@@ -1,4 +1,6 @@
+/* stylelint-disable-next-line at-rule-no-unknown */
 @import "tailwindcss" source(none);
+/* stylelint-disable-next-line at-rule-no-unknown */
 @source "../src";
 @import "tw-animate-css";
 
@@ -123,15 +125,17 @@
 
 @layer base {
   * {
-    border-color: var(--color-border);
+    border-color: var(--border);
   }
-  html {
+  html, html.dark {
     color-scheme: dark;
     scroll-behavior: smooth;
+    background-color: var(--background);
+    color: var(--foreground);
   }
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    background-color: var(--background);
+    color: var(--foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }

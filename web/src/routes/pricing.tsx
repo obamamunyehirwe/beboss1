@@ -69,11 +69,11 @@ function PricingPage() {
           <div className="max-w-2xl mb-8">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               <CheckCircle2 className="size-3.5" />
-              Measurable Business Impact
+              Pilot measurement guide
             </span>
-            <h2 className="mt-3 text-3xl font-bold sm:text-4xl">Why BeBoss Pays For Itself On Day 1</h2>
+            <h2 className="mt-3 text-3xl font-bold sm:text-4xl">Measure outcomes before claiming savings</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Most shops lose 12% to 28% of their net profit every month through invisible leaks. Here is how BeBoss closes every hole.
+              BeBoss has not established a representative reconciliation baseline. Before rollout, record the merchant's current process, then compare sales, settlement records, stock counts, debt collection and reconciliation time after 4–8 weeks. Include setup and support costs.
             </p>
           </div>
 
@@ -82,35 +82,35 @@ function PricingPage() {
               <thead className="border-b border-border bg-surface text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="p-4">Operational Area</th>
-                  <th className="p-4">Traditional Notebook / Basic Calculator</th>
-                  <th className="p-4">With BeBoss Enterprise POS</th>
-                  <th className="p-4">Typical Net Profit Impact</th>
+                  <th className="p-4">Baseline to record</th>
+                  <th className="p-4">What BeBoss records</th>
+                  <th className="p-4">Pilot measure</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 <tr className="hover:bg-surface/50">
                   <td className="p-4 font-semibold text-foreground">Cash & Split Payment Drift</td>
-                  <td className="p-4 text-muted-foreground text-xs">Manual mental math; cashiers forget to note MoMo part payments; wrong change given.</td>
-                  <td className="p-4 text-xs font-medium text-foreground">Exact integer cents math, live Cash + MoMo split calculator, automated change tender computation.</td>
-                  <td className="p-4 font-mono font-bold text-success text-xs">+3% to +6% recovered revenue</td>
+                  <td className="p-4 text-muted-foreground text-xs">How cash and operator settlement records are currently matched to sales.</td>
+                  <td className="p-4 text-xs font-medium text-foreground">Recorded payment method, split tender, amount paid and change.</td>
+                  <td className="p-4 text-xs">Mismatch rate between BeBoss sales, cash counts and MoMo settlement records.</td>
                 </tr>
                 <tr className="hover:bg-surface/50">
                   <td className="p-4 font-semibold text-foreground">Customer Debt (Amadeni)</td>
-                  <td className="p-4 text-muted-foreground text-xs">Unstructured paper debt lists; customers dispute verbal figures; forgotten installment dates.</td>
-                  <td className="p-4 text-xs font-medium text-foreground">Per-customer credit limits, historical payment ledgers, 1-tap WhatsApp and SMS reminder statements.</td>
-                  <td className="p-4 font-mono font-bold text-success text-xs">+35% to +60% faster debt collection</td>
+                  <td className="p-4 text-muted-foreground text-xs">Outstanding receivables, collection timing and staff time spent following up.</td>
+                  <td className="p-4 text-xs font-medium text-foreground">Customer balances, credit limits, payments and optional reminders.</td>
+                  <td className="p-4 text-xs">Collection rate and time spent; reminders do not guarantee repayment.</td>
                 </tr>
                 <tr className="hover:bg-surface/50">
                   <td className="p-4 font-semibold text-foreground">Stockout & Shelf Depletion</td>
-                  <td className="p-4 text-muted-foreground text-xs">Stock counted only when customers walk out disappointed; dead stock sits unmonitored.</td>
-                  <td className="p-4 text-xs font-medium text-foreground">Live Low-Stock Alerts + 14-Day Demand Forecast with recommended reorder quantities and budget.</td>
-                  <td className="p-4 font-mono font-bold text-success text-xs">+8% to +15% higher monthly turnover</td>
+                  <td className="p-4 text-muted-foreground text-xs">Opening quantities, units, purchase costs, physical counts and reorder frequency.</td>
+                  <td className="p-4 text-xs font-medium text-foreground">Product catalogue, recorded purchases, sales and stock adjustments.</td>
+                  <td className="p-4 text-xs">Stock variance and reorder frequency; insights depend on accurate entries.</td>
                 </tr>
                 <tr className="hover:bg-surface/50">
                   <td className="p-4 font-semibold text-foreground">Staff Voids & Fraud Control</td>
-                  <td className="p-4 text-muted-foreground text-xs">Staff tear out notebook pages; zero trace of voided or refunded transactions.</td>
-                  <td className="p-4 text-xs font-medium text-foreground">Operator PIN tracking, mandatory reason-audited refunds, SHA-256 tamper-evident BB- receipt seals.</td>
-                  <td className="p-4 font-mono font-bold text-success text-xs">Near-zero internal shrinkage</td>
+                  <td className="p-4 text-muted-foreground text-xs">Existing till-close, refund, void and staff-activity records.</td>
+                  <td className="p-4 text-xs font-medium text-foreground">Operator activity and recorded refund or void events.</td>
+                  <td className="p-4 text-xs">Reconciliation time and differences found; records do not prevent every loss.</td>
                 </tr>
               </tbody>
             </table>

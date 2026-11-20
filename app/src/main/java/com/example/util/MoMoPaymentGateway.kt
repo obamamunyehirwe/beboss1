@@ -20,11 +20,11 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
- * Real Production Mobile Money Gateway Integration for Rwanda (MTN MoMo & Airtel Money).
+ * Mobile-money payment helpers for Rwanda (MTN MoMo & Airtel Money).
  *
- * Implements real network requests to payment endpoints, status polling, authentic
- * Telco SMS financial transaction verification, anti-replay guards, and USSD dialer dispatch.
- * Strictly eliminates simulated fake instant approvals.
+ * Opens operator USSD flows and can query an explicitly configured backend. A transaction
+ * reference format check is not settlement verification; BeBoss does not provide a direct
+ * operator API integration here.
  */
 object MoMoPaymentGateway {
 
@@ -111,9 +111,8 @@ object MoMoPaymentGateway {
     }
 
     /**
-     * Verifies an authentic Telco Financial Transaction ID from the customer's payment SMS.
-     * MTN Rwanda MoMo: e.g. MP260903.0852.B12345 (length >= 14, contains dot)
-     * Airtel Rwanda: e.g. TX260903881234 or 12-16 digit numeric ID
+     * Checks a submitted reference's format and prevents local reuse.
+     * It cannot verify settlement or confirm the paid amount with the operator.
      */
     fun verifyTelcoTransactionReference(
         rawReference: String,
@@ -193,14 +192,13 @@ object MoMoPaymentGateway {
             amount = amount,
             provider = provider,
             payerPhone = "",
-            message = "$provider reference $cleanRef queued for server-side verification. Submit your payment proof to receive your Admin Unlock Code."
+            message = "$provider reference format looks valid, but settlement has not been verified. Send the reference and payer details through the payment proof form or WhatsApp for admin review."
         )
     }
 
     /**
-     * Initiates a real MoMo API payment request to the merchant backend or MoMo Open API.
-     * Polls for completion when a server endpoint is configured.
-     * Returns true failure if the request fails or is rejected—NEVER fakes success.
+     * Sends a request to an optional configured backend and polls its reported status.
+     * A submitted SMS reference is only format-checked here; it is not verified with the operator.
      */
     suspend fun executePaymentRequest(
         context: Context,
@@ -252,7 +250,7 @@ object MoMoPaymentGateway {
                 amount = amount,
                 provider = provider,
                 payerPhone = normalizedPhone,
-                message = "Payment initiated on $normalizedPhone. Please complete USSD payment on your handset and input the Telco SMS reference to activate."
+                message = "Payment is not confirmed. Complete the operator's USSD flow, then send the transaction reference and payer details for admin review."
             )
         }
 

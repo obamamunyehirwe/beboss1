@@ -559,7 +559,7 @@ fun SubscriptionScreen(
                 }
             }
 
-            // 3. Step 2 & Step 3: Pay via Real USSD + Send Account Username & Phone to WhatsApp Admin
+            // 3. Pay through the operator and send payment details for admin review.
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
@@ -571,7 +571,7 @@ fun SubscriptionScreen(
                         Icon(Icons.Default.Payment, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(22.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Step 2: Pay via USSD & Verify on WhatsApp",
+                            text = "Step 2: Pay by USSD & Send Proof for Admin Review",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -616,7 +616,7 @@ fun SubscriptionScreen(
                     }
 
                     Text(
-                        text = "1) Dial *182# or *500# (auto-written with exact ${breakdown.totalPayable} FRw).\n2) Send your Username, Registered Phone, Sender Phone & Registered MoMo Names via WhatsApp so Admin verifies & sends your BB2 Code or Auto-Unlocks directly.",
+                        text = "1) Complete payment in the operator's USSD flow for ${breakdown.totalPayable} FRw.\n2) Send your username, registered phone, payer details and transaction reference in the app or via WhatsApp. An admin checks settlement, then issues a BB2 code or approves an unlock on sync. Opening USSD alone does not confirm payment.",
                         fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 16.5.sp
@@ -847,7 +847,7 @@ fun SubscriptionScreen(
                             Icon(Icons.Default.VerifiedUser, contentDescription = null, modifier = Modifier.size(16.dp), tint = OrangePrimary)
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Instant Activation with MoMo SMS Reference ID",
+                                text = "Submit MoMo Reference for Verification",
                                 color = OrangePrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
@@ -1353,7 +1353,7 @@ private fun DirectMoMoPaymentDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "MoMo SMS Settlement",
+                        text = "Mobile Money payment proof",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = DarkNavy
@@ -1441,7 +1441,7 @@ private fun DirectMoMoPaymentDialog(
                 OutlinedButton(
                     onClick = {
                         MoMoPaymentGateway.openUssdDialer(context, activeUssdCode)
-                        statusMessage = "Dialer launched for $selectedProvider ($activeUssdCode). Complete payment and paste your SMS reference ID below."
+                        statusMessage = "Dialer opened for $selectedProvider. Complete payment with the operator, then submit your SMS reference for admin review."
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
@@ -1459,10 +1459,15 @@ private fun DirectMoMoPaymentDialog(
                         smsRefInput = it
                         errorMessage = null
                     },
-                    label = { Text("Telco SMS Financial Ref (e.g. MP260903...)") },
+                    label = { Text("Transaction reference (e.g. MP260903...)") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     enabled = !isProcessing
+                )
+                Text(
+                    text = "A reference format check does not verify settlement. Submit payment proof by WhatsApp for admin review.",
+                    fontSize = 11.sp,
+                    color = InkMedium
                 )
 
                 if (errorMessage != null) {
@@ -1498,7 +1503,7 @@ private fun DirectMoMoPaymentDialog(
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = OrangePrimary)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Verifying SMS financial reference...", fontSize = 11.5.sp, color = DarkNavy)
+                        Text("Checking reference format...", fontSize = 11.5.sp, color = DarkNavy)
                     }
                 }
 
@@ -1556,7 +1561,7 @@ private fun DirectMoMoPaymentDialog(
                     enabled = !isProcessing && (phoneInput.isNotBlank() || smsRefInput.isNotBlank())
                 ) {
                     Text(
-                        text = if (isProcessing) "Verifying with Provider..." else "Pay / Verify & Unlock (${breakdown.totalPayable} FRw)",
+                        text = if (isProcessing) "Checking..." else "Check reference (${breakdown.totalPayable} FRw)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )

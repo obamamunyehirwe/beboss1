@@ -1,10 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, Download, Languages, ShieldCheck, TrendingUp, Zap, Cpu } from "lucide-react";
+import { useSuspenseQuery, useQuery } from "@tanstack/react-query";
+import {
+  ArrowRight, Check, Download, Languages, ShieldCheck, TrendingUp,
+  Zap, Cpu, Store, Smartphone, Wifi, WifiOff, Activity, Lock,
+  BarChart3, Users, Package, RefreshCw, Globe
+} from "lucide-react";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SiteLayout } from "@/components/site/SiteLayout";
-import { PhoneMockup } from "@/components/site/PhoneMockup";
+import { ModernHero } from "@/components/site/ModernHero";
 import { PricingCalculator } from "@/components/site/PricingCalculator";
 import { WebPosTerminal } from "@/components/site/CheckoutDemo";
 import { ReceiptVerifier } from "@/components/site/ReceiptVerifier";
@@ -13,203 +18,47 @@ import { ArchitectureFlow } from "@/components/site/ArchitectureFlow";
 import { FEATURES, LEAKS, SECTORS } from "@/components/site/content";
 import { useI18n } from "@/lib/i18n";
 import { LANGS } from "@/lib/i18n-dict";
-import { publicSiteQuery } from "@/lib/queries";
+import { publicSiteQuery, platformStatsQuery } from "@/lib/queries";
 import { formatRwf } from "@/lib/format";
-import heroShopAsset from "@/assets/hero-shop.jpg.asset.json";
 import counterImgAsset from "@/assets/counter-printer.jpg.asset.json";
-const heroShop = heroShopAsset.url;
 const counterImg = counterImgAsset.url;
 
-export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "BeBoss POS — Run every shop from one Android phone" },
-      { name: "description", content: "Offline-first point of sale for Rwanda and East Africa: MoMo & cash checkout, debt ledger, inventory forecasts, multi-branch sync. 4-day free trial." },
-      { property: "og:title", content: "BeBoss POS — Run every shop from one Android phone" },
-      { property: "og:description", content: "Offline-first POS with MoMo payments, customer credit, stock forecasting and multi-branch sync. Download the Android app." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(publicSiteQuery),
-  component: Home,
-});
+export const Route = createFileRoute("/")(
+  {
+    head: () => ({
+      meta: [
+        { title: "BeBoss POS — Run every shop from one Android phone" },
+        { name: "description", content: "Offline-first Android business records for Rwandan shops: sales, stock and customer credit. Mobile-money payments use the operator's USSD flow and require separate verification." },
+        { property: "og:title", content: "BeBoss POS — Run every shop from one Android phone" },
+        { property: "og:description", content: "Record sales, stock and customer credit offline. Mobile-money settlement is completed and verified separately with the operator or shop administrator." },
+        { property: "og:type", content: "website" },
+        { name: "twitter:card", content: "summary_large_image" },
+      ],
+    }),
+    loader: ({ context }) => context.queryClient.ensureQueryData(publicSiteQuery),
+    component: Home,
+  }
+);
 
 function Home() {
   const { t, p } = useI18n();
   const { data } = useSuspenseQuery(publicSiteQuery);
+  const { data: statsData } = useQuery({ ...platformStatsQuery, suspense: false } as any);
+  const stats = (statsData as any)?.stats;
   const version = data.current?.version_name ?? data.config?.apk_version ?? "2.0.0";
   const [monthlyRev, setMonthlyRev] = useState(6000000);
-  const [heroView, setHeroView] = useState<"dual" | "terminal" | "station">("dual");
 
-  // Exact ROI Calculations based on Enterprise Playbook
-  const recoveredDrift = Math.round(monthlyRev * 0.045); // 4.5%
-  const fasterCredit = Math.round(monthlyRev * 0.04);   // 4.0%
-  const preventedStockout = Math.round(monthlyRev * 0.05); // 5.0%
-  const totalRecovered = recoveredDrift + fasterCredit + preventedStockout;
-  const subscriptionCost = 5000;
-  const netProfitGain = totalRecovered - subscriptionCost;
-  const roiMultiple = Math.round(netProfitGain / subscriptionCost);
-  const paybackHours = Math.max(1, Math.round((subscriptionCost / (totalRecovered / 30)) * 24));
+  const illustrativeAmounts = [
+    Math.round(monthlyRev * 0.045),
+    Math.round(monthlyRev * 0.04),
+    Math.round(monthlyRev * 0.05),
+  ];
+  const illustrativeTotal = illustrativeAmounts.reduce((sum, amount) => sum + amount, 0);
 
   return (
     <SiteLayout>
-      {/* HERO */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-ember" aria-hidden="true" />
-        <div className="absolute inset-0 bg-grid mask-fade-b" aria-hidden="true" />
-        <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 pb-16 pt-10 sm:px-6 lg:grid-cols-[1.1fr_1fr] lg:pt-14">
-          <div className="animate-fade-up">
-            {/* Official Mobile App Logo & Verified Badge */}
-            <div className="flex flex-wrap items-center gap-2.5 mb-5">
-              <div className="inline-flex items-center gap-2 rounded-2xl border border-border/80 bg-card/90 px-3 py-1.5 shadow-xs backdrop-blur-md">
-                <img 
-                  src="/beboss-app-logo.jpg" 
-                  alt="Official BeBoss Mobile App Logo" 
-                  className="size-6 rounded-lg object-cover ring-1 ring-primary/40 shadow-xs" 
-                />
-                <span className="font-display text-xs font-bold text-foreground">BeBoss Android POS</span>
-                <span className="size-1.5 rounded-full bg-success" />
-                <span className="font-mono text-[10px] text-success font-bold">Official v{version}</span>
-              </div>
-              <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-                <span className="size-1.5 rounded-full bg-success animate-pulse-ring" />
-                {t("heroEyebrow")}
-              </span>
-            </div>
-
-            <h1 className="text-4xl font-extrabold leading-[1.05] sm:text-5xl lg:text-6xl">
-              {t("heroTitleA")}
-              <br />
-              <span className="text-gradient-brand">{t("heroTitleB")}</span>
-            </h1>
-            <p className="mt-5 max-w-xl text-base sm:text-lg text-muted-foreground">{t("heroSub")}</p>
-            <div className="mt-7 flex flex-wrap items-center gap-3">
-              <Button asChild variant="hero" size="xl">
-                <Link to="/download">
-                  <Download />
-                  {t("ctaDownload")}
-                </Link>
-              </Button>
-              <Button asChild variant="glass" size="xl">
-                <Link to="/pricing">
-                  {t("ctaPricing")}
-                  <ArrowRight />
-                </Link>
-              </Button>
-            </div>
-            <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-              <Check className="size-4 text-success" />
-              {t("heroTrial")} • Android 7.0+ • v{version}
-            </p>
-          </div>
-
-          {/* Right Column: Interactive Retail Counter Station & Smartphone Showcase */}
-          <div className="relative flex flex-col items-center lg:items-end w-full">
-            {/* Interactive Showcase View Mode Switcher */}
-            <div className="flex items-center justify-center gap-1 p-1 rounded-full bg-surface-2/90 border border-border shadow-xs backdrop-blur-md mb-4">
-              <button
-                type="button"
-                onClick={() => setHeroView("dual")}
-                className={cn(
-                  "px-3 py-1 text-[11px] font-semibold rounded-full transition-all flex items-center gap-1.5",
-                  heroView === "dual" 
-                    ? "bg-primary text-primary-foreground shadow-xs" 
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Zap className="size-3" />
-                <span>Dual Showcase</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setHeroView("terminal")}
-                className={cn(
-                  "px-3 py-1 text-[11px] font-semibold rounded-full transition-all flex items-center gap-1.5",
-                  heroView === "terminal" 
-                    ? "bg-primary text-primary-foreground shadow-xs" 
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <span>📱 Mobile Terminal</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setHeroView("station")}
-                className={cn(
-                  "px-3 py-1 text-[11px] font-semibold rounded-full transition-all flex items-center gap-1.5",
-                  heroView === "station" 
-                    ? "bg-primary text-primary-foreground shadow-xs" 
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <span>🏬 Kigali Counter</span>
-              </button>
-            </div>
-
-            <div className="relative flex flex-col sm:flex-row items-center justify-center lg:justify-end gap-5 w-full">
-              {/* Real Modern Supermarket Counter Showcase Card */}
-              {(heroView === "dual" || heroView === "station") && (
-                <div className={cn(
-                  "relative flex flex-col rounded-[2.2rem] overflow-hidden border border-border/80 bg-card shadow-2xl transition-all duration-300 hover:border-primary/50 group shrink-0",
-                  heroView === "station" ? "w-full max-w-[380px] h-[515px]" : "w-[270px] h-[515px]"
-                )}>
-                  <img 
-                    src={heroShop || "/hero-shop.jpg"} 
-                    alt="Modern Supermarket Counter Station in Kigali" 
-                    className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" 
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = "/counter-printer.jpg";
-                    }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 to-black/15" />
-                  
-                  {/* Badge & Caption Overlay */}
-                  <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/90 px-2.5 py-1 text-[10px] font-bold text-white shadow-sm backdrop-blur-md">
-                      <span className="size-1.5 rounded-full bg-white animate-pulse" />
-                      Kigali Retail Station
-                    </span>
-                    <span className="rounded-full bg-black/70 px-2 py-0.5 text-[9px] font-mono text-white/90 backdrop-blur-md border border-white/10">
-                      Live Counter
-                    </span>
-                  </div>
-
-                  <div className="absolute bottom-4 left-4 right-4 text-white space-y-1.5">
-                    <p className="font-display text-sm font-extrabold leading-tight">
-                      High-Throughput Counter Station
-                    </p>
-                    <p className="text-[11px] text-white/80 leading-snug">
-                      Zero line stalls · Offline-first SQLCipher with instant MoMo USSD push & SHA-256 receipts.
-                    </p>
-                    <div className="pt-2 flex items-center justify-between text-[10px] font-mono text-emerald-400 font-semibold border-t border-white/20">
-                      <span>✓ 0.8s Checkout</span>
-                      <span>✓ 100% Offline</span>
-                      <span>✓ Multi-Cart Hold</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Smartphone Terminal Mockup */}
-              {(heroView === "dual" || heroView === "terminal") && (
-                <div className="relative z-10 shrink-0">
-                  <PhoneMockup />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="relative border-y border-border bg-surface/70">
-          <div className="mx-auto grid max-w-7xl grid-cols-2 divide-border px-4 sm:px-6 md:grid-cols-4 md:divide-x">
-            {(["stat1", "stat2", "stat3", "stat4"] as const).map((k) => (
-              <div key={k} className="px-4 py-5 text-center text-sm font-medium">
-                {t(k)}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* MODERN HERO SECTION */}
+      <ModernHero version={version} />
 
       {/* LEAKS */}
       <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6">
@@ -236,13 +85,13 @@ function Home() {
             <div className="max-w-2xl">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-semibold text-success">
                 <TrendingUp className="size-3.5" />
-                Measurable Business Profitability Playbook (ROI Guide)
+                Illustrative scenario — validate in a pilot
               </span>
               <h2 className="mt-3 text-3xl font-extrabold sm:text-4xl">
-                How BeBoss Recovers Your Net Profit
+                Measure a baseline before installation
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Move the slider to match your estimated monthly sales volume. See how closing the five silent leaks recovers more profit in 24 hours than a whole year of BeBoss licenses.
+                These example percentages are assumptions, not measured BeBoss results. Record baseline sales, stock variance, debt collection, reconciliation time and reorder frequency, then compare after 4–8 weeks and include setup and support costs.
               </p>
             </div>
 
@@ -272,27 +121,27 @@ function Home() {
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 pt-4">
               <div className="rounded-2xl border border-border bg-card p-5">
-                <span className="text-xs text-muted-foreground">1. Wrong Change & Split Drift (+4.5%)</span>
-                <p className="font-display text-xl font-bold text-success mt-2">+{formatRwf(recoveredDrift)}</p>
-                <p className="text-[11px] text-muted-foreground mt-1">Exact cents & split Cash + MoMo calculation</p>
+                <span className="text-xs text-muted-foreground">1. Illustrative cash/split-payment scenario (4.5%)</span>
+                <p className="font-display text-xl font-bold text-success mt-2">+{formatRwf(illustrativeAmounts[0])}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Assumption only; compare recorded tender and cash-up results.</p>
               </div>
 
               <div className="rounded-2xl border border-border bg-card p-5">
-                <span className="text-xs text-muted-foreground">2. Faster Debt Recovery (+4.0%)</span>
-                <p className="font-display text-xl font-bold text-success mt-2">+{formatRwf(fasterCredit)}</p>
-                <p className="text-[11px] text-muted-foreground mt-1">Limits & 1-tap WhatsApp debt reminders</p>
+                <span className="text-xs text-muted-foreground">2. Illustrative customer-credit scenario (4.0%)</span>
+                <p className="font-display text-xl font-bold text-success mt-2">+{formatRwf(illustrativeAmounts[1])}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Assumption only; a ledger cannot ensure repayment.</p>
               </div>
 
               <div className="rounded-2xl border border-border bg-card p-5">
-                <span className="text-xs text-muted-foreground">3. Stockout Prevention (+5.0%)</span>
-                <p className="font-display text-xl font-bold text-success mt-2">+{formatRwf(preventedStockout)}</p>
-                <p className="text-[11px] text-muted-foreground mt-1">14-day demand forecast & reorder plan</p>
+                <span className="text-xs text-muted-foreground">3. Illustrative stock scenario (5.0%)</span>
+                <p className="font-display text-xl font-bold text-success mt-2">+{formatRwf(illustrativeAmounts[2])}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Assumption only; stock insight depends on accurate records.</p>
               </div>
 
               <div className="rounded-2xl border border-primary/40 bg-primary/10 p-5">
-                <span className="text-xs text-primary font-semibold">Net Monthly Recovery</span>
-                <p className="font-display text-2xl font-extrabold text-primary mt-2">+{formatRwf(totalRecovered)} / mo</p>
-                <p className="text-[11px] text-muted-foreground mt-1">ROI: <strong>&gt; {roiMultiple}x</strong> • Payback in <strong>{paybackHours} hours</strong></p>
+                <span className="text-xs text-primary font-semibold">Illustrative scenario total</span>
+                <p className="font-display text-2xl font-extrabold text-primary mt-2">+{formatRwf(illustrativeTotal)} / mo</p>
+                <p className="text-[11px] text-muted-foreground mt-1">Not a forecast, verified saving or promised return.</p>
               </div>
             </div>
           </div>
@@ -306,10 +155,9 @@ function Home() {
             <h2 className="text-2xl font-bold sm:text-3xl">{t("whyTitle")}</h2>
             <p className="mt-2 text-sm text-muted-foreground">{t("whySub")}</p>
           </div>
-          {([["+35–60%", "why1L"], ["+8–15%", "why2L"], ["< 24 h", "why3L"], ["≈ 0", "why4L"]] as const).map(([v, l]) => (
+          {(["why1L", "why2L", "why3L", "why4L"] as const).map((l) => (
             <div key={l} className="border-t border-border pt-4 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
-              <p className="font-display text-4xl font-extrabold text-gradient-brand">{v}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{t(l)}</p>
+              <p className="font-display text-lg font-bold text-foreground">{t(l)}</p>
             </div>
           ))}
         </div>

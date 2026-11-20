@@ -286,7 +286,7 @@ export function PhoneMockup() {
                     e.stopPropagation();
                     const next = !online;
                     setOnline(next);
-                    triggerIslandAlert(next ? "Network: 5G (HLC)" : "Network: 100% Offline");
+                    triggerIslandAlert(next ? "Network: Connected" : "Network: Offline");
                   }}
                   className="flex items-center hover:opacity-80 transition-opacity"
                 >
@@ -591,7 +591,7 @@ export function PhoneMockup() {
                     </span>
                   </div>
                   <p className="font-display text-lg font-black mt-0.5">{totalDebtBalance.toLocaleString()} FRw</p>
-                  <p className="text-[9px] text-muted-foreground mt-0.5">Credit recovery rate: 94.2% within 14 days</p>
+                  <p className="text-[9px] text-muted-foreground mt-0.5">Illustrative balance; repayment varies by customer</p>
                 </div>
 
                 {/* Client Ledger Cards */}
@@ -915,32 +915,32 @@ export function PhoneMockup() {
       </div>
 
       {/* ================= FLOATING AMBIENT VALUE CARDS ================= */}
-      {/* Left Badge: Supabase Cloud Telemetry */}
+      {/* Left Badge: demo data indicator */}
       <div className="glass absolute -left-20 top-[48%] hidden items-center gap-2 rounded-2xl border border-border/80 px-3 py-2 text-xs shadow-xl backdrop-blur-lg lg:flex animate-float">
         <div className="size-7 rounded-lg bg-success/20 flex items-center justify-center text-success shrink-0">
           <Database className="size-3.5" />
         </div>
         <div>
-          <p className="font-bold text-[10px] leading-tight">Supabase Realtime</p>
-          <p className="text-[8.5px] text-muted-foreground font-mono">Multi-Branch Mesh</p>
+          <p className="font-bold text-[10px] leading-tight">Interactive demo</p>
+          <p className="text-[8.5px] text-muted-foreground font-mono">Sample data · not live</p>
         </div>
       </div>
 
-      {/* Right Top Badge: SHA-256 Tamper-Proof Seal */}
+      {/* Right Top Badge: Receipt checksum */}
       <div className="glass absolute -right-16 top-10 hidden rounded-2xl border border-border/80 px-3 py-2 text-xs shadow-xl backdrop-blur-lg lg:block animate-float">
         <div className="flex items-center gap-1.5">
           <ShieldCheck className="size-3 text-success" />
           <p className="font-mono text-[9.5px] text-success font-black tracking-tight">BB-7F3C29A1E4</p>
         </div>
-        <p className="text-[8.5px] text-muted-foreground mt-0.5">SHA-256 Tamper-Proof</p>
+        <p className="text-[8.5px] text-muted-foreground mt-0.5">Receipt checksum demo</p>
       </div>
 
-      {/* Right Bottom Badge: 100% Offline SQLCipher */}
+      {/* Right Bottom Badge: Offline-first storage */}
       <div className="glass absolute -right-16 bottom-8 hidden items-center gap-1.5 rounded-2xl border border-border/80 px-3 py-2 text-xs shadow-xl backdrop-blur-lg lg:flex animate-float">
         <Smartphone className="size-3.5 text-primary" />
         <div>
           <p className="font-bold text-[10px] leading-tight">Offline SQLCipher</p>
-          <p className="text-[8.5px] text-muted-foreground">Zero Internet Needed</p>
+          <p className="text-[8.5px] text-muted-foreground">Sync needs a connection</p>
         </div>
       </div>
     </div>

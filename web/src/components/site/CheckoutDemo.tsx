@@ -688,7 +688,7 @@ export function WebPosTerminal() {
                 <p className="flex items-center gap-1 font-bold text-[10px] mt-1">
                   <ShieldCheck className="size-3" /> SEAL: {completedSale.seal}
                 </p>
-                <p className="text-[9px] opacity-70">OFFLINE SHA-256 TAMPER-PROOF AUTHENTICATION</p>
+                <p className="text-[9px] opacity-70">DEMO CHECKSUM • NOT A DIGITAL SIGNATURE</p>
                 <p className="text-[9px] font-sans font-semibold mt-1">MURAKOZE CYANE • THANK YOU FOR SHOPPING</p>
               </div>
             </div>

@@ -440,11 +440,11 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onUserInteraction() {
         idleLockJob?.cancel()
-        if (!isLocked.value && !isRegistrationNeeded.value) {
+        if (!authCoordinator.isLocked.value && !authCoordinator.isRegistrationNeeded.value) {
             val timeoutMs = _idleLockMinutes.value.coerceIn(1, 60) * 60_000L
             idleLockJob = viewModelScope.launch {
                 delay(timeoutMs)
-                if (!isLocked.value && !isRegistrationNeeded.value) {
+                if (!authCoordinator.isLocked.value && !authCoordinator.isRegistrationNeeded.value) {
                     lockApp()
                 }
             }
@@ -459,50 +459,50 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // Delegated Auth Flows
-    val currentUser: StateFlow<User?> = authCoordinator.currentUser
-    val isLocked: StateFlow<Boolean> = authCoordinator.isLocked
-    val isRegistrationNeeded: StateFlow<Boolean> = authCoordinator.isRegistrationNeeded
-    val authError: StateFlow<String?> = authCoordinator.authError
+    val currentUser: StateFlow<User?> get() = authCoordinator.currentUser
+    val isLocked: StateFlow<Boolean> get() = authCoordinator.isLocked
+    val isRegistrationNeeded: StateFlow<Boolean> get() = authCoordinator.isRegistrationNeeded
+    val authError: StateFlow<String?> get() = authCoordinator.authError
 
     // Delegated POS Flows
-    val cartState: StateFlow<CartState> = posCoordinator.cartState
-    val heldCarts: StateFlow<List<HeldCart>> = posCoordinator.heldCarts
-    val activeReceiptSale: StateFlow<SaleWithItems?> = posCoordinator.activeReceiptSale
+    val cartState: StateFlow<CartState> get() = posCoordinator.cartState
+    val heldCarts: StateFlow<List<HeldCart>> get() = posCoordinator.heldCarts
+    val activeReceiptSale: StateFlow<SaleWithItems?> get() = posCoordinator.activeReceiptSale
 
     // Delegated Sync & LAN P2P Flows
-    val connectivityStatus: StateFlow<ConnectivityStatus> = syncCoordinator.connectivityStatus
-    val cloudSyncReport: StateFlow<CloudSyncReport?> = syncCoordinator.cloudSyncReport
-    val isSyncing: StateFlow<Boolean> = syncCoordinator.isSyncing
-    val isP2pSyncing: StateFlow<Boolean> = syncCoordinator.isP2pSyncing
-    val localNetworkSyncServer = syncCoordinator.localNetworkSyncServer
-    val localServerStatus = syncCoordinator.localServerStatus
-    val localServerIp = syncCoordinator.localServerIp
-    val localConnectedClients = syncCoordinator.localConnectedClients
-    val localLastReceivedPacket = syncCoordinator.localLastReceivedPacket
-    val discoveredHubs = syncCoordinator.discoveredHubs
-    val isDiscoveringHubs = syncCoordinator.isDiscoveringHubs
-    val peerSyncEvents = syncCoordinator.peerSyncEvents
+    val connectivityStatus: StateFlow<ConnectivityStatus> get() = syncCoordinator.connectivityStatus
+    val cloudSyncReport: StateFlow<CloudSyncReport?> get() = syncCoordinator.cloudSyncReport
+    val isSyncing: StateFlow<Boolean> get() = syncCoordinator.isSyncing
+    val isP2pSyncing: StateFlow<Boolean> get() = syncCoordinator.isP2pSyncing
+    val localNetworkSyncServer get() = syncCoordinator.localNetworkSyncServer
+    val localServerStatus get() = syncCoordinator.localServerStatus
+    val localServerIp get() = syncCoordinator.localServerIp
+    val localConnectedClients get() = syncCoordinator.localConnectedClients
+    val localLastReceivedPacket get() = syncCoordinator.localLastReceivedPacket
+    val discoveredHubs get() = syncCoordinator.discoveredHubs
+    val isDiscoveringHubs get() = syncCoordinator.isDiscoveringHubs
+    val peerSyncEvents get() = syncCoordinator.peerSyncEvents
 
     // Delegated Admin Console Flows
-    val adminSession: StateFlow<SupabaseAdminSession?> = adminCoordinator.adminSession
-    val adminAuthError: StateFlow<String?> = adminCoordinator.adminAuthError
-    val isAdminAuthenticating: StateFlow<Boolean> = adminCoordinator.isAdminAuthenticating
-    val adminPaymentRequests: StateFlow<List<SupabasePaymentRequestDto>> = adminCoordinator.adminPaymentRequests
-    val adminShopAccounts: StateFlow<List<SupabaseShopAccountDto>> = adminCoordinator.adminShopAccounts
-    val adminShopUsers: StateFlow<List<SupabaseShopUserDto>> = adminCoordinator.adminShopUsers
-    val adminShopDevices: StateFlow<List<SupabaseShopDeviceDto>> = adminCoordinator.adminShopDevices
-    val adminBranchSnapshots: StateFlow<List<SupabaseBranchSnapshotDto>> = adminCoordinator.adminBranchSnapshots
-    val adminUnlockCodes: StateFlow<List<SupabaseUnlockCodeDto>> = adminCoordinator.adminUnlockCodes
-    val adminAuditLogs: StateFlow<List<SupabaseAuditLogDto>> = adminCoordinator.adminAuditLogs
-    val adminPaymentConfig: StateFlow<AdminPaymentConfig> = adminCoordinator.adminPaymentConfig
-    val isAdminLoading: StateFlow<Boolean> = adminCoordinator.isAdminLoading
-    val adminLastSyncedAt: StateFlow<Long> = adminCoordinator.adminLastSyncedAt
+    val adminSession: StateFlow<SupabaseAdminSession?> get() = adminCoordinator.adminSession
+    val adminAuthError: StateFlow<String?> get() = adminCoordinator.adminAuthError
+    val isAdminAuthenticating: StateFlow<Boolean> get() = adminCoordinator.isAdminAuthenticating
+    val adminPaymentRequests: StateFlow<List<SupabasePaymentRequestDto>> get() = adminCoordinator.adminPaymentRequests
+    val adminShopAccounts: StateFlow<List<SupabaseShopAccountDto>> get() = adminCoordinator.adminShopAccounts
+    val adminShopUsers: StateFlow<List<SupabaseShopUserDto>> get() = adminCoordinator.adminShopUsers
+    val adminShopDevices: StateFlow<List<SupabaseShopDeviceDto>> get() = adminCoordinator.adminShopDevices
+    val adminBranchSnapshots: StateFlow<List<SupabaseBranchSnapshotDto>> get() = adminCoordinator.adminBranchSnapshots
+    val adminUnlockCodes: StateFlow<List<SupabaseUnlockCodeDto>> get() = adminCoordinator.adminUnlockCodes
+    val adminAuditLogs: StateFlow<List<SupabaseAuditLogDto>> get() = adminCoordinator.adminAuditLogs
+    val adminPaymentConfig: StateFlow<AdminPaymentConfig> get() = adminCoordinator.adminPaymentConfig
+    val isAdminLoading: StateFlow<Boolean> get() = adminCoordinator.isAdminLoading
+    val adminLastSyncedAt: StateFlow<Long> get() = adminCoordinator.adminLastSyncedAt
 
     // Delegated Database Engine Flows
-    val databaseStats: StateFlow<DatabaseEngineStats?> = dbCoordinator.databaseStats
-    val databaseMaintenanceResult: StateFlow<DatabaseMaintenanceResult?> = dbCoordinator.databaseMaintenanceResult
-    val isOptimizingDb: StateFlow<Boolean> = dbCoordinator.isOptimizingDb
-    val startupIntegrityOk: StateFlow<Boolean?> = dbCoordinator.startupIntegrityOk
+    val databaseStats: StateFlow<DatabaseEngineStats?> get() = dbCoordinator.databaseStats
+    val databaseMaintenanceResult: StateFlow<DatabaseMaintenanceResult?> get() = dbCoordinator.databaseMaintenanceResult
+    val isOptimizingDb: StateFlow<Boolean> get() = dbCoordinator.isOptimizingDb
+    val startupIntegrityOk: StateFlow<Boolean?> get() = dbCoordinator.startupIntegrityOk
 
     // ------------------------------------------------------------------------
     // LANGUAGE, THEME & NAVIGATION

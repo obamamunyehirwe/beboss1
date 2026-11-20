@@ -116,7 +116,12 @@ class MainActivity : ComponentActivity() {
             val isDarkTheme by viewModel.isDarkTheme.collectAsState()
 
             MyApplicationTheme(darkTheme = isDarkTheme) {
-                BeBossApp(viewModel = viewModel)
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    BeBossApp(viewModel = viewModel)
+                }
             }
         }
     }
@@ -444,6 +449,7 @@ fun BeBossApp(viewModel: BeBossViewModel = viewModel()) {
                                 inventoryValuation = inventoryValuation,
                                 lowStockProducts = lowStockProducts,
                                 recentSales = allSales,
+                                hasProducts = allProducts.isNotEmpty(),
                                 currentUser = currentUser,
                                 language = currentLanguage,
                                 branches = branches,

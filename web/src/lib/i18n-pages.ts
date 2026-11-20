@@ -51,20 +51,20 @@ const en: PageCopy = {
   home: {
     heroAlt: "Shop owner in Kigali holding a phone running BeBoss",
     counterAlt: "Phone and thermal receipt printer on a pharmacy counter",
-    sealed: "Sealed, verifiable receipts",
+    sealed: "Receipts with a checksum",
   },
   features: [
     { title: "Point of sale & checkout", items: [
       { t: "Camera barcode scanner", d: "Scan SKUs with the phone camera, or search by name and category in an instant product grid." },
       { t: "5 payment methods", d: "Cash, MTN MoMo, Airtel Money, card, split Cash + MoMo with live remaining balance, and customer credit." },
       { t: "Hold & resume carts", d: "Park a basket at rush hour, serve the next customer, resume with one tap." },
-      { t: "Sealed receipts", d: "Every receipt carries an offline-verifiable BB- seal bound to your TIN, number, time and total." },
+      { t: "Receipt checksum", d: "A checksum can flag mismatched receipt fields, but it is not a digital signature or proof that a receipt is authentic." },
       { t: "Thermal & WhatsApp", d: "58mm Bluetooth or 80mm counter printers with logo, VAT/TIN and QR — or send as a WhatsApp receipt." },
     ] },
     { title: "Stock, money & insight", items: [
       { t: "Real profit & loss", d: "Today, week, month or all-time P&L using real cost of goods, with per-item margin %." },
-      { t: "14-day demand forecast", d: "Moving-average sales velocity, days of cover left and exact reorder quantities with budget." },
-      { t: "Customer credit ledger", d: "Credit limits, VIP/wholesale categories, installments, PDF statements, WhatsApp & SMS reminders." },
+      { t: "Sales-based stock estimates", d: "Low-stock indicators use the catalogue and recorded movements; inaccurate costs, units or quantities lead to inaccurate reports." },
+      { t: "Customer credit ledger", d: "Credit limits, balances, payment history and reminders help track receivables; repayment is not guaranteed." },
       { t: "Purchases & adjustments", d: "Supplier deliveries, damaged/expired losses and count corrections — all audited with reasons." },
     ] },
     { title: "Teams, branches & sync", items: [
@@ -95,7 +95,7 @@ const en: PageCopy = {
       { role: "Store manager", steps: [
         "Record supplier deliveries in Purchases so stock and cost stay accurate.",
         "Log damaged or expired goods as adjustments with a reason — never delete sales.",
-        "Use stock transfers to move goods between branches; both branches update automatically.",
+        "Record stock transfers between branches and reconcile the sending and receiving quantities.",
         "Approve refunds and voids; each one is audited and restores stock correctly.",
       ] },
       { role: "Cashier", steps: [
@@ -105,7 +105,7 @@ const en: PageCopy = {
         "Print or WhatsApp the sealed receipt. Lock the terminal when you leave the counter.",
       ] },
     ],
-    tipsTitle: "Pro tips for zero leakage",
+    tipsTitle: "Checks to keep your records useful",
     tips: [
       "Set a credit limit for every customer before giving goods on credit.",
       "Send polite WhatsApp reminders every Monday from the Customers screen.",
@@ -114,9 +114,9 @@ const en: PageCopy = {
       "Keep one phone as the owner device and add cashiers as paired devices — every action stays traceable.",
     ],
     faq: [
-      ["Does BeBoss work without internet?", "Yes. Every sale, stock change and debt is saved on the phone first. When Wi-Fi or data returns, branches and devices sync automatically."],
+      ["Does BeBoss work without internet?", "Sales and stock changes can be recorded on the phone offline. Cloud and branch synchronization needs a connection; check that records sync before relying on them across devices."],
       ["How does the free trial work?", "Every new shop gets 4 days of full access. After that, the app locks until you pay — your data stays safe and encrypted on the phone."],
-      ["How do I pay?", "Dial the MTN MoMo (*182#) or Airtel Money (*500#) code shown in the app or on the Pricing page, then submit your payer name, phone and transaction reference."],
+      ["How do I pay?", "Use the operator's USSD flow, then submit the payer details and transaction reference in the app or My shop page. BeBoss records the payment method; it is not a licensed payment processor and does not verify settlement through a direct operator API. An admin reviews the proof."],
       ["What is a BB2 unlock code?", "A signed code like BB2-SINGLE-30-…, bound to your username and phone. Paste it in Settings → Insert Unlock Code. It only works for your shop and only once."],
       ["Can I use several phones in one shop?", "Yes. The owner device is included; each extra paired device adds a small monthly fee. Devices join with a code from the owner phone."],
       ["What happens to my data if I change phones?", "Use the encrypted backup and restore in Settings, or re-sync from a branch device, so nothing is lost."],
@@ -128,7 +128,7 @@ const en: PageCopy = {
     tiers: [
       { name: "Single store", note: "1 branch • owner device included" },
       { name: "Two branches", note: "2 branches • consolidated dashboard" },
-      { name: "Enterprise", note: "3+ branches • transfers & sync" },
+      { name: "3+ branches", note: "Transfers and sync; pilot reconciliation before relying on consolidated stock" },
     ],
     staffLine: "Staff: 2–3 = +2,000 • 4–5 = +4,000 • 6+ = +1,000 each",
     devicesLine: "Extra paired devices: +{rate} FRw each / month",
@@ -138,8 +138,8 @@ const en: PageCopy = {
     steps: [
       { t: "Dial the code", d: "Use the MTN *182# or Airtel *500# code above — the amount is already filled in." },
       { t: "Send your proof", d: "In the app (Settings → License) or on the My shop page, submit your payer name, phone and transaction reference." },
-      { t: "We verify", d: "The BeBoss team confirms the payment with the telco, usually within minutes in business hours." },
-      { t: "You're unlocked", d: "Your shop auto-unlocks when it syncs, or you receive a BB2 unlock code by WhatsApp to paste in the app." },
+      { t: "Admin review", d: "An admin checks the submitted payment proof against settlement records. A USSD dial or a reference alone is not confirmation; review time varies." },
+      { t: "Unlock", d: "After approval, the app unlocks on its next sync or the admin can issue a BB2 code. WhatsApp is a way to send proof or receive the code, not an automatic payment-verification API." },
     ],
   },
   how: { codeLegend: "plan · days · valid-until · account hash · signature" },
@@ -162,7 +162,7 @@ const en: PageCopy = {
     proofSent: "Payment proof sent. You'll be unlocked as soon as it's verified.",
     sendFailed: "Could not send your proof. Check the details and try again.",
     payerName: "Payer full name (as on MoMo)", payerPhone: "Payer phone", txRef: "Transaction reference (TxID)",
-    amountNote: "The amount is recalculated and checked by BeBoss when your proof arrives. Use the same username and phone as in the app so your shop unlocks automatically.",
+    amountNote: "BeBoss recalculates the plan amount, but a submitted reference is only a claim until an admin verifies settlement. Use the same shop username and registered phone so approval reaches the right account.",
     ref: "Ref",
     status: { ACTIVE: "Active", TRIAL: "Free trial", EXPIRED: "Expired", SUSPENDED: "Suspended", APPROVED: "Approved", PENDING_VERIFICATION: "Waiting for verification", REJECTED: "Rejected", REDEEMED: "Used", ISSUED: "Ready to use", REVOKED: "Cancelled" },
   },
@@ -178,20 +178,20 @@ const rw: PageCopy = {
   home: {
     heroAlt: "Nyir'iduka i Kigali afite telefoni ikoresha BeBoss",
     counterAlt: "Telefoni n'imashini icapa inyemezabuguzi kuri kontwari ya farumasi",
-    sealed: "Inyemezabuguzi zifite ikimenyetso kigenzurwa",
+    sealed: "Inyemezabuguzi zifite checksum",
   },
   features: [
     { title: "Gucuruza no kwishyuza", items: [
       { t: "Gusoma barcode na kamera", d: "Soma kode z'ibicuruzwa ukoresheje kamera ya telefoni, cyangwa ushakishe ukoresheje izina n'icyiciro." },
       { t: "Uburyo 5 bwo kwishyura", d: "Amafaranga mu ntoki, MTN MoMo, Airtel Money, ikarita, kugabanya hagati y'intoki na MoMo, n'ideni ry'umukiriya." },
       { t: "Hagarika usubukure igitebo", d: "Shyira igitebo ku ruhande mu gihe hari benshi, ukorere undi mukiriya, hanyuma ugisubukure ukanze rimwe." },
-      { t: "Inyemezabuguzi zifunze", d: "Buri nyemezabuguzi ifite ikimenyetso BB- kigenzurwa nta interineti, gihujwe na TIN yawe, nimero, igihe n'igiteranyo." },
+      { t: "Checksum y'inyemezabuguzi", d: "Checksum ishobora kwerekana ko amakuru atandukanye, ariko si umukono wa elegitoroniki cyangwa gihamya y'uko inyemezabuguzi ari nyayo." },
       { t: "Icapiro na WhatsApp", d: "Icapiro rya Bluetooth rya 58mm cyangwa irya kontwari rya 80mm rifite ikirango, TVA/TIN na QR — cyangwa ohereza kuri WhatsApp." },
     ] },
     { title: "Ububiko, amafaranga n'isesengura", items: [
       { t: "Inyungu n'igihombo nyabyo", d: "Inyungu y'uyu munsi, icyumweru, ukwezi cyangwa igihe cyose ukurikije igiciro nyacyo cy'ibicuruzwa, n'ijanisha kuri buri gicuruzwa." },
-      { t: "Iteganya ry'iminsi 14", d: "Umuvuduko w'igurisha, iminsi ububiko buzamara n'ingano nyayo yo kongera kurangura hamwe n'ingengo y'imari." },
-      { t: "Igitabo cy'amadeni", d: "Imipaka y'ideni, ibyiciro VIP/abarangura, kwishyura buhoro buhoro, raporo za PDF, kwibutsa kuri WhatsApp na SMS." },
+      { t: "Igereranya ry'ububiko rishingiye ku igurisha", d: "Amakuru y'ububiko ashingira ku bicuruzwa n'impinduka wanditse; ibiciro, ingano cyangwa ibarura bitari byo bitanga raporo zitari zo." },
+      { t: "Igitabo cy'amadeni", d: "Reba imipaka, amafaranga asigaye n'ubwishyu, wohereze ubutumwa bwibutsa; nticyemeza ko umukiriya azishyura." },
       { t: "Kurangura no gukosora", d: "Ibyo abatanga ibicuruzwa bazanye, ibyangiritse/ibyarengeje igihe n'ikosora ry'ibarura — byose byandikwa n'impamvu." },
     ] },
     { title: "Amatsinda, amashami no guhuza", items: [
@@ -199,7 +199,7 @@ const rw: PageCopy = {
       { t: "Amashami menshi", d: "Reba raporo ya buri shami cyangwa zose hamwe, kandi wandike iyimurwa ry'ibicuruzwa hagati y'amashami." },
       { t: "Telefoni zihujwe", d: "Ongeraho telefoni ukoresheje kode yo kwinjira. Buri telefoni ikora nta interineti kandi ihuza n'iduka." },
       { t: "Guhuza bitabanje interineti", d: "Guhuza telefoni ku yindi binyuze kuri Wi-Fi/hotspot, hamwe n'amakuru afite umukono yoherezwa kuri cloud iyo interineti igarutse." },
-      { t: "Kwemeza binyuze kuri cloud", d: "Ifatabuguzi rifunguka ako kanya iyo ubwishyu bwemejwe bugeze kuri telefoni." },
+      { t: "Uruhushya ruhuzwa na cloud", d: "Nyuma y'uko umuyobozi yemeje ubwishyu, uruhushya rushobora gufunguka telefoni imaze guhuza." },
     ] },
     { title: "Umutekano wizewe", items: [
       { t: "Ububiko bufunze", d: "Amakuru abikwa afunze na AES-256, imfunguzo zirinzwe n'ububiko bw'umutekano bwa telefoni." },
@@ -222,7 +222,7 @@ const rw: PageCopy = {
       { role: "Umuyobozi w'iduka", steps: [
         "Andika ibyo abatanga ibicuruzwa bazanye muri Kurangura kugira ngo ububiko n'ibiciro bibe ukuri.",
         "Andika ibyangiritse cyangwa ibyarengeje igihe nk'ikosora ufite impamvu — ntuzigere usiba igurisha.",
-        "Koresha iyimurwa ry'ibicuruzwa hagati y'amashami; amashami yombi ahinduka mu buryo bwikora.",
+        "Andika iyimurwa hagati y'amashami, ugereranye ingano yoherejwe n'iyakiriwe.",
         "Emeza isubizwa n'ihagarikwa; buri kimwe kirandikwa kandi kigasubiza ububiko neza.",
       ] },
       { role: "Umucuruzi", steps: [
@@ -232,7 +232,7 @@ const rw: PageCopy = {
         "Capa cyangwa wohereze kuri WhatsApp inyemezabuguzi ifunze. Funga telefoni iyo uvuye kuri kontwari.",
       ] },
     ],
-    tipsTitle: "Inama zo kudahomba na rimwe",
+    tipsTitle: "Uko wakomeza amakuru kwizerwa",
     tips: [
       "Shyiriraho buri mukiriya umupaka w'ideni mbere yo kumuha ibicuruzwa ku ideni.",
       "Ohereza ubutumwa bwiyubashye bwo kwibutsa kuri WhatsApp buri wa Mbere uvuye ku rupapuro rw'Abakiriya.",
@@ -241,9 +241,9 @@ const rw: PageCopy = {
       "Gira telefoni imwe ya nyir'iduka, abacuruzi bakoreshe telefoni zihujwe — buri gikorwa gikomeza kumenyekana.",
     ],
     faq: [
-      ["BeBoss ikora nta interineti?", "Yego. Buri gurisha, impinduka mu bubiko n'ideni bibikwa kuri telefoni mbere. Iyo Wi-Fi cyangwa interineti bigarutse, amashami na telefoni bihuza mu buryo bwikora."],
+      ["BeBoss ikora nta interineti?", "Ushobora kwandika igurisha n'impinduka z'ububiko kuri telefoni nta murandasi. Guhuza na cloud cyangwa amashami bisaba interineti; genzura ihuzwa mbere yo kwishingikiriza ku makuru yo ku bindi bikoresho."],
       ["Igerageza ry'ubuntu rikora rite?", "Buri duka rishya rihabwa iminsi 4 yo gukoresha byose. Nyuma yaho porogaramu irafunga kugeza wishyuye — amakuru yawe akomeza kurindwa kuri telefoni."],
-      ["Nishyura nte?", "Kanda kode ya MTN MoMo (*182#) cyangwa Airtel Money (*500#) iri muri porogaramu cyangwa ku rupapuro rw'Ibiciro, hanyuma wohereze izina ry'uwishyuye, telefoni na nimero y'igikorwa."],
+      ["Nishyura nte?", "Koresha USSD y'ikigo cy'itumanaho, hanyuma wohereze izina, telefoni na nimero y'igikorwa muri porogaramu cyangwa kuri Iduka ryanjye. BeBoss yandika uburyo bwo kwishyura; si ikigo cyemewe cyo kwishyurisha kandi ntigenzura ko amafaranga yageze binyuze muri API y'ikigo. Umuyobozi agenzura gihamya."],
       ["Kode ya BB2 ni iki?", "Ni kode ifite umukono nka BB2-SINGLE-30-…, ihujwe n'izina ukoresha na telefoni yawe. Yishyire muri Igenamiterere → Injiza kode. Ikora ku iduka ryawe gusa kandi rimwe gusa."],
       ["Nshobora gukoresha telefoni nyinshi mu iduka rimwe?", "Yego. Telefoni ya nyir'iduka irimo; buri telefoni yiyongereye yongeraho amafaranga make buri kwezi. Zinjira zikoresheje kode ivuye kuri telefoni ya nyir'iduka."],
       ["Amakuru yanjye agenda ate iyo mpinduye telefoni?", "Koresha kubika no kugarura amakuru afunze muri Igenamiterere, cyangwa wongere uhuze uvuye ku yindi telefoni y'ishami, nta kintu kibura."],
@@ -255,7 +255,7 @@ const rw: PageCopy = {
     tiers: [
       { name: "Iduka rimwe", note: "Ishami 1 • telefoni ya nyir'iduka irimo" },
       { name: "Amashami abiri", note: "Amashami 2 • raporo ihuriweho" },
-      { name: "Ikigo kinini", note: "Amashami 3+ • iyimurwa no guhuza" },
+      { name: "Amashami 3+", note: "Iyimurwa no guhuza; banza ugerageze kugereranya ububiko mu igerageza" },
     ],
     staffLine: "Abakozi: 2–3 = +2,000 • 4–5 = +4,000 • 6+ = +1,000 kuri buri umwe",
     devicesLine: "Telefoni ziyongereye: +{rate} FRw kuri buri imwe / ukwezi",
@@ -265,8 +265,8 @@ const rw: PageCopy = {
     steps: [
       { t: "Kanda kode", d: "Koresha kode ya MTN *182# cyangwa Airtel *500# iri hejuru — amafaranga yamaze kwandikwamo." },
       { t: "Ohereza icyemezo", d: "Muri porogaramu (Igenamiterere → Uruhushya) cyangwa ku rupapuro Iduka ryanjye, ohereza izina ry'uwishyuye, telefoni na nimero y'igikorwa." },
-      { t: "Turagenzura", d: "Itsinda rya BeBoss ryemeza ubwishyu kuri sosiyete y'itumanaho, akenshi mu minota mike mu masaha y'akazi." },
-      { t: "Urafunguriwe", d: "Iduka ryawe rifunguka ubwaryo iyo rihuje, cyangwa ukakira kode ya BB2 kuri WhatsApp ukayishyira muri porogaramu." },
+      { t: "Umuyobozi aragenzura", d: "Umuyobozi agereranya gihamya yoherejwe n'inyandiko z'ubwishyu; USSD cyangwa nimero y'igikorwa yonyine ntibyemeza ubwishyu. Igihe cyo kugenzura kiratandukana." },
+      { t: "Fungura", d: "Nyuma yo kwemezwa, iduka rifunguka telefoni imaze guhuza cyangwa umuyobozi akaguha kode ya BB2. WhatsApp ni iyo kohereza gihamya cyangwa kwakira kode, si API y'igenzura." },
     ],
   },
   how: { codeLegend: "ifatabuguzi · iminsi · kugeza · kode ya konti · umukono" },
@@ -289,7 +289,7 @@ const rw: PageCopy = {
     proofSent: "Icyemezo cy'ubwishyu cyoherejwe. Urafungurirwa nikimara kugenzurwa.",
     sendFailed: "Ntitwashoboye kohereza icyemezo. Reba amakuru wongere ugerageze.",
     payerName: "Amazina y'uwishyuye (nk'uko ari kuri MoMo)", payerPhone: "Telefoni y'uwishyuye", txRef: "Nimero y'igikorwa (TxID)",
-    amountNote: "Amafaranga yongera kubarwa no kugenzurwa na BeBoss iyo icyemezo cyawe kigeze. Koresha izina na telefoni bimwe n'ibiri muri porogaramu kugira ngo iduka ryawe rifunguke ubwaryo.",
+    amountNote: "BeBoss yongera kubara amafaranga ya gahunda, ariko nimero y'igikorwa iba ari ikirego kugeza umuyobozi agenzuye ubwishyu. Koresha izina ry'iduka na telefoni byanditswe muri porogaramu kugira ngo icyemezo kigere kuri konti nyayo.",
     ref: "Nimero",
     status: { ACTIVE: "Rirakora", TRIAL: "Igerageza", EXPIRED: "Ryarangiye", SUSPENDED: "Ryahagaritswe", APPROVED: "Byemejwe", PENDING_VERIFICATION: "Bitegereje kugenzurwa", REJECTED: "Byanzwe", REDEEMED: "Yakoreshejwe", ISSUED: "Iteguye gukoreshwa", REVOKED: "Yahagaritswe" },
   },
@@ -305,20 +305,20 @@ const fr: PageCopy = {
   home: {
     heroAlt: "Commerçante à Kigali tenant un téléphone avec BeBoss",
     counterAlt: "Téléphone et imprimante de tickets sur le comptoir d'une pharmacie",
-    sealed: "Reçus scellés et vérifiables",
+    sealed: "Reçus avec checksum",
   },
   features: [
     { title: "Caisse et encaissement", items: [
       { t: "Scanner de codes-barres", d: "Scannez les articles avec l'appareil photo, ou cherchez par nom et catégorie dans une grille instantanée." },
       { t: "5 moyens de paiement", d: "Espèces, MTN MoMo, Airtel Money, carte, paiement mixte espèces + MoMo avec solde restant en direct, et crédit client." },
       { t: "Paniers en attente", d: "Mettez un panier de côté à l'heure de pointe, servez le client suivant, reprenez-le en un geste." },
-      { t: "Reçus scellés", d: "Chaque reçu porte un sceau BB- vérifiable hors ligne, lié à votre NIF, au numéro, à l'heure et au total." },
+      { t: "Checksum du reçu", d: "Un checksum peut signaler des champs différents, mais ce n'est ni une signature numérique ni une preuve d'authenticité." },
       { t: "Ticket et WhatsApp", d: "Imprimantes Bluetooth 58 mm ou comptoir 80 mm avec logo, TVA/NIF et QR — ou reçu envoyé par WhatsApp." },
     ] },
     { title: "Stock, argent et analyses", items: [
       { t: "Vrai compte de résultat", d: "Résultat du jour, de la semaine, du mois ou depuis le début, calculé sur le vrai coût d'achat, avec marge par article." },
-      { t: "Prévision sur 14 jours", d: "Vitesse de vente moyenne, jours de stock restants et quantités exactes à commander avec budget." },
-      { t: "Registre des crédits clients", d: "Plafonds de crédit, catégories VIP/grossistes, échéances, relevés PDF, rappels WhatsApp et SMS." },
+      { t: "Estimations de stock basées sur les ventes", d: "Les alertes dépendent du catalogue et des mouvements saisis ; des coûts, unités ou quantités incorrects faussent les rapports." },
+      { t: "Registre des crédits clients", d: "Consultez soldes et paiements et envoyez des rappels ; le registre ne garantit pas le remboursement." },
       { t: "Achats et ajustements", d: "Livraisons fournisseurs, pertes (abîmés/périmés) et corrections d'inventaire — tout est tracé avec un motif." },
     ] },
     { title: "Équipes, succursales et synchro", items: [
@@ -326,7 +326,7 @@ const fr: PageCopy = {
       { t: "Multi-succursales", d: "Tableaux de bord par succursale ou consolidés, et transferts de stock entre succursales." },
       { t: "Appareils associés", d: "Ajoutez des terminaux avec un code d'adhésion. Chaque appareil fonctionne hors ligne et se synchronise avec la boutique." },
       { t: "Synchro hors ligne d'abord", d: "Synchronisation d'appareil à appareil en Wi-Fi/point d'accès, plus des sauvegardes signées dans le cloud au retour d'internet." },
-      { t: "Validations dans le cloud", d: "L'abonnement se débloque automatiquement dès qu'un paiement validé est synchronisé." },
+      { t: "Licence synchronisée", d: "Après validation par un administrateur, la licence peut se débloquer à la prochaine synchronisation." },
     ] },
     { title: "Une sécurité fiable", items: [
       { t: "Base de données chiffrée", d: "Stockage chiffré AES-256, clés protégées par le coffre matériel du téléphone." },
@@ -349,7 +349,7 @@ const fr: PageCopy = {
       { role: "Gérant", steps: [
         "Enregistrez les livraisons fournisseurs dans Achats pour garder stock et coûts exacts.",
         "Déclarez les produits abîmés ou périmés en ajustement avec un motif — ne supprimez jamais une vente.",
-        "Utilisez les transferts pour déplacer la marchandise entre succursales ; les deux sont mises à jour automatiquement.",
+        "Enregistrez les transferts et rapprochez les quantités envoyées et reçues entre succursales.",
         "Validez remboursements et annulations ; chacun est tracé et remet le stock correctement.",
       ] },
       { role: "Caissier", steps: [
@@ -359,7 +359,7 @@ const fr: PageCopy = {
         "Imprimez ou envoyez par WhatsApp le reçu scellé. Verrouillez le terminal en quittant le comptoir.",
       ] },
     ],
-    tipsTitle: "Astuces pour zéro perte",
+    tipsTitle: "Contrôles pour garder des données utiles",
     tips: [
       "Fixez un plafond de crédit pour chaque client avant de vendre à crédit.",
       "Envoyez des rappels WhatsApp courtois chaque lundi depuis l'écran Clients.",
@@ -368,9 +368,9 @@ const fr: PageCopy = {
       "Gardez un téléphone propriétaire et ajoutez les caissiers comme appareils associés — chaque action reste traçable.",
     ],
     faq: [
-      ["BeBoss fonctionne-t-il sans internet ?", "Oui. Chaque vente, mouvement de stock et crédit est d'abord enregistré sur le téléphone. Au retour du Wi-Fi ou des données, succursales et appareils se synchronisent automatiquement."],
+      ["BeBoss fonctionne-t-il sans internet ?", "Les ventes et mouvements de stock peuvent être saisis hors ligne sur le téléphone. Le cloud et la synchronisation des succursales nécessitent une connexion ; vérifiez la synchro avant de vous fier aux données d'autres appareils."],
       ["Comment fonctionne l'essai gratuit ?", "Chaque nouvelle boutique a 4 jours d'accès complet. Ensuite, l'application se verrouille jusqu'au paiement — vos données restent protégées sur le téléphone."],
-      ["Comment payer ?", "Composez le code MTN MoMo (*182#) ou Airtel Money (*500#) affiché dans l'application ou sur la page Tarifs, puis envoyez le nom du payeur, son téléphone et la référence de transaction."],
+      ["Comment payer ?", "Utilisez le parcours USSD de l'opérateur, puis envoyez les coordonnées du payeur et la référence dans l'application ou Ma boutique. BeBoss note le moyen de paiement ; ce n'est pas un prestataire de paiement agréé et l'application ne vérifie pas le règlement via une API directe de l'opérateur. Un administrateur examine la preuve."],
       ["Qu'est-ce qu'un code BB2 ?", "Un code signé comme BB2-SINGLE-30-…, lié à votre identifiant et à votre téléphone. Collez-le dans Paramètres → Saisir un code. Il ne marche que pour votre boutique, une seule fois."],
       ["Puis-je utiliser plusieurs téléphones ?", "Oui. L'appareil du propriétaire est inclus ; chaque appareil supplémentaire ajoute un petit montant mensuel. Les appareils se joignent avec un code du téléphone propriétaire."],
       ["Que deviennent mes données si je change de téléphone ?", "Utilisez la sauvegarde chiffrée dans Paramètres, ou resynchronisez depuis un appareil de succursale : rien n'est perdu."],
@@ -382,7 +382,7 @@ const fr: PageCopy = {
     tiers: [
       { name: "Boutique unique", note: "1 succursale • appareil du propriétaire inclus" },
       { name: "Deux succursales", note: "2 succursales • tableau de bord consolidé" },
-      { name: "Entreprise", note: "3+ succursales • transferts et synchro" },
+      { name: "3+ succursales", note: "Transferts et synchro ; tester le rapprochement de stock avant déploiement" },
     ],
     staffLine: "Personnel : 2–3 = +2 000 • 4–5 = +4 000 • 6+ = +1 000 par personne",
     devicesLine: "Appareils supplémentaires : +{rate} FRw chacun / mois",
@@ -392,8 +392,8 @@ const fr: PageCopy = {
     steps: [
       { t: "Composez le code", d: "Utilisez le code MTN *182# ou Airtel *500# ci-dessus — le montant est déjà rempli." },
       { t: "Envoyez la preuve", d: "Dans l'application (Paramètres → Licence) ou sur la page Ma boutique, envoyez le nom du payeur, son téléphone et la référence." },
-      { t: "Nous vérifions", d: "L'équipe BeBoss confirme le paiement auprès de l'opérateur, souvent en quelques minutes aux heures ouvrables." },
-      { t: "Vous êtes débloqué", d: "Votre boutique se débloque à la synchronisation, ou vous recevez un code BB2 par WhatsApp à coller dans l'application." },
+      { t: "Vérification admin", d: "Un administrateur compare la preuve aux relevés de règlement. Un code USSD ou une référence seule ne confirme pas le paiement ; le délai varie." },
+      { t: "Déblocage", d: "Après validation, l'application se débloque à la prochaine synchro ou l'administrateur émet un code BB2. WhatsApp sert à envoyer la preuve ou recevoir le code, pas à vérifier automatiquement le paiement." },
     ],
   },
   how: { codeLegend: "formule · jours · valable jusqu'au · empreinte du compte · signature" },
@@ -416,7 +416,7 @@ const fr: PageCopy = {
     proofSent: "Preuve de paiement envoyée. Vous serez débloqué dès sa vérification.",
     sendFailed: "Impossible d'envoyer la preuve. Vérifiez les informations et réessayez.",
     payerName: "Nom complet du payeur (comme sur MoMo)", payerPhone: "Téléphone du payeur", txRef: "Référence de transaction (TxID)",
-    amountNote: "Le montant est recalculé et vérifié par BeBoss à la réception de votre preuve. Utilisez le même identifiant et le même téléphone que dans l'application pour un déblocage automatique.",
+    amountNote: "BeBoss recalcule le prix du forfait, mais une référence soumise reste une déclaration jusqu'à la vérification du règlement par un administrateur. Utilisez l'identifiant et le téléphone enregistrés pour lier l'approbation au bon compte.",
     ref: "Réf.",
     status: { ACTIVE: "Active", TRIAL: "Essai gratuit", EXPIRED: "Expirée", SUSPENDED: "Suspendue", APPROVED: "Approuvé", PENDING_VERIFICATION: "En attente de vérification", REJECTED: "Refusé", REDEEMED: "Utilisé", ISSUED: "Prêt à l'emploi", REVOKED: "Annulé" },
   },
@@ -432,20 +432,20 @@ const sw: PageCopy = {
   home: {
     heroAlt: "Mfanyabiashara mjini Kigali akiwa na simu inayotumia BeBoss",
     counterAlt: "Simu na printa ya risiti kwenye kaunta ya duka la dawa",
-    sealed: "Risiti zilizotiwa muhuri na kuthibitishwa",
+    sealed: "Risiti zenye checksum",
   },
   features: [
     { title: "Mauzo na malipo", items: [
       { t: "Kisoma barcode kwa kamera", d: "Soma bidhaa kwa kamera ya simu, au tafuta kwa jina na aina kwenye orodha ya haraka." },
       { t: "Njia 5 za malipo", d: "Taslimu, MTN MoMo, Airtel Money, kadi, malipo mchanganyiko taslimu + MoMo yenye salio la papo hapo, na mkopo wa mteja." },
       { t: "Simamisha na endelea", d: "Weka kikapu kando wakati wa msongamano, hudumia mteja anayefuata, kisha endelea kwa mguso mmoja." },
-      { t: "Risiti zenye muhuri", d: "Kila risiti ina muhuri wa BB- unaothibitishwa bila mtandao, uliounganishwa na TIN yako, namba, muda na jumla." },
+      { t: "Checksum ya risiti", d: "Checksum inaweza kuonyesha sehemu zisizolingana, lakini si sahihi ya kidijitali wala uthibitisho wa uhalisi wa risiti." },
       { t: "Printa na WhatsApp", d: "Printa za Bluetooth 58mm au za kaunta 80mm zenye nembo, VAT/TIN na QR — au tuma risiti kwa WhatsApp." },
     ] },
     { title: "Hisa, pesa na uchambuzi", items: [
       { t: "Faida na hasara halisi", d: "Faida ya leo, wiki, mwezi au tangu mwanzo kwa gharama halisi ya bidhaa, pamoja na asilimia ya faida kwa kila bidhaa." },
-      { t: "Utabiri wa siku 14", d: "Kasi ya mauzo, siku ambazo hisa itadumu na kiasi halisi cha kuagiza pamoja na bajeti." },
-      { t: "Daftari la mikopo", d: "Kikomo cha mkopo, makundi ya VIP/jumla, malipo kwa awamu, taarifa za PDF, vikumbusho vya WhatsApp na SMS." },
+      { t: "Makadirio ya stoo kutokana na mauzo", d: "Tahadhari hutegemea katalogi na mabadiliko yaliyorekodiwa; gharama, vipimo au kiasi kisicho sahihi huharibu ripoti." },
+      { t: "Daftari la mikopo", d: "Angalia salio na malipo na utume vikumbusho; daftari haliwezi kuhakikisha ulipaji." },
       { t: "Manunuzi na marekebisho", d: "Bidhaa kutoka kwa wasambazaji, hasara za zilizoharibika/kuisha muda na marekebisho ya hesabu — zote zinarekodiwa na sababu." },
     ] },
     { title: "Timu, matawi na usawazishaji", items: [
@@ -453,7 +453,7 @@ const sw: PageCopy = {
       { t: "Matawi mengi", d: "Ripoti kwa kila tawi au kwa pamoja, na rekodi uhamishaji wa bidhaa kati ya matawi." },
       { t: "Vifaa vilivyounganishwa", d: "Ongeza simu kwa kodi ya kujiunga. Kila kifaa hufanya kazi bila mtandao na kusawazisha na duka." },
       { t: "Usawazishaji bila mtandao kwanza", d: "Kusawazisha kifaa kwa kifaa kupitia Wi-Fi/hotspot, pamoja na nakala zilizotiwa saini kwenye cloud mtandao ukirudi." },
-      { t: "Idhini kupitia cloud", d: "Usajili hufunguka papo hapo malipo yaliyoidhinishwa yanaposawazishwa." },
+      { t: "Leseni inayosawazishwa", d: "Baada ya msimamizi kuthibitisha malipo, leseni inaweza kufunguka kifaa kikisawazisha." },
     ] },
     { title: "Usalama unaoaminika", items: [
       { t: "Hifadhidata iliyosimbwa", d: "Hifadhi iliyosimbwa kwa AES-256, funguo zikilindwa na hifadhi salama ya simu." },
@@ -476,7 +476,7 @@ const sw: PageCopy = {
       { role: "Meneja wa duka", steps: [
         "Rekodi bidhaa kutoka kwa wasambazaji kwenye Manunuzi ili hisa na gharama ziwe sahihi.",
         "Rekodi bidhaa zilizoharibika au kuisha muda kama marekebisho yenye sababu — usifute mauzo kamwe.",
-        "Tumia uhamishaji kusogeza bidhaa kati ya matawi; matawi yote mawili husasishwa yenyewe.",
+        "Rekodi uhamishaji wa stoo na linganisha kiasi kilichotumwa na kilichopokelewa.",
         "Idhinisha marejesho na ughairi; kila moja hurekodiwa na kurudisha hisa ipasavyo.",
       ] },
       { role: "Keshia", steps: [
@@ -486,7 +486,7 @@ const sw: PageCopy = {
         "Chapisha au tuma kwa WhatsApp risiti yenye muhuri. Funga simu unapoondoka kaunta.",
       ] },
     ],
-    tipsTitle: "Vidokezo vya kutopoteza hata shilingi",
+    tipsTitle: "Ukaguzi wa kuweka rekodi sahihi",
     tips: [
       "Weka kikomo cha mkopo kwa kila mteja kabla ya kumpa bidhaa kwa mkopo.",
       "Tuma vikumbusho vya heshima kwa WhatsApp kila Jumatatu kutoka skrini ya Wateja.",
@@ -495,9 +495,9 @@ const sw: PageCopy = {
       "Weka simu moja ya mmiliki na ongeza makeshia kama vifaa vilivyounganishwa — kila kitendo kinafuatiliwa.",
     ],
     faq: [
-      ["BeBoss inafanya kazi bila mtandao?", "Ndiyo. Kila mauzo, mabadiliko ya hisa na deni huhifadhiwa kwenye simu kwanza. Wi-Fi au data ikirudi, matawi na vifaa husawazisha vyenyewe."],
+      ["BeBoss inafanya kazi bila mtandao?", "Mauzo na mabadiliko ya stoo yanaweza kurekodiwa kwenye simu bila mtandao. Cloud na usawazishaji wa matawi vinahitaji muunganisho; hakikisha data imesawazishwa kabla ya kutegemea vifaa vingine."],
       ["Majaribio ya bure yanafanyaje kazi?", "Kila duka jipya hupata siku 4 za matumizi kamili. Baada ya hapo programu hufungwa hadi ulipe — data yako inabaki salama kwenye simu."],
-      ["Nalipaje?", "Piga kodi ya MTN MoMo (*182#) au Airtel Money (*500#) inayoonyeshwa kwenye programu au ukurasa wa Bei, kisha tuma jina la mlipaji, simu na namba ya muamala."],
+      ["Nalipaje?", "Tumia USSD ya mtoa huduma kisha tuma jina, simu na namba ya muamala kwenye programu au ukurasa wa Duka langu. BeBoss hurekodi njia ya malipo; si mtoa huduma wa malipo aliyeidhinishwa na haithibitishi malipo kupitia API ya moja kwa moja ya mtoa huduma. Msimamizi hukagua uthibitisho."],
       ["Kodi ya BB2 ni nini?", "Ni kodi yenye saini kama BB2-SINGLE-30-…, iliyounganishwa na jina lako la mtumiaji na simu. Ibandike kwenye Mipangilio → Weka kodi. Inafanya kazi kwa duka lako tu, mara moja tu."],
       ["Naweza kutumia simu kadhaa dukani?", "Ndiyo. Simu ya mmiliki imejumuishwa; kila kifaa cha ziada huongeza ada ndogo ya kila mwezi. Vifaa hujiunga kwa kodi kutoka simu ya mmiliki."],
       ["Data yangu inakuwaje nikibadilisha simu?", "Tumia nakala iliyosimbwa na urejeshaji kwenye Mipangilio, au sawazisha upya kutoka kifaa cha tawi, hakuna kinachopotea."],
@@ -509,7 +509,7 @@ const sw: PageCopy = {
     tiers: [
       { name: "Duka moja", note: "Tawi 1 • simu ya mmiliki imejumuishwa" },
       { name: "Matawi mawili", note: "Matawi 2 • dashibodi ya pamoja" },
-      { name: "Biashara kubwa", note: "Matawi 3+ • uhamishaji na usawazishaji" },
+      { name: "Matawi 3+", note: "Uhamishaji na usawazishaji; jaribu kulinganisha stoo kabla ya kutegemea" },
     ],
     staffLine: "Wafanyakazi: 2–3 = +2,000 • 4–5 = +4,000 • 6+ = +1,000 kila mmoja",
     devicesLine: "Vifaa vya ziada: +{rate} FRw kila kimoja / mwezi",
@@ -519,8 +519,8 @@ const sw: PageCopy = {
     steps: [
       { t: "Piga kodi", d: "Tumia kodi ya MTN *182# au Airtel *500# hapo juu — kiasi kimeshajazwa." },
       { t: "Tuma uthibitisho", d: "Kwenye programu (Mipangilio → Leseni) au ukurasa wa Duka langu, tuma jina la mlipaji, simu na namba ya muamala." },
-      { t: "Tunathibitisha", d: "Timu ya BeBoss inathibitisha malipo na kampuni ya simu, mara nyingi ndani ya dakika chache saa za kazi." },
-      { t: "Umefunguliwa", d: "Duka lako hufunguka lenyewe likisawazisha, au unapokea kodi ya BB2 kwa WhatsApp ya kubandika kwenye programu." },
+      { t: "Ukaguzi wa msimamizi", d: "Msimamizi hulinganisha uthibitisho na rekodi za malipo. USSD au namba pekee si uthibitisho; muda wa ukaguzi hutofautiana." },
+      { t: "Kufungua", d: "Baada ya kuidhinishwa, programu hufunguka ikisawazisha au msimamizi hutoa kodi ya BB2. WhatsApp hutuma uthibitisho au kodi; haithibitishi malipo kiotomatiki." },
     ],
   },
   how: { codeLegend: "mpango · siku · hadi tarehe · alama ya akaunti · saini" },
@@ -543,7 +543,7 @@ const sw: PageCopy = {
     proofSent: "Uthibitisho wa malipo umetumwa. Utafunguliwa mara utakapothibitishwa.",
     sendFailed: "Imeshindikana kutuma uthibitisho. Angalia taarifa na ujaribu tena.",
     payerName: "Jina kamili la mlipaji (kama kwenye MoMo)", payerPhone: "Simu ya mlipaji", txRef: "Namba ya muamala (TxID)",
-    amountNote: "Kiasi kinahesabiwa upya na kuthibitishwa na BeBoss uthibitisho wako ukifika. Tumia jina la mtumiaji na simu sawa na kwenye programu ili duka lako lifunguke lenyewe.",
+    amountNote: "BeBoss huhesabu upya bei ya mpango, lakini namba iliyotumwa ni dai tu hadi msimamizi athibitishe malipo. Tumia jina la duka na simu iliyosajiliwa ili idhini ifike kwenye akaunti sahihi.",
     ref: "Namba",
     status: { ACTIVE: "Hai", TRIAL: "Majaribio ya bure", EXPIRED: "Imeisha", SUSPENDED: "Imesimamishwa", APPROVED: "Imeidhinishwa", PENDING_VERIFICATION: "Inasubiri uthibitisho", REJECTED: "Imekataliwa", REDEEMED: "Imetumika", ISSUED: "Tayari kutumika", REVOKED: "Imeghairiwa" },
   },

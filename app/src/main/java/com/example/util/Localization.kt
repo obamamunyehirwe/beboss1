@@ -203,10 +203,10 @@ object Localization {
             "Majaribio ya Bure Siku 4 • Kisha 5,000 FRw / mwezi"
         ),
         "reg_trial_card_desc" to entry(
-            "After 4 free days, the app locks until unlocked via MTN MoMo / Airtel Money or an Admin BB2 Unlock Code bound to your username & phone.",
-            "Nyuma y'iminsi 4 y'ubuntu, porogaramu izafungwa kugeza wishyuye na MoMo/Airtel cyangwa ukoresheje Kode y'Admin (BB2) ihujwe n'izina na terefone yawe.",
-            "Après 4 jours gratuits, l'application se verrouille jusqu'au paiement MoMo/Airtel ou à la saisie d'un code Admin BB2 lié à votre compte.",
-            "Baada ya siku 4 za bure, programu itajifunga hadi ulipe kupitia MoMo/Airtel au uweke msimbo wa Admin BB2 uliounganishwa na akaunti yako."
+            "After 4 free days, submit your payment details for admin review. After approval, enter the BB2 code or wait for the shop to unlock on sync.",
+            "Nyuma y'iminsi 4 y'ubuntu, ohereza amakuru y'ubwishyu kugira ngo umuyobozi ayagenzure. Nyuma yo kwemezwa, koresha kode ya BB2 cyangwa utegereze ko iduka rifunguka rimaze guhuza.",
+            "Après 4 jours d'essai, envoyez les détails du paiement pour vérification par un administrateur. Après validation, saisissez le code BB2 ou attendez le déblocage à la synchronisation.",
+            "Baada ya siku 4 za jaribio, tuma taarifa za malipo zikaguliwe na msimamizi. Baada ya kuidhinishwa, weka msimbo wa BB2 au subiri duka lifunguke baada ya kusawazisha."
         ),
         "reg_owner_name_label" to entry("Owner Full Name *", "Amazina Yuzuye ya Nyir'ububiko *", "Nom complet du propriétaire *", "Jina Kamili la Mmiliki *"),
         "reg_owner_name_placeholder" to entry("e.g. Jean Paul Mugisha", "urugero: Jean Paul Mugisha", "ex. Jean Paul Mugisha", "mf. Jean Paul Mugisha"),
@@ -273,6 +273,36 @@ object Localization {
             "Nta bicuruzwa biragurishwa. Kanda 'Gucuruza' utangire!",
             "Aucune vente enregistrée. Appuyez sur « Caisse POS » pour commencer !",
             "Hakuna mauzo bado. Gusa 'Mauzo POS' kuanza kuuza!"
+        ),
+        "first_sale_title" to entry(
+            "Make your first sale",
+            "Kora igurisha rya mbere",
+            "Réalisez votre première vente",
+            "Fanya mauzo yako ya kwanza"
+        ),
+        "first_sale_setup_hint" to entry(
+            "Add one product with its cost, selling price and opening quantity. Staff and receipt settings can wait.",
+            "Ongeramo igicuruzwa, igiciro wakiguze, icyo ugurishaho n'ingano watangiranye. Abakozi n'inyemezabuguzi uzabishyiraho nyuma.",
+            "Ajoutez un produit, son coût, son prix de vente et son stock initial. Le personnel et les reçus peuvent attendre.",
+            "Ongeza bidhaa moja, gharama yake, bei ya kuuza na kiasi cha mwanzo. Wafanyakazi na risiti vinaweza kusubiri."
+        ),
+        "first_sale_ready_hint" to entry(
+            "Your products are ready. Start a sale now; staff and receipt settings can wait.",
+            "Ibicuruzwa birahari. Tangira kugurisha; abakozi n'inyemezabuguzi uzabishyiraho nyuma.",
+            "Vos produits sont prêts. Commencez une vente ; les réglages du personnel et des reçus peuvent attendre.",
+            "Bidhaa zako ziko tayari. Anza kuuza sasa; mipangilio ya wafanyakazi na risiti inaweza kusubiri."
+        ),
+        "first_sale_add_product_action" to entry(
+            "Add first product",
+            "Ongeramo igicuruzwa",
+            "Ajouter un produit",
+            "Ongeza bidhaa ya kwanza"
+        ),
+        "first_sale_start_action" to entry(
+            "Start first sale",
+            "Tangira kugurisha",
+            "Démarrer la première vente",
+            "Anza mauzo ya kwanza"
         ),
 
         // =====================================================================
@@ -450,16 +480,16 @@ object Localization {
         "suspended_title" to entry("Account Suspended by Admin", "Konti Yahagaritswe na Admin", "Compte Suspendu par l'Admin", "Akaunti Imesimamishwa na Admin"),
         "subscription_expired" to entry("License Expired", "Ifatabuguzi Ryararangiye", "Licence Expirée", "Leseni Imeisha Muda"),
         "trial_ended_subtitle" to entry(
-            "Your 4-day free trial has ended. Pay via MTN MoMo / Airtel Money or paste your Admin BB2 Unlock Code below to auto-unlock immediately.",
-            "Iminsi 4 y'ubuntu yarangiye. Ishyura ukoresheje MTN MoMo / Airtel Money cyangwa winjize Kode ya BB2 yoherejwe na Admin kugira ngo porogaramu ifunguke ako kanya.",
-            "Votre essai gratuit de 4 jours est terminé. Payez via MTN MoMo / Airtel Money ou collez votre code Admin BB2 ci-dessous pour déverrouiller automatiquement.",
-            "Majaribio yako ya bure ya siku 4 yameisha. Lipa kupitia MTN MoMo / Airtel Money au weka msimbo wako wa Admin BB2 hapa chini kufungua mara moja."
+            "Your 4-day trial has ended. Pay through the operator and submit proof for admin review. After approval, use your BB2 code or wait for unlock on sync.",
+            "Iminsi 4 yo kugerageza yarangiye. Ishyura ukoresheje ikigo cy'itumanaho wohereze gihamya igenzurwe n'umuyobozi. Nyuma yo kwemezwa, koresha kode ya BB2 cyangwa utegereze ko rifunguka rimaze guhuza.",
+            "Votre essai de 4 jours est terminé. Payez via l'opérateur et envoyez une preuve pour vérification admin. Après validation, utilisez le code BB2 ou attendez le déblocage à la synchro.",
+            "Jaribio la siku 4 limeisha. Lipa kupitia mtoa huduma na utume uthibitisho ukaguliwe na msimamizi. Baada ya kuidhinishwa, tumia msimbo wa BB2 au subiri duka lifunguke baada ya kusawazisha."
         ),
         "expired_subtitle" to entry(
-            "Your monthly license has expired. Complete Mobile Money payment or paste your Admin BB2 Unlock Code to auto-unlock and continue.",
-            "Ifatabuguzi ry'ukwezi ryararangiye. Ishyura na Mobile Money cyangwa ushyiremo Kode ya BB2 kugira ngo ukomeze akazi kawe.",
-            "Votre licence mensuelle a expiré. Effectuez un paiement Mobile Money ou collez votre code Admin BB2 pour continuer immédiatement.",
-            "Leseni yako ya mwezi imeisha. Kamilisha malipo ya Mobile Money au weka msimbo wa Admin BB2 kuendelea mara moja."
+            "Your monthly license has expired. Submit payment details for admin review, then enter the issued BB2 code or sync to receive approval.",
+            "Ifatabuguzi ryarangiye. Ohereza amakuru y'ubwishyu kugira ngo umuyobozi ayagenzure, hanyuma ukoreshe kode ya BB2 cyangwa uhuze kugira ngo ubone iyemezwa.",
+            "Votre licence mensuelle a expiré. Envoyez les détails du paiement pour vérification admin, puis saisissez le code BB2 émis ou synchronisez pour recevoir l'approbation.",
+            "Leseni yako ya mwezi imeisha. Tuma taarifa za malipo zikaguliwe na msimamizi, kisha weka msimbo wa BB2 au sawazisha ili kupokea idhini."
         ),
         "suspended_subtitle" to entry(
             "Contact BeBoss Master Admin on WhatsApp or enter a newly issued BB2 unlock code to restore access.",
@@ -472,10 +502,10 @@ object Localization {
         "pay_with_momo" to entry("Pay with MTN MoMo", "Ishyura na MTN MoMo", "Payer avec MTN MoMo", "Lipa na MTN MoMo"),
         "pay_with_airtel" to entry("Pay with Airtel Money", "Ishyura na Airtel Money", "Payer avec Airtel Money", "Lipa na Airtel Money"),
         "pay_ussd_whatsapp_cta" to entry(
-            "Pay USSD & Send WhatsApp Verification",
-            "Ishyura USSD & Ohereza Gihamya kuri WhatsApp",
-            "Payer par USSD & Vérifier sur WhatsApp",
-            "Lipa kwa USSD & Tuma Uthibitisho WhatsApp"
+            "Pay by USSD & Submit Proof",
+            "Ishyura na USSD wohereze gihamya",
+            "Payer par USSD et envoyer la preuve",
+            "Lipa kwa USSD na utume uthibitisho"
         ),
         "insert_unlock_code_title" to entry(
             "Enter Admin Unlock Code (Auto-Unlock)",

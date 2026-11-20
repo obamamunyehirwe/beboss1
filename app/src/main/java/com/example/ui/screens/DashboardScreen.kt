@@ -92,6 +92,7 @@ fun DashboardScreen(
     inventoryValuation: InventoryValuation,
     lowStockProducts: List<Product>,
     recentSales: List<Sale>,
+    hasProducts: Boolean = false,
     currentUser: User?,
     language: AppLanguage,
     branches: List<Branch> = emptyList(),
@@ -648,11 +649,44 @@ fun DashboardScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = Localization.get("no_sales_yet", language),
-                            color = Color(0xFF6B7280),
+                            text = Localization.get("first_sale_title", language),
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Bold
                         )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = Localization.get(
+                                if (hasProducts) "first_sale_ready_hint" else "first_sale_setup_hint",
+                                language
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = {
+                                if (hasProducts) {
+                                    onNavigate(AppScreen.SALES_POS)
+                                } else {
+                                    onAddProductClick()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
+                        ) {
+                            Icon(
+                                imageVector = if (hasProducts) Icons.Default.AddShoppingCart else Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                Localization.get(
+                                    if (hasProducts) "first_sale_start_action" else "first_sale_add_product_action",
+                                    language
+                                )
+                            )
+                        }
                     }
                 }
             }

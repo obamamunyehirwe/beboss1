@@ -38,8 +38,8 @@ data class PaymentTransactionRecord(
 )
 
 /**
- * Robust Payment Gateway & Mobile Money manager for Rwandan and East African payment providers.
- * Supports direct USSD prompts, API push collections, and verification.
+ * Payment-method and USSD helpers for mobile-money providers.
+ * Settlement is not verified by opening a dialer; any configured backend must explicitly confirm it.
  */
 object PaymentGatewayManager {
 
@@ -83,8 +83,7 @@ object PaymentGatewayManager {
     }
 
     /**
-     * Initiates real online MoMo Collection Push via API if server endpoint is available,
-     * or prepares a valid trackable USSD payment transaction.
+     * Requests payment status from an optional configured backend or returns a pending USSD payment.
      */
     suspend fun initiateMoMoCollection(
         context: Context,
@@ -139,18 +138,25 @@ object PaymentGatewayManager {
                 if (code in 200..299) {
                     val respStr = conn.inputStream.bufferedReader().use { it.readText() }
                     val json = JSONObject(respStr)
+                    val status = json.optString("status").uppercase(Locale.ROOT)
+                    val responseAmount = json.optInt("amount", amount)
                     val confirmedRef = json.optString("transactionRef", txRef)
-                    val message = json.optString("message", "Payment of $amount FRw confirmed via $provider")
+                    val confirmed = status in setOf("SUCCESS", "SUCCESSFUL") && responseAmount == amount
 
                     return@withContext PaymentProcessingResult(
-                        isSuccess = true,
+                        isSuccess = confirmed,
+                        isPending = !confirmed && status !in setOf("FAILED", "REJECTED", "CANCELLED"),
                         transactionRef = confirmedRef,
-                        amountPaid = amount,
-                        planDays = planDays,
+                        amountPaid = if (confirmed) amount else 0,
+                        planDays = if (confirmed) planDays else 0,
                         provider = provider,
                         payerPhone = effectivePhone,
                         timestamp = now,
-                        message = message
+                        message = json.optString(
+                            "message",
+                            if (confirmed) "Payment confirmed by the configured payment endpoint."
+                            else "Payment has not been verified. Submit your proof for admin review."
+                        )
                     )
                 }
             } catch (e: Exception) {
@@ -158,16 +164,16 @@ object PaymentGatewayManager {
             }
         }
 
-        // Return verified localized transaction outcome
         PaymentProcessingResult(
-            isSuccess = true,
+            isSuccess = false,
             transactionRef = txRef,
-            amountPaid = amount,
-            planDays = planDays,
+            amountPaid = 0,
+            planDays = 0,
             provider = provider,
             payerPhone = effectivePhone,
             timestamp = now,
-            message = "Payment of $amount FRw initiated via $provider. Ref: $txRef (Subscription extended by $planDays days)"
+            isPending = true,
+            message = "Payment initiated via $provider. Ref: $txRef. Submit the transaction reference for admin verification; BeBoss does not confirm settlement from a USSD dialer."
         )
     }
 }

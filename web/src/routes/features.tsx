@@ -10,7 +10,7 @@ export const Route = createFileRoute("/features")({
   head: () => ({
     meta: [
       { title: "Features — BeBoss POS for Android" },
-      { name: "description", content: "Checkout, barcode scanning, split MoMo payments, customer credit, stock forecasting, P&L, multi-branch sync and bank-grade security in one offline Android app." },
+      { name: "description", content: "Offline-first Android POS for recording sales, stock and customer credit, with USSD payment shortcuts and admin-reviewed subscription proofs." },
       { property: "og:title", content: "BeBoss POS features" },
       { property: "og:description", content: "Every tool a growing African retailer needs — offline, multi-branch and in 4 languages." },
       { property: "og:type", content: "website" },
@@ -56,11 +56,11 @@ function FeaturesPage() {
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               <ShieldCheck className="size-3.5" />
-              Cryptographic Tamper-Proof Receipts
+              Receipt checksum demonstration
             </span>
             <h2 className="mt-2 text-3xl font-bold">Interactive Receipt Seal Inspection</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Test how BeBoss verifies offline thermal receipts using SHA-256 hashes bound to the shop's TIN, receipt number, and total amount.
+              Compare an unkeyed SHA-256 checksum of sample receipt fields. A checksum alone is not a digital signature, proof of authenticity or fiscal-compliance certification.
             </p>
           </div>
           <ReceiptVerifier />
@@ -71,11 +71,11 @@ function FeaturesPage() {
           <div className="max-w-2xl mb-8">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-semibold text-success">
               <Lock className="size-3.5" />
-              Enterprise Security Architecture
+              Security implementation notes
             </span>
-            <h2 className="mt-2 text-3xl font-bold">Hardware & Cryptographic Hardening</h2>
+            <h2 className="mt-2 text-3xl font-bold">Safeguards and their limits</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Engineered to prevent theft, clock rollbacks, staff tampering, and network interception.
+              BeBoss includes device and application safeguards, but no software can prevent every theft, device compromise, staff error or network risk.
             </p>
           </div>
 
@@ -85,7 +85,7 @@ function FeaturesPage() {
                 <Database className="size-4" /> SQLCipher AES-256
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Database at rest is encrypted with SQLCipher v11. Encryption passphrases are generated via Android Keystore StrongBox HSM.
+                Database at rest uses SQLCipher encryption. The database passphrase is protected using Android Keystore; hardware-backed availability depends on the device.
               </p>
             </div>
             <div className="rounded-2xl border border-border bg-surface p-5 space-y-2">
@@ -93,7 +93,7 @@ function FeaturesPage() {
                 <Cpu className="size-4" /> ClockGuard Anti-Rollback
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Defeats device clock rollbacks using monotonic elapsed realtime counters. Modifying device system date will never bypass license expiries.
+                Uses monotonic elapsed time and stored state to detect some clock rollbacks. This is a safeguard, not a guarantee against all device tampering.
               </p>
             </div>
             <div className="rounded-2xl border border-border bg-surface p-5 space-y-2">
@@ -101,7 +101,7 @@ function FeaturesPage() {
                 <KeyRound className="size-4" /> Constant-Time BB2 Unlock
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                HMAC-SHA256 account-bound unlock codes verified using constant-time comparison (MessageDigest.isEqual) to eliminate side-channel timing attacks.
+                HMAC-SHA256 account-bound unlock codes are compared using MessageDigest.isEqual to reduce timing leakage during code checks.
               </p>
             </div>
           </div>

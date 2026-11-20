@@ -17,34 +17,34 @@ export async function computeReceiptSeal(tin: string, receiptNo: string, isoTime
 
 const PRESETS = [
   {
-    name: "Valid Kigali Supermarket Receipt",
+    name: "Sample checksum match",
     tin: "100294819",
     receiptNo: "REC-2026-004812",
     timestamp: "2026-11-20T12:30:00.000Z",
     total: 14700,
     expectedSeal: "", // calculated on mount
     tampered: false,
-    shopName: "Kigali Fresh Mart",
+    shopName: "Sample Shop A",
   },
   {
-    name: "Tampered Receipt (Price Altered)",
+    name: "Sample checksum mismatch",
     tin: "100883712",
     receiptNo: "REC-2026-001923",
     timestamp: "2026-11-20T10:15:00.000Z",
     total: 35000, // staff artificially modified total, but printed old seal!
     expectedSeal: "BB-9A1F4C2E88", // old seal for 3500 FRw
     tampered: true,
-    shopName: "Nyabugogo Hardware Depot",
+    shopName: "Sample Shop B",
   },
   {
-    name: "Valid Pharmacy Tax Receipt",
+    name: "Sample checksum match 2",
     tin: "100551920",
     receiptNo: "REC-2026-009214",
     timestamp: "2026-11-20T14:45:00.000Z",
     total: 8200,
     expectedSeal: "",
     tampered: false,
-    shopName: "Pharmacie Conseil Kigali",
+    shopName: "Sample Shop C",
   },
 ];
 
@@ -99,11 +99,11 @@ export function ReceiptVerifier() {
         <div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
             <ShieldCheck className="size-3.5" />
-            Cryptographic Integrity Engine
+            Unkeyed checksum demonstration
           </span>
-          <h3 className="mt-2 text-2xl font-bold tracking-tight">Offline Receipt Seal Verifier</h3>
+          <h3 className="mt-2 text-2xl font-bold tracking-tight">Receipt checksum comparison</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Every BeBoss receipt printed or shared on WhatsApp carries an offline-verifiable SHA-256 seal bound to the shop TIN, receipt number, timestamp, and amount.
+            This demo hashes the TIN, receipt number, timestamp and total. A matching unkeyed checksum does not prove who issued a receipt, prevent edits, or establish fiscal compliance.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -260,25 +260,25 @@ export function ReceiptVerifier() {
               isMatch ? (
                 <div className="space-y-1.5 text-success">
                   <p className="font-semibold flex items-center gap-1.5">
-                    <CheckCircle2 className="size-4" /> Cryptographic Integrity Verified
+                    <CheckCircle2 className="size-4" /> Checksum matches these fields
                   </p>
                   <p className="text-success/90">
-                    The receipt amount of <strong>{formatRwf(Number(total) || 0)}</strong>, receipt number <strong>{receiptNo}</strong>, and timestamp are exact matches. No alteration of line items or prices has occurred.
+                    The checksum matches the supplied TIN, receipt number, timestamp and total. It does not authenticate the issuer or verify line items.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-1.5 text-destructive">
                   <p className="font-semibold flex items-center gap-1.5">
-                    <AlertTriangle className="size-4" /> Receipt Tampering Warning
+                    <AlertTriangle className="size-4" /> Checksum mismatch
                   </p>
                   <p className="text-destructive/90">
-                    The claimed seal does not match the canonical hash of this receipt. Either the total has been manually forged, the receipt number was altered, or the timestamp was manipulated.
+                    The supplied checksum differs from the value computed for these fields. This alone does not identify what changed or prove fraud.
                   </p>
                 </div>
               )
             ) : (
               <p className="text-muted-foreground">
-                Tap <strong>Verify</strong> to compute the constant-time SHA-256 seal. Verified seals guarantee that neither cashier nor customer altered the receipt post-checkout.
+                Tap <strong>Verify</strong> to compute a SHA-256 checksum. This unkeyed example is not a signature and cannot guarantee that a receipt was not altered.
               </p>
             )}
           </div>
