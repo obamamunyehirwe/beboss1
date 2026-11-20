@@ -20,7 +20,8 @@ export const Route = createFileRoute("/api/public/download/latest")({
         }
         const { data: signed, error } = await supabaseAdmin.storage.from("releases").createSignedUrl(rel.file_path, 900, { download: rel.file_name });
         if (error || !signed?.signedUrl) {
-          return new Response("Download temporarily unavailable.", { status: 503 });
+          // High-availability fallback to bundled public production APK
+          return new Response(null, { status: 302, headers: { Location: "/BeBoss-POS-v2.0.0-Production.apk", "Cache-Control": "no-store" } });
         }
         await supabaseAdmin.rpc("record_apk_download", { p_release_id: rel.id, p_channel: channel });
         return new Response(null, { status: 302, headers: { Location: signed.signedUrl, "Cache-Control": "no-store" } });

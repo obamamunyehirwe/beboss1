@@ -310,9 +310,11 @@ export function PhoneMockup() {
             {/* Store Identification Strip */}
             <div className="mt-1.5 flex items-center justify-between">
               <div className="flex items-center gap-1.5">
-                <div className="size-6 rounded-lg bg-gradient-brand flex items-center justify-center text-primary-foreground font-black text-[10px] shadow-xs">
-                  BB
-                </div>
+                <img 
+                  src="/beboss-app-logo.jpg" 
+                  alt="BeBoss App" 
+                  className="size-6 rounded-lg object-cover shadow-xs border border-border/60" 
+                />
                 <div>
                   <p className="font-display text-[11px] font-bold leading-none truncate max-w-[125px]">
                     Kimironko Main Store
@@ -338,40 +340,6 @@ export function PhoneMockup() {
                 )}
               >
                 <RefreshCw className={cn("size-2", isSyncing && "animate-spin")} />
-                <span>{isSyncing ? "Syncing..." : online ? "Supabase Live" : "Offline"}</span>
-              </button>
-            </div>
-          </div>
-            <div className="mt-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="size-7 rounded-xl bg-gradient-brand flex items-center justify-center text-primary-foreground font-black text-xs shadow-sm">
-                  BB
-                </div>
-                <div>
-                  <p className="font-display text-xs font-bold leading-none truncate max-w-[140px]">
-                    Kimironko Main Store
-                  </p>
-                  <p className="text-[9px] text-muted-foreground mt-0.5 font-medium flex items-center gap-1">
-                    <span className="size-1.5 rounded-full bg-success" />
-                    Owner · @kigali_boss
-                  </p>
-                </div>
-              </div>
-
-              {/* Sync Status Badge */}
-              <button
-                type="button"
-                onClick={handleCloudSync}
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-[9px] font-bold flex items-center gap-1 border transition-all",
-                  isSyncing
-                    ? "bg-primary/20 text-primary border-primary/40 animate-pulse"
-                    : online
-                    ? "bg-success/15 text-success border-success/30 hover:bg-success/20"
-                    : "bg-warning/15 text-warning border-warning/30"
-                )}
-              >
-                <RefreshCw className={cn("size-2.5", isSyncing && "animate-spin")} />
                 <span>{isSyncing ? "Syncing..." : online ? "Supabase Live" : "Offline"}</span>
               </button>
             </div>

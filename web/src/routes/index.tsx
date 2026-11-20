@@ -40,6 +40,7 @@ function Home() {
   const { data } = useSuspenseQuery(publicSiteQuery);
   const version = data.current?.version_name ?? data.config?.apk_version ?? "2.0.0";
   const [monthlyRev, setMonthlyRev] = useState(6000000);
+  const [heroView, setHeroView] = useState<"dual" | "terminal" | "station">("dual");
 
   // Exact ROI Calculations based on Enterprise Playbook
   const recoveredDrift = Math.round(monthlyRev * 0.045); // 4.5%
@@ -57,19 +58,33 @@ function Home() {
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-ember" aria-hidden="true" />
         <div className="absolute inset-0 bg-grid mask-fade-b" aria-hidden="true" />
-        <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-4 pb-20 pt-14 sm:px-6 lg:grid-cols-[1.15fr_1fr] lg:pt-20">
+        <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 pb-16 pt-10 sm:px-6 lg:grid-cols-[1.1fr_1fr] lg:pt-14">
           <div className="animate-fade-up">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-              <span className="size-1.5 rounded-full bg-success animate-pulse-ring" />
-              {t("heroEyebrow")}
-            </span>
-            <h1 className="mt-6 text-5xl font-extrabold leading-[1.02] sm:text-6xl lg:text-7xl">
+            {/* Official Mobile App Logo & Verified Badge */}
+            <div className="flex flex-wrap items-center gap-2.5 mb-5">
+              <div className="inline-flex items-center gap-2 rounded-2xl border border-border/80 bg-card/90 px-3 py-1.5 shadow-xs backdrop-blur-md">
+                <img 
+                  src="/beboss-app-logo.jpg" 
+                  alt="Official BeBoss Mobile App Logo" 
+                  className="size-6 rounded-lg object-cover ring-1 ring-primary/40 shadow-xs" 
+                />
+                <span className="font-display text-xs font-bold text-foreground">BeBoss Android POS</span>
+                <span className="size-1.5 rounded-full bg-success" />
+                <span className="font-mono text-[10px] text-success font-bold">Official v{version}</span>
+              </div>
+              <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                <span className="size-1.5 rounded-full bg-success animate-pulse-ring" />
+                {t("heroEyebrow")}
+              </span>
+            </div>
+
+            <h1 className="text-4xl font-extrabold leading-[1.05] sm:text-5xl lg:text-6xl">
               {t("heroTitleA")}
               <br />
               <span className="text-gradient-brand">{t("heroTitleB")}</span>
             </h1>
-            <p className="mt-6 max-w-xl text-lg text-muted-foreground">{t("heroSub")}</p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
+            <p className="mt-5 max-w-xl text-base sm:text-lg text-muted-foreground">{t("heroSub")}</p>
+            <div className="mt-7 flex flex-wrap items-center gap-3">
               <Button asChild variant="hero" size="xl">
                 <Link to="/download">
                   <Download />
@@ -88,44 +103,100 @@ function Home() {
               {t("heroTrial")} • Android 7.0+ • v{version}
             </p>
           </div>
-          <div className="relative flex items-center justify-center lg:justify-end gap-6">
-            {/* Real Modern Supermarket Counter Showcase Card */}
-            <div className="relative hidden xl:flex flex-col w-[280px] h-[480px] rounded-[2.2rem] overflow-hidden border border-border bg-card shadow-2xl transition-all duration-300 hover:border-primary/50 group shrink-0">
-              <img 
-                src={heroShop} 
-                alt="Modern Supermarket Counter Station in Kigali" 
-                className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" 
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-black/10" />
-              
-              {/* Badge & Caption Overlay */}
-              <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/90 px-2.5 py-1 text-[10px] font-bold text-white shadow-sm backdrop-blur-md">
-                  <span className="size-1.5 rounded-full bg-white animate-pulse" />
-                  Kigali Supermarket
-                </span>
-                <span className="rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-mono text-white/90 backdrop-blur-md">
-                  Live Station
-                </span>
-              </div>
 
-              <div className="absolute bottom-4 left-4 right-4 text-white space-y-1">
-                <p className="font-display text-sm font-extrabold leading-tight">
-                  High-Throughput Counter Station
-                </p>
-                <p className="text-[11px] text-white/80 leading-snug">
-                  Zero line stalls · Offline-first SQLCipher with instant MoMo USSD push & SHA-256 paper receipts.
-                </p>
-                <div className="pt-2 flex items-center gap-3 text-[10px] font-mono text-emerald-400 font-semibold border-t border-white/20">
-                  <span>✓ 0.8s Checkout</span>
-                  <span>✓ 100% Offline</span>
-                </div>
-              </div>
+          {/* Right Column: Interactive Retail Counter Station & Smartphone Showcase */}
+          <div className="relative flex flex-col items-center lg:items-end w-full">
+            {/* Interactive Showcase View Mode Switcher */}
+            <div className="flex items-center justify-center gap-1 p-1 rounded-full bg-surface-2/90 border border-border shadow-xs backdrop-blur-md mb-4">
+              <button
+                type="button"
+                onClick={() => setHeroView("dual")}
+                className={cn(
+                  "px-3 py-1 text-[11px] font-semibold rounded-full transition-all flex items-center gap-1.5",
+                  heroView === "dual" 
+                    ? "bg-primary text-primary-foreground shadow-xs" 
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Zap className="size-3" />
+                <span>Dual Showcase</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setHeroView("terminal")}
+                className={cn(
+                  "px-3 py-1 text-[11px] font-semibold rounded-full transition-all flex items-center gap-1.5",
+                  heroView === "terminal" 
+                    ? "bg-primary text-primary-foreground shadow-xs" 
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span>📱 Mobile Terminal</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setHeroView("station")}
+                className={cn(
+                  "px-3 py-1 text-[11px] font-semibold rounded-full transition-all flex items-center gap-1.5",
+                  heroView === "station" 
+                    ? "bg-primary text-primary-foreground shadow-xs" 
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span>🏬 Kigali Counter</span>
+              </button>
             </div>
 
-            {/* Smartphone Terminal */}
-            <div className="relative z-10 shrink-0">
-              <PhoneMockup />
+            <div className="relative flex flex-col sm:flex-row items-center justify-center lg:justify-end gap-5 w-full">
+              {/* Real Modern Supermarket Counter Showcase Card */}
+              {(heroView === "dual" || heroView === "station") && (
+                <div className={cn(
+                  "relative flex flex-col rounded-[2.2rem] overflow-hidden border border-border/80 bg-card shadow-2xl transition-all duration-300 hover:border-primary/50 group shrink-0",
+                  heroView === "station" ? "w-full max-w-[380px] h-[515px]" : "w-[270px] h-[515px]"
+                )}>
+                  <img 
+                    src={heroShop || "/hero-shop.jpg"} 
+                    alt="Modern Supermarket Counter Station in Kigali" 
+                    className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" 
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "/counter-printer.jpg";
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 to-black/15" />
+                  
+                  {/* Badge & Caption Overlay */}
+                  <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/90 px-2.5 py-1 text-[10px] font-bold text-white shadow-sm backdrop-blur-md">
+                      <span className="size-1.5 rounded-full bg-white animate-pulse" />
+                      Kigali Retail Station
+                    </span>
+                    <span className="rounded-full bg-black/70 px-2 py-0.5 text-[9px] font-mono text-white/90 backdrop-blur-md border border-white/10">
+                      Live Counter
+                    </span>
+                  </div>
+
+                  <div className="absolute bottom-4 left-4 right-4 text-white space-y-1.5">
+                    <p className="font-display text-sm font-extrabold leading-tight">
+                      High-Throughput Counter Station
+                    </p>
+                    <p className="text-[11px] text-white/80 leading-snug">
+                      Zero line stalls · Offline-first SQLCipher with instant MoMo USSD push & SHA-256 receipts.
+                    </p>
+                    <div className="pt-2 flex items-center justify-between text-[10px] font-mono text-emerald-400 font-semibold border-t border-white/20">
+                      <span>✓ 0.8s Checkout</span>
+                      <span>✓ 100% Offline</span>
+                      <span>✓ Multi-Cart Hold</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Smartphone Terminal Mockup */}
+              {(heroView === "dual" || heroView === "terminal") && (
+                <div className="relative z-10 shrink-0">
+                  <PhoneMockup />
+                </div>
+              )}
             </div>
           </div>
         </div>
