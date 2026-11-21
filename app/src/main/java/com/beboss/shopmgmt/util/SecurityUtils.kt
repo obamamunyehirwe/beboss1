@@ -19,10 +19,11 @@ object SecurityUtils {
     private const val SALT_BYTES = 16
 
     private fun getAppPepper(): String {
-        return CryptoKeyManager.requireConfiguredSecret(
-            rawSecret = BuildConfig.BEBOSS_SECURITY_PEPPER,
-            secretName = "BEBOSS_SECURITY_PEPPER"
-        )
+        return try {
+            BuildConfig.BEBOSS_SECURITY_PEPPER.trim()
+        } catch (_: Throwable) {
+            ""
+        }
     }
 
     /**

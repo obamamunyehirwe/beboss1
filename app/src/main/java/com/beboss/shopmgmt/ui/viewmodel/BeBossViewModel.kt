@@ -58,6 +58,7 @@ import com.beboss.shopmgmt.util.SupabaseShopDeviceDto
 import com.beboss.shopmgmt.util.SupabaseShopUserDto
 import com.beboss.shopmgmt.util.SupabaseUnlockCodeDto
 import com.beboss.shopmgmt.util.SyncAuditLog
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -170,7 +171,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     private val connectivityObserver = NetworkConnectivityObserver(application)
     private val deviceId: String = SupabaseAdminClient.getOrCreateDeviceId(application)
 
-    private val _deviceIntegrityStatus = MutableStateFlow(DeviceSecurityManager.inspectDeviceIntegrity())
+    private val _deviceIntegrityStatus = MutableStateFlow(DeviceIntegrityStatus(isCompromisedRisk = false))
     val deviceIntegrityStatus: StateFlow<DeviceIntegrityStatus> = _deviceIntegrityStatus.asStateFlow()
 
     private var idleLockJob: Job? = null
@@ -420,7 +421,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
             emitSnackbar = { msg -> _snackbarMessage.emit(msg) }
         )
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 authCoordinator.checkAuthenticationAndInit()
                 syncCoordinator.setupAutoCloudSyncOnInternet()
@@ -429,15 +430,20 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                 BeBossLogger.e("BeBossStartup", "One startup subsystem failed", e)
             }
 
-            val integrity = _deviceIntegrityStatus.value
-            if (integrity.isCompromisedRisk) {
-                repository.recordLocalAudit(
-                    actorName = "System",
-                    actorRole = "SECURITY",
-                    action = "DEVICE_INTEGRITY_WARNING",
-                    targetId = deviceId,
-                    details = integrity.signals.joinToString("; ")
-                )
+            try {
+                val integrity = DeviceSecurityManager.inspectDeviceIntegrity()
+                _deviceIntegrityStatus.value = integrity
+                if (integrity.isCompromisedRisk) {
+                    repository.recordLocalAudit(
+                        actorName = "System",
+                        actorRole = "SECURITY",
+                        action = "DEVICE_INTEGRITY_WARNING",
+                        targetId = deviceId,
+                        details = integrity.signals.joinToString("; ")
+                    )
+                }
+            } catch (e: Exception) {
+                BeBossLogger.w("BeBossStartup", "Device integrity check skipped: ${e.message}")
             }
         }
         onUserInteraction()

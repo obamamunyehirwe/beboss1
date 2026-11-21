@@ -6,18 +6,28 @@ import com.beboss.shopmgmt.util.BeBossNotificationManager
 import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.CloudSyncScheduler
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class BeBossApplication : Application() {
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate() {
         super.onCreate()
         ClockGuard.init(this)
         OfflineSubscriptionManager.initConfigCache(this)
-        BeBossNotificationManager.createNotificationChannels(this)
-        CloudSyncScheduler.schedulePeriodicSync(this)
         installGlobalExceptionHandler()
-        
+
         // Initialize Sentry crash reporting (if configured)
         initializeCrashReporting()
+
+        // Defer Binder IPC (NotificationManager) and WorkManager SQLite initialization off the main thread
+        appScope.launch {
+            BeBossNotificationManager.createNotificationChannels(this@BeBossApplication)
+            CloudSyncScheduler.schedulePeriodicSync(this@BeBossApplication)
+        }
     }
 
     private fun installGlobalExceptionHandler() {

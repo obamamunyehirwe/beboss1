@@ -34,8 +34,11 @@ object SubscriptionSecurityManager {
     private val secureRandom = SecureRandom()
 
     private fun getCrossPlatformSigningSecret(): String {
+        val raw = BuildConfig.BEBOSS_UNLOCK_SIGNING_SECRET.ifBlank {
+            System.getProperty("BEBOSS_UNLOCK_SIGNING_SECRET").orEmpty()
+        }
         return CryptoKeyManager.requireConfiguredSecret(
-            rawSecret = BuildConfig.BEBOSS_UNLOCK_SIGNING_SECRET,
+            rawSecret = raw,
             secretName = "BEBOSS_UNLOCK_SIGNING_SECRET"
         )
     }

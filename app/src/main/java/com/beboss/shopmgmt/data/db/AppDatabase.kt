@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
 import com.beboss.shopmgmt.data.dao.BranchDao
 import com.beboss.shopmgmt.data.dao.CustomerDao
 import com.beboss.shopmgmt.data.dao.CustomerPaymentDao
@@ -109,11 +110,15 @@ abstract class AppDatabase : RoomDatabase() {
                     .allowMainThreadQueries()  // For emergency fallbacks only
 
                 if (!CryptoKeyManager.isRobolectricJvm()) {
-                    System.loadLibrary("sqlcipher")
-                    val passphrase = CryptoKeyManager.getOrCreateDatabasePassphrase(appContext)
-                    migrateLegacyPlaintextDatabaseIfNeeded(appContext, passphrase)
-                    val factory = SupportOpenHelperFactory(passphrase)
-                    builder.openHelperFactory(factory)
+                    val lazyEncryptedFactory = SupportSQLiteOpenHelper.Factory { configuration ->
+                        synchronized(this) {
+                            System.loadLibrary("sqlcipher")
+                            val passphrase = CryptoKeyManager.getOrCreateDatabasePassphrase(appContext)
+                            migrateLegacyPlaintextDatabaseIfNeeded(appContext, passphrase)
+                            SupportOpenHelperFactory(passphrase).create(configuration)
+                        }
+                    }
+                    builder.openHelperFactory(lazyEncryptedFactory)
                 }
 
                 val instance = builder.build()

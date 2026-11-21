@@ -12,6 +12,7 @@ import com.beboss.shopmgmt.util.AuthRateLimiter
 import com.beboss.shopmgmt.util.Localization
 import com.beboss.shopmgmt.util.SecurityUtils
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,7 +43,7 @@ class AuthSessionCoordinator(
     val authError: StateFlow<String?> = _authError.asStateFlow()
 
     fun checkAuthenticationAndInit() {
-        scope.launch {
+        scope.launch(Dispatchers.IO) {
             try {
                 val savedUserId = prefs.getString("active_user_id", null)
                 val savedUser = if (!savedUserId.isNullOrBlank()) {
@@ -64,7 +65,7 @@ class AuthSessionCoordinator(
                 _isRegistrationNeeded.value = false
                 // Always require explicit user authentication on cold launch
                 _isLocked.value = true
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 _authError.value = "Startup database error: ${e.message}"
                 _isLocked.value = true
                 _isRegistrationNeeded.value = false

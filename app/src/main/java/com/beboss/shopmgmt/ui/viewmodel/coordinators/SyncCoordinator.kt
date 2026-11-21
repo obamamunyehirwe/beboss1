@@ -23,6 +23,7 @@ import com.beboss.shopmgmt.util.ShopDataTransferManager
 import com.beboss.shopmgmt.util.ShopImportSummary
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,9 +78,9 @@ class SyncCoordinator(
     val peerSyncEvents = localNetworkSyncServer.peerSyncEvents
 
     fun setupAutoCloudSyncOnInternet() {
-        OfflineSubscriptionManager.initConfigCache(application)
-        CloudSyncScheduler.schedulePeriodicSync(application)
-        scope.launch {
+        scope.launch(Dispatchers.IO) {
+            OfflineSubscriptionManager.initConfigCache(application)
+            CloudSyncScheduler.schedulePeriodicSync(application)
             try {
                 repository.ensureDefaultBranches()
             } catch (e: Exception) {

@@ -25,8 +25,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -1791,6 +1791,7 @@ fun AdminConsoleCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShopProfileCard(
     formState: ShopFormState,
@@ -2611,7 +2612,7 @@ fun SettingRow(
 }
 
 @Composable
-fun StatCard(
+fun RowScope.StatCard(
     label: String,
     value: String,
     color: Color,
@@ -2635,7 +2636,7 @@ fun StatCard(
 }
 
 @Composable
-fun PermissionBadge(
+fun RowScope.PermissionBadge(
     label: String,
     granted: Boolean
 ) {
@@ -2996,7 +2997,7 @@ fun StaffManagementDialog(
         onDismissRequest = onDismiss,
         title = { Text("Staff Management", fontWeight = FontWeight.Bold) },
         text = { Text("Staff management dialog - implement in separate file") },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 
@@ -3012,7 +3013,7 @@ fun BranchManagementDialog(
         onDismissRequest = onDismiss,
         title = { Text("Branch Management", fontWeight = FontWeight.Bold) },
         text = { Text("Branch management dialog - implement in separate file") },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 
@@ -3031,7 +3032,7 @@ fun ShopDevicesDialog(
         onDismissRequest = onDismiss,
         title = { Text("Shop Devices", fontWeight = FontWeight.Bold) },
         text = { Text("Shop devices dialog - implement in separate file") },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 
@@ -3057,7 +3058,7 @@ fun SyncHubDialog(
         onDismissRequest = onDismiss,
         title = { Text("Sync Hub", fontWeight = FontWeight.Bold) },
         text = { Text("Sync hub dialog - implement in separate file") },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 
@@ -3075,7 +3076,7 @@ fun SubscriptionWizardDialog(
         onDismissRequest = onDismiss,
         title = { Text("Subscription Wizard", fontWeight = FontWeight.Bold) },
         text = { Text("Subscription wizard dialog - implement in separate file") },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 
@@ -3122,7 +3123,7 @@ fun AdminConsoleDialog(
         onDismissRequest = onDismiss,
         title = { Text("Admin Console", fontWeight = FontWeight.Bold) },
         text = { Text("Admin console dialog - implement in separate file") },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 
@@ -3141,7 +3142,7 @@ fun DataTransferDialog(
         onDismissRequest = onDismiss,
         title = { Text("Data Transfer", fontWeight = FontWeight.Bold) },
         text = { Text("Data transfer dialog - implement in separate file") },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 
@@ -3158,6 +3159,6 @@ fun DiagnosticsDialog(
         onDismissRequest = onDismiss,
         title = { Text("Diagnostics", fontWeight = FontWeight.Bold) },
         text = { Text("Diagnostics dialog - implement in separate file") },
-        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
     )
 }

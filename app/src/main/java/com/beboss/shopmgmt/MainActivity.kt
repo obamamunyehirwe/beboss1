@@ -81,7 +81,6 @@ import com.beboss.shopmgmt.ui.theme.MyApplicationTheme
 import com.beboss.shopmgmt.ui.viewmodel.AppScreen
 import com.beboss.shopmgmt.ui.viewmodel.BeBossViewModel
 import com.beboss.shopmgmt.util.AppLanguage
-import com.beboss.shopmgmt.util.BeBossNotificationManager
 import com.beboss.shopmgmt.util.BiometricAuthManager
 import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.ConnectivityStatus
@@ -96,17 +95,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ClockGuard.init(this)
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            setRecentsScreenshotEnabled(false)
+        if (!BuildConfig.DEBUG) {
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                setRecentsScreenshotEnabled(false)
+            }
+            window.decorView.rootView.filterTouchesWhenObscured = true
         }
-        window.decorView.rootView.filterTouchesWhenObscured = true
         enableEdgeToEdge()
-        hideSystemNavigationBars()
-        BeBossNotificationManager.createNotificationChannels(this)
 
         setContent {
             val viewModel: BeBossViewModel = viewModel()
@@ -135,7 +134,7 @@ class MainActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
-            hideSystemNavigationBars()
+            window.decorView.post { hideSystemNavigationBars() }
         }
     }
 
@@ -160,9 +159,33 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
 fun BeBossApp(viewModel: BeBossViewModel = viewModel()) {
+    val isDarkTheme by viewModel.isDarkTheme.collectAsState()
+    var showSplashScreen by remember { mutableStateOf(true) }
+
+    if (showSplashScreen) {
+        AppSplashScreen(
+            isDarkTheme = isDarkTheme,
+            durationMs = 520L,
+            onSplashFinished = { showSplashScreen = false }
+        )
+    } else {
+        BeBossMainContent(
+            viewModel = viewModel,
+            isDarkTheme = isDarkTheme,
+            onShowSplashScreen = { showSplashScreen = true }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
+@Composable
+private fun BeBossMainContent(
+    viewModel: BeBossViewModel,
+    isDarkTheme: Boolean,
+    onShowSplashScreen: () -> Unit
+) {
     val context = LocalContext.current
     val hostActivity = context as? Activity
     val widthSizeClass = if (hostActivity != null) {
@@ -216,7 +239,6 @@ fun BeBossApp(viewModel: BeBossViewModel = viewModel()) {
     val isRegistrationNeeded by viewModel.isRegistrationNeeded.collectAsState()
     val authError by viewModel.authError.collectAsState()
     val currentLanguage by viewModel.currentLanguage.collectAsState()
-    val isDarkTheme by viewModel.isDarkTheme.collectAsState()
     val databaseStats by viewModel.databaseStats.collectAsState()
     val isOptimizingDb by viewModel.isOptimizingDb.collectAsState()
     val stockTransfers by viewModel.allStockTransfers.collectAsState()
@@ -241,7 +263,6 @@ fun BeBossApp(viewModel: BeBossViewModel = viewModel()) {
     val idleLockMinutes by viewModel.idleLockMinutes.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
-    var showSplashScreen by remember { mutableStateOf(true) }
     var showQuickSpeedDialSheet by remember { mutableStateOf(false) }
     var showQuickCustomSaleDialog by remember { mutableStateOf(false) }
     var showUniversalSearchDialog by remember { mutableStateOf(false) }
@@ -250,9 +271,9 @@ fun BeBossApp(viewModel: BeBossViewModel = viewModel()) {
 
     val debtorsCount = remember(customers) { customers.count { it.debtBalance > 0 } }
 
-    // Proactively check crucial hardware and phone permissions right after launch
-    LaunchedEffect(showSplashScreen) {
-        if (!showSplashScreen && !com.beboss.shopmgmt.util.PermissionManager.hasAllCrucialPermissions(context)) {
+    // Proactively check crucial hardware and phone permissions right after splash
+    LaunchedEffect(Unit) {
+        if (!com.beboss.shopmgmt.util.PermissionManager.hasAllCrucialPermissions(context)) {
             showPermissionOnboardingDialog = true
         }
     }
@@ -266,13 +287,7 @@ fun BeBossApp(viewModel: BeBossViewModel = viewModel()) {
         }
     }
 
-    if (showSplashScreen) {
-        AppSplashScreen(
-            isDarkTheme = isDarkTheme,
-            durationMs = 520L,
-            onSplashFinished = { showSplashScreen = false }
-        )
-    } else if (isRegistrationNeeded) {
+    if (isRegistrationNeeded) {
         ShopRegistrationScreen(
             language = currentLanguage,
             isDarkTheme = isDarkTheme,
@@ -725,7 +740,7 @@ fun BeBossApp(viewModel: BeBossViewModel = viewModel()) {
                                     viewModel.adminDeleteBranchSnapshot(snap)
                                 },
                                 onShareAdminWebPortal = { viewModel.shareAdminWebPortal(context) },
-                                onShowSplashScreen = { showSplashScreen = true },
+                                onShowSplashScreen = onShowSplashScreen,
                                 onTestNotification = { type -> viewModel.testNotification(type) },
                                 onRequestPermissions = { showPermissionOnboardingDialog = true },
                                 onSelectLanguage = { lang -> viewModel.setLanguage(lang) },
