@@ -182,7 +182,7 @@ export function SiteHeader() {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="site-nav-trigger">
+                <button type="button" className={cn("site-nav-trigger", productActive && "site-nav-trigger-active")}>
                   <Package2 size={16} />
                   <span>{c.headerProduct}</span>
                   <ChevronDown size={14} className="site-nav-chevron" />
@@ -208,7 +208,7 @@ export function SiteHeader() {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="site-nav-trigger">
+                <button type="button" className={cn("site-nav-trigger", resourcesActive && "site-nav-trigger-active")}>
                   <BookOpen size={16} />
                   <span>{c.headerResources}</span>
                   <ChevronDown size={14} className="site-nav-chevron" />
@@ -234,7 +234,7 @@ export function SiteHeader() {
               type="button"
               variant="outline"
               className="site-search-trigger"
-              onClick={() => setSearchOpen(true)}
+              onClick={() => { setMobileOpen(false); setSearchOpen(true); }}
               aria-label={c.headerSearch}
             >
               <Search size={17} />
