@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Activity, Boxes, CheckCircle2, Clock, GitBranch, KeyRound, RefreshCw, Smartphone, Store, WifiOff, Zap } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
+import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useNow } from "@/hooks/use-now";
 import { useI18n } from "@/lib/i18n";
@@ -20,6 +21,7 @@ export const Route = createFileRoute("/status")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
+  errorComponent: () => <ServiceUnavailable title="navStatus" />,
   loader: ({ context }) => context.queryClient.ensureQueryData(platformStatsQuery),
   component: StatusPage,
 });

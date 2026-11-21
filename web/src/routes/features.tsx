@@ -53,16 +53,6 @@ function FeaturesPage() {
 
         {/* Cryptographic Receipt Verification Section */}
         <section className="space-y-6">
-          <div className="max-w-2xl">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              <ShieldCheck className="size-3.5" />
-              Receipt checksum demonstration
-            </span>
-            <h2 className="mt-2 text-3xl font-bold">Interactive Receipt Seal Inspection</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Compare an unkeyed SHA-256 checksum of sample receipt fields. A checksum alone is not a digital signature, proof of authenticity or fiscal-compliance certification.
-            </p>
-          </div>
           <ReceiptVerifier />
         </section>
 
