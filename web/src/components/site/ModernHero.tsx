@@ -14,12 +14,14 @@ import {
 import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { retailCopy } from "@/lib/i18n-dict";
+import { PhoneMockup } from "./PhoneMockup";
 
 export function ModernHero() {
   const { lang, t } = useI18n();
   const c = retailCopy[lang];
   const [scene, setScene] = useState(0);
   const change = () => setScene((s) => 1 - s);
+
   return (
     <>
       <section className="market-hero" aria-labelledby="market-title">
@@ -56,19 +58,31 @@ export function ModernHero() {
               <Check />
               {t("heroTrial")}
             </div>
-          </div>
-          <div className="market-caption">
-            <div aria-live="polite">
-              <small>0{scene + 1} / 02</small>
-              <span>{c.scenes[scene]}</span>
+            <div className="market-proof" aria-label="BeBoss product capabilities">
+              <span><WifiOff /> Offline-first</span>
+              <span><Store /> Multi-branch</span>
+              <span><Languages /> EN · RW · FR · SW</span>
             </div>
-            <div className="scene-controls">
-              <button type="button" onClick={change} aria-label={c.previous}>
-                <ChevronLeft />
-              </button>
-              <button type="button" onClick={change} aria-label={c.next}>
-                <ChevronRight />
-              </button>
+          </div>
+
+          <div className="market-device">
+            <div className="market-device-glow" aria-hidden="true" />
+            <div className="market-phone-shell">
+              <PhoneMockup />
+            </div>
+            <div className="market-caption">
+              <div aria-live="polite">
+                <small>0{scene + 1} / 02</small>
+                <span>{c.scenes[scene]}</span>
+              </div>
+              <div className="scene-controls">
+                <button type="button" onClick={change} aria-label={c.previous}>
+                  <ChevronLeft />
+                </button>
+                <button type="button" onClick={change} aria-label={c.next}>
+                  <ChevronRight />
+                </button>
+              </div>
             </div>
           </div>
         </div>
