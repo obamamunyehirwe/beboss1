@@ -182,7 +182,7 @@ function AuthPage() {
             </form>
             <div className="admin-auth-method-note">
               <LockKeyhole size={15} />
-              <span>Email and password only. No Google sign-in, Lovable sign-in or public registration.</span>
+              <span>Email and password authentication only. Public registration is disabled.</span>
             </div>
             <div className="admin-auth-access-note">
               <ShieldCheck size={16} />
