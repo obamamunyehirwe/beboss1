@@ -119,7 +119,7 @@ fun AnalyticsScreen(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    AnalyticsChart(points = chartPoints, currencySymbol = shopProfile.currencySymbol)
+                    AnalyticsChart(points = chartPoints, currencySymbol = shopProfile.currencySymbol, language = language)
                     TopSellingProductsCard(topProducts, shopProfile, language)
                     if (categoryShares.isNotEmpty()) {
                         CategorySalesShareCard(categoryShares, shopProfile, language)
@@ -135,7 +135,7 @@ fun AnalyticsScreen(
             ) {
                 item { PeriodSelectorTabs(periods, selectedPeriod, language, onPeriodSelected) }
                 item { HeroProfitLossCard(summary, shopProfile, language) }
-                item { AnalyticsChart(points = chartPoints, currencySymbol = shopProfile.currencySymbol) }
+                item { AnalyticsChart(points = chartPoints, currencySymbol = shopProfile.currencySymbol, language = language) }
                 item { TopSellingProductsCard(topProducts, shopProfile, language) }
                 if (categoryShares.isNotEmpty()) {
                     item { CategorySalesShareCard(categoryShares, shopProfile, language) }
@@ -238,7 +238,7 @@ private fun HeroProfitLossCard(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "${summary.profitMarginPercent.toInt()}% Margin",
+                            text = Localization.format("ana_margin_fmt", language, summary.profitMarginPercent.toInt()),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (summary.isProfitable) ProfitGreen else LossRed
@@ -318,7 +318,7 @@ private fun TopSellingProductsCard(
             Spacer(modifier = Modifier.height(12.dp))
 
             if (topProducts.isEmpty()) {
-                Text("No sales data in selected period.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(Localization.get("ana_no_sales_period", language), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 topProducts.take(5).forEachIndexed { index, item ->
                     Row(
@@ -349,7 +349,16 @@ private fun TopSellingProductsCard(
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(item.productName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                                Text("${item.totalQuantitySold.toInt()} sold Ã¢â‚¬Â¢ Rev: ${ReceiptGenerator.formatMoney(item.totalRevenue, shopProfile)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    Localization.format(
+                                        "ana_product_perf_fmt",
+                                        language,
+                                        item.totalQuantitySold.toInt(),
+                                        ReceiptGenerator.formatMoney(item.totalRevenue, shopProfile)
+                                    ),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
 
@@ -478,7 +487,11 @@ private fun DemandForecastCard(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Computed from ${selectedPeriod.displayName.lowercase()} sales velocity & stock cover",
+                        text = Localization.format(
+                            "ana_forecast_computed_fmt",
+                            language,
+                            Localization.analyticsPeriodLabel(selectedPeriod, language).lowercase()
+                        ),
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -489,7 +502,7 @@ private fun DemandForecastCard(
 
             if (forecasts.isEmpty()) {
                 Text(
-                    text = "All active inventory items have healthy stock cover for the next 10+ days.",
+                    text = Localization.get("ana_forecast_healthy", language),
                     fontSize = 12.sp,
                     color = ProfitGreen,
                     fontWeight = FontWeight.Medium
@@ -497,7 +510,11 @@ private fun DemandForecastCard(
             } else {
                 forecasts.forEachIndexed { idx, (product, daysCover, reorderPair) ->
                     val (reorderQty, estCost) = reorderPair
-                    val coverText = if (daysCover.isInfinite()) "Low stock threshold" else "${daysCover.toInt().coerceAtLeast(0)}d stock cover"
+                    val coverText = if (daysCover.isInfinite()) {
+                        Localization.get("ana_low_threshold_badge", language)
+                    } else {
+                        Localization.format("ana_days_cover_fmt", language, daysCover.toInt().coerceAtLeast(0))
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -513,20 +530,20 @@ private fun DemandForecastCard(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "On hand: ${product.quantityInStock.toInt()} ${product.unit} Ã¢â‚¬Â¢ $coverText",
+                                text = "${product.quantityInStock.toInt()} ${product.unit} • $coverText",
                                 fontSize = 11.sp,
                                 color = if (product.quantityInStock <= 0 || daysCover < 3.0) LossRed else WarningAmber
                             )
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
-                                text = "Order +$reorderQty ${product.unit}",
+                                text = Localization.format("ana_order_unit_fmt", language, reorderQty, product.unit),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = OrangePrimary
                             )
                             Text(
-                                text = "Est. ${ReceiptGenerator.formatMoney(estCost, shopProfile)}",
+                                text = Localization.format("ana_est_cost_fmt", language, ReceiptGenerator.formatMoney(estCost, shopProfile)),
                                 fontSize = 10.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -555,9 +572,10 @@ private fun ReportExportActionsCard(
         Button(
             onClick = {
                 try {
+                    val periodLabel = Localization.analyticsPeriodLabel(selectedPeriod, language)
                     val pdf = PdfReportGenerator.generateSalesReportPdf(
                         context = context,
-                        periodName = selectedPeriod.displayName,
+                        periodName = periodLabel,
                         summary = summary,
                         topProducts = topProducts,
                         categoryShares = categoryShares,
@@ -566,10 +584,10 @@ private fun ReportExportActionsCard(
                     PdfReportGenerator.sharePdf(
                         context = context,
                         file = pdf,
-                        title = "Share Financial PDF Report (${selectedPeriod.displayName})"
+                        title = Localization.format("ana_share_pdf_period_fmt", language, periodLabel)
                     )
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Could not generate PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, Localization.format("ana_pdf_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
                 }
             },
             modifier = Modifier
@@ -585,18 +603,18 @@ private fun ReportExportActionsCard(
 
         OutlinedButton(
             onClick = {
-                val reportText = buildString {
-                    append("${shopProfile.shopName.uppercase()} Ã¢â‚¬â€ FINANCIAL SUMMARY\n")
-                    append("Period: ${selectedPeriod.displayName}\n")
-                    append("--------------------------------\n")
-                    append("Total Sales Revenue : ${ReceiptGenerator.formatMoney(summary.totalRevenue, shopProfile)}\n")
-                    append("Cost of Goods Sold  : ${ReceiptGenerator.formatMoney(summary.totalCost, shopProfile)}\n")
-                    append("NET PROFIT / LOSS   : ${ReceiptGenerator.formatMoney(summary.netProfit, shopProfile)}\n")
-                    append("Profit Margin       : ${summary.profitMarginPercent.toInt()}%\n")
-                    append("Total Transactions  : ${summary.totalSalesCount}\n")
-                    append("--------------------------------\n")
-                    append("Generated on-device via BeBoss POS\n")
-                }
+                val periodLabel = Localization.analyticsPeriodLabel(selectedPeriod, language)
+                val reportText = Localization.format(
+                    "ana_text_summary_fmt",
+                    language,
+                    shopProfile.shopName.uppercase(),
+                    periodLabel,
+                    ReceiptGenerator.formatMoney(summary.totalRevenue, shopProfile),
+                    ReceiptGenerator.formatMoney(summary.totalCost, shopProfile),
+                    ReceiptGenerator.formatMoney(summary.netProfit, shopProfile),
+                    summary.profitMarginPercent.toInt(),
+                    summary.totalSalesCount
+                )
                 ReceiptGenerator.shareReceipt(context, reportText)
             },
             modifier = Modifier
@@ -606,7 +624,7 @@ private fun ReportExportActionsCard(
         ) {
             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp), tint = OrangePrimary)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Share Text Summary to WhatsApp / SMS", fontWeight = FontWeight.SemiBold, color = OrangePrimary)
+            Text(Localization.get("ana_share_text_cta", language), fontWeight = FontWeight.SemiBold, color = OrangePrimary)
         }
     }
 }

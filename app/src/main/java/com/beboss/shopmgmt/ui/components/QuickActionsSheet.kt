@@ -141,7 +141,7 @@ fun QuickSpeedDialSheet(
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Default.Close, contentDescription = Localization.get("close", language), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -155,7 +155,7 @@ fun QuickSpeedDialSheet(
                 ) {
                     QuickActionCard(
                         title = Localization.get("quick_custom_sale", language),
-                        subtitle = "Instant cash/momo sale",
+                        subtitle = Localization.get("qa_custom_sale_sub", language),
                         icon = Icons.Default.PointOfSale,
                         iconBg = OrangePrimary,
                         modifier = Modifier.weight(1f),
@@ -168,7 +168,7 @@ fun QuickSpeedDialSheet(
 
                     QuickActionCard(
                         title = Localization.get("quick_universal_search", language),
-                        subtitle = "Find items & clients",
+                        subtitle = Localization.get("qa_universal_search_sub", language),
                         icon = Icons.Default.Search,
                         iconBg = Color(0xFF2563EB),
                         modifier = Modifier.weight(1f),
@@ -186,7 +186,7 @@ fun QuickSpeedDialSheet(
                 ) {
                     QuickActionCard(
                         title = Localization.get("quick_add_product", language),
-                        subtitle = "Add new stock item",
+                        subtitle = Localization.get("qa_add_product_sub", language),
                         icon = Icons.Default.Inventory2,
                         iconBg = ProfitGreen,
                         modifier = Modifier.weight(1f),
@@ -199,7 +199,7 @@ fun QuickSpeedDialSheet(
 
                     QuickActionCard(
                         title = Localization.get("quick_new_customer", language),
-                        subtitle = "Record debtor / buyer",
+                        subtitle = Localization.get("qa_new_customer_sub", language),
                         icon = Icons.Default.People,
                         iconBg = Color(0xFF8B5CF6),
                         modifier = Modifier.weight(1f),
@@ -217,7 +217,7 @@ fun QuickSpeedDialSheet(
                 ) {
                     QuickActionCard(
                         title = Localization.get("send_daily_whatsapp", language),
-                        subtitle = "Share shop summary",
+                        subtitle = Localization.get("qa_daily_whatsapp_sub", language),
                         icon = Icons.Default.Share,
                         iconBg = Color(0xFF10B981),
                         modifier = Modifier.weight(1f),
@@ -230,7 +230,7 @@ fun QuickSpeedDialSheet(
 
                     QuickActionCard(
                         title = Localization.get("view_last_receipt", language),
-                        subtitle = "Reprint or share",
+                        subtitle = Localization.get("qa_last_receipt_sub", language),
                         icon = Icons.Default.Receipt,
                         iconBg = Color(0xFF0F172A),
                         modifier = Modifier.weight(1f),
@@ -339,7 +339,7 @@ fun QuickCustomSaleDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Fast cashier checkout for uncatalogued items or quick service",
+                    text = Localization.get("qa_quick_sale_subtitle", language),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -357,8 +357,8 @@ fun QuickCustomSaleDialog(
                             errorMessage = null
                         }
                     },
-                    label = { Text("${Localization.get("enter_amount_rwf", language)} *") },
-                    placeholder = { Text("e.g. 2500") },
+                    label = { Text("${Localization.get("enter_amount_rwf", language)} ($currency) *") },
+                    placeholder = { Text(Localization.get("qa_amount_example", language)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
                     modifier = Modifier.fillMaxWidth(),
@@ -396,23 +396,23 @@ fun QuickCustomSaleDialog(
                     value = description,
                     onValueChange = { description = it },
                     label = { Text(Localization.get("item_description_optional", language)) },
-                    placeholder = { Text("e.g. Airtime, Cold Soda, Repair") },
+                    placeholder = { Text(Localization.get("qa_item_example", language)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 )
 
                 // Payment Method Selector
-                Text("Payment Method:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text(Localization.get("qa_payment_method_colon", language), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     listOf(
-                        "CASH" to "Cash",
-                        "MTN_MOMO" to "MoMo",
-                        "AIRTEL_MONEY" to "Airtel",
-                        "CREDIT_DEBT" to "Debt"
+                        "CASH" to Localization.get("qa_method_cash", language),
+                        "MTN_MOMO" to Localization.get("qa_method_momo", language),
+                        "AIRTEL_MONEY" to Localization.get("qa_method_airtel", language),
+                        "CREDIT_DEBT" to Localization.get("qa_method_debt", language)
                     ).forEach { (method, label) ->
                         val isSelected = selectedMethod == method
                         Surface(
@@ -445,7 +445,7 @@ fun QuickCustomSaleDialog(
                 onClick = {
                     val amt = amountInput.toDoubleOrNull()
                     if (amt == null || amt <= 0) {
-                        errorMessage = "Please enter a valid amount in RWF"
+                        errorMessage = Localization.get("qa_err_valid_amount", language)
                     } else {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onCompleteQuickSale(description, amt, selectedMethod, true)
@@ -465,7 +465,7 @@ fun QuickCustomSaleDialog(
                 onClick = {
                     val amt = amountInput.toDoubleOrNull()
                     if (amt == null || amt <= 0) {
-                        errorMessage = "Please enter a valid amount in RWF"
+                        errorMessage = Localization.get("qa_err_valid_amount", language)
                     } else {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onCompleteQuickSale(description, amt, selectedMethod, false)
@@ -556,13 +556,13 @@ fun UniversalSearchDialog(
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (language == AppLanguage.KINYARWANDA) "Gushakisha muri Byose" else "Universal Smart Search",
+                            text = Localization.get("search_dialog_title", language),
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
                     }
                     IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Close, contentDescription = Localization.get("close", language), modifier = Modifier.size(18.dp))
                     }
                 }
 
@@ -571,13 +571,13 @@ fun UniversalSearchDialog(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text("Search products, debtors, receipts, vendors...", fontSize = 12.sp) },
+                    placeholder = { Text(Localization.get("search_placeholder", language), fontSize = 12.sp) },
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(18.dp)) },
                     trailingIcon = {
                         if (query.isNotEmpty()) {
                             IconButton(onClick = { query = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Close, contentDescription = Localization.get("search_clear_cd", language), modifier = Modifier.size(16.dp))
                             }
                         }
                     },
@@ -594,11 +594,11 @@ fun UniversalSearchDialog(
                 ) {
                     val totalCount = filteredProducts.size + filteredCustomers.size + filteredSales.size + filteredPurchases.size
                     listOf(
-                        "ALL" to "All ($totalCount)",
-                        "PRODUCTS" to "Stock (${filteredProducts.size})",
-                        "CUSTOMERS" to "People (${filteredCustomers.size})",
-                        "SALES" to "Sales (${filteredSales.size})",
-                        "PURCHASES" to "Inflow (${filteredPurchases.size})"
+                        "ALL" to Localization.format("search_pill_all_fmt", language, totalCount),
+                        "PRODUCTS" to Localization.format("search_pill_stock_fmt", language, filteredProducts.size),
+                        "CUSTOMERS" to Localization.format("search_pill_people_fmt", language, filteredCustomers.size),
+                        "SALES" to Localization.format("search_pill_sales_fmt", language, filteredSales.size),
+                        "PURCHASES" to Localization.format("search_pill_inflow_fmt", language, filteredPurchases.size)
                     ).forEach { (tab, label) ->
                         val isSelected = selectedFilter == tab
                         Surface(
@@ -635,7 +635,7 @@ fun UniversalSearchDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.Inventory2, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(5.dp))
-                                Text("Products & Live Inventory", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = OrangePrimary)
+                                Text(Localization.get("search_header_products", language), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = OrangePrimary)
                             }
                         }
                         items(filteredProducts) { product ->
@@ -654,7 +654,13 @@ fun UniversalSearchDialog(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(product.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                         Text(
-                                            "${product.sellingPrice.toInt()} ${shopProfile.currencySymbol} Ã¢â‚¬Â¢ ${product.quantityInStock.toInt()} in stock",
+                                            Localization.format(
+                                                "search_in_stock_fmt",
+                                                language,
+                                                product.sellingPrice.toInt(),
+                                                shopProfile.currencySymbol,
+                                                product.quantityInStock.toInt()
+                                            ),
                                             fontSize = 11.sp,
                                             color = if (product.quantityInStock <= 0) LossRed else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -669,7 +675,7 @@ fun UniversalSearchDialog(
                                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                                                 shape = RoundedCornerShape(6.dp)
                                             ) {
-                                                Text("Restock", fontSize = 10.sp, color = DarkNavy)
+                                                Text(Localization.get("search_restock_btn", language), fontSize = 10.sp, color = DarkNavy)
                                             }
                                         }
                                         Button(
@@ -682,7 +688,11 @@ fun UniversalSearchDialog(
                                             shape = RoundedCornerShape(6.dp),
                                             colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
                                         ) {
-                                            Text(if (product.quantityInStock <= 0) "Sell (Backorder)" else "Sell", fontSize = 10.5.sp)
+                                            Text(
+                                                if (product.quantityInStock <= 0) Localization.get("search_backorder_btn", language)
+                                                else Localization.get("search_sell_btn", language),
+                                                fontSize = 10.5.sp
+                                            )
                                         }
                                     }
                                 }
@@ -699,7 +709,7 @@ fun UniversalSearchDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.People, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(5.dp))
-                                Text("Customers & Debt Ledger", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF2563EB))
+                                Text(Localization.get("search_header_customers", language), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF2563EB))
                             }
                         }
                         items(filteredCustomers) { customer ->
@@ -723,7 +733,7 @@ fun UniversalSearchDialog(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(customer.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                         Text(
-                                            customer.phone.ifBlank { "No phone registered" },
+                                            customer.phone.ifBlank { Localization.get("search_no_phone", language) },
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -734,7 +744,7 @@ fun UniversalSearchDialog(
                                             color = LossRed.copy(alpha = 0.15f)
                                         ) {
                                             Text(
-                                                "Debt: ${customer.debtBalance.toInt()} ${shopProfile.currencySymbol}",
+                                                Localization.format("search_debt_fmt", language, customer.debtBalance.toInt(), shopProfile.currencySymbol),
                                                 color = LossRed,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 10.sp,
@@ -756,7 +766,7 @@ fun UniversalSearchDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = ProfitGreen, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(5.dp))
-                                Text("Sales Receipts", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = ProfitGreen)
+                                Text(Localization.get("search_header_sales", language), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = ProfitGreen)
                             }
                         }
                         items(filteredSales) { s ->
@@ -781,12 +791,12 @@ fun UniversalSearchDialog(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("${s.totalAmount.toInt()} ${shopProfile.currencySymbol}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                         Text(
-                                            "${s.customerName} Ã¢â‚¬Â¢ $dateStr Ã¢â‚¬Â¢ ${s.receiptNumber}",
+                                            "${s.customerName} • $dateStr • ${s.receiptNumber}",
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
-                                    Icon(Icons.Default.Receipt, contentDescription = "Receipt", tint = ProfitGreen, modifier = Modifier.size(20.dp))
+                                    Icon(Icons.Default.Receipt, contentDescription = Localization.get("search_header_sales", language), tint = ProfitGreen, modifier = Modifier.size(20.dp))
                                 }
                             }
                         }
@@ -801,7 +811,7 @@ fun UniversalSearchDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.ShoppingCart, contentDescription = null, tint = DarkNavy, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(5.dp))
-                                Text("Purchases & Inflow Orders", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkNavy)
+                                Text(Localization.get("search_header_purchases", language), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkNavy)
                             }
                         }
                         items(filteredPurchases) { p ->
@@ -820,7 +830,7 @@ fun UniversalSearchDialog(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("${p.quantityPurchased.toInt()}x ${p.productName}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                         Text(
-                                            "Vendor: ${p.supplierName} Ã¢â‚¬Â¢ Total: ${p.totalPurchaseCost.toInt()} ${shopProfile.currencySymbol}",
+                                            Localization.format("search_vendor_total_fmt", language, p.supplierName, p.totalPurchaseCost.toInt(), shopProfile.currencySymbol),
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )

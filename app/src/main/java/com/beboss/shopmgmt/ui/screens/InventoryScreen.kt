@@ -155,12 +155,12 @@ fun InventoryScreen(
                 val imported = ExcelCsvExporter.parseProductsCsv(content)
                 if (imported.isNotEmpty()) {
                     imported.forEach { onSaveProduct(it) }
-                    Toast.makeText(context, "Successfully imported ${imported.size} products!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, Localization.format("inv_import_success_fmt", language, imported.size), Toast.LENGTH_LONG).show()
                 } else {
-                    Toast.makeText(context, "No valid products found in CSV file.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, Localization.get("inv_import_empty", language), Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                Toast.makeText(context, "Error importing file: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, Localization.format("inv_import_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -243,7 +243,7 @@ fun InventoryScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "${Localization.get("inventory_title", language)} (${purchases.size})",
+                                text = Localization.format("inv_tab_purchases_fmt", language, purchases.size),
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (selectedInventoryTab == 1) Color.White else InkDark
@@ -259,6 +259,7 @@ fun InventoryScreen(
                     products = products,
                     purchaseSummary = purchaseSummary,
                     shopProfile = shopProfile,
+                    language = language,
                     onRecordPurchase = { prodId, qty, cost, sellPrice, supplier, phone, status, inv, notes ->
                         onRecordPurchase?.invoke(prodId, qty, cost, sellPrice, supplier, phone, status, inv, notes)
                     },
@@ -290,7 +291,7 @@ fun InventoryScreen(
                                 Icon(Icons.Default.TableChart, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "Inventory Spreadsheet & Valuation",
+                                    text = Localization.get("inv_sheet_valuation_title", language),
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = InkDark
@@ -301,7 +302,7 @@ fun InventoryScreen(
                                 color = Color(0xFFF3F4F6)
                             ) {
                                 Text(
-                                    text = "${inventoryValuation.totalItems} Products",
+                                    text = Localization.format("inv_products_count_fmt", language, inventoryValuation.totalItems),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = InkDark,
@@ -324,7 +325,7 @@ fun InventoryScreen(
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
                             ) {
                                 Column(modifier = Modifier.padding(8.dp)) {
-                                    Text("Total Cost", fontSize = 10.sp, color = InkMedium, fontWeight = FontWeight.Medium)
+                                    Text(Localization.get("inv_total_cost", language), fontSize = 10.sp, color = InkMedium, fontWeight = FontWeight.Medium)
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = ReceiptGenerator.formatMoney(inventoryValuation.totalCostValue, shopProfile),
@@ -345,7 +346,7 @@ fun InventoryScreen(
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD8BF))
                             ) {
                                 Column(modifier = Modifier.padding(8.dp)) {
-                                    Text("Retail Value", fontSize = 10.sp, color = InkMedium, fontWeight = FontWeight.Medium)
+                                    Text(Localization.get("inv_retail_value", language), fontSize = 10.sp, color = InkMedium, fontWeight = FontWeight.Medium)
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = ReceiptGenerator.formatMoney(inventoryValuation.totalRetailValue, shopProfile),
@@ -366,7 +367,7 @@ fun InventoryScreen(
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF86EFAC))
                             ) {
                                 Column(modifier = Modifier.padding(8.dp)) {
-                                    Text("Est. Profit", fontSize = 10.sp, color = InkMedium, fontWeight = FontWeight.Medium)
+                                    Text(Localization.get("inv_est_profit", language), fontSize = 10.sp, color = InkMedium, fontWeight = FontWeight.Medium)
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = "+${ReceiptGenerator.formatMoney(inventoryValuation.potentialProfit, shopProfile)}",
@@ -391,9 +392,9 @@ fun InventoryScreen(
                                 onClick = {
                                     try {
                                         val file = ExcelCsvExporter.exportProductsCsv(context, products, shopProfile)
-                                        ExcelCsvExporter.shareCsvFile(context, file, "Share BeBoss Inventory CSV (Excel)")
+                                        ExcelCsvExporter.shareCsvFile(context, file, Localization.get("inv_share_csv_title", language))
                                     } catch (e: Exception) {
-                                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, Localization.format("inv_export_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
@@ -402,7 +403,7 @@ fun InventoryScreen(
                             ) {
                                 Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(15.dp), tint = OrangePrimary)
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Excel/CSV", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
+                                Text(Localization.get("inv_excel_csv_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
                             }
 
                             OutlinedButton(
@@ -415,16 +416,16 @@ fun InventoryScreen(
                             ) {
                                 Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(15.dp), tint = InkDark)
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Import CSV", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = InkDark)
+                                Text(Localization.get("inv_import_csv_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = InkDark)
                             }
 
                             OutlinedButton(
                                 onClick = {
                                     try {
                                         val pdf = PdfReportGenerator.generateInventoryValuationPdf(context, products, inventoryValuation, shopProfile)
-                                        PdfReportGenerator.sharePdf(context, pdf, "Share Inventory PDF")
+                                        PdfReportGenerator.sharePdf(context, pdf, Localization.get("inv_share_pdf_title", language))
                                     } catch (e: Exception) {
-                                        Toast.makeText(context, "PDF error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, Localization.format("inv_pdf_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
@@ -433,7 +434,7 @@ fun InventoryScreen(
                             ) {
                                 Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(15.dp), tint = LossRed)
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("PDF Report", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LossRed)
+                                Text(Localization.get("inv_pdf_report_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LossRed)
                             }
 
                             if (onClearAllProducts != null && products.isNotEmpty()) {
@@ -446,7 +447,7 @@ fun InventoryScreen(
                                 ) {
                                     Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(15.dp), tint = LossRed)
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Clear All", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LossRed)
+                                    Text(Localization.get("inv_clear_all_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LossRed)
                                 }
                             }
                         }
@@ -465,12 +466,12 @@ fun InventoryScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search product name, category, barcode...", fontSize = 13.sp) },
+                            placeholder = { Text(Localization.get("inv_search_placeholder", language), fontSize = 13.sp) },
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = InkMedium) },
                             trailingIcon = {
                                 if (searchQuery.isNotBlank()) {
                                     IconButton(onClick = { searchQuery = "" }) {
-                                        Icon(Icons.Default.Clear, contentDescription = null, tint = InkMedium)
+                                        Icon(Icons.Default.Clear, contentDescription = Localization.get("pos_clear_cd", language), tint = InkMedium)
                                     }
                                 }
                             },
@@ -493,7 +494,7 @@ fun InventoryScreen(
                                 FilterChip(
                                     selected = isSelected,
                                     onClick = { selectedCategory = cat },
-                                    label = { Text(cat, fontSize = 11.sp) },
+                                    label = { Text(if (cat == "All") Localization.get("all_categories", language) else cat, fontSize = 11.sp) },
                                     colors = FilterChipDefaults.filterChipColors(
                                         selectedContainerColor = OrangePrimary,
                                         selectedLabelColor = Color.White
@@ -514,7 +515,7 @@ fun InventoryScreen(
                                 Icon(Icons.Default.Warning, contentDescription = null, tint = if (lowCount > 0) LossRed else InkMedium, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    "Low stock alert ($lowCount)",
+                                    Localization.format("inv_low_stock_alert_fmt", language, lowCount),
                                     fontSize = 12.sp,
                                     color = if (lowCount > 0) LossRed else InkDark,
                                     fontWeight = if (lowCount > 0) FontWeight.Bold else FontWeight.Normal
@@ -539,6 +540,7 @@ fun InventoryScreen(
                     sortField = sortField,
                     sortAscending = sortAscending,
                     currencySymbol = shopProfile.currencySymbol,
+                    language = language,
                     onSort = { field ->
                         if (sortField == field) {
                             sortAscending = !sortAscending
@@ -566,14 +568,14 @@ fun InventoryScreen(
                         ) {
                             Icon(Icons.Default.Inventory, contentDescription = null, tint = InkMedium, modifier = Modifier.size(44.dp))
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("No products match your search/filter", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
+                            Text(Localization.get("inv_no_match", language), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
                             Spacer(modifier = Modifier.height(10.dp))
                             Button(
                                 onClick = { isAddingNewProduct = true },
                                 colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("+ Add Product to Excel Sheet")
+                                Text(Localization.get("inv_add_to_sheet_btn", language))
                             }
                         }
                     }
@@ -584,6 +586,7 @@ fun InventoryScreen(
                         index = index + 1,
                         product = product,
                         shopProfile = shopProfile,
+                        language = language,
                         isEven = index % 2 == 0,
                         onQuickAddStock = { delta ->
                             onAdjustStock(product.id, delta, "Quick +$delta stock addition")
@@ -616,9 +619,9 @@ fun InventoryScreen(
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Row(modifier = Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Product")
+                    Icon(Icons.Default.Add, contentDescription = Localization.get("add_product_action", language))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Add Product", fontWeight = FontWeight.Bold)
+                    Text(Localization.get("add_product_action", language), fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -630,6 +633,7 @@ fun InventoryScreen(
             initialProduct = productToEdit,
             categories = categories,
             shopProfile = shopProfile,
+            language = language,
             onSave = { product ->
                 onSaveProduct(product)
                 isAddingNewProduct = false
@@ -654,6 +658,7 @@ fun InventoryScreen(
         StockAdjustDialog(
             product = productToAdjust!!,
             shopProfile = shopProfile,
+            language = language,
             onConfirm = { delta, reason ->
                 onAdjustStock(productToAdjust!!.id, delta, reason)
                 productToAdjust = null
@@ -666,8 +671,8 @@ fun InventoryScreen(
     if (productToDelete != null) {
         AlertDialog(
             onDismissRequest = { productToDelete = null },
-            title = { Text("Delete Product", fontWeight = FontWeight.Bold) },
-            text = { Text("Are you sure you want to delete '${productToDelete!!.name}'? This will permanently remove it from your stock sheet.") },
+            title = { Text(Localization.get("inv_delete_product_cd", language), fontWeight = FontWeight.Bold) },
+            text = { Text(Localization.format("inv_delete_confirm_msg_fmt", language, productToDelete!!.name)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -676,12 +681,12 @@ fun InventoryScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed)
                 ) {
-                    Text("Delete")
+                    Text(Localization.get("delete", language))
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { productToDelete = null }) {
-                    Text("Cancel")
+                    Text(Localization.get("cancel", language))
                 }
             }
         )
@@ -694,10 +699,10 @@ fun InventoryScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Delete, contentDescription = null, tint = LossRed)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Wipe All Products?", fontWeight = FontWeight.Bold, color = LossRed)
+                    Text(Localization.get("set_wipe_products_title", language), fontWeight = FontWeight.Bold, color = LossRed)
                 }
             },
-            text = { Text("Are you sure you want to delete ALL products from your stock sheet? This will completely clear your inventory catalog.") },
+            text = { Text(Localization.get("set_wipe_products_msg", language)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -706,12 +711,12 @@ fun InventoryScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed)
                 ) {
-                    Text("Wipe All Products")
+                    Text(Localization.get("set_wipe_products_confirm", language))
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { showClearAllProductsDialog = false }) {
-                    Text("Cancel")
+                    Text(Localization.get("cancel", language))
                 }
             }
         )
@@ -723,6 +728,7 @@ private fun ExcelTableHeaderRow(
     sortField: ProductSortField,
     sortAscending: Boolean,
     currencySymbol: String,
+    language: AppLanguage = AppLanguage.ENGLISH,
     onSort: (ProductSortField) -> Unit
 ) {
     Surface(
@@ -752,7 +758,7 @@ private fun ExcelTableHeaderRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Product / SKU",
+                    text = Localization.get("inv_col_product_sku", language),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -776,7 +782,7 @@ private fun ExcelTableHeaderRow(
                 horizontalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = "Stock",
+                    text = Localization.get("inv_col_stock", language),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -799,7 +805,7 @@ private fun ExcelTableHeaderRow(
                 horizontalArrangement = Arrangement.End
             ) {
                 Text(
-                    text = "Price ($currencySymbol)",
+                    text = Localization.format("inv_col_price_fmt", language, currencySymbol),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -816,7 +822,7 @@ private fun ExcelTableHeaderRow(
             }
 
             Text(
-                text = "Actions",
+                text = Localization.get("inv_col_actions", language),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
@@ -832,6 +838,7 @@ private fun ExcelProductRow(
     index: Int,
     product: Product,
     shopProfile: ShopProfile,
+    language: AppLanguage = AppLanguage.ENGLISH,
     isEven: Boolean,
     onQuickAddStock: (Double) -> Unit,
     onQuickReduceStock: (Double) -> Unit,
@@ -884,7 +891,7 @@ private fun ExcelProductRow(
                     )
                     if (product.barcode.isNotBlank()) {
                         Text(
-                            text = " Ã¢â‚¬Â¢ #${product.barcode}",
+                            text = " • #${product.barcode}",
                             fontSize = 10.sp,
                             color = OrangePrimary,
                             maxLines = 1
@@ -957,7 +964,7 @@ private fun ExcelProductRow(
                     maxLines = 1
                 )
                 Text(
-                    text = "+${product.profitMarginPercent.toInt()}% profit",
+                    text = Localization.format("inv_pct_profit_fmt", language, product.profitMarginPercent.toInt()),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = ProfitGreen
@@ -974,19 +981,19 @@ private fun ExcelProductRow(
                     onClick = onAdjust,
                     modifier = Modifier.size(28.dp)
                 ) {
-                    Icon(Icons.Default.Inventory, contentDescription = "Restock", tint = OrangePrimary, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Inventory, contentDescription = Localization.get("restock", language), tint = OrangePrimary, modifier = Modifier.size(16.dp))
                 }
                 IconButton(
                     onClick = onEdit,
                     modifier = Modifier.size(28.dp)
                 ) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit", tint = InkDark, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Edit, contentDescription = Localization.get("edit", language), tint = InkDark, modifier = Modifier.size(16.dp))
                 }
                 IconButton(
                     onClick = onDelete,
                     modifier = Modifier.size(28.dp)
                 ) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete Product", tint = LossRed, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Delete, contentDescription = Localization.get("inv_delete_product_cd", language), tint = LossRed, modifier = Modifier.size(16.dp))
                 }
             }
         }
@@ -998,6 +1005,7 @@ fun ProductFormDialog(
     initialProduct: Product?,
     categories: List<String>,
     shopProfile: ShopProfile,
+    language: AppLanguage = AppLanguage.ENGLISH,
     onSave: (Product) -> Unit,
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit
@@ -1036,13 +1044,13 @@ fun ProductFormDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (initialProduct != null) "Edit Product in Excel Sheet" else "Add New Product to Sheet",
+                        text = Localization.get(if (initialProduct != null) "inv_form_edit_title" else "inv_form_add_title", language),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = InkDark
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = InkDark)
+                        Icon(Icons.Default.Close, contentDescription = Localization.get("close", language), tint = InkDark)
                     }
                 }
 
@@ -1051,8 +1059,8 @@ fun ProductFormDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Product Name *") },
-                    placeholder = { Text("e.g. Inyange Milk 500ml") },
+                    label = { Text(Localization.get("inv_form_name", language)) },
+                    placeholder = { Text("Inyange Milk 500ml") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true
@@ -1063,8 +1071,8 @@ fun ProductFormDialog(
                 OutlinedTextField(
                     value = category,
                     onValueChange = { category = it },
-                    label = { Text("Category") },
-                    placeholder = { Text("e.g. Beverages / Grocery") },
+                    label = { Text(Localization.get("inv_form_category", language)) },
+                    placeholder = { Text("Beverages / Grocery") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true
@@ -1075,7 +1083,7 @@ fun ProductFormDialog(
                 OutlinedTextField(
                     value = costPriceStr,
                     onValueChange = { costPriceStr = it },
-                    label = { Text("Cost Price (Buying) - ${shopProfile.currencySymbol}") },
+                    label = { Text(Localization.format("inv_form_cost_fmt", language, shopProfile.currencySymbol)) },
                     placeholder = { Text("450") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -1088,7 +1096,7 @@ fun ProductFormDialog(
                 OutlinedTextField(
                     value = sellingPriceStr,
                     onValueChange = { sellingPriceStr = it },
-                    label = { Text("Selling Price - ${shopProfile.currencySymbol} *") },
+                    label = { Text(Localization.format("inv_form_sell_fmt", language, shopProfile.currencySymbol)) },
                     placeholder = { Text("600") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -1109,8 +1117,8 @@ fun ProductFormDialog(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Est. Profit: +${ReceiptGenerator.formatMoney(profitPerUnit, shopProfile)}", fontSize = 12.5.sp, color = ProfitGreen, fontWeight = FontWeight.Bold)
-                            Text("Margin: ${marginPct.toInt()}%", fontSize = 12.5.sp, color = ProfitGreen, fontWeight = FontWeight.Bold)
+                            Text(Localization.format("inv_form_est_profit_fmt", language, ReceiptGenerator.formatMoney(profitPerUnit, shopProfile)), fontSize = 12.5.sp, color = ProfitGreen, fontWeight = FontWeight.Bold)
+                            Text(Localization.format("inv_form_margin_fmt", language, marginPct.toInt()), fontSize = 12.5.sp, color = ProfitGreen, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1120,7 +1128,7 @@ fun ProductFormDialog(
                 OutlinedTextField(
                     value = quantityStr,
                     onValueChange = { quantityStr = it },
-                    label = { Text("Available Quantity in Stock *") },
+                    label = { Text(Localization.get("inv_form_avail_qty", language)) },
                     placeholder = { Text("10") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -1133,7 +1141,7 @@ fun ProductFormDialog(
                 OutlinedTextField(
                     value = unit,
                     onValueChange = { unit = it },
-                    label = { Text("Unit of Measure (e.g. pcs, kg, boxes, bottles)") },
+                    label = { Text(Localization.get("inv_form_unit", language)) },
                     placeholder = { Text("pcs") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
@@ -1145,7 +1153,7 @@ fun ProductFormDialog(
                 OutlinedTextField(
                     value = lowThresholdStr,
                     onValueChange = { lowThresholdStr = it },
-                    label = { Text("Min Stock Alert Level") },
+                    label = { Text(Localization.get("inv_form_min_level", language)) },
                     placeholder = { Text("5") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -1160,11 +1168,11 @@ fun ProductFormDialog(
                 OutlinedTextField(
                     value = barcode,
                     onValueChange = { barcode = it },
-                    label = { Text("Barcode / SKU Number") },
-                    placeholder = { Text("e.g. 616123456789") },
+                    label = { Text(Localization.get("inv_form_barcode_num", language)) },
+                    placeholder = { Text("616123456789") },
                     trailingIcon = {
                         IconButton(onClick = { showBarcodeScannerForForm = true }) {
-                            Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan with Camera", tint = OrangePrimary)
+                            Icon(Icons.Filled.QrCodeScanner, contentDescription = Localization.get("pos_camera_scan_btn", language), tint = OrangePrimary)
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -1175,6 +1183,7 @@ fun ProductFormDialog(
                 if (showBarcodeScannerForForm) {
                     com.beboss.shopmgmt.ui.components.CameraBarcodeScannerDialog(
                         products = emptyList(),
+                        language = language,
                         onProductScanned = {},
                         onBarcodeScanned = { scanned ->
                             barcode = scanned
@@ -1211,7 +1220,7 @@ fun ProductFormDialog(
                     shape = RoundedCornerShape(12.dp),
                     enabled = name.isNotBlank()
                 ) {
-                    Text("Save to Excel Sheet", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(Localization.get("inv_form_save_sheet", language), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
 
                 if (initialProduct != null && onDelete != null) {
@@ -1224,7 +1233,7 @@ fun ProductFormDialog(
                     ) {
                         Icon(Icons.Default.Delete, contentDescription = null, tint = LossRed, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Delete Product from Stock", color = LossRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(Localization.get("inv_form_delete_stock", language), color = LossRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -1236,12 +1245,14 @@ fun ProductFormDialog(
 fun StockAdjustDialog(
     product: Product,
     shopProfile: ShopProfile,
+    language: AppLanguage = AppLanguage.ENGLISH,
     onConfirm: (Double, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var deltaStr by remember { mutableStateOf("10") }
     var isAddition by remember { mutableStateOf(true) }
-    var reason by remember { mutableStateOf("New supplier shipment / delivery") }
+    val defaultReason = Localization.get("inv_adj_default_reason", language)
+    var reason by remember(language) { mutableStateOf(defaultReason) }
 
     val delta = (deltaStr.toDoubleOrNull() ?: 0.0) * (if (isAddition) 1 else -1)
     val resultingStock = (product.quantityInStock + delta).coerceAtLeast(0.0)
@@ -1254,7 +1265,7 @@ fun StockAdjustDialog(
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
-                    text = "Restock / Adjust Stock",
+                    text = Localization.get("inv_adj_title", language),
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = InkDark
@@ -1283,7 +1294,7 @@ fun StockAdjustDialog(
                         color = if (isAddition) ProfitGreen else Color(0xFFF3F4F6)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text("+ Restock (Add)", fontWeight = FontWeight.Bold, color = if (isAddition) Color.White else InkDark)
+                            Text(Localization.get("inv_adj_add_mode", language), fontWeight = FontWeight.Bold, color = if (isAddition) Color.White else InkDark)
                         }
                     }
 
@@ -1296,7 +1307,7 @@ fun StockAdjustDialog(
                         color = if (!isAddition) LossRed else Color(0xFFF3F4F6)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text("- Damage / Loss", fontWeight = FontWeight.Bold, color = if (!isAddition) Color.White else InkDark)
+                            Text(Localization.get("inv_adj_loss_mode", language), fontWeight = FontWeight.Bold, color = if (!isAddition) Color.White else InkDark)
                         }
                     }
                 }
@@ -1306,7 +1317,7 @@ fun StockAdjustDialog(
                 OutlinedTextField(
                     value = deltaStr,
                     onValueChange = { deltaStr = it },
-                    label = { Text("Quantity (${product.unit})") },
+                    label = { Text(Localization.format("inv_adj_qty_fmt", language, product.unit)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
@@ -1333,7 +1344,7 @@ fun StockAdjustDialog(
                 OutlinedTextField(
                     value = reason,
                     onValueChange = { reason = it },
-                    label = { Text("Reason / Note") },
+                    label = { Text(Localization.get("inv_adj_reason", language)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true
@@ -1353,11 +1364,11 @@ fun StockAdjustDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text("Current Stock", fontSize = 11.sp, color = InkMedium)
+                            Text(Localization.get("inv_adj_current_stock", language), fontSize = 11.sp, color = InkMedium)
                             Text("${product.quantityInStock.toInt()} ${product.unit}", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text("New Stock", fontSize = 11.sp, color = InkMedium)
+                            Text(Localization.get("inv_adj_new_stock", language), fontSize = 11.sp, color = InkMedium)
                             Text(
                                 "${resultingStock.toInt()} ${product.unit}",
                                 fontWeight = FontWeight.Bold,
@@ -1379,7 +1390,7 @@ fun StockAdjustDialog(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Cancel")
+                        Text(Localization.get("cancel", language))
                     }
 
                     Button(
@@ -1393,7 +1404,7 @@ fun StockAdjustDialog(
                         colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Confirm", fontWeight = FontWeight.Bold)
+                        Text(Localization.get("inv_adj_confirm", language), fontWeight = FontWeight.Bold)
                     }
                 }
             }

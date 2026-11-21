@@ -223,9 +223,9 @@ fun CustomersScreen(
                                 onClick = {
                                     try {
                                         val file = ExcelCsvExporter.exportCustomersCsv(context, customers, shopProfile)
-                                        ExcelCsvExporter.shareCsvFile(context, file, "Share Customers & Debts CSV")
+                                        ExcelCsvExporter.shareCsvFile(context, file, Localization.get("cust_share_csv_title", language))
                                     } catch (e: Exception) {
-                                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, Localization.format("inv_export_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
@@ -258,7 +258,7 @@ fun CustomersScreen(
                                 ) {
                                     Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(15.dp), tint = LossRed)
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Clear All", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LossRed)
+                                    Text(Localization.get("cust_clear_all_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LossRed)
                                 }
                             }
                         }
@@ -277,12 +277,12 @@ fun CustomersScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search customer name, phone, city...", fontSize = 13.sp) },
+                            placeholder = { Text(Localization.get("cust_search_long_hint", language), fontSize = 13.sp) },
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = InkMedium) },
                             trailingIcon = {
                                 if (searchQuery.isNotBlank()) {
                                     IconButton(onClick = { searchQuery = "" }) {
-                                        Icon(Icons.Default.Clear, contentDescription = null, tint = InkMedium)
+                                        Icon(Icons.Default.Clear, contentDescription = Localization.get("pos_clear_cd", language), tint = InkMedium)
                                     }
                                 }
                             },
@@ -301,7 +301,7 @@ fun CustomersScreen(
                             FilterChip(
                                 selected = !filterOnlyDebt,
                                 onClick = { filterOnlyDebt = false },
-                                label = { Text("All (${customers.size})", fontSize = 11.sp) },
+                                label = { Text(Localization.format("cust_all_count_fmt", language, customers.size), fontSize = 11.sp) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = OrangePrimary, selectedLabelColor = Color.White),
                                 shape = RoundedCornerShape(8.dp)
                             )
@@ -310,7 +310,7 @@ fun CustomersScreen(
                             FilterChip(
                                 selected = filterOnlyDebt,
                                 onClick = { filterOnlyDebt = true },
-                                label = { Text("Owes Debt ($debtCount)", fontSize = 11.sp) },
+                                label = { Text(Localization.format("cust_owes_count_fmt", language, debtCount), fontSize = 11.sp) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LossRed, selectedLabelColor = Color.White),
                                 shape = RoundedCornerShape(8.dp)
                             )
@@ -325,6 +325,7 @@ fun CustomersScreen(
                     sortField = sortField,
                     sortAscending = sortAscending,
                     currencySymbol = shopProfile.currencySymbol,
+                    language = language,
                     onSort = { field ->
                         if (sortField == field) {
                             sortAscending = !sortAscending
@@ -352,14 +353,14 @@ fun CustomersScreen(
                         ) {
                             Icon(Icons.Default.People, contentDescription = null, tint = InkMedium, modifier = Modifier.size(44.dp))
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("No customers found in ledger", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
+                            Text(Localization.get("cust_empty_ledger", language), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
                             Spacer(modifier = Modifier.height(10.dp))
                             Button(
                                 onClick = { isAddingNew = true },
                                 colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("+ Add Customer to Ledger")
+                                Text(Localization.get("cust_add_to_ledger_btn", language))
                             }
                         }
                     }
@@ -370,15 +371,16 @@ fun CustomersScreen(
                         index = index + 1,
                         customer = customer,
                         shopProfile = shopProfile,
+                        language = language,
                         isEven = index % 2 == 0,
                         onRecordPayment = { customerForPayment = customer },
                         onEdit = { customerToEdit = customer },
                         onDelete = { customerToDelete = customer },
                         onSendReminder = {
                             if (customer.phone.isNotBlank()) {
-                                sendDebtReminder(context, customer, shopProfile)
+                                sendDebtReminder(context, customer, shopProfile, language)
                             } else {
-                                Toast.makeText(context, "No phone number for ${customer.name}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, Localization.format("cust_no_phone_toast_fmt", language, customer.name), Toast.LENGTH_SHORT).show()
                             }
                         },
                         onGeneratePdf = {
@@ -392,9 +394,9 @@ fun CustomersScreen(
                                     payments = customerPaymentsList,
                                     profile = shopProfile
                                 )
-                                PdfReportGenerator.sharePdf(context, pdfFile, "Statement - ${customer.name}")
+                                PdfReportGenerator.sharePdf(context, pdfFile, Localization.format("cust_statement_title_fmt", language, customer.name))
                             } catch (e: Exception) {
-                                Toast.makeText(context, "Error generating statement: ${e.message}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, Localization.format("cust_stmt_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
                             }
                         },
                         onCallPhone = {
@@ -421,9 +423,9 @@ fun CustomersScreen(
             shape = RoundedCornerShape(16.dp)
         ) {
             Row(modifier = Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Add, contentDescription = "Add Customer")
+                Icon(Icons.Default.Add, contentDescription = Localization.get("add_customer", language))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Add Customer", fontWeight = FontWeight.Bold)
+                Text(Localization.get("add_customer", language), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -433,6 +435,7 @@ fun CustomersScreen(
         CustomerFormDialog(
             initialCustomer = customerToEdit,
             shopProfile = shopProfile,
+            language = language,
             onSave = { c ->
                 onSaveCustomer(c)
                 isAddingNew = false
@@ -457,6 +460,7 @@ fun CustomersScreen(
         RecordDebtPaymentDialog(
             customer = customerForPayment!!,
             shopProfile = shopProfile,
+            language = language,
             onConfirm = { amount ->
                 onRecordPayment(customerForPayment!!.id, amount)
                 customerForPayment = null
@@ -468,6 +472,7 @@ fun CustomersScreen(
     // Bulk Phone Contacts Import Dialog
     if (showBulkContactsDialog) {
         BulkContactsImportDialog(
+            language = language,
             onImport = { selectedContacts ->
                 selectedContacts.forEach { contact ->
                     val newCustomer = Customer(
@@ -482,7 +487,7 @@ fun CustomersScreen(
                     onSaveCustomer(newCustomer)
                 }
                 showBulkContactsDialog = false
-                Toast.makeText(context, "Imported ${selectedContacts.size} contacts successfully!", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, Localization.format("cust_imported_toast_fmt", language, selectedContacts.size), Toast.LENGTH_LONG).show()
             },
             onDismiss = { showBulkContactsDialog = false }
         )
@@ -492,8 +497,8 @@ fun CustomersScreen(
     if (customerToDelete != null) {
         AlertDialog(
             onDismissRequest = { customerToDelete = null },
-            title = { Text("Delete Customer", fontWeight = FontWeight.Bold) },
-            text = { Text("Are you sure you want to delete '${customerToDelete!!.name}'? Outstanding debt history will be removed.") },
+            title = { Text(Localization.get("cust_delete_cd", language), fontWeight = FontWeight.Bold) },
+            text = { Text(Localization.format("cust_delete_confirm_msg_fmt", language, customerToDelete!!.name)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -502,12 +507,12 @@ fun CustomersScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed)
                 ) {
-                    Text("Delete")
+                    Text(Localization.get("delete", language))
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { customerToDelete = null }) {
-                    Text("Cancel")
+                    Text(Localization.get("cancel", language))
                 }
             }
         )
@@ -521,10 +526,10 @@ fun CustomersScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Delete, contentDescription = null, tint = LossRed)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Wipe All Customers?", fontWeight = FontWeight.Bold, color = LossRed)
+                    Text(Localization.get("set_wipe_customers_title", language), fontWeight = FontWeight.Bold, color = LossRed)
                 }
             },
-            text = { Text("Are you sure you want to delete ALL customers? All debts and customer ledgers will be permanently removed.") },
+            text = { Text(Localization.get("set_wipe_customers_msg", language)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -533,12 +538,12 @@ fun CustomersScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed)
                 ) {
-                    Text("Wipe All Customers")
+                    Text(Localization.get("set_wipe_customers_confirm", language))
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { showClearAllCustomersDialog = false }) {
-                    Text("Cancel")
+                    Text(Localization.get("cancel", language))
                 }
             }
         )
@@ -550,6 +555,7 @@ private fun ExcelCustomerTableHeaderRow(
     sortField: CustomerSortField,
     sortAscending: Boolean,
     currencySymbol: String,
+    language: AppLanguage,
     onSort: (CustomerSortField) -> Unit
 ) {
     Surface(
@@ -579,7 +585,7 @@ private fun ExcelCustomerTableHeaderRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Customer Name & Phone",
+                    text = Localization.get("cust_col_name_phone", language),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -603,7 +609,7 @@ private fun ExcelCustomerTableHeaderRow(
                 horizontalArrangement = Arrangement.End
             ) {
                 Text(
-                    text = "Debt ($currencySymbol)",
+                    text = Localization.format("cust_col_debt_fmt", language, currencySymbol),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -620,7 +626,7 @@ private fun ExcelCustomerTableHeaderRow(
             }
 
             Text(
-                text = "Actions",
+                text = Localization.get("inv_col_actions", language),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
@@ -636,6 +642,7 @@ private fun ExcelCustomerRow(
     index: Int,
     customer: Customer,
     shopProfile: ShopProfile,
+    language: AppLanguage,
     isEven: Boolean,
     onRecordPayment: () -> Unit,
     onEdit: () -> Unit,
@@ -683,14 +690,14 @@ private fun ExcelCustomerRow(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = customer.category,
+                        text = Localization.customerCategoryLabel(customer.category, language),
                         fontSize = 10.sp,
                         color = OrangePrimary,
                         fontWeight = FontWeight.SemiBold
                     )
                     if (customer.phone.isNotBlank()) {
                         Text(
-                            text = " Ã¢â‚¬Â¢ ${customer.phone}",
+                            text = " • ${customer.phone}",
                             fontSize = 10.sp,
                             color = InkMedium,
                             maxLines = 1
@@ -713,14 +720,14 @@ private fun ExcelCustomerRow(
                         maxLines = 1
                     )
                     Text(
-                        text = "Unpaid Debt",
+                        text = Localization.get("cust_unpaid_debt", language),
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         color = LossRed
                     )
                 } else {
                     Text(
-                        text = "Cleared (0)",
+                        text = Localization.get("cust_cleared_zero", language),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = ProfitGreen
@@ -742,7 +749,7 @@ private fun ExcelCustomerRow(
                         modifier = Modifier.size(26.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Payment, contentDescription = "Pay", tint = Color.White, modifier = Modifier.size(15.dp))
+                            Icon(Icons.Default.Payment, contentDescription = Localization.get("cust_pay_cd", language), tint = Color.White, modifier = Modifier.size(15.dp))
                         }
                     }
                     Spacer(modifier = Modifier.width(3.dp))
@@ -755,7 +762,7 @@ private fun ExcelCustomerRow(
                     modifier = Modifier.size(26.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Send, contentDescription = "Reminder", tint = ProfitGreen, modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.Send, contentDescription = Localization.get("cust_reminder_cd", language), tint = ProfitGreen, modifier = Modifier.size(14.dp))
                     }
                 }
                 Spacer(modifier = Modifier.width(3.dp))
@@ -768,7 +775,7 @@ private fun ExcelCustomerRow(
                         modifier = Modifier.size(26.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Call, contentDescription = "Call", tint = OrangePrimary, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Call, contentDescription = Localization.get("cust_call_action_cd", language), tint = OrangePrimary, modifier = Modifier.size(14.dp))
                         }
                     }
                     Spacer(modifier = Modifier.width(3.dp))
@@ -781,7 +788,7 @@ private fun ExcelCustomerRow(
                     modifier = Modifier.size(26.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = InkDark, modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.Edit, contentDescription = Localization.get("edit", language), tint = InkDark, modifier = Modifier.size(14.dp))
                     }
                 }
                 Spacer(modifier = Modifier.width(3.dp))
@@ -793,7 +800,7 @@ private fun ExcelCustomerRow(
                     modifier = Modifier.size(26.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete Customer", tint = LossRed, modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.Delete, contentDescription = Localization.get("cust_delete_cd", language), tint = LossRed, modifier = Modifier.size(14.dp))
                     }
                 }
             }
@@ -801,16 +808,22 @@ private fun ExcelCustomerRow(
     }
 }
 
-private fun sendDebtReminder(context: Context, customer: Customer, shopProfile: ShopProfile) {
-    val message = buildString {
-        append("Mwiriwe/Hello ${customer.name},\n\n")
-        append("This is an official statement from *${shopProfile.shopName}*.\n")
-        if (customer.debtBalance > 0) {
-            append("Your pending balance is *${ReceiptGenerator.formatMoney(customer.debtBalance, shopProfile)}*.\n\n")
-            append("Please settle via MTN MoMo / Airtel Money / Cash at your earliest convenience. Murakoze cyane!")
-        } else {
-            append("Thank you for your regular patronage and timely payments! Murakoze cyane.")
-        }
+private fun sendDebtReminder(context: Context, customer: Customer, shopProfile: ShopProfile, language: AppLanguage) {
+    val message = if (customer.debtBalance > 0) {
+        Localization.format(
+            "cust_reminder_sms_due_fmt",
+            language,
+            customer.name,
+            shopProfile.shopName,
+            ReceiptGenerator.formatMoney(customer.debtBalance, shopProfile)
+        )
+    } else {
+        Localization.format(
+            "cust_reminder_sms_thanks_fmt",
+            language,
+            customer.name,
+            shopProfile.shopName
+        )
     }
 
     SmsHelper.sendSmsOrOpenIntent(context, customer.phone, message)
@@ -821,6 +834,7 @@ private fun sendDebtReminder(context: Context, customer: Customer, shopProfile: 
 fun CustomerFormDialog(
     initialCustomer: Customer?,
     shopProfile: ShopProfile,
+    language: AppLanguage = AppLanguage.ENGLISH,
     onSave: (Customer) -> Unit,
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit
@@ -848,7 +862,7 @@ fun CustomerFormDialog(
                 name = contact.name
                 if (contact.phone.isNotBlank()) phone = contact.phone
                 if (contact.email.isNotBlank()) email = contact.email
-                Toast.makeText(context, "Imported ${contact.name} from Phonebook!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, Localization.format("cust_imported_one_toast_fmt", language, contact.name), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -872,13 +886,13 @@ fun CustomerFormDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (initialCustomer != null) "Edit Customer in Ledger" else "Add New Customer",
+                        text = if (initialCustomer != null) Localization.get("cust_form_edit_title", language) else Localization.get("cust_form_add_title", language),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = InkDark
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = InkDark)
+                        Icon(Icons.Default.Close, contentDescription = Localization.get("close", language), tint = InkDark)
                     }
                 }
 
@@ -892,7 +906,7 @@ fun CustomerFormDialog(
                 ) {
                     Icon(Icons.Default.Contacts, contentDescription = null, modifier = Modifier.size(16.dp), tint = OrangePrimary)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Auto-Fill from Device Contacts", fontSize = 12.sp, color = OrangePrimary, fontWeight = FontWeight.SemiBold)
+                    Text(Localization.get("cust_autofill_contacts", language), fontSize = 12.sp, color = OrangePrimary, fontWeight = FontWeight.SemiBold)
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -900,8 +914,8 @@ fun CustomerFormDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Customer Name *") },
-                    placeholder = { Text("e.g. Jeanne Uwase") },
+                    label = { Text(Localization.get("cust_name_label", language)) },
+                    placeholder = { Text("Jeanne Uwase") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true
@@ -912,7 +926,7 @@ fun CustomerFormDialog(
                 OutlinedTextField(
                     value = phone,
                     onValueChange = { phone = it },
-                    label = { Text("Phone / WhatsApp Number") },
+                    label = { Text(Localization.get("cust_phone_wa_label", language)) },
                     placeholder = { Text("+250 788 123 456") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth(),
@@ -928,10 +942,10 @@ fun CustomerFormDialog(
                     onExpandedChange = { categoryExpanded = it }
                 ) {
                     OutlinedTextField(
-                        value = category,
+                        value = Localization.customerCategoryLabel(category, language),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Customer Category") },
+                        label = { Text(Localization.get("cust_category_label", language)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -944,7 +958,7 @@ fun CustomerFormDialog(
                     ) {
                         CustomerCategory.values().forEach { cat ->
                             DropdownMenuItem(
-                                text = { Text(cat.displayName) },
+                                text = { Text(Localization.customerCategoryLabel(cat.displayName, language)) },
                                 onClick = {
                                     category = cat.displayName
                                     categoryExpanded = false
@@ -959,7 +973,7 @@ fun CustomerFormDialog(
                 OutlinedTextField(
                     value = city,
                     onValueChange = { city = it },
-                    label = { Text("City / Town") },
+                    label = { Text(Localization.get("cust_city_label", language)) },
                     placeholder = { Text("Kigali") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
@@ -971,7 +985,7 @@ fun CustomerFormDialog(
                 OutlinedTextField(
                     value = debtStr,
                     onValueChange = { debtStr = it },
-                    label = { Text("Initial Debt Balance (${shopProfile.currencySymbol})") },
+                    label = { Text(Localization.format("cust_init_debt_fmt", language, shopProfile.currencySymbol)) },
                     placeholder = { Text("0") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -984,8 +998,8 @@ fun CustomerFormDialog(
                 OutlinedTextField(
                     value = address,
                     onValueChange = { address = it },
-                    label = { Text("Physical Address / Sector") },
-                    placeholder = { Text("e.g. Kimironko Market, Stall 12") },
+                    label = { Text(Localization.get("cust_address_label", language)) },
+                    placeholder = { Text("Kimironko, Stall 12") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true
@@ -996,8 +1010,7 @@ fun CustomerFormDialog(
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Notes & Preferences") },
-                    placeholder = { Text("e.g. Prefers morning delivery") },
+                    label = { Text(Localization.get("cust_notes_label", language)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true
@@ -1032,7 +1045,7 @@ fun CustomerFormDialog(
                     shape = RoundedCornerShape(12.dp),
                     enabled = name.isNotBlank()
                 ) {
-                    Text("Save Customer Profile", fontWeight = FontWeight.Bold)
+                    Text(Localization.get("cust_save_profile_btn", language), fontWeight = FontWeight.Bold)
                 }
 
                 if (initialCustomer != null && onDelete != null) {
@@ -1045,7 +1058,7 @@ fun CustomerFormDialog(
                     ) {
                         Icon(Icons.Default.Delete, contentDescription = null, tint = LossRed, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Delete Customer from System", color = LossRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(Localization.get("cust_delete_from_system", language), color = LossRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -1057,11 +1070,12 @@ fun CustomerFormDialog(
 fun RecordDebtPaymentDialog(
     customer: Customer,
     shopProfile: ShopProfile,
+    language: AppLanguage = AppLanguage.ENGLISH,
     onConfirm: (Double) -> Unit,
     onDismiss: () -> Unit
 ) {
     var amountStr by remember { mutableStateOf("${customer.debtBalance.toInt()}") }
-    var paymentMethod by remember { mutableStateOf("Cash") }
+    var paymentMethod by remember { mutableStateOf("CASH") }
     val parsedAmount = amountStr.toDoubleOrNull() ?: 0.0
     val remainingDebt = (customer.debtBalance - parsedAmount).coerceAtLeast(0.0)
 
@@ -1077,14 +1091,14 @@ fun RecordDebtPaymentDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    text = "Kwishyura Umwenda (Debt Payment)",
+                    text = Localization.get("cust_debt_dialog_title", language),
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = InkDark
                 )
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    text = "Umukiriya (Customer): ${customer.name}",
+                    text = Localization.format("cust_debt_customer_fmt", language, customer.name),
                     fontSize = 13.sp,
                     color = OrangePrimary,
                     fontWeight = FontWeight.SemiBold
@@ -1103,7 +1117,7 @@ fun RecordDebtPaymentDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Umwenda wose (Total Debt):", fontSize = 12.sp, color = LossRed, fontWeight = FontWeight.Medium)
+                        Text(Localization.get("cust_debt_total_label", language), fontSize = 12.sp, color = LossRed, fontWeight = FontWeight.Medium)
                         Text(
                             ReceiptGenerator.formatMoney(customer.debtBalance, shopProfile),
                             fontSize = 14.sp,
@@ -1118,7 +1132,7 @@ fun RecordDebtPaymentDialog(
                 OutlinedTextField(
                     value = amountStr,
                     onValueChange = { amountStr = it },
-                    label = { Text("Amafaranga Yishyuwe (Amount Paid in ${shopProfile.currencySymbol})") },
+                    label = { Text(Localization.format("cust_debt_paid_label_fmt", language, shopProfile.currencySymbol)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
@@ -1135,7 +1149,7 @@ fun RecordDebtPaymentDialog(
                         color = Color(0xFFDCFCE7)
                     ) {
                         Text(
-                            "Kwishyura Yose Full (${customer.debtBalance.toInt()})",
+                            Localization.format("cust_debt_full_fmt", language, customer.debtBalance.toInt()),
                             fontSize = 11.sp,
                             color = ProfitGreen,
                             fontWeight = FontWeight.Bold,
@@ -1150,7 +1164,7 @@ fun RecordDebtPaymentDialog(
                             color = Color(0xFFF3F4F6)
                         ) {
                             Text(
-                                "Kimwe cya Kabiri Half (${(customer.debtBalance / 2).toInt()})",
+                                Localization.format("cust_debt_half_fmt", language, (customer.debtBalance / 2).toInt()),
                                 fontSize = 11.sp,
                                 color = InkDark,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
@@ -1174,7 +1188,7 @@ fun RecordDebtPaymentDialog(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = if (remainingDebt == 0.0) "Umwenda Uzashira Wose!" else "Ayasigaye (Remaining Debt):",
+                                text = if (remainingDebt == 0.0) Localization.get("cust_debt_will_clear", language) else Localization.get("cust_debt_remaining_label", language),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (remainingDebt == 0.0) ProfitGreen else Color(0xFFB45309)
@@ -1188,7 +1202,7 @@ fun RecordDebtPaymentDialog(
                         }
                         if (remainingDebt == 0.0) {
                             Text(
-                                text = "Debt will be fully settled to 0 ${shopProfile.currencySymbol}",
+                                text = Localization.format("cust_debt_settled_zero_fmt", language, shopProfile.currencySymbol),
                                 fontSize = 11.sp,
                                 color = ProfitGreen
                             )
@@ -1199,13 +1213,13 @@ fun RecordDebtPaymentDialog(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Payment Method Chips
-                Text("Uburyo Bwishyuwe (Method):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = InkDark)
+                Text(Localization.get("cust_debt_method_label", language), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = InkDark)
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    listOf("Cash", "MTN MoMo", "Airtel", "Bank").forEach { method ->
+                    listOf("CASH", "MTN MOMO", "AIRTEL MONEY", "BANK CARD").forEach { method ->
                         val isSelected = paymentMethod == method
                         Surface(
                             onClick = { paymentMethod = method },
@@ -1213,7 +1227,7 @@ fun RecordDebtPaymentDialog(
                             color = if (isSelected) OrangePrimary else Color(0xFFF1F5F9)
                         ) {
                             Text(
-                                text = method,
+                                text = Localization.paymentMethodLabel(method, language),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isSelected) Color.White else InkDark,
@@ -1234,7 +1248,7 @@ fun RecordDebtPaymentDialog(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Kureka (Cancel)", fontSize = 12.sp)
+                        Text(Localization.get("cancel", language), fontSize = 12.sp)
                     }
 
                     Button(
@@ -1248,7 +1262,7 @@ fun RecordDebtPaymentDialog(
                         shape = RoundedCornerShape(10.dp),
                         enabled = parsedAmount > 0
                     ) {
-                        Text("Bika Kwishyura", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(Localization.get("cust_debt_save_btn", language), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }
@@ -1258,6 +1272,7 @@ fun RecordDebtPaymentDialog(
 
 @Composable
 fun BulkContactsImportDialog(
+    language: AppLanguage = AppLanguage.ENGLISH,
     onImport: (List<PickedContactInfo>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1275,7 +1290,7 @@ fun BulkContactsImportDialog(
             isLoading = false
         } else {
             isLoading = false
-            Toast.makeText(context, "Contacts permission denied", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, Localization.get("cust_contacts_perm_denied", language), Toast.LENGTH_SHORT).show()
             onDismiss()
         }
     }
@@ -1309,19 +1324,19 @@ fun BulkContactsImportDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Import Contacts into BeBoss",
+                        text = Localization.get("cust_import_contacts_title", language),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = InkDark
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = InkDark)
+                        Icon(Icons.Default.Close, contentDescription = Localization.get("close", language), tint = InkDark)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Select contacts from your phone to add as shop customers:",
+                    text = Localization.get("cust_contacts_select_hint", language),
                     fontSize = 12.sp,
                     color = InkMedium
                 )
@@ -1330,11 +1345,11 @@ fun BulkContactsImportDialog(
 
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
-                        Text("Reading phonebook contacts...", fontSize = 13.sp, color = InkMedium)
+                        Text(Localization.get("cust_contacts_reading", language), fontSize = 13.sp, color = InkMedium)
                     }
                 } else if (contactsList.isEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
-                        Text("No contacts found in phonebook.", fontSize = 13.sp, color = InkMedium)
+                        Text(Localization.get("cust_contacts_none", language), fontSize = 13.sp, color = InkMedium)
                     }
                 } else {
                     LazyColumn(
@@ -1388,7 +1403,7 @@ fun BulkContactsImportDialog(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Cancel")
+                        Text(Localization.get("cancel", language))
                     }
 
                     Button(
@@ -1398,7 +1413,7 @@ fun BulkContactsImportDialog(
                         shape = RoundedCornerShape(10.dp),
                         enabled = selectedContacts.isNotEmpty()
                     ) {
-                        Text("Import (${selectedContacts.size})", fontWeight = FontWeight.Bold)
+                        Text(Localization.format("cust_import_selected_fmt", language, selectedContacts.size), fontWeight = FontWeight.Bold)
                     }
                 }
             }

@@ -14,8 +14,26 @@ data class AppPermissionItem(
     val descriptionRw: String,
     val isGranted: Boolean,
     val isCrucial: Boolean = true,
-    val iconName: String = "shield"
-)
+    val iconName: String = "shield",
+    val titleKey: String = "",
+    val descriptionKey: String = ""
+) {
+    fun localizedTitle(language: AppLanguage): String {
+        if (titleKey.isNotBlank()) return Localization.get(titleKey, language)
+        return when (language) {
+            AppLanguage.KINYARWANDA -> titleRw
+            else -> title
+        }
+    }
+
+    fun localizedDescription(language: AppLanguage): String {
+        if (descriptionKey.isNotBlank()) return Localization.get(descriptionKey, language)
+        return when (language) {
+            AppLanguage.KINYARWANDA -> descriptionRw
+            else -> description
+        }
+    }
+}
 
 object PermissionManager {
 
@@ -64,7 +82,9 @@ object PermissionManager {
                 descriptionRw = "Kwinjiza abakiriya, amazina na telefone zabo ako kanya uvanye muri telefoni yawe.",
                 isGranted = hasContactsPermission(context),
                 isCrucial = true,
-                iconName = "contacts"
+                iconName = "contacts",
+                titleKey = "perm_contacts_title",
+                descriptionKey = "perm_contacts_desc"
             )
         )
 
@@ -78,7 +98,9 @@ object PermissionManager {
                 descriptionRw = "Kohereza ubutumwa bwa SMS bw'amadeni, inyemezabuguzi na raporo z'ubucuruzi ako kanya.",
                 isGranted = hasSmsPermission(context),
                 isCrucial = true,
-                iconName = "sms"
+                iconName = "sms",
+                titleKey = "perm_sms_title",
+                descriptionKey = "perm_sms_desc"
             )
         )
 
@@ -92,7 +114,9 @@ object PermissionManager {
                 descriptionRw = "Gusoma barcode z'ibicuruzwa na QR pass z'abakozi ukoresheje kamera ya telefoni.",
                 isGranted = hasCameraPermission(context),
                 isCrucial = false,
-                iconName = "camera"
+                iconName = "camera",
+                titleKey = "perm_camera_title",
+                descriptionKey = "perm_camera_desc"
             )
         )
 
@@ -107,7 +131,9 @@ object PermissionManager {
                     descriptionRw = "Kumenyeshwa ibicuruzwa bishize mu bubiko, amadeni arangiye n'amasaha y'akazi.",
                     isGranted = hasNotificationPermission(context),
                     isCrucial = false,
-                    iconName = "notifications"
+                    iconName = "notifications",
+                    titleKey = "perm_notif_title",
+                    descriptionKey = "perm_notif_desc"
                 )
             )
             list.add(
@@ -119,7 +145,9 @@ object PermissionManager {
                     descriptionRw = "Kubona amashami ari kuri Wi-Fi imwe mudakenera GPS.",
                     isGranted = hasNearbyWifiPermission(context),
                     isCrucial = false,
-                    iconName = "wifi"
+                    iconName = "wifi",
+                    titleKey = "perm_wifi_title",
+                    descriptionKey = "perm_wifi_desc"
                 )
             )
         }

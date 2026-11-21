@@ -158,10 +158,10 @@ fun SalesPosScreen(
                             onValueChange = { searchQuery = it },
                             placeholder = { Text(Localization.get("search_product_hint", language), fontSize = 13.sp) },
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = Localization.get("search", language), tint = InkMedium) },
-                            trailingIcon = {
+                                trailingIcon = {
                                 if (searchQuery.isNotBlank()) {
                                     IconButton(onClick = { searchQuery = "" }) {
-                                        Icon(Icons.Default.Clear, contentDescription = "Clear", tint = InkMedium)
+                                        Icon(Icons.Default.Clear, contentDescription = Localization.get("pos_clear_cd", language), tint = InkMedium)
                                     }
                                 }
                             },
@@ -187,7 +187,7 @@ fun SalesPosScreen(
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.QrCodeScanner,
-                                    contentDescription = "Scan Barcode",
+                                    contentDescription = Localization.get("pos_scan_barcode_cd", language),
                                     tint = OrangePrimary,
                                     modifier = Modifier.size(24.dp)
                                 )
@@ -210,7 +210,7 @@ fun SalesPosScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.PauseCircle,
-                                        contentDescription = "Held Carts",
+                                        contentDescription = Localization.get("pos_held_carts_cd", language),
                                         tint = WarningAmber,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -263,14 +263,14 @@ fun SalesPosScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "No products found",
+                            text = Localization.get("pos_no_products_found", language),
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = InkDark
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Try adjusting your search or category filter",
+                            text = Localization.get("pos_adjust_search_hint", language),
                             fontSize = 12.sp,
                             color = InkMedium
                         )
@@ -282,7 +282,7 @@ fun SalesPosScreen(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Add New Product")
+                            Text(Localization.get("pos_add_new_product", language))
                         }
                     }
                 }
@@ -337,7 +337,7 @@ fun SalesPosScreen(
                                             color = Color(0xFFFEE2E2)
                                         ) {
                                             Text(
-                                                text = "Low Stock",
+                                                text = Localization.get("pos_low_stock_tag", language),
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color(0xFFDC2626),
@@ -376,7 +376,7 @@ fun SalesPosScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "${product.quantityInStock} left",
+                                        text = Localization.format("pos_left_fmt", language, "${product.quantityInStock}"),
                                         fontSize = 11.sp,
                                         color = if (product.quantityInStock <= 0) Color(0xFFDC2626) else InkMedium
                                     )
@@ -387,7 +387,7 @@ fun SalesPosScreen(
                                             color = OrangePrimary
                                         ) {
                                             Text(
-                                                text = "${inCartQty.toInt()} in cart",
+                                                text = Localization.format("pos_in_cart_fmt", language, inCartQty.toInt()),
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color.White,
@@ -401,7 +401,7 @@ fun SalesPosScreen(
                                             modifier = Modifier.size(28.dp)
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Default.Add, contentDescription = "Add", tint = OrangePrimary, modifier = Modifier.size(16.dp))
+                                                Icon(Icons.Default.Add, contentDescription = Localization.get("pos_add_cd", language), tint = OrangePrimary, modifier = Modifier.size(16.dp))
                                             }
                                         }
                                     }
@@ -440,13 +440,13 @@ fun SalesPosScreen(
                             modifier = Modifier.size(44.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.ShoppingCart, contentDescription = "Cart", tint = Color.White, modifier = Modifier.size(22.dp))
+                                Icon(Icons.Default.ShoppingCart, contentDescription = Localization.get("pos_cart_cd", language), tint = Color.White, modifier = Modifier.size(22.dp))
                             }
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "${cartState.totalUnitsCount.toInt()} items in cart",
+                                text = Localization.format("pos_items_in_cart_fmt", language, cartState.totalUnitsCount.toInt()),
                                 fontSize = 12.sp,
                                 color = InkMedium
                             )
@@ -527,7 +527,7 @@ fun SalesPosScreen(
                         color = InkDark
                     )
                     IconButton(onClick = onClearCart) {
-                        Icon(Icons.Default.Delete, contentDescription = "Clear cart", tint = Color(0xFFDC2626))
+                        Icon(Icons.Default.Delete, contentDescription = Localization.get("pos_clear_cart_cd", language), tint = Color(0xFFDC2626))
                     }
                 }
 
@@ -535,7 +535,7 @@ fun SalesPosScreen(
 
                 // Cart Items List
                 Text(
-                    text = "Items (${cartState.items.size})",
+                    text = Localization.format("pos_items_count_fmt", language, cartState.items.size),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = InkMedium
@@ -580,7 +580,7 @@ fun SalesPosScreen(
                                     modifier = Modifier.size(30.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Remove, contentDescription = "Minus", modifier = Modifier.size(16.dp), tint = InkDark)
+                                        Icon(Icons.Default.Remove, contentDescription = Localization.get("pos_minus_cd", language), modifier = Modifier.size(16.dp), tint = InkDark)
                                     }
                                 }
 
@@ -600,7 +600,7 @@ fun SalesPosScreen(
                                     modifier = Modifier.size(30.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Add, contentDescription = "Plus", modifier = Modifier.size(16.dp), tint = InkDark)
+                                        Icon(Icons.Default.Add, contentDescription = Localization.get("pos_plus_cd", language), modifier = Modifier.size(16.dp), tint = InkDark)
                                     }
                                 }
 
@@ -622,7 +622,7 @@ fun SalesPosScreen(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFE5E7EB))
 
                 // Customer Selector
-                Text("Link to Customer (Optional)", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = InkMedium)
+                Text(Localization.get("pos_link_customer_label", language), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = InkMedium)
                 Spacer(modifier = Modifier.height(6.dp))
 
                 var customerExpanded by remember { mutableStateOf(false) }
@@ -650,7 +650,7 @@ fun SalesPosScreen(
                         onDismissRequest = { customerExpanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Walk-in Customer (No debt)") },
+                            text = { Text(Localization.get("pos_walkin_no_debt", language)) },
                             onClick = {
                                 onSelectCustomer(null)
                                 customerExpanded = false
@@ -666,7 +666,7 @@ fun SalesPosScreen(
                                         Text(cust.name)
                                         if (cust.debtBalance > 0) {
                                             Text(
-                                                "Owes ${ReceiptGenerator.formatMoney(cust.debtBalance, shopProfile)}",
+                                                Localization.format("pos_owes_fmt", language, ReceiptGenerator.formatMoney(cust.debtBalance, shopProfile)),
                                                 fontSize = 11.sp,
                                                 color = Color(0xFFDC2626)
                                             )
@@ -745,13 +745,13 @@ fun SalesPosScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Split Payment Breakdown (Cash + MoMo)",
+                                    text = Localization.get("pos_split_breakdown_title", language),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = InkDark
                                 )
                                 Text(
-                                    text = "Left: ${ReceiptGenerator.formatMoney(cartState.splitRemainingAmount, shopProfile)}",
+                                    text = Localization.format("pos_split_left_fmt", language, ReceiptGenerator.formatMoney(cartState.splitRemainingAmount, shopProfile)),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (cartState.splitRemainingAmount > 0.0) WarningAmber else ProfitGreen
@@ -771,7 +771,7 @@ fun SalesPosScreen(
                                             onSetSplitMomo(remainder.toLong().toString())
                                         }
                                     },
-                                    label = { Text("Cash (${shopProfile.currencySymbol})", fontSize = 11.sp) },
+                                    label = { Text(Localization.format("pos_split_cash_fmt", language, shopProfile.currencySymbol), fontSize = 11.sp) },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     modifier = Modifier
                                         .weight(1f)
@@ -782,7 +782,7 @@ fun SalesPosScreen(
                                 OutlinedTextField(
                                     value = cartState.splitMomoInput,
                                     onValueChange = onSetSplitMomo,
-                                    label = { Text("MoMo (${shopProfile.currencySymbol})", fontSize = 11.sp) },
+                                    label = { Text(Localization.format("pos_split_momo_fmt", language, shopProfile.currencySymbol), fontSize = 11.sp) },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     modifier = Modifier
                                         .weight(1f)
@@ -804,7 +804,7 @@ fun SalesPosScreen(
                     OutlinedTextField(
                         value = if (cartState.discountAmount > 0) cartState.discountAmount.toString() else "",
                         onValueChange = { onSetDiscount(it.toDoubleOrNull() ?: 0.0) },
-                        label = { Text("Discount (${shopProfile.currencySymbol})", fontSize = 12.sp) },
+                        label = { Text(Localization.format("pos_discount_label_fmt", language, shopProfile.currencySymbol), fontSize = 12.sp) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp),
@@ -815,7 +815,7 @@ fun SalesPosScreen(
                         OutlinedTextField(
                             value = cartState.amountPaidInput,
                             onValueChange = onSetAmountPaid,
-                            label = { Text("Amount Paid", fontSize = 12.sp) },
+                            label = { Text(Localization.get("pos_amount_paid_label", language), fontSize = 12.sp) },
                             placeholder = { Text("${cartState.netTotal.toInt()}") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f),
@@ -839,7 +839,7 @@ fun SalesPosScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Subtotal:", fontSize = 13.sp, color = InkMedium)
+                            Text(Localization.get("pos_subtotal_colon", language), fontSize = 13.sp, color = InkMedium)
                             Text(ReceiptGenerator.formatMoney(cartState.rawTotal, shopProfile), fontSize = 13.sp, color = InkDark)
                         }
                         if (cartState.discountAmount > 0) {
@@ -847,7 +847,7 @@ fun SalesPosScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Discount:", fontSize = 13.sp, color = InkMedium)
+                                Text(Localization.get("pos_discount_colon", language), fontSize = 13.sp, color = InkMedium)
                                 Text("-${ReceiptGenerator.formatMoney(cartState.discountAmount, shopProfile)}", fontSize = 13.sp, color = ProfitGreen)
                             }
                         }
@@ -855,7 +855,7 @@ fun SalesPosScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Total Due:", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = InkDark)
+                            Text(Localization.get("pos_total_due_colon", language), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = InkDark)
                             Text(
                                 ReceiptGenerator.formatMoney(cartState.netTotal, shopProfile),
                                 fontSize = 18.sp,
@@ -870,7 +870,7 @@ fun SalesPosScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Estimated Profit from this sale:", fontSize = 12.sp, color = InkMedium)
+                            Text(Localization.get("pos_est_profit_sale", language), fontSize = 12.sp, color = InkMedium)
                             Text(
                                 "+${ReceiptGenerator.formatMoney(cartState.estimatedProfit, shopProfile)}",
                                 fontSize = 13.sp,
@@ -902,7 +902,7 @@ fun SalesPosScreen(
                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "COMPLETE SALE & ISSUE RECEIPT",
+                        text = Localization.get("pos_complete_sale_cta", language),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -917,6 +917,7 @@ fun SalesPosScreen(
     if (showScannerDialog) {
         com.beboss.shopmgmt.ui.components.CameraBarcodeScannerDialog(
             products = products,
+            language = language,
             onProductScanned = { p ->
                 onAddToCart(p)
                 showScannerDialog = false
@@ -933,7 +934,7 @@ fun SalesPosScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.PauseCircle, contentDescription = null, tint = WarningAmber)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Held Carts (${heldCarts.size})", fontWeight = FontWeight.Bold)
+                    Text(Localization.format("pos_held_carts_title_fmt", language, heldCarts.size), fontWeight = FontWeight.Bold)
                 }
             },
             text = {
@@ -942,7 +943,7 @@ fun SalesPosScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (heldCarts.isEmpty()) {
-                        Text("No held orders right now.", fontSize = 12.sp, color = InkMedium)
+                        Text(Localization.get("pos_no_held_carts", language), fontSize = 12.sp, color = InkMedium)
                     } else {
                         heldCarts.forEach { held ->
                             Surface(
@@ -959,7 +960,7 @@ fun SalesPosScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(held.label, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = InkDark)
                                         Text(
-                                            text = "${held.totalUnits.toInt()} items Ã¢â‚¬Â¢ ${ReceiptGenerator.formatMoney(held.netTotal, shopProfile)}",
+                                            text = Localization.format("pos_held_cart_meta_fmt", language, held.totalUnits.toInt(), ReceiptGenerator.formatMoney(held.netTotal, shopProfile)),
                                             fontSize = 11.5.sp,
                                             color = OrangePrimary,
                                             fontWeight = FontWeight.SemiBold
@@ -972,12 +973,12 @@ fun SalesPosScreen(
                                                 showHeldCartsDialog = false
                                             }
                                         ) {
-                                            Icon(Icons.Default.PlayArrow, contentDescription = "Resume cart", tint = ProfitGreen)
+                                            Icon(Icons.Default.PlayArrow, contentDescription = Localization.get("pos_resume_cart_cd", language), tint = ProfitGreen)
                                         }
                                         IconButton(
                                             onClick = { onDeleteHeldCart(held.id) }
                                         ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete held cart", tint = Color(0xFFDC2626))
+                                            Icon(Icons.Default.Delete, contentDescription = Localization.get("pos_delete_held_cd", language), tint = Color(0xFFDC2626))
                                         }
                                     }
                                 }
@@ -988,7 +989,7 @@ fun SalesPosScreen(
             },
             confirmButton = {
                 OutlinedButton(onClick = { showHeldCartsDialog = false }) {
-                    Text("Close")
+                    Text(Localization.get("close", language))
                 }
             }
         )
@@ -998,6 +999,8 @@ fun SalesPosScreen(
 @Composable
 fun BarcodeLookupDialog(
     products: List<Product>,
+    language: AppLanguage = AppLanguage.ENGLISH,
+    currencySymbol: String = "FRw",
     onProductScanned: (Product) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1019,13 +1022,13 @@ fun BarcodeLookupDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Barcode Scanner & Lookup",
+                        text = Localization.get("pos_barcode_lookup_title", language),
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = InkDark
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = InkDark)
+                        Icon(Icons.Default.Close, contentDescription = Localization.get("close", language), tint = InkDark)
                     }
                 }
 
@@ -1037,8 +1040,8 @@ fun BarcodeLookupDialog(
                         barcodeInput = input
                         matchedProduct = products.find { it.barcode.equals(input.trim(), ignoreCase = true) }
                     },
-                    label = { Text("Enter / Scan Barcode") },
-                    placeholder = { Text("e.g. 6001001") },
+                    label = { Text(Localization.get("pos_enter_scan_barcode", language)) },
+                    placeholder = { Text("6001001") },
                     leadingIcon = { Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = OrangePrimary) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -1047,7 +1050,7 @@ fun BarcodeLookupDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Text("Quick barcodes in catalog:", fontSize = 12.sp, color = InkMedium)
+                Text(Localization.get("pos_quick_barcodes_hint", language), fontSize = 12.sp, color = InkMedium)
                 Spacer(modifier = Modifier.height(6.dp))
 
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1085,19 +1088,23 @@ fun BarcodeLookupDialog(
                         ) {
                             Column {
                                 Text(matchedProduct!!.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
-                                Text("Price: ${matchedProduct!!.sellingPrice} FRw | Stock: ${matchedProduct!!.quantityInStock}", fontSize = 12.sp, color = InkMedium)
+                                Text(
+                                    Localization.format("pos_price_stock_meta_fmt", language, "${matchedProduct!!.sellingPrice} $currencySymbol", "${matchedProduct!!.quantityInStock}"),
+                                    fontSize = 12.sp,
+                                    color = InkMedium
+                                )
                             }
                             Button(
                                 onClick = { onProductScanned(matchedProduct!!) },
                                 colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("Add to Cart", fontSize = 12.sp)
+                                Text(Localization.get("add_to_cart_action", language), fontSize = 12.sp)
                             }
                         }
                     }
                 } else if (barcodeInput.isNotBlank()) {
-                    Text("No product matches barcode '$barcodeInput'", color = Color(0xFFDC2626), fontSize = 12.sp)
+                    Text(Localization.format("pos_barcode_no_match_fmt", language, barcodeInput), color = Color(0xFFDC2626), fontSize = 12.sp)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1107,7 +1114,7 @@ fun BarcodeLookupDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Cancel")
+                    Text(Localization.get("cancel", language))
                 }
             }
         }

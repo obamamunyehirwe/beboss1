@@ -34,12 +34,15 @@ import com.beboss.shopmgmt.ui.theme.InkDark
 import com.beboss.shopmgmt.ui.theme.InkMedium
 import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
+import com.beboss.shopmgmt.util.AppLanguage
+import com.beboss.shopmgmt.util.Localization
 
 @Composable
 fun AnalyticsChart(
     points: List<DailyAnalyticsPoint>,
     currencySymbol: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    language: AppLanguage = AppLanguage.ENGLISH
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -54,7 +57,7 @@ fun AnalyticsChart(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Revenue & Profit Trends",
+                    text = Localization.get("chart_title", language),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = InkDark
@@ -64,13 +67,13 @@ fun AnalyticsChart(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(modifier = Modifier.size(8.dp).background(OrangePrimary, CircleShape))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Revenue", fontSize = 11.sp, color = InkMedium)
+                    Text(Localization.get("chart_revenue_legend", language), fontSize = 11.sp, color = InkMedium)
 
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Box(modifier = Modifier.size(8.dp).background(ProfitGreen, CircleShape))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Profit", fontSize = 11.sp, color = InkMedium)
+                    Text(Localization.get("chart_profit_legend", language), fontSize = 11.sp, color = InkMedium)
                 }
             }
 
@@ -83,7 +86,7 @@ fun AnalyticsChart(
                         .height(160.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No sales data in this period", fontSize = 13.sp, color = InkMedium)
+                    Text(Localization.get("chart_empty", language), fontSize = 13.sp, color = InkMedium)
                 }
             } else {
                 val maxVal = points.maxOfOrNull { maxOf(it.revenue, it.profit) }?.coerceAtLeast(100.0) ?: 100.0

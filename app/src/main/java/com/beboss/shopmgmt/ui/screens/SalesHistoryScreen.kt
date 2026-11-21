@@ -192,7 +192,7 @@ fun SalesHistoryScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.Receipt, contentDescription = null, tint = InkMedium, modifier = Modifier.size(48.dp))
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("No sales history found", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = InkDark)
+                    Text(Localization.get("hist_empty", language), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = InkDark)
                 }
             }
         } else {
@@ -240,7 +240,7 @@ fun SalesHistoryScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = "${sale.receiptNumber} Ã¢â‚¬Â¢ ${ReceiptGenerator.formatDate(sale.saleDate)}",
+                                        text = "${sale.receiptNumber} • ${ReceiptGenerator.formatDate(sale.saleDate)}",
                                         fontSize = 11.sp,
                                         color = InkMedium
                                     )
@@ -250,7 +250,7 @@ fun SalesHistoryScreen(
                                             color = Color(0xFFF3F4F6)
                                         ) {
                                             Text(
-                                                text = "${sale.paymentMethod} (${sale.paymentStatus})",
+                                                text = "${Localization.paymentMethodLabel(sale.paymentMethod, language)} (${Localization.paymentStatusLabel(sale.paymentStatus, language)})",
                                                 fontSize = 10.sp,
                                                 color = InkDark,
                                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
@@ -271,7 +271,7 @@ fun SalesHistoryScreen(
                                         color = InkDark
                                     )
                                     Text(
-                                        text = "+${ReceiptGenerator.formatMoney(sale.totalProfit, shopProfile)} profit",
+                                        text = Localization.format("hist_profit_fmt", language, ReceiptGenerator.formatMoney(sale.totalProfit, shopProfile)),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = ProfitGreen
@@ -286,7 +286,7 @@ fun SalesHistoryScreen(
                                     ) {
                                         Icon(
                                             Icons.Default.Delete,
-                                            contentDescription = "Delete / Void Sale",
+                                            contentDescription = Localization.get("hist_delete_void_cd", language),
                                             tint = LossRed.copy(alpha = 0.8f),
                                             modifier = Modifier.size(18.dp)
                                         )
@@ -301,7 +301,12 @@ fun SalesHistoryScreen(
     }
 
     if (saleToDelete != null) {
-        val quickReasons = listOf("Customer Return", "Pricing Error", "Duplicate Entry", "Damaged Goods")
+        val quickReasons = listOf(
+            Localization.get("hist_refund_reason_return", language),
+            Localization.get("hist_refund_reason_pricing", language),
+            Localization.get("hist_refund_reason_duplicate", language),
+            Localization.get("hist_refund_reason_damaged", language)
+        )
         AlertDialog(
             onDismissRequest = {
                 saleToDelete = null
@@ -317,7 +322,12 @@ fun SalesHistoryScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Receipt #${saleToDelete!!.receiptNumber} (${ReceiptGenerator.formatMoney(saleToDelete!!.totalAmount, shopProfile)})\nÃ¢â‚¬Â¢ Stock will be atomically restored\nÃ¢â‚¬Â¢ Credit debt will be recalculated\nÃ¢â‚¬Â¢ Owner/Manager approval & audit entry recorded.",
+                        text = Localization.format(
+                            "hist_void_bullets_fmt",
+                            language,
+                            saleToDelete!!.receiptNumber,
+                            ReceiptGenerator.formatMoney(saleToDelete!!.totalAmount, shopProfile)
+                        ),
                         fontSize = 12.sp
                     )
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -332,8 +342,8 @@ fun SalesHistoryScreen(
                     OutlinedTextField(
                         value = refundReasonInput,
                         onValueChange = { refundReasonInput = it },
-                        label = { Text("Mandatory Refund / Void Reason *") },
-                        placeholder = { Text("Enter audit reason...") },
+                        label = { Text(Localization.get("hist_refund_reason_label", language)) },
+                        placeholder = { Text(Localization.get("hist_refund_reason_hint", language)) },
                         singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -354,7 +364,7 @@ fun SalesHistoryScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed),
                     modifier = Modifier.testTag("confirm_refund_sale_btn")
                 ) {
-                    Text("Approve Refund & Void", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(Localization.get("hist_approve_void_btn", language), color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -362,7 +372,7 @@ fun SalesHistoryScreen(
                     saleToDelete = null
                     refundReasonInput = ""
                 }) {
-                    Text("Cancel")
+                    Text(Localization.get("cancel", language))
                 }
             }
         )
@@ -382,7 +392,7 @@ fun SalesHistoryScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Verify any printed or shared BeBoss receipt offline against its tamper-evident SHA-256 BB-seal.",
+                        text = Localization.get("hist_seal_verifier_desc", language),
                         fontSize = 12.sp,
                         color = InkMedium
                     )
@@ -392,7 +402,7 @@ fun SalesHistoryScreen(
                             verifyReceiptNumberInput = it
                             verificationResult = null
                         },
-                        label = { Text("Receipt Number (e.g. REC-...)") },
+                        label = { Text(Localization.get("hist_receipt_num_input_label", language)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -402,7 +412,7 @@ fun SalesHistoryScreen(
                             verifySealInput = it.uppercase()
                             verificationResult = null
                         },
-                        label = { Text("Printed Seal (e.g. BB-A1B2C3D4E5)") },
+                        label = { Text(Localization.get("hist_printed_seal_input_label", language)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -432,17 +442,22 @@ fun SalesHistoryScreen(
                             it.receiptNumber.equals(verifyReceiptNumberInput.trim(), ignoreCase = true)
                         }
                         verificationResult = if (matched == null) {
-                            false to "NOT FOUND: No local sale matches receipt '${verifyReceiptNumberInput.trim()}'."
+                            false to Localization.format("hist_seal_not_found_fmt", language, verifyReceiptNumberInput.trim())
                         } else if (ReceiptGenerator.verifyOfflineReceiptSeal(matched, shopProfile, verifySealInput)) {
-                            true to "AUTHENTIC: Receipt #${matched.receiptNumber} (${ReceiptGenerator.formatMoney(matched.totalAmount, shopProfile)}) matches cryptographic seal."
+                            true to Localization.format(
+                                "hist_seal_authentic_fmt",
+                                language,
+                                matched.receiptNumber,
+                                ReceiptGenerator.formatMoney(matched.totalAmount, shopProfile)
+                            )
                         } else {
-                            false to "TAMPERED / MISMATCH: Seal does not match local sale #${matched.receiptNumber}!"
+                            false to Localization.format("hist_seal_tampered_fmt", language, matched.receiptNumber)
                         }
                     },
                     enabled = verifyReceiptNumberInput.isNotBlank() && verifySealInput.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen)
                 ) {
-                    Text("Verify Offline", fontWeight = FontWeight.Bold)
+                    Text(Localization.get("hist_verify_offline_btn", language), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

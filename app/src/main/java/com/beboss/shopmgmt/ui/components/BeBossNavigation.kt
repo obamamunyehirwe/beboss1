@@ -156,7 +156,7 @@ fun BeBossTopBar(
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = shopProfile.shopName.ifBlank { "BeBoss Store" },
+                            text = shopProfile.shopName.ifBlank { Localization.get("default_store_name", language) },
                             fontFamily = GopherFontFamily,
                             fontSize = 11.5.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -165,7 +165,7 @@ fun BeBossTopBar(
                         )
                         if (currentUser != null) {
                             Text(
-                                text = " Ã¢â‚¬Â¢ ${currentUser.name.split(" ").first()}",
+                                text = " • ${currentUser.name.split(" ").first()}",
                                 fontFamily = GopherFontFamily,
                                 fontSize = 10.5.sp,
                                 color = OrangePrimary,
@@ -194,10 +194,10 @@ fun BeBossTopBar(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Bolt, contentDescription = "Quick Actions", tint = OrangePrimary, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Bolt, contentDescription = Localization.get("quick_actions", language), tint = OrangePrimary, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(3.dp))
                     Text(
-                        text = "POS",
+                        text = Localization.get("nav_quick_actions_pos", language),
                         fontFamily = GopherFontFamily,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -216,7 +216,7 @@ fun BeBossTopBar(
             ) {
                 Icon(
                     imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
+                    contentDescription = Localization.get("search", language),
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(20.dp)
                 )
@@ -274,7 +274,7 @@ fun BeBossTopBar(
             ) {
                 Icon(
                     imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                    contentDescription = "Toggle Theme",
+                    contentDescription = Localization.get("nav_toggle_theme", language),
                     tint = if (isDarkTheme) Color(0xFFFFD166) else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(19.dp)
                 )
@@ -590,7 +590,7 @@ fun BeBossNavigationRail(
                     .padding(top = 8.dp, bottom = 10.dp)
                     .size(48.dp)
             ) {
-                Icon(Icons.Default.Bolt, contentDescription = "Quick POS Actions")
+                Icon(Icons.Default.Bolt, contentDescription = Localization.get("nav_quick_pos_actions", language))
             }
         }
     ) {

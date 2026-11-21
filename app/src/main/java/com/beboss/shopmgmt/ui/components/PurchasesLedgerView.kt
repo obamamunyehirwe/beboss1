@@ -89,7 +89,9 @@ import com.beboss.shopmgmt.ui.theme.LossRed
 import com.beboss.shopmgmt.ui.theme.OrangeLight
 import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
+import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.ExcelCsvExporter
+import com.beboss.shopmgmt.util.Localization
 import com.beboss.shopmgmt.util.ReceiptGenerator
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -106,7 +108,8 @@ fun PurchasesLedgerView(
     purchaseSummary: PurchaseSummary,
     shopProfile: ShopProfile,
     onRecordPurchase: (productId: String, qty: Double, cost: Double, sellPrice: Double?, supplier: String, phone: String, status: String, invoice: String, notes: String) -> Unit,
-    onDeletePurchase: (String) -> Unit
+    onDeletePurchase: (String) -> Unit,
+    language: AppLanguage = AppLanguage.ENGLISH
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
@@ -165,7 +168,7 @@ fun PurchasesLedgerView(
                             Icon(Icons.Default.LocalShipping, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(22.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Purchases & Inflow Spreadsheet",
+                                text = Localization.get("pur_sheet_title", language),
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = InkDark
@@ -177,7 +180,7 @@ fun PurchasesLedgerView(
                             color = Color(0xFFF3F4F6)
                         ) {
                             Text(
-                                text = "${purchaseSummary.totalPurchasesCount} Orders Logged",
+                                text = Localization.format("pur_orders_logged_fmt", language, purchaseSummary.totalPurchasesCount),
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = InkDark,
@@ -200,7 +203,7 @@ fun PurchasesLedgerView(
                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBBF7D0))
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
-                                Text("TOTAL BOUGHT VALUE", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = ProfitGreen)
+                                Text(Localization.get("pur_total_bought_upper", language), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = ProfitGreen)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = ReceiptGenerator.formatMoney(purchaseSummary.totalExpenditure, shopProfile),
@@ -219,10 +222,10 @@ fun PurchasesLedgerView(
                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE))
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
-                                Text("UNITS RESTOCKED", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = DarkNavy)
+                                Text(Localization.get("pur_units_restocked_upper", language), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = DarkNavy)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "${purchaseSummary.totalUnitsBought.toInt()} Units",
+                                    text = Localization.format("pur_units_fmt", language, purchaseSummary.totalUnitsBought.toInt()),
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Black,
                                     color = DarkNavy
@@ -238,10 +241,10 @@ fun PurchasesLedgerView(
                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFED7AA))
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
-                                Text("SUPPLIERS", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
+                                Text(Localization.get("pur_suppliers_upper", language), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "${purchaseSummary.uniqueSuppliersCount} Vendors",
+                                    text = Localization.format("pur_vendors_fmt", language, purchaseSummary.uniqueSuppliersCount),
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Black,
                                     color = OrangePrimary
@@ -261,9 +264,9 @@ fun PurchasesLedgerView(
                             onClick = {
                                 try {
                                     val file = ExcelCsvExporter.exportPurchasesCsv(context, purchases, shopProfile)
-                                    ExcelCsvExporter.shareCsvFile(context, file, "Share Purchases Spreadsheet CSV")
+                                    ExcelCsvExporter.shareCsvFile(context, file, Localization.get("pur_share_csv_title", language))
                                 } catch (e: Exception) {
-                                    Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, Localization.format("pur_export_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.weight(1f),
@@ -272,7 +275,7 @@ fun PurchasesLedgerView(
                         ) {
                             Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(15.dp), tint = OrangePrimary)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Export Excel CSV", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
+                            Text(Localization.get("pur_export_excel_csv", language), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
                         }
 
                         Button(
@@ -284,7 +287,7 @@ fun PurchasesLedgerView(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color.White)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("+ Buy / Restock In", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text(Localization.get("pur_buy_restock_btn", language), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 }
@@ -304,12 +307,12 @@ fun PurchasesLedgerView(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Search by product, vendor, PO number...", fontSize = 12.5.sp) },
+                        placeholder = { Text(Localization.get("pur_search_placeholder", language), fontSize = 12.5.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = InkMedium, modifier = Modifier.size(18.dp)) },
                         trailingIcon = {
                             if (searchQuery.isNotBlank()) {
                                 IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.Clear, contentDescription = Localization.get("search_clear_cd", language), modifier = Modifier.size(16.dp))
                                 }
                             }
                         },
@@ -331,14 +334,14 @@ fun PurchasesLedgerView(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("View: ", fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = InkMedium)
+                            Text(Localization.get("pur_view_colon", language), fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = InkMedium)
                             FilterChip(
                                 selected = isExcelTableView,
                                 onClick = { isExcelTableView = true },
                                 leadingIcon = {
                                     Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(13.dp), tint = if (isExcelTableView) OrangePrimary else InkMedium)
                                 },
-                                label = { Text("Excel Table", fontSize = 11.sp) },
+                                label = { Text(Localization.get("pur_view_excel", language), fontSize = 11.sp) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = OrangePrimary.copy(alpha = 0.15f))
                             )
                             Spacer(modifier = Modifier.width(6.dp))
@@ -348,7 +351,7 @@ fun PurchasesLedgerView(
                                 leadingIcon = {
                                     Icon(Icons.Default.ViewAgenda, contentDescription = null, modifier = Modifier.size(13.dp), tint = if (!isExcelTableView) OrangePrimary else InkMedium)
                                 },
-                                label = { Text("Cards", fontSize = 11.sp) },
+                                label = { Text(Localization.get("pur_view_cards", language), fontSize = 11.sp) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = OrangePrimary.copy(alpha = 0.15f))
                             )
                         }
@@ -357,7 +360,7 @@ fun PurchasesLedgerView(
                         IconButton(onClick = { sortAscending = !sortAscending }, modifier = Modifier.size(32.dp)) {
                             Icon(
                                 imageVector = if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                                contentDescription = "Sort Direction",
+                                contentDescription = Localization.get("pur_sort_cd", language),
                                 tint = OrangePrimary,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -384,9 +387,9 @@ fun PurchasesLedgerView(
                     ) {
                         Icon(Icons.Default.TableChart, contentDescription = null, tint = InkMedium, modifier = Modifier.size(40.dp))
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("No purchase records found", fontWeight = FontWeight.Bold, color = InkDark)
+                        Text(Localization.get("pur_empty_title", language), fontWeight = FontWeight.Bold, color = InkDark)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("Tap '+ Buy / Restock In' above to record stock received from suppliers.", fontSize = 12.sp, color = InkMedium, textAlign = TextAlign.Center)
+                        Text(Localization.get("pur_empty_sub", language), fontSize = 12.sp, color = InkMedium, textAlign = TextAlign.Center)
                     }
                 }
             }
@@ -415,18 +418,18 @@ fun PurchasesLedgerView(
                                 .padding(vertical = 10.dp, horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("#", width = Modifier.width(36.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
-                            Text("PO Ref", width = Modifier.width(100.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
-                            Text("Date", width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
-                            Text("Product Name", width = Modifier.width(150.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
-                            Text("Supplier / Vendor", width = Modifier.width(140.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
-                            Text("Qty In", width = Modifier.width(70.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
-                            Text("Unit Cost", width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
-                            Text("Total Cost", width = Modifier.width(100.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
-                            Text("Sell Price", width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
-                            Text("Est. Profit", width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
-                            Text("Status", width = Modifier.width(80.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.Center)
-                            Text("Actions", width = Modifier.width(70.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.Center)
+                            Text(Localization.get("pur_col_num", language), width = Modifier.width(36.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                            Text(Localization.get("pur_col_po_ref", language), width = Modifier.width(100.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                            Text(Localization.get("pur_col_date", language), width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                            Text(Localization.get("pur_col_product_name", language), width = Modifier.width(150.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                            Text(Localization.get("pur_col_supplier_vendor", language), width = Modifier.width(140.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                            Text(Localization.get("pur_col_qty_in", language), width = Modifier.width(70.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
+                            Text(Localization.get("pur_col_unit_cost", language), width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
+                            Text(Localization.get("pur_col_total_cost", language), width = Modifier.width(100.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
+                            Text(Localization.get("pur_col_sell_price", language), width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
+                            Text(Localization.get("pur_col_est_profit", language), width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
+                            Text(Localization.get("pur_col_status", language), width = Modifier.width(80.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.Center)
+                            Text(Localization.get("pur_col_actions", language), width = Modifier.width(70.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.Center)
                         }
 
                         HorizontalDivider(color = Color(0xFFCBD5E1), thickness = 1.dp)
@@ -461,7 +464,7 @@ fun PurchasesLedgerView(
                                         color = if (record.paymentStatus == "PAID_CASH" || record.paymentStatus == "PAID_MOMO") Color(0xFFDCFCE7) else Color(0xFFFEF3C7)
                                     ) {
                                         Text(
-                                            text = if (record.paymentStatus.startsWith("PAID")) "PAID" else "CREDIT",
+                                            text = if (record.paymentStatus.startsWith("PAID")) Localization.get("pur_status_paid", language) else Localization.get("pur_status_credit", language),
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (record.paymentStatus.startsWith("PAID")) Color(0xFF166534) else Color(0xFF92400E),
@@ -475,7 +478,7 @@ fun PurchasesLedgerView(
                                         onClick = { purchaseToDelete = record },
                                         modifier = Modifier.size(24.dp)
                                     ) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = LossRed, modifier = Modifier.size(15.dp))
+                                        Icon(Icons.Default.Delete, contentDescription = Localization.get("delete", language), tint = LossRed, modifier = Modifier.size(15.dp))
                                     }
                                 }
                             }
@@ -491,7 +494,8 @@ fun PurchasesLedgerView(
                     record = record,
                     shopProfile = shopProfile,
                     onViewDetail = { selectedPurchaseDetail = record },
-                    onDelete = { purchaseToDelete = record }
+                    onDelete = { purchaseToDelete = record },
+                    language = language
                 )
             }
         }
@@ -506,7 +510,8 @@ fun PurchasesLedgerView(
             onConfirm = { prodId, qty, cost, sellPrice, supplier, phone, status, inv, notes ->
                 onRecordPurchase(prodId, qty, cost, sellPrice, supplier, phone, status, inv, notes)
                 showAddPurchaseDialog = false
-            }
+            },
+            language = language
         )
     }
 
@@ -514,8 +519,17 @@ fun PurchasesLedgerView(
     if (purchaseToDelete != null) {
         AlertDialog(
             onDismissRequest = { purchaseToDelete = null },
-            title = { Text("Delete Purchase Record?") },
-            text = { Text("Are you sure you want to remove the purchase record for '${purchaseToDelete?.productName}' (${purchaseToDelete?.quantityPurchased?.toInt()} units)?") },
+            title = { Text(Localization.get("pur_delete_record_title", language)) },
+            text = {
+                Text(
+                    Localization.format(
+                        "pur_delete_record_msg_fmt",
+                        language,
+                        purchaseToDelete?.productName ?: "",
+                        "${purchaseToDelete?.quantityPurchased?.toInt() ?: 0}"
+                    )
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = {
@@ -524,12 +538,12 @@ fun PurchasesLedgerView(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed)
                 ) {
-                    Text("Delete", fontWeight = FontWeight.Bold)
+                    Text(Localization.get("delete", language), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { purchaseToDelete = null }) {
-                    Text("Cancel")
+                    Text(Localization.get("cancel", language))
                 }
             }
         )
@@ -541,7 +555,8 @@ fun PurchaseRecordCard(
     record: PurchaseRecord,
     shopProfile: ShopProfile,
     onViewDetail: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    language: AppLanguage = AppLanguage.ENGLISH
 ) {
     val dateFmt = remember { SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()) }
 
@@ -597,15 +612,15 @@ fun PurchaseRecordCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text("Supplier", fontSize = 10.sp, color = InkMedium)
+                    Text(Localization.get("pur_card_supplier", language), fontSize = 10.sp, color = InkMedium)
                     Text(record.supplierName, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = InkDark)
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Quantity In", fontSize = 10.sp, color = InkMedium)
-                    Text("+${record.quantityPurchased.toInt()} units", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ProfitGreen)
+                    Text(Localization.get("pur_card_qty_in", language), fontSize = 10.sp, color = InkMedium)
+                    Text(Localization.format("pur_card_units_plus_fmt", language, record.quantityPurchased.toInt()), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ProfitGreen)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("Total Outflow", fontSize = 10.sp, color = InkMedium)
+                    Text(Localization.get("pur_card_total_outflow", language), fontSize = 10.sp, color = InkMedium)
                     Text(ReceiptGenerator.formatMoney(record.totalPurchaseCost, shopProfile), fontSize = 13.sp, fontWeight = FontWeight.Black, color = DarkNavy)
                 }
             }
@@ -619,7 +634,8 @@ fun AddPurchaseOrderDialog(
     products: List<Product>,
     shopProfile: ShopProfile,
     onDismiss: () -> Unit,
-    onConfirm: (productId: String, qty: Double, cost: Double, sellPrice: Double?, supplier: String, phone: String, status: String, invoice: String, notes: String) -> Unit
+    onConfirm: (productId: String, qty: Double, cost: Double, sellPrice: Double?, supplier: String, phone: String, status: String, invoice: String, notes: String) -> Unit,
+    language: AppLanguage = AppLanguage.ENGLISH
 ) {
     var selectedProduct by remember { mutableStateOf(products.firstOrNull()) }
     var quantityStr by remember { mutableStateOf("10") }
@@ -659,16 +675,16 @@ fun AddPurchaseOrderDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Record Stock In / Purchase", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = InkDark)
+                    Text(Localization.get("pur_add_dialog_title", language), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = InkDark)
                     IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
+                        Icon(Icons.Default.Close, contentDescription = Localization.get("close", language))
                     }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Product Selection Dropdown
-                Text("Select Product to Restock", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = InkMedium)
+                Text(Localization.get("pur_select_product_restock", language), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = InkMedium)
                 Spacer(modifier = Modifier.height(4.dp))
 
                 ExposedDropdownMenuBox(
@@ -676,7 +692,7 @@ fun AddPurchaseOrderDialog(
                     onExpandedChange = { productDropdownExpanded = !productDropdownExpanded }
                 ) {
                     OutlinedTextField(
-                        value = selectedProduct?.name ?: "Select a product",
+                        value = selectedProduct?.name ?: Localization.get("pur_select_product_hint", language),
                         onValueChange = {},
                         readOnly = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = productDropdownExpanded) },
@@ -692,7 +708,7 @@ fun AddPurchaseOrderDialog(
                     ) {
                         products.forEach { p ->
                             DropdownMenuItem(
-                                text = { Text("${p.name} (${p.quantityInStock.toInt()} in stock)") },
+                                text = { Text(Localization.format("pur_dropdown_in_stock_fmt", language, p.name, p.quantityInStock.toInt())) },
                                 onClick = {
                                     selectedProduct = p
                                     unitCostStr = p.costPrice.toString()
@@ -713,7 +729,7 @@ fun AddPurchaseOrderDialog(
                     OutlinedTextField(
                         value = quantityStr,
                         onValueChange = { quantityStr = it },
-                        label = { Text("Quantity Bought") },
+                        label = { Text(Localization.get("pur_qty_bought_label", language)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
@@ -722,7 +738,7 @@ fun AddPurchaseOrderDialog(
                     OutlinedTextField(
                         value = unitCostStr,
                         onValueChange = { unitCostStr = it },
-                        label = { Text("Unit Cost (${shopProfile.currencySymbol})") },
+                        label = { Text(Localization.format("pur_unit_cost_currency_fmt", language, shopProfile.currencySymbol)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
@@ -734,7 +750,7 @@ fun AddPurchaseOrderDialog(
                 OutlinedTextField(
                     value = sellingPriceStr,
                     onValueChange = { sellingPriceStr = it },
-                    label = { Text("Selling Price (${shopProfile.currencySymbol})") },
+                    label = { Text(Localization.format("pur_sell_price_currency_fmt", language, shopProfile.currencySymbol)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
@@ -749,7 +765,7 @@ fun AddPurchaseOrderDialog(
                     OutlinedTextField(
                         value = supplierName,
                         onValueChange = { supplierName = it },
-                        label = { Text("Supplier Name") },
+                        label = { Text(Localization.get("pur_supplier_name_label", language)) },
                         modifier = Modifier.weight(1.2f),
                         shape = RoundedCornerShape(10.dp)
                     )
@@ -757,7 +773,7 @@ fun AddPurchaseOrderDialog(
                     OutlinedTextField(
                         value = supplierPhone,
                         onValueChange = { supplierPhone = it },
-                        label = { Text("Supplier Phone") },
+                        label = { Text(Localization.get("pur_supplier_phone_label", language)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
@@ -769,7 +785,7 @@ fun AddPurchaseOrderDialog(
                 OutlinedTextField(
                     value = invoiceNumber,
                     onValueChange = { invoiceNumber = it },
-                    label = { Text("PO / Invoice Number (Optional)") },
+                    label = { Text(Localization.get("pur_po_invoice_optional", language)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
                 )
@@ -788,11 +804,11 @@ fun AddPurchaseOrderDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text("Total Purchase Cost:", fontSize = 11.sp, color = InkMedium)
+                            Text(Localization.get("pur_total_cost_colon", language), fontSize = 11.sp, color = InkMedium)
                             Text(ReceiptGenerator.formatMoney(totalCost, shopProfile), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = DarkNavy)
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text("Expected Profit:", fontSize = 11.sp, color = InkMedium)
+                            Text(Localization.get("pur_expected_profit_colon", language), fontSize = 11.sp, color = InkMedium)
                             Text(ReceiptGenerator.formatMoney(estProfit, shopProfile), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = ProfitGreen)
                         }
                     }
@@ -809,7 +825,7 @@ fun AddPurchaseOrderDialog(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Cancel")
+                        Text(Localization.get("cancel", language))
                     }
 
                     Button(
@@ -833,7 +849,7 @@ fun AddPurchaseOrderDialog(
                         colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Save & Restock", fontWeight = FontWeight.Bold)
+                        Text(Localization.get("pur_save_restock_btn", language), fontWeight = FontWeight.Bold)
                     }
                 }
             }

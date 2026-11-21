@@ -117,19 +117,19 @@ fun PermissionRequestDialog(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = if (language == AppLanguage.KINYARWANDA) "Uburenganzira bwa Sisitemu" else "Device Access & Permissions",
+                            text = Localization.get("perm_dialog_title", language),
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
                         Text(
-                            text = if (language == AppLanguage.KINYARWANDA) "Ibi bifasha BeBoss gukora neza 100%" else "Enables real-time advanced retail features",
+                            text = Localization.get("perm_dialog_subtitle", language),
                             fontSize = 11.5.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
                 IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Close, contentDescription = Localization.get("close", language), modifier = Modifier.size(18.dp))
                 }
             }
         },
@@ -148,7 +148,7 @@ fun PermissionRequestDialog(
                             Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ProfitGreen)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (language == AppLanguage.KINYARWANDA) "Uburenganzira bwose bwemejwe neza!" else "All permissions granted! Full features active.",
+                                text = Localization.get("perm_all_granted_banner", language),
                                 color = Color(0xFF166534),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
@@ -212,7 +212,7 @@ fun PermissionRequestDialog(
                     Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (language == AppLanguage.KINYARWANDA) "Emeza Byose Hamwe (1-Tap)" else "Grant All Permissions",
+                        text = Localization.get("perm_grant_all_btn", language),
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.5.sp
                     )
@@ -244,7 +244,7 @@ fun PermissionRequestDialog(
             ) {
                 Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("App Settings", fontSize = 11.5.sp)
+                Text(Localization.get("perm_app_settings_btn", language), fontSize = 11.5.sp)
             }
         }
     )
@@ -299,14 +299,14 @@ fun PermissionItemCard(
 
                 Column {
                     Text(
-                        text = if (language == AppLanguage.KINYARWANDA) item.titleRw else item.title,
+                        text = item.localizedTitle(language),
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.5.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = if (language == AppLanguage.KINYARWANDA) item.descriptionRw else item.description,
+                        text = item.localizedDescription(language),
                         fontSize = 10.5.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 13.sp
@@ -327,7 +327,7 @@ fun PermissionItemCard(
                     ) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ProfitGreen, modifier = Modifier.size(12.dp))
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text("Active", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF166534))
+                        Text(Localization.get("perm_active_badge", language), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF166534))
                     }
                 }
             } else {
@@ -337,7 +337,7 @@ fun PermissionItemCard(
                     shape = RoundedCornerShape(6.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
                 ) {
-                    Text(if (language == AppLanguage.KINYARWANDA) "Emeza" else "Allow", fontSize = 11.sp)
+                    Text(Localization.get("perm_allow_btn", language), fontSize = 11.sp)
                 }
             }
         }

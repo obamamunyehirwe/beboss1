@@ -107,11 +107,11 @@ fun DashboardScreen(
     onAddProductClick: () -> Unit
 ) {
     var branchMenuExpanded by remember { mutableStateOf(false) }
-    val activeBranchLabel = remember(branches, selectedBranchId) {
+    val activeBranchLabel = remember(branches, selectedBranchId, language) {
         if (selectedBranchId == "ALL") {
-            "All Branches (${branches.size.coerceAtLeast(1)})"
+            Localization.format("dash_all_branches_fmt", language, branches.size.coerceAtLeast(1))
         } else {
-            branches.firstOrNull { it.id == selectedBranchId }?.name ?: "HQ Branch"
+            branches.firstOrNull { it.id == selectedBranchId }?.name ?: Localization.get("dash_hq_branch", language)
         }
     }
     val daysRemaining = shopProfile.daysRemaining
@@ -159,7 +159,7 @@ fun DashboardScreen(
                                 )
                             }
                             if (branches.isNotEmpty()) {
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = "Switch branch", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = Localization.get("dash_switch_branch_cd", language), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -169,7 +169,7 @@ fun DashboardScreen(
                         onDismissRequest = { branchMenuExpanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("All Branches (${branches.size})") },
+                            text = { Text(Localization.format("dash_all_branches_fmt", language, branches.size)) },
                             onClick = {
                                 onSelectBranch("ALL")
                                 branchMenuExpanded = false
@@ -199,10 +199,10 @@ fun DashboardScreen(
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 val syncLabel = when {
-                    isSyncing -> "Syncing..."
-                    connectivityStatus == ConnectivityStatus.AVAILABLE && cloudSyncReport?.state == CloudSyncState.SYNCED -> "Synced"
-                    connectivityStatus == ConnectivityStatus.AVAILABLE -> "Auto-Sync"
-                    else -> "Offline"
+                    isSyncing -> Localization.get("dash_syncing", language)
+                    connectivityStatus == ConnectivityStatus.AVAILABLE && cloudSyncReport?.state == CloudSyncState.SYNCED -> Localization.get("dash_synced", language)
+                    connectivityStatus == ConnectivityStatus.AVAILABLE -> Localization.get("dash_auto_sync", language)
+                    else -> Localization.get("dash_offline", language)
                 }
 
                 Surface(
@@ -219,7 +219,7 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
-                        Icon(syncIcon, contentDescription = "Sync status", tint = syncColor, modifier = Modifier.size(15.dp))
+                        Icon(syncIcon, contentDescription = Localization.get("dash_sync_status_cd", language), tint = syncColor, modifier = Modifier.size(15.dp))
                         Text(syncLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = syncColor)
                     }
                 }
@@ -232,9 +232,9 @@ fun DashboardScreen(
                     else -> ProfitGreen
                 }
                 val subPillLabel = when {
-                    daysRemaining <= 0 -> "Locked"
-                    shopProfile.isFreeTrial -> "Trial ${daysRemaining}d"
-                    else -> "${daysRemaining}d"
+                    daysRemaining <= 0 -> Localization.get("dash_locked", language)
+                    shopProfile.isFreeTrial -> Localization.format("dash_trial_days_fmt", language, daysRemaining)
+                    else -> Localization.format("dash_days_short_fmt", language, daysRemaining)
                 }
                 Surface(
                     onClick = { onNavigate(AppScreen.SETTINGS) },
@@ -250,7 +250,7 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(Icons.Default.VerifiedUser, contentDescription = "License status", tint = subColor, modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.VerifiedUser, contentDescription = Localization.get("dash_license_status_cd", language), tint = subColor, modifier = Modifier.size(14.dp))
                         Text(
                             text = subPillLabel,
                             fontSize = 11.sp,
@@ -287,18 +287,14 @@ fun DashboardScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (language == AppLanguage.KINYARWANDA)
-                                        "IGERAGEZA RY'IMINSI 4 Y'UBUNTU"
-                                    else "4-DAY FREE TRIAL ACTIVE",
+                                    text = Localization.get("dash_trial_banner_title", language).uppercase(),
                                     fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Black,
                                     color = accent,
                                     letterSpacing = 0.8.sp
                                 )
                                 Text(
-                                    text = if (language == AppLanguage.KINYARWANDA)
-                                        "Hasigaye iminsi $daysRemaining (${hoursLeft}h) mbere y'uko porogaramu ifungwa."
-                                    else "$daysRemaining day(s) (${hoursLeft}h) left before terminal locks for activation.",
+                                    text = Localization.format("dash_trial_banner_desc_hours_fmt", language, daysRemaining, hoursLeft),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -313,7 +309,7 @@ fun DashboardScreen(
                                 modifier = Modifier.testTag("dashboard_trial_activate_button")
                             ) {
                                 Text(
-                                    text = if (language == AppLanguage.KINYARWANDA) "Fungura" else "Activate",
+                                    text = Localization.get("dash_activate_cta", language),
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -582,7 +578,7 @@ fun DashboardScreen(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
-                                                text = "${Localization.get("quantity_in_stock", language)}: ${product.quantityInStock.toInt()} ${product.unit} (Min: ${product.lowStockThreshold.toInt()})",
+                                                text = "${Localization.get("quantity_in_stock", language)}: ${product.quantityInStock.toInt()} ${product.unit} (${Localization.format("dash_min_fmt", language, product.lowStockThreshold.toInt().toString())})",
                                                 fontSize = 11.sp,
                                                 color = Color(0xFFDC2626),
                                                 fontWeight = FontWeight.Medium
@@ -731,7 +727,7 @@ fun DashboardScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "${sale.receiptNumber} Ã¢â‚¬Â¢ ${ReceiptGenerator.formatDate(sale.saleDate)}",
+                                    text = "${sale.receiptNumber} • ${ReceiptGenerator.formatDate(sale.saleDate)}",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -750,7 +746,7 @@ fun DashboardScreen(
                                 color = if (sale.paymentMethod == "CREDIT_DEBT") Color(0xFFFEE2E2) else ProfitGreenLight
                             ) {
                                 Text(
-                                    text = if (sale.paymentMethod == "CREDIT_DEBT") Localization.get("credit_debt", language) else sale.paymentMethod,
+                                    text = Localization.paymentMethodLabel(sale.paymentMethod, language),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (sale.paymentMethod == "CREDIT_DEBT") Color(0xFFDC2626) else ProfitGreen,

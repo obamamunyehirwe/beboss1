@@ -61,13 +61,16 @@ import com.beboss.shopmgmt.ui.theme.InkDark
 import com.beboss.shopmgmt.ui.theme.InkMedium
 import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
+import com.beboss.shopmgmt.util.AppLanguage
+import com.beboss.shopmgmt.util.Localization
 import com.beboss.shopmgmt.util.ReceiptGenerator
 
 @Composable
 fun ReceiptDialog(
     saleWithItems: SaleWithItems,
     shopProfile: ShopProfile,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    language: AppLanguage = AppLanguage.ENGLISH
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -109,14 +112,14 @@ fun ReceiptDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Sale Completed",
+                            text = Localization.get("rec_sale_completed", language),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = InkDark
                         )
                     }
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = InkDark)
+                        Icon(Icons.Default.Close, contentDescription = Localization.get("close", language), tint = InkDark)
                     }
                 }
 
@@ -168,29 +171,34 @@ fun ReceiptDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Receipt #:", fontSize = 12.sp, color = InkMedium)
+                            Text(Localization.get("rec_receipt_num_colon", language), fontSize = 12.sp, color = InkMedium)
                             Text(sale.receiptNumber, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = InkDark)
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Date:", fontSize = 12.sp, color = InkMedium)
+                            Text(Localization.get("rec_date_colon", language), fontSize = 12.sp, color = InkMedium)
                             Text(ReceiptGenerator.formatDate(sale.saleDate), fontSize = 12.sp, color = InkDark)
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Customer:", fontSize = 12.sp, color = InkMedium)
+                            Text(Localization.get("rec_customer_colon", language), fontSize = 12.sp, color = InkMedium)
                             Text(sale.customerName, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = InkDark)
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Payment:", fontSize = 12.sp, color = InkMedium)
-                            Text("${sale.paymentMethod} (${sale.paymentStatus})", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = InkDark)
+                            Text(Localization.get("rec_payment_colon", language), fontSize = 12.sp, color = InkMedium)
+                            Text(
+                                "${Localization.paymentMethodLabel(sale.paymentMethod, language)} (${Localization.paymentStatusLabel(sale.paymentStatus, language)})",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = InkDark
+                            )
                         }
 
                         HorizontalDivider(
@@ -242,7 +250,7 @@ fun ReceiptDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "TOTAL",
+                                text = Localization.get("rec_total_upper", language),
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = InkDark
@@ -261,7 +269,7 @@ fun ReceiptDialog(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Incl. Tax (${shopProfile.taxRate}%):", fontSize = 12.sp, color = InkMedium)
+                                Text(Localization.format("rec_incl_tax_fmt", language, shopProfile.taxRate.toString()), fontSize = 12.sp, color = InkMedium)
                                 Text(ReceiptGenerator.formatMoney(vatAmount, shopProfile), fontSize = 12.sp, color = InkDark)
                             }
                         }
@@ -271,7 +279,7 @@ fun ReceiptDialog(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Discount:", fontSize = 12.sp, color = InkMedium)
+                                Text(Localization.get("rec_discount_colon", language), fontSize = 12.sp, color = InkMedium)
                                 Text("-${ReceiptGenerator.formatMoney(sale.discountAmount, shopProfile)}", fontSize = 12.sp, color = ProfitGreen)
                             }
                         }
@@ -280,7 +288,7 @@ fun ReceiptDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Amount Paid:", fontSize = 12.sp, color = InkMedium)
+                            Text(Localization.get("rec_amount_paid_colon", language), fontSize = 12.sp, color = InkMedium)
                             Text(ReceiptGenerator.formatMoney(sale.amountPaid, shopProfile), fontSize = 12.sp, color = InkDark)
                         }
 
@@ -290,7 +298,7 @@ fun ReceiptDialog(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Debt / Balance Due:", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFDC2626))
+                                Text(Localization.get("rec_balance_due_colon", language), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFDC2626))
                                 Text(ReceiptGenerator.formatMoney(debt, shopProfile), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFDC2626))
                             }
                         }
@@ -307,7 +315,8 @@ fun ReceiptDialog(
                         val offlineSeal = ReceiptGenerator.computeOfflineReceiptSeal(sale, shopProfile)
                         OfflineReceiptVerificationMatrix(
                             payload = "${sale.receiptNumber}|$offlineSeal|${sale.totalAmount.toLong()}",
-                            sealCode = offlineSeal
+                            sealCode = offlineSeal,
+                            language = language
                         )
                     }
                 }
@@ -331,7 +340,7 @@ fun ReceiptDialog(
                                 com.beboss.shopmgmt.util.PdfReportGenerator.sharePdf(
                                     context = context,
                                     file = pdf,
-                                    title = "Invoice ${sale.receiptNumber}"
+                                    title = Localization.format("rec_print_job_fmt", language, sale.receiptNumber)
                                 )
                             } catch (e: Exception) {
                                 ReceiptGenerator.shareReceipt(context, textReceipt)
@@ -341,21 +350,21 @@ fun ReceiptDialog(
                         colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Icon(Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Share, contentDescription = Localization.get("rec_share_pdf", language), modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Share PDF", fontWeight = FontWeight.Bold)
+                        Text(Localization.get("rec_share_pdf", language), fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(
                         onClick = {
-                            printHtmlReceipt(context, ReceiptGenerator.generateHtmlReceipt(sale, items, shopProfile), sale.receiptNumber)
+                            printHtmlReceipt(context, ReceiptGenerator.generateHtmlReceipt(sale, items, shopProfile), sale.receiptNumber, language)
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Icon(Icons.Default.Print, contentDescription = "Print", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Print, contentDescription = Localization.get("rec_print_pos", language), modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Print POS")
+                        Text(Localization.get("rec_print_pos", language))
                     }
                 }
 
@@ -364,21 +373,21 @@ fun ReceiptDialog(
                 OutlinedButton(
                     onClick = {
                         clipboardManager.setText(AnnotatedString(textReceipt))
-                        Toast.makeText(context, "Receipt text copied to clipboard!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, Localization.get("rec_copied_toast", language), Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.ContentCopy, contentDescription = Localization.get("rec_copy_text_sms", language), modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Copy Plain Text / SMS Format")
+                    Text(Localization.get("rec_copy_text_sms", language))
                 }
             }
         }
     }
 }
 
-private fun printHtmlReceipt(context: Context, htmlContent: String, jobName: String) {
+private fun printHtmlReceipt(context: Context, htmlContent: String, jobName: String, language: AppLanguage) {
     try {
         val webView = WebView(context)
         webView.webViewClient = object : WebViewClient() {
@@ -390,14 +399,15 @@ private fun printHtmlReceipt(context: Context, htmlContent: String, jobName: Str
         }
         webView.loadDataWithBaseURL(null, htmlContent, "text/html", "UTF-8", null)
     } catch (e: Exception) {
-        Toast.makeText(context, "Unable to launch print service: ${e.message}", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, Localization.format("rec_print_err_fmt", language, e.message ?: ""), Toast.LENGTH_LONG).show()
     }
 }
 
 @Composable
 private fun OfflineReceiptVerificationMatrix(
     payload: String,
-    sealCode: String
+    sealCode: String,
+    language: AppLanguage = AppLanguage.ENGLISH
 ) {
     val digestBytes = java.security.MessageDigest.getInstance("SHA-256")
         .digest(payload.toByteArray(Charsets.UTF_8))
@@ -447,7 +457,7 @@ private fun OfflineReceiptVerificationMatrix(
         }
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Offline Verification Seal: $sealCode",
+            text = Localization.format("rec_seal_fmt", language, sealCode),
             fontSize = 10.5.sp,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,

@@ -46,6 +46,8 @@ import com.beboss.shopmgmt.R
 import com.beboss.shopmgmt.ui.theme.GopherFontFamily
 import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
+import com.beboss.shopmgmt.util.AppLanguage
+import com.beboss.shopmgmt.util.Localization
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -56,6 +58,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AppSplashScreen(
     isDarkTheme: Boolean = false,
+    language: AppLanguage = AppLanguage.ENGLISH,
     durationMs: Long = 520L,
     onSplashFinished: () -> Unit = {}
 ) {
@@ -139,7 +142,7 @@ fun AppSplashScreen(
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.beboss_app_logo_1787833759468),
-                        contentDescription = "BeBoss POS Emblem",
+                        contentDescription = Localization.get("splash_emblem_cd", language),
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(24.dp)),
@@ -151,7 +154,7 @@ fun AppSplashScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "BeBoss",
+                text = Localization.get("app_title", language),
                 fontFamily = GopherFontFamily,
                 fontWeight = FontWeight.Black,
                 fontSize = 28.sp,
@@ -160,7 +163,7 @@ fun AppSplashScreen(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Multi-Branch POS & Inventory Suite",
+                text = Localization.get("splash_tagline", language),
                 fontFamily = GopherFontFamily,
                 fontWeight = FontWeight.Medium,
                 fontSize = 12.5.sp,
@@ -190,7 +193,7 @@ fun AppSplashScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "BEBOSS ENTERPRISE POS",
+                    text = Localization.get("splash_badge", language),
                     fontFamily = GopherFontFamily,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,

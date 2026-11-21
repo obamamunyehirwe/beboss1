@@ -71,6 +71,8 @@ import com.beboss.shopmgmt.ui.theme.InkDark
 import com.beboss.shopmgmt.ui.theme.InkMedium
 import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
+import com.beboss.shopmgmt.util.AppLanguage
+import com.beboss.shopmgmt.util.Localization
 import java.util.concurrent.Executors
 
 @Composable
@@ -78,7 +80,8 @@ fun CameraBarcodeScannerDialog(
     products: List<Product>,
     onProductScanned: (Product) -> Unit,
     onBarcodeScanned: (String) -> Unit = {},
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    language: AppLanguage = AppLanguage.ENGLISH
 ) {
     val context = LocalContext.current
     var hasCameraPermission by remember {
@@ -138,14 +141,14 @@ fun CameraBarcodeScannerDialog(
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "Barcode / QR Scanner",
+                            text = Localization.get("scan_title", language),
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
                             color = InkDark
                         )
                     }
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = InkDark)
+                        Icon(Icons.Default.Close, contentDescription = Localization.get("close", language), tint = InkDark)
                     }
                 }
 
@@ -219,7 +222,7 @@ fun CameraBarcodeScannerDialog(
                         ) {
                             Icon(
                                 Icons.Default.FlashOn,
-                                contentDescription = "Torch",
+                                contentDescription = Localization.get("scan_flash_cd", language),
                                 tint = if (isFlashOn) OrangePrimary else Color.White
                             )
                         }
@@ -230,13 +233,13 @@ fun CameraBarcodeScannerDialog(
                         ) {
                             Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(40.dp))
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("Camera permission is required to scan barcodes", color = Color.White, fontSize = 12.sp)
+                            Text(Localization.get("scan_perm_required_desc", language), color = Color.White, fontSize = 12.sp)
                             Spacer(modifier = Modifier.height(10.dp))
                             Button(
                                 onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
                                 colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
                             ) {
-                                Text("Grant Permission", fontSize = 12.sp)
+                                Text(Localization.get("scan_grant_camera_btn", language), fontSize = 12.sp)
                             }
                         }
                     }
@@ -255,7 +258,7 @@ fun CameraBarcodeScannerDialog(
                             onBarcodeScanned(input.trim())
                         }
                     },
-                    placeholder = { Text("Or enter barcode manually...", fontSize = 13.sp) },
+                    placeholder = { Text(Localization.get("scan_manual_placeholder", language), fontSize = 13.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = InkMedium) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -307,7 +310,18 @@ fun CameraBarcodeScannerDialog(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(matchedProduct!!.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
-                                Text("Price: ${matchedProduct!!.sellingPrice} FRw | Stock: ${matchedProduct!!.quantityInStock.toInt()} ${matchedProduct!!.unit}", fontSize = 12.sp, color = InkMedium)
+                                Text(
+                                    Localization.format(
+                                        "scan_match_meta_fmt",
+                                        language,
+                                        matchedProduct!!.sellingPrice.toInt().toString(),
+                                        "FRw",
+                                        matchedProduct!!.quantityInStock.toInt(),
+                                        matchedProduct!!.unit
+                                    ),
+                                    fontSize = 12.sp,
+                                    color = InkMedium
+                                )
                             }
                             Button(
                                 onClick = {
@@ -317,7 +331,7 @@ fun CameraBarcodeScannerDialog(
                                 colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("Add", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text(Localization.get("scan_add_btn", language), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -330,7 +344,7 @@ fun CameraBarcodeScannerDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Close Scanner")
+                    Text(Localization.get("scan_close_btn", language))
                 }
             }
         }

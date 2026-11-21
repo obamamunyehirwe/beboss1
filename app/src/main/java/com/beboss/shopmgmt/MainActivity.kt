@@ -162,11 +162,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun BeBossApp(viewModel: BeBossViewModel = viewModel()) {
     val isDarkTheme by viewModel.isDarkTheme.collectAsState()
+    val currentLanguage by viewModel.currentLanguage.collectAsState()
     var showSplashScreen by remember { mutableStateOf(true) }
 
     if (showSplashScreen) {
         AppSplashScreen(
             isDarkTheme = isDarkTheme,
+            language = currentLanguage,
             durationMs = 520L,
             onSplashFinished = { showSplashScreen = false }
         )
@@ -766,7 +768,7 @@ private fun BeBossMainContent(
         )
     }
 
-    // Quick Speed Dial Sheet (Ã¢Å¡Â¡ Fast Actions)
+    // Quick Speed Dial Sheet (Fast Actions)
     if (showQuickSpeedDialSheet) {
         QuickSpeedDialSheet(
             language = currentLanguage,
@@ -913,6 +915,7 @@ private fun BeBossMainContent(
         ReceiptDialog(
             saleWithItems = activeReceipt!!,
             shopProfile = shopProfile,
+            language = currentLanguage,
             onDismiss = { viewModel.closeReceipt() }
         )
     }

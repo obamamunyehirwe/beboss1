@@ -284,7 +284,7 @@ fun AuthLockScreen(
                         Box(modifier = Modifier.size(7.dp).background(ProfitGreen, CircleShape))
                         Text(
                             text = if (activeUser != null) {
-                                "${activeUser.assignedBranchName.ifBlank { "HQ" }.uppercase()} Ã¢â‚¬Â¢ @${activeUser.username}"
+                                "${activeUser.assignedBranchName.ifBlank { "HQ" }.uppercase()} • @${activeUser.username}"
                             } else {
                                 Localization.get("offline_branch_pos_badge", language)
                             },
@@ -369,7 +369,7 @@ fun AuthLockScreen(
                                             color = textPrimary
                                         )
                                         Text(
-                                            text = "${user.role.name} Ã¢â‚¬Â¢ ${user.assignedBranchName.ifBlank { "HQ" }}",
+                                            text = "${Localization.userRoleLabel(user.role, language).substringBefore(" (")} • ${user.assignedBranchName.ifBlank { "HQ" }}",
                                             fontFamily = GopherFontFamily,
                                             fontSize = 9.5.sp,
                                             color = if (isSelected) OrangePrimary else textSecondary
@@ -490,6 +490,7 @@ fun AuthLockScreen(
 
                         PinKeypad(
                             isDarkTheme = isDarkTheme,
+                            language = language,
                             onDigit = { digit ->
                                 if (pinInput.length < 4) {
                                     val next = pinInput + digit
@@ -671,7 +672,7 @@ fun ShopRegistrationScreen(
         Triple("$", "USD", "USD"),
         Triple("KSh", "KES", "Kenya"),
         Triple("USh", "UGX", "Uganda"),
-        Triple("Ã¢â€šÂ¬", "EUR", "Euro")
+        Triple("€", "EUR", "Euro")
     )
 
     val bgColors = if (isDarkTheme) {
@@ -1005,7 +1006,7 @@ fun ShopRegistrationScreen(
                             value = joinOwnerUsername,
                             onValueChange = { joinOwnerUsername = it; errorMessage = null; onClearError() },
                             label = { Text(Localization.get("reg_username_label", language), fontFamily = GopherFontFamily) },
-                            placeholder = { Text("Owner @username (e.g. jeanpaul)") },
+                            placeholder = { Text(Localization.get("auth_join_owner_placeholder", language)) },
                             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = OrangePrimary) },
                             singleLine = true,
                             modifier = Modifier
@@ -1068,8 +1069,8 @@ fun ShopRegistrationScreen(
                         OutlinedTextField(
                             value = joinDeviceName,
                             onValueChange = { joinDeviceName = it; errorMessage = null },
-                            label = { Text("This Device Name *", fontFamily = GopherFontFamily) },
-                            placeholder = { Text("Cashier Counter 2") },
+                            label = { Text(Localization.get("auth_this_device_name_label", language), fontFamily = GopherFontFamily) },
+                            placeholder = { Text(Localization.get("auth_this_device_name_placeholder", language)) },
                             leadingIcon = { Icon(Icons.Default.Devices, contentDescription = null, tint = OrangePrimary) },
                             singleLine = true,
                             modifier = Modifier
@@ -1191,9 +1192,9 @@ fun ShopRegistrationScreen(
                                     } else if (joinOwnerPhone.filter { it.isDigit() }.length < 9) {
                                         errorMessage = Localization.get("reg_err_phone", language)
                                     } else if (joinCode.isBlank()) {
-                                        errorMessage = "Enter the Device Join Code from the Shop Owner."
+                                        errorMessage = Localization.get("auth_err_join_code", language)
                                     } else if (joinDeviceName.isBlank()) {
-                                        errorMessage = "Enter a name for this device."
+                                        errorMessage = Localization.get("auth_err_device_name", language)
                                     } else if (joinPin.length != 4) {
                                         errorMessage = Localization.get("reg_err_pin", language)
                                     } else if (joinPassword.length < 6) {
@@ -1220,7 +1221,7 @@ fun ShopRegistrationScreen(
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "Pair Device & Sync Shop",
+                                    text = Localization.get("auth_pair_device_cta", language),
                                     fontFamily = GopherFontFamily,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -1593,7 +1594,7 @@ fun ShopRegistrationScreen(
                                         ) {
                                             Icon(Icons.Default.CloudSync, contentDescription = null, tint = ProfitGreen, modifier = Modifier.size(16.dp))
                                             Text(
-                                                text = "Saves automatically to Supabase Cloud & syncs in background whenever internet connects.",
+                                                text = Localization.get("auth_cloud_autosave_note", language),
                                                 fontFamily = GopherFontFamily,
                                                 fontSize = 10.5.sp,
                                                 color = textSecondary
@@ -1718,6 +1719,7 @@ fun ShopRegistrationScreen(
 @Composable
 private fun PinKeypad(
     isDarkTheme: Boolean = true,
+    language: AppLanguage = AppLanguage.ENGLISH,
     onDigit: (String) -> Unit,
     onBackspace: () -> Unit,
     onInstantUnlock: () -> Unit
@@ -1763,7 +1765,7 @@ private fun PinKeypad(
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.Backspace,
-                                        contentDescription = "Backspace",
+                                        contentDescription = Localization.get("auth_backspace_cd", language),
                                         tint = delIconColor,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -1786,7 +1788,7 @@ private fun PinKeypad(
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.Fingerprint,
-                                        contentDescription = "Biometric Unlock",
+                                        contentDescription = Localization.get("auth_biometric_cd", language),
                                         tint = ProfitGreen,
                                         modifier = Modifier.size(28.dp)
                                     )

@@ -267,13 +267,19 @@ fun SubscriptionScreen(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        text = "BeBoss Multi-Branch Licensing",
+                        text = Localization.get("sub_licensing_title", language),
                         fontSize = 19.sp,
                         fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "${shopProfile.shopName} Ã¢â‚¬Â¢ @${ownerAccount?.username ?: "owner"} Ã¢â‚¬Â¢ Expires $expiryDateStr",
+                        text = Localization.format(
+                            "sub_hero_meta_fmt",
+                            language,
+                            shopProfile.shopName,
+                            ownerAccount?.username ?: "owner",
+                            expiryDateStr
+                        ),
                         fontSize = 12.5.sp,
                         color = OrangePrimary,
                         fontWeight = FontWeight.Bold,
@@ -287,8 +293,8 @@ fun SubscriptionScreen(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.clickable {
                             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            cm.setPrimaryClip(ClipData.newPlainText("Device Code", deviceCode))
-                            Toast.makeText(context, "Copied Device Code: $deviceCode", Toast.LENGTH_SHORT).show()
+                            cm.setPrimaryClip(ClipData.newPlainText(Localization.get("device_code", language), deviceCode))
+                            Toast.makeText(context, Localization.format("sub_copied_device_fmt", language, deviceCode), Toast.LENGTH_SHORT).show()
                         }
                     ) {
                         Row(
@@ -303,7 +309,7 @@ fun SubscriptionScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy Device Code", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.ContentCopy, contentDescription = Localization.get("sub_copy_device_cd", language), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
                         }
                     }
                 }
@@ -326,7 +332,7 @@ fun SubscriptionScreen(
                             Icon(Icons.Default.Storefront, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(22.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Step 1: Choose Branch & Staff Plan",
+                                text = Localization.get("sub_step1_title", language),
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -341,9 +347,9 @@ fun SubscriptionScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         listOf(
-                            Triple(1, "1 Branch", "5,000 FRw"),
-                            Triple(2, "2 Branches", "10,000 FRw"),
-                            Triple(3, "3+ Branches", "20,000 FRw")
+                            Triple(1, Localization.get("sub_1_branch", language), "5,000 FRw"),
+                            Triple(2, Localization.get("sub_2_branches", language), "10,000 FRw"),
+                            Triple(3, Localization.get("sub_3_branches", language), "20,000 FRw")
                         ).forEach { (count, label, priceTag) ->
                             val isSelected = (count == 1 && selectedBranchCount == 1) ||
                                 (count == 2 && selectedBranchCount == 2) ||
@@ -386,7 +392,7 @@ fun SubscriptionScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Shop Workers Administered:",
+                                text = Localization.get("sub_workers_admin", language),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -410,7 +416,7 @@ fun SubscriptionScreen(
                                 modifier = Modifier.size(40.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Remove, contentDescription = "Decrease staff count", modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.Remove, contentDescription = Localization.get("sub_dec_staff_cd", language), modifier = Modifier.size(18.dp))
                                 }
                             }
                             Text(
@@ -426,7 +432,7 @@ fun SubscriptionScreen(
                                 modifier = Modifier.size(48.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Add, contentDescription = "Increase staff count", tint = Color.White, modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.Add, contentDescription = Localization.get("sub_inc_staff_cd", language), tint = Color.White, modifier = Modifier.size(18.dp))
                                 }
                             }
                         }
@@ -444,7 +450,7 @@ fun SubscriptionScreen(
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                                 Icon(Icons.Default.Devices, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(15.dp))
                                 Text(
-                                    text = "${Localization.get("shop_devices_title", language)} (+2,000 FRw/added):",
+                                    text = Localization.format("sub_devices_addon_fmt", language, Localization.get("shop_devices_title", language)),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -471,7 +477,7 @@ fun SubscriptionScreen(
                                     .testTag("sub_device_dec_btn")
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Remove, contentDescription = "Decrease device count", modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.Remove, contentDescription = Localization.get("sub_dec_device_cd", language), modifier = Modifier.size(18.dp))
                                 }
                             }
                             Text(
@@ -489,7 +495,7 @@ fun SubscriptionScreen(
                                     .testTag("sub_device_inc_btn")
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Add, contentDescription = "Increase device count", tint = Color.White, modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.Add, contentDescription = Localization.get("sub_inc_device_cd", language), tint = Color.White, modifier = Modifier.size(18.dp))
                                 }
                             }
                         }
@@ -502,9 +508,9 @@ fun SubscriptionScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         listOf(
-                            Pair(1, "1 Month"),
-                            Pair(3, "3 Mo (-10%)"),
-                            Pair(12, "1 Yr (-20%)")
+                            Pair(1, Localization.get("sub_1_month", language)),
+                            Pair(3, Localization.get("sub_3_mo_short", language)),
+                            Pair(12, Localization.get("sub_1_yr_short", language))
                         ).forEach { (months, label) ->
                             val isSelected = selectedDurationMonths == months
                             Surface(
@@ -542,12 +548,12 @@ fun SubscriptionScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text("Total USSD Payable:", fontSize = 11.5.sp, color = InkMedium, fontWeight = FontWeight.SemiBold)
+                                Text(Localization.get("sub_total_ussd_payable", language), fontSize = 11.5.sp, color = InkMedium, fontWeight = FontWeight.SemiBold)
                                 Text("${breakdown.totalPayable} FRw", fontSize = 22.sp, fontWeight = FontWeight.Black, color = DarkNavy)
                             }
                             Surface(shape = RoundedCornerShape(8.dp), color = ProfitGreen.copy(alpha = 0.15f)) {
                                 Text(
-                                    text = "+${selectedDurationMonths * 30} Days",
+                                    text = Localization.format("sub_plus_days_fmt", language, selectedDurationMonths * 30),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = ProfitGreen,
@@ -571,7 +577,7 @@ fun SubscriptionScreen(
                         Icon(Icons.Default.Payment, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(22.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Step 2: Pay by USSD & Send Proof for Admin Review",
+                            text = Localization.get("sub_step2_title", language),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -589,25 +595,41 @@ fun SubscriptionScreen(
                     ) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "Live Admin Payment & WhatsApp Settings",
+                                text = Localization.get("sub_live_pay_config_title", language),
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrangePrimary
                             )
                             Text(
-                                text = "MTN *182#: Code ${livePaymentConfig.mtnMoMoCode.ifBlank { livePaymentConfig.mtnMoMoPhone }} (${livePaymentConfig.mtnRecipientName}) Ã¢â€ â€™ ${breakdown.ussdMtnCode}",
+                                text = Localization.format(
+                                    "sub_mtn_config_row_fmt",
+                                    language,
+                                    livePaymentConfig.mtnMoMoCode.ifBlank { livePaymentConfig.mtnMoMoPhone },
+                                    livePaymentConfig.mtnRecipientName,
+                                    breakdown.ussdMtnCode
+                                ),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Airtel *500#: ${livePaymentConfig.airtelMoneyPhone} (${livePaymentConfig.airtelRecipientName}) Ã¢â€ â€™ ${breakdown.ussdAirtelCode}",
+                                text = Localization.format(
+                                    "sub_airtel_config_row_fmt",
+                                    language,
+                                    livePaymentConfig.airtelMoneyPhone,
+                                    livePaymentConfig.airtelRecipientName,
+                                    breakdown.ussdAirtelCode
+                                ),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Admin WhatsApp: ${resolvedAdminWa.ifBlank { "Set Admin WhatsApp in Admin Console -> Pay Config" }}",
+                                text = Localization.format(
+                                    "sub_admin_wa_row_fmt",
+                                    language,
+                                    resolvedAdminWa.ifBlank { Localization.get("sub_admin_wa_unset", language) }
+                                ),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (resolvedAdminWa.isNotBlank()) ProfitGreen else LossRed
@@ -616,7 +638,7 @@ fun SubscriptionScreen(
                     }
 
                     Text(
-                        text = "1) Complete payment in the operator's USSD flow for ${breakdown.totalPayable} FRw.\n2) Send your username, registered phone, payer details and transaction reference in the app or via WhatsApp. An admin checks settlement, then issues a BB2 code or approves an unlock on sync. Opening USSD alone does not confirm payment.",
+                        text = Localization.format("sub_ussd_instructions_fmt", language, breakdown.totalPayable),
                         fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 16.5.sp
@@ -640,7 +662,7 @@ fun SubscriptionScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFCC00))
                         ) {
                             Text(
-                                text = "MTN USSD *182#",
+                                text = Localization.get("sub_mtn_ussd_btn", language),
                                 color = Color(0xFF0F172A),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
@@ -660,7 +682,7 @@ fun SubscriptionScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
                         ) {
                             Text(
-                                text = "Airtel USSD *500#",
+                                text = Localization.get("sub_airtel_ussd_btn", language),
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
@@ -671,7 +693,7 @@ fun SubscriptionScreen(
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                     Text(
-                        text = "Credentials Sent to Admin WhatsApp (for Verification & Unlock):",
+                        text = Localization.get("sub_creds_to_wa_header", language),
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -680,7 +702,7 @@ fun SubscriptionScreen(
                     OutlinedTextField(
                         value = usernameProofInput,
                         onValueChange = { usernameProofInput = it; proofError = null },
-                        label = { Text("Created Account Username *") },
+                        label = { Text(Localization.get("sub_created_username_label", language)) },
                         leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = OrangePrimary) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -692,7 +714,7 @@ fun SubscriptionScreen(
                     OutlinedTextField(
                         value = registeredPhoneInput,
                         onValueChange = { registeredPhoneInput = it; proofError = null },
-                        label = { Text("Registered Account Phone Number *") },
+                        label = { Text(Localization.get("sub_registered_phone_label", language)) },
                         leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = OrangePrimary) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                         modifier = Modifier
@@ -706,7 +728,7 @@ fun SubscriptionScreen(
                         value = payerFullNameInput,
                         onValueChange = { payerFullNameInput = it; proofError = null },
                         label = { Text(Localization.get("payer_full_name_label", language)) },
-                        placeholder = { Text("e.g. Jean Paul Habimana") },
+                        placeholder = { Text("Jean Paul Habimana") },
                         leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null, tint = OrangePrimary) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -719,7 +741,7 @@ fun SubscriptionScreen(
                         OutlinedTextField(
                             value = payerPhoneInput,
                             onValueChange = { payerPhoneInput = it; proofError = null },
-                            label = { Text("Sender MoMo Phone *") },
+                            label = { Text(Localization.get("sub_sender_phone_short_label", language)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                             modifier = Modifier
                                 .weight(1f)
@@ -730,7 +752,7 @@ fun SubscriptionScreen(
                         OutlinedTextField(
                             value = telcoRefInput,
                             onValueChange = { telcoRefInput = it },
-                            label = { Text("MoMo SMS Ref (Optional)") },
+                            label = { Text(Localization.get("sub_momo_ref_opt_label", language)) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp),
                             singleLine = true
@@ -764,7 +786,7 @@ fun SubscriptionScreen(
                             val cleanPayerPhone = payerPhoneInput.trim().ifBlank { cleanPhone }
                             val cleanPayerName = payerFullNameInput.trim()
                             if (cleanUser.isBlank() || cleanPhone.isBlank() || cleanPayerName.isBlank()) {
-                                proofError = "Please enter Username, Registered Phone, and Full Names on the sender phone."
+                                proofError = Localization.get("sub_proof_err_required", language)
                                 return@Button
                             }
                             proofError = null
@@ -830,7 +852,7 @@ fun SubscriptionScreen(
                         Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Submit & Send Proof via WhatsApp",
+                            text = Localization.get("sub_submit_wa_proof_btn", language),
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.5.sp
                         )
@@ -847,7 +869,7 @@ fun SubscriptionScreen(
                             Icon(Icons.Default.VerifiedUser, contentDescription = null, modifier = Modifier.size(16.dp), tint = OrangePrimary)
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Submit MoMo Reference for Verification",
+                                text = Localization.get("sub_submit_direct_ref_btn", language),
                                 color = OrangePrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
@@ -892,7 +914,12 @@ fun SubscriptionScreen(
                     }
 
                     Text(
-                        text = "Paste or type the BB2-... code bound to @${ownerAccount?.username ?: "owner"} (${ownerAccount?.phone?.ifBlank { shopProfile.phone } ?: shopProfile.phone}). Complete BB2 codes verify and auto-unlock instantly.",
+                        text = Localization.format(
+                            "sub_paste_bb2_hint_fmt",
+                            language,
+                            ownerAccount?.username ?: "owner",
+                            ownerAccount?.phone?.ifBlank { shopProfile.phone } ?: shopProfile.phone
+                        ),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -960,7 +987,7 @@ fun SubscriptionScreen(
                     if (paymentRequests.isNotEmpty()) {
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                         Text(
-                            text = "Recent Payment Verification Requests (${paymentRequests.size})",
+                            text = Localization.format("sub_recent_requests_fmt", language, paymentRequests.size),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -983,7 +1010,7 @@ fun SubscriptionScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "${req.amountRwf} FRw Ã¢â‚¬Â¢ ${req.provider}",
+                                            text = "${req.amountRwf} FRw • ${req.provider}",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurface
@@ -1004,7 +1031,15 @@ fun SubscriptionScreen(
                                         }
                                     }
                                     Text(
-                                        text = "@${req.ownerUsername} (${req.ownerPhone}) Ã¢â‚¬Â¢ ${req.deviceCount} dev Ã¢â‚¬Â¢ ${req.payerFullName.ifBlank { req.payerPhone }} Ã¢â‚¬Â¢ ${if (req.syncedToSupabase) "Synced to Supabase" else "Saved Offline"}",
+                                        text = Localization.format(
+                                            "sub_req_meta_fmt",
+                                            language,
+                                            req.ownerUsername,
+                                            req.ownerPhone,
+                                            req.deviceCount,
+                                            req.payerFullName.ifBlank { req.payerPhone },
+                                            if (req.syncedToSupabase) Localization.get("sub_synced_supabase", language) else Localization.get("sub_saved_offline", language)
+                                        ),
                                         fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1049,7 +1084,7 @@ fun SubscriptionScreen(
                                                     colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen),
                                                     shape = RoundedCornerShape(8.dp)
                                                 ) {
-                                                    Text("Apply Code", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    Text(Localization.get("sub_apply_code_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                         }
@@ -1075,7 +1110,7 @@ fun SubscriptionScreen(
                     ) {
                         Icon(Icons.Default.SupportAgent, contentDescription = null, modifier = Modifier.size(16.dp), tint = ProfitGreen)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("WhatsApp Admin Support", color = ProfitGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(Localization.get("sub_wa_admin_support_btn", language), color = ProfitGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
 
                     OutlinedButton(
@@ -1089,7 +1124,7 @@ fun SubscriptionScreen(
                     ) {
                         Icon(Icons.Default.CloudDone, contentDescription = null, modifier = Modifier.size(16.dp), tint = OrangePrimary)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Sync Approved Cloud Unlock", fontSize = 12.sp, color = OrangePrimary, fontWeight = FontWeight.Bold)
+                        Text(Localization.get("sub_sync_approved_cloud_btn", language), fontSize = 12.sp, color = OrangePrimary, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1100,6 +1135,7 @@ fun SubscriptionScreen(
         DirectMoMoPaymentDialog(
             shopProfile = shopProfile,
             breakdown = breakdown,
+            language = language,
             onDismiss = { showDirectPaymentDialog = false },
             onSubmitOnlinePayment = onProcessDirectPayment,
             onPaymentCompleted = { result ->
@@ -1125,7 +1161,7 @@ fun SubscriptionScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ProfitGreen)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Official Subscription Receipt", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(Localization.get("sub_official_receipt_title", language), fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             },
             text = {
@@ -1151,12 +1187,12 @@ fun SubscriptionScreen(
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Share / Print Invoice")
+                    Text(Localization.get("sub_share_print_invoice", language))
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { showInvoiceDialog = false }) {
-                    Text("Close")
+                    Text(Localization.get("close", language))
                 }
             }
         )
@@ -1238,7 +1274,7 @@ fun SubscriptionPaywallDialog(
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
                                             imageVector = Icons.Default.Lock,
-                                            contentDescription = "App Locked",
+                                            contentDescription = Localization.get("sub_terminal_locked_cd", language),
                                             tint = Color.White,
                                             modifier = Modifier.size(22.dp)
                                         )
@@ -1253,7 +1289,7 @@ fun SubscriptionPaywallDialog(
                                         color = Color.White
                                     )
                                     Text(
-                                        text = "${shopProfile.shopName.ifBlank { "BeBoss POS" }} Ã¢â‚¬Â¢ Terminal Locked",
+                                        text = Localization.format("sub_terminal_locked_fmt", language, shopProfile.shopName.ifBlank { "BeBoss POS" }),
                                         fontSize = 11.5.sp,
                                         color = Color.White.copy(alpha = 0.9f),
                                         fontWeight = FontWeight.SemiBold
@@ -1267,7 +1303,7 @@ fun SubscriptionPaywallDialog(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.AdminPanelSettings,
-                                        contentDescription = "Open Master Admin Console",
+                                        contentDescription = Localization.get("sub_open_admin_console_cd", language),
                                         tint = Color.White
                                     )
                                 }
@@ -1321,6 +1357,7 @@ fun SubscriptionPaywallDialog(
 private fun DirectMoMoPaymentDialog(
     shopProfile: ShopProfile,
     breakdown: SubscriptionPriceBreakdown,
+    language: AppLanguage = AppLanguage.ENGLISH,
     onDismiss: () -> Unit,
     onSubmitOnlinePayment: ((provider: String, phone: String, durationMonths: Int, userReference: String?, onSuccess: (PaymentProcessingResult, SubscriptionPriceBreakdown) -> Unit) -> Unit)? = null,
     onPaymentCompleted: (PaymentProcessingResult) -> Unit
@@ -1353,14 +1390,14 @@ private fun DirectMoMoPaymentDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Mobile Money payment proof",
+                        text = Localization.get("sub_momo_proof_title", language),
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = DarkNavy
                     )
                     if (!isProcessing) {
                         IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = InkMedium)
+                            Icon(Icons.Default.Close, contentDescription = Localization.get("close", language), tint = InkMedium)
                         }
                     }
                 }
@@ -1378,7 +1415,7 @@ private fun DirectMoMoPaymentDialog(
                         Text(text = breakdown.workerTierName, fontSize = 11.sp, color = InkMedium)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Total: ${breakdown.totalPayable} FRw (${breakdown.durationMonths * 30} Days)",
+                            text = Localization.format("sub_total_days_fmt", language, breakdown.totalPayable, breakdown.durationMonths * 30),
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Black,
                             color = DarkNavy
@@ -1429,7 +1466,7 @@ private fun DirectMoMoPaymentDialog(
                         phoneInput = it
                         errorMessage = null
                     },
-                    label = { Text("Payer Phone Number (078... / 073...)") },
+                    label = { Text(Localization.get("sub_payer_phone_hint", language)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
@@ -1441,14 +1478,14 @@ private fun DirectMoMoPaymentDialog(
                 OutlinedButton(
                     onClick = {
                         MoMoPaymentGateway.openUssdDialer(context, activeUssdCode)
-                        statusMessage = "Dialer opened for $selectedProvider. Complete payment with the operator, then submit your SMS reference for admin review."
+                        statusMessage = Localization.format("sub_dialer_status_fmt", language, selectedProvider)
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Dial USSD ($activeUssdCode)", fontSize = 11.5.sp)
+                    Text(Localization.format("sub_dial_ussd_fmt", language, activeUssdCode), fontSize = 11.5.sp)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1459,13 +1496,13 @@ private fun DirectMoMoPaymentDialog(
                         smsRefInput = it
                         errorMessage = null
                     },
-                    label = { Text("Transaction reference (e.g. MP260903...)") },
+                    label = { Text(Localization.get("sub_tx_ref_label", language)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     enabled = !isProcessing
                 )
                 Text(
-                    text = "A reference format check does not verify settlement. Submit payment proof by WhatsApp for admin review.",
+                    text = Localization.get("sub_ref_format_note", language),
                     fontSize = 11.sp,
                     color = InkMedium
                 )
@@ -1503,7 +1540,7 @@ private fun DirectMoMoPaymentDialog(
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = OrangePrimary)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Checking reference format...", fontSize = 11.5.sp, color = DarkNavy)
+                        Text(Localization.get("sub_checking_ref", language), fontSize = 11.5.sp, color = DarkNavy)
                     }
                 }
 
@@ -1561,7 +1598,8 @@ private fun DirectMoMoPaymentDialog(
                     enabled = !isProcessing && (phoneInput.isNotBlank() || smsRefInput.isNotBlank())
                 ) {
                     Text(
-                        text = if (isProcessing) "Checking..." else "Check reference (${breakdown.totalPayable} FRw)",
+                        text = if (isProcessing) Localization.get("sub_checking_btn", language)
+                        else Localization.format("sub_check_ref_btn_fmt", language, breakdown.totalPayable),
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
