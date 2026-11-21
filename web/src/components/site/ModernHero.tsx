@@ -25,6 +25,7 @@ export function ModernHero() {
           alt=""
           aria-hidden="true"
           loading="eager"
+          fetchPriority="high"
           decoding="async"
         />
         <div className="market-orbit market-orbit-one" aria-hidden="true" />
