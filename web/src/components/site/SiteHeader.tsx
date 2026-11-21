@@ -40,7 +40,7 @@ export function SiteHeader() {
       <div className="site-nav-inner mx-auto flex h-[76px] max-w-[1480px] items-center justify-between gap-3 px-4 sm:px-6 xl:px-8">
         <div className="site-brand-wrap">
           <Logo />
-          <span className="site-brand-caption">RETAIL · CLOUD · OFFLINE</span>
+          <span className="site-brand-caption">{t("footerTag")}</span>
         </div>
 
         <nav className="site-primary-nav" aria-label={p.common.menu}>
