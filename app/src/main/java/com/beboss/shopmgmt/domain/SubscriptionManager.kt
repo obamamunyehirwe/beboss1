@@ -5,6 +5,7 @@ import com.beboss.shopmgmt.data.dao.ShopProfileDao
 import com.beboss.shopmgmt.data.model.RedeemedVoucher
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
+import com.beboss.shopmgmt.util.LegacyUnlockVerificationClient
 import com.beboss.shopmgmt.util.PaymentProcessingResult
 import com.beboss.shopmgmt.util.SubscriptionSecurityManager
 import com.beboss.shopmgmt.util.VoucherValidationResult
@@ -36,20 +37,32 @@ class SubscriptionManager(
     ): VoucherValidationResult = withContext(Dispatchers.IO) {
         val redeemedHashes = redeemedVoucherDao.getAllRedeemedHashes().toSet()
 
-        val validation = SubscriptionSecurityManager.verifyVoucherToken(
-            voucherInput = voucherCode,
-            shopProfile = shopProfile,
-            branchCount = branchCount,
-            workerCount = workerCount,
-            alreadyRedeemedHashes = redeemedHashes,
-            ownerUsername = ownerUsername,
-            ownerPhoneOverride = ownerPhoneOverride
-        )
+        val cleanCode = voucherCode.trim()
+        val validation = if (cleanCode.startsWith("BB2-", ignoreCase = true)) {
+            // BB2's shared signing key was distributed in previous APK builds.
+            // Verify these old codes online against the original server-issued row.
+            LegacyUnlockVerificationClient.verify(
+                code = cleanCode,
+                username = ownerUsername,
+                phone = ownerPhoneOverride.ifBlank { shopProfile.phone }
+            )
+        } else {
+            SubscriptionSecurityManager.verifyVoucherToken(
+                voucherInput = cleanCode,
+                shopProfile = shopProfile,
+                branchCount = branchCount,
+                workerCount = workerCount,
+                alreadyRedeemedHashes = redeemedHashes,
+                ownerUsername = ownerUsername,
+                ownerPhoneOverride = ownerPhoneOverride
+            )
+        }
 
         if (validation.isValid) {
-            val voucherFingerprint = SubscriptionSecurityManager.computeVoucherFingerprint(voucherCode)
+            val voucherFingerprint = SubscriptionSecurityManager.computeVoucherFingerprint(cleanCode)
+            val normalizedStoredCode = if (cleanCode.startsWith("BB3-", ignoreCase = true)) cleanCode else cleanCode.uppercase()
             val redeemedRecord = RedeemedVoucher(
-                voucherCode = voucherCode.trim().uppercase(),
+                voucherCode = normalizedStoredCode,
                 voucherHash = voucherFingerprint,
                 planName = validation.planName,
                 daysAdded = validation.daysToAdd,
@@ -67,7 +80,7 @@ class SubscriptionManager(
             val updatedProfile = shopProfile.copy(
                 subscriptionStatus = ShopProfile.STATUS_ACTIVE,
                 subscriptionExpiresAt = newExpiry,
-                lastPaymentRef = voucherCode.trim().uppercase(),
+                lastPaymentRef = if (cleanCode.startsWith("BB3-", ignoreCase = true)) cleanCode else cleanCode.uppercase(),
                 lastPaymentAmount = validation.verifiedAmount,
                 lastPaymentDate = now,
                 updatedAt = now
