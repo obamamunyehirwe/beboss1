@@ -110,6 +110,19 @@ Deno.serve(async (request: Request) => {
     const updated = await patch.json();
     if (!updated.length) return json(409, { valid: false, message: "This code was already redeemed on another device." });
 
+    // Keep the matching payment request in sync with the one-time code redemption.
+    const paymentQuery = new URLSearchParams({
+      generated_unlock_code: `eq.${code}`,
+      owner_username: `eq.${username}`,
+    });
+    const paymentUpdate = await rest(`payment_requests?${paymentQuery.toString()}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "REDEEMED", updated_at: Date.now() }),
+    });
+    if (!paymentUpdate.ok) {
+      console.warn("[verify-legacy-bb2] Code redeemed, but its payment-request status could not be updated.");
+    }
+
     return json(200, {
       valid: true,
       tier: row.tier_code,
