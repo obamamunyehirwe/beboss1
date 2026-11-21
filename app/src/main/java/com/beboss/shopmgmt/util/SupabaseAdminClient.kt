@@ -1174,7 +1174,8 @@ object SupabaseAdminClient {
     // -------------------------------------------------------------------------
     suspend fun upsertShopBranches(shopSyncKey: String, shopName: String, branches: List<Branch>): Boolean =
         withContext(Dispatchers.IO) {
-            if (!isConfigured() || shopSyncKey.isBlank() || branches.isEmpty()) return@withContext false
+            if (!isConfigured() || shopSyncKey.isBlank()) return@withContext false
+            if (branches.isEmpty()) return@withContext true
             try {
                 val arr = JSONArray()
                 for (b in branches) {
@@ -1246,7 +1247,8 @@ object SupabaseAdminClient {
     // -------------------------------------------------------------------------
     suspend fun upsertShopStockTransfers(shopSyncKey: String, shopName: String, transfers: List<StockTransfer>): Boolean =
         withContext(Dispatchers.IO) {
-            if (!isConfigured() || shopSyncKey.isBlank() || transfers.isEmpty()) return@withContext false
+            if (!isConfigured() || shopSyncKey.isBlank()) return@withContext false
+            if (transfers.isEmpty()) return@withContext true
             try {
                 val arr = JSONArray()
                 for (t in transfers) {

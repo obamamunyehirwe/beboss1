@@ -128,4 +128,8 @@ export const syncEventsQuery = queryOptions({
     if (error) throw new Error(error.message);
     return data ?? [];
   },
+  staleTime: 5_000,
+  // Realtime is the fast path; polling keeps the admin monitor current after a socket reconnect.
+  refetchInterval: 15_000,
+  refetchIntervalInBackground: false,
 });

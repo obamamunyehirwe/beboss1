@@ -2494,3 +2494,77 @@ a:hover .brand-mark {
 }
 .dark .site-header-shell .site-nav-trigger-active { border-color:#70513b;background:#302b24;color:#ffb27f; }
 .dark .site-header-shell .site-mega-link-active { border-color:#594735!important;background:#302a23!important; }
+
+
+/* ── Production responsive hero containment ─────────────────────────────── */
+.market-frame {
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+}
+
+.market-copy,
+.market-device,
+.market-phone-shell,
+.market-phone-shell > div,
+.market-phone-mockup {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.market-device {
+  width: 100%;
+}
+
+.market-phone-shell {
+  width: min(100%, 352px);
+}
+
+.market-phone-mockup {
+  width: 100%;
+  max-width: 352px;
+  margin-inline: auto;
+}
+
+.market-phone-screen {
+  width: 100%;
+}
+
+@media (min-width: 681px) and (max-width: 1024px) {
+  .market-frame {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.82fr);
+    gap: clamp(14px, 2.4vw, 24px);
+    min-height: clamp(680px, 74vw, 780px);
+    padding-inline: clamp(20px, 3vw, 44px);
+  }
+
+  .market-copy h1 {
+    font-size: clamp(48px, 6vw, 72px);
+    line-height: 0.98;
+  }
+
+  .market-device {
+    padding-inline: 0;
+  }
+
+  .market-phone-shell > div {
+    transform: scale(0.92) rotateY(-5deg) rotateX(1deg);
+    transform-origin: top center;
+  }
+
+  .market-caption {
+    width: min(100%, 320px);
+  }
+}
+
+@media (max-width: 680px) {
+  .market-frame {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .market-phone-shell {
+    max-width: min(100%, 352px);
+  }
+
+  .market-phone-shell > div {
+    transform: none;
+  }
+}

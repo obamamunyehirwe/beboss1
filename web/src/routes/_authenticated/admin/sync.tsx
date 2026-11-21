@@ -19,7 +19,7 @@ import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, Searc
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { useNow } from "@/hooks/use-now";
 import { deleteSnapshot } from "@/lib/admin.functions";
-import { devicesQuery, snapshotsQuery, syncEventsQuery, type SyncEvent } from "@/lib/admin-queries";
+import { devicesQuery, shopsQuery, snapshotsQuery, syncEventsQuery, type SyncEvent } from "@/lib/admin-queries";
 import { formatDateTime, relativeTime } from "@/lib/format";
 import { DAY, HEALTH_LABEL, HOUR, deviceHealth, type DeviceHealth } from "@/lib/sync-health";
 import { cn } from "@/lib/utils";
@@ -52,6 +52,7 @@ const tooltipStyle = { background: "var(--popover)", border: "1px solid var(--bo
 function SyncMonitor() {
   const now = useNow(10_000);
   const events = useQuery(syncEventsQuery);
+  const shops = useQuery(shopsQuery);
   const devices = useQuery(devicesQuery);
   const snaps = useQuery(snapshotsQuery);
 
@@ -73,31 +74,43 @@ function SyncMonitor() {
         }).length,
       });
     }
-    const activeShops = new Set(last24.filter((e) => now - new Date(e.created_at).getTime() < 15 * 60_000).map((e) => e.shop_sync_key)).size;
-    
-    // Calculate failure rate
-    const totalSyncs = last24.length;
-    const failedSyncs = last24.filter((e) => e.action.includes("FAILED")).length;
-    const failureRate = totalSyncs > 0 ? ((failedSyncs / totalSyncs) * 100).toFixed(2) : "0.00";
-    
-    // Derive unique shops and branch data entirely from real records.
-    const totalShops = new Set(dv.map((d) => d.shop_sync_key)).size;
+    // Count activity that is actually emitted by the mobile-to-cloud sync triggers.
+    const syncActivity = last24.filter((e) =>
+      (e.entity === "SNAPSHOT" && e.action === "UPLOADED") ||
+      (e.entity === "DEVICE" && e.action === "SYNCED") ||
+      (e.entity === "SHOP" && ["HEARTBEAT", "REGISTERED"].includes(e.action))
+    );
+    const activeShops = new Set(
+      syncActivity
+        .filter((e) => now - new Date(e.created_at).getTime() < 15 * 60_000)
+        .map((e) => e.shop_sync_key)
+        .filter(Boolean),
+    ).size;
+
+    // Failure telemetry is not yet uploaded by the offline Android outbox. Never
+    // turn the absence of cloud failure events into a misleading 0% failure rate.
+    const reportedFailures = last24.filter((e) => e.action.includes("FAILED")).length;
+    const snapshotUploads24h = last24.filter((e) => e.entity === "SNAPSHOT" && e.action === "UPLOADED").length;
+
+    // Shop totals come from shop_accounts, not devices: a valid shop can have no
+    // paired device row while its first snapshot is still being provisioned.
+    const totalShops = (shops.data ?? []).length;
     const snapshots = (snaps.data ?? []).length;
     const staleDevices = dv.filter((d) => d.is_active && deviceHealth(d.last_synced_at, now) === "STALE").length;
-    
-    return { 
-      health, 
-      last24: last24.length, 
-      hours, 
-      activeShops, 
+
+    return {
+      health,
+      last24: last24.length,
+      hours,
+      activeShops,
       lastEvent: ev[0] ?? null,
       totalShops,
-      failureRate,
+      reportedFailures,
+      snapshotUploads24h,
       snapshots,
       staleDevices,
-      syncedLast24h: last24.filter(e => e.action.includes("SYNC") && !e.action.includes("FAILED")).length
     };
-  }, [events.data, devices.data, snaps.data, now]);
+  }, [events.data, shops.data, devices.data, snaps.data, now]);
 
   return (
     <div className="space-y-6">
@@ -107,21 +120,21 @@ function SyncMonitor() {
         actions={
           <span className="flex items-center gap-2 rounded-full border border-success/40 bg-success/10 px-3 py-1.5 text-xs text-success">
             <Radio className="size-3.5 animate-pulse" />
-            {stats.lastEvent ? `Last sync ${relativeTime(stats.lastEvent.created_at, now)}` : "Listening for syncs"}
+            {stats.lastEvent ? `Last cloud event ${relativeTime(stats.lastEvent.created_at, now)}` : "Listening for cloud events"}
           </span>
         }
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <StatCard label="Total Shops" value={stats.totalShops} sub="registered businesses" icon={Store} tone="brand" />
-        <StatCard label="Active Now" value={stats.activeShops} sub="synced in last 15 min" icon={Wifi} tone="success" />
-        <StatCard label="Synced (24h)" value={stats.syncedLast24h} sub="successful syncs" icon={Activity} tone="info" />
-        <StatCard label="Failure Rate" value={`${stats.failureRate}%`} sub="of sync attempts failed" icon={AlertTriangle} tone={parseFloat(stats.failureRate) > 5 ? "danger" : "warning"} />
+        <StatCard label="Active Now" value={stats.activeShops} sub="sync signal in last 15 min" icon={Wifi} tone="success" />
+        <StatCard label="Snapshot Uploads (24h)" value={stats.snapshotUploads24h} sub="uploaded phone datasets" icon={Activity} tone="info" />
+        <StatCard label="Reported Failures" value={stats.reportedFailures} sub="cloud-reported only; local retries stay on device" icon={AlertTriangle} tone={stats.reportedFailures > 0 ? "danger" : "info"} />
         <StatCard label="Branch Snapshots" value={stats.snapshots} sub="stored phone datasets" icon={Boxes} tone="brand" />
         <StatCard label="Stale Devices" value={stats.staleDevices} sub="active, no sync for 7+ days" icon={Clock} tone={stats.staleDevices > 0 ? "danger" : "success"} />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5">
-        <h2 className="font-semibold">Sync activity — last 24 hours</h2>
+        <h2 className="font-semibold">Cloud activity — last 24 hours</h2>
         <div className="mt-3 h-36">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={stats.hours}>
