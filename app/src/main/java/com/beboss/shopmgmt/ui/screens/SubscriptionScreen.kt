@@ -177,7 +177,10 @@ fun SubscriptionScreen(
         SubscriptionSecurityManager.isCompleteUnlockCodeFormat(voucherInput)
     }
     LaunchedEffect(voucherInput) {
-        val clean = voucherInput.trim().uppercase(Locale.ROOT)
+        // BB3 signatures are case-sensitive Base64. Preserve the exact pasted code;
+        // older BB2/BB hardware formats remain case-insensitive.
+        val raw = voucherInput.trim()
+        val clean = if (raw.startsWith("BB3-", ignoreCase = true)) raw else raw.uppercase(Locale.ROOT)
         if (SubscriptionSecurityManager.isCompleteUnlockCodeFormat(clean) && clean != lastAutoTriggeredCode) {
             lastAutoTriggeredCode = clean
             onActivateVoucher(clean)
