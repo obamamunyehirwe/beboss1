@@ -235,7 +235,10 @@ function LiveFeed() {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "shop_devices" }, () => qc.invalidateQueries({ queryKey: ["admin", "devices"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "shop_users" }, () => qc.invalidateQueries({ queryKey: ["admin", "users"] }))
-      .on("postgres_changes", { event: "*", schema: "public", table: "branch_sync_snapshots" }, () => qc.invalidateQueries({ queryKey: ["admin", "snapshots"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "branch_sync_snapshots" }, () => {
+        qc.invalidateQueries({ queryKey: ["admin", "snapshots"] });
+        qc.invalidateQueries({ queryKey: ["admin", "records"] });
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "unlock_codes" }, () => qc.invalidateQueries({ queryKey: ["admin", "codes"] }))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "contact_messages" }, () => {
         qc.invalidateQueries({ queryKey: ["admin", "inbox"] });

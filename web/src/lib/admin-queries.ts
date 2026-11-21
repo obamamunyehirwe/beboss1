@@ -14,7 +14,10 @@ export type AppRelease = Tables["app_releases"]["Row"];
 export type ContactMessage = Tables["contact_messages"]["Row"];
 export type AppConfig = Tables["app_config"]["Row"];
 
-async function all<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>, cap = 5000): Promise<T[]> {
+async function all<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  cap = Number.POSITIVE_INFINITY,
+): Promise<T[]> {
   const out: T[] = [];
   const page = 1000;
   for (let from = 0; from < cap; from += page) {
@@ -22,6 +25,7 @@ async function all<T>(build: (from: number, to: number) => PromiseLike<{ data: T
     if (error) throw new Error(error.message);
     out.push(...(data ?? []));
     if (!data || data.length < page) break;
+    if (out.length >= cap) break;
   }
   return out;
 }
@@ -43,28 +47,40 @@ export const adminKeys = {
 export const shopsQuery = queryOptions({
   queryKey: adminKeys.shops,
   queryFn: () => all<ShopAccount>((a, b) => supabase.from("shop_accounts").select("*").order("updated_at", { ascending: false }).range(a, b)),
+  staleTime: 5_000,
+  refetchInterval: 15_000,
 });
 export const paymentsQuery = queryOptions({
   queryKey: adminKeys.payments,
   queryFn: () => all<PaymentRequest>((a, b) => supabase.from("payment_requests").select("*").order("created_at", { ascending: false }).range(a, b)),
+  staleTime: 5_000,
+  refetchInterval: 10_000,
 });
 export const devicesQuery = queryOptions({
   queryKey: adminKeys.devices,
   queryFn: () => all<ShopDevice>((a, b) => supabase.from("shop_devices").select("*").order("updated_at", { ascending: false }).range(a, b)),
+  staleTime: 5_000,
+  refetchInterval: 15_000,
 });
 export const usersQuery = queryOptions({
   queryKey: adminKeys.users,
   queryFn: () => all<ShopUser>((a, b) => supabase.from("shop_users").select("*").order("updated_at", { ascending: false }).range(a, b)),
+  staleTime: 5_000,
+  refetchInterval: 15_000,
 });
 export const codesQuery = queryOptions({
   queryKey: adminKeys.codes,
   queryFn: () => all<UnlockCode>((a, b) => supabase.from("unlock_codes").select("*").order("issued_at", { ascending: false }).range(a, b)),
+  staleTime: 5_000,
+  refetchInterval: 15_000,
 });
 export const snapshotsQuery = queryOptions({
   queryKey: adminKeys.snapshots,
   queryFn: () => all<Omit<Snapshot, "payload_token"> & { payload_size: number }>((a, b) =>
-    supabase.from("branch_sync_snapshots").select("id, shop_sync_key, device_id, branch_id, branch_name, shop_name, owner_username, records_summary, updated_at").order("updated_at", { ascending: false }).range(a, b) as never,
+    supabase.from("branch_sync_snapshots").select("id, shop_sync_key, device_id, branch_id, branch_name, shop_name, owner_username, records_summary, sync_generation, chunk_index, chunk_count, updated_at").order("updated_at", { ascending: false }).range(a, b) as never,
   ),
+  staleTime: 5_000,
+  refetchInterval: 10_000,
 });
 export const auditQuery = queryOptions({
   queryKey: adminKeys.audit,

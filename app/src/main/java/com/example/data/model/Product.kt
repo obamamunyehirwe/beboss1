@@ -10,7 +10,10 @@ import java.util.UUID
     indices = [
         Index(value = ["barcode"]),
         Index(value = ["branchId"]),
-        Index(value = ["updatedAt"])
+        Index(value = ["updatedAt"]),
+        Index(value = ["name"]),
+        Index(value = ["category"]),
+        Index(value = ["isDeleted"])
     ]
 )
 data class Product(

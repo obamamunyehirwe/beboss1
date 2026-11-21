@@ -58,7 +58,10 @@ function Home() {
   return (
     <SiteLayout>
       {/* MODERN HERO SECTION */}
-      <ModernHero version={version} />
+      <ModernHero
+        version={version}
+        liveStats={stats?.ok ? stats.stats : null}
+      />
 
       {/* LEAKS */}
       <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6">

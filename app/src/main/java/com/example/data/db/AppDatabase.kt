@@ -8,6 +8,7 @@ import androidx.room.RoomDatabase
 import com.example.data.dao.BranchDao
 import com.example.data.dao.CustomerDao
 import com.example.data.dao.CustomerPaymentDao
+import com.example.data.dao.DeadLetterDao
 import com.example.data.dao.LocalAuditLogDao
 import com.example.data.dao.PaymentVerificationDao
 import com.example.data.dao.ProductDao
@@ -23,6 +24,7 @@ import com.example.data.dao.UserDao
 import com.example.data.model.Branch
 import com.example.data.model.Customer
 import com.example.data.model.CustomerPayment
+import com.example.data.model.DeadLetterItem
 import com.example.data.model.LocalAuditLog
 import com.example.data.model.PaymentVerificationRequest
 import com.example.data.model.Product
@@ -40,6 +42,7 @@ import com.example.util.CryptoKeyManager
 import net.zetetic.database.sqlcipher.SQLiteDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 @Database(
     entities = [
@@ -58,9 +61,10 @@ import java.io.File
         PaymentVerificationRequest::class,
         LocalAuditLog::class,
         SyncTombstone::class,
-        ShopDevice::class
+        ShopDevice::class,
+        DeadLetterItem::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -79,6 +83,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun localAuditLogDao(): LocalAuditLogDao
     abstract fun syncTombstoneDao(): SyncTombstoneDao
     abstract fun shopDeviceDao(): ShopDeviceDao
+    abstract fun deadLetterDao(): DeadLetterDao
 
     companion object {
         const val DATABASE_NAME = "beboss_database.db"
@@ -88,6 +93,7 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        @OptIn(androidx.room.ExperimentalRoomApi::class)
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE?.let { return@synchronized it }
@@ -96,7 +102,11 @@ abstract class AppDatabase : RoomDatabase() {
                     appContext,
                     AppDatabase::class.java,
                     DATABASE_NAME
-                ).addMigrations(*DatabaseMigrations.ALL_MIGRATIONS)
+                )
+                    .addMigrations(*DatabaseMigrations.ALL_MIGRATIONS)
+                    .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
+                    .setAutoCloseTimeout(60, TimeUnit.SECONDS)
+                    .allowMainThreadQueries()  // For emergency fallbacks only
 
                 if (!CryptoKeyManager.isRobolectricJvm()) {
                     System.loadLibrary("sqlcipher")

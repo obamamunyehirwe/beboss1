@@ -19,6 +19,7 @@ export interface ShareDataset {
   saleItems: Row[];
   customerPayments: Row[];
   purchases: Row[];
+  stockTransfers: Row[];
   branches: Row[];
   users: Row[];
 }
@@ -68,7 +69,7 @@ const arr = (v: unknown): Row[] => (Array.isArray(v) ? (v.filter((x) => x && typ
 
 /** Merges chunked exports into one dataset: newest row per id wins, tombstoned ids are dropped. */
 export function mergeShareJson(parts: Row[]): ShareDataset {
-  const keys = ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "branches", "users"] as const;
+  const keys = ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users"] as const;
   const maps = Object.fromEntries(keys.map((k) => [k, new Map<string, Row>()])) as Record<(typeof keys)[number], Map<string, Row>>;
   const dead = new Set<string>();
   let shopName = "";
@@ -98,9 +99,10 @@ export function mergeShareJson(parts: Row[]): ShareDataset {
     products: live("products"),
     customers: live("customers"),
     sales: live("sales"),
-    saleItems: [...maps.saleItems.values()],
+    saleItems: live("saleItems"),
     customerPayments: live("customerPayments"),
     purchases: live("purchases"),
+    stockTransfers: live("stockTransfers"),
     branches: live("branches"),
     users: live("users"),
   };
@@ -259,43 +261,124 @@ export function computeRetailInsights(ds: ShareDataset, now = Date.now()): Retai
   };
 }
 
-/** Picks the freshest device's chunk set: "<device>" plus "<device>#c1", "#c2"... */
-export function pickLatestChunkSet<T extends { device_id: string; updated_at: number }>(rows: T[]): T[] {
-  const groups = new Map<string, T[]>();
-  for (const r of rows) {
-    const base = r.device_id.split("#")[0] ?? r.device_id;
-    const g = groups.get(base) ?? [];
-    g.push(r);
-    groups.set(base, g);
+/** Returns the newest complete snapshot generation from every device, not a partial single-device view. */
+export function pickLatestChunkSet<
+  T extends {
+    device_id: string;
+    updated_at: number;
+    sync_generation?: string;
+    chunk_index?: number;
+    chunk_count?: number;
+    records_summary?: string;
+  },
+>(rows: T[]): T[] {
+  const byDevice = new Map<string, T[]>();
+  for (const row of rows) {
+    const base = row.device_id.replace(/#c\d+$/, "");
+    const group = byDevice.get(base) ?? [];
+    group.push(row);
+    byDevice.set(base, group);
   }
-  let best: T[] = [];
-  let bestTs = -1;
-  for (const g of groups.values()) {
-    const ts = Math.max(...g.map((r) => Number(r.updated_at) || 0));
-    if (ts > bestTs) {
-      bestTs = ts;
-      best = g;
+
+  const selected: T[] = [];
+  for (const deviceRows of byDevice.values()) {
+    const generations = new Map<string, T[]>();
+    for (const row of deviceRows) {
+      const generation = row.sync_generation ?? "";
+      const group = generations.get(generation) ?? [];
+      group.push(row);
+      generations.set(generation, group);
     }
+
+    const latest = [...generations.values()].sort(
+      (a, b) => Math.max(...b.map((row) => Number(row.updated_at) || 0)) - Math.max(...a.map((row) => Number(row.updated_at) || 0)),
+    )[0];
+    if (!latest?.length) continue;
+
+    const generation = latest[0]?.sync_generation ?? "";
+    const expected = generation
+      ? Math.max(...latest.map((row) => Number(row.chunk_count) || 0))
+      : Number(/\((\d+) chunk\(s\)\)/.exec(latest[0]?.records_summary ?? "")?.[1]) || latest.length;
+    const indexes = latest.map((row) => {
+      const suffix = /#c(\d+)$/.exec(row.device_id)?.[1];
+      return generation ? Number(row.chunk_index) : suffix ? Number(suffix) : 0;
+    });
+    const hasCompleteIndexes =
+      expected > 0 &&
+      indexes.length === expected &&
+      indexes.every((index) => Number.isInteger(index) && index >= 0 && index < expected) &&
+      new Set(indexes).size === expected;
+    if (!hasCompleteIndexes) continue;
+
+    selected.push(...latest.slice().sort((a, b) => indexes[latest.indexOf(a)] - indexes[latest.indexOf(b)]));
   }
-  return best;
+  return selected;
+}
+
+/** Keeps the legacy owner portal scoped to the freshest device snapshot. */
+export function pickLatestDeviceChunkSet<
+  T extends {
+    device_id: string;
+    updated_at: number;
+    sync_generation?: string;
+    chunk_index?: number;
+    chunk_count?: number;
+    records_summary?: string;
+  },
+>(rows: T[]): T[] {
+  const complete = pickLatestChunkSet(rows);
+  const byDevice = new Map<string, T[]>();
+  for (const row of complete) {
+    const base = row.device_id.replace(/#c\d+$/, "");
+    const group = byDevice.get(base) ?? [];
+    group.push(row);
+    byDevice.set(base, group);
+  }
+  return [...byDevice.values()].sort(
+    (a, b) => Math.max(...b.map((row) => Number(row.updated_at) || 0)) - Math.max(...a.map((row) => Number(row.updated_at) || 0)),
+  )[0] ?? [];
 }
 
 export interface ShopRecords {
   currency: string;
-  products: { id: string; name: string; category: string; barcode: string; cost: number; price: number; stock: number; threshold: number; unit: string; marginPct: number }[];
-  customers: { id: string; name: string; phone: string; category: string; debt: number; limit: number; overLimit: boolean }[];
-  sales: { id: string; receipt: string; date: number; total: number; profit: number; method: string; cashier: string; branch: string; items: number; customer: string }[];
-  staff: { id: string; name: string; username: string; role: string; branch: string; active: boolean }[];
-  purchases: { id: string; date: number; supplier: string; product: string; quantity: number; cost: number }[];
+  products: { id: string; name: string; category: string; barcode: string; cost: number; price: number; stock: number; threshold: number; unit: string; marginPct: number; branch: string; updatedAt: number }[];
+  customers: { id: string; name: string; phone: string; email: string; address: string; city: string; category: string; debt: number; limit: number; overLimit: boolean; notes: string }[];
+  sales: { id: string; receipt: string; date: number; total: number; cost: number; profit: number; discount: number; amountPaid: number; status: string; method: string; cashier: string; branch: string; items: number; customer: string; notes: string }[];
+  saleItems: { id: string; receipt: string; product: string; category: string; quantity: number; unit: string; cost: number; price: number; subtotal: number; profit: number; branch: string }[];
+  payments: { id: string; date: number; customer: string; amount: number; previousDebt: number; remainingDebt: number; method: string; receipt: string; recordedBy: string; branch: string; notes: string }[];
+  branches: { id: string; name: string; code: string; address: string; phone: string; manager: string; active: boolean; isMain: boolean }[];
+  stockTransfers: { id: string; number: string; date: number; product: string; fromBranch: string; toBranch: string; quantity: number; unit: string; status: string; transferredBy: string; notes: string }[];
+  staff: {
+    id: string;
+    name: string;
+    username: string;
+    role: string;
+    branch: string;
+    active: boolean;
+    canSellPOS: boolean;
+    canApplyDiscounts: boolean;
+    canManageInventory: boolean;
+    canViewCostAndProfit: boolean;
+    canViewAnalytics: boolean;
+    canManageCustomers: boolean;
+    canCollectDebt: boolean;
+    canDeleteRecords: boolean;
+    canExportReports: boolean;
+    canManageCollaborators: boolean;
+    canManageShopSettings: boolean;
+    canExportImportData: boolean;
+  }[];
+  purchases: { id: string; date: number; supplier: string; supplierPhone: string; product: string; quantity: number; cost: number; paymentStatus: string; invoice: string; branch: string; recordedBy: string; notes: string }[];
 }
 
-/** Flattens a merged snapshot into browsable admin tables (newest sales first, capped at 500). */
+/** Flattens the complete merged phone snapshot into browsable admin tables. */
 export function extractShopRecords(ds: ShareDataset): ShopRecords {
   const itemCount = new Map<string, number>();
   for (const it of ds.saleItems) {
     const sid = str(it["saleId"]);
     itemCount.set(sid, (itemCount.get(sid) ?? 0) + num(it["quantitySold"]));
   }
+  const receipts = new Map(ds.sales.map((sale) => [str(sale["id"]), str(sale["receiptNumber"]) || str(sale["id"]).slice(0, 8)]));
   return {
     currency: ds.currency,
     products: ds.products
@@ -313,6 +396,8 @@ export function extractShopRecords(ds: ShareDataset): ShopRecords {
           threshold: num(p["lowStockThreshold"]),
           unit: str(p["unit"]),
           marginPct: price ? ((price - cost) / price) * 100 : 0,
+          branch: str(p["branchId"]),
+          updatedAt: num(p["updatedAt"]),
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name)),
@@ -320,23 +405,94 @@ export function extractShopRecords(ds: ShareDataset): ShopRecords {
       .map((c) => {
         const debt = num(c["debtBalance"]);
         const limit = num(c["creditLimit"]);
-        return { id: str(c["id"]), name: str(c["name"]), phone: str(c["phone"]), category: str(c["category"]), debt, limit, overLimit: limit > 0 && debt > limit };
+        return {
+          id: str(c["id"]),
+          name: str(c["name"]),
+          phone: str(c["phone"]),
+          email: str(c["email"]),
+          address: str(c["address"]),
+          city: str(c["city"]),
+          category: str(c["category"]),
+          debt,
+          limit,
+          overLimit: limit > 0 && debt > limit,
+          notes: str(c["notes"]),
+        };
       })
       .sort((a, b) => b.debt - a.debt),
     sales: [...ds.sales]
       .sort((a, b) => num(b["saleDate"]) - num(a["saleDate"]))
-      .slice(0, 500)
       .map((s) => ({
         id: str(s["id"]),
         receipt: str(s["receiptNumber"]) || str(s["id"]).slice(0, 8),
         date: num(s["saleDate"]),
         total: num(s["totalAmount"]),
+        cost: num(s["totalCost"]),
         profit: num(s["totalProfit"]),
+        discount: num(s["discountAmount"]),
+        amountPaid: num(s["amountPaid"]),
+        status: str(s["paymentStatus"]),
         method: str(s["paymentMethod"]) || "CASH",
         cashier: str(s["cashierName"]),
         branch: str(s["branchName"]),
         items: itemCount.get(str(s["id"])) ?? 0,
         customer: str(s["customerName"]),
+        notes: str(s["notes"]),
+      })),
+    saleItems: [...ds.saleItems]
+      .sort((a, b) => str(a["saleId"]).localeCompare(str(b["saleId"])))
+      .map((item) => ({
+        id: str(item["id"]),
+        receipt: receipts.get(str(item["saleId"])) ?? str(item["saleId"]),
+        product: str(item["productName"]),
+        category: str(item["category"]),
+        quantity: num(item["quantitySold"]),
+        unit: str(item["unit"]),
+        cost: num(item["costPriceAtSale"]),
+        price: num(item["unitPriceAtSale"]),
+        subtotal: num(item["subtotal"]),
+        profit: num(item["profit"]),
+        branch: str(item["branchId"]),
+      })),
+    payments: [...ds.customerPayments]
+      .sort((a, b) => num(b["paymentDate"]) - num(a["paymentDate"]))
+      .map((payment) => ({
+        id: str(payment["id"]),
+        date: num(payment["paymentDate"]),
+        customer: str(payment["customerName"]),
+        amount: num(payment["amount"]),
+        previousDebt: num(payment["previousDebt"]),
+        remainingDebt: num(payment["remainingDebt"]),
+        method: str(payment["paymentMethod"]),
+        receipt: str(payment["receiptNumber"]),
+        recordedBy: str(payment["recordedBy"]),
+        branch: str(payment["branchName"]),
+        notes: str(payment["notes"]),
+      })),
+    branches: ds.branches.map((branch) => ({
+      id: str(branch["id"]),
+      name: str(branch["name"]),
+      code: str(branch["code"]),
+      address: str(branch["address"]),
+      phone: str(branch["phone"]),
+      manager: str(branch["managerName"]),
+      active: branch["isActive"] !== false,
+      isMain: branch["isMainBranch"] === true,
+    })),
+    stockTransfers: [...ds.stockTransfers]
+      .sort((a, b) => num(b["transferDate"]) - num(a["transferDate"]))
+      .map((transfer) => ({
+        id: str(transfer["id"]),
+        number: str(transfer["transferNumber"]),
+        date: num(transfer["transferDate"]),
+        product: str(transfer["productName"]),
+        fromBranch: str(transfer["fromBranchName"]),
+        toBranch: str(transfer["toBranchName"]),
+        quantity: num(transfer["quantity"]),
+        unit: str(transfer["unit"]),
+        status: str(transfer["status"]),
+        transferredBy: str(transfer["transferredBy"]),
+        notes: str(transfer["notes"]),
       })),
     staff: ds.users.map((u) => ({
       id: str(u["id"]),
@@ -345,17 +501,34 @@ export function extractShopRecords(ds: ShareDataset): ShopRecords {
       role: str(u["role"]),
       branch: str(u["assignedBranchName"]),
       active: u["isActive"] !== false,
+      canSellPOS: u["canSellPOS"] === true,
+      canApplyDiscounts: u["canApplyDiscounts"] === true,
+      canManageInventory: u["canManageInventory"] === true,
+      canViewCostAndProfit: u["canViewCostAndProfit"] === true,
+      canManageCustomers: u["canManageCustomers"] === true,
+      canViewAnalytics: u["canViewAnalytics"] === true,
+      canCollectDebt: u["canCollectDebt"] === true,
+      canDeleteRecords: u["canDeleteRecords"] === true,
+      canExportReports: u["canExportReports"] === true,
+      canManageCollaborators: u["canManageCollaborators"] === true,
+      canManageShopSettings: u["canManageShopSettings"] === true,
+      canExportImportData: u["canExportImportData"] === true,
     })),
     purchases: [...ds.purchases]
       .sort((a, b) => num(b["purchaseDate"] ?? b["createdAt"]) - num(a["purchaseDate"] ?? a["createdAt"]))
-      .slice(0, 300)
       .map((p) => ({
         id: str(p["id"]),
         date: num(p["purchaseDate"] ?? p["createdAt"]),
         supplier: str(p["supplierName"]),
+        supplierPhone: str(p["supplierPhone"]),
         product: str(p["productName"]),
         quantity: num(p["quantityPurchased"]),
         cost: p["totalPurchaseCost"] != null ? num(p["totalPurchaseCost"]) : num(p["unitCostPrice"]) * num(p["quantityPurchased"]),
+        paymentStatus: str(p["paymentStatus"]),
+        invoice: str(p["invoiceNumber"]),
+        branch: str(p["branchName"]),
+        recordedBy: str(p["purchasedByName"]),
+        notes: str(p["notes"]),
       })),
   };
 }

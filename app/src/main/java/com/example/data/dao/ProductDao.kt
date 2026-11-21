@@ -22,8 +22,15 @@ interface ProductDao {
     @Query("UPDATE products SET isDeleted = 0, updatedAt = :updatedAt WHERE id = :productId")
     suspend fun restoreProduct(productId: String, updatedAt: Long = System.currentTimeMillis())
 
-    @Query("SELECT * FROM products WHERE isDeleted = 0 AND (name LIKE '%' || :query || '%' OR category LIKE '%' || :query || '%' OR barcode LIKE '%' || :query || '%') ORDER BY name ASC")
-    fun searchProducts(query: String): Flow<List<Product>>
+    @Query("""
+        SELECT * FROM products
+        WHERE isDeleted = 0
+        AND (name LIKE '%' || :query || '%' OR category LIKE '%' || :query || '%' OR barcode LIKE '%' || :query || '%')
+        AND (:category = 'All' OR category = :category)
+        ORDER BY name ASC
+        LIMIT 200
+    """)
+    fun searchProducts(query: String, category: String = "All"): Flow<List<Product>>
 
     @Query("SELECT * FROM products WHERE isDeleted = 0 AND quantityInStock <= lowStockThreshold ORDER BY quantityInStock ASC")
     fun getLowStockProducts(): Flow<List<Product>>
@@ -33,6 +40,9 @@ interface ProductDao {
 
     @Query("SELECT * FROM products WHERE barcode = :barcode AND isDeleted = 0 LIMIT 1")
     suspend fun getProductByBarcode(barcode: String): Product?
+
+    @Query("SELECT * FROM products WHERE barcode = :barcode AND branchId = :branchId AND isDeleted = 0 LIMIT 1")
+    suspend fun getProductByBarcodeAndBranch(barcode: String, branchId: String): Product?
 
     @Query("SELECT DISTINCT category FROM products WHERE isDeleted = 0 ORDER BY category ASC")
     fun getAllCategories(): Flow<List<String>>

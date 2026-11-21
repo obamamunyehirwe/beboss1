@@ -54,4 +54,10 @@ interface SyncQueueDao {
 
     @Query("DELETE FROM sync_queue")
     suspend fun clearQueue()
+
+    @Query("SELECT * FROM sync_queue WHERE id = :itemId LIMIT 1")
+    suspend fun getSyncQueueItem(itemId: String): SyncQueueItem?
+
+    @Query("DELETE FROM sync_queue WHERE id = :itemId")
+    suspend fun deleteSyncQueueItem(itemId: String)
 }

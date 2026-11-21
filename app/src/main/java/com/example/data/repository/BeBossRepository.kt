@@ -110,7 +110,7 @@ class BeBossRepository(private val database: AppDatabase) {
     val inventoryManager = InventoryManager(productDao, purchaseDao, syncQueueDao, syncTombstoneDao)
     val customerDebtManager = CustomerDebtManager(customerDao, customerPaymentDao, saleDao, syncQueueDao, syncTombstoneDao)
     val staffAuthManager = StaffAuthManager(userDao, syncQueueDao, syncTombstoneDao)
-    val branchTransferManager = BranchTransferManager(branchDao, stockTransferDao, productDao, shopProfileDao, syncQueueDao, syncTombstoneDao)
+    val branchTransferManager = BranchTransferManager(branchDao, stockTransferDao, productDao, shopProfileDao, syncQueueDao, syncTombstoneDao, database)
     val subscriptionManager = SubscriptionManager(shopProfileDao, redeemedVoucherDao)
     val analyticsEngine = AnalyticsEngine(saleDao)
     val cloudSyncManager = CloudSyncManager(database)
@@ -239,6 +239,15 @@ class BeBossRepository(private val database: AppDatabase) {
     }
 
     suspend fun ensureDefaultBranches(): List<Branch> = branchTransferManager.ensureDefaultBranches()
+
+    suspend fun updateBranchOperationalStatus(branchId: String, status: String) =
+        branchTransferManager.updateBranchOperationalStatus(branchId, status)
+
+    suspend fun refreshAllBranchStockSnapshots() =
+        branchTransferManager.refreshAllBranchStockSnapshots()
+
+    suspend fun confirmTransferReceived(transferId: String, receivedBy: String): StockTransfer =
+        branchTransferManager.confirmTransferReceived(transferId, receivedBy)
 
     // -------------------------------------------------------------
     // USERS & AUTHENTICATION
@@ -1369,5 +1378,6 @@ class BeBossRepository(private val database: AppDatabase) {
 
         ensureDefaultAdminUser()
         ensureDefaultBranches()
+        refreshAllBranchStockSnapshots()
     }
 }

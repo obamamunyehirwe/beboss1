@@ -53,7 +53,30 @@ object BeBossLogger {
             scrub(message)
         }
         safeLog(Log.ERROR, tag, summary, null)
+        
+        // Forward to global crash telemetry hook if registered
+        crashReporter?.invoke(tag, summary, throwable)
+        
+        // Forward to Sentry if available (optional dependency)
+        try {
+            // Sentry integration hook - will be initialized if Sentry is added as dependency
+            SentryCrashReporter?.invoke(tag, summary, throwable)
+        } catch (_: Throwable) {
+            // Sentry not available - ignore
+        }
     }
+
+    /**
+     * Optional crash reporter hook — set once in Application.onCreate() to forward
+     * errors to Sentry / Firebase Crashlytics without a hard dependency.
+     */
+    var crashReporter: ((tag: String, message: String, throwable: Throwable?) -> Unit)? = null
+    
+    /**
+     * Optional Sentry crash reporter hook — set once in Application.onCreate() to forward
+     * errors to Sentry for production crash tracking.
+     */
+    var SentryCrashReporter: ((tag: String, message: String, throwable: Throwable?) -> Unit)? = null
 
     private fun safeLog(priority: Int, tag: String, msg: String, tr: Throwable?) {
         try {

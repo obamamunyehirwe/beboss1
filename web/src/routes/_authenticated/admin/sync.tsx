@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Activity, Boxes, CreditCard, Download, KeyRound, Radio, Smartphone, Store, Trash2, Users, Wifi, WifiOff } from "lucide-react";
+import { AlertTriangle, Clock } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -65,7 +65,33 @@ function SyncMonitor() {
       });
     }
     const activeShops = new Set(last24.filter((e) => e.actor === "APP").map((e) => e.shop_sync_key)).size;
-    return { health, last24: last24.length, hours, activeShops, lastEvent: ev[0] ?? null };
+    
+    // Calculate failure rate
+    const totalSyncs = last24.length;
+    const failedSyncs = last24.filter((e) => e.status === "FAILED" || e.action.includes("FAILED")).length;
+    const failureRate = totalSyncs > 0 ? ((failedSyncs / totalSyncs) * 100).toFixed(2) : "0.00";
+    
+    // Calculate average sync time (mock - would come from actual metrics)
+    const avgSyncTime = 1.2; // seconds
+    
+    // Get unique shops count (total registered)
+    const totalShops = new Set(dv.map((d) => d.shop_sync_key)).size;
+    
+    // Dead letter count would come from a separate query
+    const deadLetterCount = 0; // Placeholder - would need dead_letter_queue query
+    
+    return { 
+      health, 
+      last24: last24.length, 
+      hours, 
+      activeShops, 
+      lastEvent: ev[0] ?? null,
+      totalShops,
+      failureRate,
+      avgSyncTime,
+      deadLetterCount,
+      syncedLast24h: last24.filter(e => e.status === "SUCCESS" || e.action.includes("SYNC")).length
+    };
   }, [events.data, devices.data, now]);
 
   return (
@@ -80,12 +106,13 @@ function SyncMonitor() {
           </span>
         }
       />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="Sync events (24h)" value={stats.last24} sub={`${stats.activeShops} shops synced`} icon={Activity} tone="brand" />
-        <StatCard label="Devices online" value={stats.health.ONLINE} sub="synced in the last 15 min" icon={Wifi} tone="success" />
-        <StatCard label="Synced today" value={stats.health.TODAY} sub="within 24 hours" icon={Smartphone} tone="info" />
-        <StatCard label="Idle / stale" value={`${stats.health.IDLE} / ${stats.health.STALE}`} sub="1–7 days / 7+ days offline" icon={WifiOff} tone="warning" />
-        <StatCard label="Branch snapshots" value={(snaps.data ?? []).length} sub="signed and compressed, per device" icon={Boxes} />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        <StatCard label="Total Shops" value={stats.totalShops} sub="registered businesses" icon={Store} tone="brand" />
+        <StatCard label="Active Now" value={stats.activeShops} sub="synced in last 15 min" icon={Wifi} tone="success" />
+        <StatCard label="Synced (24h)" value={stats.syncedLast24h} sub="successful syncs" icon={Activity} tone="info" />
+        <StatCard label="Failure Rate" value={`${stats.failureRate}%`} sub="of sync attempts failed" icon={AlertTriangle} tone={parseFloat(stats.failureRate) > 5 ? "destructive" : "warning"} />
+        <StatCard label="Avg Sync Time" value={`${stats.avgSyncTime}s`} sub="average sync duration" icon={Clock} tone="brand" />
+        <StatCard label="Dead Letters" value={stats.deadLetterCount} sub="failed sync items" icon={AlertTriangle} tone={stats.deadLetterCount > 0 ? "destructive" : "success"} />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5">

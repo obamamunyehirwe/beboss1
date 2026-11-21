@@ -81,7 +81,6 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.BeBossViewModel
 import com.example.util.AppLanguage
-import com.example.util.BeBossLogger
 import com.example.util.BeBossNotificationManager
 import com.example.util.BiometricAuthManager
 import com.example.util.ClockGuard
@@ -96,7 +95,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        installCrashTelemetryHook()
         ClockGuard.init(this)
         window.setFlags(
             WindowManager.LayoutParams.FLAG_SECURE,
@@ -126,27 +124,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun installCrashTelemetryHook() {
-        if (crashHookInstalled) return
-        synchronized(MainActivity::class.java) {
-            if (crashHookInstalled) return
-            val previous = Thread.getDefaultUncaughtExceptionHandler()
-            Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-                BeBossLogger.e(
-                    "BeBossUncaught",
-                    "Uncaught exception on thread=${thread.name}",
-                    throwable
-                )
-                previous?.uncaughtException(thread, throwable)
-            }
-            crashHookInstalled = true
-        }
-    }
-
-    companion object {
-        @Volatile
-        private var crashHookInstalled = false
-    }
 
     override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
         if (ev != null) {
@@ -175,6 +152,11 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             // Graceful fallback on older vendor skins
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        activeViewModel = null
     }
 }
 

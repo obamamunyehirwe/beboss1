@@ -284,6 +284,8 @@ export type Database = {
         Row: {
           branch_id: string
           branch_name: string
+          chunk_count: number
+          chunk_index: number
           device_id: string
           id: string
           owner_username: string
@@ -291,11 +293,14 @@ export type Database = {
           records_summary: string
           shop_name: string
           shop_sync_key: string
+          sync_generation: string
           updated_at: number
         }
         Insert: {
           branch_id?: string
           branch_name?: string
+          chunk_count?: number
+          chunk_index?: number
           device_id: string
           id: string
           owner_username?: string
@@ -303,11 +308,14 @@ export type Database = {
           records_summary?: string
           shop_name?: string
           shop_sync_key: string
+          sync_generation?: string
           updated_at?: number
         }
         Update: {
           branch_id?: string
           branch_name?: string
+          chunk_count?: number
+          chunk_index?: number
           device_id?: string
           id?: string
           owner_username?: string
@@ -315,6 +323,7 @@ export type Database = {
           records_summary?: string
           shop_name?: string
           shop_sync_key?: string
+          sync_generation?: string
           updated_at?: number
         }
         Relationships: []

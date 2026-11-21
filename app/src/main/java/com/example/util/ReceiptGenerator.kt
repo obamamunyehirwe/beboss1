@@ -2,6 +2,7 @@ package com.example.util
 
 import android.content.Context
 import android.content.Intent
+import android.util.LruCache
 import com.example.data.model.Sale
 import com.example.data.model.SaleItem
 import com.example.data.model.ShopProfile
@@ -11,6 +12,9 @@ import java.util.Date
 import java.util.Locale
 
 object ReceiptGenerator {
+
+    // Cache last 10 receipts to avoid regenerating
+    private val receiptCache = LruCache<String, String>(10)
 
     fun formatMoney(amount: Double, profile: ShopProfile): String {
         val formatter = NumberFormat.getNumberInstance(Locale.getDefault()).apply {
@@ -64,6 +68,9 @@ object ReceiptGenerator {
         items: List<SaleItem>,
         profile: ShopProfile
     ): String {
+        val cacheKey = sale.id
+        receiptCache.get(cacheKey)?.let { return it }
+
         val sb = StringBuilder()
         val line = "--------------------------------"
         val doubleLine = "================================"
@@ -119,7 +126,9 @@ object ReceiptGenerator {
         sb.append("   Powered by BeBoss\n")
         sb.append(doubleLine)
 
-        return sb.toString()
+        val result = sb.toString()
+        receiptCache.put(cacheKey, result)
+        return result
     }
 
     /**

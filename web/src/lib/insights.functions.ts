@@ -5,6 +5,34 @@ import { computeRetailInsights, decodeShareToken, extractShopRecords, mergeShare
 import { readServerSecret, requireStaffRole, writeAudit, type AdminCtx } from "./admin-guard.server";
 
 const DATASHARE_SECRET = "BEBOSS_DATASHARE_HMAC_SECRET";
+const SNAPSHOT_PAGE_SIZE = 1000;
+
+async function loadShopSnapshots(ctx: AdminCtx, shopId: string) {
+  const rows: {
+    id: string;
+    device_id: string;
+    branch_name: string;
+    payload_token: string;
+    updated_at: number;
+    sync_generation: string;
+    chunk_index: number;
+    chunk_count: number;
+    records_summary: string;
+  }[] = [];
+
+  for (let from = 0; ; from += SNAPSHOT_PAGE_SIZE) {
+    const { data, error } = await ctx.supabase
+      .from("branch_sync_snapshots")
+      .select("id, device_id, branch_name, payload_token, updated_at, sync_generation, chunk_index, chunk_count, records_summary")
+      .eq("shop_sync_key", shopId)
+      .order("updated_at", { ascending: false })
+      .range(from, from + SNAPSHOT_PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    rows.push(...(data ?? []));
+    if (!data || data.length < SNAPSHOT_PAGE_SIZE) break;
+  }
+  return rows;
+}
 
 export interface ShopInsightsResult {
   insights: RetailInsights | null;
@@ -22,16 +50,14 @@ export const getShopInsights = createServerFn({ method: "POST" })
   .handler(async ({ data, context }): Promise<ShopInsightsResult> => {
     const ctx = context as unknown as AdminCtx;
     await requireStaffRole(ctx, false);
-    const { data: rows, error } = await ctx.supabase
-      .from("branch_sync_snapshots")
-      .select("id, device_id, branch_name, payload_token, updated_at")
-      .eq("shop_sync_key", data.shopId)
-      .order("updated_at", { ascending: false })
-      .limit(200);
-    if (error) throw new Error(error.message);
-    const set = pickLatestChunkSet((rows ?? []) as { id: string; device_id: string; branch_name: string; payload_token: string; updated_at: number }[]);
+    const rows = await loadShopSnapshots(ctx, data.shopId);
+    const set = pickLatestChunkSet(rows);
     const empty: ShopInsightsResult = { insights: null, chunks: 0, deviceId: "", branchName: "", uploadedAt: 0, signature: "UNCHECKED", error: null };
-    if (!set.length) return empty;
+    if (!set.length) {
+      return rows.length
+        ? { ...empty, error: "The latest phone sync is incomplete. Waiting for its automatic retry." }
+        : empty;
+    }
     const head = set.find((r) => !r.device_id.includes("#")) ?? set[0]!;
     const base = { ...empty, chunks: set.length, deviceId: head.device_id, branchName: head.branch_name, uploadedAt: Math.max(...set.map((r) => Number(r.updated_at))) };
     try {
@@ -79,15 +105,15 @@ export const getShopRecords = createServerFn({ method: "POST" })
   .handler(async ({ data, context }): Promise<{ records: ShopRecords | null; uploadedAt: number; error: string | null }> => {
     const ctx = context as unknown as AdminCtx;
     await requireStaffRole(ctx, false);
-    const { data: rows, error } = await ctx.supabase
-      .from("branch_sync_snapshots")
-      .select("id, device_id, branch_name, payload_token, updated_at")
-      .eq("shop_sync_key", data.shopId)
-      .order("updated_at", { ascending: false })
-      .limit(200);
-    if (error) throw new Error(error.message);
-    const set = pickLatestChunkSet((rows ?? []) as { id: string; device_id: string; branch_name: string; payload_token: string; updated_at: number }[]);
-    if (!set.length) return { records: null, uploadedAt: 0, error: null };
+    const rows = await loadShopSnapshots(ctx, data.shopId);
+    const set = pickLatestChunkSet(rows);
+    if (!set.length) {
+      return {
+        records: null,
+        uploadedAt: 0,
+        error: rows.length ? "The latest phone sync is incomplete. Waiting for its automatic retry." : null,
+      };
+    }
     const uploadedAt = Math.max(...set.map((r) => Number(r.updated_at)));
     try {
       const parts = await Promise.all(set.map((r) => decodeShareToken(r.payload_token)));

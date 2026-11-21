@@ -389,4 +389,28 @@ object SubscriptionSecurityManager {
             b.uppercase(Locale.ROOT).toByteArray(StandardCharsets.UTF_8)
         )
     }
+
+    /**
+     * Verifies an unlock code (BB2 format) with account binding and HMAC signature.
+     * This is a simplified verification for direct code checking.
+     */
+    fun verifyUnlockCode(code: String, username: String, phone: String): Boolean {
+        val parts = code.split("-")
+        if (parts.size != 6) return false
+
+        if (parts[0] != "BB2") return false
+
+        // Verify account binding
+        val acctHash = parts[4]
+        val expectedHash = computeAccountBindingHash(username, phone)
+        if (acctHash != expectedHash) return false
+
+        // Verify HMAC signature (constant-time)
+        val hmacSig = parts[5]
+        val payload = code.take(code.lastIndexOf("-"))
+        val signingSecret = getCrossPlatformSigningSecret()
+        val key = SecretKeySpec(signingSecret.toByteArray(StandardCharsets.UTF_8), HMAC_ALGORITHM)
+        val expectedSig = computeHmacSignature(payload, key).take(8).uppercase(Locale.ROOT)
+        return slowEquals(hmacSig, expectedSig)
+    }
 }

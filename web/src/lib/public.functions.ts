@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { createPublicClient } from "./server/public-client";
 import { computeShopKey, normalizePhoneLast9 } from "./pricing";
-import { decodeShareToken, extractShopRecords, mergeShareJson, pickLatestChunkSet, type ShopRecords } from "./snapshot-analytics";
+import { decodeShareToken, extractShopRecords, mergeShareJson, pickLatestDeviceChunkSet, type ShopRecords } from "./snapshot-analytics";
 
 export const getPublicSite = createServerFn({ method: "GET" }).handler(async () => {
   const sb = createPublicClient();
@@ -33,7 +33,7 @@ export const lookupMyShop = createServerFn({ method: "POST" })
       sb.from("unlock_codes").select("unlock_code, tier_code, plan_days, status, issued_at, redeemed_at").order("issued_at", { ascending: false }).limit(20),
       sb.from("shop_devices").select("id, device_name, device_id, role, branch_name, is_active, is_owner_primary, assigned_user_name, last_synced_at").eq("shop_sync_key", key).order("last_synced_at", { ascending: false }).limit(50),
       sb.from("announcements").select("*").in("audience", ["ALL", "APP"]).order("starts_at", { ascending: false }).limit(5),
-      sb.from("branch_sync_snapshots").select("id, device_id, branch_name, records_summary, payload_token, updated_at").eq("shop_sync_key", key).order("updated_at", { ascending: false }).limit(20),
+      sb.from("branch_sync_snapshots").select("id, device_id, branch_name, records_summary, payload_token, updated_at, sync_generation, chunk_index, chunk_count").eq("shop_sync_key", key).order("updated_at", { ascending: false }).limit(20),
     ]);
 
     let decodedRecords: ShopRecords | null = null;
@@ -41,7 +41,7 @@ export const lookupMyShop = createServerFn({ method: "POST" })
     const snapRows = snaps.data ?? [];
     if (snapRows.length > 0) {
       try {
-        const set = pickLatestChunkSet(snapRows as { id: string; device_id: string; branch_name: string; payload_token: string; updated_at: number }[]);
+        const set = pickLatestDeviceChunkSet(snapRows);
         if (set.length > 0) {
           snapshotUploadedAt = Math.max(...set.map((r) => Number(r.updated_at)));
           const parts = await Promise.all(set.map((r) => decodeShareToken(r.payload_token)));

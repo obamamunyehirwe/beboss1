@@ -289,6 +289,9 @@ const en = {
   // Leak case studies
   leakCaseStudy: "Real case study",
   leakClose: "Close",
+  heroOfflineLabel: "Offline-first",
+  heroActiveShops: "Active shops",
+  heroSyncedDevices: "Synced / active",
 };
 
 type Dict = typeof en;
@@ -570,6 +573,9 @@ const rw: Dict = {
   trustSupport: "Ubufasha bwa WhatsApp",
   leakCaseStudy: "Urugero nyarwo",
   leakClose: "Funga",
+  heroOfflineLabel: "Ikoresha nta murandasi",
+  heroActiveShops: "Amaduka akora",
+  heroSyncedDevices: "Bihuza / birakora",
 };
 
 const fr: Dict = {
@@ -849,6 +855,9 @@ const fr: Dict = {
   trustSupport: "Support WhatsApp",
   leakCaseStudy: "Cas réel",
   leakClose: "Fermer",
+  heroOfflineLabel: "Hors ligne",
+  heroActiveShops: "Boutiques actives",
+  heroSyncedDevices: "Synchronisés / actifs",
 };
 
 const sw: Dict = {
@@ -1128,6 +1137,9 @@ const sw: Dict = {
   trustSupport: "Msaada wa WhatsApp",
   leakCaseStudy: "Kesi halisi",
   leakClose: "Funga",
+  heroOfflineLabel: "Bila mtandao",
+  heroActiveShops: "Maduka hai",
+  heroSyncedDevices: "Imesawazishwa / hai",
 };
 
 export const DICTS: Record<Lang, Dict> = { en, rw, fr, sw };

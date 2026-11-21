@@ -288,6 +288,27 @@ object DatabaseMigrations {
         }
     }
 
+    val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS dead_letter_queue (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    originalItemId TEXT NOT NULL,
+                    tableName TEXT NOT NULL,
+                    operation TEXT NOT NULL,
+                    payloadJson TEXT NOT NULL,
+                    failureReason TEXT NOT NULL,
+                    failureCount INTEGER NOT NULL DEFAULT 1,
+                    createdAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_dead_letter_originalItemId ON dead_letter_queue(originalItemId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_dead_letter_createdAt ON dead_letter_queue(createdAt)")
+        }
+    }
+
     val ALL_MIGRATIONS = arrayOf(
         MIGRATION_1_2,
         MIGRATION_2_3,
@@ -299,6 +320,7 @@ object DatabaseMigrations {
         MIGRATION_8_9,
         MIGRATION_9_10,
         MIGRATION_10_11,
-        MIGRATION_11_12
+        MIGRATION_11_12,
+        MIGRATION_12_13
     )
 }

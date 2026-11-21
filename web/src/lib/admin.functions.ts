@@ -36,6 +36,25 @@ async function loadSigningSecret(): Promise<string> {
   return v;
 }
 
+/**
+ * Ensure admin session is valid and refresh if near expiry.
+ * Returns true if session is valid, false if expired and could not be refreshed.
+ */
+async function ensureValidAdminSession(context: Ctx): Promise<boolean> {
+  const { data: { session } } = await context.supabase.auth.getSession();
+  if (!session) return false;
+
+  const expiresIn = session.expires_in || 3600;
+  const expiresAt = session.created_at + expiresIn * 1000;
+
+  // Refresh if within 5 minutes of expiry
+  if (Date.now() > expiresAt - 300_000) {
+    const { error } = await context.supabase.auth.refreshSession();
+    return !error;
+  }
+  return true;
+}
+
 async function perDeviceRate(context: Ctx): Promise<number> {
   const { data } = await context.supabase.from("app_config").select("per_device_fee_rwf").eq("id", "global").maybeSingle();
   return Number(data?.per_device_fee_rwf) || 2000;
@@ -98,9 +117,20 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
   .inputValidator((d: { requestId: string }) => z.object({ requestId: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
+    
+    // Ensure admin session is valid
+    const sessionValid = await ensureValidAdminSession(ctx);
+    if (!sessionValid) throw new Error("Admin session expired. Please sign in again.");
+    
     const admin = await requireAdmin(ctx);
     const { data: req, error } = await ctx.supabase.from("payment_requests").select("*").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
+    
+    // Idempotency check: if already approved, return existing code
+    if (req.status === "APPROVED" && req.generated_unlock_code) {
+      return { code: req.generated_unlock_code, alreadyApproved: true, days: req.duration_months * 30, tier: req.tier_code || "SINGLE", total: req.amount_rwf, expiresAt: req.subscription_expires_at, shopName: req.shop_name, username: req.owner_username, phone: req.payer_phone || req.owner_phone };
+    }
+    
     const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, await perDeviceRate(ctx));
     const secret = await loadSigningSecret();
     const code = await generateBB2UnlockCode({ username: req.owner_username, phone: req.owner_phone, tier: calc.tier, days: calc.days, secret });
@@ -134,7 +164,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
       fallback: { shop_name: req.shop_name, owner_username: String(req.owner_username).toLowerCase(), owner_phone: req.owner_phone, device_challenge: req.device_challenge || "" },
     });
     await audit(ctx, admin.email, "APPROVE_PAYMENT", `@${req.owner_username}`, `Verified ${req.payer_full_name || req.payer_phone} ${req.telco_reference} (${calc.total} FRw) -> issued ${code}`);
-    return { code, days: calc.days, tier: calc.tier, total: calc.total, expiresAt, shopName: req.shop_name, username: req.owner_username, phone: req.payer_phone || req.owner_phone };
+    return { code, days: calc.days, tier: calc.tier, total: calc.total, expiresAt, shopName: req.shop_name, username: req.owner_username, phone: req.payer_phone || req.owner_phone, alreadyApproved: false };
   });
 
 export const directAutoUnlock = createServerFn({ method: "POST" })
@@ -189,6 +219,53 @@ export const deletePaymentRequest = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     await audit(ctx, admin.email, "DELETE_PAYMENT", data.requestId, "Removed payment claim");
     return { ok: true };
+  });
+
+/**
+ * Batch approve multiple payments with individual results.
+ * Each payment is processed independently; failures don't block others.
+ */
+export const approveBatchPayments = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { requestIds: string[] }) => z.object({ requestIds: z.array(z.string().min(1).max(200)).min(1).max(50) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requireAdmin(ctx);
+    
+    const results = [];
+    for (const requestId of data.requestIds) {
+      try {
+        const result = await approvePaymentWithCode({ requestId }, { context });
+        results.push({ requestId, success: true, code: result.code, alreadyApproved: result.alreadyApproved });
+      } catch (e) {
+        results.push({ requestId, success: false, error: e instanceof Error ? e.message : "Unknown error" });
+      }
+    }
+    
+    await audit(ctx, admin.email, "APPROVE_BATCH_PAYMENTS", "multiple", `Processed ${data.requestIds.length} payments: ${results.filter(r => r.success).length} succeeded, ${results.filter(r => !r.success).length} failed`);
+    
+    return { results, successCount: results.filter(r => r.success).length };
+  });
+
+/**
+ * Check app version for automatic update detection.
+ * Returns current version, minimum required version, and download URL.
+ */
+export const checkAppVersion = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const ctx = context as unknown as Ctx;
+    const { data: config } = await ctx.supabase
+      .from("app_config")
+      .select("apk_version, min_app_version, apk_download_url")
+      .eq("id", "global")
+      .maybeSingle();
+    
+    return {
+      currentVersion: config?.apk_version || "2.1.0",
+      minimumVersion: config?.min_app_version || "2.0.0",
+      downloadUrl: config?.apk_download_url || ""
+    };
   });
 
 // ---------------- Unlock codes ----------------

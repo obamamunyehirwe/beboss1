@@ -297,3 +297,49 @@ gradle :app:testDebugUnitTest
 ---
 
 *Built with Kotlin, Jetpack Compose Material 3, Room SQLite v11 + SQLCipher AES-256, CameraX + ML Kit, WorkManager, OkHttp, and Supabase.*
+
+---
+
+## v2.1.0 Critical Upgrades (November 2026)
+
+### What's New in v2.1.0
+
+#### ✅ Dead-Letter Queue Implementation
+- **New File**: `DeadLetterItem.kt` - Model for failed sync items
+- **New File**: `DeadLetterDao.kt` - DAO for dead-letter queue management
+- **Database Migration**: Added `dead_letter_queue` table with indices
+- **Enhanced Sync**: `CloudSyncManager.moveToDeadLetter()` function for failed item handling
+- **Purpose**: Prevents sync queue from being clogged by permanently failed items
+
+#### ✅ Memory Leak Prevention
+- **MainActivity**: Added `onDestroy()` cleanup to explicitly clear ViewModel references
+- **Result**: Prevents memory leaks when Activity is destroyed
+
+#### ✅ Sentry Crash Reporting Integration
+- **BeBossLogger**: Added `SentryCrashReporter` hook for optional Sentry integration
+- **BeBossApplication**: Added `initializeCrashReporting()` method
+- **BuildConfig**: Added `SENTRY_DSN` field for crash reporting configuration
+- **.env**: Added `SENTRY_DSN` secret for production crash tracking
+
+#### ✅ Database Schema Updates
+- **Version**: Upgraded from 12 to 13
+- **Migration**: Added `MIGRATION_12_13` for dead-letter queue table
+- **All Migrations**: Updated `ALL_MIGRATIONS` array
+
+#### ✅ Secrets Management
+- **BuildConfig**: Added `SENTRY_DSN` field for crash reporting
+- **Secrets Plugin**: Added `SENTRY_DSN` to ignore list
+- **.env**: Added `SENTRY_DSN` configuration
+
+### How to Use
+
+1. **Dead-Letter Queue**: Automatically managed by sync engine. Items that fail 6+ retries are moved to dead-letter queue.
+2. **Memory Leak Prevention**: Automatic cleanup when Activity is destroyed.
+3. **Crash Reporting**: Configure `SENTRY_DSN` in `.env` file to enable production crash tracking.
+
+### Migration Path
+
+- **v2.0.x → v2.1.0**: Database auto-migrates to version 13. No manual steps required.
+- **Data Integrity**: All existing data preserved during migration.
+
+---

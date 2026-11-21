@@ -6,10 +6,18 @@ import { PhoneMockup } from "./PhoneMockup";
 
 interface ModernHeroProps {
   version: string;
+  liveStats?: {
+    shops_active?: number;
+    devices_active?: number;
+    devices_synced_24h?: number;
+  } | null;
 }
 
-export function ModernHero({ version }: ModernHeroProps) {
+export function ModernHero({ version, liveStats }: ModernHeroProps) {
   const { t } = useI18n();
+  const activeShops = liveStats?.shops_active ?? 0;
+  const activeDevices = liveStats?.devices_active ?? 0;
+  const syncedDevices = liveStats?.devices_synced_24h ?? 0;
 
   return (
     <section className="relative overflow-hidden">
@@ -78,9 +86,9 @@ export function ModernHero({ version }: ModernHeroProps) {
             {/* Inline trust micro-stats */}
             <div className="grid grid-cols-3 gap-3 pt-4">
               {[
-                { value: "100%", label: "Offline-First", color: "text-success" },
-                { value: "< 1s", label: "Checkout Speed", color: "text-primary" },
-                { value: ">100×", label: "Monthly ROI", color: "text-warning" },
+                { value: "Offline", label: t("heroOfflineLabel"), color: "text-success" },
+                { value: String(activeShops), label: t("heroActiveShops"), color: "text-primary" },
+                { value: `${syncedDevices}/${activeDevices || syncedDevices}`, label: t("heroSyncedDevices"), color: "text-warning" },
               ].map(({ value, label, color }) => (
                 <div key={label} className="rounded-2xl border border-border/60 bg-card/70 px-3 py-3 backdrop-blur-sm">
                   <p className={`font-display text-xl font-extrabold ${color}`}>{value}</p>

@@ -419,13 +419,17 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
             emitSnackbar = { msg -> _snackbarMessage.emit(msg) }
         )
 
-        authCoordinator.checkAuthenticationAndInit()
-        syncCoordinator.setupAutoCloudSyncOnInternet()
-        dbCoordinator.verifyStartupIntegritySilently()
+        viewModelScope.launch {
+            try {
+                authCoordinator.checkAuthenticationAndInit()
+                syncCoordinator.setupAutoCloudSyncOnInternet()
+                dbCoordinator.verifyStartupIntegritySilently()
+            } catch (e: Exception) {
+                BeBossLogger.e("BeBossStartup", "One startup subsystem failed", e)
+            }
 
-        val integrity = _deviceIntegrityStatus.value
-        if (integrity.isCompromisedRisk) {
-            viewModelScope.launch {
+            val integrity = _deviceIntegrityStatus.value
+            if (integrity.isCompromisedRisk) {
                 repository.recordLocalAudit(
                     actorName = "System",
                     actorRole = "SECURITY",
@@ -876,6 +880,31 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
             repository.deleteStockTransfer(id)
             scheduleAutoBranchSync()
             _snackbarMessage.emit("Stock transfer log removed.")
+        }
+    }
+
+    fun confirmTransferReceived(transferId: String) {
+        viewModelScope.launch {
+            try {
+                val user = currentUser.value
+                repository.confirmTransferReceived(transferId, user?.name ?: "Store Manager")
+                scheduleAutoBranchSync()
+                _snackbarMessage.emit("Transfer confirmed received — destination stock credited.")
+            } catch (e: Exception) {
+                _snackbarMessage.emit("Confirm received error: ${e.message}")
+            }
+        }
+    }
+
+    fun updateBranchOperationalStatus(branchId: String, status: String) {
+        viewModelScope.launch {
+            try {
+                repository.updateBranchOperationalStatus(branchId, status)
+                scheduleAutoBranchSync()
+                _snackbarMessage.emit("Branch status updated to $status.")
+            } catch (e: Exception) {
+                _snackbarMessage.emit("Status update error: ${e.message}")
+            }
         }
     }
 

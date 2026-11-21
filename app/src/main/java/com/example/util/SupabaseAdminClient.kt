@@ -18,6 +18,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.TlsVersion
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.net.URL
 import java.net.URLEncoder
 import java.util.Locale
@@ -118,6 +119,9 @@ data class SupabaseBranchSnapshotDto(
     val id: String,
     val shopSyncKey: String,
     val deviceId: String,
+    val syncGeneration: String = "",
+    val chunkIndex: Int = 0,
+    val chunkCount: Int = 0,
     val branchId: String,
     val branchName: String,
     val shopName: String,
@@ -255,6 +259,26 @@ object SupabaseAdminClient {
             !url.contains("your-project-id") &&
             key.isNotBlank() &&
             !key.contains("your_supabase_anon_key")
+    }
+
+    /**
+     * Check if the branch_sync_snapshots table has the new migration columns applied.
+     * Returns true if sync_generation, chunk_index, chunk_count columns exist.
+     * Call this to verify migration 0004 has been applied.
+     */
+    suspend fun checkSnapshotMigrationApplied(): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext false
+        try {
+            val req = buildRestRequest(
+                "branch_sync_snapshots?select=sync_generation,chunk_index,chunk_count&limit=1"
+            ).get().build()
+            client.newCall(req).execute().use { resp ->
+                return@withContext resp.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Migration check failed: ${e.message}")
+            return@withContext false
+        }
     }
 
     fun getCurrentAdminSession(): SupabaseAdminSession? {
@@ -522,6 +546,9 @@ object SupabaseAdminClient {
     suspend fun upsertBranchSyncSnapshot(
         shopSyncKey: String,
         deviceId: String,
+        syncGeneration: String,
+        chunkIndex: Int,
+        chunkCount: Int,
         branchId: String,
         branchName: String,
         shopName: String,
@@ -530,34 +557,110 @@ object SupabaseAdminClient {
         recordsSummary: String
     ): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || payloadToken.isBlank()) return@withContext false
-        try {
-            val now = System.currentTimeMillis()
-            val snapshotId = "${shopSyncKey}::${deviceId}"
-            val body = JSONObject().apply {
-                put("id", snapshotId)
-                put("shop_sync_key", shopSyncKey)
-                put("device_id", deviceId)
-                put("branch_id", branchId)
-                put("branch_name", branchName)
-                put("shop_name", shopName)
-                put("owner_username", ownerUsername.trim().lowercase(Locale.ROOT))
-                put("payload_token", payloadToken)
-                put("records_summary", recordsSummary)
-                put("updated_at", now)
-            }
-            val req = buildRestRequest("branch_sync_snapshots?on_conflict=id", tenantSyncKey = shopSyncKey)
-                .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
-                .post(body.toString().toRequestBody(jsonMediaType))
-                .build()
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) {
-                    Log.w(TAG, "upsertBranchSyncSnapshot HTTP ${resp.code}: ${resp.body?.string()}")
-                }
-                resp.isSuccessful
-            }
+        
+        // Try with new columns first (sync_generation, chunk_index, chunk_count)
+        // If columns don't exist (schema cache stale), fall back to legacy format
+        return@withContext try {
+            upsertSnapshotWithNewColumns(
+                shopSyncKey, deviceId, syncGeneration, chunkIndex, chunkCount,
+                branchId, branchName, shopName, ownerUsername, payloadToken, recordsSummary
+            )
         } catch (e: Exception) {
-            Log.e(TAG, "upsertBranchSyncSnapshot error: ${e.message}")
-            false
+            // Check if error is about missing columns (PGRST204 = column not found)
+            if (e.message?.contains("PGRST204") == true || 
+                e.message?.contains("Could not find") == true ||
+                e.message?.contains("column") == true) {
+                Log.w(TAG, "New snapshot columns not found, falling back to legacy format")
+                upsertSnapshotLegacy(
+                    shopSyncKey, deviceId, branchId, branchName, shopName, 
+                    ownerUsername, payloadToken, recordsSummary
+                )
+            } else {
+                Log.e(TAG, "upsertBranchSyncSnapshot error: ${e.message}")
+                false
+            }
+        }
+    }
+
+    private suspend fun upsertSnapshotWithNewColumns(
+        shopSyncKey: String,
+        deviceId: String,
+        syncGeneration: String,
+        chunkIndex: Int,
+        chunkCount: Int,
+        branchId: String,
+        branchName: String,
+        shopName: String,
+        ownerUsername: String,
+        payloadToken: String,
+        recordsSummary: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val snapshotId = "${shopSyncKey}::${deviceId}"
+        val body = JSONObject().apply {
+            put("id", snapshotId)
+            put("shop_sync_key", shopSyncKey)
+            put("device_id", deviceId)
+            put("sync_generation", syncGeneration)
+            put("chunk_index", chunkIndex)
+            put("chunk_count", chunkCount)
+            put("branch_id", branchId)
+            put("branch_name", branchName)
+            put("shop_name", shopName)
+            put("owner_username", ownerUsername.trim().lowercase(Locale.ROOT))
+            put("payload_token", payloadToken)
+            put("records_summary", recordsSummary)
+            put("updated_at", now)
+        }
+        val req = buildRestRequest("branch_sync_snapshots?on_conflict=id", tenantSyncKey = shopSyncKey)
+            .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
+            .post(body.toString().toRequestBody(jsonMediaType))
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                val body = resp.body?.string() ?: ""
+                if (body.contains("PGRST204") || body.contains("Could not find")) {
+                    throw IOException("Schema missing columns: $body")
+                }
+                Log.w(TAG, "upsertBranchSyncSnapshot HTTP ${resp.code}: $body")
+            }
+            resp.isSuccessful
+        }
+    }
+
+    private suspend fun upsertSnapshotLegacy(
+        shopSyncKey: String,
+        deviceId: String,
+        branchId: String,
+        branchName: String,
+        shopName: String,
+        ownerUsername: String,
+        payloadToken: String,
+        recordsSummary: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val snapshotId = "${shopSyncKey}::${deviceId}"
+        val body = JSONObject().apply {
+            put("id", snapshotId)
+            put("shop_sync_key", shopSyncKey)
+            put("device_id", deviceId)
+            put("branch_id", branchId)
+            put("branch_name", branchName)
+            put("shop_name", shopName)
+            put("owner_username", ownerUsername.trim().lowercase(Locale.ROOT))
+            put("payload_token", payloadToken)
+            put("records_summary", recordsSummary)
+            put("updated_at", now)
+        }
+        val req = buildRestRequest("branch_sync_snapshots?on_conflict=id", tenantSyncKey = shopSyncKey)
+            .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
+            .post(body.toString().toRequestBody(jsonMediaType))
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                Log.w(TAG, "upsertSnapshotLegacy HTTP ${resp.code}: ${resp.body?.string()}")
+            }
+            resp.isSuccessful
         }
     }
 
@@ -568,25 +671,31 @@ object SupabaseAdminClient {
         if (!isConfigured() || shopSyncKey.isBlank()) return@withContext emptyList()
         try {
             val encKey = URLEncoder.encode(shopSyncKey, "UTF-8")
-            val req = buildRestRequest(
-                "branch_sync_snapshots?shop_sync_key=eq.$encKey&order=updated_at.asc&limit=30",
-                tenantSyncKey = shopSyncKey
-            )
-                .get()
-                .build()
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext emptyList()
-                val arr = JSONArray(resp.body?.string().orEmpty().ifBlank { "[]" })
-                val list = mutableListOf<SupabaseBranchSnapshotDto>()
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    val devId = o.optString("device_id")
-                    if (excludingDeviceId.isNotBlank() && devId == excludingDeviceId) continue
-                    list.add(
+            val pageSize = 1000
+            val list = mutableListOf<SupabaseBranchSnapshotDto>()
+            var offset = 0
+            while (true) {
+                val req = buildRestRequest(
+                    "branch_sync_snapshots?shop_sync_key=eq.$encKey&order=updated_at.asc&limit=$pageSize&offset=$offset",
+                    tenantSyncKey = shopSyncKey
+                )
+                    .get()
+                    .build()
+                val page = client.newCall(req).execute().use { resp ->
+                    val body = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) {
+                        throw IOException("fetchShopBranchSnapshots HTTP ${resp.code}: $body")
+                    }
+                    val arr = JSONArray(body.ifBlank { "[]" })
+                    (0 until arr.length()).map { i ->
+                        val o = arr.getJSONObject(i)
                         SupabaseBranchSnapshotDto(
                             id = o.optString("id"),
                             shopSyncKey = o.optString("shop_sync_key"),
-                            deviceId = devId,
+                            deviceId = o.optString("device_id"),
+                            syncGeneration = o.optString("sync_generation"),
+                            chunkIndex = o.optInt("chunk_index", 0),
+                            chunkCount = o.optInt("chunk_count", 0),
                             branchId = o.optString("branch_id"),
                             branchName = o.optString("branch_name"),
                             shopName = o.optString("shop_name"),
@@ -595,15 +704,68 @@ object SupabaseAdminClient {
                             recordsSummary = o.optString("records_summary"),
                             updatedAt = o.optLong("updated_at", 0L)
                         )
-                    )
+                    }
                 }
-                list
+                list.addAll(page)
+                if (page.size < pageSize) break
+                offset += pageSize
             }
+            if (excludingDeviceId.isBlank()) list else list.filter { snapshotDeviceBase(it.deviceId) != excludingDeviceId }
         } catch (e: Exception) {
             Log.e(TAG, "fetchShopBranchSnapshots error: ${e.message}")
-            emptyList()
+            throw e
         }
     }
+
+    fun latestCompleteSnapshotChunks(
+        snapshots: List<SupabaseBranchSnapshotDto>
+    ): List<SupabaseBranchSnapshotDto> =
+        snapshots
+            .groupBy { snapshotDeviceBase(it.deviceId) }
+            .toSortedMap()
+            .values
+            .flatMap { deviceSnapshots ->
+                val generations = deviceSnapshots.groupBy { it.syncGeneration }
+                val latestGeneration = generations.values.maxByOrNull { rows -> rows.maxOfOrNull { it.updatedAt } ?: 0L }
+                    .orEmpty()
+                if (latestGeneration.isEmpty()) return@flatMap emptyList()
+
+                val generation = latestGeneration.first().syncGeneration
+                if (generation.isBlank()) {
+                    val expectedChunks = Regex("(\\d+) chunk\\(s\\)").find(latestGeneration.first().recordsSummary)
+                        ?.groupValues?.getOrNull(1)?.toIntOrNull()
+                        ?: latestGeneration.size
+                    val legacyChunks = latestGeneration.filter {
+                        (snapshotChunkIndex(it.deviceId) ?: it.chunkIndex) < expectedChunks
+                    }
+                    if (completeChunkIndexes(legacyChunks.map { snapshotChunkIndex(it.deviceId) ?: it.chunkIndex }, expectedChunks)) {
+                        legacyChunks.sortedBy { snapshotChunkIndex(it.deviceId) ?: it.chunkIndex }
+                    } else {
+                        emptyList()
+                    }
+                } else {
+                    val expectedChunks = latestGeneration.maxOfOrNull { it.chunkCount } ?: 0
+                    if (latestGeneration.all { it.syncGeneration == generation && it.chunkCount == expectedChunks } &&
+                        completeChunkIndexes(latestGeneration.map { it.chunkIndex }, expectedChunks)
+                    ) {
+                        latestGeneration.sortedBy { it.chunkIndex }
+                    } else {
+                        emptyList()
+                    }
+                }
+            }
+
+    private fun snapshotDeviceBase(deviceId: String): String =
+        deviceId.replace(Regex("#c\\d+$"), "")
+
+    private fun snapshotChunkIndex(deviceId: String): Int? =
+        Regex("#c(\\d+)$").find(deviceId)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: if ("#c" !in deviceId) 0 else null
+
+    private fun completeChunkIndexes(indexes: List<Int?>, expectedCount: Int): Boolean =
+        expectedCount > 0 &&
+            indexes.size == expectedCount &&
+            indexes.all { it != null && it in 0 until expectedCount } &&
+            indexes.filterNotNull().toSet().size == expectedCount
 
     // -------------------------------------------------------------------------
     // GLOBAL ADMIN PAYMENT & WHATSAPP CONFIG (`app_config`)

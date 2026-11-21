@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeRetailInsights, decodeShareToken, mergeShareJson, periodTotals, pickLatestChunkSet, shareSignature, SHARE_PREFIX, extractShopRecords } from "./snapshot-analytics";
+import { computeRetailInsights, decodeShareToken, mergeShareJson, periodTotals, pickLatestChunkSet, pickLatestDeviceChunkSet, shareSignature, SHARE_PREFIX, extractShopRecords } from "./snapshot-analytics";
 
 async function gzipB64(text: string) {
   const stream = new Response(text).body!.pipeThrough(new CompressionStream("gzip"));
@@ -24,13 +24,23 @@ describe("snapshot tokens", () => {
     expect(sig).toBe("B82FCB791ACEC57859B989B430A826488CE2E479FDF92326BD0A2E8375A42BA4".slice(0, 16));
   });
 
-  it("uses only the freshest device's chunks", () => {
+  it("uses the latest complete generation from every device", () => {
     const rows = [
-      { device_id: "a", updated_at: 10 },
-      { device_id: "a#c1", updated_at: 11 },
-      { device_id: "b", updated_at: 20 },
+      { device_id: "a", sync_generation: "old", chunk_index: 0, chunk_count: 2, updated_at: 10 },
+      { device_id: "a#c1", sync_generation: "old", chunk_index: 1, chunk_count: 2, updated_at: 11 },
+      { device_id: "a", sync_generation: "new", chunk_index: 0, chunk_count: 1, updated_at: 30 },
+      { device_id: "b", sync_generation: "other", chunk_index: 0, chunk_count: 1, updated_at: 20 },
+      { device_id: "c", sync_generation: "incomplete", chunk_index: 0, chunk_count: 2, updated_at: 40 },
     ];
-    expect(pickLatestChunkSet(rows).map((r) => r.device_id)).toEqual(["b"]);
+    expect(pickLatestChunkSet(rows).map((r) => `${r.device_id}:${r.sync_generation}`)).toEqual(["a:new", "b:other"]);
+  });
+
+  it("keeps the public shop lookup scoped to one complete device snapshot", () => {
+    const rows = [
+      { device_id: "a", sync_generation: "a1", chunk_index: 0, chunk_count: 1, updated_at: 10 },
+      { device_id: "b", sync_generation: "b1", chunk_index: 0, chunk_count: 1, updated_at: 20 },
+    ];
+    expect(pickLatestDeviceChunkSet(rows).map((r) => r.device_id)).toEqual(["b"]);
   });
 });
 
@@ -94,6 +104,9 @@ describe("extractShopRecords", () => {
         { id: "i2", saleId: "s2", quantitySold: 1 },
       ],
       purchases: [{ id: "u1", supplierName: "Kabuye", productName: "Sugar", quantityPurchased: 10, unitCostPrice: 1300, purchaseDate: 500, updatedAt: 1 }],
+      customerPayments: [{ id: "cp1", customerName: "Aline", amount: 3000, paymentDate: 2500, paymentMethod: "CASH" }],
+      branches: [{ id: "b1", name: "Main", isMainBranch: true, isActive: true }],
+      stockTransfers: [{ id: "t1", transferNumber: "T-1", productName: "Sugar", quantity: 3, status: "RECEIVED", transferDate: 1000 }],
     },
   ]);
   const r = extractShopRecords(ds);
@@ -110,5 +123,17 @@ describe("extractShopRecords", () => {
   });
   it("computes purchase cost from unit cost when no total is sent", () => {
     expect(r.purchases[0]?.cost).toBe(13000);
+  });
+  it("exposes debt payments, branch data, and stock transfers", () => {
+    expect(r.payments[0]?.amount).toBe(3000);
+    expect(r.branches[0]?.isMain).toBe(true);
+    expect(r.stockTransfers[0]?.number).toBe("T-1");
+  });
+  it("does not truncate phone sales or purchases", () => {
+    const sales = Array.from({ length: 501 }, (_, i) => ({ id: `s${i}`, saleDate: i, updatedAt: i }));
+    const purchases = Array.from({ length: 301 }, (_, i) => ({ id: `p${i}`, purchaseDate: i }));
+    const allRecords = extractShopRecords(mergeShareJson([{ sales, purchases }]));
+    expect(allRecords.sales).toHaveLength(501);
+    expect(allRecords.purchases).toHaveLength(301);
   });
 });

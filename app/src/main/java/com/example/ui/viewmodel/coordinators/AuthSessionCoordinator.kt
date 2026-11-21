@@ -43,26 +43,32 @@ class AuthSessionCoordinator(
 
     fun checkAuthenticationAndInit() {
         scope.launch {
-            val savedUserId = prefs.getString("active_user_id", null)
-            val savedUser = if (!savedUserId.isNullOrBlank()) {
-                db.userDao().getUserById(savedUserId)?.takeIf { it.isActive }
-            } else {
-                null
-            }
+            try {
+                val savedUserId = prefs.getString("active_user_id", null)
+                val savedUser = if (!savedUserId.isNullOrBlank()) {
+                    db.userDao().getUserById(savedUserId)?.takeIf { it.isActive }
+                } else {
+                    null
+                }
 
-            val count = db.userDao().getUserCount()
-            if (count == 0) {
-                _currentUser.value = null
-                _isRegistrationNeeded.value = true
+                val count = db.userDao().getUserCount()
+                if (count == 0) {
+                    _currentUser.value = null
+                    _isRegistrationNeeded.value = true
+                    _isLocked.value = true
+                    return@launch
+                }
+
+                val preselected = savedUser ?: db.userDao().getAllActiveUsersList().firstOrNull()
+                _currentUser.value = preselected
+                _isRegistrationNeeded.value = false
+                // Always require explicit user authentication on cold launch
                 _isLocked.value = true
-                return@launch
+            } catch (e: Exception) {
+                _authError.value = "Startup database error: ${e.message}"
+                _isLocked.value = true
+                _isRegistrationNeeded.value = false
             }
-
-            val preselected = savedUser ?: db.userDao().getAllActiveUsersList().firstOrNull()
-            _currentUser.value = preselected
-            _isRegistrationNeeded.value = false
-            // Always require explicit user authentication on cold launch
-            _isLocked.value = true
         }
     }
 

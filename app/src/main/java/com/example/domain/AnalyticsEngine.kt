@@ -12,16 +12,26 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * High-performance offline analytics aggregation engine.
+ * Includes 5-minute in-memory cache to avoid redundant DB queries.
  */
 class AnalyticsEngine(
     private val saleDao: SaleDao
 ) {
+    private val analyticsCache = ConcurrentHashMap<String, Pair<Long, ProfitLossSummary>>()
+    private val CACHE_TTL_MS = 300_000L // 5 minutes
     fun getProfitLossForPeriod(period: AnalyticsPeriod): Flow<ProfitLossSummary> {
         val (startTime, endTime) = period.getRange()
         return saleDao.getSalesByDateRange(startTime, endTime).map { sales ->
+            val cacheKey = period.name
+            val cached = analyticsCache[cacheKey]
+            if (cached != null && System.currentTimeMillis() - cached.first < CACHE_TTL_MS) {
+                return@map cached.second
+            }
+
             var totalRev = 0.0
             var totalProfit = 0.0
             var totalCost = 0.0
@@ -36,7 +46,7 @@ class AnalyticsEngine(
             val marginPct = if (totalRev > 0) (totalProfit / totalRev) * 100.0 else 0.0
             val avgOrder = if (sales.isNotEmpty()) totalRev / sales.size else 0.0
 
-            ProfitLossSummary(
+            val result = ProfitLossSummary(
                 totalRevenue = totalRev,
                 totalCost = totalCost,
                 netProfit = totalProfit,
@@ -47,6 +57,8 @@ class AnalyticsEngine(
                 isProfitable = totalProfit >= 0.0,
                 periodLabel = period.displayName
             )
+            analyticsCache[cacheKey] = System.currentTimeMillis() to result
+            result
         }
     }
 

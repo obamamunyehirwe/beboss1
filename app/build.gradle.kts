@@ -48,8 +48,18 @@ android {
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
+      buildConfigField("String", "SENTRY_DSN", "\"${project.findProperty("SENTRY_DSN") ?: ""}\"")
+      buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
+      buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
+      buildConfigField("String", "BEBOSS_UNLOCK_SIGNING_SECRET", "\"${project.findProperty("BEBOSS_UNLOCK_SIGNING_SECRET") ?: ""}\"")
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug { 
+      signingConfig = signingConfigs.getByName("debugConfig") 
+      buildConfigField("String", "SENTRY_DSN", "\"${project.findProperty("SENTRY_DSN") ?: ""}\"")
+      buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
+      buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
+      buildConfigField("String", "BEBOSS_UNLOCK_SIGNING_SECRET", "\"${project.findProperty("BEBOSS_UNLOCK_SIGNING_SECRET") ?: ""}\"")
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -80,6 +90,7 @@ secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+  ignoreList.add("SENTRY_DSN")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }

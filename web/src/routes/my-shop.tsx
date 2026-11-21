@@ -348,7 +348,7 @@ function LookupPanel() {
           <p className="mt-1">
             {result.snapshots && result.snapshots.length > 0
               ? `Your phone has uploaded ${result.snapshots.length} cloud snapshot(s). Latest summary: "${result.snapshots[0]?.records_summary || "Sync active"}".`
-              : "No snapshots uploaded yet. On your BeBoss Android phone, go to Settings → Sync & Network → 'Push All Data to Cloud' to view your inventory and sales ledger here."}
+              : "No phone snapshot is available yet. BeBoss uploads records automatically when the phone has internet access; keep the app open briefly and check again."}
           </p>
         </div>
       )}

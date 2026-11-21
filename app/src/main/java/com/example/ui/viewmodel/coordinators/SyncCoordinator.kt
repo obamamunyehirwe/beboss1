@@ -21,6 +21,7 @@ import com.example.util.NetworkConnectivityObserver
 import com.example.util.OfflineSubscriptionManager
 import com.example.util.ShopDataTransferManager
 import com.example.util.ShopImportSummary
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -79,21 +80,13 @@ class SyncCoordinator(
         OfflineSubscriptionManager.initConfigCache(application)
         CloudSyncScheduler.schedulePeriodicSync(application)
         scope.launch {
-            repository.ensureDefaultBranches()
+            try {
+                repository.ensureDefaultBranches()
+            } catch (e: Exception) {
+                repository.logSyncEvent("BRANCH_AUTO_SYNC", "FAILED", "Could not prepare branch data: ${e.message}")
+            }
             connectivityStatus.collect { status ->
-                if (status == ConnectivityStatus.AVAILABLE) {
-                    _isSyncing.value = true
-                    try {
-                        syncAdminCloud(true)
-                        val report = repository.performSync(
-                            activeBranchId = selectedBranchId.value,
-                            deviceId = deviceId
-                        )
-                        _cloudSyncReport.value = report
-                    } finally {
-                        _isSyncing.value = false
-                    }
-                }
+                if (status == ConnectivityStatus.AVAILABLE) runAutomaticCloudSync()
             }
         }
     }
@@ -107,30 +100,41 @@ class SyncCoordinator(
         autoBranchSyncJob = scope.launch {
             delay(delayMs)
             if (connectivityStatus.value == ConnectivityStatus.AVAILABLE && !_isSyncing.value) {
-                syncAdminCloud(true)
-                val report = repository.performSync(
-                    activeBranchId = selectedBranchId.value,
-                    deviceId = deviceId
-                )
-                _cloudSyncReport.value = report
+                runAutomaticCloudSync()
             }
         }
     }
 
     fun syncToCloudNow() {
         scope.launch {
-            _isSyncing.value = true
-            try {
-                syncAdminCloud(true)
-                val report = repository.performSync(
-                    activeBranchId = selectedBranchId.value,
-                    deviceId = deviceId
-                )
-                _cloudSyncReport.value = report
-                emitSnackbar(report.message)
-            } finally {
-                _isSyncing.value = false
-            }
+            runAutomaticCloudSync(showResult = true)
+        }
+    }
+
+    private suspend fun runAutomaticCloudSync(showResult: Boolean = false) {
+        if (_isSyncing.value) return
+        _isSyncing.value = true
+        try {
+            syncAdminCloud(true)
+            val report = repository.performSync(
+                activeBranchId = selectedBranchId.value,
+                deviceId = deviceId
+            )
+            _cloudSyncReport.value = report
+            if (showResult) emitSnackbar(report.message)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val message = "Automatic cloud sync failed: ${e.localizedMessage ?: "Unknown error"}"
+            repository.logSyncEvent("BRANCH_AUTO_SYNC", "FAILED", message)
+            _cloudSyncReport.value = CloudSyncReport(
+                state = com.example.util.CloudSyncState.ERROR,
+                message = message,
+                lastSyncTimestamp = shopProfile.value.lastSyncedAt
+            )
+            if (showResult) emitSnackbar(message)
+        } finally {
+            _isSyncing.value = false
         }
     }
 

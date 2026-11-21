@@ -8,6 +8,7 @@ import com.example.data.db.AppDatabase
 import com.example.data.model.UserRole
 import com.example.data.repository.BeBossRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
 /**
@@ -76,11 +77,14 @@ class BeBossCloudSyncWorker(
                 )
             }
 
-            if (branchReport.state == CloudSyncState.ERROR && SupabaseAdminClient.isConfigured()) {
+            val hasCloudTarget = SupabaseAdminClient.isConfigured() || profile.backendServerUrl.isNotBlank()
+            if (branchReport.state == CloudSyncState.ERROR && hasCloudTarget) {
                 Result.retry()
             } else {
                 Result.success()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Background cloud sync worker failed: ${e.message}")
             Result.retry()

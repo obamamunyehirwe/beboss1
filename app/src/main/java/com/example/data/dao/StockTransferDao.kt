@@ -20,8 +20,26 @@ interface StockTransferDao {
     @Query("SELECT * FROM stock_transfers WHERE fromBranchId = :branchId OR toBranchId = :branchId ORDER BY transferDate DESC")
     fun getTransfersByBranch(branchId: String): Flow<List<StockTransfer>>
 
+    @Query("SELECT * FROM stock_transfers WHERE fromBranchId = :branchId OR toBranchId = :branchId ORDER BY transferDate DESC")
+    suspend fun getTransfersByBranchList(branchId: String): List<StockTransfer>
+
+    @Query("SELECT * FROM stock_transfers WHERE productId = :productId ORDER BY transferDate DESC")
+    suspend fun getTransfersByProduct(productId: String): List<StockTransfer>
+
+    @Query("SELECT * FROM stock_transfers WHERE status = :status ORDER BY transferDate DESC")
+    fun getTransfersByStatus(status: String): Flow<List<StockTransfer>>
+
     @Query("SELECT * FROM stock_transfers WHERE id = :id LIMIT 1")
     suspend fun getTransferById(id: String): StockTransfer?
+
+    @Query("SELECT COUNT(*) FROM stock_transfers WHERE (fromBranchId = :branchId OR toBranchId = :branchId) AND transferDate >= :sinceMs")
+    suspend fun getTransferCountForBranchSince(branchId: String, sinceMs: Long): Int
+
+    @Query("SELECT SUM(costValueRwf) FROM stock_transfers WHERE toBranchId = :branchId AND transferDate >= :sinceMs")
+    suspend fun getTotalInboundValueSince(branchId: String, sinceMs: Long): Long?
+
+    @Query("SELECT SUM(costValueRwf) FROM stock_transfers WHERE fromBranchId = :branchId AND transferDate >= :sinceMs")
+    suspend fun getTotalOutboundValueSince(branchId: String, sinceMs: Long): Long?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransfer(transfer: StockTransfer)
@@ -31,6 +49,9 @@ interface StockTransferDao {
 
     @Update
     suspend fun updateTransfer(transfer: StockTransfer)
+
+    @Query("UPDATE stock_transfers SET status = :status, receivedBy = :receivedBy, receivedAt = :receivedAt WHERE id = :id")
+    suspend fun confirmReceived(id: String, receivedBy: String, receivedAt: Long, status: String = "COMPLETED")
 
     @Query("DELETE FROM stock_transfers WHERE id = :id")
     suspend fun deleteTransfer(id: String)
