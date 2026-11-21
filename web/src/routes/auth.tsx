@@ -106,7 +106,13 @@ function AuthPage() {
     setBootstrapBusy(true);
     try {
       const { data, error } = await supabase.functions.invoke("bootstrap-first-admin", { body: {} });
-      if (error) throw new Error(error.message || "Could not contact the secure invitation service.");
+      if (error) {
+        const responseContext = (error as { context?: unknown }).context;
+        const responseBody = responseContext instanceof Response
+          ? await responseContext.clone().json().catch(() => null) as { message?: string } | null
+          : null;
+        throw new Error(responseBody?.message || error.message || "Could not contact the secure invitation service.");
+      }
       const result = data as { status?: string; email?: string; message?: string; retryAfterSeconds?: number; resent?: boolean };
       if (result.status === "sent") {
         toast.success(
