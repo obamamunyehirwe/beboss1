@@ -146,7 +146,14 @@ class SubscriptionSecurityManagerTest {
     fun testBB3FingerprintPreservesCaseSensitiveSignature() {
         val signature = Base64.getEncoder().encodeToString(ByteArray(70) { it.toByte() })
         val code = "BB3-SINGLE-30-1A2B3C-4D5E6F-0123456789ABCDEF01234567-$signature"
-        val changedCase = code.dropLast(2) + code.takeLast(2).lowercase()
+        val changedSignature = signature.map { ch ->
+            when {
+                ch.isUpperCase() -> ch.lowercaseChar()
+                ch.isLowerCase() -> ch.uppercaseChar()
+                else -> ch
+            }
+        }.joinToString("")
+        val changedCase = code.substringBeforeLast("-") + "-" + changedSignature
         assertNotEquals(
             "Base64 signature case is significant and must not be uppercased before hashing",
             SubscriptionSecurityManager.computeVoucherFingerprint(code),
