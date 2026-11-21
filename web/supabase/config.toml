@@ -4,3 +4,12 @@ project_id = "ahlpvlhmpfiyeoercxol"
 # admins can sign in and master admins can send invitation links from the server.
 [auth]
 enable_signup = false
+
+[functions.issue-bb3-unlock]
+verify_jwt = true
+
+[functions.verify-legacy-bb2]
+verify_jwt = false
+
+[functions.bootstrap-first-admin]
+verify_jwt = false
