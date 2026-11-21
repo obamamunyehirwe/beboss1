@@ -11,12 +11,11 @@ Set these environment variables for Production, Preview and Development as appro
 | `SUPABASE_URL` | Supabase project URL | Public URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Web Supabase client / server-side user requests | Public publishable key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Trusted server functions only (admin invitations, private storage, privileged operations) | Server-only secret |
-| `BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM` | BB3 P-256 unlock-code signing | Supabase `app_secrets` row; never expose to browser or Android |
 | `BEBOSS_SECURITY_PEPPER` | Security hashing/derivation | Server-only secret |
 | `BEBOSS_DATASHARE_HMAC_SECRET` | Signed data-share requests | Server-only secret |
 | `BEBOSS_LAN_SYNC_SECRET` | LAN sync authentication | Server-only secret |
 | `BEBOSS_ADMIN_WHATSAPP` | Support contact shown to merchants | Public display value |
-| `BEBOSS_ADMIN_URL` | Required for new team invitations, e.g. `https://your-domain/reset-password?invite=1` | Public URL |
+| `BEBOSS_ADMIN_URL` | Invitation redirect, `https://admin.beboss.rw/reset-password?invite=1` | Public URL |
 
 Never add a `VITE_` prefix to `SUPABASE_SERVICE_ROLE_KEY`. The Vite configuration intentionally injects only the Supabase URL and publishable key into browser code. Keep `.env.example` as a template; never commit actual service-role keys, signing secrets, or passwords.
 
@@ -47,12 +46,12 @@ Set `BEBOSS_ADMIN_URL` to the exact production URL `https://your-domain/reset-pa
 
 ## 3. Android production build
 
-The Android app reads the Supabase URL and current legacy anon JWT from Gradle properties:
+The Android app reads the Supabase URL and public Supabase anon/publishable key from Gradle properties. It embeds only the BB3 public verification key; it never receives the BB3 private signing key.
 
 ```properties
 SUPABASE_URL=https://ahlpvlhmpfiyeoercxol.supabase.co
 SUPABASE_ANON_KEY=replace_with_project_anon_key
-// The BB3 P-256 private key is stored in Supabase app_secrets; do not place it in deployment files or mobile builds.
+# The BB3 P-256 private key is stored in Supabase app_secrets; do not place it in deployment files or mobile builds.
 ```
 
 Do not commit real credentials or the release keystore. Configure release signing values as CI secrets, build with `./gradlew :app:assembleRelease`, verify the resulting APK signature, and upload the signed APK through Admin → App releases. The public download page uses the private Supabase Storage release object; verify a real APK upload before announcing downloads as production-ready.
