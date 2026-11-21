@@ -17,6 +17,8 @@ Set these environment variables for Production, Preview and Development as appro
 | `BEBOSS_ADMIN_WHATSAPP` | Support contact shown to merchants | Public display value |
 | `BEBOSS_ADMIN_URL` | Invitation redirect, `https://admin.beboss.rw/reset-password?invite=1` | Public URL |
 
+The BB3 ECDSA P-256 private key is provisioned in the live Supabase `app_secrets` table as `BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM`. It is not a Vercel environment variable and must never be placed in an Android Gradle property, APK asset, browser bundle, or `VITE_*` variable. Android contains only the matching public verification key.
+
 Never add a `VITE_` prefix to `SUPABASE_SERVICE_ROLE_KEY`. The Vite configuration intentionally injects only the Supabase URL and publishable key into browser code. Keep `.env.example` as a template; never commit actual service-role keys, signing secrets, or passwords.
 
 Build and deploy from the `web` directory:
