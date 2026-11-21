@@ -51,7 +51,10 @@ class SyncResilienceTest {
                 listOf(SaleItem(id = "analytics-item-1", saleId = "analytics-sale-1", productId = "p1", productName = "Milk", quantitySold = 2.0, subtotal = 100.0, profit = 40.0))
             )
 
-            val first = analytics.getProfitLossForPeriod(AnalyticsPeriod.ALL_TIME).first()
+            // Reuse the same Flow after creating a new transaction. Its period query
+            // must keep accepting sales recorded after the analytics screen opened.
+            val liveSummaryFlow = analytics.getProfitLossForPeriod(AnalyticsPeriod.ALL_TIME)
+            val first = liveSummaryFlow.first()
             assertEquals(100.0, first.totalRevenue, 0.001)
             assertEquals(2.0, first.totalItemsSold, 0.001)
 
@@ -63,7 +66,7 @@ class SyncResilienceTest {
                 listOf(SaleItem(id = "analytics-item-2", saleId = "analytics-sale-2", productId = "p2", productName = "Sugar", quantitySold = 3.0, subtotal = 200.0, profit = 80.0))
             )
 
-            val updated = analytics.getProfitLossForPeriod(AnalyticsPeriod.ALL_TIME).first()
+            val updated = liveSummaryFlow.first()
             assertEquals(300.0, updated.totalRevenue, 0.001)
             assertEquals(180.0, updated.totalCost, 0.001)
             assertEquals(120.0, updated.netProfit, 0.001)
