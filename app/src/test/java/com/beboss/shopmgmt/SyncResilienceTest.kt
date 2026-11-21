@@ -65,7 +65,7 @@ class SyncResilienceTest {
 
             val updated = analytics.getProfitLossForPeriod(AnalyticsPeriod.ALL_TIME).first()
             assertEquals(300.0, updated.totalRevenue, 0.001)
-            assertEquals(120.0, updated.totalCost, 0.001)
+            assertEquals(180.0, updated.totalCost, 0.001)
             assertEquals(120.0, updated.netProfit, 0.001)
             assertEquals(2, updated.totalSalesCount)
             assertEquals(5.0, updated.totalItemsSold, 0.001)
