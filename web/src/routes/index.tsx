@@ -71,18 +71,36 @@ function Home() {
           </Link>
         </div>
       </section>
-      {data?.ok && data.stats && (
-        <div className="retail-section flex flex-wrap items-center gap-5 border-y border-border py-6">
-          <Activity size={18} />
-          <span>
-            {t("heroActiveShops")}: <b>{data.stats.shops_active}</b>
-          </span>
-          <span>
-            {t("heroSyncedDevices")}: <b>{data.stats.devices_synced_24h}</b>
-          </span>
-          <Link to="/status">{t("navStatus")} →</Link>
+      <section className="live-platform-section" aria-labelledby="live-platform-title">
+        <div className="live-platform-inner">
+          <div className="live-platform-heading">
+            <div className="section-kicker"><Activity size={16} /> LIVE PLATFORM DATA</div>
+            <h2 id="live-platform-title">Real activity from the BeBoss cloud</h2>
+            <p>Aggregate operational metrics queried directly from Supabase. No sample transactions or invented device counts.</p>
+          </div>
+          {data?.ok && data.stats ? (
+            <>
+              <div className="live-platform-grid">
+                <article><span>Active shops</span><strong>{data.stats.shops_active.toLocaleString()}</strong><small>Current subscriptions and trials</small></article>
+                <article><span>Registered shops</span><strong>{data.stats.shops_total.toLocaleString()}</strong><small>Accounts in the platform</small></article>
+                <article><span>Branches configured</span><strong>{data.stats.branches_total.toLocaleString()}</strong><small>Reported by shop accounts</small></article>
+                <article><span>Devices synced · 24h</span><strong>{data.stats.devices_synced_24h.toLocaleString()}</strong><small>Devices with a recent sync timestamp</small></article>
+              </div>
+              <div className="live-platform-foot">
+                <span><i /> Supabase connection · live query</span>
+                <span>Last platform event: {data.stats.last_sync_at ? new Date(data.stats.last_sync_at).toLocaleString() : "No sync events recorded"}</span>
+                <Link to="/status">View platform status <ArrowUpRight size={15} /></Link>
+              </div>
+            </>
+          ) : (
+            <div className="live-platform-unavailable" role="status">
+              <span>Live metrics are temporarily unavailable.</span>
+              <span>The website will not substitute mock values for cloud data.</span>
+              <Link to="/status">Check service status <ArrowUpRight size={15} /></Link>
+            </div>
+          )}
         </div>
-      )}
+      </section>
       <section className="retail-section">
         <div className="install-panel">
           <div>

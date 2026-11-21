@@ -90,7 +90,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "BeBoss POS — Offline-first multi-branch point of sale for Android" },
       { name: "description", content: "BeBoss turns any Android phone into an offline-first POS with MoMo payments, debt tracking, inventory forecasting and multi-branch sync." },
       { name: "author", content: "BeBoss" },
-      { name: "theme-color", content: "#0f1424" },
+      { name: "theme-color", content: "#faf9f6" },
       { property: "og:site_name", content: "BeBoss POS" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -119,7 +119,7 @@ function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{__html:`document.documentElement.classList.toggle('dark',document.cookie.includes('beboss_theme=dark')||(!document.cookie.includes('beboss_theme=')&&matchMedia('(prefers-color-scheme: dark)').matches))`}} />
+        <script dangerouslySetInnerHTML={{__html:`document.documentElement.classList.toggle('dark',document.cookie.includes('beboss_theme=dark'))`}} />
         <HeadContent />
       </head>
       <body style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
