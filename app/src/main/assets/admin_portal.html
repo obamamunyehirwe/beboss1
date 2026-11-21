@@ -1781,24 +1781,29 @@ create table if not exists public.payment_requests (
     return toHexUpper(digest).slice(0, 6);
   }
 
-  async function generateBB2UnlockCode(username, phone, tierCode, days, secret, validityWindowDays = 14) {
-    const cleanTier = String(tierCode || 'SINGLE').trim().toUpperCase();
-    const acctHash6 = await computeAccountBindingHash(username, phone);
-    const expiryHex = (Math.floor(Date.now() / 86400000) + validityWindowDays).toString(16).toUpperCase();
-    const payload = `BB2:${cleanTier}:${days}:${expiryHex}:${acctHash6}`;
-    const signingSecret = String(secret || '').trim();
-    if (!signingSecret) {
-      throw new Error('BB2 signing key is not configured. Use the server-secured BeBoss web admin to issue unlock codes.');
+  async function generateBB3UnlockCode(session, username, phone, tierCode, days) {
+    if (!session?.url || !session?.anonKey || !session?.accessToken) {
+      throw new Error('An authenticated BeBoss admin session is required to issue a secure BB3 code.');
     }
-    const key = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(signingSecret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
-    return `BB2-${cleanTier}-${days}-${expiryHex}-${acctHash6}-${toHexUpper(sig).slice(0, 8)}`;
+    const response = await fetch(`${session.url}/functions/v1/issue-bb3-unlock`, {
+      method: 'POST',
+      headers: {
+        apikey: session.anonKey,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        username: String(username || '').trim(),
+        phone: String(phone || '').trim(),
+        tier: String(tierCode || 'SINGLE').trim().toUpperCase(),
+        days: Math.max(1, Math.floor(Number(days) || 0))
+      })
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.message || `Secure BB3 signing failed (HTTP ${response.status}).`);
+    const code = String(body.code || '').trim();
+    if (!code.startsWith('BB3-')) throw new Error('The BB3 signing service returned an invalid unlock code.');
+    return code;
   }
 
   function calculateSubscriptionFee(branches, workers, months, devices = 1, perDeviceRate = 2000) {
@@ -1915,7 +1920,6 @@ create table if not exists public.payment_requests (
   function AdminLoginModal({ session, onLoginSuccess, onClose, onShowSql }) {
     const [url, setUrl] = useState(session.url || '');
     const [anonKey, setAnonKey] = useState(session.anonKey || '');
-    const [secret, setSecret] = useState(session.secret || '');
     const [authPassword, setAuthPassword] = useState('');
     const [authError, setAuthError] = useState('');
     const [authBusy, setAuthBusy] = useState(false);
@@ -1984,7 +1988,6 @@ create table if not exists public.payment_requests (
         const nextSession = {
           url: cleanUrl,
           anonKey: cleanKey,
-          secret: secret.trim(),
           accessToken,
           refreshToken: body.refresh_token || body.session?.refresh_token || '',
           userId,
@@ -2060,15 +2063,8 @@ create table if not exists public.payment_requests (
                 />
               </div>
             </div>
-            <div>
-              <label className="field-label">BB2 Cryptographic HMAC Signing Secret</label>
-              <input
-                className="input mono"
-                type="password"
-                required
-                value={secret}
-                onChange={e => setSecret(e.target.value)}
-              />
+            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3" style={{ color: 'var(--muted)', fontSize: 11, lineHeight: 1.6 }}>
+              BB3 unlock codes are signed by the private key on the BeBoss server. This portal receives only the signed code; no shared or private signing secret is stored in the browser or APK.
             </div>
 
             {authError && (
@@ -2285,7 +2281,7 @@ create table if not exists public.payment_requests (
         req.device_count || 1,
         payConfig.per_device_fee_rwf
       );
-      const code = await generateBB2UnlockCode(req.owner_username, req.owner_phone, calc.tier, calc.days, session.secret);
+      const code = await generateBB3UnlockCode(session, req.owner_username, req.owner_phone, calc.tier, calc.days);
       const now = Date.now();
       const adminLabel = `${session.fullName} (${session.email})`;
       try {
@@ -2592,7 +2588,7 @@ create table if not exists public.payment_requests (
       }
       const calc = calculateSubscriptionFee(genForm.branches, genForm.workers, genForm.months, genForm.devices, payConfig.per_device_fee_rwf);
       const amount = Number(genForm.amount) >= 0 ? Number(genForm.amount) : calc.total;
-      const code = await generateBB2UnlockCode(username, phone, calc.tier, calc.days, session.secret);
+      const code = await generateBB3UnlockCode(session, username, phone, calc.tier, calc.days);
       const adminLabel = `${session.fullName} (${session.email})`;
 
       try {
@@ -3742,7 +3738,7 @@ create table if not exists public.payment_requests (
     SCHEMA_SQL,
     normalizePhoneLast9,
     computeShopKey,
-    generateBB2UnlockCode,
+    generateBB3UnlockCode,
     calculateSubscriptionFee,
     buildWhatsAppUrl,
     buildUnlockReplyText,
