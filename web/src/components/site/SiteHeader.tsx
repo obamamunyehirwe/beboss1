@@ -21,8 +21,9 @@ import {
   Store,
   X,
   Zap,
+  type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -51,6 +52,8 @@ type SitePath =
   | "/my-shop"
   | "/contact"
   | "/admin";
+
+type HeaderLink = { to: SitePath; label: string; description: string; icon: LucideIcon };
 
 export function SiteHeader() {
   const { t, p, lang } = useI18n();
@@ -85,13 +88,12 @@ export function SiteHeader() {
     { to: "/admin" as const, label: t("navAdmin"), description: c.headerAdminDesc, icon: ShieldCheck },
   ];
 
-  const filteredLinks = useMemo(() => {
-    const query = searchQuery.trim().toLocaleLowerCase();
-    if (!query) return allLinks.slice(0, 6);
-    return allLinks
-      .filter((item) => `${item.label} ${item.description} ${item.to}`.toLocaleLowerCase().includes(query))
-      .slice(0, 8);
-  }, [searchQuery, lang]);
+  const query = searchQuery.trim().toLocaleLowerCase();
+  const filteredLinks = query
+    ? allLinks
+        .filter((item) => `${item.label} ${item.description} ${item.to}`.toLocaleLowerCase().includes(query))
+        .slice(0, 8)
+    : allLinks.slice(0, 6);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -128,9 +130,7 @@ export function SiteHeader() {
     void navigate({ to });
   };
 
-  const menuLink = (
-    item: (typeof productLinks)[number] | (typeof resourceLinks)[number],
-  ) => (
+  const menuLink = (item: HeaderLink) => (
     <DropdownMenuItem key={item.to} asChild>
       <Link to={item.to} className="site-mega-link">
         <span className="site-mega-icon"><item.icon size={18} /></span>
@@ -323,7 +323,7 @@ export function SiteHeader() {
           >
             <div className="site-search-topline">
               <span><Search size={16} /> {c.headerSearchHint}</span>
-              <button type="button" onClick={() => setSearchOpen(false)} aria-label={p.common.close}><X size={18} /></button>
+              <button type="button" onClick={() => setSearchOpen(false)} aria-label={c.headerClose}><X size={18} /></button>
             </div>
             <div className="site-search-input-wrap">
               <Search size={20} />
