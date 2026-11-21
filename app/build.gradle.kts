@@ -88,6 +88,9 @@ secrets {
   defaultPropertiesFileName = ".env.example"
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
   ignoreList.add("SENTRY_DSN")
+  ignoreList.add("VITE_SUPABASE_URL")
+  ignoreList.add("VITE_SUPABASE_PUBLISHABLE_KEY")
+  ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
 }
 
 dependencies {
