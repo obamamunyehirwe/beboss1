@@ -205,7 +205,12 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
             <SidebarBody email={email} isAdmin={isAdmin} onSignOut={onSignOut} onNavigate={() => setOpen(false)} />
           </SheetContent>
         </Sheet>
-        <LivePulse />
+        <div className="admin-topbar-mobile-brand lg:hidden">
+          <Logo to="/admin" suffix="Admin" />
+        </div>
+        <div className="hidden sm:block">
+          <LivePulse />
+        </div>
       </div>
       <div className="flex items-center gap-2">
       <LanguageSwitcher /><ThemeToggle /><CommandPalette nav={NAV.map(n=>({...n,label:a(n.label)}))} />
