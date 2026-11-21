@@ -296,14 +296,7 @@ object SupabaseAdminClient {
         }
     }
 
-    fun getDefaultAdminEmail(): String {
-        val envEmail = try {
-            BuildConfig.SUPABASE_ADMIN_EMAIL.trim().lowercase(Locale.ROOT)
-        } catch (_: Throwable) {
-            ""
-        }
-        return if (envEmail == MASTER_ADMIN_EMAIL) envEmail else MASTER_ADMIN_EMAIL
-    }
+    fun getDefaultAdminEmail(): String = MASTER_ADMIN_EMAIL
 
     fun isAllowedMasterAdminEmail(email: String): Boolean {
         return email.trim().lowercase(Locale.ROOT) == MASTER_ADMIN_EMAIL
