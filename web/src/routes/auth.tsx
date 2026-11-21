@@ -21,9 +21,9 @@ export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
       { title: "Admin sign in — BeBoss" },
-      { name: "description", content: "Secure password sign-in for approved BeBoss administrators." },
+      { name: "description", content: "Password-only sign-in for approved BeBoss administrators and support staff." },
       { property: "og:title", content: "BeBoss Admin sign-in" },
-      { property: "og:description", content: "Restricted access for the BeBoss admin team." },
+      { property: "og:description", content: "Restricted access for the approved BeBoss admin team." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "robots", content: "noindex" },
@@ -126,10 +126,10 @@ function AuthPage() {
       <main className="admin-auth-layout">
         <section className="admin-auth-story" aria-labelledby="admin-auth-story-title">
           <div className="admin-auth-eyebrow"><span className="admin-auth-eyebrow-dot" /><ShieldCheck size={15} />RESTRICTED ADMIN WORKSPACE</div>
-          <h1 id="admin-auth-story-title">Keep every part of your retail operation <em>in control.</em></h1>
-          <p className="admin-auth-story-copy">A single secure workspace for shop operations, payment reviews, connected devices, releases and platform activity.</p>
+          <h1 id="admin-auth-story-title">One secure command center. <em>Every shop in view.</em></h1>
+          <p className="admin-auth-story-copy">Review payment requests, monitor connected devices, manage releases and keep every BeBoss operation under control from one protected workspace.</p>
           <div className="admin-auth-visual">
-            <img src="/Friendly%20Modern%20Store%20Checkout.png" alt="BeBoss retail point-of-sale checkout" loading="eager" decoding="async" width={1600} height={1100} />
+            <img src="/Friendly%20Modern%20Store%20Checkout.png" alt="BeBoss retail point-of-sale checkout experience" loading="eager" decoding="async" width={1600} height={1100} />
             <div className="admin-auth-visual-shade" aria-hidden="true" />
             <div className="admin-auth-visual-brand">
               <img src="/beboss-app-icon.png" alt="" width={42} height={42} />
@@ -146,9 +146,9 @@ function AuthPage() {
         <section className="admin-auth-form-wrap" aria-labelledby="admin-auth-form-title">
           <div className="auth-page-card admin-auth-form-card">
             <div className="admin-auth-form-icon"><LockKeyhole size={22} /></div>
-            <p className="admin-auth-form-kicker">BE BOSS · ADMIN ACCESS</p>
-            <h2 id="admin-auth-form-title">Welcome back</h2>
-            <p className="admin-auth-form-intro">Sign in with the email and password assigned to your BeBoss admin account.</p>
+            <p className="admin-auth-form-kicker">BE BOSS · PASSWORD-ONLY ACCESS</p>
+            <h2 id="admin-auth-form-title">Sign in to BeBoss Admin</h2>
+            <p className="admin-auth-form-intro">Use the email and password for the BeBoss account invited or approved by a master administrator.</p>
             {!liveConfigured ? (
               <div role="status" className="admin-auth-config-warning">
                 <strong>Admin sign-in is not configured in this deployment.</strong>
@@ -180,9 +180,13 @@ function AuthPage() {
                 {checkingSession ? "Checking session…" : busy ? "Signing in…" : a("Sign in securely")}
               </Button>
             </form>
+            <div className="admin-auth-method-note">
+              <LockKeyhole size={15} />
+              <span>Email and password only. No Google sign-in, Lovable sign-in or public registration.</span>
+            </div>
             <div className="admin-auth-access-note">
               <ShieldCheck size={16} />
-              <p>Access is limited to accounts invited or approved by a BeBoss master admin. This page does not offer public registration.</p>
+              <p>Supabase verifies the account's approved BeBoss role before admin data is shown. Master admin and approved support permissions remain separate.</p>
             </div>
           </div>
         </section>
