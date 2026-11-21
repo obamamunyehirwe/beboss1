@@ -57,7 +57,32 @@ function AdminLayout() {
       </div>
     );
   }
-  if (ctx.error || !ctx.data?.isStaff) {
+  if (ctx.error) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-ember px-4">
+        <div className="max-w-md rounded-3xl border border-border bg-card p-8 text-center">
+          <ShieldAlert className="mx-auto size-10 text-warning" />
+          <h1 className="mt-4 text-xl font-bold">Could not verify admin access</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            BeBoss could not complete the secure role check with Supabase. Your permissions have not been changed. Retry the connection, or sign out and sign in again.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <Button variant="hero" onClick={() => void ctx.refetch()}>
+              <RefreshCw /> Retry
+            </Button>
+            <Button variant="glass" asChild>
+              <Link to="/">Back to site</Link>
+            </Button>
+            <Button variant="secondary" onClick={signOut}>
+              <LogOut /> Sign out
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!ctx.data?.isStaff) {
     return (
       <div className="grid min-h-screen place-items-center bg-ember px-4">
         <div className="max-w-md rounded-3xl border border-border bg-card p-8 text-center">
