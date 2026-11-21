@@ -23,6 +23,14 @@ interface SaleDao {
     @Query("SELECT * FROM sales WHERE saleDate >= :startTime AND saleDate <= :endTime ORDER BY saleDate DESC")
     fun getSalesByDateRange(startTime: Long, endTime: Long): Flow<List<Sale>>
 
+    @Query("""
+        SELECT COALESCE(SUM(si.quantitySold), 0.0)
+        FROM sale_items si
+        INNER JOIN sales s ON si.saleId = s.id
+        WHERE s.saleDate >= :startTime AND s.saleDate <= :endTime
+    """)
+    fun getItemsSoldBetween(startTime: Long, endTime: Long): Flow<Double>
+
     @Query("SELECT * FROM sales WHERE customerId = :customerId ORDER BY saleDate DESC")
     fun getSalesForCustomer(customerId: String): Flow<List<Sale>>
 
