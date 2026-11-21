@@ -78,13 +78,7 @@ class BeBossCloudSyncWorker(
             }
 
             val hasCloudTarget = SupabaseAdminClient.isConfigured() || profile.backendServerUrl.isNotBlank()
-            // A successful snapshot upload must not hide a failed license/config sync.
-            // Retry only when Supabase is the configured target; an intentionally disabled
-            // Supabase path may still use the optional signed custom relay endpoint.
-            val adminSyncFailed = SupabaseAdminClient.isConfigured() && !adminResult.success
-            val branchSyncFailed = branchReport.state == CloudSyncState.ERROR && hasCloudTarget
-            if (adminSyncFailed || branchSyncFailed) {
-                Log.w(TAG, "Background sync incomplete; scheduling retry. adminSyncFailed=$adminSyncFailed branchSyncFailed=$branchSyncFailed")
+            if (branchReport.state == CloudSyncState.ERROR && hasCloudTarget) {
                 Result.retry()
             } else {
                 Result.success()

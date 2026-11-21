@@ -2,6 +2,8 @@ import { Link } from "@tanstack/react-router";
 import {
   ArrowDownToLine,
   ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
   ScanLine,
   WifiOff,
   Store,
@@ -9,6 +11,7 @@ import {
   Smartphone,
   Check,
 } from "lucide-react";
+import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { retailCopy } from "@/lib/i18n-dict";
 import { PhoneMockup } from "./PhoneMockup";
@@ -16,17 +19,24 @@ import { PhoneMockup } from "./PhoneMockup";
 export function ModernHero() {
   const { lang, t } = useI18n();
   const c = retailCopy[lang];
+  const [scene, setScene] = useState(0);
+  const change = () => setScene((s) => 1 - s);
+
   return (
     <>
       <section className="market-hero" aria-labelledby="market-title">
-        <div className="market-orbit market-orbit-one" aria-hidden="true" />
-        <div className="market-orbit market-orbit-two" aria-hidden="true" />
-        <div className="market-shade" aria-hidden="true" />
+        <img
+          className="market-photo"
+          src={scene === 0 ? "/hero-shop.jpg" : "/retail-receipt.png"}
+          alt=""
+          fetchPriority="high"
+        />
+        <div className="market-shade" />
         <div className="market-frame">
           <div className="market-copy">
             <div className="market-label">
               <span />
-              BeBoss · Retail operations platform
+              {c.kicker}
             </div>
             <h1 id="market-title">
               {c.first}
@@ -46,12 +56,7 @@ export function ModernHero() {
             </div>
             <div className="market-trial">
               <Check />
-              Built for real shops. Works offline. Syncs when connected.
-            </div>
-            <div className="market-trust">
-              <span><WifiOff /> Offline-first Android POS</span>
-              <span><Store /> Multi-branch operations</span>
-              <span><Languages /> English · Kinyarwanda · Français · Kiswahili</span>
+              {t("heroTrial")}
             </div>
           </div>
 
@@ -61,11 +66,18 @@ export function ModernHero() {
               <PhoneMockup />
             </div>
             <div className="market-caption">
-              <div>
-                <small>PRODUCT PREVIEW</small>
-                <span>Explore the BeBoss Android experience</span>
+              <div aria-live="polite">
+                <small>0{scene + 1} / 02</small>
+                <span>{c.scenes[scene]}</span>
               </div>
-              <span className="market-preview-pill">Interactive preview</span>
+              <div className="scene-controls">
+                <button type="button" onClick={change} aria-label={c.previous}>
+                  <ChevronLeft />
+                </button>
+                <button type="button" onClick={change} aria-label={c.next}>
+                  <ChevronRight />
+                </button>
+              </div>
             </div>
           </div>
         </div>
