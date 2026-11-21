@@ -37,7 +37,7 @@ The web admin screen uses email/password only. Public self-registration and Goog
 
 1. In Supabase, open Authentication → URL Configuration. Set the Site URL to the canonical production web origin.
 2. Add the canonical production `/auth` and `/reset-password` URLs to Redirect URLs. Add local development URLs and the exact Vercel preview pattern only if preview logins are required.
-3. Keep email/password authentication enabled and require email confirmation.
+3. Keep the email/password provider enabled and require email confirmation. Set the top-level Auth setting `enable_signup = false` (not `[auth.email].enable_signup = false`, which controls the email provider itself). This blocks public self-registration while leaving password sign-in available. The repo config records the no-public-signup setting; apply it in the hosted Supabase Auth settings after provisioning the first master admin.
 4. The database has a protected `admin_bootstrap_emails` allow-list and a trigger that gives the allow-listed first account the master-admin role after its email is confirmed.
 5. Create/invite the initial allow-listed master-admin user from Authentication → Users in the Supabase Dashboard, then complete email confirmation before signing in at `/auth`.
 6. After the first master admin has signed in, use Admin → Admin team to invite additional administrators or support users. The server uses the service-role client to send invitations and attach the selected role. Invited users can sign in after accepting their invitation.
