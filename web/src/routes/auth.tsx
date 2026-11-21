@@ -1,5 +1,4 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { Eye, EyeOff, KeyRound, Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -14,7 +13,6 @@ import { liveConfigured } from "@/lib/live-config";
 import { useI18n } from "@/lib/i18n";
 import { Logo } from "@/components/site/Logo";
 import { supabase } from "@/integrations/supabase/client";
-import { bootstrapInitialAdmin } from "@/lib/admin.functions";
 
 const searchSchema = z.object({ redirect: z.string().optional() });
 
@@ -44,7 +42,6 @@ function AuthPage() {
   const { redirect } = Route.useSearch();
   const target = safeRedirect(redirect);
   const router = useRouter();
-  const sendBootstrapInvite = useServerFn(bootstrapInitialAdmin);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -88,7 +85,11 @@ function AuthPage() {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error) {
-        toast.error(error.message);
+        const invalidCredentials = error.code === "invalid_credentials" ||
+          error.message.toLowerCase().includes("invalid login credentials");
+        toast.error(invalidCredentials
+          ? "BeBoss could not find a matching confirmed account and password. For first-time master-admin setup, use the secure invitation button below first. If you already accepted the invitation, check the spelling of the approved email and use password recovery."
+          : error.message);
         return;
       }
       toast.success("Credentials accepted. Verifying your BeBoss access…");
@@ -104,15 +105,21 @@ function AuthPage() {
     if (!liveConfigured || bootstrapBusy) return;
     setBootstrapBusy(true);
     try {
-      const result = await sendBootstrapInvite();
+      const { data, error } = await supabase.functions.invoke("bootstrap-first-admin", { body: {} });
+      if (error) throw new Error(error.message || "Could not contact the secure invitation service.");
+      const result = data as { status?: string; email?: string; message?: string };
       if (result.status === "sent") {
         toast.success(`A secure setup invitation was sent to ${result.email}. Open the email and choose your own password.`);
       } else if (result.status === "already_sent") {
         toast.info(`The one-time invitation has already been issued to ${result.email}. Check that mailbox and its spam folder.`);
       } else if (result.status === "account_exists") {
-        toast.info(`The approved account ${result.email} already exists. Complete its invitation or use password recovery before signing in.`);
-      } else {
+        toast.info(result.message || `The approved account ${result.email} already exists. Complete its invitation or use password recovery before signing in.`);
+      } else if (result.status === "account_repaired") {
+        toast.success(`The confirmed administrator account ${result.email} was repaired. Sign in with its password.`);
+      } else if (result.status === "already_configured") {
         toast.info("A master administrator is already configured. Sign in with the approved admin account.");
+      } else {
+        throw new Error(result.message || "Could not prepare the first-admin invitation.");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not prepare the first-admin invitation.");
