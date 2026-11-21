@@ -29,7 +29,7 @@ function corsHeadersFor(origin: string | null, request?: Request): HeadersInit {
   };
 }
 
-const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\\/+$/, "");
+const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/[/]+$/, "");
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 function json(status: number, body: Record<string, unknown>, origin: string | null, request?: Request) {
