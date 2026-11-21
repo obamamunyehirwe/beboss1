@@ -3,6 +3,10 @@ package com.beboss.shopmgmt.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -581,7 +585,10 @@ fun SettingsScreen(
                 idleLockMinutes = idleLockMinutes,
                 language = language,
                 onSetIdleLockMinutes = onSetIdleLockMinutes,
-                onOpenDiagnostics = { showDiagnosticsDialog = true }
+                onOpenDiagnostics = {
+                    onRefreshDatabaseStats()
+                    showDiagnosticsDialog = true
+                }
             ) }
         }
 
@@ -599,7 +606,10 @@ fun SettingsScreen(
                 onRefreshStats = onRefreshDatabaseStats,
                 onVerifyIntegrity = onVerifyDatabaseIntegrity,
                 onOptimize = onOptimizeDatabase,
-                onOpenDiagnostics = { showDiagnosticsDialog = true },
+                onOpenDiagnostics = {
+                    onRefreshDatabaseStats()
+                    showDiagnosticsDialog = true
+                },
                 onResetTransactions = { showResetTransactionsDialog = true },
                 onWipeProducts = { showClearProductsDialog = true },
                 onWipeCustomers = { showClearCustomersDialog = true },
@@ -653,7 +663,19 @@ fun SettingsScreen(
         currencySymbol = shopForm.currencySymbol,
         onDismiss = { showThermalPreviewDialog = false },
         onTestPrint = {
-            Toast.makeText(context, "Test print signal sent to ${shopForm.paperWidthMm} mm thermal printer!", Toast.LENGTH_SHORT).show()
+            printThermalTestPage(
+                context = context,
+                paperWidthMm = shopForm.paperWidthMm,
+                shopName = shopForm.shopName,
+                receiptHeader = shopForm.receiptHeader,
+                address = shopForm.address,
+                phone = shopForm.phone,
+                ownerName = shopForm.ownerName,
+                tinNumber = shopForm.tinNumber,
+                showTaxOnReceipt = shopForm.showTaxOnReceipt,
+                receiptFooter = shopForm.receiptFooter,
+                currencySymbol = shopForm.currencySymbol
+            )
             showThermalPreviewDialog = false
         },
         language = language
@@ -720,22 +742,32 @@ fun SettingsScreen(
         language = language
     )
 
-    // Dialogs for Team Management
+    // Dialogs for Team, Multi-Branch, Sync, Licensing, Admin & Diagnostics
     if (showStaffDialog) StaffManagementDialog(
-        currentUser = currentUser,
         allUsers = allUsers,
+        currentUser = currentUser,
+        branches = branches,
+        shopProfile = shopProfile,
         language = language,
         onSaveUser = onSaveUser,
         onDeleteUser = onDeleteUser,
-        onSwitchUser = onSwitchUser,
         onDismiss = { showStaffDialog = false }
     )
 
     if (showBranchDialog) BranchManagementDialog(
         branches = branches,
+        allUsers = allUsers,
+        products = products,
+        sales = sales,
+        stockTransfers = stockTransfers,
+        currencySymbol = shopProfile.currencySymbol,
+        selectedBranchId = selectedBranchId,
         language = language,
+        onSelectActiveBranch = onSelectActiveBranch,
         onSaveBranch = onSaveBranch,
         onDeleteBranch = onDeleteBranch,
+        onCreateStockTransfer = onCreateStockTransfer,
+        onDeleteStockTransfer = onDeleteStockTransfer,
         onDismiss = { showBranchDialog = false }
     )
 
@@ -750,81 +782,127 @@ fun SettingsScreen(
         onDismiss = { showShopDevicesDialog = false }
     )
 
-    if (showSyncHubDialog) SyncHubDialog(
-        discoveredHubs = discoveredHubs,
-        isDiscovering = isDiscoveringHubs,
-        peerSyncEvents = peerSyncEvents,
+    if (showSyncHubDialog) ShopOwnerSyncHubDialog(
+        shopProfile = shopProfile,
+        currentUser = currentUser,
+        allUsers = allUsers,
+        branches = branches,
+        sales = sales,
+        products = products,
+        customers = customers,
+        customerPayments = customerPayments,
+        stockTransfers = stockTransfers,
+        cloudSyncReport = cloudSyncReport,
+        isSyncing = isSyncing,
+        language = language,
         localServerStatus = localServerStatus,
         localServerIp = localServerIp,
         localConnectedClients = localConnectedClients,
         localLastReceivedPacket = localLastReceivedPacket,
+        discoveredHubs = discoveredHubs,
+        isDiscoveringHubs = isDiscoveringHubs,
+        peerSyncEvents = peerSyncEvents,
         isP2pSyncing = isP2pSyncing,
-        language = language,
-        onStartDiscovery = onStartLanDiscovery,
-        onStopDiscovery = onStopLanDiscovery,
-        onSyncWithHub = onSyncWithLocalHub,
-        onGenerateShareToken = onGenerateBranchShareToken,
-        onExportPackage = onExportFullBranchPackage,
+        syncAuditLogs = syncAuditLogs,
+        onStartLanDiscovery = onStartLanDiscovery,
+        onStopLanDiscovery = onStopLanDiscovery,
+        onGenerateBranchShareToken = onGenerateBranchShareToken,
+        onExportFullBranchPackage = onExportFullBranchPackage,
+        onSyncToCloudNow = onSyncToCloudNow,
+        onSyncCloudWithEndpoint = onSyncCloudWithEndpoint,
+        onTestPing = onTestPing,
+        onToggleLocalServer = onToggleLocalServer,
+        onSyncWithLocalHub = onSyncWithLocalHub,
+        onImportBranchPacket = onImportPackage,
         onDismiss = { showSyncHubDialog = false }
     )
 
-    if (showSubscriptionDialog) SubscriptionWizardDialog(
-        shopProfile = shopProfile,
-        currentPricing = currentPricing,
-        ownerAccount = ownerAccount,
-        livePaymentConfig = livePaymentConfig,
-        language = language,
-        onProcessPayment = onProcessDirectPayment!!,
-        onDismiss = { showSubscriptionDialog = false }
-    )
+    if (showSubscriptionDialog) {
+        Dialog(
+            onDismissRequest = { showSubscriptionDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                SubscriptionScreen(
+                    shopProfile = shopProfile,
+                    branches = branches,
+                    allUsers = allUsers,
+                    shopDevices = shopDevices,
+                    currentUser = currentUser,
+                    paymentRequests = paymentVerificationRequests,
+                    livePaymentConfig = livePaymentConfig,
+                    language = language,
+                    onActivateVoucher = onActivateVoucher,
+                    onProcessDirectPayment = onProcessDirectPayment,
+                    onSubmitPaymentVerification = onSubmitPaymentVerification,
+                    onCheckCloudApproval = onCheckCloudApproval,
+                    onClose = { showSubscriptionDialog = false }
+                )
+            }
+        }
+    }
 
-    if (showAdminConsoleDialog) AdminConsoleDialog(
+    if (showAdminConsoleDialog) AdminVerificationConsoleDialog(
+        shopProfile = shopProfile,
         adminSession = adminSession,
         adminAuthError = adminAuthError,
         isAdminAuthenticating = isAdminAuthenticating,
-        adminPaymentRequests = adminPaymentRequests,
-        adminShopAccounts = adminShopAccounts,
-        adminShopUsers = adminShopUsers,
-        adminShopDevices = adminShopDevices,
-        adminBranchSnapshots = adminBranchSnapshots,
-        adminUnlockCodes = adminUnlockCodes,
-        adminAuditLogs = adminAuditLogs,
+        paymentRequests = adminPaymentRequests,
+        shopAccounts = adminShopAccounts,
+        shopUsers = adminShopUsers,
+        shopDevices = adminShopDevices,
+        branchSnapshots = adminBranchSnapshots,
+        unlockCodes = adminUnlockCodes,
+        auditLogs = adminAuditLogs,
         localAuditLogs = localAuditLogs,
-        isAdminLoading = isAdminLoading,
+        paymentConfig = livePaymentConfig,
+        isLoading = isAdminLoading,
         language = language,
-        onAdminSignIn = onAdminSignIn,
-        onAdminSignUp = onAdminSignUp,
-        onAdminSignOut = onAdminSignOut,
+        lastSyncedAt = adminLastSyncedAt,
+        onSignInAdmin = onAdminSignIn,
+        onSignUpAdmin = onAdminSignUp,
+        onSignOutAdmin = onAdminSignOut,
         onRefresh = onRefreshAdminDashboard,
-        onApprovePayment = onAdminApprovePayment!!,
-        onDirectAutoUnlock = onAdminDirectAutoUnlock!!,
-        onSavePaymentConfig = onAdminSavePaymentConfig!!,
-        onToggleShopDevice = onAdminToggleShopDevice,
+        onApprovePayment = onAdminApprovePayment ?: { _, onDone -> onDone(false, "Admin approval unavailable") },
+        onDirectAutoUnlock = onAdminDirectAutoUnlock ?: { _, onDone -> onDone(false) },
+        onSavePaymentConfig = onAdminSavePaymentConfig ?: { _, onDone -> onDone(false) },
+        onToggleShopDeviceActive = onAdminToggleShopDevice,
         onDeleteShopDevice = onAdminDeleteShopDevice,
-        onApproveBatch = onAdminApproveBatch,
+        onBatchApprovePending = onAdminApproveBatch,
         onRejectPayment = onAdminRejectPayment,
-        onIssueManualCode = onAdminIssueManualCode!!,
+        onIssueManualCode = onAdminIssueManualCode ?: { _, _, _, _, _, onDone -> onDone(false, "Unavailable") },
         onRevokeCode = onAdminRevokeCode,
-        onExtendSubscription = onAdminExtendShopSubscription,
-        onResetTrial = onAdminResetShopTrial,
+        onExtendShopSubscription = onAdminExtendShopSubscription,
+        onResetShopTrial = onAdminResetShopTrial,
         onSetShopStatus = onAdminSetShopStatus,
-        onUpdateLimits = onAdminUpdateShopLimits,
+        onUpdateShopLimits = onAdminUpdateShopLimits,
         onDeleteShopAccount = onAdminDeleteShopAccount,
-        onUpdateUserRole = onAdminUpdateShopUserRole,
-        onToggleUserActive = onAdminToggleShopUserActive,
-        onDeleteUser = onAdminDeleteShopUser,
+        onUpdateShopUserRole = onAdminUpdateShopUserRole,
+        onToggleShopUserActive = onAdminToggleShopUserActive,
+        onDeleteShopUser = onAdminDeleteShopUser,
         onDeleteBranchSnapshot = onAdminDeleteBranchSnapshot,
+        onShareWebPortal = onShareAdminWebPortal,
         onDismiss = { showAdminConsoleDialog = false }
     )
 
     if (showDataTransferDialog) DataTransferDialog(
+        shopProfile = shopProfile,
+        allUsers = allUsers,
         products = products,
         customers = customers,
         sales = sales,
-        allUsers = allUsers,
-        shopProfile = shopProfile,
-        language = language,
-        onImport = onImportPackage,
+        customerPayments = customerPayments,
+        currentUser = currentUser,
+        onImportPackage = onImportPackage,
+        onExportFullPackage = onExportFullBranchPackage?.let { exportFn ->
+            { onReady -> exportFn(null, onReady) }
+        },
+        onCreateShareToken = onGenerateBranchShareToken?.let { tokenFn ->
+            { onReady -> tokenFn(null, onReady) }
+        },
         onDismiss = { showDataTransferDialog = false }
     )
 
@@ -835,11 +913,22 @@ fun SettingsScreen(
     )
 
     if (showDiagnosticsDialog) DiagnosticsDialog(
+        shopProfile = shopProfile,
+        databaseStats = databaseStats,
+        deviceIntegrityStatus = integrity,
+        connectivityStatus = connectivityStatus,
+        pendingSyncCount = pendingSyncCount,
+        deadLetterSyncCount = deadLetterSyncCount,
+        isSyncing = isSyncing,
+        isOptimizingDb = isOptimizingDb,
         syncAuditLogs = syncAuditLogs,
         localAuditLogs = localAuditLogs,
-        deadLetterSyncCount = deadLetterSyncCount,
         adminLastSyncedAt = adminLastSyncedAt,
         language = language,
+        onVerifyDatabaseIntegrity = onVerifyDatabaseIntegrity,
+        onOptimizeDatabase = onOptimizeDatabase,
+        onRefreshDatabaseStats = onRefreshDatabaseStats,
+        onForceSyncNow = onSyncToCloudNow,
         onDismiss = { showDiagnosticsDialog = false }
     )
 }
@@ -2739,7 +2828,7 @@ fun NotificationTestButtons(
 }
 
 // ========================================================================
-// DIALOGS (Stub implementations - keeping existing complex dialogs as-is)
+// SETTINGS UTILITY DIALOGS & PRINT DISPATCH
 // ========================================================================
 
 @Composable
@@ -2982,183 +3071,69 @@ fun ConfirmDialog(
     )
 }
 
-// Stub dialogs for complex dialogs that would need their own files
-@Composable
-fun StaffManagementDialog(
-    currentUser: User?,
-    allUsers: List<User>,
-    language: AppLanguage,
-    onSaveUser: (User) -> Unit,
-    onDeleteUser: (String) -> Unit,
-    onSwitchUser: (User) -> Unit,
-    onDismiss: () -> Unit
+private fun printThermalTestPage(
+    context: Context,
+    paperWidthMm: Int,
+    shopName: String,
+    receiptHeader: String,
+    address: String,
+    phone: String,
+    ownerName: String,
+    tinNumber: String,
+    showTaxOnReceipt: Boolean,
+    receiptFooter: String,
+    currencySymbol: String
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Staff Management", fontWeight = FontWeight.Bold) },
-        text = { Text("Staff management dialog - implement in separate file") },
-        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
-    )
-}
+    val safeShop = shopName.ifBlank { "BEBOSS RETAIL SHOP" }
+    val safeAddress = address.ifBlank { "Kigali, Rwanda" }
+    val safePhone = phone.ifBlank { "+250 788 000 000" }
+    val safeCashier = ownerName.ifBlank { "Main Cashier" }
+    val safeFooter = receiptFooter.ifBlank { "Murakoze Cyane! Thank you!" }
+    val html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8" />
+            <style>
+                body { font-family: monospace; width: ${paperWidthMm}mm; margin: 0 auto; padding: 8px; font-size: 11px; color: #000; }
+                .center { text-align: center; }
+                .row { display: flex; justify-content: space-between; margin: 2px 0; }
+                hr { border: none; border-top: 1px dashed #333; margin: 6px 0; }
+            </style>
+        </head>
+        <body>
+            <div class="center">
+                <strong>${safeShop.uppercase()}</strong><br/>
+                ${if (receiptHeader.isNotBlank()) "$receiptHeader<br/>" else ""}
+                $safeAddress<br/>Tel: $safePhone<br/>
+                ${if (showTaxOnReceipt && tinNumber.isNotBlank()) "TIN: $tinNumber<br/>" else ""}
+            </div>
+            <hr/>
+            <div>TEST PRINT (${paperWidthMm}mm ESC/POS)<br/>Cashier: $safeCashier</div>
+            <hr/>
+            <div class="row"><span>Inyange Milk 500ml x 2</span><span>1,400 $currencySymbol</span></div>
+            <div class="row"><span>Azam Bread 1kg</span><span>1,200 $currencySymbol</span></div>
+            <div class="row"><span>Gorilla Coffee 250g</span><span>4,500 $currencySymbol</span></div>
+            <hr/>
+            <div class="row"><strong>TOTAL PAID</strong><strong>7,100 $currencySymbol</strong></div>
+            <hr/>
+            <div class="center">$safeFooter<br/><small>Powered by BeBoss Offline POS</small></div>
+        </body>
+        </html>
+    """.trimIndent()
 
-@Composable
-fun BranchManagementDialog(
-    branches: List<com.beboss.shopmgmt.data.model.Branch>,
-    language: AppLanguage,
-    onSaveBranch: (com.beboss.shopmgmt.data.model.Branch) -> Unit,
-    onDeleteBranch: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Branch Management", fontWeight = FontWeight.Bold) },
-        text = { Text("Branch management dialog - implement in separate file") },
-        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
-    )
-}
-
-@Composable
-fun ShopDevicesDialog(
-    shopDevices: List<ShopDevice>,
-    allUsers: List<User>,
-    branches: List<com.beboss.shopmgmt.data.model.Branch>,
-    language: AppLanguage,
-    onAddDevice: (String, User, com.beboss.shopmgmt.data.model.Branch?, (ShopDevice) -> Unit) -> Unit,
-    onToggleActive: (String, Boolean) -> Unit,
-    onDelete: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Shop Devices", fontWeight = FontWeight.Bold) },
-        text = { Text("Shop devices dialog - implement in separate file") },
-        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
-    )
-}
-
-@Composable
-fun SyncHubDialog(
-    discoveredHubs: List<DiscoveredBranchHub>,
-    isDiscovering: Boolean,
-    peerSyncEvents: List<BranchPeerSyncEvent>,
-    localServerStatus: LocalServerStatus,
-    localServerIp: String?,
-    localConnectedClients: Int,
-    localLastReceivedPacket: String?,
-    isP2pSyncing: Boolean,
-    language: AppLanguage,
-    onStartDiscovery: () -> Unit,
-    onStopDiscovery: () -> Unit,
-    onSyncWithHub: (String) -> Unit,
-    onGenerateShareToken: ((String?, (String) -> Unit) -> Unit)?,
-    onExportPackage: ((String?, (File) -> Unit) -> Unit)?,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Sync Hub", fontWeight = FontWeight.Bold) },
-        text = { Text("Sync hub dialog - implement in separate file") },
-        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
-    )
-}
-
-@Composable
-fun SubscriptionWizardDialog(
-    shopProfile: ShopProfile,
-    currentPricing: com.beboss.shopmgmt.util.SubscriptionPriceBreakdown,
-    ownerAccount: User?,
-    livePaymentConfig: AdminPaymentConfig,
-    language: AppLanguage,
-    onProcessPayment: (provider: String, phone: String, durationMonths: Int, userReference: String?, onSuccess: (com.beboss.shopmgmt.util.PaymentProcessingResult, com.beboss.shopmgmt.util.SubscriptionPriceBreakdown) -> Unit) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Subscription Wizard", fontWeight = FontWeight.Bold) },
-        text = { Text("Subscription wizard dialog - implement in separate file") },
-        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
-    )
-}
-
-@Composable
-fun AdminConsoleDialog(
-    adminSession: SupabaseAdminSession?,
-    adminAuthError: String?,
-    isAdminAuthenticating: Boolean,
-    adminPaymentRequests: List<SupabasePaymentRequestDto>,
-    adminShopAccounts: List<SupabaseShopAccountDto>,
-    adminShopUsers: List<SupabaseShopUserDto>,
-    adminShopDevices: List<SupabaseShopDeviceDto>,
-    adminBranchSnapshots: List<SupabaseBranchSnapshotDto>,
-    adminUnlockCodes: List<SupabaseUnlockCodeDto>,
-    adminAuditLogs: List<SupabaseAuditLogDto>,
-    localAuditLogs: List<LocalAuditLog>,
-    isAdminLoading: Boolean,
-    language: AppLanguage,
-    onAdminSignIn: (String, String) -> Unit,
-    onAdminSignUp: (String, String, String) -> Unit,
-    onAdminSignOut: () -> Unit,
-    onRefresh: () -> Unit,
-    onApprovePayment: (SupabasePaymentRequestDto, (Boolean, String) -> Unit) -> Unit,
-    onDirectAutoUnlock: (SupabasePaymentRequestDto, (Boolean) -> Unit) -> Unit,
-    onSavePaymentConfig: (AdminPaymentConfig, (Boolean) -> Unit) -> Unit,
-    onToggleShopDevice: (SupabaseShopDeviceDto, Boolean) -> Unit,
-    onDeleteShopDevice: (SupabaseShopDeviceDto) -> Unit,
-    onApproveBatch: ((Int, Int) -> Unit) -> Unit,
-    onRejectPayment: (SupabasePaymentRequestDto, String) -> Unit,
-    onIssueManualCode: (String, String, String, Int, Int, (Boolean, String) -> Unit) -> Unit,
-    onRevokeCode: (SupabaseUnlockCodeDto) -> Unit,
-    onExtendSubscription: (SupabaseShopAccountDto, Int) -> Unit,
-    onResetTrial: (SupabaseShopAccountDto) -> Unit,
-    onSetShopStatus: (SupabaseShopAccountDto, String) -> Unit,
-    onUpdateLimits: (SupabaseShopAccountDto, Int, Int, Int) -> Unit,
-    onDeleteShopAccount: (SupabaseShopAccountDto) -> Unit,
-    onUpdateUserRole: (SupabaseShopUserDto, String) -> Unit,
-    onToggleUserActive: (SupabaseShopUserDto, Boolean) -> Unit,
-    onDeleteUser: (SupabaseShopUserDto) -> Unit,
-    onDeleteBranchSnapshot: (SupabaseBranchSnapshotDto) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Admin Console", fontWeight = FontWeight.Bold) },
-        text = { Text("Admin console dialog - implement in separate file") },
-        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
-    )
-}
-
-@Composable
-fun DataTransferDialog(
-    products: List<Product>,
-    customers: List<Customer>,
-    sales: List<Sale>,
-    allUsers: List<User>,
-    shopProfile: ShopProfile,
-    language: AppLanguage,
-    onImport: (ShopImportSummary) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Data Transfer", fontWeight = FontWeight.Bold) },
-        text = { Text("Data transfer dialog - implement in separate file") },
-        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
-    )
-}
-
-@Composable
-fun DiagnosticsDialog(
-    syncAuditLogs: List<SyncAuditLog>,
-    localAuditLogs: List<LocalAuditLog>,
-    deadLetterSyncCount: Int,
-    adminLastSyncedAt: Long,
-    language: AppLanguage,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Diagnostics", fontWeight = FontWeight.Bold) },
-        text = { Text("Diagnostics dialog - implement in separate file") },
-        confirmButton = { OutlinedButton(onClick = onDismiss) { Text("Close") } }
-    )
+    try {
+        val webView = WebView(context)
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                val printManager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager
+                val jobName = "BeBoss_Thermal_Test_${paperWidthMm}mm"
+                val adapter = webView.createPrintDocumentAdapter(jobName)
+                printManager?.print(jobName, adapter, PrintAttributes.Builder().build())
+            }
+        }
+        webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+    } catch (e: Exception) {
+        Toast.makeText(context, "Unable to open print service: ${e.message}", Toast.LENGTH_LONG).show()
+    }
 }

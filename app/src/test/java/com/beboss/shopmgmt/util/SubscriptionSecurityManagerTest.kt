@@ -45,15 +45,15 @@ class SubscriptionSecurityManagerTest {
     @Test
     fun testUnlockCodeFormatValidation() {
         // Valid BB2 code format
-        val validCode = "BB2-SINGLE-30-1A2B3C-4D5E6F-7G8H9I0J"
+        val validCode = "BB2-SINGLE-30-1A2B3C-4D5E6F-7A8B9C0D"
         assertTrue(SubscriptionSecurityManager.isCompleteUnlockCodeFormat(validCode))
         
         // Valid BB code format
-        val validBBCode = "BB-SINGLE-30-1A2B3C-12345-7G8H9I0J"
+        val validBBCode = "BB-SINGLE-30-1A2B3C-12345-7A8B9C0D"
         assertTrue(SubscriptionSecurityManager.isCompleteUnlockCodeFormat(validBBCode))
         
         // Invalid - wrong prefix
-        val invalidPrefix = "XX-SINGLE-30-1A2B3C-4D5E6F-7G8H9I0J"
+        val invalidPrefix = "XX-SINGLE-30-1A2B3C-4D5E6F-7A8B9C0D"
         assertTrue(!SubscriptionSecurityManager.isCompleteUnlockCodeFormat(invalidPrefix))
         
         // Invalid - wrong number of parts
@@ -66,7 +66,7 @@ class SubscriptionSecurityManagerTest {
 
     @Test
     fun testVoucherFingerprint() {
-        val code = "BB2-SINGLE-30-1A2B3C-4D5E6F-7G8H9I0J"
+        val code = "BB2-SINGLE-30-1A2B3C-4D5E6F-7A8B9C0D"
         val fingerprint = SubscriptionSecurityManager.computeVoucherFingerprint(code)
         
         // Should be 64 hex chars (SHA-256)
@@ -77,7 +77,7 @@ class SubscriptionSecurityManagerTest {
         assertEquals(fingerprint, fingerprint2)
         
         // Different code should produce different fingerprint
-        val code2 = "BB2-SINGLE-30-1A2B3C-4D5E6F-7G8H9I0K"
+        val code2 = "BB2-SINGLE-30-1A2B3C-4D5E6F-7A8B9C0E"
         val fingerprint3 = SubscriptionSecurityManager.computeVoucherFingerprint(code2)
         assertTrue(fingerprint != fingerprint3)
     }
@@ -85,11 +85,10 @@ class SubscriptionSecurityManagerTest {
     @Test
     fun testDeviceChallengeConsistency() {
         val profile = com.beboss.shopmgmt.data.model.ShopProfile(
-            id = "test-shop-id",
+            id = 1L,
             shopName = "Test Shop",
             phone = "+250788123456",
-            name = "Test Owner",
-            username = "testshop"
+            name = "Test Owner"
         )
         
         val challenge1 = SubscriptionSecurityManager.computeDeviceChallenge(profile)
@@ -135,16 +134,16 @@ class SubscriptionSecurityManagerTest {
         System.setProperty("BEBOSS_UNLOCK_SIGNING_SECRET", "test-secret-key-1234567890123456")
         
         val codeSingle = SubscriptionSecurityManager.generateAccountBoundUnlockCode(
-            username = "test", phone = "+250788123456", tierCode = "SINGLE", days = 30
+            username = "test", registeredPhone = "+250788123456", tierCode = "SINGLE", days = 30
         )
         val codeDual = SubscriptionSecurityManager.generateAccountBoundUnlockCode(
-            username = "test", phone = "+250788123456", tierCode = "DUAL", days = 30
+            username = "test", registeredPhone = "+250788123456", tierCode = "DUAL", days = 30
         )
         val codeMulti = SubscriptionSecurityManager.generateAccountBoundUnlockCode(
-            username = "test", phone = "+250788123456", tierCode = "MULTI", days = 30
+            username = "test", registeredPhone = "+250788123456", tierCode = "MULTI", days = 30
         )
         val codeAnnual = SubscriptionSecurityManager.generateAccountBoundUnlockCode(
-            username = "test", phone = "+250788123456", tierCode = "ANNUAL", days = 365
+            username = "test", registeredPhone = "+250788123456", tierCode = "ANNUAL", days = 365
         )
         
         // All should be valid formats

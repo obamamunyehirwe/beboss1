@@ -304,22 +304,86 @@ object DatabaseMigrations {
                 )
                 """.trimIndent()
             )
-            db.execSQL("CREATE INDEX IF NOT EXISTS index_dead_letter_originalItemId ON dead_letter_queue(originalItemId)")
-            db.execSQL("CREATE INDEX IF NOT EXISTS index_dead_letter_createdAt ON dead_letter_queue(createdAt)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_dead_letter_queue_originalItemId ON dead_letter_queue(originalItemId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_dead_letter_queue_createdAt ON dead_letter_queue(createdAt)")
         }
+    }
+
+    private fun tableExists(db: SupportSQLiteDatabase, tableName: String): Boolean {
+        db.query(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            arrayOf(tableName)
+        ).use { cursor ->
+            return cursor.moveToFirst()
+        }
+    }
+
+    private fun getExistingColumns(db: SupportSQLiteDatabase, tableName: String): Set<String> {
+        val existingColumns = mutableSetOf<String>()
+        db.query("PRAGMA table_info($tableName)").use { cursor ->
+            val nameIndex = cursor.getColumnIndex("name")
+            while (cursor.moveToNext()) {
+                if (nameIndex >= 0) {
+                    existingColumns.add(cursor.getString(nameIndex))
+                }
+            }
+        }
+        return existingColumns
     }
 
     val MIGRATION_13_14 = object : Migration(13, 14) {
         override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE branches ADD COLUMN managerUserId TEXT NOT NULL DEFAULT ''")
-            db.execSQL("ALTER TABLE branches ADD COLUMN dailySalesTargetRwf INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE branches ADD COLUMN monthlyTargetRwf INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE branches ADD COLUMN openingCashFloat INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE branches ADD COLUMN stockValueRwf INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE branches ADD COLUMN productCount INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE branches ADD COLUMN operationalStatus TEXT NOT NULL DEFAULT 'OPEN'")
-            db.execSQL("ALTER TABLE branches ADD COLUMN email TEXT NOT NULL DEFAULT ''")
-            db.execSQL("ALTER TABLE branches ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+            if (tableExists(db, "branches")) {
+                val branchCols = getExistingColumns(db, "branches")
+                val branchColumnsToAdd = listOf(
+                    "managerUserId" to "TEXT NOT NULL DEFAULT ''",
+                    "dailySalesTargetRwf" to "INTEGER NOT NULL DEFAULT 0",
+                    "monthlyTargetRwf" to "INTEGER NOT NULL DEFAULT 0",
+                    "openingCashFloat" to "INTEGER NOT NULL DEFAULT 0",
+                    "stockValueRwf" to "INTEGER NOT NULL DEFAULT 0",
+                    "productCount" to "INTEGER NOT NULL DEFAULT 0",
+                    "operationalStatus" to "TEXT NOT NULL DEFAULT 'OPEN'",
+                    "email" to "TEXT NOT NULL DEFAULT ''",
+                    "notes" to "TEXT NOT NULL DEFAULT ''"
+                )
+                for ((columnName, columnDef) in branchColumnsToAdd) {
+                    if (!branchCols.contains(columnName)) {
+                        db.execSQL("ALTER TABLE branches ADD COLUMN $columnName $columnDef")
+                    }
+                }
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_branches_isActive ON branches(isActive)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_branches_isMainBranch ON branches(isMainBranch)")
+            }
+
+            if (tableExists(db, "stock_transfers")) {
+                val transferCols = getExistingColumns(db, "stock_transfers")
+                val transferColumnsToAdd = listOf(
+                    "costValueRwf" to "INTEGER NOT NULL DEFAULT 0",
+                    "receivedBy" to "TEXT NOT NULL DEFAULT ''",
+                    "receivedAt" to "INTEGER NOT NULL DEFAULT 0"
+                )
+                for ((columnName, columnDef) in transferColumnsToAdd) {
+                    if (!transferCols.contains(columnName)) {
+                        db.execSQL("ALTER TABLE stock_transfers ADD COLUMN $columnName $columnDef")
+                    }
+                }
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_stock_transfers_status ON stock_transfers(status)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_stock_transfers_transferDate ON stock_transfers(transferDate)")
+            }
+
+            if (tableExists(db, "products")) {
+                // Missing Room @Index definitions required by AppDatabase v14
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_products_name ON products(name)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_products_category ON products(category)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_products_isDeleted ON products(isDeleted)")
+            }
+
+            if (tableExists(db, "dead_letter_queue")) {
+                db.execSQL("DROP INDEX IF EXISTS index_dead_letter_originalItemId")
+                db.execSQL("DROP INDEX IF EXISTS index_dead_letter_createdAt")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dead_letter_queue_originalItemId ON dead_letter_queue(originalItemId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_dead_letter_queue_createdAt ON dead_letter_queue(createdAt)")
+            }
         }
     }
 

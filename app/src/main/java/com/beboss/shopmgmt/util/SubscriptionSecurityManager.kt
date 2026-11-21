@@ -398,19 +398,26 @@ object SubscriptionSecurityManager {
      * This is a simplified verification for direct code checking.
      */
     fun verifyUnlockCode(code: String, username: String, phone: String): Boolean {
-        val parts = code.split("-")
+        val parts = code.trim().uppercase(Locale.ROOT).split("-")
         if (parts.size != 6) return false
 
         if (parts[0] != "BB2") return false
+        val tier = parts[1]
+        val days = parts[2].toIntOrNull() ?: return false
+        val expiryHex = parts[3]
+        val acctHash = parts[4]
+        val hmacSig = parts[5]
+
+        val expiryEpochDays = expiryHex.toLongOrNull(16) ?: return false
+        val todayEpochDays = System.currentTimeMillis() / 86_400_000L
+        if (todayEpochDays > expiryEpochDays) return false
 
         // Verify account binding
-        val acctHash = parts[4]
         val expectedHash = computeAccountBindingHash(username, phone)
         if (acctHash != expectedHash) return false
 
-        // Verify HMAC signature (constant-time)
-        val hmacSig = parts[5]
-        val payload = code.take(code.lastIndexOf("-"))
+        // Verify HMAC signature (constant-time) matching BB2:$tier:$days:$expiryHex:$acctHash
+        val payload = "BB2:$tier:$days:$expiryHex:$acctHash"
         val signingSecret = getCrossPlatformSigningSecret()
         val key = SecretKeySpec(signingSecret.toByteArray(StandardCharsets.UTF_8), HMAC_ALGORITHM)
         val expectedSig = computeHmacSignature(payload, key).take(8).uppercase(Locale.ROOT)

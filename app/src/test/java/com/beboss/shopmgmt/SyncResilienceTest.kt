@@ -54,40 +54,40 @@ class SyncResilienceTest {
         } catch (expected: IllegalArgumentException) {
             assertTrue(expected.message?.contains("replayed", ignoreCase = true) == true)
         }
+    }
 
-        @Test
-        fun `latest complete snapshot generation includes each peer and excludes stale or partial chunks`() {
-            fun snapshot(device: String, generation: String, index: Int, count: Int, updatedAt: Long) =
-                SupabaseBranchSnapshotDto(
-                    id = "$device-$generation-$index",
-                    shopSyncKey = "shop_123456789",
-                    deviceId = if (index == 0) device else "$device#c$index",
-                    syncGeneration = generation,
-                    chunkIndex = index,
-                    chunkCount = count,
-                    branchId = "main",
-                    branchName = "Main",
-                    shopName = "Test Shop",
-                    ownerUsername = "owner",
-                    payloadToken = "token",
-                    recordsSummary = "$count chunk(s)",
-                    updatedAt = updatedAt
-                )
-
-            val selected = SupabaseAdminClient.latestCompleteSnapshotChunks(
-                listOf(
-                    snapshot("device-a", "old", 0, 2, 10),
-                    snapshot("device-a", "old", 1, 2, 11),
-                    snapshot("device-a", "new", 0, 1, 20),
-                    snapshot("device-b", "peer", 0, 2, 30),
-                    snapshot("device-b", "peer", 1, 2, 31),
-                    snapshot("device-c", "partial", 0, 2, 40)
-                )
+    @Test
+    fun `latest complete snapshot generation includes each peer and excludes stale or partial chunks`() {
+        fun snapshot(device: String, generation: String, index: Int, count: Int, updatedAt: Long) =
+            SupabaseBranchSnapshotDto(
+                id = "$device-$generation-$index",
+                shopSyncKey = "shop_123456789",
+                deviceId = if (index == 0) device else "$device#c$index",
+                syncGeneration = generation,
+                chunkIndex = index,
+                chunkCount = count,
+                branchId = "main",
+                branchName = "Main",
+                shopName = "Test Shop",
+                ownerUsername = "owner",
+                payloadToken = "token",
+                recordsSummary = "$count chunk(s)",
+                updatedAt = updatedAt
             )
 
-            assertEquals(listOf("device-a", "device-b", "device-b#c1"), selected.map { it.deviceId })
-            assertEquals(listOf("new", "peer", "peer"), selected.map { it.syncGeneration })
-        }
+        val selected = SupabaseAdminClient.latestCompleteSnapshotChunks(
+            listOf(
+                snapshot("device-a", "old", 0, 2, 10),
+                snapshot("device-a", "old", 1, 2, 11),
+                snapshot("device-a", "new", 0, 1, 20),
+                snapshot("device-b", "peer", 0, 2, 30),
+                snapshot("device-b", "peer", 1, 2, 31),
+                snapshot("device-c", "partial", 0, 2, 40)
+            )
+        )
+
+        assertEquals(listOf("device-a", "device-b", "device-b#c1"), selected.map { it.deviceId })
+        assertEquals(listOf("new", "peer", "peer"), selected.map { it.syncGeneration })
     }
 
     @Test

@@ -5,6 +5,9 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.data.db.DatabaseMigrations
@@ -590,41 +593,52 @@ class DatabaseMigrationTest {
         )
         db.close()
 
-        // Run the migration directly.
-        val migrated = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
-        DatabaseMigrations.MIGRATION_13_14.migrate(migrated)
-        migrated.close()
+        // Run the migration via SupportSQLiteDatabase and verify all 23 columns and data survive.
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbName)
+                .callback(object : SupportSQLiteOpenHelper.Callback(14) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {}
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
+                        if (oldVersion == 13 && newVersion == 14) {
+                            DatabaseMigrations.MIGRATION_13_14.migrate(db)
+                        }
+                    }
+                })
+                .build()
+        )
+        try {
+            val migrated = helper.writableDatabase
+            val cols = mutableSetOf<String>()
+            migrated.query("PRAGMA table_info(branches)").use { c ->
+                val nameIdx = c.getColumnIndex("name")
+                while (c.moveToNext()) cols.add(c.getString(nameIdx))
+            }
+            listOf(
+                "id", "name", "code", "address", "phone", "managerUserId", "managerName",
+                "isMainBranch", "isActive", "colorHex", "dailySalesTargetRwf", "monthlyTargetRwf",
+                "openingCashFloat", "stockValueRwf", "productCount", "operationalStatus",
+                "email", "notes", "createdAt", "updatedAt", "syncVersion", "hlcTimestamp",
+                "lastModifiedDeviceId"
+            ).forEach { assertTrue("Missing branch column after migration: $it", cols.contains(it)) }
+            assertEquals(23, cols.size)
 
-        // Verify all 23 columns exist and old data survived.
-        val verify = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
-        val cols = mutableSetOf<String>()
-        verify.query("PRAGMA table_info(branches)").use { c ->
-            val nameIdx = c.getColumnIndex("name")
-            while (c.moveToNext()) cols.add(c.getString(nameIdx))
+            migrated.query(
+                "SELECT name, managerUserId, dailySalesTargetRwf, operationalStatus, stockValueRwf, productCount, email, notes FROM branches WHERE id = 'main_branch'"
+            ).use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("Kigali HQ", c.getString(0))
+                assertEquals("", c.getString(1))
+                assertEquals(0L, c.getLong(2))
+                assertEquals("OPEN", c.getString(3))
+                assertEquals(0L, c.getLong(4))
+                assertEquals(0, c.getInt(5))
+                assertEquals("", c.getString(6))
+                assertEquals("", c.getString(7))
+            }
+        } finally {
+            helper.close()
+            context.deleteDatabase(dbName)
         }
-        listOf(
-            "id", "name", "code", "address", "phone", "managerUserId", "managerName",
-            "isMainBranch", "isActive", "colorHex", "dailySalesTargetRwf", "monthlyTargetRwf",
-            "openingCashFloat", "stockValueRwf", "productCount", "operationalStatus",
-            "email", "notes", "createdAt", "updatedAt", "syncVersion", "hlcTimestamp",
-            "lastModifiedDeviceId"
-        ).forEach { assertTrue("Missing branch column after migration: $it", cols.contains(it)) }
-        assertEquals(23, cols.size)
-
-        verify.query(
-            "SELECT name, managerUserId, dailySalesTargetRwf, operationalStatus, stockValueRwf, productCount, email, notes FROM branches WHERE id = 'main_branch'"
-        ).use { c ->
-            assertTrue(c.moveToFirst())
-            assertEquals("Kigali HQ", c.getString(0))
-            assertEquals("", c.getString(1))
-            assertEquals(0L, c.getLong(2))
-            assertEquals("OPEN", c.getString(3))
-            assertEquals(0L, c.getLong(4))
-            assertEquals(0, c.getInt(5))
-            assertEquals("", c.getString(6))
-            assertEquals("", c.getString(7))
-        }
-        verify.close()
-        context.deleteDatabase(dbName)
     }
 }

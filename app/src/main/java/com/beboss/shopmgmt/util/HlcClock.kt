@@ -20,6 +20,8 @@ object HlcClock {
 
     fun logicalOf(hlc: Long): Int = (hlc and 0xFFFFL).toInt()
 
+    fun current(): Long = lastHlc.get()
+
     /**
      * Advances HLC for a local mutation event.
      */
