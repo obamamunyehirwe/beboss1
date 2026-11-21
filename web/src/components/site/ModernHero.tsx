@@ -58,11 +58,6 @@ export function ModernHero() {
               <Check />
               {t("heroTrial")}
             </div>
-            <div className="market-proof" aria-label="BeBoss product capabilities">
-              <span><WifiOff /> Offline-first</span>
-              <span><Store /> Multi-branch</span>
-              <span><Languages /> EN · RW · FR · SW</span>
-            </div>
           </div>
 
           <div className="market-device">

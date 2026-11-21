@@ -13,7 +13,7 @@
   </defs>
   <rect x="4" y="4" width="120" height="120" rx="31" fill="url(#back)"/>
   <rect x="4.75" y="4.75" width="118.5" height="118.5" rx="30.25" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="1.5"/>
-  <path d="M30 20h32c22 0 35 11 35 29 0 11-5 19-16 24 13 4 21 14 21 28 0 19-15 31-39 31H30V20Z" fill="url(#orange)"/>
+  <path d="M31 14h30c20 0 32 10 32 27 0 10-5 17-15 21 12 4 19 13 19 26 0 17-14 28-35 28H31V14Z" fill="url(#orange)"/>
   <path d="M48 38v24h16c8 0 12-4 12-12s-4-12-12-12H48Zm0 42v29h18c10 0 15-5 15-15 0-9-5-14-15-14H48Z" fill="#17211b"/>
   <path d="m82 26 9-9 9 9M91 18v19" fill="none" stroke="#fff0e2" stroke-linecap="round" stroke-linejoin="round" stroke-width="5"/>
   <path d="M45 115h46" stroke="#fff0e2" stroke-opacity=".65" stroke-linecap="round" stroke-width="2"/>

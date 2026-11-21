@@ -869,30 +869,6 @@ a:hover .brand-mark {
   position: relative;
   z-index: 2;
 }
-.market-proof {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 9px 16px;
-  margin-top: 24px;
-  color: #e4e5dd;
-  font-size: 11px;
-}
-.market-proof span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid #ffffff2b;
-  border-radius: 999px;
-  background: #1018128c;
-  padding: 7px 10px;
-  backdrop-filter: blur(12px);
-}
-.market-proof svg {
-  width: 13px;
-  height: 13px;
-  color: #ffad78;
-}
 .market-device {
   position: relative;
   isolation: isolate;
@@ -1005,14 +981,6 @@ a:hover .brand-mark {
   }
   .market-caption {
     margin-top: 4px;
-  }
-  .market-proof {
-    margin-top: 18px;
-    gap: 7px;
-  }
-  .market-proof span {
-    font-size: 10px;
-    padding: 6px 8px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
