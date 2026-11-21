@@ -257,4 +257,5 @@ class BeBossHardeningTest {
         )
         assertFalse(replayResult.isValid)
         assertTrue(replayResult.message.contains("Anti-Replay"))
-    }}
+    }
+}
