@@ -9,8 +9,26 @@
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+// Vercel has the Supabase URL and publishable key as server environment variables.
+// The browser client needs the same PUBLIC values at build time. Explicitly expose only
+// these two values; never expose SUPABASE_SERVICE_ROLE_KEY or any other server secret.
+const publicSupabaseUrl = process.env["VITE_SUPABASE_URL"] || process.env["SUPABASE_URL"];
+const publicSupabaseKey =
+  process.env["VITE_SUPABASE_PUBLISHABLE_KEY"] || process.env["SUPABASE_PUBLISHABLE_KEY"];
+
+const publicSupabaseDefine: Record<string, string> = {};
+if (publicSupabaseUrl) {
+  publicSupabaseDefine["import.meta.env.VITE_SUPABASE_URL"] = JSON.stringify(publicSupabaseUrl);
+}
+if (publicSupabaseKey) {
+  publicSupabaseDefine["import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY"] = JSON.stringify(publicSupabaseKey);
+}
+
 export default defineConfig({
-  vite: { server: { allowedHosts: ['workspace-zkvm7tks-8b08c7aa60177527.v0.build'] } },
+  vite: {
+    ...(Object.keys(publicSupabaseDefine).length ? { define: publicSupabaseDefine } : {}),
+    server: { allowedHosts: ['workspace-zkvm7tks-8b08c7aa60177527.v0.build'] },
+  },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
