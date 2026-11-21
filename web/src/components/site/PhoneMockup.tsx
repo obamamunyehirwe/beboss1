@@ -223,7 +223,7 @@ export function PhoneMockup() {
   const totalDebtBalance = debtsList.reduce((acc, c) => acc + c.debt, 0);
 
   return (
-    <div className="relative mx-auto w-full max-w-[304px] select-none py-1">
+    <div className="relative mx-auto w-full max-w-[352px] select-none py-1">
       {/* Dynamic Background Glow Ambient Aura */}
       <div 
         className="absolute -inset-3 rounded-[3.5rem] bg-gradient-to-tr from-primary/30 via-warning/20 to-success/30 opacity-50 blur-2xl transition-opacity duration-1000" 
@@ -242,7 +242,7 @@ export function PhoneMockup() {
         <div className="absolute -right-[4px] top-28 h-12 w-[4px] rounded-r-md bg-[#3a3e47] border-y border-r border-white/20 shadow-xs" />
 
         {/* Outer Bezel Rim */}
-        <div className="relative flex flex-col justify-between overflow-hidden rounded-[2.2rem] bg-background text-foreground border border-black/60 shadow-inner h-[515px] max-h-[515px]">
+        <div className="relative flex flex-col justify-between overflow-hidden rounded-[2.2rem] bg-background text-foreground border border-black/60 shadow-inner h-[660px] max-h-[660px]">
           
           {/* ================= TOP STATUS BAR & DYNAMIC ISLAND ================= */}
           <div className="relative z-30 bg-background/95 pt-2 px-4 pb-1.5 backdrop-blur-md border-b border-border/40">
