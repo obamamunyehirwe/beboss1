@@ -76,6 +76,26 @@ describe("retail insights (AnalyticsEngine formulas)", () => {
   });
   it("today's totals only include today's sales", () => expect(ins.today.revenue).toBe(10000));
   it("counts items sold (fixes the app's always-zero total)", () => expect(ins.itemsSold30).toBe(5));
+  it("includes phone purchase and branch-transfer activity in the 30-day view", () => {
+    const activity = computeRetailInsights(
+      mergeShareJson([{
+        purchases: [
+          { id: "purchase-1", purchaseDate: NOW - DAY, quantityPurchased: 12, totalPurchaseCost: 18000, supplierName: "Kabuye" },
+          { id: "purchase-2", purchaseDate: NOW - 2 * DAY, quantityPurchased: 5, unitCostPrice: 1000, supplierName: "Kabuye" },
+        ],
+        stockTransfers: [
+          { id: "transfer-1", transferDate: NOW - DAY, quantity: 4 },
+        ],
+      }]),
+      NOW,
+    ).activity;
+    expect(activity.purchaseOrders30).toBe(2);
+    expect(activity.purchaseUnits30).toBe(17);
+    expect(activity.purchaseValue30).toBe(23000);
+    expect(activity.supplierCount30).toBe(1);
+    expect(activity.stockTransfers30).toBe(1);
+    expect(activity.stockTransferUnits30).toBe(4);
+  });
   it("ranks top products by profit", () => expect(ins.topProducts[0]?.name).toBe("Milk"));
   it("flags low stock at or below threshold", () => expect(ins.lowStock.map((p) => p.name)).toEqual(["Milk"]));
   it("values inventory at cost and retail", () => {
