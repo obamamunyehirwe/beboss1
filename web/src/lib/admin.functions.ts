@@ -685,18 +685,45 @@ export const grantTeamRole = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const target = data.email.toLowerCase();
     let found: { id: string; email?: string } | undefined;
+
     for (let page = 1; page <= 20 && !found; page++) {
       const { data: list, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
       if (error) throw new Error(error.message);
-      found = list.users.find((u) => (u.email ?? "").toLowerCase() === target);
+      found = list.users.find((user) => (user.email ?? "").toLowerCase() === target);
       if (list.users.length < 200) break;
     }
-    if (!found) throw new Error("No account with that email yet. Ask them to create an account on the admin sign-in page first.");
-    const { error } = await supabaseAdmin.from("user_roles").upsert({ user_id: found.id, role: data.role }, { onConflict: "user_id,role" });
-    if (error) throw new Error(error.message);
-    await supabaseAdmin.from("admin_profiles").upsert({ user_id: found.id, email: target, full_name: target, role: data.role === "admin" ? "SUPER_ADMIN" : "SUPPORT" }, { onConflict: "user_id" });
-    await audit(ctx, admin.email, "GRANT_ROLE", target, data.role);
-    return { ok: true };
+
+    let invited = false;
+    if (!found) {
+      const redirectTo = process.env["BEBOSS_ADMIN_URL"]?.trim();
+      const options = redirectTo ? { redirectTo } : undefined;
+      const { data: invitation, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(target, options);
+      if (error) throw new Error(`Could not invite this team member: ${error.message}`);
+      if (!invitation.user?.id) throw new Error("Supabase did not return the invited account.");
+      found = { id: invitation.user.id, email: invitation.user.email ?? target };
+      invited = true;
+    }
+
+    const { error: roleError } = await supabaseAdmin
+      .from("user_roles")
+      .upsert({ user_id: found.id, role: data.role }, { onConflict: "user_id,role" });
+    if (roleError) {
+      if (invited) await supabaseAdmin.auth.admin.deleteUser(found.id);
+      throw new Error(`Could not grant the requested role: ${roleError.message}`);
+    }
+
+    const { error: profileError } = await supabaseAdmin.from("admin_profiles").upsert({
+      user_id: found.id,
+      email: target,
+      full_name: target,
+      role: data.role === "admin" ? "SUPER_ADMIN" : "SUPPORT",
+    }, { onConflict: "user_id" });
+    if (profileError) {
+      console.error("[BeBoss team] Role granted but admin profile could not be updated", profileError);
+    }
+
+    await audit(ctx, admin.email, invited ? "INVITE_TEAM_MEMBER" : "GRANT_ROLE", target, data.role);
+    return { ok: true, invited, email: target, role: data.role };
   });
 
 export const revokeTeamRole = createServerFn({ method: "POST" })

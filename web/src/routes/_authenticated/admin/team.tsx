@@ -22,7 +22,7 @@ function TeamPage() {
   const team = useQuery({ queryKey: ["admin", "team"], queryFn: () => list(), enabled: isAdmin });
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "support">("support");
-  const grant = useAdminAction(useServerFn(grantTeamRole), { success: "Access granted", invalidate: [["admin", "team"]] });
+  const grant = useAdminAction(useServerFn(grantTeamRole), { success: "Invitation sent or access granted", invalidate: [["admin", "team"]] });
   const revoke = useAdminAction(useServerFn(revokeTeamRole), { success: "Access removed", invalidate: [["admin", "team"]] });
 
   if (!isAdmin) return <EmptyState title="Master admins only" sub="Ask a master admin to manage the team." />;
@@ -38,7 +38,7 @@ function TeamPage() {
         className="flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-card p-5"
       >
         <div className="min-w-[240px] flex-1 space-y-1.5">
-          <label className="text-sm font-medium">Email of an existing account</label>
+          <label className="text-sm font-medium">Team member email</label>
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="teammate@example.com" />
         </div>
         <Select value={role} onValueChange={(v) => setRole(v as typeof role)}>
@@ -53,7 +53,7 @@ function TeamPage() {
         <Button type="submit" variant="hero" disabled={grant.isPending}>
           {grant.isPending ? <Loader2 className="animate-spin" /> : <UserPlus />} Grant access
         </Button>
-        <p className="w-full text-xs text-muted-foreground">They first create an account on the admin sign-in page; then you grant the role here.</p>
+        <p className="w-full text-xs text-muted-foreground">If the email has no account yet, BeBoss sends a secure invitation. Their selected role is ready when they accept it.</p>
       </form>
       {team.isLoading ? (
         <LoadingBlock />
