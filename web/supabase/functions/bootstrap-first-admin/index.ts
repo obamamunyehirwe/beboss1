@@ -1,5 +1,7 @@
+const ALLOWED_ADMIN_ORIGIN = "https://admin.beboss.rw";
+
 const corsHeadersFor = (origin: string | null) => ({
-  "Access-Control-Allow-Origin": origin ?? "null",
+  "Access-Control-Allow-Origin": origin === ALLOWED_ADMIN_ORIGIN ? ALLOWED_ADMIN_ORIGIN : "null",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Vary": "Origin",
@@ -22,18 +24,18 @@ async function rest(path: string, init: RequestInit = {}) {
 
 Deno.serve(async (request: Request) => {
   const origin = request.headers.get("origin");
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeadersFor(origin) });
-  if (request.method !== "POST") return json(405, { status: "error", message: "Method not allowed." }, origin);
+  if (request.method === "OPTIONS") {
+    if (origin !== ALLOWED_ADMIN_ORIGIN) return new Response("forbidden", { status: 403, headers: corsHeadersFor(null) });
+    return new Response("ok", { headers: corsHeadersFor(origin) });
+  }
+  if (request.method !== "POST") return json(405, { status: "error", message: "Method not allowed." }, null);
+  if (origin !== ALLOWED_ADMIN_ORIGIN) {
+    return json(403, { status: "error", message: "First-admin invitations can only be requested from the official BeBoss admin domain." }, null);
+  }
 
   try {
     if (!supabaseUrl || !serviceRoleKey) throw new Error("First-admin invitation service is not configured.");
-    if (!origin) return json(400, { status: "error", message: "Open this setup action from the BeBoss admin website." }, origin);
-    const originUrl = new URL(origin);
-    const localDev = originUrl.hostname === "localhost" || originUrl.hostname === "127.0.0.1";
-    if (originUrl.protocol !== "https:" && !(localDev && originUrl.protocol === "http:")) {
-      return json(400, { status: "error", message: "A secure HTTPS admin website is required." }, origin);
-    }
-    const redirectTo = new URL("/reset-password?invite=1", originUrl.origin).toString();
+    const redirectTo = new URL("/reset-password?invite=1", ALLOWED_ADMIN_ORIGIN).toString();
 
     const allowlistResponse = await rest("admin_bootstrap_emails?select=email&limit=2");
     if (!allowlistResponse.ok) throw new Error("Could not read the approved first-admin email list.");
