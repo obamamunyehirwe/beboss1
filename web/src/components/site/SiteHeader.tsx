@@ -72,7 +72,7 @@ export function SiteHeader() {
                 variant="outline"
                 size="icon"
                 className="site-menu-trigger"
-                aria-label={p.common.openMenu}
+                aria-label={p.common.menu}
               >
                 <Menu />
               </Button>
