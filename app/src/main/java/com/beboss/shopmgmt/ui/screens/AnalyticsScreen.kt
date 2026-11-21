@@ -65,6 +65,7 @@ import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.Localization
 import com.beboss.shopmgmt.util.PdfReportGenerator
 import com.beboss.shopmgmt.util.ReceiptGenerator
+import java.text.NumberFormat
 import kotlin.math.ceil
 
 @Composable
@@ -258,28 +259,41 @@ private fun HeroProfitLossCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricTile(
-                    label = Localization.get("gross_revenue", language),
-                    value = ReceiptGenerator.formatMoney(summary.totalRevenue, shopProfile),
-                    color = OrangePrimary,
-                    modifier = Modifier.weight(1f)
-                )
-                MetricTile(
-                    label = Localization.get("cost_of_goods", language),
-                    value = ReceiptGenerator.formatMoney(summary.totalCost, shopProfile),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                MetricTile(
-                    label = Localization.get("today_orders", language),
-                    value = "${summary.totalSalesCount}",
-                    color = Color(0xFF3B82F6),
-                    modifier = Modifier.weight(1f)
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MetricTile(
+                        label = Localization.get("gross_revenue", language),
+                        value = ReceiptGenerator.formatMoney(summary.totalRevenue, shopProfile),
+                        color = OrangePrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetricTile(
+                        label = Localization.get("cost_of_goods", language),
+                        value = ReceiptGenerator.formatMoney(summary.totalCost, shopProfile),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MetricTile(
+                        label = Localization.get("today_orders", language),
+                        value = "${summary.totalSalesCount}",
+                        color = Color(0xFF3B82F6),
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetricTile(
+                        label = Localization.get("items_sold", language),
+                        value = NumberFormat.getNumberInstance().format(summary.totalItemsSold),
+                        color = ProfitGreen,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
