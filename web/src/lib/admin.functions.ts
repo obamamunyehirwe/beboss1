@@ -696,8 +696,10 @@ export const grantTeamRole = createServerFn({ method: "POST" })
     let invited = false;
     if (!found) {
       const redirectTo = process.env["BEBOSS_ADMIN_URL"]?.trim();
-      const options = redirectTo ? { redirectTo } : undefined;
-      const { data: invitation, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(target, options);
+      if (!redirectTo) {
+        throw new Error("Team invitations are not configured. Set BEBOSS_ADMIN_URL to the production /reset-password?invite=1 URL first.");
+      }
+      const { data: invitation, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(target, { redirectTo });
       if (error) throw new Error(`Could not invite this team member: ${error.message}`);
       if (!invitation.user?.id) throw new Error("Supabase did not return the invited account.");
       found = { id: invitation.user.id, email: invitation.user.email ?? target };

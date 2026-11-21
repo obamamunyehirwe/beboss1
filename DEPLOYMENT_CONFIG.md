@@ -16,7 +16,7 @@ Set these environment variables for Production, Preview and Development as appro
 | `BEBOSS_DATASHARE_HMAC_SECRET` | Signed data-share requests | Server-only secret |
 | `BEBOSS_LAN_SYNC_SECRET` | LAN sync authentication | Server-only secret |
 | `BEBOSS_ADMIN_WHATSAPP` | Support contact shown to merchants | Public display value |
-| `BEBOSS_ADMIN_URL` | Optional post-invitation redirect, e.g. `https://your-domain/auth` | Public URL |
+| `BEBOSS_ADMIN_URL` | Required for new team invitations, e.g. `https://your-domain/reset-password?invite=1` | Public URL |
 
 Never add a `VITE_` prefix to `SUPABASE_SERVICE_ROLE_KEY`. The Vite configuration intentionally injects only the Supabase URL and publishable key into browser code. Keep `.env.example` as a template; never commit actual service-role keys, signing secrets, or passwords.
 
@@ -36,14 +36,14 @@ The GitHub `main` branch is connected to Vercel for production deployment. Confi
 The web admin screen uses email/password only. Public self-registration and Google/Lovable sign-in buttons are not part of the admin login flow.
 
 1. In Supabase, open Authentication → URL Configuration. Set the Site URL to the canonical production web origin.
-2. Add the canonical production `/auth` and `/reset-password` URLs to Redirect URLs. Add local development URLs and the exact Vercel preview pattern only if preview logins are required.
+2. Add the canonical production `/auth` and `/reset-password` URLs to Redirect URLs, including the invite URL `/reset-password?invite=1`. Add local development URLs and the exact Vercel preview pattern only if preview logins are required.
 3. Keep the email/password provider enabled and require email confirmation. Set the top-level Auth setting `enable_signup = false` (not `[auth.email].enable_signup = false`, which controls the email provider itself). This blocks public self-registration while leaving password sign-in available. The repo config records the no-public-signup setting; apply it in the hosted Supabase Auth settings after provisioning the first master admin.
 4. The database has a protected `admin_bootstrap_emails` allow-list and a trigger that gives the allow-listed first account the master-admin role after its email is confirmed.
 5. Create/invite the initial allow-listed master-admin user from Authentication → Users in the Supabase Dashboard, then complete email confirmation before signing in at `/auth`.
-6. After the first master admin has signed in, use Admin → Admin team to invite additional administrators or support users. The server uses the service-role client to send invitations and attach the selected role. Invited users can sign in after accepting their invitation.
+6. After the first master admin has signed in, use Admin → Admin team to invite additional administrators or support users. The server uses the service-role client to send invitations and attach the selected role. New invitees land on `/reset-password?invite=1`, set their first password, then continue to the admin portal.
 7. Keep all privileged admin functions protected by the Supabase role check. Hiding registration in the UI is not a replacement for the server-side role check.
 
-For invitations to redirect directly to the sign-in page, set `BEBOSS_ADMIN_URL` to the exact `/auth` URL and add that URL to Supabase Redirect URLs.
+Set `BEBOSS_ADMIN_URL` to the exact production URL `https://your-domain/reset-password?invite=1` and add that URL to Supabase Redirect URLs. The invite acceptance page verifies the Supabase invitation session before enabling password setup.
 
 ## 3. Android production build
 
