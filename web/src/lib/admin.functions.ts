@@ -98,7 +98,16 @@ export const getAdminContext = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const ctx = context as unknown as Ctx;
-    const [{ data: isAdmin }, { data: isStaff }] = await Promise.all([ctx.supabase.rpc("is_beboss_admin"), ctx.supabase.rpc("is_beboss_staff")]);
+    const [adminResult, staffResult] = await Promise.all([
+      ctx.supabase.rpc("is_beboss_admin"),
+      ctx.supabase.rpc("is_beboss_staff"),
+    ]);
+    if (adminResult.error || staffResult.error) {
+      console.error("[BeBoss admin auth] Supabase role verification failed", adminResult.error ?? staffResult.error);
+      throw new Error("BeBoss could not verify this account's admin permissions. Please retry.");
+    }
+    const isAdmin = adminResult.data;
+    const isStaff = staffResult.data;
     let signingKeyConfigured = false;
     if (isAdmin) {
       try {
