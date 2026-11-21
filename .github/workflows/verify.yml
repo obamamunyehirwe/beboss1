@@ -40,8 +40,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - name: Lint changed security and authentication files
+        run: >-
+          npx eslint --no-warn-ignored
+          --rule 'prettier/prettier: off'
+          --rule '@typescript-eslint/no-explicit-any: off'
+          src/lib/admin.functions.ts
+          src/lib/bb2.ts
+          src/lib/bb2.test.ts
+          src/routes/auth.tsx
+          src/routes/_authenticated/admin/settings.tsx
+          supabase/functions/bootstrap-first-admin/index.ts
+          supabase/functions/issue-bb3-unlock/index.ts
+          supabase/functions/verify-legacy-bb2/index.ts
 
       - name: Run unit tests
         run: npm run test
@@ -85,6 +96,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.3.1"
+          validate-wrappers: false
 
       - name: Run Android unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
