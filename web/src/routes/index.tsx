@@ -15,6 +15,7 @@ import { useI18n } from "@/lib/i18n";
 import { platformStatsQuery } from "@/lib/queries";
 import { liveConfigured } from "@/lib/live-config";
 import { retailCopy } from "@/lib/i18n-dict";
+
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
