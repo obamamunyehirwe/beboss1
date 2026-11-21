@@ -61,12 +61,7 @@ function Home() {
       </section>
       <section className="retail-section workflow-section">
         <div className="workflow-visual">
-          <div className="workflow-visual-art" role="img" aria-label={c.workflowAlt}>
-            <img src="/retail-checkout-1.webp" loading="lazy" decoding="async" alt="" />
-            <img src="/retail-checkout-2.webp" loading="lazy" decoding="async" alt="" />
-            <img src="/retail-checkout-3.webp" loading="lazy" decoding="async" alt="" />
-            <img src="/retail-checkout-4.webp" loading="lazy" decoding="async" alt="" />
-          </div>
+          <img className="workflow-visual-image" src="/retail-checkout.svg" loading="lazy" decoding="async" alt={c.workflowAlt} />
           <div className="workflow-visual-badge">
             <span><Activity size={17} /></span>
             <div><strong>{c.visualBadgeTitle}</strong><small>{c.visualBadgeSub}</small></div>
