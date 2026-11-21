@@ -1804,3 +1804,52 @@ a:hover .brand-mark {
   .admin-stat,.admin-nav-item,.admin-workspace main tbody tr { transition:none!important; }
   .admin-workspace .admin-stat:hover,.admin-nav-item:hover { transform:none; }
 }
+
+
+/* Authentication screens use the same warm BeBoss visual language. */
+.auth-page-shell,.reset-page-shell {
+  isolation:isolate;
+  overflow:hidden;
+  background:
+    radial-gradient(ellipse at 14% 15%,color-mix(in srgb,var(--primary) 13%,transparent),transparent 34rem),
+    radial-gradient(ellipse at 90% 85%,color-mix(in srgb,var(--success) 7%,transparent),transparent 30rem),
+    var(--background);
+}
+.auth-page-backdrop { display:none; }
+.auth-page-shell::before,.reset-page-shell::before {
+  content:"";
+  position:absolute;
+  z-index:-1;
+  inset:0;
+  opacity:.36;
+  background-image:
+    linear-gradient(to right,color-mix(in srgb,var(--foreground) 7%,transparent) 1px,transparent 1px),
+    linear-gradient(to bottom,color-mix(in srgb,var(--foreground) 7%,transparent) 1px,transparent 1px);
+  background-size:38px 38px;
+  mask-image:radial-gradient(ellipse at center,#000 0%,transparent 80%);
+  pointer-events:none;
+}
+.auth-page-inner { z-index:1; }
+.auth-page-card,.reset-page-card {
+  border-color:var(--border);
+  border-radius:25px;
+  background:color-mix(in srgb,var(--card) 94%,transparent);
+  box-shadow:0 30px 90px -48px color-mix(in srgb,var(--foreground) 48%,transparent),inset 0 1px color-mix(in srgb,white 65%,transparent);
+  backdrop-filter:blur(18px);
+}
+.auth-page-brandrow { border-color:var(--border); }
+.auth-page-card fieldset > div:first-child {
+  border:1px solid color-mix(in srgb,var(--success) 18%,var(--border));
+  border-radius:12px;
+  padding:10px 12px;
+  background:color-mix(in srgb,var(--success) 6%,var(--card));
+}
+.auth-page-card [role="tablist"] { padding:4px;border:1px solid var(--border);border-radius:13px;background:var(--surface); }
+.auth-page-card [role="tab"] { border-radius:10px; }
+.auth-page-card input,.reset-page-card input { min-height:43px;border-radius:11px; }
+.auth-page-card button,.reset-page-card button { border-radius:11px; }
+.reset-page-card { width:min(100%,440px);padding:clamp(22px,4vw,34px); }
+@media (max-width:520px) {
+  .auth-page-card { padding:20px; }
+  .auth-page-brandrow { gap:10px; }
+}
