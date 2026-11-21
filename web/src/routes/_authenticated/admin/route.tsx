@@ -81,13 +81,13 @@ function AdminLayout() {
 
   return (
     <div className="admin-workspace flex min-h-screen">
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
+      <aside className="admin-sidebar sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <SidebarBody email={ctx.data.email} isAdmin={ctx.data.isAdmin} onSignOut={signOut} />
       </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="admin-main-column flex min-w-0 flex-1 flex-col">
         <TopBar email={ctx.data.email} isAdmin={ctx.data.isAdmin} onSignOut={signOut} />
         <LiveFeed />
-        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main className="admin-main-content mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
           {!ctx.data.signingKeyConfigured && ctx.data.isAdmin ? (
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
               <span className="text-warning">Unlock codes can't be issued until you add the BB2 signing key used in your Android app.</span>
@@ -120,21 +120,21 @@ function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string;
   const badges = useBadges();
   return (
     <div className="flex h-full flex-col">
-      <div className="px-5 py-5">
+      <div className="admin-sidebar-brand px-5 py-5">
         <Logo to="/admin" suffix="Admin" />
       </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3">
+      <nav className="admin-side-nav flex-1 space-y-0.5 overflow-y-auto px-3">
         {NAV.map((n,i) => {
           const count = "badge" in n ? badges[n.badge] : 0;
           return (
             <div key={n.to}>
-            {[0,3,12].includes(i) && <p className="px-3 pt-4 pb-2 font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{a(i===0?'Workspace':i===3?'Operations':'Administration')}</p>}
+            {[0,3,12].includes(i) && <p className="admin-nav-group-label px-3 pt-4 pb-2 font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{a(i===0?'Workspace':i===3?'Operations':'Administration')}</p>}
             <Link
               to={n.to}
               onClick={onNavigate}
               activeOptions={{ exact: "exact" in n && n.exact }}
-              className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-              activeProps={{ className: "bg-sidebar-accent text-sidebar-foreground font-medium" }}
+              className="admin-nav-item flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+              activeProps={{ className: "admin-nav-item admin-nav-item-active bg-sidebar-accent text-sidebar-foreground font-medium" }}
             >
               <n.icon className="size-4" />
               <span className="flex-1">{a(n.label)}</span>
@@ -143,8 +143,8 @@ function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string;
           );
         })}
       </nav>
-      <div className="space-y-2 border-t border-sidebar-border p-4">
-        <Link to="/" className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
+      <div className="admin-sidebar-footer space-y-2 border-t border-sidebar-border p-4">
+        <Link to="/" className="admin-live-pulse flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
           <ExternalLink className="size-3.5" /> {a('View public site')}
         </Link>
         <div className="flex items-center justify-between gap-2">
@@ -167,7 +167,7 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
   const a=useAdminText();
   const [spinning, setSpinning] = useState(false);
   return (
-    <div className="glass sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
+    <div className="admin-topbar glass sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
       <div className="flex items-center gap-2">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
@@ -175,7 +175,7 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
               <Menu />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-64 bg-sidebar p-0">
+          <SheetContent side="left" className="admin-mobile-sheet w-64 bg-sidebar p-0">
             <SheetTitle className="sr-only">Admin menu</SheetTitle>
             <SidebarBody email={email} isAdmin={isAdmin} onSignOut={onSignOut} onNavigate={() => setOpen(false)} />
           </SheetContent>
