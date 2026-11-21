@@ -5,6 +5,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.nio.charset.StandardCharsets
 import java.security.KeyPair
 import java.security.KeyPairGenerator
@@ -12,6 +15,8 @@ import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.util.Base64
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
 class SubscriptionSecurityManagerTest {
 
     private fun createSignedBb3Code(
