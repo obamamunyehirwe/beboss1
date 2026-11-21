@@ -261,6 +261,7 @@ object Localization {
         "today_revenue" to locEntry("Today's Sales", "Amafaranga Yinjiye", "Ventes du jour", "Mauzo ya Leo"),
         "today_profit" to locEntry("Est. Profit", "Inyungu Y'uyu Munsi", "Bénéfice est.", "Faida ya Leo"),
         "today_orders" to locEntry("Orders", "Inyemezabuguzi", "Commandes", "Oda"),
+        "items_sold" to locEntry("Items sold", "Ibicuruzwa byagurishijwe", "Articles vendus", "Bidhaa zilizouzwa"),
         "total_stock_value" to locEntry("Total Stock Value", "Agaciro k'Ububiko", "Valeur totale du stock", "Thamani ya Stoo"),
         "potential_profit" to locEntry("Potential Profit", "Inyungu Itegerejwe", "Profit potentiel", "Faida Inayotarajiwa"),
         "outstanding_debts" to locEntry("Uncollected Debts", "Amadeni Asigaye Hanze", "Créances clients", "Madeni Yasiyolipwa"),
