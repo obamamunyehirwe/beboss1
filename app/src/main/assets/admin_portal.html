@@ -1653,7 +1653,6 @@
 
   const MASTER_ADMIN_EMAIL = 'reponsekdz@gmail.com';
   const STORAGE_KEY = 'beboss_admin_platform_v3';
-  const DEFAULT_HMAC_SECRET = 'BeBoss_Enterprise_HMAC_Signing_2026';
 
   const SCHEMA_SQL = `-- BeBoss Enterprise Licensing, Multi-Device Sync & Global Payment Config Schema (Supabase PostgreSQL)
 -- Master Admin Email: reponsekdz@gmail.com
@@ -1776,9 +1775,13 @@ create table if not exists public.payment_requests (
     const acctHash6 = await computeAccountBindingHash(username, phone);
     const expiryHex = (Math.floor(Date.now() / 86400000) + validityWindowDays).toString(16).toUpperCase();
     const payload = `BB2:${cleanTier}:${days}:${expiryHex}:${acctHash6}`;
+    const signingSecret = String(secret || '').trim();
+    if (!signingSecret) {
+      throw new Error('BB2 signing key is not configured. Use the server-secured BeBoss web admin to issue unlock codes.');
+    }
     const key = await crypto.subtle.importKey(
       'raw',
-      new TextEncoder().encode(secret || DEFAULT_HMAC_SECRET),
+      new TextEncoder().encode(signingSecret),
       { name: 'HMAC', hash: 'SHA-256' },
       false,
       ['sign']
@@ -1872,7 +1875,7 @@ create table if not exists public.payment_requests (
     return {
       url,
       anonKey,
-      secret: saved.secret || DEFAULT_HMAC_SECRET,
+      secret: '',
       accessToken: saved.accessToken || '',
       refreshToken: saved.refreshToken || '',
       userId: saved.userId || '',
@@ -1901,10 +1904,8 @@ create table if not exists public.payment_requests (
   function AdminLoginModal({ session, onLoginSuccess, onClose, onShowSql }) {
     const [url, setUrl] = useState(session.url || '');
     const [anonKey, setAnonKey] = useState(session.anonKey || '');
-    const [secret, setSecret] = useState(session.secret || DEFAULT_HMAC_SECRET);
-    const [authMode, setAuthMode] = useState('signin');
+    const [secret, setSecret] = useState(session.secret || '');
     const [authPassword, setAuthPassword] = useState('');
-    const [authFullName, setAuthFullName] = useState(session.fullName || 'BeBoss Master Admin');
     const [authError, setAuthError] = useState('');
     const [authBusy, setAuthBusy] = useState(false);
 
@@ -1919,16 +1920,12 @@ create table if not exists public.payment_requests (
       }
       setAuthBusy(true);
       try {
-        const endpoint = authMode === 'signin'
-          ? `${cleanUrl}/auth/v1/token?grant_type=password`
-          : `${cleanUrl}/auth/v1/signup`;
-        const res = await fetch(endpoint, {
+        const res = await fetch(`${cleanUrl}/auth/v1/token?grant_type=password`, {
           method: 'POST',
           headers: { apikey: cleanKey, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email: MASTER_ADMIN_EMAIL,
             password: authPassword,
-            data: authMode === 'signup' ? { full_name: authFullName.trim() || 'BeBoss Master Admin' } : undefined
           })
         });
         const body = await res.json();
@@ -1940,7 +1937,7 @@ create table if not exists public.payment_requests (
           throw new Error('Account created! Confirm email in Supabase if confirmation is enabled, then Sign In.');
         }
         const userId = body.user?.id || '';
-        const fullName = body.user?.user_metadata?.full_name || authFullName.trim() || 'BeBoss Master Admin';
+        const fullName = body.user?.user_metadata?.full_name || 'BeBoss Master Admin';
 
         if (userId) {
           const checkRes = await fetch(`${cleanUrl}/rest/v1/admin_profiles?user_id=eq.${encodeURIComponent(userId)}&limit=1`, {
@@ -1976,7 +1973,7 @@ create table if not exists public.payment_requests (
         const nextSession = {
           url: cleanUrl,
           anonKey: cleanKey,
-          secret: secret.trim() || DEFAULT_HMAC_SECRET,
+          secret: secret.trim(),
           accessToken,
           refreshToken: body.refresh_token || body.session?.refresh_token || '',
           userId,
@@ -2009,24 +2006,9 @@ create table if not exists public.payment_requests (
             <button type="button" className="btn btn-dark btn-sm" onClick={onClose}>Close</button>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-            <button
-              type="button"
-              className={`btn ${authMode === 'signin' ? 'btn-primary' : 'btn-dark'}`}
-              style={{ flex: 1 }}
-              onClick={() => { setAuthMode('signin'); setAuthError(''); }}
-            >
-              Master Sign In
-            </button>
-            <button
-              type="button"
-              className={`btn ${authMode === 'signup' ? 'btn-primary' : 'btn-dark'}`}
-              style={{ flex: 1 }}
-              onClick={() => { setAuthMode('signup'); setAuthError(''); }}
-            >
-              First-Time Setup
-            </button>
-          </div>
+          <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 12, lineHeight: 1.6 }}>
+            First-time setup is invitation-only. Request the secure setup email from the BeBoss web admin sign-in page, then choose your password there. This portal accepts existing approved accounts only.
+          </p>
 
           <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 12 }}>
             <div>
@@ -2049,16 +2031,6 @@ create table if not exists public.payment_requests (
                 onChange={e => setAnonKey(e.target.value)}
               />
             </div>
-            {authMode === 'signup' && (
-              <div>
-                <label className="field-label">Master Admin Full Name</label>
-                <input
-                  className="input"
-                  value={authFullName}
-                  onChange={e => setAuthFullName(e.target.value)}
-                />
-              </div>
-            )}
             <div className="grid-2">
               <div>
                 <label className="field-label">Authorized Email (Locked)</label>
@@ -2081,6 +2053,7 @@ create table if not exists public.payment_requests (
               <label className="field-label">BB2 Cryptographic HMAC Signing Secret</label>
               <input
                 className="input mono"
+                type="password"
                 required
                 value={secret}
                 onChange={e => setSecret(e.target.value)}
@@ -2094,7 +2067,7 @@ create table if not exists public.payment_requests (
             )}
 
             <button type="submit" className="btn btn-primary" disabled={authBusy} style={{ padding: '12px 16px', fontSize: 13.5 }}>
-              {authBusy ? 'Authenticating...' : (authMode === 'signin' ? 'Sign In & Open Admin Console' : 'Initialize Master Admin Profile')}
+              {authBusy ? 'Authenticating...' : 'Sign In & Open Admin Console'}
             </button>
           </form>
 
@@ -3755,7 +3728,6 @@ create table if not exists public.payment_requests (
   global.BeBossCore = {
     MASTER_ADMIN_EMAIL,
     STORAGE_KEY,
-    DEFAULT_HMAC_SECRET,
     SCHEMA_SQL,
     normalizePhoneLast9,
     computeShopKey,
@@ -4781,7 +4753,8 @@ create table if not exists public.payment_requests (
       const persistSession = useCallback((nextSession) => {
         setSession(nextSession);
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
+          const { secret: inMemoryOnlySecret, ...persistableSession } = nextSession;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(persistableSession));
         } catch (_) {}
       }, [STORAGE_KEY]);
 
