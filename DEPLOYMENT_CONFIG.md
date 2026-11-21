@@ -11,7 +11,7 @@ Set these environment variables for Production, Preview and Development as appro
 | `SUPABASE_URL` | Supabase project URL | Public URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Web Supabase client / server-side user requests | Public publishable key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Trusted server functions only (admin invitations, private storage, privileged operations) | Server-only secret |
-| `BEBOSS_UNLOCK_SIGNING_SECRET` | BB2 unlock-code signing | Server-only secret |
+| `BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM` | BB3 P-256 unlock-code signing | Supabase `app_secrets` row; never expose to browser or Android |
 | `BEBOSS_SECURITY_PEPPER` | Security hashing/derivation | Server-only secret |
 | `BEBOSS_DATASHARE_HMAC_SECRET` | Signed data-share requests | Server-only secret |
 | `BEBOSS_LAN_SYNC_SECRET` | LAN sync authentication | Server-only secret |
@@ -52,7 +52,7 @@ The Android app reads the Supabase URL and current legacy anon JWT from Gradle p
 ```properties
 SUPABASE_URL=https://ahlpvlhmpfiyeoercxol.supabase.co
 SUPABASE_ANON_KEY=replace_with_project_anon_key
-BEBOSS_UNLOCK_SIGNING_SECRET=replace_with_the_same_server_signing_secret
+// The BB3 P-256 private key is stored in Supabase app_secrets; do not place it in deployment files or mobile builds.
 ```
 
 Do not commit real credentials or the release keystore. Configure release signing values as CI secrets, build with `./gradlew :app:assembleRelease`, verify the resulting APK signature, and upload the signed APK through Admin → App releases. The public download page uses the private Supabase Storage release object; verify a real APK upload before announcing downloads as production-ready.
