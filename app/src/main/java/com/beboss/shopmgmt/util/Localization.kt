@@ -591,7 +591,6 @@ object Localization {
         "cloud_offline" to entry("Offline Safe (Queued)", "Bikora Offline", "Hors Ligne (En file)", "Nje ya Mtandao (Salama)"),
         "push_to_cloud" to entry("Push All Data to Cloud", "Ohereza Byose kuri Cloud", "Tout envoyer au Cloud", "Tuma Data Zote Wingu"),
         "sync_completed" to entry("Cloud Sync Complete", "Byahujwe neza byose", "Synchronisation terminÃƒÂ©e", "Usawazishaji Umekamilika"),
-        "firebase_cloud_connected" to entry("Cloud Storage Active", "Ububiko bwa Cloud Burakora", "Stockage Cloud Actif", "Hifadhi ya Wingu Inafanya Kazi"),
 
         "admin_console_title" to entry("Master Admin Command Center", "Ikigo cy'Ubuyobozi Mukuru (Admin)", "Centre de Commande Master Admin", "Kituo cha Usimamizi Mkuu"),
         "admin_tab_queue" to entry("Payments", "Ubwishyu", "Paiements", "Malipo"),

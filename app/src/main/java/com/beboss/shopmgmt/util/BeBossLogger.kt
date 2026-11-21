@@ -67,8 +67,8 @@ object BeBossLogger {
     }
 
     /**
-     * Optional crash reporter hook Ã¢â‚¬â€ set once in Application.onCreate() to forward
-     * errors to Sentry / Firebase Crashlytics without a hard dependency.
+     * Optional crash reporter hook set once in Application.onCreate().
+     * Forward errors to Sentry without adding another service dependency.
      */
     var crashReporter: ((tag: String, message: String, throwable: Throwable?) -> Unit)? = null
     
