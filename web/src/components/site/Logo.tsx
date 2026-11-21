@@ -13,8 +13,9 @@ export function LogoMark({ className }: { className?: string }) {
         src="/beboss-brand.svg"
         alt=""
         aria-hidden="true"
-        className="size-full object-cover"
+        className="size-full object-contain p-0.5"
         loading="eager"
+        decoding="async"
         width={40}
         height={40}
       />
