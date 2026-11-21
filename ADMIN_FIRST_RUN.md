@@ -5,13 +5,13 @@
 The live Supabase project currently has this single bootstrap allow-list entry:
 
 - Email: `reponsekdz@gmail.com`
-- Password: **not created yet**. There is no Auth user for this address in the current project, so there is no existing password to recover or disclose. The administrator must choose a private password from the one-time invitation email.
+- Password: **not created yet**. Supabase has created the Auth user in the invited state (`invited_at` is set; `email_confirmed_at` is still null). The one-time invitation was successfully sent on 2026-11-21. There is no existing password to disclose; the administrator must accept the email link and choose a private password.
 
 Do not add a default password, seed a password in source code, or enable public self-registration.
 
 ## Required deployment configuration
 
-Before the first-admin button can send an invitation, configure these values in the web host's environment:
+For the web site and subsequent team invitations, configure these values in the web host's environment:
 
 | Variable | Purpose |
 | --- | --- |
