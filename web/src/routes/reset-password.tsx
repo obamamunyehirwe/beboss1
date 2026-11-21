@@ -52,12 +52,12 @@ function ResetPage() {
     navigate({ to: "/admin" });
   };
   return (
-    <div className="grid min-h-screen place-items-center bg-ember px-4">
+    <div className="reset-page-shell grid min-h-screen place-items-center bg-ember px-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex justify-center">
           <Logo suffix="Admin" />
         </div>
-        <form onSubmit={submit} className="space-y-4 rounded-3xl border border-border bg-card p-7">
+        <form onSubmit={submit} className="reset-page-card space-y-4 rounded-3xl border border-border bg-card p-7">
           <h1 className="text-xl font-bold">Choose a new password</h1>
           {!ready ? <p className="text-sm text-muted-foreground">Open this page from the reset link in your email.</p> : null}
           <div className="space-y-2">

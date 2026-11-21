@@ -10,7 +10,7 @@ export function LanguageSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" aria-label={p.common.changeLanguage}>
+        <Button variant="outline" size="sm" className="site-language-trigger" aria-label={p.common.changeLanguage}>
           <Languages />
           {current?.short}
         </Button>
