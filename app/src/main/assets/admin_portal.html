@@ -1971,7 +1971,7 @@ create table if not exists public.payment_requests (
         }
         const accessToken = body.access_token || body.session?.access_token;
         if (!accessToken) {
-          throw new Error('Account created! Confirm email in Supabase if confirmation is enabled, then Sign In.');
+          throw new Error('Sign-in did not return an access token. Complete the approved email invitation before signing in.');
         }
         const userId = body.user?.id || '';
         const fullName = body.user?.user_metadata?.full_name || 'BeBoss Master Admin';
