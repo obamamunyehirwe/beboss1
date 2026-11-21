@@ -796,7 +796,6 @@ class BeBossRepository(private val database: AppDatabase) {
     ): VoucherValidationResult {
         val rawCode = voucherCode.trim()
         val isBb3 = rawCode.startsWith("BB3-", ignoreCase = true)
-        val isLegacyBb2 = rawCode.startsWith("BB2-", ignoreCase = true)
         val normalizedCode = if (isBb3) rawCode else rawCode.uppercase()
         val effectiveUser = ownerUsername.ifBlank { ownerUser?.username.orEmpty() }
         val effectivePhone = ownerPhoneOverride.ifBlank { shopProfile.phone }
