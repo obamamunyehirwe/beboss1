@@ -8,6 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAdminText } from '@/lib/admin-copy';
+import { ThemeToggle } from '@/components/site/ThemeToggle';
+import { LanguageSwitcher } from '@/components/site/LanguageSwitcher';
+import { liveConfigured } from '@/lib/live-config';
+import { retailCopy } from '@/lib/i18n-dict';
+import { useI18n } from '@/lib/i18n';
 import { Logo } from "@/components/site/Logo";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
@@ -46,6 +52,7 @@ function GoogleG() {
 }
 
 function AuthPage() {
+  const {lang,t}=useI18n();const a=useAdminText();
   const { redirect } = Route.useSearch();
   const target = safeRedirect(redirect);
   const router = useRouter();
@@ -56,6 +63,7 @@ function AuthPage() {
   const [mode, setMode] = useState("signin");
 
   useEffect(() => {
+    if (!liveConfigured) return;
     const go = () => {
       const stored = sessionStorage.getItem("beboss.postAuth");
       sessionStorage.removeItem("beboss.postAuth");
@@ -116,80 +124,80 @@ function AuthPage() {
 
   return (
     <div className="relative grid min-h-screen place-items-center px-4 py-10">
-      <div className="absolute inset-0 bg-ember" aria-hidden="true" />
-      <div className="absolute inset-0 bg-grid mask-fade-b" aria-hidden="true" />
+      <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage:'linear-gradient(100deg,#102017bb,#181b16aa),url(/hero-shop.jpg)'}} aria-hidden="true"/>
       <div className="relative w-full max-w-md">
-        <div className="mb-8 flex justify-center">
-          <Logo suffix="Admin" />
-        </div>
-        <div className="rounded-3xl border border-border bg-card p-7 shadow-soft">
+        <div className="rounded-2xl border border-border bg-card p-7 shadow-soft">
+          <div className="mb-6 flex items-center justify-between border-b border-border pb-5"><Logo suffix={t('navAdmin')} /><div className="flex items-center"><LanguageSwitcher/><ThemeToggle/></div></div>
+          {!liveConfigured && <p role="status" className="mb-5 rounded-lg bg-muted p-3 text-sm">{retailCopy[lang].unavailable}</p>}
+          <fieldset disabled={!liveConfigured} className="min-w-0 disabled:opacity-65">
           <div className="mb-5 flex items-center gap-2 text-sm text-muted-foreground">
             <ShieldCheck className="size-4 text-success" />
-            Restricted to the BeBoss admin team
+            {a("Restricted to the BeBoss admin team")}
           </div>
           <div className="grid gap-2">
             <Button type="button" variant="outline" className="h-10 w-full" onClick={() => oauth("google")}>
               <GoogleG />
-              Continue with Google
+              {a("Continue with Google")}
             </Button>
             <Button type="button" variant="outline" className="h-10 w-full" onClick={() => oauth("lovable")}>
               <LovableMark className="size-[18px]" />
-              Continue with Lovable
+              {a("Continue with Lovable")}
             </Button>
           </div>
           <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
             <span className="h-px flex-1 bg-border" />
-            or with email
+            {a("or with email")}
             <span className="h-px flex-1 bg-border" />
           </div>
           <Tabs value={mode} onValueChange={setMode}>
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="signin">Sign in</TabsTrigger>
-              <TabsTrigger value="signup">Create account</TabsTrigger>
+              <TabsTrigger value="signin">{a("Sign in")}</TabsTrigger>
+              <TabsTrigger value="signup">{a("Create account")}</TabsTrigger>
             </TabsList>
             <TabsContent value="signin">
               <form onSubmit={signIn} className="mt-4 space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="e1">Email</Label>
+                  <Label htmlFor="e1">{a("Email")}</Label>
                   <Input id="e1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="p1">Password</Label>
+                    <Label htmlFor="p1">{a("Password")}</Label>
                     <button type="button" className="text-xs text-primary hover:underline" onClick={forgot}>
-                      Forgot password?
+                      {a("Forgot password?")}
                     </button>
                   </div>
                   <Input id="p1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
                 </div>
                 <Button type="submit" variant="hero" className="w-full" disabled={busy}>
                   {busy ? <Loader2 className="animate-spin" /> : null}
-                  Sign in
+                  {a('Sign in')}
                 </Button>
               </form>
             </TabsContent>
             <TabsContent value="signup">
               <form onSubmit={signUp} className="mt-4 space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="n2">Full name</Label>
+                  <Label htmlFor="n2">{a("Full name")}</Label>
                   <Input id="n2" value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="e2">Email</Label>
+                  <Label htmlFor="e2">{a("Email")}</Label>
                   <Input id="e2" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="p2">Password</Label>
+                  <Label htmlFor="p2">{a("Password")}</Label>
                   <Input id="p2" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} autoComplete="new-password" />
                 </div>
                 <Button type="submit" variant="hero" className="w-full" disabled={busy}>
                   {busy ? <Loader2 className="animate-spin" /> : null}
-                  Create account
+                  {a('Create account')}
                 </Button>
-                <p className="text-xs text-muted-foreground">Admin access is granted by the master admin. New accounts see the admin center only after approval.</p>
+                <p className="text-xs text-muted-foreground">{a("Admin access is granted by the master admin. New accounts see the admin center only after approval.")}</p>
               </form>
             </TabsContent>
           </Tabs>
+          </fieldset>
         </div>
       </div>
     </div>

@@ -14,6 +14,9 @@ import { inboxQuery, paymentsQuery, syncEventsQuery } from "@/lib/admin-queries"
 import { useNow } from "@/hooks/use-now";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useAdminText } from '@/lib/admin-copy';
+import { ThemeToggle } from '@/components/site/ThemeToggle';
+import { LanguageSwitcher } from '@/components/site/LanguageSwitcher';
 import { CommandPalette } from "@/components/admin/CommandPalette";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -77,7 +80,7 @@ function AdminLayout() {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="admin-workspace flex min-h-screen">
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <SidebarBody email={ctx.data.email} isAdmin={ctx.data.isAdmin} onSignOut={signOut} />
       </aside>
@@ -113,6 +116,7 @@ function useBadges() {
 }
 
 function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string; isAdmin: boolean; onSignOut: () => void; onNavigate?: () => void }) {
+  const a=useAdminText();
   const badges = useBadges();
   return (
     <div className="flex h-full flex-col">
@@ -120,11 +124,12 @@ function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string;
         <Logo to="/admin" suffix="Admin" />
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3">
-        {NAV.map((n) => {
+        {NAV.map((n,i) => {
           const count = "badge" in n ? badges[n.badge] : 0;
           return (
+            <div key={n.to}>
+            {[0,3,12].includes(i) && <p className="px-3 pt-4 pb-2 font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{a(i===0?'Workspace':i===3?'Operations':'Administration')}</p>}
             <Link
-              key={n.to}
               to={n.to}
               onClick={onNavigate}
               activeOptions={{ exact: "exact" in n && n.exact }}
@@ -132,20 +137,20 @@ function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string;
               activeProps={{ className: "bg-sidebar-accent text-sidebar-foreground font-medium" }}
             >
               <n.icon className="size-4" />
-              <span className="flex-1">{n.label}</span>
+              <span className="flex-1">{a(n.label)}</span>
               {count ? <span className="rounded-full bg-primary px-2 py-0.5 font-mono text-[10px] font-bold text-primary-foreground">{count}</span> : null}
-            </Link>
+            </Link></div>
           );
         })}
       </nav>
       <div className="space-y-2 border-t border-sidebar-border p-4">
         <Link to="/" className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
-          <ExternalLink className="size-3.5" /> View public site
+          <ExternalLink className="size-3.5" /> {a('View public site')}
         </Link>
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-sm">{email}</p>
-            <p className="text-[11px] text-muted-foreground">{isAdmin ? "Master admin" : "Support (read-only)"}</p>
+            <p className="text-[11px] text-muted-foreground">{a(isAdmin ? "Master admin" : "Support (read-only)")}</p>
           </div>
           <Button size="icon" variant="ghost" onClick={onSignOut} aria-label="Sign out">
             <LogOut />
@@ -159,6 +164,7 @@ function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string;
 function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean; onSignOut: () => void }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const a=useAdminText();
   const [spinning, setSpinning] = useState(false);
   return (
     <div className="glass sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
@@ -177,7 +183,7 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
         <LivePulse />
       </div>
       <div className="flex items-center gap-2">
-      <CommandPalette nav={NAV} />
+      <LanguageSwitcher /><ThemeToggle /><CommandPalette nav={NAV.map(n=>({...n,label:a(n.label)}))} />
       <Button
         size="sm"
         variant="glass"
@@ -188,7 +194,7 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
           toast.success("Data refreshed");
         }}
       >
-        <RefreshCw className={cn(spinning && "animate-spin")} /> <span className="hidden sm:inline">Refresh</span>
+        <RefreshCw className={cn(spinning && "animate-spin")} /> <span className="hidden sm:inline">{a('Refresh')}</span>
       </Button>
       </div>
     </div>

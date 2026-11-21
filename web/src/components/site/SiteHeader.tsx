@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from './ThemeToggle';
 import { Logo } from "./Logo";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 
@@ -27,7 +28,7 @@ export function SiteHeader() {
     { to: "/contact", label: t("navContact") },
   ] as const;
   return (
-    <header className={cn("fixed inset-x-0 top-0 z-50 transition-all", scrolled ? "glass border-b border-border" : "bg-transparent")}>
+    <header className={cn("site-nav fixed inset-x-0 top-0 z-50 border-b border-border bg-background transition-shadow", scrolled && "shadow-sm")}>
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <Logo />
         <nav className="hidden items-center gap-1 lg:flex">
@@ -42,8 +43,9 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
+        <nav className="compact-nav" aria-label={p.common.menu}>{links.slice(0,3).map(l=><Link key={l.to} to={l.to} activeProps={{className:'text-primary'}}>{l.label}</Link>)}</nav>
         <div className="flex items-center gap-1.5">
-          <LanguageSwitcher />
+          <LanguageSwitcher /><ThemeToggle />
           <Button asChild variant="hero" size="sm" className="hidden sm:inline-flex">
             <Link to="/download">
               <Download />

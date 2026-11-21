@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { CheckCircle2, KeyRound, PhoneCall, Send } from "lucide-react";
+import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { PricingCalculator } from "@/components/site/PricingCalculator";
 import { useI18n } from "@/lib/i18n";
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/pricing")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  errorComponent: () => <ServiceUnavailable title="navPricing" />,
   loader: ({ context }) => context.queryClient.ensureQueryData(publicSiteQuery),
   component: PricingPage,
 });

@@ -6,6 +6,13 @@ export const LANGS: { code: Lang; label: string; short: string }[] = [
   { code: "sw", label: "Kiswahili", short: "SW" },
 ];
 
+export const retailCopy = {
+  en: {kicker:'Retail operating system', first:'Your shop.', second:'In control.', intro:'Sales, stock and customer credit, together on your Android phone. Keep selling, even offline.', scenes:['At the counter','Receipt printing'], previous:'Previous image',next:'Next image',caps:['Offline-first','Multi-branch','4 languages','Android native'],details:['Sell without internet','Connected shops','Built for your team','Android 7.0+'], toolkit:'The retail toolkit',heading:'Built for the everyday.',theme:'Switch theme',unavailable:'Live service unavailable. Please try again later.'},
+  rw: {kicker:'Sisitemu yo gucunga iduka', first:'Iduka ryawe.',second:'Mu biganza byawe.', intro:'Genzura ibyacurujwe, ibicuruzwa n’amadeni kuri telefone ya Android. Komeza gucuruza nta interineti.', scenes:['Aho bishyurira','Gucapa inyemezabuguzi'],previous:'Ifoto ibanza',next:'Ifoto ikurikira',caps:['Nta interineti','Amashami menshi','Indimi 4','Kuri Android'],details:['Curuza nta interineti','Amaduka ahujwe','Ku bakozi bawe','Android 7.0+'],toolkit:'Ibikoresho by’umucuruzi',heading:'Ku kazi ka buri munsi.',theme:'Hindura isura',unavailable:'Serivisi ntiboneka ubu. Ongera ugerageze nyuma.'},
+  fr: {kicker:'Gestion du commerce',first:'Votre boutique.',second:'En main.',intro:'Ventes, stock et crédit client sur votre téléphone Android. Continuez à vendre, même hors ligne.',scenes:['Au comptoir','Impression des reçus'],previous:'Image précédente',next:'Image suivante',caps:['Hors ligne','Multi-boutique','4 langues','Android natif'],details:['Vendez sans internet','Boutiques connectées','Pour votre équipe','Android 7.0+'],toolkit:'Les outils du commerce',heading:'Pensé pour le quotidien.',theme:'Changer de thème',unavailable:'Service indisponible. Veuillez réessayer plus tard.'},
+  sw: {kicker:'Mfumo wa usimamizi wa duka',first:'Duka lako.',second:'Mikononi mwako.',intro:'Mauzo, bidhaa na madeni ya wateja kwenye simu yako ya Android. Endelea kuuza hata bila intaneti.',scenes:['Kwenye kaunta','Uchapishaji wa risiti'],previous:'Picha iliyotangulia',next:'Picha inayofuata',caps:['Bila intaneti','Matawi mengi','Lugha 4','Kwa Android'],details:['Uza bila intaneti','Maduka yaliyounganishwa','Kwa timu yako','Android 7.0+'],toolkit:'Zana za biashara',heading:'Kwa kazi za kila siku.',theme:'Badili mandhari',unavailable:'Huduma haipatikani. Tafadhali jaribu tena baadaye.'}
+} as const;
+
 const en = {
   navFeatures: "Features",
   navPricing: "Pricing",

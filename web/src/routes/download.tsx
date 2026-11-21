@@ -5,6 +5,7 @@ import { Check, Copy, Download, FileDown, Printer, ShieldCheck, Smartphone } fro
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
 import { DOWNLOAD_PATH, publicSiteQuery } from "@/lib/queries";
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/download")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  errorComponent: () => <ServiceUnavailable title="downloadTitle" />,
   loader: ({ context }) => context.queryClient.ensureQueryData(publicSiteQuery),
   component: DownloadPage,
 });
@@ -30,6 +32,7 @@ function DownloadPage() {
   const { data } = useSuspenseQuery(publicSiteQuery);
   const rel = data.current;
   const [origin, setOrigin] = useState("");
+  const [copied, setCopied] = useState(false);
   const [testHash, setTestHash] = useState("");
   const isHashMatch = rel && testHash.trim() && testHash.trim().toLowerCase() === rel.sha256.toLowerCase();
   useEffect(() => setOrigin(window.location.origin), []);

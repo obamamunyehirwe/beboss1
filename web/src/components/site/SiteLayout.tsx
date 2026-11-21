@@ -1,3 +1,4 @@
+import { liveConfigured } from '@/lib/live-config';
 import type { ReactNode } from "react";
 import { SiteHeader } from "./SiteHeader";
 import { SiteFooter } from "./SiteFooter";
@@ -8,7 +9,7 @@ export function SiteLayout({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="flex-1 pt-16">
-        <AnnouncementBanner />
+        {liveConfigured && <AnnouncementBanner />}
         {children}
       </main>
       <SiteFooter />
@@ -18,7 +19,7 @@ export function SiteLayout({ children }: { children: ReactNode }) {
 
 export function PageHero({ eyebrow, title, sub, children }: { eyebrow?: string; title: string; sub?: string; children?: ReactNode }) {
   return (
-    <section className="relative overflow-hidden border-b border-border">
+    <section className="interior-hero relative overflow-hidden border-b border-border">
       <div className="absolute inset-0 bg-ember" aria-hidden="true" />
       <div className="absolute inset-0 bg-grid mask-fade-b" aria-hidden="true" />
       <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">

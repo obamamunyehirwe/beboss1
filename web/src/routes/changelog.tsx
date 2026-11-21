@@ -3,6 +3,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { Download, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
 import { DOWNLOAD_PATH, publicSiteQuery } from "@/lib/queries";
@@ -19,6 +20,7 @@ export const Route = createFileRoute("/changelog")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
+  errorComponent: () => <ServiceUnavailable title="navChangelog" />,
   loader: ({ context }) => context.queryClient.ensureQueryData(publicSiteQuery),
   component: ChangelogPage,
 });

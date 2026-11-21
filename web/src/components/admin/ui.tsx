@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { useAdminText } from '@/lib/admin-copy';
 import { cn } from "@/lib/utils";
 
 // ─── PageHeader ────────────────────────────────────────────────────────────────
@@ -23,6 +24,7 @@ export function PageHeader({
   /** Map of key (uppercase) → callback. E.g. { P: () => navigate('/admin/payments') } */
   shortcuts?: Record<string, () => void>;
 }) {
+  const a=useAdminText();
   useEffect(() => {
     if (!shortcuts) return;
     const handler = (e: KeyboardEvent) => {
@@ -40,10 +42,10 @@ export function PageHeader({
   }, [shortcuts]);
 
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="admin-heading mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-bold sm:text-3xl">{title}</h1>
-        {sub ? <p className="mt-1 text-sm text-muted-foreground">{sub}</p> : null}
+        <h1 className="text-2xl font-bold sm:text-3xl">{a(title)}</h1>
+        {sub ? <p className="mt-1 text-sm text-muted-foreground">{a(sub)}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
@@ -76,7 +78,7 @@ export function StatCard({
   }[tone];
   return (
     <div
-      className={cn("rounded-2xl border border-border bg-card p-5", onClick && "cursor-pointer transition-colors hover:bg-accent")}
+      className={cn("admin-stat rounded-xl border border-border bg-card p-5", onClick && "cursor-pointer transition-colors hover:bg-accent")}
       onClick={onClick}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
@@ -133,7 +135,7 @@ export function SearchInput({ value, onChange, placeholder }: { value: string; o
   return (
     <div className="relative min-w-[220px] flex-1">
       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="pl-9" />
+      <Input aria-label={placeholder} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="pl-9" />
     </div>
   );
 }
@@ -146,6 +148,7 @@ export function FilterChips<T extends string>({ value, onChange, options }: { va
         <button
           key={o.value}
           type="button"
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
           className={cn(
             "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",

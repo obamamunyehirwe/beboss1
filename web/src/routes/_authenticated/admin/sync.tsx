@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  AlertTriangle,
+  Activity, Download, Radio, Trash2, Wifi, AlertTriangle,
   Boxes,
   Clock,
   CreditCard,
@@ -77,7 +77,7 @@ function SyncMonitor() {
     
     // Calculate failure rate
     const totalSyncs = last24.length;
-    const failedSyncs = last24.filter((e) => e.status === "FAILED" || e.action.includes("FAILED")).length;
+    const failedSyncs = last24.filter((e) => e.action.includes("FAILED")).length;
     const failureRate = totalSyncs > 0 ? ((failedSyncs / totalSyncs) * 100).toFixed(2) : "0.00";
     
     // Derive unique shops and branch data entirely from real records.
@@ -95,7 +95,7 @@ function SyncMonitor() {
       failureRate,
       snapshots,
       staleDevices,
-      syncedLast24h: last24.filter(e => e.status === "SUCCESS" || e.action.includes("SYNC")).length
+      syncedLast24h: last24.filter(e => e.action.includes("SYNC") && !e.action.includes("FAILED")).length
     };
   }, [events.data, devices.data, snaps.data, now]);
 
@@ -115,9 +115,9 @@ function SyncMonitor() {
         <StatCard label="Total Shops" value={stats.totalShops} sub="registered businesses" icon={Store} tone="brand" />
         <StatCard label="Active Now" value={stats.activeShops} sub="synced in last 15 min" icon={Wifi} tone="success" />
         <StatCard label="Synced (24h)" value={stats.syncedLast24h} sub="successful syncs" icon={Activity} tone="info" />
-        <StatCard label="Failure Rate" value={`${stats.failureRate}%`} sub="of sync attempts failed" icon={AlertTriangle} tone={parseFloat(stats.failureRate) > 5 ? "destructive" : "warning"} />
+        <StatCard label="Failure Rate" value={`${stats.failureRate}%`} sub="of sync attempts failed" icon={AlertTriangle} tone={parseFloat(stats.failureRate) > 5 ? "danger" : "warning"} />
         <StatCard label="Branch Snapshots" value={stats.snapshots} sub="stored phone datasets" icon={Boxes} tone="brand" />
-        <StatCard label="Stale Devices" value={stats.staleDevices} sub="active, no sync for 7+ days" icon={Clock} tone={stats.staleDevices > 0 ? "destructive" : "success"} />
+        <StatCard label="Stale Devices" value={stats.staleDevices} sub="active, no sync for 7+ days" icon={Clock} tone={stats.staleDevices > 0 ? "danger" : "success"} />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5">

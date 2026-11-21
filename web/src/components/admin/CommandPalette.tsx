@@ -1,3 +1,4 @@
+import { useAdminText } from '@/lib/admin-copy';
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { CreditCard, KeyRound, Search, Smartphone, Store, Users } from "lucide-react";
@@ -13,6 +14,7 @@ export type NavEntry = { to: string; label: string; icon: ComponentType<{ classN
 /** Ctrl/⌘+K: jump to any page, shop, payment, code, device or staff member. */
 export function CommandPalette({ nav }: { nav: readonly NavEntry[] }) {
   const [open, setOpen] = useState(false);
+  const a=useAdminText();
   const navigate = useNavigate();
   const shops = useQuery({ ...shopsQuery, enabled: open });
   const pays = useQuery({ ...paymentsQuery, enabled: open });
@@ -41,7 +43,7 @@ export function CommandPalette({ nav }: { nav: readonly NavEntry[] }) {
     <>
       <Button variant="glass" size="sm" className="hidden w-56 justify-between text-muted-foreground md:inline-flex" onClick={() => setOpen(true)}>
         <span className="flex items-center gap-2">
-          <Search /> Search everything
+          <Search /> {a('Search everything')}
         </span>
         <kbd className="rounded border border-border px-1.5 font-mono text-[10px]">Ctrl K</kbd>
       </Button>
@@ -49,10 +51,10 @@ export function CommandPalette({ nav }: { nav: readonly NavEntry[] }) {
         <Search />
       </Button>
       <CommandDialog open={open} onOpenChange={setOpen}>
-        <CommandInput placeholder="Search shops, phones, codes, references, devices, staff…" />
+        <CommandInput placeholder={a('Search everything')} />
         <CommandList className="max-h-[60vh]">
-          <CommandEmpty>No matches.</CommandEmpty>
-          <CommandGroup heading="Go to">
+          <CommandEmpty>{a('No matches.')}</CommandEmpty>
+          <CommandGroup heading={a('Go to')}>
             {nav.map((n) => (
               <CommandItem key={n.to} value={`page ${n.label}`} onSelect={() => go(() => navigate({ to: n.to }))}>
                 <n.icon className="size-4" /> {n.label}

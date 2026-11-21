@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { liveConfigured } from '@/lib/live-config';
+import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
 import { confirmMyShopStockTransfer, deleteMyShopBranch, lookupMyShop, submitPaymentProof, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
@@ -42,7 +44,7 @@ export const Route = createFileRoute("/my-shop")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
-  component: MyShopPage,
+  component: liveConfigured ? MyShopPage : () => <ServiceUnavailable title="navMyShop" />,
 });
 
 type Lookup = Awaited<ReturnType<typeof lookupMyShop>>;

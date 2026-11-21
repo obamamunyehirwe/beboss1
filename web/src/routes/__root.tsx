@@ -13,6 +13,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { I18nProvider, useStoredPageCopy } from "@/lib/i18n";
 
+import { liveConfigured } from '@/lib/live-config';
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
@@ -99,7 +100,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "icon", href: "/beboss-app-logo.jpg", type: "image/jpeg" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
@@ -116,8 +117,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{__html:`document.documentElement.classList.toggle('dark',document.cookie.includes('beboss_theme=dark')||(!document.cookie.includes('beboss_theme=')&&matchMedia('(prefers-color-scheme: dark)').matches))`}} />
         <HeadContent />
       </head>
       <body style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
@@ -133,6 +135,7 @@ function RootComponent() {
   const router = useRouter();
 
   useEffect(() => {
+    if (!liveConfigured) return;
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
