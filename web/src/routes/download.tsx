@@ -55,8 +55,8 @@ function DownloadPage() {
           {rel ? (
             <>
               <div className="flex flex-wrap items-center gap-4">
-                <span className="grid size-16 place-items-center rounded-2xl bg-gradient-brand text-primary-foreground shadow-brand">
-                  <Smartphone className="size-8" />
+                <span className="download-app-art">
+                  <img src="/beboss-app-logo.png" alt="" width={64} height={64} loading="eager" decoding="async" />
                 </span>
                 <div>
                   <h2 className="text-2xl font-bold">BeBoss POS</h2>

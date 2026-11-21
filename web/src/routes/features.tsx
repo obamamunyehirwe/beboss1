@@ -14,6 +14,7 @@ export const Route = createFileRoute("/features")({
       { property: "og:title", content: "BeBoss POS features" },
       { property: "og:description", content: "Every tool a growing African retailer needs — offline, multi-branch and in 4 languages." },
       { property: "og:type", content: "website" },
+      { property: "og:image", content: "/Friendly%20Modern%20Store%20Checkout.png" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),

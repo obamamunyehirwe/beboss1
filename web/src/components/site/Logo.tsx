@@ -10,7 +10,7 @@ export function LogoMark({ className }: { className?: string }) {
       )}
     >
       <img
-        src="/beboss-brand.svg"
+        src="/beboss-app-icon.png"
         alt=""
         aria-hidden="true"
         className="size-full object-contain p-0.5"
@@ -25,11 +25,32 @@ export function LogoMark({ className }: { className?: string }) {
 
 export function Logo({ to = "/", suffix }: { to?: string; suffix?: string }) {
   return (
-    <Link to={to} className="flex items-center gap-2.5" aria-label={suffix ? `BeBoss ${suffix}` : "BeBoss POS"}>
-      <LogoMark />
-      <span className="font-display text-2xl font-extrabold tracking-[-0.06em]">
-        BeBoss{suffix ? <span className="ml-1.5 text-sm font-medium text-muted-foreground">{suffix}</span> : <span className="brand-pos">POS</span>}
+    <Link
+      to={to}
+      className="brand-lockup flex min-w-0 items-center gap-2.5"
+      aria-label={suffix ? `BeBoss ${suffix}` : "BeBoss POS"}
+    >
+      <span className="brand-wordmark" aria-hidden="true">
+        <img
+          src="/beboss-wordmark-dark.png"
+          alt=""
+          className="brand-wordmark-image brand-wordmark-dark"
+          loading="eager"
+          decoding="async"
+          width={720}
+          height={160}
+        />
+        <img
+          src="/beboss-wordmark-light.png"
+          alt=""
+          className="brand-wordmark-image brand-wordmark-light"
+          loading="eager"
+          decoding="async"
+          width={720}
+          height={160}
+        />
       </span>
+      {suffix ? <span className="brand-suffix">{suffix}</span> : null}
     </Link>
   );
 }

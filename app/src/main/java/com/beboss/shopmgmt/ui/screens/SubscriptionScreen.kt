@@ -227,12 +227,12 @@ fun SubscriptionScreen(
                         shadowElevation = 4.dp
                     ) {
                         Image(
-                            painter = painterResource(id = R.drawable.beboss_app_logo_1787833759468),
+                            painter = painterResource(id = R.drawable.beboss_app_icon),
                             contentDescription = "BeBoss Logo",
                             modifier = Modifier
                                 .fillMaxSize()
                                 .clip(RoundedCornerShape(14.dp)),
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Fit
                         )
                     }
 

@@ -141,12 +141,12 @@ fun AppSplashScreen(
                     modifier = Modifier.size(92.dp)
                 ) {
                     Image(
-                        painter = painterResource(id = R.drawable.beboss_app_logo_1787833759468),
+                        painter = painterResource(id = R.drawable.beboss_app_icon),
                         contentDescription = Localization.get("splash_emblem_cd", language),
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(24.dp)),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Fit
                     )
                 }
             }
