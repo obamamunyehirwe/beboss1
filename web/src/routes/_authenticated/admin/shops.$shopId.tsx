@@ -47,7 +47,7 @@ function ShopDetail() {
   const del = useAdminAction(useServerFn(deleteShop), { success: "Shop deleted", invalidate: [["admin"]] });
 
   const [q, setQ] = useState({ branches: 1, workers: 1, devices: 1 });
-  const [c, setC] = useState({ killSwitch: false, minAppVersion: "2.0.0", notes: "", adminWhatsapp: "" });
+  const [c, setC] = useState({ killSwitch: false, minAppVersion: "2.1.0", notes: "", adminWhatsapp: "" });
   const [custom, setCustom] = useState(30);
   useEffect(() => {
     if (!shop) return;

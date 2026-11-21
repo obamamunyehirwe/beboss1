@@ -1,7 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { AlertTriangle, Clock } from "lucide-react";
+import {
+  AlertTriangle,
+  Boxes,
+  Clock,
+  CreditCard,
+  KeyRound,
+  Smartphone,
+  Store,
+  Users,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -64,21 +73,17 @@ function SyncMonitor() {
         }).length,
       });
     }
-    const activeShops = new Set(last24.filter((e) => e.actor === "APP").map((e) => e.shop_sync_key)).size;
+    const activeShops = new Set(last24.filter((e) => now - new Date(e.created_at).getTime() < 15 * 60_000).map((e) => e.shop_sync_key)).size;
     
     // Calculate failure rate
     const totalSyncs = last24.length;
     const failedSyncs = last24.filter((e) => e.status === "FAILED" || e.action.includes("FAILED")).length;
     const failureRate = totalSyncs > 0 ? ((failedSyncs / totalSyncs) * 100).toFixed(2) : "0.00";
     
-    // Calculate average sync time (mock - would come from actual metrics)
-    const avgSyncTime = 1.2; // seconds
-    
-    // Get unique shops count (total registered)
+    // Derive unique shops and branch data entirely from real records.
     const totalShops = new Set(dv.map((d) => d.shop_sync_key)).size;
-    
-    // Dead letter count would come from a separate query
-    const deadLetterCount = 0; // Placeholder - would need dead_letter_queue query
+    const snapshots = (snaps.data ?? []).length;
+    const staleDevices = dv.filter((d) => d.is_active && deviceHealth(d.last_synced_at, now) === "STALE").length;
     
     return { 
       health, 
@@ -88,11 +93,11 @@ function SyncMonitor() {
       lastEvent: ev[0] ?? null,
       totalShops,
       failureRate,
-      avgSyncTime,
-      deadLetterCount,
+      snapshots,
+      staleDevices,
       syncedLast24h: last24.filter(e => e.status === "SUCCESS" || e.action.includes("SYNC")).length
     };
-  }, [events.data, devices.data, now]);
+  }, [events.data, devices.data, snaps.data, now]);
 
   return (
     <div className="space-y-6">
@@ -111,8 +116,8 @@ function SyncMonitor() {
         <StatCard label="Active Now" value={stats.activeShops} sub="synced in last 15 min" icon={Wifi} tone="success" />
         <StatCard label="Synced (24h)" value={stats.syncedLast24h} sub="successful syncs" icon={Activity} tone="info" />
         <StatCard label="Failure Rate" value={`${stats.failureRate}%`} sub="of sync attempts failed" icon={AlertTriangle} tone={parseFloat(stats.failureRate) > 5 ? "destructive" : "warning"} />
-        <StatCard label="Avg Sync Time" value={`${stats.avgSyncTime}s`} sub="average sync duration" icon={Clock} tone="brand" />
-        <StatCard label="Dead Letters" value={stats.deadLetterCount} sub="failed sync items" icon={AlertTriangle} tone={stats.deadLetterCount > 0 ? "destructive" : "success"} />
+        <StatCard label="Branch Snapshots" value={stats.snapshots} sub="stored phone datasets" icon={Boxes} tone="brand" />
+        <StatCard label="Stale Devices" value={stats.staleDevices} sub="active, no sync for 7+ days" icon={Clock} tone={stats.staleDevices > 0 ? "destructive" : "success"} />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5">
@@ -308,7 +313,7 @@ function Snapshots({ now }: { now: number }) {
           />
         ) : null}
       </div>
-      <p className="text-xs text-muted-foreground">Branch data stays end-to-end encrypted between the shop's own devices — the cloud only relays it, so only the summary is visible here.</p>
+      <p className="text-xs text-muted-foreground">Snapshots are HMAC-signed and compressed; they are relayed through the cloud and can be inspected only by authorized admin sessions.</p>
       {isLoading ? (
         <LoadingBlock />
       ) : !rows.length ? (

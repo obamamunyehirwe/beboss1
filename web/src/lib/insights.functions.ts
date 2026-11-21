@@ -105,9 +105,59 @@ export const getShopRecords = createServerFn({ method: "POST" })
   .handler(async ({ data, context }): Promise<{ records: ShopRecords | null; uploadedAt: number; error: string | null }> => {
     const ctx = context as unknown as AdminCtx;
     await requireStaffRole(ctx, false);
+
+    // Live branch + transfer rows from their normalized cloud tables (written by the phone
+    // and the owner portal). These are authoritative when present; otherwise fall back to
+    // the snapshot payload.
+    const [branchRes, transferRes] = await Promise.all([
+      ctx.supabase
+        .from("shop_branches")
+        .select("id, name, code, address, phone, manager_name, is_main_branch, is_active, operational_status, stock_value_rwf, product_count, daily_sales_target_rwf, monthly_target_rwf, opening_cash_float, email, notes")
+        .eq("shop_sync_key", data.shopId)
+        .eq("is_active", true)
+        .order("is_main_branch", { ascending: false })
+        .limit(500),
+      ctx.supabase
+        .from("shop_stock_transfers")
+        .select("id, transfer_number, product_name, from_branch_name, to_branch_name, quantity, unit, status, transferred_by, notes, transfer_date")
+        .eq("shop_sync_key", data.shopId)
+        .order("updated_at", { ascending: false })
+        .limit(1000),
+    ]);
+    const liveBranches = (branchRes.data ?? []).map((b) => ({
+      id: b.id,
+      name: b.name,
+      code: b.code,
+      address: b.address,
+      phone: b.phone,
+      manager: b.manager_name,
+      active: b.is_active,
+      isMain: b.is_main_branch,
+    }));
+    const liveTransfers = (transferRes.data ?? []).map((t) => ({
+      id: t.id,
+      number: t.transfer_number,
+      date: t.transfer_date,
+      product: t.product_name,
+      fromBranch: t.from_branch_name,
+      toBranch: t.to_branch_name,
+      quantity: t.quantity,
+      unit: t.unit,
+      status: t.status,
+      transferredBy: t.transferred_by,
+      notes: t.notes,
+    }));
+
     const rows = await loadShopSnapshots(ctx, data.shopId);
     const set = pickLatestChunkSet(rows);
     if (!set.length) {
+      // No snapshot yet, but live tables may still have data.
+      if (liveBranches.length || liveTransfers.length) {
+        const empty = await emptyRecords();
+        empty.branches = liveBranches;
+        empty.stockTransfers = liveTransfers;
+        return { records: empty, uploadedAt: 0, error: null };
+      }
       return {
         records: null,
         uploadedAt: 0,
@@ -117,8 +167,27 @@ export const getShopRecords = createServerFn({ method: "POST" })
     const uploadedAt = Math.max(...set.map((r) => Number(r.updated_at)));
     try {
       const parts = await Promise.all(set.map((r) => decodeShareToken(r.payload_token)));
-      return { records: extractShopRecords(mergeShareJson(parts)), uploadedAt, error: null };
+      const records = extractShopRecords(mergeShareJson(parts));
+      // Overlay live cloud tables when present.
+      if (liveBranches.length) records.branches = liveBranches;
+      if (liveTransfers.length) records.stockTransfers = liveTransfers;
+      return { records, uploadedAt, error: null };
     } catch (e) {
       return { records: null, uploadedAt, error: e instanceof Error ? e.message : "Could not read this snapshot" };
     }
   });
+
+async function emptyRecords(): Promise<ShopRecords> {
+  return {
+    currency: "FRw",
+    products: [],
+    customers: [],
+    sales: [],
+    saleItems: [],
+    payments: [],
+    branches: [],
+    stockTransfers: [],
+    staff: [],
+    purchases: [],
+  };
+}

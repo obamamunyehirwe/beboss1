@@ -103,7 +103,7 @@ create table public.app_config (
   airtel_recipient_name text not null default 'BeBoss Pay',
   per_device_fee_rwf integer not null default 2000,
   apk_download_url text not null default '',
-  apk_version text not null default '2.0.0',
+  apk_version text not null default '2.1.0',
   support_email text not null default '',
   updated_at bigint not null default (extract(epoch from now()) * 1000)::bigint
 );
@@ -160,7 +160,7 @@ create table public.shop_accounts (
   subscription_status text not null default 'TRIAL',
   subscription_expires_at bigint not null default ((extract(epoch from now()) + 345600) * 1000)::bigint,
   remote_kill_switch boolean not null default false,
-  min_app_version text not null default '2.0.0',
+  min_app_version text not null default '2.1.0',
   server_failed_pin_attempts integer not null default 0,
   admin_notes text not null default '',
   created_at bigint not null default (extract(epoch from now()) * 1000)::bigint,

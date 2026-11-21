@@ -27,13 +27,15 @@ export const lookupMyShop = createServerFn({ method: "POST" })
     if (normalizePhoneLast9(data.phone).length < 9) throw new Error("Enter the full phone number registered in the app.");
     const key = computeShopKey(data.username, data.phone);
     const sb = createPublicClient(key);
-    const [shop, pays, codes, devices, news, snaps] = await Promise.all([
+    const [shop, pays, codes, devices, news, snaps, branchRows, transferRows] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, owner_name, owner_username, branch_count, worker_count, device_count, device_limit, monthly_fee_rwf, subscription_status, subscription_expires_at, remote_kill_switch, updated_at").eq("id", key).maybeSingle(),
       sb.from("payment_requests").select("id, provider, amount_rwf, duration_months, telco_reference, status, approval_mode, generated_unlock_code, rejection_reason, created_at, updated_at").order("created_at", { ascending: false }).limit(20),
       sb.from("unlock_codes").select("unlock_code, tier_code, plan_days, status, issued_at, redeemed_at").order("issued_at", { ascending: false }).limit(20),
       sb.from("shop_devices").select("id, device_name, device_id, role, branch_name, is_active, is_owner_primary, assigned_user_name, last_synced_at").eq("shop_sync_key", key).order("last_synced_at", { ascending: false }).limit(50),
       sb.from("announcements").select("*").in("audience", ["ALL", "APP"]).order("starts_at", { ascending: false }).limit(5),
       sb.from("branch_sync_snapshots").select("id, device_id, branch_name, records_summary, payload_token, updated_at, sync_generation, chunk_index, chunk_count").eq("shop_sync_key", key).order("updated_at", { ascending: false }).limit(20),
+      sb.from("shop_branches").select("id, name, code, address, phone, manager_name, is_main_branch, is_active, color_hex, daily_sales_target_rwf, monthly_target_rwf, opening_cash_float, stock_value_rwf, product_count, operational_status, email, notes, updated_at, hlc_timestamp").eq("shop_sync_key", key).eq("is_active", true).order("is_main_branch", { ascending: false }).limit(200),
+      sb.from("shop_stock_transfers").select("id, transfer_number, product_name, from_branch_name, to_branch_name, quantity, unit, cost_value_rwf, transfer_date, status, transferred_by, received_by, received_at, updated_at").eq("shop_sync_key", key).order("updated_at", { ascending: false }).limit(500),
     ]);
 
     let decodedRecords: ShopRecords | null = null;
@@ -68,6 +70,8 @@ export const lookupMyShop = createServerFn({ method: "POST" })
       })),
       records: decodedRecords,
       snapshotUploadedAt,
+      branches: branchRows.data ?? [],
+      stockTransfers: transferRows.data ?? [],
     };
   });
 
@@ -115,5 +119,168 @@ export const submitPaymentProof = createServerFn({ method: "POST" })
       updated_at: now,
     });
     if (error) throw new Error("Could not submit your payment proof. Please try again.");
+    return { ok: true };
+  });
+
+// ---------------------------------------------------------------------------
+// Branch & stock-transfer management (owner portal, tenant-scoped via X-Shop-Sync-Key)
+// Writes set a fresh HLC timestamp so the phone's HLC merge adopts the web edit.
+// ---------------------------------------------------------------------------
+
+const branchSchema = z.object({
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+  id: z.string().trim().min(1).max(120),
+  name: z.string().trim().min(1).max(120),
+  code: z.string().trim().max(40).default(""),
+  address: z.string().trim().max(240).default(""),
+  phoneBranch: z.string().trim().max(40).default(""),
+  managerName: z.string().trim().max(120).default(""),
+  isMainBranch: z.boolean().default(false),
+  operationalStatus: z.enum(["OPEN", "CLOSED", "SUSPENDED"]).default("OPEN"),
+  colorHex: z.string().trim().max(16).default("#FF6B1A"),
+  dailySalesTargetRwf: z.number().int().min(0).max(1_000_000_000).default(0),
+  monthlyTargetRwf: z.number().int().min(0).max(1_000_000_000).default(0),
+  openingCashFloat: z.number().int().min(0).max(1_000_000_000).default(0),
+  email: z.string().trim().max(120).default(""),
+  notes: z.string().trim().max(1000).default(""),
+});
+
+export const upsertMyShopBranch = createServerFn({ method: "POST" })
+  .inputValidator((d: z.infer<typeof branchSchema>) => branchSchema.parse(d))
+  .handler(async ({ data }) => {
+    const key = computeShopKey(data.username, data.phone);
+    const sb = createPublicClient(key);
+    const now = Date.now();
+    const { error } = await sb.from("shop_branches").upsert(
+      {
+        id: data.id,
+        shop_sync_key: key,
+        name: data.name,
+        code: data.code,
+        address: data.address,
+        phone: data.phoneBranch,
+        manager_user_id: "",
+        manager_name: data.managerName,
+        is_main_branch: data.isMainBranch,
+        is_active: true,
+        color_hex: data.colorHex,
+        daily_sales_target_rwf: data.dailySalesTargetRwf,
+        monthly_target_rwf: data.monthlyTargetRwf,
+        opening_cash_float: data.openingCashFloat,
+        stock_value_rwf: 0,
+        product_count: 0,
+        operational_status: data.operationalStatus,
+        email: data.email,
+        notes: data.notes,
+        created_at: now,
+        updated_at: now,
+        sync_version: 1,
+        hlc_timestamp: now,
+        last_modified_device_id: "WEB",
+      },
+      { onConflict: "id" },
+    );
+    if (error) throw new Error("Could not save the branch. Please try again.");
+    return { ok: true, id: data.id };
+  });
+
+const branchIdSchema = z.object({
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+  id: z.string().trim().min(1).max(120),
+});
+
+export const deleteMyShopBranch = createServerFn({ method: "POST" })
+  .inputValidator((d: z.infer<typeof branchIdSchema>) => branchIdSchema.parse(d))
+  .handler(async ({ data }) => {
+    const key = computeShopKey(data.username, data.phone);
+    const sb = createPublicClient(key);
+    const now = Date.now();
+    // RLS allows tenant update but not delete; soft-delete via is_active=false + fresh HLC.
+    const { error } = await sb
+      .from("shop_branches")
+      .update({ is_active: false, updated_at: now, hlc_timestamp: now, last_modified_device_id: "WEB" })
+      .eq("id", data.id)
+      .eq("shop_sync_key", key);
+    if (error) throw new Error("Could not delete the branch. Please try again.");
+    return { ok: true };
+  });
+
+const transferSchema = z.object({
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+  id: z.string().trim().min(1).max(120),
+  transferNumber: z.string().trim().max(60).default(""),
+  productId: z.string().trim().max(120).default(""),
+  productName: z.string().trim().max(160).default(""),
+  fromBranchId: z.string().trim().max(120).default(""),
+  fromBranchName: z.string().trim().max(120).default(""),
+  toBranchId: z.string().trim().max(120).default(""),
+  toBranchName: z.string().trim().max(120).default(""),
+  quantity: z.number().positive().max(1_000_000),
+  unit: z.string().trim().max(20).default("pcs"),
+  costValueRwf: z.number().int().min(0).max(1_000_000_000).default(0),
+  notes: z.string().trim().max(1000).default(""),
+  transferredBy: z.string().trim().max(120).default("Shop Owner"),
+});
+
+export const upsertMyShopStockTransfer = createServerFn({ method: "POST" })
+  .inputValidator((d: z.infer<typeof transferSchema>) => transferSchema.parse(d))
+  .handler(async ({ data }) => {
+    const key = computeShopKey(data.username, data.phone);
+    const sb = createPublicClient(key);
+    const now = Date.now();
+    const { error } = await sb.from("shop_stock_transfers").upsert(
+      {
+        id: data.id,
+        shop_sync_key: key,
+        transfer_number: data.transferNumber,
+        product_id: data.productId,
+        product_name: data.productName,
+        from_branch_id: data.fromBranchId,
+        from_branch_name: data.fromBranchName,
+        to_branch_id: data.toBranchId,
+        to_branch_name: data.toBranchName,
+        quantity: data.quantity,
+        unit: data.unit,
+        cost_value_rwf: data.costValueRwf,
+        transfer_date: now,
+        status: "IN_TRANSIT",
+        notes: data.notes,
+        transferred_by: data.transferredBy,
+        received_by: "",
+        received_at: 0,
+        synced: false,
+        created_at: now,
+        updated_at: now,
+        hlc_timestamp: now,
+        last_modified_device_id: "WEB",
+      },
+      { onConflict: "id" },
+    );
+    if (error) throw new Error("Could not save the stock transfer. Please try again.");
+    return { ok: true, id: data.id };
+  });
+
+const confirmTransferSchema = z.object({
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+  id: z.string().trim().min(1).max(120),
+  receivedBy: z.string().trim().max(120).default("Shop Owner"),
+});
+
+export const confirmMyShopStockTransfer = createServerFn({ method: "POST" })
+  .inputValidator((d: z.infer<typeof confirmTransferSchema>) => confirmTransferSchema.parse(d))
+  .handler(async ({ data }) => {
+    const key = computeShopKey(data.username, data.phone);
+    const sb = createPublicClient(key);
+    const now = Date.now();
+    const { error } = await sb
+      .from("shop_stock_transfers")
+      .update({ status: "COMPLETED", received_by: data.receivedBy, received_at: now, updated_at: now, hlc_timestamp: now, last_modified_device_id: "WEB" })
+      .eq("id", data.id)
+      .eq("shop_sync_key", key);
+    if (error) throw new Error("Could not confirm the transfer. Please try again.");
     return { ok: true };
   });

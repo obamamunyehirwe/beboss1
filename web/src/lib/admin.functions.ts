@@ -263,7 +263,7 @@ export const checkAppVersion = createServerFn({ method: "GET" })
     
     return {
       currentVersion: config?.apk_version || "2.1.0",
-      minimumVersion: config?.min_app_version || "2.0.0",
+      minimumVersion: config?.min_app_version || "2.1.0",
       downloadUrl: config?.apk_download_url || ""
     };
   });
@@ -397,7 +397,7 @@ export const updateShopControls = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { shopId: string; killSwitch: boolean; minAppVersion: string; notes: string; adminWhatsapp: string }) =>
     z
-      .object({ shopId, killSwitch: z.boolean(), minAppVersion: z.string().trim().regex(/^\d+(\.\d+){0,3}$/, "Version like 2.0.0").max(20), notes: z.string().max(2000), adminWhatsapp: z.string().max(30) })
+      .object({ shopId, killSwitch: z.boolean(), minAppVersion: z.string().trim().regex(/^\d+(\.\d+){0,3}$/, "Version like 2.1.0").max(20), notes: z.string().max(2000), adminWhatsapp: z.string().max(30) })
       .parse(d),
   )
   .handler(async ({ data, context }) => {

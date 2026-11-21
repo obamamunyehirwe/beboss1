@@ -45,7 +45,7 @@ function Home() {
   const { data } = useSuspenseQuery(publicSiteQuery);
   const { data: statsData } = useQuery({ ...platformStatsQuery, suspense: false } as any);
   const stats = (statsData as any)?.stats;
-  const version = data.current?.version_name ?? data.config?.apk_version ?? "2.0.0";
+  const version = data.current?.version_name ?? data.config?.apk_version ?? "2.1.0";
   const [monthlyRev, setMonthlyRev] = useState(6000000);
 
   const illustrativeAmounts = [

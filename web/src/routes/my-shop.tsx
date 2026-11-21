@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, Loader2, Search, Send, Smartphone } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Plus, Search, Send, Smartphone, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
-import { lookupMyShop, submitPaymentProof } from "@/lib/public.functions";
+import { confirmMyShopStockTransfer, deleteMyShopBranch, lookupMyShop, submitPaymentProof, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
 import { publicSiteQuery } from "@/lib/queries";
 import { AnnouncementCard } from "@/components/site/AnnouncementBanner";
 import { buildAirtelUssd, buildMtnUssd, calculateSubscriptionFee, effectiveShopStatus } from "@/lib/pricing";
@@ -186,6 +186,9 @@ function LookupPanel() {
               <TabsTrigger value="staff">
                 Staff Directory ({result.records.staff.length})
               </TabsTrigger>
+              <TabsTrigger value="branches">
+                <Plus className="size-4" /> Branches & Transfers
+              </TabsTrigger>
             </TabsList>
 
             {/* Products Tab */}
@@ -337,6 +340,22 @@ function LookupPanel() {
                 </table>
               </div>
             </TabsContent>
+
+            {/* Branches & Transfers Tab */}
+            <TabsContent value="branches" className="pt-3">
+              <BranchManager
+                username={username}
+                phone={phone}
+                result={result}
+                onRefresh={async () => {
+                  try {
+                    setResult(await lookup({ data: { username, phone } }));
+                  } catch {
+                    /* silent refresh */
+                  }
+                }}
+              />
+            </TabsContent>
           </Tabs>
         </div>
       )}
@@ -447,6 +466,430 @@ function LookupPanel() {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function BranchManager({
+  username,
+  phone,
+  result,
+  onRefresh,
+}: {
+  username: string;
+  phone: string;
+  result: Lookup;
+  onRefresh: () => void;
+}) {
+  const upsertBranch = useServerFn(upsertMyShopBranch);
+  const deleteBranch = useServerFn(deleteMyShopBranch);
+  const upsertTransfer = useServerFn(upsertMyShopStockTransfer);
+  const confirmTransfer = useServerFn(confirmMyShopStockTransfer);
+
+  const [busy, setBusy] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+
+  type BranchRow = (typeof result.branches)[number];
+  const branches: BranchRow[] = result.branches ?? [];
+  const transfers = result.stockTransfers ?? [];
+
+  const emptyBranch = {
+    id: "",
+    name: "",
+    code: "",
+    address: "",
+    phoneBranch: "",
+    managerName: "",
+    operationalStatus: "OPEN" as "OPEN" | "CLOSED" | "SUSPENDED",
+    colorHex: "#FF6B1A",
+    dailySalesTargetRwf: 0,
+    monthlyTargetRwf: 0,
+    openingCashFloat: 0,
+    email: "",
+    notes: "",
+    isMainBranch: false,
+  };
+  const [form, setForm] = useState(emptyBranch);
+
+  const resetForm = () => {
+    setEditing(null);
+    setForm(emptyBranch);
+  };
+
+  const startEdit = (b: BranchRow) => {
+    setEditing(b.id);
+    setForm({
+      id: b.id,
+      name: b.name,
+      code: b.code,
+      address: b.address,
+      phoneBranch: b.phone,
+      managerName: b.manager_name,
+      operationalStatus: (b.operational_status as "OPEN" | "CLOSED" | "SUSPENDED") ?? "OPEN",
+      colorHex: b.color_hex,
+      dailySalesTargetRwf: b.daily_sales_target_rwf,
+      monthlyTargetRwf: b.monthly_target_rwf,
+      openingCashFloat: b.opening_cash_float,
+      email: b.email,
+      notes: b.notes,
+      isMainBranch: b.is_main_branch,
+    });
+  };
+
+  const saveBranch = async () => {
+    if (!form.name.trim()) {
+      toast.error("Branch name is required.");
+      return;
+    }
+    setBusy("branch");
+    try {
+      await upsertBranch({
+        data: {
+          username,
+          phone,
+          id: editing ?? crypto.randomUUID(),
+          name: form.name,
+          code: form.code,
+          address: form.address,
+          phoneBranch: form.phoneBranch,
+          managerName: form.managerName,
+          isMainBranch: form.isMainBranch,
+          operationalStatus: form.operationalStatus,
+          colorHex: form.colorHex,
+          dailySalesTargetRwf: form.dailySalesTargetRwf,
+          monthlyTargetRwf: form.monthlyTargetRwf,
+          openingCashFloat: form.openingCashFloat,
+          email: form.email,
+          notes: form.notes,
+        },
+      });
+      toast.success(editing ? "Branch updated. It will sync to your phone." : "Branch created. It will sync to your phone.");
+      resetForm();
+      onRefresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save branch.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const removeBranch = async (id: string) => {
+    setBusy(id);
+    try {
+      await deleteBranch({ data: { username, phone, id } });
+      toast.success("Branch removed. It will sync to your phone.");
+      onRefresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delete branch.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const [tf, setTf] = useState({
+    productName: "",
+    fromBranchId: "",
+    toBranchId: "",
+    quantity: 1,
+    unit: "pcs",
+    notes: "",
+  });
+
+  const saveTransfer = async () => {
+    if (!tf.productName.trim() || !tf.fromBranchId || !tf.toBranchId || tf.quantity <= 0) {
+      toast.error("Product, both branches and a positive quantity are required.");
+      return;
+    }
+    if (tf.fromBranchId === tf.toBranchId) {
+      toast.error("Source and destination branches must differ.");
+      return;
+    }
+    setBusy("transfer");
+    try {
+      const fromName = branches.find((b) => b.id === tf.fromBranchId)?.name ?? "";
+      const toName = branches.find((b) => b.id === tf.toBranchId)?.name ?? "";
+      await upsertTransfer({
+        data: {
+          username,
+          phone,
+          id: crypto.randomUUID(),
+          transferNumber: `TRF-${Date.now().toString().slice(-8)}`,
+          productName: tf.productName,
+          fromBranchId: tf.fromBranchId,
+          fromBranchName: fromName,
+          toBranchId: tf.toBranchId,
+          toBranchName: toName,
+          quantity: tf.quantity,
+          unit: tf.unit,
+          notes: tf.notes,
+          transferredBy: "Shop Owner",
+        },
+      });
+      toast.success("Stock transfer recorded. It will sync to your phone.");
+      setTf({ productName: "", fromBranchId: "", toBranchId: "", quantity: 1, unit: "pcs", notes: "" });
+      onRefresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save transfer.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const confirmRx = async (id: string) => {
+    setBusy(id);
+    try {
+      await confirmTransfer({ data: { username, phone, id, receivedBy: "Shop Owner" } });
+      toast.success("Transfer confirmed.");
+      onRefresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not confirm transfer.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const branchesForSelect = branches.length > 0 ? branches : result.records?.branches.map((b) => ({
+    id: b.id,
+    name: b.name,
+  })) ?? [];
+  const branchOptions = branchesForSelect.map((b) => ({ id: b.id, name: b.name }));
+
+  return (
+    <div className="space-y-6">
+      {/* Branches list */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="font-semibold">Branches ({branches.length})</h4>
+          {editing ? (
+            <Button variant="ghost" size="sm" onClick={resetForm}>
+              Cancel edit
+            </Button>
+          ) : null}
+        </div>
+        {branches.length === 0 ? (
+          <p className="rounded-2xl border border-border bg-surface/50 p-4 text-sm text-muted-foreground">
+            No branches yet. Create your first branch below; it will sync to your phone automatically.
+          </p>
+        ) : (
+          <div className="max-h-[320px] overflow-auto rounded-2xl border border-border">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-border bg-surface uppercase text-muted-foreground">
+                <tr>
+                  <th className="p-3">Name</th>
+                  <th className="p-3">Code</th>
+                  <th className="p-3">Manager</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Stock Value</th>
+                  <th className="p-3">Products</th>
+                  <th className="p-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {branches.map((b) => (
+                  <tr key={b.id} className="hover:bg-surface/50">
+                    <td className="p-3 font-medium">
+                      {b.name}
+                      {b.is_main_branch ? <Badge variant="info" className="ml-2 text-[10px]">HQ</Badge> : null}
+                    </td>
+                    <td className="p-3 font-mono text-muted-foreground">{b.code || "—"}</td>
+                    <td className="p-3 text-muted-foreground">{b.manager_name || "—"}</td>
+                    <td className="p-3">
+                      <Badge variant={b.operational_status === "OPEN" ? "success" : b.operational_status === "SUSPENDED" ? "danger" : "muted"} className="text-[10px]">
+                        {b.operational_status}
+                      </Badge>
+                    </td>
+                    <td className="p-3 font-mono">{formatRwf(b.stock_value_rwf)}</td>
+                    <td className="p-3 font-mono">{b.product_count}</td>
+                    <td className="p-3">
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => startEdit(b)}>
+                          Edit
+                        </Button>
+                        <Button variant="ghost" size="sm" disabled={busy === b.id} onClick={() => removeBranch(b.id)}>
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Branch form */}
+      <div className="grid gap-4 rounded-2xl border border-border bg-surface-2 p-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label>Branch name</Label>
+          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Kimironko Branch" />
+        </div>
+        <div className="space-y-2">
+          <Label>Code</Label>
+          <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="BR-02" />
+        </div>
+        <div className="space-y-2">
+          <Label>Phone</Label>
+          <Input value={form.phoneBranch} onChange={(e) => setForm({ ...form, phoneBranch: e.target.value })} placeholder="0788 000 000" />
+        </div>
+        <div className="space-y-2">
+          <Label>Manager</Label>
+          <Input value={form.managerName} onChange={(e) => setForm({ ...form, managerName: e.target.value })} placeholder="Manager name" />
+        </div>
+        <div className="space-y-2 sm:col-span-2">
+          <Label>Address</Label>
+          <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Kigali, Rwanda" />
+        </div>
+        <div className="space-y-2">
+          <Label>Operational status</Label>
+          <Select value={form.operationalStatus} onValueChange={(v) => setForm({ ...form, operationalStatus: v as typeof form.operationalStatus })}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="OPEN">OPEN</SelectItem>
+              <SelectItem value="CLOSED">CLOSED</SelectItem>
+              <SelectItem value="SUSPENDED">SUSPENDED</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Daily sales target (RWF)</Label>
+          <Input type="number" min={0} value={form.dailySalesTargetRwf} onChange={(e) => setForm({ ...form, dailySalesTargetRwf: Number(e.target.value) || 0 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Monthly target (RWF)</Label>
+          <Input type="number" min={0} value={form.monthlyTargetRwf} onChange={(e) => setForm({ ...form, monthlyTargetRwf: Number(e.target.value) || 0 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Opening cash float (RWF)</Label>
+          <Input type="number" min={0} value={form.openingCashFloat} onChange={(e) => setForm({ ...form, openingCashFloat: Number(e.target.value) || 0 })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Email</Label>
+          <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="branch@shop.rw" />
+        </div>
+        <div className="space-y-2 sm:col-span-2">
+          <Label>Notes</Label>
+          <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes" />
+        </div>
+        <div className="flex items-center gap-2 sm:col-span-2">
+          <input
+            id="is-main"
+            type="checkbox"
+            checked={form.isMainBranch}
+            onChange={(e) => setForm({ ...form, isMainBranch: e.target.checked })}
+            className="size-4 accent-primary"
+          />
+          <Label htmlFor="is-main">This is the main/head office branch</Label>
+        </div>
+        <div className="sm:col-span-2">
+          <Button variant="hero" disabled={busy === "branch"} onClick={saveBranch}>
+            {busy === "branch" ? <Loader2 className="animate-spin" /> : <Plus />}
+            {editing ? "Save changes" : "Create branch"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Stock transfers */}
+      <div className="space-y-3">
+        <h4 className="font-semibold">Stock Transfers ({transfers.length})</h4>
+        <div className="grid gap-4 rounded-2xl border border-border bg-surface-2 p-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Product</Label>
+            <Input value={tf.productName} onChange={(e) => setTf({ ...tf, productName: e.target.value })} placeholder="Product name" />
+          </div>
+          <div className="space-y-2">
+            <Label>Quantity</Label>
+            <Input type="number" min={0} value={tf.quantity} onChange={(e) => setTf({ ...tf, quantity: Number(e.target.value) || 0 })} />
+          </div>
+          <div className="space-y-2">
+            <Label>From branch</Label>
+            <Select value={tf.fromBranchId} onValueChange={(v) => setTf({ ...tf, fromBranchId: v })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select source" />
+              </SelectTrigger>
+              <SelectContent>
+                {branchOptions.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>To branch</Label>
+            <Select value={tf.toBranchId} onValueChange={(v) => setTf({ ...tf, toBranchId: v })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select destination" />
+              </SelectTrigger>
+              <SelectContent>
+                {branchOptions.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Notes</Label>
+            <Input value={tf.notes} onChange={(e) => setTf({ ...tf, notes: e.target.value })} placeholder="Optional" />
+          </div>
+          <div className="sm:col-span-2">
+            <Button variant="hero" disabled={busy === "transfer"} onClick={saveTransfer}>
+              {busy === "transfer" ? <Loader2 className="animate-spin" /> : <Plus />}
+              Record transfer
+            </Button>
+          </div>
+        </div>
+
+        {transfers.length > 0 ? (
+          <div className="max-h-[320px] overflow-auto rounded-2xl border border-border">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-border bg-surface uppercase text-muted-foreground">
+                <tr>
+                  <th className="p-3">Number</th>
+                  <th className="p-3">Product</th>
+                  <th className="p-3">From</th>
+                  <th className="p-3">To</th>
+                  <th className="p-3">Qty</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {transfers.map((t) => (
+                  <tr key={t.id} className="hover:bg-surface/50">
+                    <td className="p-3 font-mono">{t.transfer_number}</td>
+                    <td className="p-3 font-medium">{t.product_name}</td>
+                    <td className="p-3 text-muted-foreground">{t.from_branch_name}</td>
+                    <td className="p-3 text-muted-foreground">{t.to_branch_name}</td>
+                    <td className="p-3 font-mono">{t.quantity} {t.unit}</td>
+                    <td className="p-3">
+                      <Badge variant={t.status === "COMPLETED" ? "success" : "warning"} className="text-[10px]">
+                        {t.status}
+                      </Badge>
+                    </td>
+                    <td className="p-3 text-right">
+                      {t.status !== "COMPLETED" ? (
+                        <Button variant="ghost" size="sm" disabled={busy === t.id} onClick={() => confirmRx(t.id)}>
+                          <Check /> Confirm
+                        </Button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="rounded-2xl border border-border bg-surface/50 p-4 text-sm text-muted-foreground">
+            No stock transfers yet. Record one above; it will sync to your phone automatically.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
