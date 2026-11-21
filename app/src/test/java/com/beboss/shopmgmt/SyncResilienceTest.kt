@@ -4,7 +4,11 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.beboss.shopmgmt.data.db.AppDatabase
+import com.beboss.shopmgmt.data.model.AnalyticsPeriod
 import com.beboss.shopmgmt.data.model.Product
+import com.beboss.shopmgmt.data.model.Sale
+import com.beboss.shopmgmt.data.model.SaleItem
+import com.beboss.shopmgmt.domain.AnalyticsEngine
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.data.model.SyncQueueItem
 import com.beboss.shopmgmt.data.repository.BeBossRepository
@@ -28,6 +32,47 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class SyncResilienceTest {
+
+    @Test
+    fun `analytics refreshes after each sale and includes sold item quantities`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+
+        try {
+            val analytics = AnalyticsEngine(db.saleDao())
+            val now = System.currentTimeMillis()
+
+            db.saleDao().insertSale(
+                Sale(id = "analytics-sale-1", saleDate = now, totalAmount = 100.0, totalCost = 60.0, totalProfit = 40.0)
+            )
+            db.saleDao().insertSaleItems(
+                listOf(SaleItem(id = "analytics-item-1", saleId = "analytics-sale-1", productId = "p1", productName = "Milk", quantitySold = 2.0, subtotal = 100.0, profit = 40.0))
+            )
+
+            val first = analytics.getProfitLossForPeriod(AnalyticsPeriod.ALL_TIME).first()
+            assertEquals(100.0, first.totalRevenue, 0.001)
+            assertEquals(2.0, first.totalItemsSold, 0.001)
+
+            val secondSaleAt = System.currentTimeMillis() + 1L
+            db.saleDao().insertSale(
+                Sale(id = "analytics-sale-2", saleDate = secondSaleAt, totalAmount = 200.0, totalCost = 120.0, totalProfit = 80.0)
+            )
+            db.saleDao().insertSaleItems(
+                listOf(SaleItem(id = "analytics-item-2", saleId = "analytics-sale-2", productId = "p2", productName = "Sugar", quantitySold = 3.0, subtotal = 200.0, profit = 80.0))
+            )
+
+            val updated = analytics.getProfitLossForPeriod(AnalyticsPeriod.ALL_TIME).first()
+            assertEquals(300.0, updated.totalRevenue, 0.001)
+            assertEquals(120.0, updated.totalCost, 0.001)
+            assertEquals(120.0, updated.netProfit, 0.001)
+            assertEquals(2, updated.totalSalesCount)
+            assertEquals(5.0, updated.totalItemsSold, 0.001)
+        } finally {
+            db.close()
+        }
+    }
 
     @Test
     fun `BBSHARE1 token replay protection accepts first use and blocks replay`() {
