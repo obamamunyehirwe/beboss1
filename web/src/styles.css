@@ -2467,3 +2467,30 @@ a:hover .brand-mark {
 .dark .site-search-result:hover,.dark .site-search-result:focus-visible { border-color:#594735;background:#302a23; }
 .dark .site-search-result small { color:#aab3a4; }
 .dark .site-search-topline button:hover { background:#30372f;color:#ffb27f; }
+
+
+/* Header sizing and responsive text overrides keep every control in its lane. */
+.site-header-shell > .site-utility-bar,
+.site-header-shell > .site-header-main {
+  width:100%;
+  max-width:none;
+  margin-inline:0;
+  padding-inline:0;
+}
+.site-header-shell .site-mobile-link { white-space:normal; }
+.site-header-shell .site-nav-trigger-active {
+  border-color:#edcfb7;
+  background:#fff4ea;
+  color:#a64216;
+}
+.site-header-shell .site-mega-link-active {
+  border-color:#efdfce!important;
+  background:#fff5eb!important;
+}
+.site-header-shell .site-mega-link-active .site-mega-icon { background:#f9e7d8; }
+@media (max-width:620px) {
+  .site-public-main { padding-top:72px!important; }
+  .site-header-shell > .site-header-main { min-height:72px; }
+}
+.dark .site-header-shell .site-nav-trigger-active { border-color:#70513b;background:#302b24;color:#ffb27f; }
+.dark .site-header-shell .site-mega-link-active { border-color:#594735!important;background:#302a23!important; }
