@@ -123,11 +123,11 @@ function AuthPage() {
   };
 
   return (
-    <div className="relative grid min-h-screen place-items-center px-4 py-10">
-      <div className="absolute inset-0 bg-cover bg-center" style={{backgroundImage:'linear-gradient(100deg,#102017bb,#181b16aa),url(/hero-shop.jpg)'}} aria-hidden="true"/>
-      <div className="relative w-full max-w-md">
-        <div className="rounded-2xl border border-border bg-card p-7 shadow-soft">
-          <div className="mb-6 flex items-center justify-between border-b border-border pb-5"><Logo suffix={t('navAdmin')} /><div className="flex items-center"><LanguageSwitcher/><ThemeToggle/></div></div>
+    <div className="auth-page-shell relative grid min-h-screen place-items-center px-4 py-10">
+      <div className="auth-page-backdrop absolute inset-0 bg-cover bg-center" style={{backgroundImage:'linear-gradient(100deg,#102017bb,#181b16aa),url(/hero-shop.jpg)'}} aria-hidden="true"/>
+      <div className="auth-page-inner relative w-full max-w-md">
+        <div className="auth-page-card rounded-2xl border border-border bg-card p-7 shadow-soft">
+          <div className="auth-page-brandrow mb-6 flex items-center justify-between border-b border-border pb-5"><Logo suffix={t('navAdmin')} /><div className="flex items-center"><LanguageSwitcher/><ThemeToggle/></div></div>
           {!liveConfigured && <p role="status" className="mb-5 rounded-lg bg-muted p-3 text-sm">{retailCopy[lang].unavailable}</p>}
           <fieldset disabled={!liveConfigured} className="min-w-0 disabled:opacity-65">
           <div className="mb-5 flex items-center gap-2 text-sm text-muted-foreground">
