@@ -242,7 +242,7 @@ export function PhoneMockup() {
         <div className="absolute -right-[4px] top-28 h-12 w-[4px] rounded-r-md bg-[#3a3e47] border-y border-r border-white/20 shadow-xs" />
 
         {/* Outer Bezel Rim */}
-        <div className="market-phone-screen relative flex flex-col justify-between overflow-hidden rounded-[2.2rem] bg-background text-foreground border border-black/60 shadow-inner h-[660px] max-h-[660px]">
+        <div className="market-phone-screen relative flex min-h-0 flex-col justify-between overflow-hidden rounded-[2.2rem] bg-background text-foreground border border-black/60 shadow-inner">
           
           {/* ================= TOP STATUS BAR & DYNAMIC ISLAND ================= */}
           <div className="relative z-30 bg-background/95 pt-2 px-4 pb-1.5 backdrop-blur-md border-b border-border/40">
