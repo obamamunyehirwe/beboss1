@@ -9,7 +9,7 @@ export function SiteLayout({ children }: { children: ReactNode }) {
   return (
     <div className="site-public-shell flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="site-public-main flex-1 pt-[76px]">
+      <main className="site-public-main flex-1 pt-[108px]">
         {liveConfigured && <AnnouncementBanner />}
         {children}
       </main>
