@@ -14,6 +14,7 @@ import { ModernHero, ToolkitHeader } from "@/components/site/ModernHero";
 import { useI18n } from "@/lib/i18n";
 import { platformStatsQuery } from "@/lib/queries";
 import { liveConfigured } from "@/lib/live-config";
+import { retailCopy } from "@/lib/i18n-dict";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -35,7 +36,8 @@ const tools = [
   { icon: Wallet, title: "f3T", desc: "f3D" },
 ] as const;
 function Home() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const c = retailCopy[lang];
   const { data } = useQuery({ ...platformStatsQuery, enabled: liveConfigured });
   return (
     <SiteLayout>
@@ -58,7 +60,14 @@ function Home() {
         </div>
       </section>
       <section className="retail-section workflow-section">
-        <img src="/retail-receipt.png" loading="lazy" alt="" />
+        <div className="workflow-visual">
+          <img src="/retail-checkout.webp" loading="lazy" alt={c.workflowAlt} />
+          <div className="workflow-visual-badge">
+            <span><Activity size={17} /></span>
+            <div><strong>{c.visualBadgeTitle}</strong><small>{c.visualBadgeSub}</small></div>
+          </div>
+          <div className="workflow-visual-glow" aria-hidden="true" />
+        </div>
         <div>
           <div className="section-kicker">
             <Network size={16} />
@@ -74,29 +83,29 @@ function Home() {
       <section className="live-platform-section" aria-labelledby="live-platform-title">
         <div className="live-platform-inner">
           <div className="live-platform-heading">
-            <div className="section-kicker"><Activity size={16} /> LIVE PLATFORM DATA</div>
-            <h2 id="live-platform-title">Real activity from the BeBoss cloud</h2>
-            <p>Aggregate operational metrics queried directly from Supabase. No sample transactions or invented device counts.</p>
+            <div className="section-kicker"><Activity size={16} /> {c.platformKicker}</div>
+            <h2 id="live-platform-title">{c.platformTitle}</h2>
+            <p>{c.platformIntro}</p>
           </div>
           {data?.ok && data.stats ? (
             <>
               <div className="live-platform-grid">
-                <article><span>Active shops</span><strong>{data.stats.shops_active.toLocaleString()}</strong><small>Current subscriptions and trials</small></article>
-                <article><span>Registered shops</span><strong>{data.stats.shops_total.toLocaleString()}</strong><small>Accounts in the platform</small></article>
-                <article><span>Branches configured</span><strong>{data.stats.branches_total.toLocaleString()}</strong><small>Reported by shop accounts</small></article>
-                <article><span>Devices synced · 24h</span><strong>{data.stats.devices_synced_24h.toLocaleString()}</strong><small>Devices with a recent sync timestamp</small></article>
+                <article><span>{c.activeShops}</span><strong>{data.stats.shops_active.toLocaleString()}</strong><small>{c.activeShopsHelp}</small></article>
+                <article><span>{c.registeredShops}</span><strong>{data.stats.shops_total.toLocaleString()}</strong><small>{c.registeredShopsHelp}</small></article>
+                <article><span>{c.branchesConfigured}</span><strong>{data.stats.branches_total.toLocaleString()}</strong><small>{c.branchesConfiguredHelp}</small></article>
+                <article><span>{c.devicesSynced}</span><strong>{data.stats.devices_synced_24h.toLocaleString()}</strong><small>{c.devicesSyncedHelp}</small></article>
               </div>
               <div className="live-platform-foot">
-                <span><i /> Supabase connection · live query</span>
-                <span>Last platform event: {data.stats.last_sync_at ? new Date(data.stats.last_sync_at).toLocaleString() : "No sync events recorded"}</span>
-                <Link to="/status">View platform status <ArrowUpRight size={15} /></Link>
+                <span><i /> {c.liveConnection}</span>
+                <span>{c.lastPlatformEvent}: {data.stats.last_sync_at ? new Date(data.stats.last_sync_at).toLocaleString() : c.noSyncEvents}</span>
+                <Link to="/status">{c.viewStatus} <ArrowUpRight size={15} /></Link>
               </div>
             </>
           ) : (
             <div className="live-platform-unavailable" role="status">
-              <span>Live metrics are temporarily unavailable.</span>
-              <span>The website will not substitute mock values for cloud data.</span>
-              <Link to="/status">Check service status <ArrowUpRight size={15} /></Link>
+              <span>{c.unavailableTitle}</span>
+              <span>{c.unavailableHelp}</span>
+              <Link to="/status">{c.checkStatus} <ArrowUpRight size={15} /></Link>
             </div>
           )}
         </div>
@@ -104,7 +113,7 @@ function Home() {
       <section className="retail-section">
         <div className="install-panel">
           <div>
-            <div className="section-kicker">ANDROID POS</div>
+            <div className="section-kicker">{c.androidPos}</div>
             <h2>{t("howTitle")}</h2>
           </div>
           <Link className="action-primary" to="/download">
