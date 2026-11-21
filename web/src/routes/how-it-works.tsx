@@ -15,6 +15,7 @@ export const Route = createFileRoute("/how-it-works")({
       { property: "og:title", content: "How BeBoss works — offline-first POS for African shops" },
       { property: "og:description", content: "Try the offline simulator and see how sales, branches, payments and unlock codes flow from the counter to the cloud." },
       { property: "og:type", content: "website" },
+      { property: "og:image", content: "/Friendly%20Modern%20Store%20Checkout.png" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
