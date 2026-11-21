@@ -49,7 +49,7 @@ async function loadBb3PrivateKeyPem(): Promise<string> {
 
 async function generateBB3UnlockCode(input: Bb3Input): Promise<string> {
   const username = input.username.trim();
-  const normalizedPhone = input.phone.trim().replace(/\\D/g, "").slice(-9);
+  const normalizedPhone = input.phone.trim().replace(/\D/g, "").slice(-9);
   const tier = input.tier.trim().toUpperCase();
   const days = Math.floor(input.days);
   if (!username || normalizedPhone.length !== 9) throw new Error("A shop username and registered phone are required.");
