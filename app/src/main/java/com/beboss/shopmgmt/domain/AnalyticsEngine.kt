@@ -22,10 +22,10 @@ class AnalyticsEngine(
     private val saleDao: SaleDao
 ) {
     fun getProfitLossForPeriod(period: AnalyticsPeriod): Flow<ProfitLossSummary> {
-        val (startTime, endTime) = period.getRange()
+        val (startTime, _) = period.getRange()
         return combine(
-            saleDao.getSalesByDateRange(startTime, endTime),
-            saleDao.getItemsSoldBetween(startTime, endTime)
+            saleDao.getSalesByDateRange(startTime, Long.MAX_VALUE),
+            saleDao.getItemsSoldBetween(startTime, Long.MAX_VALUE)
         ) { sales, itemsCount ->
             val totalRev = sales.sumOf { it.totalAmount }
             val totalProfit = sales.sumOf { it.totalProfit }
@@ -49,8 +49,8 @@ class AnalyticsEngine(
     }
 
     fun getDailyAnalyticsPoints(period: AnalyticsPeriod): Flow<List<DailyAnalyticsPoint>> {
-        val (startTime, endTime) = period.getRange()
-        return saleDao.getSalesByDateRange(startTime, endTime).map { sales ->
+        val (startTime, _) = period.getRange()
+        return saleDao.getSalesByDateRange(startTime, Long.MAX_VALUE).map { sales ->
             val dateFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
             val calendar = Calendar.getInstance()
             calendar.timeInMillis = startTime
@@ -59,7 +59,8 @@ class AnalyticsEngine(
             calendar.set(Calendar.SECOND, 0)
             calendar.set(Calendar.MILLISECOND, 0)
 
-            val daysCount = (((endTime - calendar.timeInMillis) / (24 * 60 * 60 * 1000L)) + 1).toInt().coerceIn(1, 31)
+            val currentEnd = System.currentTimeMillis()
+            val daysCount = (((currentEnd - calendar.timeInMillis) / (24 * 60 * 60 * 1000L)) + 1).toInt().coerceIn(1, 31)
             val result = mutableListOf<DailyAnalyticsPoint>()
 
             for (i in 0 until daysCount) {
@@ -90,8 +91,8 @@ class AnalyticsEngine(
     }
 
     fun getTopProducts(period: AnalyticsPeriod, limit: Int = 10): Flow<List<TopProductReport>> {
-        val (startTime, endTime) = period.getRange()
-        return saleDao.getTopProductsByProfit(startTime, endTime, limit).map { rawList ->
+        val (startTime, _) = period.getRange()
+        return saleDao.getTopProductsByProfit(startTime, Long.MAX_VALUE, limit).map { rawList ->
             rawList.map {
                 TopProductReport(
                     productId = it.productId,
@@ -105,8 +106,8 @@ class AnalyticsEngine(
     }
 
     fun getCategorySalesBreakdown(period: AnalyticsPeriod): Flow<List<CategorySalesShare>> {
-        val (startTime, endTime) = period.getRange()
-        return saleDao.getCategorySalesBreakdown(startTime, endTime).map { rawList ->
+        val (startTime, _) = period.getRange()
+        return saleDao.getCategorySalesBreakdown(startTime, Long.MAX_VALUE).map { rawList ->
             val totalAllCategories = rawList.sumOf { it.totalRevenue }
             rawList.map {
                 CategorySalesShare(
