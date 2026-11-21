@@ -13,7 +13,13 @@ const short = (v: number) => (Math.abs(v) >= 1_000_000 ? `${(v / 1_000_000).toFi
 
 export function RetailInsights({ shopId }: { shopId: string }) {
   const fetchInsights = useServerFn(getShopInsights);
-  const q = useQuery({ queryKey: ["admin", "insights", shopId], queryFn: () => fetchInsights({ data: { shopId } }), staleTime: 60_000 });
+  const q = useQuery({
+    queryKey: ["admin", "insights", shopId],
+    queryFn: () => fetchInsights({ data: { shopId } }),
+    staleTime: 0,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+  });
 
   if (q.isLoading) return <LoadingBlock />;
   if (q.error) return <EmptyState title="Couldn't load insights" sub={q.error instanceof Error ? q.error.message : "Try again"} />;
