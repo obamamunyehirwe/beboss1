@@ -155,7 +155,7 @@ Deno.serve(async (request: Request) => {
       throw new Error("First-admin setup requires exactly one approved email address.");
     }
     const email = String(allowlist[0]?.email ?? "").trim().toLowerCase();
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw new Error("The approved administrator email is invalid.");
     }
 
