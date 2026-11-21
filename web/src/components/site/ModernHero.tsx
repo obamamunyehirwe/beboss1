@@ -26,7 +26,7 @@ export function ModernHero() {
           <div className="market-copy">
             <div className="market-label">
               <span />
-              BeBoss · Retail operations platform
+              {c.kicker}
             </div>
             <h1 id="market-title">
               {c.first}
@@ -46,12 +46,12 @@ export function ModernHero() {
             </div>
             <div className="market-trial">
               <Check />
-              Built for real shops. Works offline. Syncs when connected.
+              {c.trial}
             </div>
             <div className="market-trust">
-              <span><WifiOff /> Offline-first Android POS</span>
-              <span><Store /> Multi-branch operations</span>
-              <span><Languages /> English · Kinyarwanda · Français · Kiswahili</span>
+              <span><WifiOff /> {c.trustOffline}</span>
+              <span><Store /> {c.trustBranches}</span>
+              <span><Languages /> {c.trustLanguages}</span>
             </div>
           </div>
 
@@ -62,10 +62,10 @@ export function ModernHero() {
             </div>
             <div className="market-caption">
               <div>
-                <small>PRODUCT PREVIEW</small>
-                <span>Explore the BeBoss Android experience</span>
+                <small>{c.previewLabel}</small>
+                <span>{c.previewText}</span>
               </div>
-              <span className="market-preview-pill">Interactive preview</span>
+              <span className="market-preview-pill">{c.interactiveLabel}</span>
             </div>
           </div>
         </div>
