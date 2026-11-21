@@ -41,7 +41,7 @@ BeBoss adapts during its 3-step onboarding flow for 8 retail & service verticals
 
 ### Go-To-Market & Conversion Funnel (How Marketing Works in `/web`)
 The web app is engineered as an end-to-end acquisition and self-service conversion funnel rather than a static brochure:
-1. **Interactive Product Simulator (`/`, `PhoneMockup.tsx`)** — Visitors test POS checkout, receipt generation, customer credit reminders, 14-day stock estimates, and sync previews directly in the browser hero. Every screen clearly labels sample figures as non-production demo data.
+1. **Interactive Capability Showcase (`/`, `ModernHero.tsx`)** — The phone-free homepage hero uses the supplied BeBoss retail artwork and lets visitors explore offline sales, multi-branch operations, four-language support, and Android compatibility through interactive capability tabs.
 2. **Real Cryptographic Receipt Verifier (`/features`, `ReceiptVerifier.tsx`)** — Merchants and customers can inspect and verify receipt formats directly on the marketing site.
 3. **Self-Serve Price & USSD Dialer Calculator (`/pricing`, `PricingCalculator.tsx`)** — Interactive steppers for branches, staff seats, extra POS terminals, and billing cycles compute the exact FRw total and output copy-ready **MTN MoMo** and **Airtel Money** USSD strings immediately.
 4. **Honest Outcome Measurement Guide (`/pricing`)** — Instead of inflated marketing promises, the pricing page includes a **Pilot Measurement Matrix** instructing merchants to record baseline cash/MoMo mismatch, receivables collection speed, stock variance, and till reconciliation time over 4–8 weeks.
