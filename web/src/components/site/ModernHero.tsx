@@ -19,6 +19,14 @@ export function ModernHero() {
   return (
     <>
       <section className="market-hero" aria-labelledby="market-title">
+        <img
+          className="market-photo"
+          src="/hero-shop.jpg"
+          alt=""
+          aria-hidden="true"
+          loading="eager"
+          decoding="async"
+        />
         <div className="market-orbit market-orbit-one" aria-hidden="true" />
         <div className="market-orbit market-orbit-two" aria-hidden="true" />
         <div className="market-shade" aria-hidden="true" />
