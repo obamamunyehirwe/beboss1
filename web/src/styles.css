@@ -3094,3 +3094,57 @@ a:hover .brand-mark {
     min-height: 72px;
   }
 }
+
+
+/* The supplied BeBoss wordmarks keep site, footer and admin branding in sync. */
+.brand-lockup { min-width:0; text-decoration:none; }
+.brand-wordmark { display:inline-flex; width:168px; height:38px; flex:0 1 auto; align-items:center; overflow:hidden; }
+.brand-wordmark-image { display:block; width:100%; height:100%; object-fit:contain; object-position:left center; }
+.brand-wordmark-light { display:none; }
+.dark .brand-wordmark-dark { display:none; }
+.dark .brand-wordmark-light { display:block; }
+.brand-suffix { flex:0 0 auto; margin-left:1px; color:var(--muted-foreground); font-size:10px; font-weight:750; letter-spacing:.04em; }
+.site-brand-wrap .brand-wordmark { width:174px; height:40px; }
+.site-brand-wrap .brand-suffix { font-size:10px; }
+.site-mobile-panel .brand-wordmark,.site-footer .brand-wordmark { width:166px; height:38px; }
+.admin-workspace .brand-wordmark,.admin-mobile-sheet .brand-wordmark { width:154px; height:35px; }
+.admin-topbar-mobile-brand .brand-wordmark { width:122px; height:29px; }
+.admin-topbar-mobile-brand .brand-suffix { font-size:9px; }
+
+.page-hero-visual-photo-shell {
+  position:relative; width:min(100%,440px); overflow:hidden; isolation:isolate;
+  border:1px solid color-mix(in srgb,var(--foreground) 12%,var(--border));
+  border-radius:28px; background:#111b17;
+  box-shadow:0 34px 76px -42px color-mix(in srgb,var(--foreground) 48%,transparent);
+  transform:rotateY(-7deg) rotateX(2deg);
+  transition:transform 420ms cubic-bezier(.2,.7,.2,1);
+}
+.page-hero-visual:hover .page-hero-visual-photo-shell { transform:rotateY(-1deg) rotateX(0) translateY(-4px); }
+.page-hero-visual-photo { display:block; width:100%; aspect-ratio:1.45; object-fit:cover; object-position:center; opacity:.96; }
+.page-hero-visual-photo-shell::after {
+  content:""; position:absolute; inset:38% 0 0; z-index:1; pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(8,14,10,.58));
+}
+.page-hero-visual-brand {
+  position:absolute; z-index:2; left:14px; bottom:14px; display:flex; align-items:center; gap:9px;
+  border:1px solid rgba(255,255,255,.2); border-radius:15px; padding:8px 12px 8px 8px;
+  color:#fffaf3; background:rgba(11,20,14,.82); box-shadow:0 14px 32px -22px #000;
+  backdrop-filter:blur(14px);
+}
+.page-hero-visual-brand img { width:38px; height:38px; flex:0 0 auto; border-radius:10px; object-fit:contain; }
+.page-hero-visual-brand strong,.page-hero-visual-brand small { display:block; }
+.page-hero-visual-brand strong { font-size:12px; font-weight:850; letter-spacing:-.02em; }
+.page-hero-visual-brand small { margin-top:3px; color:#ffc49f; font:700 7px/1.2 var(--font-mono); letter-spacing:.08em; }
+.site-brand-wrap a > .brand-wordmark { font-size:inherit; line-height:normal; letter-spacing:normal; }
+@media (max-width:680px) {
+  .brand-wordmark { width:148px; height:34px; }
+  .site-brand-wrap .brand-wordmark { width:144px; height:33px; }
+  .site-mobile-panel .brand-wordmark { width:158px; height:36px; }
+  .admin-workspace .brand-wordmark,.admin-mobile-sheet .brand-wordmark { width:142px; height:32px; }
+  .admin-topbar-mobile-brand .brand-wordmark { width:112px; height:27px; }
+  .brand-suffix { font-size:9px; }
+  .page-hero-visual-photo-shell { transform:none; border-radius:21px; }
+  .page-hero-visual-photo { aspect-ratio:1.28; }
+  .page-hero-visual-brand { left:10px; bottom:10px; padding:7px 9px 7px 7px; }
+}
+@media (prefers-reduced-motion:reduce) { .page-hero-visual-photo-shell { transition:none; transform:none; } }

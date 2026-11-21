@@ -21,7 +21,7 @@ export function ModernHero() {
       <section className="market-hero" aria-labelledby="market-title">
         <img
           className="market-photo"
-          src="/hero-shop.jpg"
+          src="/Friendly%20Modern%20Store%20Checkout.png"
           alt=""
           aria-hidden="true"
           loading="eager"

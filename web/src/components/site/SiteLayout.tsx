@@ -58,30 +58,22 @@ export function PageHero({
 function PageHeroVisual() {
   return (
     <div className="page-hero-visual" aria-hidden="true">
-      <div className="page-hero-visual-orbit page-hero-visual-orbit-one" />
-      <div className="page-hero-visual-orbit page-hero-visual-orbit-two" />
-      <div className="page-hero-visual-shell">
-        <div className="page-hero-visual-top">
-          <span className="page-hero-brand">BB</span>
-          <div className="page-hero-window-dots"><i /><i /><i /></div>
-          <span className="page-hero-visual-status"><span /> <Activity size={12} /> </span>
-        </div>
-        <div className="page-hero-visual-heading">
-          <span />
-          <span />
-        </div>
-        <div className="page-hero-visual-grid">
-          <span><Smartphone /></span>
-          <span><Boxes /></span>
-          <span><ReceiptText /></span>
-          <span><Wifi /></span>
-        </div>
-        <div className="page-hero-visual-flow">
-          <span><Smartphone /></span>
-          <i />
-          <span><Cloud /></span>
-          <i />
-          <span><ShieldCheck /></span>
+      <div className="page-hero-visual-photo-shell">
+        <img
+          className="page-hero-visual-photo"
+          src="/Friendly%20Modern%20Store%20Checkout.png"
+          alt=""
+          loading="lazy"
+          decoding="async"
+          width={1200}
+          height={800}
+        />
+        <div className="page-hero-visual-brand">
+          <img src="/beboss-app-logo.png" alt="" width={38} height={38} loading="lazy" />
+          <span>
+            <strong>BeBoss POS</strong>
+            <small>BUSINESS · SALES · INVENTORY</small>
+          </span>
         </div>
       </div>
       <div className="page-hero-float page-hero-float-cloud"><Cloud size={19} /><span /></div>

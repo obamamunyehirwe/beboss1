@@ -30,7 +30,7 @@ export const Route = createFileRoute("/")({
         content:
           "Manage sales, inventory and customer credit on Android. BeBoss is an offline-first point of sale for independent retailers in Rwanda.",
       },
-      { property: "og:image", content: "/hero-shop.jpg" },
+      { property: "og:image", content: "/Friendly%20Modern%20Store%20Checkout.png" },
     ],
   }),
   component: Home,
@@ -66,48 +66,15 @@ function Home() {
       </section>
       <section className="retail-section workflow-section">
         <div className="workflow-visual" role="img" aria-label={c.workflowAlt}>
-          <div className="workflow-visual-art">
-            <div className="workflow-scene-orbit" />
-            <div className="workflow-terminal">
-              <div className="workflow-terminal-top">
-                <span className="workflow-terminal-mark">BB</span>
-                <span className="workflow-terminal-label">POINT OF SALE</span>
-                <span className="workflow-terminal-indicator"><i /> </span>
-              </div>
-              <div className="workflow-terminal-body">
-                <div className="workflow-terminal-title">
-                  <span />
-                  <span />
-                </div>
-                <div className="workflow-terminal-actions">
-                  <span><ReceiptText /></span>
-                  <span><PackageCheck /></span>
-                  <span><ArrowDownUp /></span>
-                </div>
-                <div className="workflow-terminal-bars">
-                  <i /><i /><i /><i /><i /><i /><i />
-                </div>
-              </div>
-              <div className="workflow-terminal-foot"><Wifi size={14} /> OFFLINE-READY WORKFLOW</div>
-            </div>
-            <div className="workflow-phone">
-              <div className="workflow-phone-speaker" />
-              <Smartphone className="workflow-phone-icon" />
-              <span />
-              <span />
-              <span />
-              <Wifi size={13} />
-            </div>
-            <div className="workflow-receipt">
-              <div />
-              <div />
-              <div />
-              <div />
-              <div />
-              <strong />
-            </div>
-            <div className="workflow-scene-chip"><span><PackageCheck size={16} /></span><i /></div>
-          </div>
+          <img
+            className="workflow-visual-image"
+            src="/Friendly%20Modern%20Store%20Checkout.png"
+            alt=""
+            loading="lazy"
+            decoding="async"
+            width={1200}
+            height={800}
+          />
           <div className="workflow-visual-badge">
             <span><Activity size={17} /></span>
             <div><strong>{c.visualBadgeTitle}</strong><small>{c.visualBadgeSub}</small></div>

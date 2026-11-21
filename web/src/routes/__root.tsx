@@ -90,7 +90,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "BeBoss POS — Offline-first multi-branch point of sale for Android" },
       { name: "description", content: "BeBoss turns any Android phone into an offline-first POS with MoMo payments, debt tracking, inventory forecasting and multi-branch sync." },
       { name: "author", content: "BeBoss" },
-      { name: "theme-color", content: "#faf9f6" },
+      { name: "theme-color", content: "#101811" },
       { property: "og:site_name", content: "BeBoss POS" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -100,7 +100,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/beboss-brand.svg", type: "image/svg+xml" },
+      { rel: "icon", href: "/beboss-app-icon.png", type: "image/png", sizes: "1024x1024" },
+      { rel: "apple-touch-icon", href: "/beboss-app-icon.png", sizes: "1024x1024" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
