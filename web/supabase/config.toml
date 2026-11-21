@@ -1,1 +1,6 @@
-project_id = "gyglqrzdvuhncjdauwhj"
+project_id = "ahlpvlhmpfiyeoercxol"
+
+# Block public self-registration. Keep the email provider enabled so existing
+# admins can sign in and master admins can send invitation links from the server.
+[auth]
+enable_signup = false

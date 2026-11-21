@@ -1,21 +1,18 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { LovableMark } from "@lovable.dev/cloud-auth-js/react";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAdminText } from '@/lib/admin-copy';
-import { ThemeToggle } from '@/components/site/ThemeToggle';
-import { LanguageSwitcher } from '@/components/site/LanguageSwitcher';
-import { liveConfigured } from '@/lib/live-config';
-import { useI18n } from '@/lib/i18n';
+import { useAdminText } from "@/lib/admin-copy";
+import { ThemeToggle } from "@/components/site/ThemeToggle";
+import { LanguageSwitcher } from "@/components/site/LanguageSwitcher";
+import { liveConfigured } from "@/lib/live-config";
+import { useI18n } from "@/lib/i18n";
 import { Logo } from "@/components/site/Logo";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 
 const searchSchema = z.object({ redirect: z.string().optional() });
 
@@ -23,10 +20,10 @@ export const Route = createFileRoute("/auth")({
   validateSearch: searchSchema,
   head: () => ({
     meta: [
-      { title: "Sign in — BeBoss Admin Center" },
-      { name: "description", content: "Secure sign-in for the BeBoss admin team." },
+      { title: "Admin sign in — BeBoss" },
+      { name: "description", content: "Secure password sign-in for approved BeBoss administrators." },
       { property: "og:title", content: "BeBoss Admin sign-in" },
-      { property: "og:description", content: "Secure sign-in for the BeBoss admin team." },
+      { property: "og:description", content: "Restricted access for the BeBoss admin team." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "robots", content: "noindex" },
@@ -35,63 +32,63 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
-function safeRedirect(r?: string) {
-  return r && r.startsWith("/") && !r.startsWith("//") ? r : "/admin";
-}
-
-function GoogleG() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-      <path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z" />
-      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z" />
-      <path fill="#FBBC05" d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z" />
-      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z" />
-    </svg>
-  );
+function safeRedirect(value?: string) {
+  return value && value.startsWith("/admin") && !value.startsWith("//") ? value : "/admin";
 }
 
 function AuthPage() {
-  const {t}=useI18n();const a=useAdminText();
+  const { t } = useI18n();
+  const a = useAdminText();
   const { redirect } = Route.useSearch();
   const target = safeRedirect(redirect);
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState("signin");
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [resetBusy, setResetBusy] = useState(false);
 
   useEffect(() => {
-    if (!liveConfigured) return;
-    const go = () => {
-      const stored = sessionStorage.getItem("beboss.postAuth");
-      sessionStorage.removeItem("beboss.postAuth");
-      router.history.push(redirect ? target : safeRedirect(stored ?? undefined));
-    };
+    if (!liveConfigured) {
+      setCheckingSession(false);
+      return;
+    }
     let active = true;
-    void supabase.auth.getSession().then(({ data, error }) => {
-      if (!active) return;
-      if (error) toast.error(error.message);
-      else if (data.session) go();
-    }).catch((error: unknown) => {
-      if (active) toast.error(error instanceof Error ? error.message : "Could not restore your BeBoss session.");
-    });
+    const restoreSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (!active) return;
+        if (error) toast.error(error.message);
+        else if (data.session) router.history.push(target);
+      } catch (error) {
+        if (active) toast.error(error instanceof Error ? error.message : "Could not restore your BeBoss session.");
+      } finally {
+        if (active) setCheckingSession(false);
+      }
+    };
+    void restoreSession();
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session) go();
+      if (event === "SIGNED_IN" && session) router.history.push(target);
     });
     return () => {
       active = false;
       data.subscription.unsubscribe();
     };
-  }, [router, target, redirect]);
+  }, [router, target]);
 
-  const signIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!liveConfigured) return;
+  const signIn = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!liveConfigured || busy || checkingSession) return;
     setBusy(true);
     try {
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      if (error) toast.error(error.message);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("Credentials accepted. Verifying your BeBoss access…");
+      router.history.push(target);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to sign in. Check your connection and try again.");
     } finally {
@@ -99,151 +96,98 @@ function AuthPage() {
     }
   };
 
-  const signUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!liveConfigured) return;
-    if (password.length < 8) {
-      toast.error("Use at least 8 characters for your password.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: { emailRedirectTo: `${window.location.origin}/admin`, data: { full_name: name.trim() } },
-      });
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-      if (data.session) {
-        toast.success("Account created. Opening BeBoss Admin…");
-      } else {
-        setMode("signin");
-        toast.success("Check your email to confirm your account, then sign in.");
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to create your account. Please try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const forgot = async () => {
-    if (!liveConfigured) return;
+    if (!liveConfigured || resetBusy) return;
     if (!email.trim()) {
-      toast.error("Enter your email first.");
+      toast.error("Enter your admin email first.");
       return;
     }
+    setResetBusy(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/reset-password` });
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
       if (error) toast.error(error.message);
-      else toast.success("Password reset link sent to your email.");
+      else toast.success("Password reset link sent. Check your inbox.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not send the password reset email.");
-    }
-  };
-
-  const oauth = async (provider: "google" | "lovable") => {
-    if (!liveConfigured) return;
-    setBusy(true);
-    try {
-      sessionStorage.setItem("beboss.postAuth", target);
-      const result = await lovable.auth.signInWithOAuth(provider, { redirect_uri: window.location.origin + "/auth" });
-      if (result.error) throw result.error;
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Sign-in could not be started.");
-      setBusy(false);
+    } finally {
+      setResetBusy(false);
     }
   };
 
   return (
-    <div className="auth-page-shell relative grid min-h-screen place-items-center px-4 py-10">
-      <div className="auth-page-backdrop absolute inset-0 bg-cover bg-center" style={{backgroundImage:'linear-gradient(100deg,#102017bb,#181b16aa),url(/hero-shop.jpg)'}} aria-hidden="true"/>
-      <div className="auth-page-inner relative w-full max-w-md">
-        <div className="auth-page-card rounded-2xl border border-border bg-card p-7 shadow-soft">
-          <div className="auth-page-brandrow mb-6 flex items-center justify-between border-b border-border pb-5"><Logo suffix={t('navAdmin')} /><div className="flex items-center"><LanguageSwitcher/><ThemeToggle/></div></div>
-          {!liveConfigured && (
-            <div role="status" className="mb-5 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
-              <p className="font-semibold text-warning">Admin sign-in is not configured in this web build.</p>
-              <p className="mt-1 text-muted-foreground">The deployment must provide SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY. Only the public publishable key belongs in the browser; the service-role key must remain server-only.</p>
+    <div className="admin-auth-shell">
+      <div className="admin-auth-atmosphere" aria-hidden="true" />
+      <header className="admin-auth-header">
+        <Logo suffix={t("navAdmin")} />
+        <div className="admin-auth-header-tools"><LanguageSwitcher /><ThemeToggle /></div>
+      </header>
+      <main className="admin-auth-layout">
+        <section className="admin-auth-story" aria-labelledby="admin-auth-story-title">
+          <div className="admin-auth-eyebrow"><span className="admin-auth-eyebrow-dot" /><ShieldCheck size={15} />RESTRICTED ADMIN WORKSPACE</div>
+          <h1 id="admin-auth-story-title">Keep every part of your retail operation <em>in control.</em></h1>
+          <p className="admin-auth-story-copy">A single secure workspace for shop operations, payment reviews, connected devices, releases and platform activity.</p>
+          <div className="admin-auth-visual">
+            <img src="/Friendly%20Modern%20Store%20Checkout.png" alt="BeBoss retail point-of-sale checkout" loading="eager" decoding="async" width={1600} height={1100} />
+            <div className="admin-auth-visual-shade" aria-hidden="true" />
+            <div className="admin-auth-visual-brand">
+              <img src="/beboss-app-icon.png" alt="" width={42} height={42} />
+              <span><strong>BeBoss POS</strong><small>BUSINESS · SALES · INVENTORY</small></span>
             </div>
-          )}
-          <fieldset disabled={!liveConfigured} className="min-w-0 disabled:opacity-65">
-          <div className="mb-5 flex items-center gap-2 text-sm text-muted-foreground">
-            <ShieldCheck className="size-4 text-success" />
-            {a("Restricted to the BeBoss admin team")}
+            <div className="admin-auth-visual-stamp"><LockKeyhole size={15} />Role-verified access</div>
           </div>
-          <div className="grid gap-2">
-            <Button type="button" variant="outline" className="h-10 w-full" onClick={() => oauth("google")}>
-              <GoogleG />
-              {a("Continue with Google")}
-            </Button>
-            <Button type="button" variant="outline" className="h-10 w-full" onClick={() => oauth("lovable")}>
-              <LovableMark className="size-[18px]" />
-              {a("Continue with Lovable")}
-            </Button>
+          <div className="admin-auth-proof">
+            <span><ShieldCheck size={15} /> Permission checked</span>
+            <span><KeyRound size={15} /> Password protected</span>
+            <span><LockKeyhole size={15} /> Secure admin session</span>
           </div>
-          <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="h-px flex-1 bg-border" />
-            {a("or with email")}
-            <span className="h-px flex-1 bg-border" />
+        </section>
+        <section className="admin-auth-form-wrap" aria-labelledby="admin-auth-form-title">
+          <div className="auth-page-card admin-auth-form-card">
+            <div className="admin-auth-form-icon"><LockKeyhole size={22} /></div>
+            <p className="admin-auth-form-kicker">BE BOSS · ADMIN ACCESS</p>
+            <h2 id="admin-auth-form-title">Welcome back</h2>
+            <p className="admin-auth-form-intro">Sign in with the email and password assigned to your BeBoss admin account.</p>
+            {!liveConfigured ? (
+              <div role="status" className="admin-auth-config-warning">
+                <strong>Admin sign-in is not configured in this deployment.</strong>
+                <span>Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in the web deployment. Keep SUPABASE_SERVICE_ROLE_KEY server-only.</span>
+              </div>
+            ) : null}
+            <form onSubmit={signIn} className="admin-auth-form">
+              <div className="space-y-2">
+                <Label htmlFor="admin-email">{a("Email")}</Label>
+                <Input id="admin-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="admin@yourbusiness.com" disabled={!liveConfigured || busy || checkingSession} />
+              </div>
+              <div className="space-y-2">
+                <div className="admin-auth-password-label">
+                  <Label htmlFor="admin-password">{a("Password")}</Label>
+                  <button type="button" onClick={forgot} disabled={!liveConfigured || resetBusy}>
+                    {resetBusy ? <Loader2 size={13} className="animate-spin" /> : null}
+                    {a("Forgot password?")}
+                  </button>
+                </div>
+                <div className="admin-auth-password-wrap">
+                  <Input id="admin-password" type={passwordVisible ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" disabled={!liveConfigured || busy || checkingSession} />
+                  <button className="admin-auth-password-toggle" type="button" onClick={() => setPasswordVisible((visible) => !visible)} aria-label={passwordVisible ? "Hide password" : "Show password"} aria-pressed={passwordVisible}>
+                    {passwordVisible ? <EyeOff size={17} /> : <Eye size={17} />}
+                  </button>
+                </div>
+              </div>
+              <Button type="submit" variant="hero" className="admin-auth-submit" disabled={!liveConfigured || busy || checkingSession}>
+                {busy || checkingSession ? <Loader2 className="animate-spin" /> : <LockKeyhole size={17} />}
+                {checkingSession ? "Checking session…" : busy ? "Signing in…" : a("Sign in securely")}
+              </Button>
+            </form>
+            <div className="admin-auth-access-note">
+              <ShieldCheck size={16} />
+              <p>Access is limited to accounts invited or approved by a BeBoss master admin. This page does not offer public registration.</p>
+            </div>
           </div>
-          <Tabs value={mode} onValueChange={setMode}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="signin">{a("Sign in")}</TabsTrigger>
-              <TabsTrigger value="signup">{a("Create account")}</TabsTrigger>
-            </TabsList>
-            <TabsContent value="signin">
-              <form onSubmit={signIn} className="mt-4 space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="e1">{a("Email")}</Label>
-                  <Input id="e1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="p1">{a("Password")}</Label>
-                    <button type="button" className="text-xs text-primary hover:underline" onClick={forgot}>
-                      {a("Forgot password?")}
-                    </button>
-                  </div>
-                  <Input id="p1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
-                </div>
-                <Button type="submit" variant="hero" className="w-full" disabled={busy}>
-                  {busy ? <Loader2 className="animate-spin" /> : null}
-                  {a('Sign in')}
-                </Button>
-              </form>
-            </TabsContent>
-            <TabsContent value="signup">
-              <p className="mt-4 rounded-xl bg-muted/70 p-3 text-xs leading-relaxed text-muted-foreground">
-                First-time setup: the account on the secure BeBoss bootstrap allow-list becomes the master admin after its email is confirmed. Other accounts must be approved by a master admin.
-              </p>
-              <form onSubmit={signUp} className="mt-4 space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="n2">{a("Full name")}</Label>
-                  <Input id="n2" value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="e2">{a("Email")}</Label>
-                  <Input id="e2" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="p2">{a("Password")}</Label>
-                  <Input id="p2" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} autoComplete="new-password" />
-                </div>
-                <Button type="submit" variant="hero" className="w-full" disabled={busy}>
-                  {busy ? <Loader2 className="animate-spin" /> : null}
-                  {a('Create account')}
-                </Button>
-                <p className="text-xs text-muted-foreground">{a("Email confirmation is required. New accounts that are not on the first-admin allow-list must be approved by a master admin.")}</p>
-              </form>
-            </TabsContent>
-          </Tabs>
-          </fieldset>
-        </div>
-      </div>
+        </section>
+      </main>
+      <footer className="admin-auth-footer"><span>© {new Date().getFullYear()} BeBoss POS</span><span>Authorized access only</span></footer>
     </div>
   );
 }
