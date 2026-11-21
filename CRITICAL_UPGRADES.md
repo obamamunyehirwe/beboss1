@@ -184,26 +184,14 @@ suspend fun moveToDeadLetter(itemId: String, reason: String) {
 - Prevents trial/license extension via clock manipulation
 
 ### 4.2 Unlock Code Verification
-**File**: `app/src/main/java/com/example/util/SubscriptionSecurityManager.kt`
 
-**Recommended Enhancement**:
-```kotlin
-fun verifyUnlockCode(code: String, username: String, phone: String): Boolean {
-    val parts = code.split("-")
-    if (parts.size != 6) return false
-    
-    val (prefix, tier, days, expiryHex, acctHash, hmacSig) = parts
-    if (prefix != "BB2") return false
-    
-    // Verify account binding
-    val expectedHash = computeAccountHash(username, phone)
-    if (acctHash != expectedHash) return false
-    
-    // Verify HMAC signature (constant-time)
-    val expectedSig = computeHmacSignature(code.take(code.lastIndexOf("-")))
-    return MessageDigest.isEqual(hmacSig.toByteArray(), expectedSig)
-}
-```
+**Current production protocol: BB3 ECDSA P-256 / SHA-256**
+
+- The server signs the payload `BB3:TIER:DAYS:EXPIRY_HEX:ACCT_HASH6:NONCE` using a P-256 private key kept only in Supabase `app_secrets`.
+- The Android build contains only the matching public key. It verifies signatures offline using `SHA256withECDSA`.
+- New codes are generated through the authenticated `issue-bb3-unlock` Edge Function or the server-side web admin signing function.
+- Legacy BB2 codes are no longer verified with an APK-shared HMAC secret. The app sends them to `verify-legacy-bb2`, which checks the exact server-issued `unlock_codes` row and atomically redeems it once.
+- Never add an unlock private key or shared signing secret to Android `BuildConfig`, APK assets, browser local storage, or `VITE_*` environment variables.
 
 ### 4.3 Anti-Replay Protection
 **File**: `app/src/main/java/com/example/data/dao/RedeemedVoucherDao.kt`
@@ -298,7 +286,8 @@ android {
         release {
             buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL")}\"")
             buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY")}\"")
-            buildConfigField("String", "BEBOSS_UNLOCK_SIGNING_SECRET", "\"${project.findProperty("BEBOSS_UNLOCK_SIGNING_SECRET")}\"")
+            // No unlock signing secret is compiled into the Android app.
+            // BB3 private signing key stays server-side; Android contains only its public verification key.
         }
     }
 }
@@ -354,32 +343,20 @@ export const checkAppVersion = createServerFn({ method: "GET" })
 
 ## 7. TESTING CRITICAL FIXES
 
-### 7.1 Unit Tests for Unlock Codes
-**File**: `app/src/test/java/com/example/util/SubscriptionSecurityManagerTest.kt`
+### 7.1 Unit Tests for BB3 Unlock Codes
 
-**Recommended Enhancement**:
-```kotlin
-@Test
-fun testUnlockCodeGeneration() {
-    val code = SubscriptionSecurityManager.generateAccountBoundUnlockCode(
-        username = "testshop",
-        registeredPhone = "+250788123456",
-        tierCode = "SINGLE",
-        days = 30
-    )
-    
-    assertTrue(code.startsWith("BB2-"))
-    assertTrue(code.split("-").size == 6)
-    assertTrue(SubscriptionSecurityManager.verifyUnlockCode(code, "testshop", "+250788123456"))
-}
+Test using an ephemeral P-256 keypair generated inside the JVM test process. Sign the canonical BB3 payload with the test private key and verify with the test public key through `verifyBB3CodeWithPublicKey`.
 
-@Test
-fun testPhoneNormalization() {
-    assertEquals("788123456", SubscriptionSecurityManager.normalizePhoneLast9("+250788123456"))
-    assertEquals("788123456", SubscriptionSecurityManager.normalizePhoneLast9("0788123456"))
-    assertEquals("788123456", SubscriptionSecurityManager.normalizePhoneLast9("788123456"))
-}
-```
+Required cases:
+- Valid signature and correct username/phone.
+- Wrong username or normalized phone.
+- Expired code.
+- Tampered signature.
+- Signature Base64 case preservation.
+- Legacy BB2 rejected offline and routed to server-only record verification.
+- Replayed local voucher fingerprint rejected.
+
+Production private keys must never appear in test source or be copied from the server secret store.
 
 ### 7.2 Integration Tests for Sync
 **File**: `app/src/test/java/com/example/util/SyncCoordinatorTest.kt`
