@@ -302,6 +302,43 @@
       border-radius: 12px;
       padding: 10px 12px;
     }
+    .hero-ops-panel{min-width:0;overflow:hidden;border:1px solid rgba(255,255,255,.13);border-radius:24px;padding:clamp(16px,2.2vw,24px);background:linear-gradient(145deg,#17243a,#0b1324 78%);box-shadow:0 28px 75px rgba(0,0,0,.4),inset 0 1px rgba(255,255,255,.06)}
+    .hero-ops-head,.hero-ops-brand,.hero-ops-demo,.hero-ops-foot,.hero-ops-legend{display:flex;align-items:center}
+    .hero-ops-head{justify-content:space-between;gap:12px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,.1)}
+    .hero-ops-brand{min-width:0;gap:9px}
+    .hero-ops-brand img{width:40px;height:40px;object-fit:contain;border-radius:11px;background:#fff}
+    .hero-ops-brand strong,.hero-ops-brand small{display:block}
+    .hero-ops-brand strong{color:#fff;font-size:13px;font-weight:900}
+    .hero-ops-brand small{margin-top:4px;color:#9aaac2;font-size:8px;font-weight:800;letter-spacing:.12em}
+    .hero-ops-demo{flex-shrink:0;border:1px solid rgba(253,186,116,.27);border-radius:99px;padding:7px 9px;color:#fdba74;background:rgba(249,115,22,.08);font-size:8px;font-weight:900;letter-spacing:.09em}
+    .hero-ops-summary{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:22px 0 16px}
+    .hero-ops-overline{color:#fdba74;font-size:8px;font-weight:900;letter-spacing:.16em}
+    .hero-ops-summary h2{margin:8px 0 6px;color:#fff;font-size:clamp(20px,2.7vw,30px);line-height:1.08;font-weight:900;letter-spacing:-.04em}
+    .hero-ops-summary p{max-width:390px;margin:0;color:#aebbd0;font-size:11px;line-height:1.55}
+    .hero-ops-mark{display:grid;width:58px;height:58px;flex:0 0 auto;place-items:center;border:1px solid rgba(253,186,116,.3);border-radius:18px;color:#fdba74;background:rgba(249,115,22,.09);font-size:22px;font-weight:1000}
+    .hero-ops-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    .hero-ops-metrics>div{min-width:0;border:1px solid rgba(255,255,255,.09);border-radius:13px;padding:11px;background:rgba(255,255,255,.035)}
+    .hero-ops-metrics span,.hero-ops-metrics strong,.hero-ops-metrics small{display:block}
+    .hero-ops-metrics span{color:#9aaac2;font-size:9px;font-weight:800}
+    .hero-ops-metrics strong{margin-top:6px;color:#fff;font-size:13px;font-weight:900}
+    .hero-ops-metrics small{margin-top:4px;color:#8293ae;font-size:8px;line-height:1.45}
+    .hero-ops-chart{margin-top:10px;border:1px solid rgba(255,255,255,.09);border-radius:15px;padding:13px;background:rgba(255,255,255,.025)}
+    .hero-ops-chart-head{display:flex;justify-content:space-between;gap:9px;flex-wrap:wrap}
+    .hero-ops-chart-head strong{color:#e8eef8;font-size:10px}
+    .hero-ops-chart-head span{color:#8293ae;font-size:8px}
+    .hero-ops-bars{display:flex;height:100px;align-items:flex-end;gap:clamp(4px,1vw,9px);padding-top:12px}
+    .hero-ops-bars i{min-width:4px;flex:1;border:1px solid rgba(253,186,116,.22);border-bottom:0;border-radius:5px 5px 1px 1px;background:linear-gradient(180deg,#fdba74,rgba(249,115,22,.16));animation:hero-ops-rise .7s ease-out both}
+    .hero-ops-bars i:nth-child(3n){background:linear-gradient(180deg,#6ee7b7,rgba(16,185,129,.12));border-color:rgba(110,231,183,.25)}
+    .hero-ops-bars i:nth-child(2n){animation-delay:70ms}
+    .hero-ops-bars i:nth-child(3n){animation-delay:120ms}
+    .hero-ops-legend{flex-wrap:wrap;gap:8px 13px;margin-top:10px;color:#8293ae;font-size:8px}
+    .hero-ops-legend span::before{content:"";display:inline-block;width:6px;height:6px;margin-right:5px;border-radius:50%;background:#fdba74}
+    .hero-ops-legend span:nth-child(2)::before{background:#6ee7b7}
+    .hero-ops-legend span:nth-child(3)::before{background:#93c5fd}
+    .hero-ops-foot{flex-wrap:wrap;justify-content:space-between;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.09);color:#b8c5d8;font-size:9px;font-weight:750}
+    @keyframes hero-ops-rise{from{transform:scaleY(.15);opacity:.35}to{transform:scaleY(1);opacity:1}}
+    @media(max-width:600px){.hero-ops-panel{padding:14px;border-radius:18px}.hero-ops-metrics{grid-template-columns:1fr}.hero-ops-summary{padding-top:17px}.hero-ops-mark{width:46px;height:46px;border-radius:14px}.hero-ops-foot{justify-content:flex-start}.hero-ops-chart-head span{width:100%}}
+    @media(prefers-reduced-motion:reduce){.hero-ops-bars i{animation:none}}
 
     .pub-section {
       padding: 54px 0;
@@ -4090,53 +4127,40 @@ create table if not exists public.payment_requests (
               </div>
             </div>
 
-            {/* Live Device Mockup Preview */}
-            <div className="phone-mockup-wrap">
-              <div className="phone-frame">
-                <div className="phone-notch" />
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontSize: 10, color: '#34d399', fontWeight: 800 }}>● SUPABASE AUTO-SYNC ON</div>
-                    <div style={{ fontWeight: 900, fontSize: 16 }}>BeBoss Terminal • {lang.toUpperCase()}</div>
-                  </div>
-                  <span className="badge b-orange">TRIAL 4D</span>
+            <div className="hero-ops-panel" aria-label="Illustrative BeBoss operations dashboard preview">
+              <div className="hero-ops-head">
+                <div className="hero-ops-brand">
+                  <img src="./beboss-app-icon.png" alt="" />
+                  <span><strong>BeBoss Operations</strong><small>SALES · INVENTORY · BRANCHES</small></span>
                 </div>
-
-                <div className="phone-stat-card">
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>TODAY NET SALES (OFFLINE-FIRST)</div>
-                  <div style={{ fontSize: 24, fontWeight: 900, color: '#f8fafc', marginTop: 2 }}>248,500 FRw</div>
-                  <div style={{ display: 'flex', gap: 10, marginTop: 8, fontSize: 11.5 }}>
-                    <span style={{ color: '#34d399' }}>Cash: 142,000</span>
-                    <span style={{ color: '#fbbf24' }}>MoMo: 86,500</span>
-                    <span style={{ color: '#f87171' }}>Credit: 20,000</span>
-                  </div>
+                <span className="hero-ops-demo">ILLUSTRATIVE DEMO</span>
+              </div>
+              <div className="hero-ops-summary">
+                <div>
+                  <span className="hero-ops-overline">ONE WORKSPACE</span>
+                  <h2>Every branch. One clear view.</h2>
+                  <p>Explore how BeBoss brings daily selling, stock control and branch operations together.</p>
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
-                  <div className="phone-mini-tile">
-                    <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>PAIRED DEVICES</div>
-                    <div style={{ fontWeight: 800, fontSize: 14, marginTop: 2 }}>3 / 3 Online</div>
-                  </div>
-                  <div className="phone-mini-tile">
-                    <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>14D FORECAST</div>
-                    <div style={{ fontWeight: 800, fontSize: 14, color: '#fbbf24', marginTop: 2 }}>4 SKUs Low</div>
-                  </div>
+                <span className="hero-ops-mark" aria-hidden="true">BB</span>
+              </div>
+              <div className="hero-ops-metrics">
+                <div><span>Sales overview</span><strong>RWF · demo</strong><small>Daily and period summaries</small></div>
+                <div><span>Stock control</span><strong>Live ledger</strong><small>Reorders and adjustments</small></div>
+                <div><span>Branch network</span><strong>Multi-branch</strong><small>Shared records and roles</small></div>
+              </div>
+              <div className="hero-ops-chart">
+                <div className="hero-ops-chart-head"><strong>Operations activity</strong><span>Illustrative trend · not live account data</span></div>
+                <div className="hero-ops-bars" aria-hidden="true">
+                  {[34,48,42,62,54,74,66,86,71,93,79,100].map((height,index)=>(
+                    <i key={index} style={{height:`${height}%`}} />
+                  ))}
                 </div>
-
-                <div className="phone-mini-tile" style={{ marginTop: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
-                    <span style={{ color: '#fdba74', fontWeight: 800 }}>BB-7F9A31C204 SEALED</span>
-                    <span style={{ color: '#34d399' }}>AES-256</span>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                    2x Inyange Milk • 1x Akabanga = <strong style={{ color: '#fff' }}>4,100 FRw</strong>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 12, display: 'flex', gap: 6 }}>
-                  <a href="#experience" className="btn btn-primary btn-sm" style={{ flex: 1 }}>Test POS Counter</a>
-                  <a href="#download" className="btn btn-dark btn-sm" style={{ flex: 1 }}>Install APK</a>
-                </div>
+                <div className="hero-ops-legend"><span>Sales workflow</span><span>Inventory workflow</span><span>Cloud sync workflow</span></div>
+              </div>
+              <div className="hero-ops-foot">
+                <span>Offline-first operations</span>
+                <span>Role-based access</span>
+                <span>Branch-ready</span>
               </div>
             </div>
           </div>
