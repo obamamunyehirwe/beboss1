@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -35,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
@@ -122,13 +126,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -138,6 +145,7 @@ import com.beboss.shopmgmt.data.model.Customer
 import com.beboss.shopmgmt.data.model.CustomerPayment
 import com.beboss.shopmgmt.data.model.DatabaseEngineStats
 import com.beboss.shopmgmt.data.model.DatabaseMaintenanceResult
+import com.beboss.shopmgmt.data.model.LocalAuditLog
 import com.beboss.shopmgmt.data.model.PaymentVerificationRequest
 import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.Sale
@@ -159,10 +167,8 @@ import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.BranchPeerSyncEvent
 import com.beboss.shopmgmt.util.CloudSyncReport
 import com.beboss.shopmgmt.util.ConnectivityStatus
-import com.beboss.shopmgmt.util.DatabaseEngineStats
 import com.beboss.shopmgmt.util.DeviceIntegrityStatus
 import com.beboss.shopmgmt.util.DiscoveredBranchHub
-import com.beboss.shopmgmt.util.LocalAuditLog
 import com.beboss.shopmgmt.util.LocalServerStatus
 import com.beboss.shopmgmt.util.Localization
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
@@ -182,7 +188,7 @@ import com.beboss.shopmgmt.util.SupabaseShopUserDto
 import com.beboss.shopmgmt.util.SupabaseUnlockCodeDto
 import com.beboss.shopmgmt.util.SyncAuditLog
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import java.io.File
@@ -391,7 +397,7 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .safeDrawing(),
+            .safeDrawingPadding(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -463,6 +469,7 @@ fun SettingsScreen(
                 isActive = isActive,
                 daysRemaining = daysRemaining,
                 currentPricing = currentPricing,
+                activeDeviceCount = activeDeviceCount,
                 ownerAccount = ownerAccount,
                 deviceCode = deviceCode,
                 liveWhatsApp = liveWhatsApp,
@@ -822,8 +829,9 @@ fun SettingsScreen(
     )
 
     if (showPermissionsDialog) PermissionRequestDialog(
-        context = context,
-        onDismiss = { showPermissionsDialog = false }
+        language = language,
+        onDismiss = { showPermissionsDialog = false },
+        onPermissionGranted = { showPermissionsDialog = false }
     )
 
     if (showDiagnosticsDialog) DiagnosticsDialog(
@@ -843,7 +851,7 @@ fun SettingsScreen(
 data class Category(
     val id: String,
     val label: String,
-    val icon: androidx.compose.material.icons.filled.Icon,
+    val icon: ImageVector,
     val color: Color
 )
 
@@ -1050,13 +1058,13 @@ fun CategoryFilterChips(
 fun SettingsSectionCard(
     title: String,
     subtitle: String? = null,
-    icon: androidx.compose.material.icons.filled.Icon,
+    icon: ImageVector,
     iconColor: Color,
     modifier: Modifier = Modifier,
     showDivider: Boolean = false,
     onAction: (() -> Unit)? = null,
     actionLabel: String? = null,
-    actionIcon: androidx.compose.material.icons.filled.Icon? = null,
+    actionIcon: ImageVector? = null,
     content: @Composable () -> Unit
 ) {
     Card(
@@ -1460,6 +1468,7 @@ fun LicenseSubscriptionCard(
     isActive: Boolean,
     daysRemaining: Int,
     currentPricing: com.beboss.shopmgmt.util.SubscriptionPriceBreakdown,
+    activeDeviceCount: Int,
     ownerAccount: User?,
     deviceCode: String,
     liveWhatsApp: String,
@@ -1493,7 +1502,7 @@ fun LicenseSubscriptionCard(
             )
         }
 
-        Spacer(modifier = modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         Surface(
             shape = RoundedCornerShape(10.dp),
