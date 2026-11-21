@@ -296,14 +296,7 @@ object SupabaseAdminClient {
         }
     }
 
-    fun getDefaultAdminEmail(): String {
-        val envEmail = try {
-            BuildConfig.SUPABASE_ADMIN_EMAIL.trim().lowercase(Locale.ROOT)
-        } catch (_: Throwable) {
-            ""
-        }
-        return if (envEmail == MASTER_ADMIN_EMAIL) envEmail else MASTER_ADMIN_EMAIL
-    }
+    fun getDefaultAdminEmail(): String = MASTER_ADMIN_EMAIL
 
     fun isAllowedMasterAdminEmail(email: String): Boolean {
         return email.trim().lowercase(Locale.ROOT) == MASTER_ADMIN_EMAIL
@@ -423,6 +416,56 @@ object SupabaseAdminClient {
         return builder
     }
 
+    /**
+     * Ask the trusted Supabase Edge Function to sign a BB3 code. The ECDSA private
+     * key never enters this Android process or BuildConfig.
+     */
+    private suspend fun requestServerSignedBB3Code(
+        username: String,
+        registeredPhone: String,
+        tierCode: String,
+        days: Int
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val session = ensureValidAdminSession()
+            ?: return@withContext Result.failure(IllegalStateException("Admin session expired. Sign in again."))
+        if (!isConfigured()) {
+            return@withContext Result.failure(IllegalStateException("Supabase connection is not configured."))
+        }
+        try {
+            val payload = JSONObject().apply {
+                put("username", username.trim())
+                put("phone", registeredPhone.trim())
+                put("tier", tierCode.trim().uppercase(Locale.ROOT))
+                put("days", days.coerceIn(1, 800))
+            }
+            val req = Request.Builder()
+                .url("${getSupabaseUrl()}/functions/v1/issue-bb3-unlock")
+                .addHeader("apikey", getSupabaseAnonKey())
+                .addHeader("Authorization", "Bearer ${session.accessToken}")
+                .addHeader("Content-Type", "application/json")
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(req).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                val json = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
+                if (!response.isSuccessful) {
+                    val message = json.optString("message")
+                        .ifBlank { json.optString("error") }
+                        .ifBlank { "Secure BB3 signing service failed (HTTP ${response.code})." }
+                    return@withContext Result.failure(IllegalStateException(message))
+                }
+                val code = json.optString("code").trim()
+                if (!SubscriptionSecurityManager.isCompleteUnlockCodeFormat(code) || !code.startsWith("BB3-")) {
+                    return@withContext Result.failure(IllegalStateException("The BB3 signing service returned an invalid code."))
+                }
+                Result.success(code)
+            }
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
     // -------------------------------------------------------------------------
     // REAL SUPABASE ADMIN AUTHENTICATION (GoTrue Email/Password JWT)
     // -------------------------------------------------------------------------
@@ -451,10 +494,13 @@ object SupabaseAdminClient {
                 val raw = resp.body?.string().orEmpty()
                 val json = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
                 if (!resp.isSuccessful) {
-                    val msg = json.optString("error_description")
+                    val rawMessage = json.optString("error_description")
                         .ifBlank { json.optString("msg") }
                         .ifBlank { json.optString("message") }
                         .ifBlank { "Sign in failed (HTTP ${resp.code})" }
+                    val msg = if (rawMessage.contains("invalid login credentials", ignoreCase = true)) {
+                        "No valid Master Admin email/password pair was found. For first-time setup, the approved account must first receive and accept the secure invitation sent to $MASTER_ADMIN_EMAIL. If you already accepted it, use password recovery and check your email confirmation."
+                    } else rawMessage
                     return@withContext Result.failure(IllegalStateException(msg))
                 }
                 val session = parseAuthSession(json, MASTER_ADMIN_EMAIL)
@@ -469,50 +515,14 @@ object SupabaseAdminClient {
         }
     }
 
-    suspend fun signUpAdmin(email: String, password: String, fullName: String): Result<SupabaseAdminSession> = withContext(Dispatchers.IO) {
-        if (!isAllowedMasterAdminEmail(email)) {
-            return@withContext Result.failure(
-                IllegalStateException("Only the designated master admin ($MASTER_ADMIN_EMAIL) can register in BeBoss Admin.")
-            )
-        }
-        if (!isConfigured()) {
-            return@withContext Result.failure(IllegalStateException("Configure SUPABASE_URL and SUPABASE_ANON_KEY in app secrets."))
-        }
-        try {
-            val cleanName = fullName.trim().ifBlank { "BeBoss Master Admin" }
-            val payload = JSONObject().apply {
-                put("email", MASTER_ADMIN_EMAIL)
-                put("password", password)
-                put("data", JSONObject().apply { put("full_name", cleanName) })
-            }
-            val req = Request.Builder()
-                .url("${getSupabaseUrl()}/auth/v1/signup")
-                .addHeader("apikey", getSupabaseAnonKey())
-                .addHeader("Content-Type", "application/json")
-                .post(payload.toString().toRequestBody(jsonMediaType))
-                .build()
-
-            client.newCall(req).execute().use { resp ->
-                val raw = resp.body?.string().orEmpty()
-                val json = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
-                if (!resp.isSuccessful) {
-                    val msg = json.optString("error_description")
-                        .ifBlank { json.optString("msg") }
-                        .ifBlank { json.optString("message") }
-                        .ifBlank { "Registration failed (HTTP ${resp.code})" }
-                    return@withContext Result.failure(IllegalStateException(msg))
-                }
-                val session = parseAuthSession(json, email, cleanName)
-                    ?: return@withContext Result.failure(IllegalStateException("Account created. Verify email in Supabase if confirmation is enabled, then Sign In."))
-                ensureAdminProfile(session)
-                activeAdminSession = session
-                logAdminAudit("ADMIN_SIGNUP", session.email, "Registered admin operator profile")
-                Result.success(session)
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+    /**
+     * Public admin self-registration is deliberately disabled. The first admin is
+     * created only through the one-time allow-listed email invitation flow.
+     */
+    suspend fun signUpAdmin(email: String, password: String, fullName: String): Result<SupabaseAdminSession> =
+        Result.failure(
+            IllegalStateException("Admin self-registration is disabled. Open the BeBoss web admin sign-in page and request the secure first-admin invitation for $MASTER_ADMIN_EMAIL.")
+        )
 
     suspend fun signOutAdmin() = withContext(Dispatchers.IO) {
         val current = activeAdminSession
@@ -1394,50 +1404,70 @@ object SupabaseAdminClient {
     ): SupabaseUnlockCodeDto? = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext null
         try {
+            val rawCode = unlockCode.trim()
+            val cleanCode = if (rawCode.startsWith("BB3-", ignoreCase = true)) {
+                rawCode // BB3 Base64 ECDSA signatures are case-sensitive.
+            } else {
+                rawCode.uppercase(Locale.ROOT)
+            }
             val shopSyncKey = computeShopSyncKey(username, phone)
-            val cleanCode = URLEncoder.encode(unlockCode.trim().uppercase(Locale.ROOT), "UTF-8")
-            val req = buildRestRequest("unlock_codes?unlock_code=eq.$cleanCode&limit=1", tenantSyncKey = shopSyncKey).get().build()
-            var matched: SupabaseUnlockCodeDto? = null
-            client.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    val arr = JSONArray(resp.body?.string().orEmpty().ifBlank { "[]" })
-                    if (arr.length() > 0) {
-                        matched = parseUnlockCodeDto(arr.getJSONObject(0))
-                    }
+            val encodedCode = URLEncoder.encode(cleanCode, "UTF-8")
+            val lookup = buildRestRequest(
+                "unlock_codes?unlock_code=eq.$encodedCode&limit=1",
+                tenantSyncKey = shopSyncKey
+            ).get().build()
+
+            val matched = client.newCall(lookup).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val rows = JSONArray(response.body?.string().orEmpty().ifBlank { "[]" })
+                if (rows.length() == 0) null else parseUnlockCodeDto(rows.getJSONObject(0))
+            } ?: return@withContext null
+
+            // Existing REDEEMED/REVOKED records are authoritative and must never be
+            // converted back to ISSUED or silently accepted on another device.
+            if (matched.status != "ISSUED") return@withContext matched
+
+            val now = System.currentTimeMillis()
+            val patchBody = JSONObject().apply {
+                put("status", "REDEEMED")
+                put("redeemed_at", now)
+            }
+            val claimUrl = "unlock_codes?id=eq.${URLEncoder.encode(matched.id, "UTF-8")}&status=eq.ISSUED"
+            val patch = buildRestRequest(claimUrl, tenantSyncKey = shopSyncKey)
+                .addHeader("Prefer", "return=representation")
+                .patch(patchBody.toString().toRequestBody(jsonMediaType))
+                .build()
+
+            val claimed = client.newCall(patch).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Could not atomically claim unlock code (HTTP ${response.code}).")
+                    return@withContext matched.copy(status = "CLAIM_FAILED")
                 }
+                val rows = JSONArray(response.body?.string().orEmpty().ifBlank { "[]" })
+                rows.length() > 0
+            }
+            if (!claimed) {
+                // Another device may have redeemed between the read and conditional update.
+                return@withContext matched.copy(status = "REDEEMED")
             }
 
-            if (matched != null && matched!!.status == "ISSUED") {
-                val now = System.currentTimeMillis()
-                val patchBody = JSONObject().apply {
-                    put("status", "REDEEMED")
-                    put("redeemed_at", now)
-                }
-                val patchReq = buildRestRequest(
-                    "unlock_codes?id=eq.${URLEncoder.encode(matched!!.id, "UTF-8")}",
-                    tenantSyncKey = shopSyncKey
-                )
-                    .patch(patchBody.toString().toRequestBody(jsonMediaType))
-                    .build()
-                client.newCall(patchReq).execute().close()
-
-                val cleanUser = URLEncoder.encode(username.trim().lowercase(Locale.ROOT), "UTF-8")
-                val prPatch = JSONObject().apply {
-                    put("status", "REDEEMED")
-                    put("updated_at", now)
-                }
-                val prReq = buildRestRequest(
-                    "payment_requests?generated_unlock_code=eq.$cleanCode&owner_username=eq.$cleanUser",
-                    tenantSyncKey = shopSyncKey
-                )
-                    .patch(prPatch.toString().toRequestBody(jsonMediaType))
-                    .build()
-                client.newCall(prReq).execute().close()
+            val cleanUser = URLEncoder.encode(username.trim().lowercase(Locale.ROOT), "UTF-8")
+            val paymentPatch = JSONObject().apply {
+                put("status", "REDEEMED")
+                put("updated_at", now)
             }
-            matched
+            val paymentReq = buildRestRequest(
+                "payment_requests?generated_unlock_code=eq.$encodedCode&owner_username=eq.$cleanUser",
+                tenantSyncKey = shopSyncKey
+            ).patch(paymentPatch.toString().toRequestBody(jsonMediaType)).build()
+            client.newCall(paymentReq).execute().close()
+
+            // CLAIMED is a local result marker only; the database row remains REDEEMED.
+            // BeBossRepository allows this first claim but rejects later REDEEMED lookups.
+            matched.copy(status = "CLAIMED", redeemedAt = now)
         } catch (e: Exception) {
             Log.e(TAG, "verifyAndMarkCodeRedeemedInCloud error: ${e.message}")
-            null
+            null // Network unavailable: caller may use the BB3 public-key offline path.
         }
     }
 
@@ -1585,15 +1615,13 @@ object SupabaseAdminClient {
             else -> "SINGLE"
         }
         val days = (request.durationMonths.coerceAtLeast(1)) * 30
-        val generatedCode = try {
-            SubscriptionSecurityManager.generateAccountBoundUnlockCode(
-                username = request.ownerUsername,
-                registeredPhone = request.ownerPhone,
-                tierCode = tierCode,
-                days = days
-            )
-        } catch (e: Exception) {
-            return@withContext Pair(false, e.message ?: "Unable to bind unlock code.")
+        val generatedCode = requestServerSignedBB3Code(
+            username = request.ownerUsername,
+            registeredPhone = request.ownerPhone,
+            tierCode = tierCode,
+            days = days
+        ).getOrElse { error ->
+            return@withContext Pair(false, error.message ?: "Unable to sign a secure BB3 unlock code.")
         }
 
         try {
@@ -1784,13 +1812,17 @@ object SupabaseAdminClient {
         amountRwf: Int,
         adminName: String
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        val code = SubscriptionSecurityManager.generateAccountBoundUnlockCode(
+        if (!isConfigured() || ensureValidAdminSession() == null) {
+            return@withContext Pair(false, "Admin authentication expired or unavailable.")
+        }
+        val code = requestServerSignedBB3Code(
             username = username,
             registeredPhone = registeredPhone,
             tierCode = tierCode,
             days = days
-        )
-        if (!isConfigured() || activeAdminSession == null) return@withContext Pair(false, code)
+        ).getOrElse { error ->
+            return@withContext Pair(false, error.message ?: "Unable to sign a secure BB3 unlock code.")
+        }
 
         try {
             val operatorLabel = activeAdminSession?.let { "${it.fullName} (${it.email})" } ?: adminName

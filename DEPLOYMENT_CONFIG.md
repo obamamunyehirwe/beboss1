@@ -11,12 +11,13 @@ Set these environment variables for Production, Preview and Development as appro
 | `SUPABASE_URL` | Supabase project URL | Public URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Web Supabase client / server-side user requests | Public publishable key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Trusted server functions only (admin invitations, private storage, privileged operations) | Server-only secret |
-| `BEBOSS_UNLOCK_SIGNING_SECRET` | BB2 unlock-code signing | Server-only secret |
 | `BEBOSS_SECURITY_PEPPER` | Security hashing/derivation | Server-only secret |
 | `BEBOSS_DATASHARE_HMAC_SECRET` | Signed data-share requests | Server-only secret |
 | `BEBOSS_LAN_SYNC_SECRET` | LAN sync authentication | Server-only secret |
 | `BEBOSS_ADMIN_WHATSAPP` | Support contact shown to merchants | Public display value |
-| `BEBOSS_ADMIN_URL` | Required for new team invitations, e.g. `https://your-domain/reset-password?invite=1` | Public URL |
+| `BEBOSS_ADMIN_URL` | Invitation redirect, `https://admin.beboss.rw/reset-password?invite=1` | Public URL |
+
+The BB3 ECDSA P-256 private key is provisioned in the live Supabase `app_secrets` table as `BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM`. It is not a Vercel environment variable and must never be placed in an Android Gradle property, APK asset, browser bundle, or `VITE_*` variable. Android contains only the matching public verification key.
 
 Never add a `VITE_` prefix to `SUPABASE_SERVICE_ROLE_KEY`. The Vite configuration intentionally injects only the Supabase URL and publishable key into browser code. Keep `.env.example` as a template; never commit actual service-role keys, signing secrets, or passwords.
 
@@ -37,25 +38,24 @@ The web admin screen uses email/password only. Public self-registration and Goog
 
 1. In Supabase, open Authentication → URL Configuration. Set the Site URL to the canonical production web origin.
 2. Add the canonical production `/auth` and `/reset-password` URLs to Redirect URLs, including the invite URL `/reset-password?invite=1`. Add local development URLs and the exact Vercel preview pattern only if preview logins are required.
-3. Keep the email/password provider enabled and require email confirmation. Set the top-level Auth setting `enable_signup = false` (not `[auth.email].enable_signup = false`, which controls the email provider itself). This blocks public self-registration while leaving password sign-in available. The repo config records the no-public-signup setting; apply it in the hosted Supabase Auth settings after provisioning the first master admin.
-4. The database has a protected `admin_bootstrap_emails` allow-list and a trigger that gives the allow-listed first account the master-admin role after its email is confirmed.
-5. Create/invite the initial allow-listed master-admin user from Authentication → Users in the Supabase Dashboard, then complete email confirmation before signing in at `/auth`.
-6. After the first master admin has signed in, use Admin → Admin team to invite additional administrators or support users. The server uses the service-role client to send invitations and attach the selected role. New invitees land on `/reset-password?invite=1`, set their first password, then continue to the admin portal.
-7. Keep all privileged admin functions protected by the Supabase role check. Hiding registration in the UI is not a replacement for the server-side role check.
+3. Keep the email/password provider enabled and require email confirmation. Keep the top-level Auth setting `enable_signup = false`; this blocks public self-registration while the service-role invite API remains available.
+4. The database has a protected `admin_bootstrap_emails` allow-list and an Auth trigger that gives the allow-listed first account the master-admin role after its email is confirmed.
+5. Open `https://admin.beboss.rw/auth` and choose **Send first-admin setup invitation**. The deployed Edge Function only accepts requests from this exact admin origin, reads the approved email from the allow-list, and sends the invitation without accepting a caller-supplied email or password.
+6. Accept the invitation at `https://admin.beboss.rw/reset-password?invite=1`, set a password of at least 10 characters, then sign in at `/auth`. The first allow-listed account has already had an invitation issued in the live project; it remains invited until the email link is accepted.
+7. After the first master admin has signed in, use Admin → Admin team to invite additional administrators or support users. Keep all privileged admin functions protected by the Supabase role check.
 
-Set `BEBOSS_ADMIN_URL` to the exact production URL `https://your-domain/reset-password?invite=1` and add that URL to Supabase Redirect URLs. The invite acceptance page verifies the Supabase invitation session before enabling password setup.
+Set `BEBOSS_ADMIN_URL=https://admin.beboss.rw/reset-password?invite=1` for the separate team-invitation server function and add that exact URL to Supabase Auth Redirect URLs. The invite acceptance page verifies the Supabase invitation session before enabling password setup.
 
 ## 3. Android production build
 
-The Android app reads the Supabase URL and current legacy anon JWT from Gradle properties:
+The Android 2.2.0 app reads the Supabase URL and public Supabase anon/publishable key from Gradle properties. It embeds only the BB3 public verification key; it never receives the BB3 private signing key. A previously downloaded APK cannot be retroactively changed, so distribute this new signed version before claiming existing devices are migrated.
 
 ```properties
 SUPABASE_URL=https://ahlpvlhmpfiyeoercxol.supabase.co
 SUPABASE_ANON_KEY=replace_with_project_anon_key
-BEBOSS_UNLOCK_SIGNING_SECRET=replace_with_the_same_server_signing_secret
 ```
 
-Do not commit real credentials or the release keystore. Configure release signing values as CI secrets, build with `./gradlew :app:assembleRelease`, verify the resulting APK signature, and upload the signed APK through Admin → App releases. The public download page uses the private Supabase Storage release object; verify a real APK upload before announcing downloads as production-ready.
+Do not commit real credentials or the release keystore. Configure release signing values as CI secrets, build with `./gradlew :app:assembleRelease`, verify the resulting APK signature, and upload the signed APK through Admin → App releases. The public download page uses the private Supabase Storage release object; verify a real APK upload and update the live release metadata/checksum to 2.2.0 before announcing downloads as production-ready.
 
 ## 4. Production verification checklist
 

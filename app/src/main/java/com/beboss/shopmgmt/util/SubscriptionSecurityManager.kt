@@ -2,11 +2,15 @@ package com.beboss.shopmgmt.util
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import com.beboss.shopmgmt.BuildConfig
+import android.util.Base64
 import com.beboss.shopmgmt.data.model.ShopProfile
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import java.security.MessageDigest
+import java.security.KeyFactory
+import java.security.PublicKey
+import java.security.Signature
+import java.security.spec.X509EncodedKeySpec
 import java.security.SecureRandom
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -19,10 +23,11 @@ import kotlin.math.abs
 /**
  * Enterprise Cryptographic Voucher & Admin Unlock Code Engine for BeBoss.
  *
- * Strictly zero-fallback design:
- * - No inline hardcoded HMAC secrets (requires BuildConfig.BEBOSS_UNLOCK_SIGNING_SECRET).
- * - No wildcard bypass hashes (ALL000 / ALL00 / empty username candidates removed).
- * - No offline self-approval of unverified MoMo/SMS reference strings.
+ * Signing model:
+ * - BB3 codes use a pinned P-256 public key; the matching private key stays in the server.
+ * - Legacy BB2 codes are checked online against their exact server-issued database record.
+ * - BB hardware vouchers retain per-installation AndroidKeyStore HMAC keys (not shared secrets).
+ * - No wildcard or unverified payment-reference bypasses.
  */
 object SubscriptionSecurityManager {
 
@@ -33,14 +38,20 @@ object SubscriptionSecurityManager {
     private val jvmEphemeralKeys = ConcurrentHashMap<Long, SecretKey>()
     private val secureRandom = SecureRandom()
 
-    private fun getCrossPlatformSigningSecret(): String {
-        val raw = BuildConfig.BEBOSS_UNLOCK_SIGNING_SECRET.ifBlank {
-            System.getProperty("BEBOSS_UNLOCK_SIGNING_SECRET").orEmpty()
-        }
-        return CryptoKeyManager.requireConfiguredSecret(
-            rawSecret = raw,
-            secretName = "BEBOSS_UNLOCK_SIGNING_SECRET"
-        )
+    // Public verification key only. The matching ECDSA private key is stored in Supabase
+    // app_secrets and is never included in the Android build.
+    private const val BB3_PUBLIC_KEY_PEM = """-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEnH8Qg10M7lur8WocoKgklEJ98F6
+UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
+-----END PUBLIC KEY-----"""
+
+    private val bb3PublicKey: PublicKey by lazy {
+        val encoded = BB3_PUBLIC_KEY_PEM
+            .replace("-----BEGIN PUBLIC KEY-----", "")
+            .replace("-----END PUBLIC KEY-----", "")
+            .replace("\\s".toRegex(), "")
+        val der = Base64.decode(encoded, Base64.DEFAULT)
+        KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(der))
     }
 
     /**
@@ -61,30 +72,6 @@ object SubscriptionSecurityManager {
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(seed.toByteArray(StandardCharsets.UTF_8))
         return SecurityUtils.bytesToHex(digest).take(6).uppercase(Locale.ROOT)
-    }
-
-    /**
-     * Generates a Cross-Platform Account-Bound Unlock Code (BB2 format) matching the Web Admin Platform.
-     */
-    fun generateAccountBoundUnlockCode(
-        username: String,
-        registeredPhone: String,
-        tierCode: String = "SINGLE",
-        days: Int = 30,
-        validityWindowDays: Int = 14,
-        signingSecret: String = getCrossPlatformSigningSecret()
-    ): String {
-        require(username.trim().isNotEmpty()) { "Owner username is required for BB2 unlock codes." }
-        require(normalizePhoneLast9(registeredPhone).isNotEmpty()) { "Registered phone is required for BB2 unlock codes." }
-        val cleanSecret = CryptoKeyManager.requireConfiguredSecret(signingSecret, "BEBOSS_UNLOCK_SIGNING_SECRET")
-        val cleanTier = tierCode.trim().uppercase(Locale.ROOT).ifBlank { "SINGLE" }
-        val acctHash6 = computeAccountBindingHash(username, registeredPhone)
-        val expiryEpochDays = (System.currentTimeMillis() / 86_400_000L) + validityWindowDays
-        val expiryHex = expiryEpochDays.toString(16).uppercase(Locale.ROOT)
-        val payload = "BB2:$cleanTier:$days:$expiryHex:$acctHash6"
-        val key = SecretKeySpec(cleanSecret.toByteArray(StandardCharsets.UTF_8), HMAC_ALGORITHM)
-        val sig8 = computeHmacSignature(payload, key).take(8).uppercase(Locale.ROOT)
-        return "BB2-$cleanTier-$days-$expiryHex-$acctHash6-$sig8"
     }
 
     /**
@@ -155,7 +142,33 @@ object SubscriptionSecurityManager {
      * immediately verify and auto-unlock without extra clicks.
      */
     fun isCompleteUnlockCodeFormat(input: String): Boolean {
-        val clean = input.trim().uppercase(Locale.ROOT)
+        val raw = input.trim()
+        if (raw.isBlank()) return false
+        val rawParts = raw.split("-")
+
+        // BB3 signatures are case-sensitive standard Base64, so never uppercase the whole code.
+        if (rawParts.size == 7 && rawParts[0].equals("BB3", ignoreCase = true)) {
+            val tier = rawParts[1].uppercase(Locale.ROOT)
+            val days = rawParts[2].toIntOrNull() ?: 0
+            val expiry = rawParts[3].uppercase(Locale.ROOT)
+            val account = rawParts[4].uppercase(Locale.ROOT)
+            val nonce = rawParts[5].uppercase(Locale.ROOT)
+            val signature = try {
+                Base64.decode(rawParts[6], Base64.NO_WRAP)
+            } catch (_: IllegalArgumentException) {
+                return false
+            }
+            val canonicalSignature = Base64.encodeToString(signature, Base64.NO_WRAP)
+            return tier.matches(Regex("[A-Z]{2,12}")) &&
+                days > 0 &&
+                expiry.length in 3..8 && expiry.all { it in '0'..'9' || it in 'A'..'F' } &&
+                account.length == 6 && account.all { it in '0'..'9' || it in 'A'..'F' } &&
+                nonce.length == 24 && nonce.all { it in '0'..'9' || it in 'A'..'F' } &&
+                signature.size in 68..72 &&
+                canonicalSignature == rawParts[6]
+        }
+
+        val clean = raw.uppercase(Locale.ROOT)
         val parts = clean.split("-")
         if (parts.size != 6) return false
         val prefix = parts[0]
@@ -183,16 +196,14 @@ object SubscriptionSecurityManager {
         workerCount: Int = 1,
         alreadyRedeemedHashes: Set<String> = emptySet(),
         ownerUsername: String = "",
-        ownerPhoneOverride: String = "",
-        signingSecretOverride: String? = null
+        ownerPhoneOverride: String = ""
     ): VoucherValidationResult {
-        val cleanCode = voucherInput.trim().uppercase(Locale.ROOT)
-        if (cleanCode.isBlank()) {
+        val rawCode = voucherInput.trim()
+        if (rawCode.isBlank()) {
             return VoucherValidationResult(false, 0, "Please enter an unlock code", "")
         }
 
-        // Anti-Replay Attack Check
-        val voucherFingerprint = computeVoucherFingerprint(cleanCode)
+        val voucherFingerprint = computeVoucherFingerprint(rawCode)
         if (alreadyRedeemedHashes.contains(voucherFingerprint)) {
             return VoucherValidationResult(
                 isValid = false,
@@ -203,107 +214,80 @@ object SubscriptionSecurityManager {
         }
 
         val pricing = OfflineSubscriptionManager.calculateSubscriptionPrice(branchCount, workerCount, 1)
-        val parts = cleanCode.split("-")
+        val parts = rawCode.split("-")
+        val prefix = parts.firstOrNull()?.uppercase(Locale.ROOT).orEmpty()
 
-        // 1. Cross-Platform Admin-Issued Unlock Code: BB2-[TIER]-[DAYS]-[EXPIRY_HEX]-[ACCT_HASH6]-[HMAC_SIG8]
-        if (parts.size == 6 && parts[0] == "BB2") {
-            val tier = parts[1]
-            val days = parts[2].toIntOrNull() ?: 0
-            val expiryHex = parts[3]
-            val receivedAcctHash = parts[4]
-            val receivedSignature = parts[5]
-
-            val expiryEpochDays = expiryHex.toLongOrNull(16)
-            val currentEpochDays = ClockGuard.effectiveNowMs() / 86_400_000L
-            if (expiryEpochDays == null || currentEpochDays > expiryEpochDays) {
-                return VoucherValidationResult(
-                    isValid = false,
-                    daysToAdd = 0,
-                    message = "This admin unlock code has expired. Please request a fresh code from BeBoss Admin.",
-                    planName = ""
-                )
-            }
-
-            val candidatePhones = listOf(shopProfile.phone, ownerPhoneOverride)
+        // BB3 is offline-verifiable using a pinned public key. No private/shared key is present here.
+        if (parts.size == 7 && prefix == "BB3") {
+            val usernames = listOf(ownerUsername.trim()).filter { it.isNotEmpty() }.distinct()
+            val phones = listOf(shopProfile.phone, ownerPhoneOverride)
                 .map { it.trim() }
                 .filter { normalizePhoneLast9(it).isNotEmpty() }
                 .distinct()
-            val candidateUsernames = listOf(ownerUsername.trim())
-                .filter { it.isNotEmpty() }
-                .distinct()
-
-            val accountMatches = candidateUsernames.isNotEmpty() &&
-                candidatePhones.isNotEmpty() &&
-                candidateUsernames.any { u ->
-                    candidatePhones.any { p ->
-                        computeAccountBindingHash(u, p) == receivedAcctHash
-                    }
+            val accountMatches = usernames.any { username ->
+                phones.any { phone ->
+                    computeAccountBindingHash(username, phone) == parts[4].uppercase(Locale.ROOT)
                 }
-
+            }
             if (!accountMatches) {
                 return VoucherValidationResult(
                     isValid = false,
                     daysToAdd = 0,
-                    message = "Account mismatch: this unlock code is bound to a different username/phone ($receivedAcctHash).",
+                    message = "Account mismatch: this BB3 code belongs to a different username or phone.",
                     planName = ""
                 )
             }
 
-            val signingSecret = try {
-                if (signingSecretOverride != null) {
-                    CryptoKeyManager.requireConfiguredSecret(signingSecretOverride, "BEBOSS_UNLOCK_SIGNING_SECRET")
-                } else {
-                    getCrossPlatformSigningSecret()
-                }
-            } catch (e: SecurityException) {
+            val valid = phones.any { phone ->
+                verifyBB3CodeWithPublicKey(rawCode, ownerUsername, phone, bb3PublicKey)
+            }
+            if (!valid) {
                 return VoucherValidationResult(
                     isValid = false,
                     daysToAdd = 0,
-                    message = e.message ?: "Unlock verification secret not configured.",
+                    message = "BB3 signature verification failed. The code may be invalid, expired or modified.",
                     planName = ""
                 )
             }
-
-            val payload = "BB2:$tier:$days:$expiryHex:$receivedAcctHash"
-            val key = SecretKeySpec(signingSecret.toByteArray(StandardCharsets.UTF_8), HMAC_ALGORITHM)
-            val expectedSig = computeHmacSignature(payload, key).take(8).uppercase(Locale.ROOT)
-
-            return if (slowEquals(receivedSignature, expectedSig)) {
-                val (planName, verifiedAmt) = mapTierNameAndAmount(tier, branchCount, pricing.totalPayable)
-                VoucherValidationResult(
-                    isValid = true,
-                    daysToAdd = days.coerceAtLeast(1),
-                    message = "Admin Unlock Code Verified! Subscription extended by +$days Days.",
-                    planName = planName,
-                    verifiedAmount = verifiedAmt
-                )
-            } else {
-                VoucherValidationResult(
-                    isValid = false,
-                    daysToAdd = 0,
-                    message = "Unlock code cryptographic signature verification failed (Invalid or Tampered Code).",
-                    planName = ""
-                )
-            }
+            val tier = parts[1].uppercase(Locale.ROOT)
+            val days = parts[2].toIntOrNull() ?: 0
+            val (planName, verifiedAmt) = mapTierNameAndAmount(tier, branchCount, pricing.totalPayable)
+            return VoucherValidationResult(
+                isValid = true,
+                daysToAdd = days,
+                message = "Secure BB3 unlock code verified offline. Subscription extended by +$days days.",
+                planName = planName,
+                verifiedAmount = verifiedAmt
+            )
         }
 
-        // 2. Device-Bound Hardware Voucher: BB-[TIER]-[DAYS]-[EXPIRY_HEX]-[CHALLENGE_HASH]-[SIGNATURE]
-        if (parts.size == 6 && parts[0] == "BB") {
-            val tier = parts[1]
-            val days = parts[2].toIntOrNull() ?: 0
-            val expiryHex = parts[3]
-            val challengeHash = parts[4]
-            val receivedSignature = parts[5]
+        val cleanCode = rawCode.uppercase(Locale.ROOT)
+        val normalizedParts = cleanCode.split("-")
+
+        // Legacy BB2 HMAC codes are no longer accepted offline because a shared key was
+        // previously distributed in APK builds. SubscriptionManager verifies them online
+        // against the exact, unredeemed server-issued record instead.
+        if (normalizedParts.size == 6 && normalizedParts[0] == "BB2") {
+            return VoucherValidationResult(
+                isValid = false,
+                daysToAdd = 0,
+                message = "This is a legacy BB2 code. Connect to the internet to verify it securely with BeBoss before activation.",
+                planName = ""
+            )
+        }
+
+        // Device-bound hardware voucher: HMAC key never leaves this Android installation.
+        if (normalizedParts.size == 6 && normalizedParts[0] == "BB") {
+            val tier = normalizedParts[1]
+            val days = normalizedParts[2].toIntOrNull() ?: 0
+            val expiryHex = normalizedParts[3]
+            val challengeHash = normalizedParts[4]
+            val receivedSignature = normalizedParts[5]
 
             val expiryEpochDays = expiryHex.toLongOrNull(16)
-            val currentEpochDays = ClockGuard.effectiveNowMs() / (24 * 60 * 60 * 1000L)
+            val currentEpochDays = ClockGuard.effectiveNowMs() / 86_400_000L
             if (expiryEpochDays == null || currentEpochDays > expiryEpochDays) {
-                return VoucherValidationResult(
-                    isValid = false,
-                    daysToAdd = 0,
-                    message = "This voucher has expired or has an invalid expiry header.",
-                    planName = ""
-                )
+                return VoucherValidationResult(false, 0, "This voucher has expired or has an invalid expiry header.", "")
             }
 
             val myChallenge = computeDeviceChallenge(shopProfile)
@@ -321,15 +305,9 @@ object SubscriptionSecurityManager {
             val key = try {
                 getOrCreateIsolatedHmacKey(shopProfile)
             } catch (e: SecurityException) {
-                return VoucherValidationResult(
-                    isValid = false,
-                    daysToAdd = 0,
-                    message = e.message ?: "Hardware voucher keystore unavailable.",
-                    planName = ""
-                )
+                return VoucherValidationResult(false, 0, e.message ?: "Hardware voucher keystore unavailable.", "")
             }
             val expectedSig = computeHmacSignature(payload, key).take(8).uppercase(Locale.ROOT)
-
             return if (slowEquals(receivedSignature, expectedSig)) {
                 val (planName, verifiedAmt) = mapTierNameAndAmount(tier, branchCount, pricing.totalPayable)
                 VoucherValidationResult(
@@ -340,21 +318,56 @@ object SubscriptionSecurityManager {
                     verifiedAmount = verifiedAmt
                 )
             } else {
-                VoucherValidationResult(
-                    isValid = false,
-                    daysToAdd = 0,
-                    message = "Voucher signature verification failed (Tampered or Invalid Code).",
-                    planName = ""
-                )
+                VoucherValidationResult(false, 0, "Voucher signature verification failed (Tampered or Invalid Code).", "")
             }
         }
 
         return VoucherValidationResult(
             isValid = false,
             daysToAdd = 0,
-            message = "Unrecognized unlock code. Submit your MoMo transaction reference for admin verification to receive a signed BB2-... code.",
+            message = "Unrecognized unlock code. Submit your MoMo transaction reference for admin verification to receive a signed BB3-... code.",
             planName = ""
         )
+    }
+
+    /**
+     * Shared verifier for production and unit tests. The production caller always supplies
+     * the public key pinned in this APK; test code can supply a throwaway public key.
+     */
+    internal fun verifyBB3CodeWithPublicKey(
+        code: String,
+        username: String,
+        phone: String,
+        publicKey: PublicKey,
+        nowMs: Long = ClockGuard.effectiveNowMs()
+    ): Boolean {
+        val parts = code.trim().split("-")
+        if (parts.size != 7 || !parts[0].equals("BB3", true)) return false
+        val tier = parts[1].uppercase(Locale.ROOT)
+        val days = parts[2].toIntOrNull() ?: return false
+        if (days !in 1..800) return false
+        val expiryHex = parts[3].uppercase(Locale.ROOT)
+        val expiryEpochDay = expiryHex.toLongOrNull(16) ?: return false
+        val today = nowMs / 86_400_000L
+        if (today > expiryEpochDay) return false
+        val accountHash = parts[4].uppercase(Locale.ROOT)
+        if (accountHash != computeAccountBindingHash(username, phone)) return false
+        val nonce = parts[5].uppercase(Locale.ROOT)
+        if (nonce.length != 24 || !nonce.all { it in '0'..'9' || it in 'A'..'F' }) return false
+        val payload = "BB3:$tier:$days:$expiryHex:$accountHash:$nonce"
+        val signatureBytes = try {
+            Base64.decode(parts[6], Base64.NO_WRAP)
+        } catch (_: IllegalArgumentException) {
+            return false
+        }
+        return try {
+            val verifier = Signature.getInstance("SHA256withECDSA")
+            verifier.initVerify(publicKey)
+            verifier.update(payload.toByteArray(StandardCharsets.UTF_8))
+            verifier.verify(signatureBytes)
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun mapTierNameAndAmount(tier: String, branchCount: Int, calculatedMonthly: Int): Pair<String, Int> {
@@ -367,8 +380,10 @@ object SubscriptionSecurityManager {
     }
 
     fun computeVoucherFingerprint(code: String): String {
+        val raw = code.trim()
+        val canonical = if (raw.substringBefore("-").equals("BB3", true)) raw else raw.uppercase(Locale.ROOT)
         val digest = MessageDigest.getInstance("SHA-256")
-        val hash = digest.digest(code.trim().uppercase(Locale.ROOT).toByteArray(StandardCharsets.UTF_8))
+        val hash = digest.digest(canonical.toByteArray(StandardCharsets.UTF_8))
         return SecurityUtils.bytesToHex(hash)
     }
 
@@ -393,34 +408,7 @@ object SubscriptionSecurityManager {
         )
     }
 
-    /**
-     * Verifies an unlock code (BB2 format) with account binding and HMAC signature.
-     * This is a simplified verification for direct code checking.
-     */
-    fun verifyUnlockCode(code: String, username: String, phone: String): Boolean {
-        val parts = code.trim().uppercase(Locale.ROOT).split("-")
-        if (parts.size != 6) return false
-
-        if (parts[0] != "BB2") return false
-        val tier = parts[1]
-        val days = parts[2].toIntOrNull() ?: return false
-        val expiryHex = parts[3]
-        val acctHash = parts[4]
-        val hmacSig = parts[5]
-
-        val expiryEpochDays = expiryHex.toLongOrNull(16) ?: return false
-        val todayEpochDays = System.currentTimeMillis() / 86_400_000L
-        if (todayEpochDays > expiryEpochDays) return false
-
-        // Verify account binding
-        val expectedHash = computeAccountBindingHash(username, phone)
-        if (acctHash != expectedHash) return false
-
-        // Verify HMAC signature (constant-time) matching BB2:$tier:$days:$expiryHex:$acctHash
-        val payload = "BB2:$tier:$days:$expiryHex:$acctHash"
-        val signingSecret = getCrossPlatformSigningSecret()
-        val key = SecretKeySpec(signingSecret.toByteArray(StandardCharsets.UTF_8), HMAC_ALGORITHM)
-        val expectedSig = computeHmacSignature(payload, key).take(8).uppercase(Locale.ROOT)
-        return slowEquals(hmacSig, expectedSig)
-    }
+    /** Compatibility name retained for callers/tests; only public-key BB3 codes verify locally. */
+    fun verifyUnlockCode(code: String, username: String, phone: String): Boolean =
+        verifyBB3CodeWithPublicKey(code, username, phone, bb3PublicKey)
 }

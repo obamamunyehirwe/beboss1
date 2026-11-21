@@ -9,7 +9,7 @@
 BeBoss is now **production-ready** with:
 - ✅ **100% Offline-First Mobile POS** (Android 7.0+)
 - ✅ **Real-Time Web Admin Console** (Supabase + TanStack)
-- ✅ **Cryptographic Account-Bound Licensing** (BB2 Unlock Codes)
+- ✅ **Cryptographic Account-Bound Licensing** (BB3 ECDSA Unlock Codes; BB2 legacy online verification)
 - ✅ **Multi-Branch LAN P2P + Cloud Sync**
 - ✅ **4-Language Local Translation Engine** (EN, RW, FR, SW)
 - ✅ **Bank-Grade AES-256 Encryption**
@@ -153,11 +153,11 @@ init {
 - Reset trials, adjust branch/worker/device limits
 - Suspend/reactivate shops remotely
 
-#### 4. Issue Code (BB2 Generator)
+#### 4. Issue Code (BB3 Generator)
 - **Registered Shop Quick-Picker**: Auto-fills username + phone
 - **Tier & Duration Presets**: SINGLE/DUAL/MULTI/ANNUAL + 4d/30d/90d/365d
 - **Live Cryptographic Binding Hash Preview**: Shows `@username + *last9 -> Hash #XXXXXX`
-- Generates real HMAC-signed `BB2-...` code
+- Requests a server-signed ECDSA P-256 `BB3-...` code; the private key never reaches Android or the browser
 - Extends shop's cloud expiry automatically
 
 #### 5. Codes Registry
@@ -200,17 +200,21 @@ init {
 | MULTI | 3+ | 5+ | 3+ | 12,000 FRw |
 | ANNUAL | Any | Any | Any | 50,000 FRw |
 
-### 4.3 Account-Bound BB2 Unlock Code
+### 4.3 Account-Bound BB3 ECDSA Unlock Code
 
-```
-BB2-[TIER]-[DAYS]-[EXPIRY_HEX]-[ACCT_HASH6]-[HMAC_SIG8]
-Example: BB2-SINGLE-30-505B-A7F3C2-9E41D80B
-
-ACCT_HASH6 = SHA-256(lowercase(username) + ":" + last9Digits(phone))
-HMAC_SIG8 = HMAC-SHA256(code_prefix, BEBOSS_UNLOCK_SIGNING_SECRET)[0:8]
+```text
+BB3-[TIER]-[DAYS]-[EXPIRY_HEX]-[ACCT_HASH6]-[NONCE_96BIT]-[ECDSA_SIGNATURE_BASE64]
+Payload: BB3:TIER:DAYS:EXPIRY_HEX:ACCT_HASH6:NONCE
 ```
 
-**Anti-Replay**: Every redeemed code's SHA-256 fingerprint stored in `redeemed_vouchers` table.
+- `ACCT_HASH6`: SHA-256 prefix of the normalized lowercase shop username and last nine phone digits.
+- `NONCE_96BIT`: cryptographically random 96-bit value, unique per code.
+- `ECDSA_SIGNATURE_BASE64`: DER-encoded ECDSA P-256 / SHA-256 signature.
+- **Private-key location**: server-only Supabase `app_secrets.BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM`. It must never be placed in mobile BuildConfig, APK assets, browser local storage, or any `VITE_*` variable.
+- **Android verification**: the app embeds only the matching public key and verifies new BB3 codes offline.
+- **Legacy BB2 compatibility**: existing BB2 codes are verified online against the exact BeBoss-issued `unlock_codes` database record; the server requires `status = ISSUED`, checks shop account/tier/days and atomically changes it to `REDEEMED`. The old shared HMAC secret is not used to issue new codes.
+
+**Anti-Replay**: BB3 fingerprints are recorded locally by each installation. Legacy BB2 codes are redeemed atomically in the cloud and cannot be redeemed a second time through the new app.
 
 ### 4.4 Payment Flow
 
@@ -221,7 +225,7 @@ HMAC_SIG8 = HMAC-SHA256(code_prefix, BEBOSS_UNLOCK_SIGNING_SECRET)[0:8]
 4. Owner completes payment, gets telco reference
 5. Owner submits reference in app or web (My Shop page)
 6. Admin verifies payment in Payments Queue
-7. Admin clicks "Approve & Generate BB2"
+7. Admin clicks "Approve & Generate BB3"
 8. Code generated, saved to Supabase, shop's cloud expiry extended
 9. Owner receives code via WhatsApp or email
 10. Owner pastes code into app → Auto-unlock (even offline)
@@ -246,7 +250,7 @@ HMAC_SIG8 = HMAC-SHA256(code_prefix, BEBOSS_UNLOCK_SIGNING_SECRET)[0:8]
 - **TLS 1.2/1.3**: Modern cipher suites only
 - **Certificate Pinning**: Optional SHA-256 public key pins
 - **Fail-Closed Validation**: Bad data rejected before sync
-- **Constant-Time Verification**: `MessageDigest.isEqual` for all HMAC checks
+- **Constant-Time Verification**: `MessageDigest.isEqual` for equality checks and ECDSA verification for BB3 signatures
 
 ### 5.4 Anti-Tampering
 - **ClockGuard**: Monotonic `SystemClock.elapsedRealtime()` vs wall-clock
@@ -269,7 +273,7 @@ HMAC_SIG8 = HMAC-SHA256(code_prefix, BEBOSS_UNLOCK_SIGNING_SECRET)[0:8]
   ```
   SUPABASE_URL=https://your-project-ref.supabase.co
   SUPABASE_ANON_KEY=your-supabase-anon-public-key
-  BEBOSS_UNLOCK_SIGNING_SECRET=your-high-entropy-32-plus-char-secret
+  # P-256 BB3 private signing key is stored in Supabase app_secrets; it is not an Android or VITE_ variable.
   SUPABASE_CERT_PINS=none  # or comma-separated SHA-256 pins
   ```
 
@@ -361,7 +365,7 @@ HMAC_SIG8 = HMAC-SHA256(code_prefix, BEBOSS_UNLOCK_SIGNING_SECRET)[0:8]
 3. **Verify Payment**:
    - Payments Queue → Find pending request
    - Confirm payer phone + telco reference match
-   - Tap "Approve & Generate BB2"
+   - Tap "Approve & Generate BB3"
 4. **Send Code**: Copy code → WhatsApp to shop owner
 5. **Monitor**: Codes Registry → Verify code redeemed
 
@@ -385,9 +389,9 @@ HMAC_SIG8 = HMAC-SHA256(code_prefix, BEBOSS_UNLOCK_SIGNING_SECRET)[0:8]
 ### Issue: Unlock Code Not Recognized
 **Cause**: Code format invalid or account mismatch
 **Fix**:
-1. Verify code format: `BB2-TIER-DAYS-EXPIRY-HASH-SIG`
-2. Confirm username + phone match registered account
-3. Check code not already redeemed
+1. New codes use `BB3-TIER-DAYS-EXPIRY-HASH-NONCE-SIGNATURE`; check the entire copied code is intact.
+2. Confirm the registered shop username and phone match the code.
+3. BB3 verifies offline with the pinned public key. Old BB2 requires an internet connection and a matching, unredeemed server-issued record.
 **Verify**: Admin Console → Codes Registry → Search code
 
 ### Issue: Multi-Branch Sync Not Working

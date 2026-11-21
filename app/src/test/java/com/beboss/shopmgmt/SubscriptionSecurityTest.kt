@@ -5,7 +5,17 @@ import com.beboss.shopmgmt.util.SubscriptionSecurityManager
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.nio.charset.StandardCharsets
+import java.security.KeyPairGenerator
+import java.security.Signature
+import java.security.spec.ECGenParameterSpec
+import java.util.Base64
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
 class SubscriptionSecurityTest {
 
     private val sampleShop = ShopProfile(
@@ -14,6 +24,22 @@ class SubscriptionSecurityTest {
         shopName = "BeBoss Kigali Store",
         phone = "+250 788 123 456"
     )
+
+    private fun createBb3Code(username: String, phone: String, tier: String, days: Int): Pair<String, java.security.KeyPair> {
+        val generator = KeyPairGenerator.getInstance("EC")
+        generator.initialize(ECGenParameterSpec("secp256r1"))
+        val pair = generator.generateKeyPair()
+        val accountHash = SubscriptionSecurityManager.computeAccountBindingHash(username, phone)
+        val expiryHex = ((System.currentTimeMillis() / 86_400_000L) + 14).toString(16).uppercase()
+        val nonce = ByteArray(12).also { java.security.SecureRandom().nextBytes(it) }
+            .joinToString("") { "%02X".format(it) }
+        val payload = "BB3:$tier:$days:$expiryHex:$accountHash:$nonce"
+        val signer = Signature.getInstance("SHA256withECDSA")
+        signer.initSign(pair.private)
+        signer.update(payload.toByteArray(StandardCharsets.UTF_8))
+        val signature = Base64.getEncoder().encodeToString(signer.sign())
+        return Pair("BB3-$tier-$days-$expiryHex-$accountHash-$nonce-$signature", pair)
+    }
 
     @Test
     fun testValidCryptographicVoucherVerification() {
@@ -110,52 +136,43 @@ class SubscriptionSecurityTest {
     }
 
     @Test
-    fun testAccountBoundUnlockCodeVerificationAndPhoneNormalization() {
-        // Admin generates BB2 code for created username "jeanpaul" and phone "+250 788 123 456"
-        val unlockCode = SubscriptionSecurityManager.generateAccountBoundUnlockCode(
+    fun testBB3AccountBindingPhoneNormalizationAndSignatureTamperDetection() {
+        val (code, pair) = createBb3Code(
             username = "JeanPaul",
-            registeredPhone = "+250 788 123 456",
-            tierCode = "MULTI",
+            phone = "+250 788 123 456",
+            tier = "MULTI",
             days = 30
         )
+        assertTrue(code.startsWith("BB3-MULTI-30-"))
+        assertTrue(SubscriptionSecurityManager.isCompleteUnlockCodeFormat(code))
 
-        assertTrue(unlockCode.startsWith("BB2-MULTI-30-"))
-
-        // User enters local format "0788123456" on device Ã¢â‚¬â€ last 9 digits must normalize identically
-        val validResult = SubscriptionSecurityManager.verifyVoucherToken(
-            voucherInput = unlockCode,
-            shopProfile = sampleShop.copy(phone = "0788123456"),
-            branchCount = 2,
-            workerCount = 3,
-            ownerUsername = "jeanpaul",
-            ownerPhoneOverride = "0788123456"
+        // Equivalent local Rwanda phone format verifies with the same normalized account hash.
+        assertTrue(
+            SubscriptionSecurityManager.verifyBB3CodeWithPublicKey(
+                code, "jeanpaul", "0788123456", pair.public
+            )
         )
 
-        assertTrue(validResult.isValid)
-        assertTrue(validResult.daysToAdd == 30)
-
-        // Wrong username must be rejected
-        val wrongUserResult = SubscriptionSecurityManager.verifyVoucherToken(
-            voucherInput = unlockCode,
-            shopProfile = sampleShop,
-            branchCount = 2,
-            workerCount = 3,
-            ownerUsername = "other_owner",
-            ownerPhoneOverride = "+250788123456"
+        assertFalse(
+            "A BB3 signature must not verify for another username",
+            SubscriptionSecurityManager.verifyBB3CodeWithPublicKey(
+                code, "other_owner", "0788123456", pair.public
+            )
         )
-        assertFalse(wrongUserResult.isValid)
-
-        // Tampered HMAC signature must be rejected
-        val tampered = unlockCode.dropLast(2) + "FF"
-        val tamperedResult = SubscriptionSecurityManager.verifyVoucherToken(
-            voucherInput = tampered,
-            shopProfile = sampleShop,
-            branchCount = 2,
-            workerCount = 3,
-            ownerUsername = "jeanpaul",
-            ownerPhoneOverride = "0788123456"
+        assertFalse(
+            "A BB3 signature must not verify for another phone",
+            SubscriptionSecurityManager.verifyBB3CodeWithPublicKey(
+                code, "jeanpaul", "0788999999", pair.public
+            )
         )
-        assertFalse(tamperedResult.isValid)
+
+        val tampered = code.dropLast(2) + "AA"
+        assertFalse(
+            "A changed BB3 signature must be rejected",
+            SubscriptionSecurityManager.verifyBB3CodeWithPublicKey(
+                tampered, "jeanpaul", "0788123456", pair.public
+            )
+        )
     }
 
     @Test

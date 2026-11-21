@@ -14,8 +14,8 @@ android {
     applicationId = "com.beboss.shopmgmt"
     minSdk = 24
     targetSdk = 36
-    versionCode = 3
-    versionName = "2.1.0"
+    versionCode = 4
+    versionName = "2.2.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -48,14 +48,12 @@ android {
       buildConfigField("String", "SENTRY_DSN", "\"${project.findProperty("SENTRY_DSN") ?: ""}\"")
       buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
       buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
-      buildConfigField("String", "BEBOSS_UNLOCK_SIGNING_SECRET", "\"${project.findProperty("BEBOSS_UNLOCK_SIGNING_SECRET") ?: ""}\"")
     }
     debug { 
       signingConfig = signingConfigs.getByName("debugConfig") 
       buildConfigField("String", "SENTRY_DSN", "\"${project.findProperty("SENTRY_DSN") ?: ""}\"")
       buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
       buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
-      buildConfigField("String", "BEBOSS_UNLOCK_SIGNING_SECRET", "\"${project.findProperty("BEBOSS_UNLOCK_SIGNING_SECRET") ?: ""}\"")
     }
   }
   compileOptions {

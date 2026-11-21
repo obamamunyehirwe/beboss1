@@ -40,7 +40,7 @@ function SettingsPage() {
   const qc = useQueryClient();
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const save = useAdminAction(useServerFn(saveAppConfig), { success: "Saved — every app picks this up on its next sync", invalidate: [["admin", "config"], ["public-site"]] });
-  const setKey = useAdminAction(useServerFn(setSigningSecret), { success: "Signing key saved", invalidate: [["admin", "ctx"]] });
+  const setKey = useAdminAction(useServerFn(setSigningSecret), { success: "BB3 signing key saved", invalidate: [["admin", "ctx"]] });
   const [secret, setSecret] = useState("");
   const [show, setShow] = useState(false);
 
@@ -109,11 +109,11 @@ function SettingsPage() {
         <section className="grid gap-5 rounded-2xl border border-border bg-card p-5 lg:grid-cols-2">
           <div>
             <h2 className="flex items-center gap-2 font-semibold">
-              <KeyRound className="size-4 text-primary" /> Unlock signing key
+              <KeyRound className="size-4 text-primary" /> BB3 signing private key
               {ctx.data?.signingKeyConfigured ? <Badge variant="success">Configured</Badge> : <Badge variant="warning">Missing</Badge>}
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Must be exactly the value built into your Android app as <span className="font-mono">BEBOSS_UNLOCK_SIGNING_SECRET</span>. Codes signed with a different key are rejected by the app. The key is stored server-side and never shown again.
+              P-256 private key used to sign new BB3 unlock codes. It remains in the server-only Supabase app_secrets table and is never included in Android builds. Android apps contain only the matching public verification key. Do not paste this private key into mobile .env files or VITE_ variables. Rotate only after the matching new public key has shipped in an app update.
             </p>
           </div>
           <form
@@ -124,13 +124,13 @@ function SettingsPage() {
             className="flex flex-col gap-3"
           >
             <div className="relative">
-              <Input type={show ? "text" : "password"} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={ctx.data?.signingKeyConfigured ? "Enter a new key to replace it" : "Paste the app's signing key"} minLength={8} required autoComplete="off" className="pr-10" />
+              <Input type={show ? "text" : "password"} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={ctx.data?.signingKeyConfigured ? "Paste a replacement PKCS#8 P-256 private key PEM" : "Paste the server-only PKCS#8 P-256 private key PEM"} minLength={120} required autoComplete="off" className="pr-10" />
               <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShow(!show)} aria-label="Toggle visibility">
                 {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
             <Button type="submit" variant="soft" disabled={setKey.isPending}>
-              {setKey.isPending ? <Loader2 className="animate-spin" /> : <Save />} Save signing key
+              {setKey.isPending ? <Loader2 className="animate-spin" /> : <Save />} Save BB3 private key
             </Button>
           </form>
         </section>

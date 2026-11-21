@@ -19,12 +19,38 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.nio.charset.StandardCharsets
+import java.security.KeyPairGenerator
+import java.security.Signature
+import java.security.spec.ECGenParameterSpec
+import java.util.Base64
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class BeBossHardeningTest {
+
+    private fun createBb3Code(
+        username: String,
+        phone: String,
+        tier: String,
+        days: Int
+    ): Pair<String, java.security.KeyPair> {
+        val generator = KeyPairGenerator.getInstance("EC")
+        generator.initialize(ECGenParameterSpec("secp256r1"))
+        val pair = generator.generateKeyPair()
+        val accountHash = SubscriptionSecurityManager.computeAccountBindingHash(username, phone)
+        val expiryHex = ((System.currentTimeMillis() / 86_400_000L) + 14).toString(16).uppercase()
+        val nonce = ByteArray(12).also { java.security.SecureRandom().nextBytes(it) }
+            .joinToString("") { "%02X".format(it) }
+        val payload = "BB3:$tier:$days:$expiryHex:$accountHash:$nonce"
+        val signer = Signature.getInstance("SHA256withECDSA")
+        signer.initSign(pair.private)
+        signer.update(payload.toByteArray(StandardCharsets.UTF_8))
+        val signature = Base64.getEncoder().encodeToString(signer.sign())
+        return Pair("BB3-$tier-$days-$expiryHex-$accountHash-$nonce-$signature", pair)
+    }
 
     @Test
     fun testNewShopStartsWithMandatoryFourDayFreeTrial() {
@@ -190,63 +216,46 @@ class BeBossHardeningTest {
     }
 
     @Test
-    fun testAccountBoundBB2UnlockCodeGenerationAutoDetectVerificationAndAntiReplay() {
-        val testSecret = "BeBoss_UnitTest_HMAC_Signing_Secret_2026_Strong_32B!"
-        val code = SubscriptionSecurityManager.generateAccountBoundUnlockCode(
+    fun testAccountBoundBB3UnlockCodeGenerationVerificationAndAntiReplay() {
+        val (code, pair) = createBb3Code(
             username = "jeanpaul",
-            registeredPhone = "+250 788 123 456",
-            tierCode = "SINGLE",
-            days = 30,
-            signingSecret = testSecret
+            phone = "+250 788 123 456",
+            tier = "SINGLE",
+            days = 30
         )
 
-        // Format auto-detector accepts complete BB2 code and rejects partial inputs
         assertTrue(SubscriptionSecurityManager.isCompleteUnlockCodeFormat(code))
-        assertFalse(SubscriptionSecurityManager.isCompleteUnlockCodeFormat("BB2-SINGLE-30"))
+        assertFalse(SubscriptionSecurityManager.isCompleteUnlockCodeFormat("BB3-SINGLE-30"))
         assertFalse(SubscriptionSecurityManager.isCompleteUnlockCodeFormat("RANDOM-STRING"))
 
-        // Local phone format (0788123456) matches international (+250 788 123 456)
-        val matchingShop = ShopProfile(shopName = "Jean Paul Store", phone = "0788123456")
-        val okResult = SubscriptionSecurityManager.verifyVoucherToken(
-            voucherInput = code,
-            shopProfile = matchingShop,
-            ownerUsername = "JeanPaul",
-            ownerPhoneOverride = "0788123456",
-            signingSecretOverride = testSecret
+        val matchingPhone = "0788123456"
+        assertTrue(
+            SubscriptionSecurityManager.verifyBB3CodeWithPublicKey(
+                code, "JeanPaul", matchingPhone, pair.public
+            )
         )
-        assertTrue("Expected BB2 code to verify: ${okResult.message}", okResult.isValid)
-        assertEquals(30, okResult.daysToAdd)
 
-        // Wrong username must fail account binding check
-        val wrongUserResult = SubscriptionSecurityManager.verifyVoucherToken(
-            voucherInput = code,
-            shopProfile = matchingShop,
-            ownerUsername = "otherowner",
-            ownerPhoneOverride = "0788123456",
-            signingSecretOverride = testSecret
+        assertFalse(
+            SubscriptionSecurityManager.verifyBB3CodeWithPublicKey(
+                code, "otherowner", matchingPhone, pair.public
+            )
         )
-        assertFalse(wrongUserResult.isValid)
-
-        // Wrong phone must fail account binding check
-        val wrongPhoneResult = SubscriptionSecurityManager.verifyVoucherToken(
-            voucherInput = code,
-            shopProfile = matchingShop.copy(phone = "0788999999"),
-            ownerUsername = "jeanpaul",
-            ownerPhoneOverride = "0788999999",
-            signingSecretOverride = testSecret
+        assertFalse(
+            SubscriptionSecurityManager.verifyBB3CodeWithPublicKey(
+                code, "jeanpaul", "0788999999", pair.public
+            )
         )
-        assertFalse(wrongPhoneResult.isValid)
 
-        // Replay of an already redeemed fingerprint must be rejected
         val fingerprint = SubscriptionSecurityManager.computeVoucherFingerprint(code)
+        val profile = ShopProfile(shopName = "Jean Paul Store", phone = matchingPhone)
         val replayResult = SubscriptionSecurityManager.verifyVoucherToken(
             voucherInput = code,
-            shopProfile = matchingShop,
+            shopProfile = profile,
             alreadyRedeemedHashes = setOf(fingerprint),
             ownerUsername = "jeanpaul",
-            ownerPhoneOverride = "0788123456",
-            signingSecretOverride = testSecret
+            ownerPhoneOverride = matchingPhone
         )
         assertFalse(replayResult.isValid)
+        assertTrue(replayResult.message.contains("Anti-Replay"))
     }
 }
