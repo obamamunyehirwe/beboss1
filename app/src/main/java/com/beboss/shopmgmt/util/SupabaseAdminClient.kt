@@ -1411,50 +1411,70 @@ object SupabaseAdminClient {
     ): SupabaseUnlockCodeDto? = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext null
         try {
+            val rawCode = unlockCode.trim()
+            val cleanCode = if (rawCode.startsWith("BB3-", ignoreCase = true)) {
+                rawCode // BB3 Base64 ECDSA signatures are case-sensitive.
+            } else {
+                rawCode.uppercase(Locale.ROOT)
+            }
             val shopSyncKey = computeShopSyncKey(username, phone)
-            val cleanCode = URLEncoder.encode(unlockCode.trim().uppercase(Locale.ROOT), "UTF-8")
-            val req = buildRestRequest("unlock_codes?unlock_code=eq.$cleanCode&limit=1", tenantSyncKey = shopSyncKey).get().build()
-            var matched: SupabaseUnlockCodeDto? = null
-            client.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    val arr = JSONArray(resp.body?.string().orEmpty().ifBlank { "[]" })
-                    if (arr.length() > 0) {
-                        matched = parseUnlockCodeDto(arr.getJSONObject(0))
-                    }
+            val encodedCode = URLEncoder.encode(cleanCode, "UTF-8")
+            val lookup = buildRestRequest(
+                "unlock_codes?unlock_code=eq.$encodedCode&limit=1",
+                tenantSyncKey = shopSyncKey
+            ).get().build()
+
+            val matched = client.newCall(lookup).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val rows = JSONArray(response.body?.string().orEmpty().ifBlank { "[]" })
+                if (rows.length() == 0) null else parseUnlockCodeDto(rows.getJSONObject(0))
+            } ?: return@withContext null
+
+            // Existing REDEEMED/REVOKED records are authoritative and must never be
+            // converted back to ISSUED or silently accepted on another device.
+            if (matched.status != "ISSUED") return@withContext matched
+
+            val now = System.currentTimeMillis()
+            val patchBody = JSONObject().apply {
+                put("status", "REDEEMED")
+                put("redeemed_at", now)
+            }
+            val claimUrl = "unlock_codes?id=eq.${URLEncoder.encode(matched.id, "UTF-8")}&status=eq.ISSUED"
+            val patch = buildRestRequest(claimUrl, tenantSyncKey = shopSyncKey)
+                .addHeader("Prefer", "return=representation")
+                .patch(patchBody.toString().toRequestBody(jsonMediaType))
+                .build()
+
+            val claimed = client.newCall(patch).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Could not atomically claim unlock code (HTTP ${response.code}).")
+                    return@withContext matched.copy(status = "CLAIM_FAILED")
                 }
+                val rows = JSONArray(response.body?.string().orEmpty().ifBlank { "[]" })
+                rows.length() > 0
+            }
+            if (!claimed) {
+                // Another device may have redeemed between the read and conditional update.
+                return@withContext matched.copy(status = "REDEEMED")
             }
 
-            if (matched != null && matched!!.status == "ISSUED") {
-                val now = System.currentTimeMillis()
-                val patchBody = JSONObject().apply {
-                    put("status", "REDEEMED")
-                    put("redeemed_at", now)
-                }
-                val patchReq = buildRestRequest(
-                    "unlock_codes?id=eq.${URLEncoder.encode(matched!!.id, "UTF-8")}",
-                    tenantSyncKey = shopSyncKey
-                )
-                    .patch(patchBody.toString().toRequestBody(jsonMediaType))
-                    .build()
-                client.newCall(patchReq).execute().close()
-
-                val cleanUser = URLEncoder.encode(username.trim().lowercase(Locale.ROOT), "UTF-8")
-                val prPatch = JSONObject().apply {
-                    put("status", "REDEEMED")
-                    put("updated_at", now)
-                }
-                val prReq = buildRestRequest(
-                    "payment_requests?generated_unlock_code=eq.$cleanCode&owner_username=eq.$cleanUser",
-                    tenantSyncKey = shopSyncKey
-                )
-                    .patch(prPatch.toString().toRequestBody(jsonMediaType))
-                    .build()
-                client.newCall(prReq).execute().close()
+            val cleanUser = URLEncoder.encode(username.trim().lowercase(Locale.ROOT), "UTF-8")
+            val paymentPatch = JSONObject().apply {
+                put("status", "REDEEMED")
+                put("updated_at", now)
             }
-            matched
+            val paymentReq = buildRestRequest(
+                "payment_requests?generated_unlock_code=eq.$encodedCode&owner_username=eq.$cleanUser",
+                tenantSyncKey = shopSyncKey
+            ).patch(paymentPatch.toString().toRequestBody(jsonMediaType)).build()
+            client.newCall(paymentReq).execute().close()
+
+            // CLAIMED is a local result marker only; the database row remains REDEEMED.
+            // BeBossRepository allows this first claim but rejects later REDEEMED lookups.
+            matched.copy(status = "CLAIMED", redeemedAt = now)
         } catch (e: Exception) {
             Log.e(TAG, "verifyAndMarkCodeRedeemedInCloud error: ${e.message}")
-            null
+            null // Network unavailable: caller may use the BB3 public-key offline path.
         }
     }
 
