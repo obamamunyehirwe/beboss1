@@ -744,3 +744,105 @@ export const revokeTeamRole = createServerFn({ method: "POST" })
     await audit(ctx, admin.email, "REVOKE_ROLE", data.userId, data.role);
     return { ok: true };
   });
+
+
+/**
+ * One-time first-admin bootstrap. This endpoint accepts no email or password from
+ * the browser: it can only invite the single address in admin_bootstrap_emails,
+ * only while no admin role exists, and only once. The invited user chooses their
+ * own password through Supabase's verified email flow.
+ */
+export const bootstrapInitialAdmin = createServerFn({ method: "POST" }).handler(async () => {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+  const { count: adminCount, error: roleError } = await supabaseAdmin
+    .from("user_roles")
+    .select("user_id", { count: "exact", head: true })
+    .eq("role", "admin");
+  if (roleError) throw new Error(`Could not verify initial admin setup: ${roleError.message}`);
+  if ((adminCount ?? 0) > 0) return { status: "already_configured" as const };
+
+  const { data: allowlist, error: allowlistError } = await supabaseAdmin
+    .from("admin_bootstrap_emails")
+    .select("email")
+    .order("email")
+    .limit(2);
+  if (allowlistError) throw new Error(`Could not read the administrator allow-list: ${allowlistError.message}`);
+  if (!allowlist || allowlist.length !== 1) {
+    throw new Error("Initial setup requires exactly one approved email in admin_bootstrap_emails.");
+  }
+
+  const email = String(allowlist[0].email ?? "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("The approved first-admin email is invalid. Update admin_bootstrap_emails.");
+  }
+
+  // Do not issue another invitation for an Auth account that already exists.
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw new Error(`Could not verify the first-admin account: ${error.message}`);
+    if (data.users.some((user) => (user.email ?? "").toLowerCase() === email)) {
+      return { status: "account_exists" as const, email };
+    }
+    if (data.users.length < 200) break;
+  }
+
+  const configuredRedirect = process.env["BEBOSS_ADMIN_URL"]?.trim();
+  if (!configuredRedirect) {
+    throw new Error("Initial admin invitations are not configured. Set BEBOSS_ADMIN_URL to the production /reset-password?invite=1 URL.");
+  }
+  let redirectTo: string;
+  try {
+    const parsed = new URL(configuredRedirect);
+    const isLocal = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+    if (parsed.protocol !== "https:" && !(isLocal && parsed.protocol === "http:")) {
+      throw new Error("HTTPS is required for the admin invitation redirect.");
+    }
+    if (parsed.hostname.endsWith(".example") || parsed.hostname === "example.com") {
+      throw new Error("Replace the example BEBOSS_ADMIN_URL with your real production domain.");
+    }
+    if (parsed.pathname !== "/reset-password") {
+      throw new Error("BEBOSS_ADMIN_URL must point to /reset-password?invite=1.");
+    }
+    parsed.searchParams.set("invite", "1");
+    redirectTo = parsed.toString();
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : "BEBOSS_ADMIN_URL is invalid.");
+  }
+
+  // A unique service-only app_secrets row is the one-shot lock. Reserve it before
+  // sending mail so concurrent anonymous requests cannot send duplicate invites.
+  const markerName = "BEBOSS_INITIAL_ADMIN_INVITE_SENT";
+  const reservation = `PENDING:${Date.now()}`;
+  const { error: reservationError } = await supabaseAdmin.from("app_secrets").insert({
+    name: markerName,
+    value: reservation,
+    updated_by: "first-admin-bootstrap",
+    updated_at: new Date().toISOString(),
+  });
+  if (reservationError) {
+    if (reservationError.code === "23505") {
+      return { status: "already_sent" as const, email };
+    }
+    throw new Error(`Could not reserve the one-time setup invitation: ${reservationError.message}`);
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, { redirectTo });
+    if (error) throw new Error(`Supabase could not send the first-admin invitation: ${error.message}`);
+    if (!data.user?.id) throw new Error("Supabase did not create the invited administrator account.");
+
+    const { error: markerError } = await supabaseAdmin
+      .from("app_secrets")
+      .update({ value: `SENT:${new Date().toISOString()}`, updated_at: new Date().toISOString() })
+      .eq("name", markerName);
+    if (markerError) {
+      // The reservation remains in place, preventing duplicate invitations.
+      console.error("[BeBoss bootstrap] Invitation sent but one-time marker could not be finalized", markerError);
+    }
+    return { status: "sent" as const, email };
+  } catch (error) {
+    await supabaseAdmin.from("app_secrets").delete().eq("name", markerName).eq("value", reservation);
+    throw error;
+  }
+});
