@@ -375,7 +375,7 @@ fun AdminVerificationConsoleDialog(
                             ) {
                                 Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(16.dp), tint = OrangePrimary)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Open secure web admin setup", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
+                                Text("Export Admin Portal HTML", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
                             }
                         }
                     }
