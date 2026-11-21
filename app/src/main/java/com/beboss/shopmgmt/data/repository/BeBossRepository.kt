@@ -794,29 +794,54 @@ class BeBossRepository(private val database: AppDatabase) {
         ownerPhoneOverride: String = "",
         ownerUser: User? = null
     ): VoucherValidationResult {
-        val cleanUpper = voucherCode.trim().uppercase()
+        val rawCode = voucherCode.trim()
+        val isBb3 = rawCode.startsWith("BB3-", ignoreCase = true)
+        val isLegacyBb2 = rawCode.startsWith("BB2-", ignoreCase = true)
+        val normalizedCode = if (isBb3) rawCode else rawCode.uppercase()
         val effectiveUser = ownerUsername.ifBlank { ownerUser?.username.orEmpty() }
         val effectivePhone = ownerPhoneOverride.ifBlank { shopProfile.phone }
 
-        val cloudRecord = if (SupabaseAdminClient.isConfigured()) {
+        // Legacy BB2 has its own online verifier which checks the exact ISSUED row and
+        // atomically redeems it. Do not pre-claim it here or the legacy verifier would
+        // see REDEEMED and reject the first legitimate redemption.
+        // New BB3 can be claimed online for cross-device anti-replay, while still
+        // supporting offline public-key verification when the cloud is unreachable.
+        val cloudRecord = if (
+            SupabaseAdminClient.isConfigured() &&
+            isBb3 &&
+            effectiveUser.isNotBlank() &&
+            effectivePhone.isNotBlank()
+        ) {
             SupabaseAdminClient.verifyAndMarkCodeRedeemedInCloud(
-                unlockCode = cleanUpper,
+                unlockCode = normalizedCode,
                 username = effectiveUser,
                 phone = effectivePhone
             )
         } else null
 
-        if (cloudRecord?.status == "REVOKED") {
-            return VoucherValidationResult(
+        when (cloudRecord?.status) {
+            "REVOKED" -> return VoucherValidationResult(
                 isValid = false,
                 daysToAdd = 0,
                 message = "This unlock code was revoked by BeBoss Admin and cannot be activated.",
                 planName = ""
             )
+            "REDEEMED" -> return VoucherValidationResult(
+                isValid = false,
+                daysToAdd = 0,
+                message = "This BB3 unlock code has already been redeemed on another device.",
+                planName = ""
+            )
+            "CLAIM_FAILED" -> return VoucherValidationResult(
+                isValid = false,
+                daysToAdd = 0,
+                message = "BeBoss could not securely reserve this code online. Check your connection and retry before activating it.",
+                planName = ""
+            )
         }
 
         val res = subscriptionManager.redeemVoucher(
-            voucherCode = voucherCode,
+            voucherCode = normalizedCode,
             shopProfile = shopProfile,
             branchCount = branchCount,
             workerCount = workerCount,
@@ -825,8 +850,19 @@ class BeBossRepository(private val database: AppDatabase) {
         )
         if (res.isValid) {
             val existingReqs = paymentVerificationDao.getAllRequestsList()
-            existingReqs.filter { it.generatedUnlockCode.equals(cleanUpper, ignoreCase = true) }.forEach { req ->
-                paymentVerificationDao.updateCloudApproval(req.id, "REDEEMED", cleanUpper, req.approvalMode)
+            existingReqs.filter { request ->
+                if (isBb3) {
+                    request.generatedUnlockCode.trim() == normalizedCode
+                } else {
+                    request.generatedUnlockCode.equals(normalizedCode, ignoreCase = true)
+                }
+            }.forEach { request ->
+                paymentVerificationDao.updateCloudApproval(
+                    request.id,
+                    "REDEEMED",
+                    normalizedCode,
+                    request.approvalMode
+                )
             }
             if (SupabaseAdminClient.isConfigured()) {
                 val updatedProf = shopProfileDao.getShopProfileDirect() ?: shopProfile
