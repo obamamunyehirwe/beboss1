@@ -1,4 +1,5 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { Eye, EyeOff, KeyRound, Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -13,6 +14,7 @@ import { liveConfigured } from "@/lib/live-config";
 import { useI18n } from "@/lib/i18n";
 import { Logo } from "@/components/site/Logo";
 import { supabase } from "@/integrations/supabase/client";
+import { bootstrapInitialAdmin } from "@/lib/admin.functions";
 
 const searchSchema = z.object({ redirect: z.string().optional() });
 
@@ -42,12 +44,14 @@ function AuthPage() {
   const { redirect } = Route.useSearch();
   const target = safeRedirect(redirect);
   const router = useRouter();
+  const sendBootstrapInvite = useServerFn(bootstrapInitialAdmin);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [resetBusy, setResetBusy] = useState(false);
+  const [bootstrapBusy, setBootstrapBusy] = useState(false);
 
   useEffect(() => {
     if (!liveConfigured) {
@@ -93,6 +97,27 @@ function AuthPage() {
       toast.error(error instanceof Error ? error.message : "Unable to sign in. Check your connection and try again.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const requestFirstAdminInvite = async () => {
+    if (!liveConfigured || bootstrapBusy) return;
+    setBootstrapBusy(true);
+    try {
+      const result = await sendBootstrapInvite();
+      if (result.status === "sent") {
+        toast.success(`A secure setup invitation was sent to ${result.email}. Open the email and choose your own password.`);
+      } else if (result.status === "already_sent") {
+        toast.info(`The one-time invitation has already been issued to ${result.email}. Check that mailbox and its spam folder.`);
+      } else if (result.status === "account_exists") {
+        toast.info(`The approved account ${result.email} already exists. Complete its invitation or use password recovery before signing in.`);
+      } else {
+        toast.info("A master administrator is already configured. Sign in with the approved admin account.");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not prepare the first-admin invitation.");
+    } finally {
+      setBootstrapBusy(false);
     }
   };
 
@@ -180,6 +205,13 @@ function AuthPage() {
                 {checkingSession ? "Checking session…" : busy ? "Signing in…" : a("Sign in securely")}
               </Button>
             </form>
+            <div className="admin-auth-bootstrap">
+              <p>First-time setup is invitation-only. The one-time setup link goes to the pre-approved administrator email; no shared or default password is created.</p>
+              <Button type="button" variant="secondary" className="admin-auth-bootstrap-button" onClick={requestFirstAdminInvite} disabled={!liveConfigured || bootstrapBusy}>
+                {bootstrapBusy ? <Loader2 className="animate-spin" /> : <KeyRound size={16} />}
+                {bootstrapBusy ? "Preparing secure invitation…" : "Send first-admin setup invitation"}
+              </Button>
+            </div>
             <div className="admin-auth-method-note">
               <LockKeyhole size={15} />
               <span>Email and password authentication only. Public registration is disabled.</span>
