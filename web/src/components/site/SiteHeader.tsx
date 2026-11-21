@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   Activity,
   ArrowRight,
@@ -59,6 +59,7 @@ export function SiteHeader() {
   const { t, p, lang } = useI18n();
   const c = retailCopy[lang];
   const navigate = useNavigate();
+  const location = useLocation();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -78,6 +79,9 @@ export function SiteHeader() {
     { to: "/status" as const, label: t("navStatus"), description: c.headerStatusDesc, icon: Activity },
     { to: "/contact" as const, label: t("navContact"), description: c.headerContactDesc, icon: LifeBuoy },
   ];
+
+  const productActive = productLinks.some((item) => location.pathname === item.to);
+  const resourcesActive = resourceLinks.some((item) => location.pathname === item.to);
 
   const allLinks = [
     { to: "/" as const, label: p.common.goHome, description: c.headerHomeDesc, icon: Home },
@@ -132,7 +136,7 @@ export function SiteHeader() {
 
   const menuLink = (item: HeaderLink) => (
     <DropdownMenuItem key={item.to} asChild>
-      <Link to={item.to} className="site-mega-link">
+      <Link to={item.to} className="site-mega-link" activeProps={{ className: "site-mega-link site-mega-link-active" }}>
         <span className="site-mega-icon"><item.icon size={18} /></span>
         <span className="site-mega-copy">
           <strong>{item.label}</strong>
@@ -172,7 +176,7 @@ export function SiteHeader() {
           </div>
 
           <nav className="site-desktop-nav" aria-label={p.common.menu}>
-            <Link to="/" className="site-nav-home" activeProps={{ className: "site-nav-home site-nav-home-active" }}>
+            <Link to="/" activeOptions={{ exact: true }} className="site-nav-home" activeProps={{ className: "site-nav-home site-nav-home-active" }}>
               {p.common.goHome}
             </Link>
 
