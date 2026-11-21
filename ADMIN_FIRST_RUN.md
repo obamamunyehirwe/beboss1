@@ -45,3 +45,10 @@ The bootstrap invitation is one-time. The server records its reservation in the 
 ## Production security note
 
 The current mobile BB2 implementation still verifies legacy unlock codes using a shared HMAC secret supplied to the Android build. A secret compiled into a distributed APK cannot be treated as confidential. Removing that shared secret immediately would invalidate existing offline BB2 verification, so a backward-compatible asymmetric-signature migration is still required before claiming the entire mobile/web system is fully production-secure. The older embedded HTML portal no longer contains its former hardcoded HMAC fallback and does not persist the manually supplied key in local storage, but that is only a partial mitigation.
+
+
+## Mobile release status to verify
+
+The live release metadata currently advertises version `2.0.0`, while the Android source tree is configured as `2.1.0`. The private `releases` storage bucket currently has no APK objects, and no GitHub release attachment is present. The website's stable download endpoint deliberately returns HTTP 503 when a release record has no matching private object.
+
+Do not change the version pointer or publish a checksum until a real signed APK has been built from the verified source and uploaded through Admin → App releases. After upload, verify that the stored object path matches `app_releases.file_path`, the SHA-256 matches the binary, and `/api/public/download/latest` returns a successful redirect.
