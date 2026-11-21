@@ -126,6 +126,14 @@ export interface RetailInsights {
   last30: PeriodTotals;
   allTime: PeriodTotals;
   itemsSold30: number;
+  activity: {
+    purchaseOrders30: number;
+    purchaseUnits30: number;
+    purchaseValue30: number;
+    supplierCount30: number;
+    stockTransfers30: number;
+    stockTransferUnits30: number;
+  };
   daily: { day: string; revenue: number; profit: number; orders: number }[];
   topProducts: { name: string; quantity: number; revenue: number; profit: number }[];
   categories: { name: string; revenue: number; sharePct: number }[];
@@ -229,6 +237,14 @@ export function computeRetailInsights(ds: ShareDataset, now = Date.now()): Retai
     if (q <= 0) outOfStock++;
   }
 
+  const purchases30 = ds.purchases.filter((p) => (num(p["purchaseDate"]) || num(p["createdAt"])) >= since30);
+  const purchaseValue30 = purchases30.reduce(
+    (sum, p) => sum + (num(p["totalPurchaseCost"]) || num(p["quantityPurchased"]) * num(p["unitCostPrice"])),
+    0,
+  );
+  const supplierCount30 = new Set(purchases30.map((p) => str(p["supplierName"]).trim().toLowerCase()).filter(Boolean)).size;
+  const transfers30 = ds.stockTransfers.filter((t) => (num(t["transferDate"]) || num(t["createdAt"])) >= since30);
+
   const debtors = ds.customers.filter((c) => num(c["debtBalance"]) > 0);
   const collected30 = ds.customerPayments.filter((p) => num(p["paymentDate"]) >= since30).reduce((a, p) => a + num(p["amount"]), 0);
 
@@ -241,6 +257,14 @@ export function computeRetailInsights(ds: ShareDataset, now = Date.now()): Retai
     last30: periodTotals(recent),
     allTime: periodTotals(sales),
     itemsSold30,
+    activity: {
+      purchaseOrders30: purchases30.length,
+      purchaseUnits30: purchases30.reduce((sum, p) => sum + num(p["quantityPurchased"]), 0),
+      purchaseValue30,
+      supplierCount30,
+      stockTransfers30: transfers30.length,
+      stockTransferUnits30: transfers30.reduce((sum, t) => sum + num(t["quantity"]), 0),
+    },
     daily,
     topProducts: topBy(products, (p) => p.profit, 10),
     categories: topBy(cats, (c) => c.revenue, 8).map((c) => ({ ...c, sharePct: catTotal ? (c.revenue / catTotal) * 100 : 0 })),

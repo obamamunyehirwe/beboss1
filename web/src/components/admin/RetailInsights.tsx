@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { AlertTriangle, BadgeCheck, Boxes, HandCoins, PackageX, Receipt, RefreshCw, ShieldQuestion, TrendingUp, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BadgeCheck, Boxes, HandCoins, PackageX, Receipt, RefreshCw, ShieldQuestion, TrendingUp, Truck, Wallet } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingBlock, StatCard, downloadCsv } from "@/components/admin/ui";
@@ -13,7 +13,13 @@ const short = (v: number) => (Math.abs(v) >= 1_000_000 ? `${(v / 1_000_000).toFi
 
 export function RetailInsights({ shopId }: { shopId: string }) {
   const fetchInsights = useServerFn(getShopInsights);
-  const q = useQuery({ queryKey: ["admin", "insights", shopId], queryFn: () => fetchInsights({ data: { shopId } }), staleTime: 60_000 });
+  const q = useQuery({
+    queryKey: ["admin", "insights", shopId],
+    queryFn: () => fetchInsights({ data: { shopId } }),
+    staleTime: 0,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+  });
 
   if (q.isLoading) return <LoadingBlock />;
   if (q.error) return <EmptyState title="Couldn't load insights" sub={q.error instanceof Error ? q.error.message : "Try again"} />;
@@ -55,6 +61,8 @@ export function RetailInsights({ shopId }: { shopId: string }) {
         <StatCard label="Profit (30 days)" value={money(i.last30.profit, cur)} sub={`${i.last30.marginPct.toFixed(1)}% margin · ${i.itemsSold30.toLocaleString()} items sold`} icon={Wallet} tone="info" />
         <StatCard label="Customer debts" value={money(i.debts.total, cur)} sub={`${i.debts.debtors} debtors · collected ${money(i.debts.collected30, cur)} in 30d`} icon={HandCoins} tone="warning" />
         <StatCard label="Stock value (cost)" value={money(i.inventory.costValue, cur)} sub={`Retail ${money(i.inventory.retailValue, cur)}`} icon={Boxes} />
+        <StatCard label="Purchases (30 days)" value={money(i.activity.purchaseValue30, cur)} sub={`${i.activity.purchaseOrders30} purchase orders · ${i.activity.purchaseUnits30.toLocaleString()} units from ${i.activity.supplierCount30} suppliers`} icon={Truck} tone="info" />
+        <StatCard label="Stock transfers (30 days)" value={i.activity.stockTransfers30.toLocaleString()} sub={`${i.activity.stockTransferUnits30.toLocaleString()} units moved between branches`} icon={ArrowLeftRight} />
         <StatCard label="Products" value={i.counts.products} sub={`${i.inventory.outOfStock} out of stock · ${i.lowStock.length} low`} icon={PackageX} tone={i.lowStock.length ? "danger" : "default"} />
         <StatCard label="All-time revenue" value={money(i.allTime.revenue, cur)} sub={`${i.counts.sales.toLocaleString()} receipts recorded`} icon={Receipt} />
         <StatCard label="Data snapshot" value={formatDateTime(i.exportedAt)} sub={`${i.counts.branches} branches · ${i.counts.staff} staff · ${i.counts.customers} customers`} />

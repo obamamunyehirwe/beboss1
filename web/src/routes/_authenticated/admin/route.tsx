@@ -259,6 +259,7 @@ function LiveFeed() {
       .on("postgres_changes", { event: "*", schema: "public", table: "branch_sync_snapshots" }, () => {
         qc.invalidateQueries({ queryKey: ["admin", "snapshots"] });
         qc.invalidateQueries({ queryKey: ["admin", "records"] });
+        qc.invalidateQueries({ queryKey: ["admin", "insights"] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "unlock_codes" }, () => qc.invalidateQueries({ queryKey: ["admin", "codes"] }))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "contact_messages" }, () => {
