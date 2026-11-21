@@ -12,7 +12,6 @@ import { useAdminText } from '@/lib/admin-copy';
 import { ThemeToggle } from '@/components/site/ThemeToggle';
 import { LanguageSwitcher } from '@/components/site/LanguageSwitcher';
 import { liveConfigured } from '@/lib/live-config';
-import { retailCopy } from '@/lib/i18n-dict';
 import { useI18n } from '@/lib/i18n';
 import { Logo } from "@/components/site/Logo";
 import { supabase } from "@/integrations/supabase/client";
@@ -52,7 +51,7 @@ function GoogleG() {
 }
 
 function AuthPage() {
-  const {lang,t}=useI18n();const a=useAdminText();
+  const {t}=useI18n();const a=useAdminText();
   const { redirect } = Route.useSearch();
   const target = safeRedirect(redirect);
   const router = useRouter();
@@ -69,57 +68,94 @@ function AuthPage() {
       sessionStorage.removeItem("beboss.postAuth");
       router.history.push(redirect ? target : safeRedirect(stored ?? undefined));
     };
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) go();
+    let active = true;
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (!active) return;
+      if (error) toast.error(error.message);
+      else if (data.session) go();
+    }).catch((error: unknown) => {
+      if (active) toast.error(error instanceof Error ? error.message : "Could not restore your BeBoss session.");
     });
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session) go();
     });
-    return () => data.subscription.unsubscribe();
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
   }, [router, target, redirect]);
 
   const signIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!liveConfigured) return;
     setBusy(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setBusy(false);
-    if (error) toast.error(error.message);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) toast.error(error.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to sign in. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const signUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!liveConfigured) return;
     if (password.length < 8) {
       toast.error("Use at least 8 characters for your password.");
       return;
     }
     setBusy(true);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: `${window.location.origin}/admin`, data: { full_name: name } },
-    });
-    setBusy(false);
-    if (error) {
-      toast.error(error.message);
-      return;
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { emailRedirectTo: `${window.location.origin}/admin`, data: { full_name: name.trim() } },
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      if (data.session) {
+        toast.success("Account created. Opening BeBoss Admin…");
+      } else {
+        setMode("signin");
+        toast.success("Check your email to confirm your account, then sign in.");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to create your account. Please try again.");
+    } finally {
+      setBusy(false);
     }
-    if (!data.session) toast.success("Check your email to confirm your account, then sign in.");
   };
 
   const forgot = async () => {
-    if (!email) {
+    if (!liveConfigured) return;
+    if (!email.trim()) {
       toast.error("Enter your email first.");
       return;
     }
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
-    if (error) toast.error(error.message);
-    else toast.success("Password reset link sent to your email.");
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/reset-password` });
+      if (error) toast.error(error.message);
+      else toast.success("Password reset link sent to your email.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not send the password reset email.");
+    }
   };
 
   const oauth = async (provider: "google" | "lovable") => {
-    sessionStorage.setItem("beboss.postAuth", target);
-    const result = await lovable.auth.signInWithOAuth(provider, { redirect_uri: window.location.origin + "/auth" });
-    if (result.error) toast.error(result.error.message ?? "Sign-in failed");
+    if (!liveConfigured) return;
+    setBusy(true);
+    try {
+      sessionStorage.setItem("beboss.postAuth", target);
+      const result = await lovable.auth.signInWithOAuth(provider, { redirect_uri: window.location.origin + "/auth" });
+      if (result.error) throw result.error;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Sign-in could not be started.");
+      setBusy(false);
+    }
   };
 
   return (
@@ -128,7 +164,12 @@ function AuthPage() {
       <div className="auth-page-inner relative w-full max-w-md">
         <div className="auth-page-card rounded-2xl border border-border bg-card p-7 shadow-soft">
           <div className="auth-page-brandrow mb-6 flex items-center justify-between border-b border-border pb-5"><Logo suffix={t('navAdmin')} /><div className="flex items-center"><LanguageSwitcher/><ThemeToggle/></div></div>
-          {!liveConfigured && <p role="status" className="mb-5 rounded-lg bg-muted p-3 text-sm">{retailCopy[lang].unavailable}</p>}
+          {!liveConfigured && (
+            <div role="status" className="mb-5 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+              <p className="font-semibold text-warning">Admin sign-in is not configured in this web build.</p>
+              <p className="mt-1 text-muted-foreground">The deployment must provide SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY. Only the public publishable key belongs in the browser; the service-role key must remain server-only.</p>
+            </div>
+          )}
           <fieldset disabled={!liveConfigured} className="min-w-0 disabled:opacity-65">
           <div className="mb-5 flex items-center gap-2 text-sm text-muted-foreground">
             <ShieldCheck className="size-4 text-success" />
@@ -176,6 +217,9 @@ function AuthPage() {
               </form>
             </TabsContent>
             <TabsContent value="signup">
+              <p className="mt-4 rounded-xl bg-muted/70 p-3 text-xs leading-relaxed text-muted-foreground">
+                First-time setup: the account on the secure BeBoss bootstrap allow-list becomes the master admin after its email is confirmed. Other accounts must be approved by a master admin.
+              </p>
               <form onSubmit={signUp} className="mt-4 space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="n2">{a("Full name")}</Label>
@@ -193,7 +237,7 @@ function AuthPage() {
                   {busy ? <Loader2 className="animate-spin" /> : null}
                   {a('Create account')}
                 </Button>
-                <p className="text-xs text-muted-foreground">{a("Admin access is granted by the master admin. New accounts see the admin center only after approval.")}</p>
+                <p className="text-xs text-muted-foreground">{a("Email confirmation is required. New accounts that are not on the first-admin allow-list must be approved by a master admin.")}</p>
               </form>
             </TabsContent>
           </Tabs>

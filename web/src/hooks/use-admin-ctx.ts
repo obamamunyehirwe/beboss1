@@ -4,5 +4,11 @@ import { getAdminContext } from "@/lib/admin.functions";
 
 export function useAdminCtx() {
   const fn = useServerFn(getAdminContext);
-  return useQuery({ queryKey: ["admin", "ctx"], queryFn: () => fn(), staleTime: 60_000 });
+  return useQuery({
+    queryKey: ["admin", "ctx"],
+    queryFn: () => fn(),
+    staleTime: 30_000,
+    retry: 1,
+    refetchOnWindowFocus: true,
+  });
 }

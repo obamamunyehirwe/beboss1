@@ -1,30 +1,75 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+const noStore = { "Cache-Control": "no-store, max-age=0", "X-Content-Type-Options": "nosniff" };
+
 // Stable APK link used by the website, QR codes and the Android app's update check.
-// Looks up the current (or requested) release, counts the download, and redirects
-// to a short-lived signed file URL from private storage.
+// Release objects stay private; only this server handler can mint a short-lived signed URL.
 export const Route = createFileRoute("/api/public/download/latest")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const url = new URL(request.url);
-        const requested = url.searchParams.get("release");
-        const channel = (url.searchParams.get("ch") ?? "web").replace(/[^a-z0-9_-]/gi, "").slice(0, 20) || "web";
-        const query = supabaseAdmin.from("app_releases").select("id, file_path, file_name");
-        const { data: rel } = requested && /^[0-9a-f-]{36}$/i.test(requested)
-          ? await query.eq("id", requested).maybeSingle()
-          : await query.eq("is_current", true).maybeSingle();
-        if (!rel) {
-          return new Response("No BeBoss release is published yet.", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const url = new URL(request.url);
+          const requested = url.searchParams.get("release");
+          const channel = (url.searchParams.get("ch") ?? "web").replace(/[^a-z0-9_-]/gi, "").slice(0, 20) || "web";
+
+          const query = supabaseAdmin.from("app_releases").select("id, file_path, file_name");
+          const { data: rel, error: releaseError } = requested && /^[0-9a-f-]{36}$/i.test(requested)
+            ? await query.eq("id", requested).maybeSingle()
+            : await query.eq("is_current", true).maybeSingle();
+
+          if (releaseError) {
+            console.error("[BeBoss APK] Could not load release metadata", releaseError);
+            return new Response("The BeBoss download service could not verify the published release. Please try again later.", {
+              status: 503,
+              headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
+            });
+          }
+
+          if (!rel) {
+            return new Response("No BeBoss APK release is currently published.", {
+              status: 404,
+              headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
+            });
+          }
+
+          const { data: signed, error: storageError } = await supabaseAdmin.storage
+            .from("releases")
+            .createSignedUrl(rel.file_path, 900, { download: rel.file_name });
+
+          if (storageError || !signed?.signedUrl) {
+            console.error("[BeBoss APK] Published release has no downloadable storage object", {
+              releaseId: rel.id,
+              filePath: rel.file_path,
+              error: storageError,
+            });
+            return new Response(
+              "The release is listed, but its signed APK file has not been uploaded to BeBoss private release storage. A master admin must publish the real APK from Admin → App releases.",
+              {
+                status: 503,
+                headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
+              },
+            );
+          }
+
+          const { error: countError } = await supabaseAdmin.rpc("record_apk_download", {
+            p_release_id: rel.id,
+            p_channel: channel,
+          });
+          if (countError) console.warn("[BeBoss APK] Download succeeded but its counter could not be recorded", countError);
+
+          return new Response(null, {
+            status: 302,
+            headers: { ...noStore, Location: signed.signedUrl },
+          });
+        } catch (error) {
+          console.error("[BeBoss APK] Download handler failed", error);
+          return new Response("The BeBoss download service is not ready. Please contact the administrator.", {
+            status: 503,
+            headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
+          });
         }
-        const { data: signed, error } = await supabaseAdmin.storage.from("releases").createSignedUrl(rel.file_path, 900, { download: rel.file_name });
-        if (error || !signed?.signedUrl) {
-          // High-availability fallback to bundled public production APK
-          return new Response(null, { status: 302, headers: { Location: "/BeBoss-POS-v2.1.0-Production.apk", "Cache-Control": "no-store" } });
-        }
-        await supabaseAdmin.rpc("record_apk_download", { p_release_id: rel.id, p_channel: channel });
-        return new Response(null, { status: 302, headers: { Location: signed.signedUrl, "Cache-Control": "no-store" } });
       },
     },
   },

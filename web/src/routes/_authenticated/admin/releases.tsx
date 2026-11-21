@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Download, Loader2, Star, Trash2, UploadCloud } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +22,8 @@ import { formatBytes, formatDateTime } from "@/lib/format";
 export const Route = createFileRoute("/_authenticated/admin/releases")({
   component: ReleasesPage,
 });
+
+const MAX_APK_BYTES = 100 * 1024 * 1024;
 
 async function sha256Hex(file: File) {
   const buf = await file.arrayBuffer();
@@ -43,6 +45,18 @@ function ReleasesPage() {
   const [stage, setStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
 
   const downloadUrl = typeof window !== "undefined" ? `${window.location.origin}${DOWNLOAD_PATH}` : DOWNLOAD_PATH;
+
+  // Start new releases above the highest version code already published.
+  useEffect(() => {
+    const highestVersionCode = (releases.data ?? []).reduce(
+      (highest, release) => Math.max(highest, Number(release.version_code) || 0),
+      0,
+    );
+    const nextVersionCode = highestVersionCode + 1;
+    setForm((current) => current.version_code < nextVersionCode
+      ? { ...current, version_code: nextVersionCode }
+      : current);
+  }, [releases.data]);
 
   const daily = useMemo(() => {
     const out: { day: string; n: number }[] = [];
@@ -69,6 +83,15 @@ function ReleasesPage() {
     }
     if (!file.name.toLowerCase().endsWith(".apk")) {
       toast.error("The file must be an .apk");
+      return;
+    }
+    if (file.size > MAX_APK_BYTES) {
+      toast.error("The APK must be 100 MB or smaller.");
+      return;
+    }
+    const signature = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    if (signature[0] !== 0x50 || signature[1] !== 0x4b) {
+      toast.error("This file does not have a valid APK/ZIP package signature.");
       return;
     }
     try {
@@ -126,7 +149,7 @@ function ReleasesPage() {
             </h2>
             <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border px-4 py-8 text-center hover:border-primary/50">
               <UploadCloud className="size-8 text-muted-foreground" />
-              <span className="text-sm">{file ? `${file.name} • ${formatBytes(file.size)}` : "Choose the signed release APK"}</span>
+              <span className="text-sm">{file ? `${file.name} • ${formatBytes(file.size)}` : "Choose the signed release APK (max 100 MB)"}</span>
               <input type="file" accept=".apk,application/vnd.android.package-archive" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             </label>
             <div className="grid grid-cols-3 gap-3">
