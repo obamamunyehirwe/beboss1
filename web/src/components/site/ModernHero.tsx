@@ -1,16 +1,46 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowDownToLine, ArrowUpRight, ScanLine, WifiOff, Store, Languages, PackageCheck, Check } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpRight,
+  Check,
+  Languages,
+  PackageCheck,
+  Store,
+  WifiOff,
+} from "lucide-react";
 import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { retailCopy } from "@/lib/i18n-dict";
 
 const capabilityIcons = [WifiOff, Store, Languages, PackageCheck];
+const activityBars = [28, 39, 34, 48, 43, 63, 55, 72, 61, 82, 69, 94];
 
 export function ModernHero() {
   const { lang, t } = useI18n();
   const c = retailCopy[lang];
   const [activeFeature, setActiveFeature] = useState(0);
   const ActiveIcon = capabilityIcons[activeFeature] ?? WifiOff;
+
+  const selectWithKeyboard = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    let nextIndex = index;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (index + 1) % capabilityIcons.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (index - 1 + capabilityIcons.length) % capabilityIcons.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = capabilityIcons.length - 1;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    setActiveFeature(nextIndex);
+    document.getElementById(`market-feature-${nextIndex}`)?.focus();
+  };
 
   return (
     <>
@@ -34,51 +64,63 @@ export function ModernHero() {
           </div>
 
           <div className="market-showcase">
-            <div className="market-showcase-photo-shell">
-              <img
-                className="market-showcase-photo"
-                src="/Friendly%20Modern%20Store%20Checkout.png"
-                alt="BeBoss point-of-sale retail checkout experience"
-                loading="eager"
-                fetchPriority="high"
-                decoding="async"
-                width={1600}
-                height={1100}
-              />
-              <div className="market-showcase-photo-shade" aria-hidden="true" />
-              <div className="market-showcase-brand">
-                <img src="/beboss-app-icon.png" alt="" width={42} height={42} />
-                <span><strong>BeBoss POS</strong><small>BUSINESS · SALES · INVENTORY</small></span>
+            <div className="market-ops-board">
+              <div className="market-ops-topbar">
+                <div className="market-ops-brand">
+                  <img src="/beboss-app-icon.png" alt="" width={42} height={42} />
+                  <span><strong>BeBoss POS</strong><small>{c.toolkit}</small></span>
+                </div>
+                <span className="market-ops-preview"><i />{c.previewLabel}</span>
               </div>
-              <div className="market-showcase-photo-tag"><span className="market-showcase-live-dot" />{c.previewLabel}</div>
-            </div>
 
-            <div className="market-capability-panel">
-              <div className="market-capability-heading">
-                <span className="market-capability-icon"><ActiveIcon size={19} /></span>
-                <div><small>{c.toolkit}</small><strong>{c.caps[activeFeature]}</strong></div>
-                <span className="market-capability-count">0{activeFeature + 1}/04</span>
+              <div className="market-ops-workspace">
+                <div className="market-ops-workspace-copy">
+                  <span className="market-ops-eyebrow">{c.toolkit} <b>0{activeFeature + 1} / 04</b></span>
+                  <h2>{c.caps[activeFeature]}</h2>
+                  <p>{c.details[activeFeature]}</p>
+                </div>
+                <span className="market-ops-active-icon" aria-hidden="true"><ActiveIcon size={27} /></span>
               </div>
-              <div className="market-capability-detail" id="market-feature-panel" role="tabpanel" aria-label={c.caps[activeFeature]}>
-                <p>{c.details[activeFeature]}</p>
-                <Link to="/features">{t("navFeatures")} <ArrowUpRight size={15} /></Link>
+
+              <div className="market-ops-visual" aria-hidden="true">
+                <div className="market-ops-visual-heading">
+                  <span>{c.heading}</span>
+                  <span className="market-ops-visual-key"><i /> BeBoss</span>
+                </div>
+                <div className="market-ops-bars">
+                  {activityBars.map((height, index) => (
+                    <span key={index} style={{ height: `${height}%` }} />
+                  ))}
+                </div>
+                <div className="market-ops-visual-foot">
+                  <span /><span /><span />
+                </div>
               </div>
-              <div className="market-capability-tabs" role="tablist" aria-label={c.toolkit}>
+
+              <div className="market-capability-tabs" role="group" aria-label={c.toolkit}>
                 {capabilityIcons.map((Icon, index) => (
                   <button
                     key={c.caps[index]}
+                    id={`market-feature-${index}`}
                     type="button"
-                    role="tab"
-                    aria-selected={activeFeature === index}
-                    aria-controls="market-feature-panel"
+                    aria-pressed={activeFeature === index}
                     className={activeFeature === index ? "market-capability-tab market-capability-tab-active" : "market-capability-tab"}
                     onClick={() => setActiveFeature(index)}
+                    onKeyDown={(event) => selectWithKeyboard(event, index)}
                   >
-                    <Icon size={16} /><span>{c.caps[index]}</span>
+                    <Icon size={17} />
+                    <span>{c.caps[index]}</span>
                   </button>
                 ))}
               </div>
+
+              <div className="market-ops-footer">
+                <span><Check size={14} />{c.trial}</span>
+                <Link to="/features">{t("navFeatures")} <ArrowUpRight size={15} /></Link>
+              </div>
             </div>
+            <div className="market-ops-orbit market-ops-orbit-one" aria-hidden="true" />
+            <div className="market-ops-orbit market-ops-orbit-two" aria-hidden="true" />
           </div>
         </div>
       </section>
@@ -100,7 +142,7 @@ export function ToolkitHeader() {
   const c = retailCopy[lang];
   return (
     <div className="toolkit-head">
-      <div><div className="section-kicker"><ScanLine size={15} />{c.toolkit}</div><h2>{c.heading}</h2></div>
+      <div><div className="section-kicker"><Store size={15} />{c.toolkit}</div><h2>{c.heading}</h2></div>
       <Link to="/features">{t("navFeatures")} <ArrowUpRight size={16} /></Link>
     </div>
   );
