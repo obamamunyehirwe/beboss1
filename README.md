@@ -13,7 +13,7 @@ BeBoss (`com.beboss.shopmgmt`) is a full-stack retail operating system built for
 3. [System Architecture (Android + Web + Cloud)](#3-system-architecture-android--web--cloud)
 4. [Android Engineering Deep Dive (`/app`)](#4-android-engineering-deep-dive-app)
 5. [Web Platform & Admin Engineering (`/web`)](#5-web-platform--admin-engineering-web)
-6. [Security, Cryptography & `BB2` Unlock Protocol](#6-security-cryptography--bb2-unlock-protocol)
+6. [Security, Cryptography & `BB3` Unlock Protocol](#6-security-cryptography--bb2-unlock-protocol)
 7. [Repository Layout](#7-repository-layout)
 8. [Configuration, Build & Verification](#8-configuration-build--verification)
 
@@ -45,7 +45,7 @@ The web app is engineered as an end-to-end acquisition and self-service conversi
 2. **Real Cryptographic Receipt Verifier (`/features`, `ReceiptVerifier.tsx`)** — Merchants and customers can inspect and verify receipt formats directly on the marketing site.
 3. **Self-Serve Price & USSD Dialer Calculator (`/pricing`, `PricingCalculator.tsx`)** — Interactive steppers for branches, staff seats, extra POS terminals, and billing cycles compute the exact FRw total and output copy-ready **MTN MoMo** and **Airtel Money** USSD strings immediately.
 4. **Honest Outcome Measurement Guide (`/pricing`)** — Instead of inflated marketing promises, the pricing page includes a **Pilot Measurement Matrix** instructing merchants to record baseline cash/MoMo mismatch, receivables collection speed, stock variance, and till reconciliation time over 4–8 weeks.
-5. **Instant Trial + Merchant Self-Service (`/my-shop`)** — New shops start with a **4-day full-access trial** on Android, submit Mobile Money proofs online or via WhatsApp, track approval status in `/my-shop`, manage branches/stock transfers online, and unlock instantly via cloud auto-sync or `BB2` codes.
+5. **Instant Trial + Merchant Self-Service (`/my-shop`)** — New shops start with a **4-day full-access trial** on Android, submit Mobile Money proofs online or via WhatsApp, track approval status in `/my-shop`, manage branches/stock transfers online, and unlock instantly via cloud auto-sync or signed `BB3` codes.
 
 ---
 
@@ -149,33 +149,38 @@ The app follows **MVVM with Domain Managers and UI State Coordinators**:
   - `/my-shop`: Self-service merchant portal for checking license/expiry status, viewing issued unlock codes and paired device health, managing branches and inter-branch stock transfers, and submitting Mobile Money proofs.
   - `/api/public/download.latest.ts`: Public endpoint serving latest release download metadata.
 - **Master Admin Console (`/web/src/routes/_authenticated/admin`)**:
-  - Protected workspace with `analytics`, `shops` (`shops.index`, `shops.$shopId`), `payments`, `codes` (`BB2` generator/registry), `devices`, `sync`, `users`, `team`, `inbox`, `announcements`, `releases`, `copilot`, `audit`, and `settings`.
+  - Protected workspace with `analytics`, `shops` (`shops.index`, `shops.$shopId`), `payments`, `codes` (`BB3` generator/registry), `devices`, `sync`, `users`, `team`, `inbox`, `announcements`, `releases`, `copilot`, `audit`, and `settings`.
 
 ---
 
-## 6. Security, Cryptography & `BB2` Unlock Protocol
+## 6. Security, Cryptography & `BB3` Unlock Protocol
 
 | Layer | Implementation |
 | :--- | :--- |
 | **Database Encryption** | Room v14 + **SQLCipher AES-256**; passphrase protected via **Android Keystore** (`CryptoKeyManager`) |
-| **Secret Injection** | Zero hardcoded credentials; Gradle Secrets Plugin + `BuildConfig` reading `.env` / AI Studio Secrets |
 | **Credential Storage & Auth** | PBKDF2-HMAC-SHA256 salted PIN/password hashing, persistent brute-force exponential lockout (`AuthRateLimiter`), hardware `BiometricPrompt` |
-| **Constant-Time Crypto** | `MessageDigest.isEqual` (`slowEquals`) across `BB2` unlock codes, receipt seals, and LAN sync tokens |
+| **Unlock-Code Signing** | ECDSA P-256 / SHA-256. The private key stays in server-only Supabase `app_secrets`; Android contains only the matching public verification key |
+| **Offline Verification** | New `BB3` codes are verified offline by Android using the pinned public key and account binding; no shared signing secret is shipped to devices |
+| **Legacy Compatibility** | Old `BB2` codes are checked online against the exact BeBoss-issued, still-`ISSUED` database record and marked redeemed atomically |
+| **Anti-Replay** | Local `RedeemedVoucher` fingerprints for offline BB3 use; server-side status transition for legacy BB2 online redemption |
 | **Anti-Tamper Clock** | `ClockGuard` monitors `SystemClock.elapsedRealtime()` vs. wall clock to detect and preserve monotonic high-water timestamps against clock rollbacks |
 | **Network Hardening** | OkHttp TLS certificate pinning (`SUPABASE_CERT_PINS`) + `SyncPayloadValidator` (schema bounds, FK & non-negative validation) |
-| **Window & Log Privacy** | Release-mode `FLAG_SECURE`, `filterTouchesWhenObscured`, and `BeBossLogger.scrub()` redacting PINs, passwords, Bearer JWTs, `BB2` codes, and `BBSHARE1` packets |
+| **Window & Log Privacy** | Release-mode `FLAG_SECURE`, `filterTouchesWhenObscured`, and `BeBossLogger.scrub()` redacting PINs, passwords, Bearer JWTs, unlock codes, and `BBSHARE1` packets |
 
-### Account-Bound `BB2` Offline/Online Unlock Format
+### Account-Bound `BB3` Unlock Format
+
 ```text
-BB2-[TIER]-[DAYS]-[EXPIRY_HEX]-[ACCT_HASH6]-[HMAC_SIG8]
-Example: BB2-SINGLE-30-505B-A7F3C2-9E41D80B
+BB3-[TIER]-[DAYS]-[EXPIRY_HEX]-[ACCT_HASH6]-[NONCE_96BIT]-[ECDSA_SIGNATURE_BASE64]
 ```
-1. **`ACCT_HASH6`**: Uppercase 6-character SHA-256 prefix of `lowercase(ownerUsername) + ":" + last9Digits(phone)`, normalizing formats like `+250788123456` and `0788123456` while rejecting mismatched accounts.
-2. **`HMAC_SIG8`**: 8-character uppercase HMAC-SHA256 over `"BB2:$tier:$days:$expiryHex:$acctHash"` verified in constant time against `BEBOSS_UNLOCK_SIGNING_SECRET`.
-3. **Anti-Replay**: `RedeemedVoucher` records each redeemed voucher's SHA-256 fingerprint locally to prevent code reuse.
-4. **Dual Activation**: Works **100% offline** when pasted into the Paywall/Settings unlock field, or **automatically online** when approved in the Web/Android Admin Console and synced to `shop_accounts`.
 
----
+The signed payload is `BB3:TIER:DAYS:EXPIRY_HEX:ACCT_HASH6:NONCE`.
+
+1. `ACCT_HASH6` is the uppercase six-character SHA-256 prefix of `lowercase(ownerUsername) + ":" + last9Digits(phone)`; Rwanda local and international phone formats normalize identically.
+2. The final field is an ECDSA P-256 / SHA-256 signature encoded as Base64 DER. Verification is offline and uses only the public key embedded in the Android app.
+3. The 96-bit nonce makes each issued code distinct. Codes carry a bounded expiry window and are bound to the intended shop username and phone.
+4. The private key is not part of Android `BuildConfig`, app assets, browser storage, or any `VITE_*` variable. Authenticated server functions create new codes.
+5. Legacy `BB2` HMAC codes can only be redeemed online if a matching original BeBoss database record exists and remains in `ISSUED` status. The server marks the record `REDEEMED`; the old client-shipped shared HMAC key is not used to issue codes.
+
 
 ## 7. Repository Layout
 
@@ -211,7 +216,7 @@ Copy `.env.example` or configure these variables in your environment / Secrets p
 ```properties
 SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_key
-BEBOSS_UNLOCK_SIGNING_SECRET=your_unlock_signing_secret_32plus_chars
+# BB3 private signing key is stored in Supabase app_secrets; never put it in Android or VITE_ variables.
 BEBOSS_SECURITY_PEPPER=your_security_pepper
 BEBOSS_LAN_SYNC_SECRET=your_lan_sync_secret
 BEBOSS_DATASHARE_HMAC_SECRET=your_datashare_hmac_secret
