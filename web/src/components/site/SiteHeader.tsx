@@ -239,7 +239,7 @@ export function SiteHeader() {
             >
               <Search size={17} />
               <span>{c.headerSearch}</span>
-              <kbd>⌘ K</kbd>
+              <kbd>Ctrl K</kbd>
             </Button>
             <div className="site-desktop-utilities">
               <LanguageSwitcher />
