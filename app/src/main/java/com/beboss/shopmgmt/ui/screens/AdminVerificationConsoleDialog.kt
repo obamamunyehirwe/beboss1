@@ -179,10 +179,8 @@ fun AdminVerificationConsoleDialog(
     var lastTargetDays by remember { mutableIntStateOf(30) }
 
     // Single Master Admin Auth Form State (Email locked strictly to MASTER_ADMIN_EMAIL)
-    var isRegisterMode by remember { mutableStateOf(false) }
     val masterEmail = SupabaseAdminClient.MASTER_ADMIN_EMAIL
     var adminPassword by remember { mutableStateOf("") }
-    var adminFullName by remember { mutableStateOf("BeBoss Master Admin") }
     var showAdminPassword by remember { mutableStateOf(false) }
 
     // Queue, Users, Devices, Shops, Codes, Audit Filters
@@ -277,7 +275,8 @@ fun AdminVerificationConsoleDialog(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 if (adminSession == null) {
-                    // SINGLE MASTER ADMIN AUTH GATE
+                    // Password-only master admin gate. First-time setup is invitation-only
+                    // through the secure web bootstrap flow; the Android app never self-registers.
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
@@ -288,65 +287,17 @@ fun AdminVerificationConsoleDialog(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = { isRegisterMode = false },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .testTag("admin_auth_signin_tab"),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (!isRegisterMode) OrangePrimary.copy(alpha = 0.14f) else Color.Transparent
-                                    )
-                                ) {
-                                    Text("Master Sign In", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                }
-                                OutlinedButton(
-                                    onClick = { isRegisterMode = true },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .testTag("admin_auth_signup_tab"),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (isRegisterMode) OrangePrimary.copy(alpha = 0.14f) else Color.Transparent
-                                    )
-                                ) {
-                                    Text("First-Time Setup", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                }
-                            }
-
                             Text(
-                                text = if (isRegisterMode) {
-                                    "Initialize the single authorized Supabase Master Admin account ($masterEmail) in admin_profiles."
-                                } else {
-                                    "Sign in with the Master Administrator credentials for $masterEmail to manage all shops, staff users, subscriptions, and unlock codes."
-                                },
+                                text = "Sign in with the approved Master Administrator account ($masterEmail). First-time setup is invitation-only: request the secure setup invitation from the BeBoss web admin sign-in page, then choose your password using the email link. Public self-registration is disabled.",
                                 fontSize = 11.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-
-                            if (isRegisterMode) {
-                                OutlinedTextField(
-                                    value = adminFullName,
-                                    onValueChange = { adminFullName = it },
-                                    label = { Text("Master Admin Name *") },
-                                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = OrangePrimary) },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("admin_fullname_input"),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                            }
 
                             OutlinedTextField(
                                 value = masterEmail,
                                 onValueChange = {},
                                 readOnly = true,
-                                label = { Text("Authorized Master Admin Email (Locked)") },
+                                label = { Text("Authorized Master Admin Email") },
                                 leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = OrangePrimary) },
                                 singleLine = true,
                                 modifier = Modifier
@@ -394,14 +345,8 @@ fun AdminVerificationConsoleDialog(
                             }
 
                             Button(
-                                onClick = {
-                                    if (isRegisterMode) {
-                                        onSignUpAdmin(masterEmail, adminPassword, adminFullName.trim())
-                                    } else {
-                                        onSignInAdmin(masterEmail, adminPassword)
-                                    }
-                                },
-                                enabled = !isAdminAuthenticating && adminPassword.length >= 6 && (!isRegisterMode || adminFullName.isNotBlank()),
+                                onClick = { onSignInAdmin(masterEmail, adminPassword) },
+                                enabled = !isAdminAuthenticating && adminPassword.length >= 6,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .heightIn(min = 48.dp)
@@ -416,10 +361,7 @@ fun AdminVerificationConsoleDialog(
                                 } else {
                                     Icon(Icons.Default.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = if (isRegisterMode) "Initialize Master Admin & Enter" else "Sign In as Master Admin",
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    Text("Sign In as Master Admin", fontWeight = FontWeight.Bold)
                                 }
                             }
 
@@ -433,12 +375,12 @@ fun AdminVerificationConsoleDialog(
                             ) {
                                 Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(16.dp), tint = OrangePrimary)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Export Web Admin Portal (admin_portal.html)", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
+                                Text("Open secure web admin setup", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
                             }
                         }
                     }
                 } else {
-                    // AUTHENTICATED MASTER ADMIN WORKSPACE
+                    
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
