@@ -202,17 +202,32 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
 }
 
 function LivePulse() {
-  const { data } = useQuery(syncEventsQuery);
+  const { data, isLoading, isError } = useQuery(syncEventsQuery);
   const now = useNow(10_000);
   const last = data?.[0];
+  const lastAt = last ? Date.parse(last.created_at) : Number.NaN;
+  const isRecent = Number.isFinite(lastAt) && lastAt <= now && now - lastAt < 15 * 60_000;
+  const label = isLoading
+    ? "Checking cloud activity"
+    : isError
+      ? "Cloud activity unavailable"
+      : isRecent
+        ? "Recent cloud activity"
+        : last
+          ? "No recent sync activity"
+          : "No sync activity recorded";
+  const tone = isRecent ? "text-success" : isError ? "text-destructive" : "text-muted-foreground";
+
   return (
-    <Link to="/admin/sync" className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
-      <span className="relative flex size-2">
-        <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
-        <span className="relative inline-flex size-2 rounded-full bg-success" />
-      </span>
-      <Activity className="size-3.5 text-success" />
-      <span className="hidden sm:inline">Live cloud sync</span>
+    <Link
+      to="/admin/sync"
+      className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+      title={label}
+      aria-label={label}
+    >
+      <span className={cn("size-2 rounded-full", isRecent ? "bg-success" : isError ? "bg-destructive" : "bg-muted-foreground/50")} />
+      <Activity className={cn("size-3.5", tone)} />
+      <span className="hidden sm:inline">{label}</span>
       {last ? <span className="text-muted-foreground/80">· last {relativeTime(last.created_at, now)}</span> : null}
     </Link>
   );

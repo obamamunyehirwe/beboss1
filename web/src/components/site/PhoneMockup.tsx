@@ -80,7 +80,7 @@ export function PhoneMockup() {
   // Sync state
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState(100);
-  const [lastSyncText, setLastSyncText] = useState("Just now");
+  
 
   // Live Clock updater
   useEffect(() => {
@@ -148,18 +148,18 @@ export function PhoneMockup() {
   // Barcode scanner trigger simulation
   const handleScanLaser = () => {
     setIsScanning(true);
-    triggerIslandAlert("Barcode Scanner Active");
+    triggerIslandAlert("Demo barcode scanner preview");
     setTimeout(() => {
       setIsScanning(false);
       addToCart("p5"); // Add cooking oil
-      triggerIslandAlert("Scanned: Cooking Oil 1L");
+      triggerIslandAlert("Sample item added to the demo cart");
     }, 1200);
   };
 
   // Complete checkout tender
   const handleCheckout = (method: string) => {
     if (cartItems.length === 0) return;
-    const seal = `BB-${Math.random().toString(16).slice(2, 12).toUpperCase()}`;
+    const seal = `DEMO-${Math.random().toString(16).slice(2, 10).toUpperCase()}`;
     const receiptNo = `R-${Math.floor(100000 + Math.random() * 900000)}`;
     setCompletedReceipt({
       receiptNo,
@@ -169,7 +169,7 @@ export function PhoneMockup() {
       method,
     });
     setCart({});
-    triggerIslandAlert(`✓ Sale Sealed: ${seal.slice(0, 7)}`);
+    triggerIslandAlert("Demo checkout completed — no payment was collected");
   };
 
   // Trigger manual cloud sync
@@ -177,15 +177,14 @@ export function PhoneMockup() {
     if (isSyncing) return;
     setIsSyncing(true);
     setSyncProgress(15);
-    triggerIslandAlert("☁ Syncing to Supabase...");
+    triggerIslandAlert("Starting the demo sync animation — no data will be sent");
 
     setTimeout(() => setSyncProgress(45), 400);
     setTimeout(() => setSyncProgress(85), 800);
     setTimeout(() => {
       setSyncProgress(100);
       setIsSyncing(false);
-      setLastSyncText("Just now");
-      triggerIslandAlert("✓ All branches synced (24ms)");
+      triggerIslandAlert("Demo sync animation complete — no data was sent");
     }, 1300);
   };
 
@@ -281,7 +280,7 @@ export function PhoneMockup() {
                 {/* Interactive Network Toggle */}
                 <button
                   type="button"
-                  title="Toggle Online/Offline network state"
+                  title="Toggle simulated network state (demo only)" aria-label="Toggle demo network state"
                   onClick={(e) => {
                     e.stopPropagation();
                     const next = !online;
@@ -311,17 +310,17 @@ export function PhoneMockup() {
             <div className="mt-1.5 flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <img 
-                  src="/beboss-app-logo.jpg" 
-                  alt="BeBoss App" 
+                  src="/beboss-brand.svg" 
+                  alt="" 
                   className="size-6 rounded-lg object-cover shadow-xs border border-border/60" 
                 />
                 <div>
                   <p className="font-display text-[11px] font-bold leading-none truncate max-w-[125px]">
-                    Kimironko Main Store
+                    BeBoss Sample Shop
                   </p>
                   <p className="text-[8.5px] text-muted-foreground mt-0.5 font-medium flex items-center gap-1">
                     <span className="size-1 rounded-full bg-success" />
-                    Owner · @kigali_boss
+                    DEMO DATA · sample account
                   </p>
                 </div>
               </div>
@@ -340,7 +339,7 @@ export function PhoneMockup() {
                 )}
               >
                 <RefreshCw className={cn("size-2", isSyncing && "animate-spin")} />
-                <span>{isSyncing ? "Syncing..." : online ? "Supabase Live" : "Offline"}</span>
+                <span>{isSyncing ? "Demo sync..." : online ? "Online · Demo" : "Offline · Demo"}</span>
               </button>
             </div>
           </div>
@@ -364,8 +363,8 @@ export function PhoneMockup() {
               <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm p-3 flex flex-col justify-end animate-fade-in">
                 <div className="rounded-3xl border border-border bg-card p-4 shadow-2xl animate-fade-up">
                   <div className="text-center pb-2 border-b border-dashed border-border">
-                    <p className="font-display text-sm font-black">BEBOSS POS RECEIPT</p>
-                    <p className="text-[9px] text-muted-foreground font-mono">TIN: 102938475 · Kigali, Rwanda</p>
+                    <p className="font-display text-sm font-black">BEBOSS DEMO RECEIPT</p>
+                    <p className="text-[9px] text-muted-foreground font-mono">Sample preview · not a fiscal receipt</p>
                     <p className="text-[9px] font-mono text-primary font-bold mt-0.5">{completedReceipt.receiptNo}</p>
                   </div>
 
@@ -388,7 +387,7 @@ export function PhoneMockup() {
                       <span className="uppercase font-semibold">{completedReceipt.method}</span>
                     </div>
                     <div className="flex justify-between text-muted-foreground text-[9px]">
-                      <span>Offline SHA-256 Seal</span>
+                      <span>Demo reference · not a signature</span>
                       <span className="font-mono text-success font-bold">{completedReceipt.seal}</span>
                     </div>
                   </div>
@@ -397,12 +396,11 @@ export function PhoneMockup() {
                     <button
                       type="button"
                       onClick={() => {
-                        triggerIslandAlert("Receipt sent via WhatsApp");
-                        setCompletedReceipt(null);
+                        triggerIslandAlert("Share preview only — no message was sent");
                       }}
                       className="flex-1 rounded-xl bg-success/20 text-success hover:bg-success/30 font-bold py-1.5 text-[10px] flex items-center justify-center gap-1 transition-colors"
                     >
-                      <Share2 className="size-3" /> WhatsApp
+                      <Share2 className="size-3" /> Share preview
                     </button>
                     <button
                       type="button"
@@ -630,11 +628,7 @@ export function PhoneMockup() {
                             <button
                               type="button"
                               onClick={() => {
-                                const waUrl = `https://wa.me/${client.phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
-                                  `Yewe ${client.name}, iki ni cyibutso cya BeBoss POS ko ufite ideni rya ${client.debt.toLocaleString()} FRw muri Kimironko Store.`
-                                )}`;
-                                window.open(waUrl, "_blank");
-                                triggerIslandAlert(`WhatsApp reminder generated for ${client.name}`);
+                                triggerIslandAlert(`Demo reminder preview for ${client.name} — no message was sent`);
                               }}
                               className="rounded-lg bg-success/20 text-success hover:bg-success/30 px-2 py-0.5 font-bold text-[9px] flex items-center gap-1 transition-colors"
                             >
@@ -663,14 +657,14 @@ export function PhoneMockup() {
                 <div className="rounded-2xl bg-gradient-to-r from-primary/20 via-primary/10 to-transparent border border-primary/30 p-3">
                   <div className="flex items-center justify-between">
                     <p className="text-[9px] font-bold uppercase tracking-wider text-primary flex items-center gap-1">
-                      <Sparkles className="size-3 text-warning" /> 14-Day Demand Forecast
+                      <Sparkles className="size-3 text-warning" /> Illustrative 14-Day Stock Estimate
                     </p>
                     <span className="text-[9px] font-mono bg-primary/20 text-primary px-1.5 py-0.2 rounded font-bold">
-                      AI Active
+                      SAMPLE DATA
                     </span>
                   </div>
-                  <p className="font-display text-sm font-black mt-0.5">2 Items Require Urgent Restock</p>
-                  <p className="text-[9px] text-muted-foreground mt-0.5">Prevents 84,000 FRw in lost sales this weekend</p>
+                  <p className="font-display text-sm font-black mt-0.5">Sample stock levels and reorder prompts</p>
+                  <p className="text-[9px] text-muted-foreground mt-0.5">Illustrative estimates only; real forecasts need recorded sales history.</p>
                 </div>
 
                 {/* Stock Forecast Items */}
@@ -690,7 +684,7 @@ export function PhoneMockup() {
                           <div>
                             <p className="font-semibold text-[11px] leading-tight">{item.name}</p>
                             <p className="text-[9px] text-muted-foreground mt-0.5">
-                              Burn rate: ~2.2 {item.unit}/day · Category: {item.category}
+                              Sample sales velocity: 2.2 {item.unit}/day · {item.category}
                             </p>
                           </div>
                           <div className="text-right">
@@ -725,40 +719,40 @@ export function PhoneMockup() {
             {/* ---------------- SCREEN 4: SUPABASE CLOUD & MULTI-BRANCH SYNC ---------------- */}
             {screen === "sync" && (
               <div className="space-y-2.5 animate-fade-in">
-                {/* Supabase Relay Card */}
-                <div className="rounded-2xl border border-success/30 bg-success/10 p-3">
+                {/* This is a product simulator, not a connected Supabase session. */}
+                <div className="rounded-2xl border border-primary/30 bg-primary/10 p-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
-                      <Database className="size-3.5 text-success" />
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-success">Supabase Postgres Live</p>
+                      <Database className="size-3.5 text-primary" />
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-primary">Cloud sync experience preview</p>
                     </div>
-                    <span className="size-2 rounded-full bg-success animate-pulse" />
+                    <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[8px] font-bold text-primary">DEMO</span>
                   </div>
-                  <p className="font-display text-sm font-black mt-1">ahlpvlhmpfiyeoercxol.supabase.co</p>
-                  <p className="text-[9px] font-mono text-muted-foreground mt-0.5">Region: eu-central-1 · 24ms ping</p>
+                  <p className="font-display text-sm font-black mt-1">No live Supabase connection</p>
+                  <p className="text-[9px] text-muted-foreground mt-0.5">This public simulator sends no requests and displays no real shop or device records.</p>
                 </div>
 
-                {/* Sync Diagnostics Matrix */}
+                {/* Illustrative diagnostics — not live device telemetry. */}
                 <div className="grid grid-cols-2 gap-1.5 text-[10px]">
                   <div className="rounded-2xl border border-border bg-surface-2 p-2.5">
-                    <p className="text-[8.5px] text-muted-foreground uppercase font-semibold">Clock Vector (HLC)</p>
-                    <p className="font-mono font-bold text-primary mt-0.5">1795188892464:001</p>
-                    <p className="text-[8px] text-success">Monotonic Guard Active</p>
+                    <p className="text-[8.5px] text-muted-foreground uppercase font-semibold">Sync mode</p>
+                    <p className="font-mono font-bold text-primary mt-0.5">Preview only</p>
+                    <p className="text-[8px] text-muted-foreground">No API request</p>
                   </div>
                   <div className="rounded-2xl border border-border bg-surface-2 p-2.5">
-                    <p className="text-[8.5px] text-muted-foreground uppercase font-semibold">Offline Outbox</p>
-                    <p className="font-mono font-bold text-success mt-0.5">0 Pending</p>
-                    <p className="text-[8px] text-muted-foreground">All queues cleared</p>
+                    <p className="text-[8.5px] text-muted-foreground uppercase font-semibold">Local queue</p>
+                    <p className="font-mono font-bold mt-0.5">Sample state</p>
+                    <p className="text-[8px] text-muted-foreground">Not a live outbox</p>
                   </div>
                   <div className="rounded-2xl border border-border bg-surface-2 p-2.5">
-                    <p className="text-[8.5px] text-muted-foreground uppercase font-semibold">Device Challenge</p>
-                    <p className="font-mono font-bold mt-0.5">BB-8801-492</p>
-                    <p className="text-[8px] text-muted-foreground">Keystore Verified</p>
+                    <p className="text-[8.5px] text-muted-foreground uppercase font-semibold">Devices</p>
+                    <p className="font-mono font-bold mt-0.5">Illustrative</p>
+                    <p className="text-[8px] text-muted-foreground">No devices queried</p>
                   </div>
                   <div className="rounded-2xl border border-border bg-surface-2 p-2.5">
-                    <p className="text-[8.5px] text-muted-foreground uppercase font-semibold">Branch Terminals</p>
-                    <p className="font-mono font-bold mt-0.5">2 Paired</p>
-                    <p className="text-[8px] text-success">Counter-1 & Counter-2</p>
+                    <p className="text-[8.5px] text-muted-foreground uppercase font-semibold">Tenant records</p>
+                    <p className="font-mono font-bold mt-0.5">Not loaded</p>
+                    <p className="text-[8px] text-muted-foreground">Sign in for live data</p>
                   </div>
                 </div>
 
@@ -766,7 +760,7 @@ export function PhoneMockup() {
                 {isSyncing && (
                   <div className="space-y-1">
                     <div className="flex justify-between text-[9px] font-mono">
-                      <span>Compressing & Pushing LWW Delta...</span>
+                      <span>Playing the sample sync animation...</span>
                       <span>{syncProgress}%</span>
                     </div>
                     <div className="h-1.5 w-full rounded-full bg-border overflow-hidden">
@@ -786,7 +780,7 @@ export function PhoneMockup() {
                   className="w-full rounded-2xl bg-primary text-primary-foreground font-bold py-2.5 text-xs flex items-center justify-center gap-1.5 shadow-md hover:opacity-95 active:scale-98 transition-all"
                 >
                   <RefreshCw className={cn("size-3.5", isSyncing && "animate-spin")} />
-                  {isSyncing ? "Transmitting Snapshot..." : "Sync All Data to Cloud Now"}
+                  {isSyncing ? "Previewing sync..." : "Preview sync animation"}
                 </button>
               </div>
             )}
@@ -797,8 +791,8 @@ export function PhoneMockup() {
                 {/* Shift Performance Summary */}
                 <div className="rounded-2xl bg-gradient-brand p-3 text-primary-foreground shadow-sm">
                   <div className="flex items-center justify-between">
-                    <p className="text-[9px] font-semibold uppercase opacity-85">Today's Shift Turnover</p>
-                    <span className="text-[9px] bg-black/20 px-1.5 py-0.2 rounded font-mono">24 sales</span>
+                    <p className="text-[9px] font-semibold uppercase opacity-85">Sample shift turnover</p>
+                    <span className="text-[9px] bg-black/20 px-1.5 py-0.2 rounded font-mono">DEMO FIGURES</span>
                   </div>
                   <p className="font-display text-xl font-black mt-0.5">248,500 FRw</p>
                   <div className="mt-1 flex items-center justify-between text-[9px] opacity-90 font-medium">
@@ -809,7 +803,7 @@ export function PhoneMockup() {
 
                 {/* Cash vs MoMo Breakdown */}
                 <div className="rounded-2xl border border-border bg-surface-2 p-2.5 space-y-2">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Tender Distribution</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Illustrative tender distribution</p>
                   <div className="space-y-1.5">
                     <div>
                       <div className="flex justify-between text-[10px] font-medium">
@@ -921,8 +915,8 @@ export function PhoneMockup() {
           <Database className="size-3.5" />
         </div>
         <div>
-          <p className="font-bold text-[10px] leading-tight">Interactive demo</p>
-          <p className="text-[8.5px] text-muted-foreground font-mono">Sample data · not live</p>
+          <p className="font-bold text-[10px] leading-tight">BeBoss product demo</p>
+          <p className="text-[8.5px] text-muted-foreground font-mono">Sample data · no backend writes</p>
         </div>
       </div>
 
@@ -930,9 +924,9 @@ export function PhoneMockup() {
       <div className="glass absolute -right-16 top-10 hidden rounded-2xl border border-border/80 px-3 py-2 text-xs shadow-xl backdrop-blur-lg lg:block animate-float">
         <div className="flex items-center gap-1.5">
           <ShieldCheck className="size-3 text-success" />
-          <p className="font-mono text-[9.5px] text-success font-black tracking-tight">BB-7F3C29A1E4</p>
+          <p className="font-mono text-[9.5px] text-success font-black tracking-tight">DEMO-7F3C29A1</p>
         </div>
-        <p className="text-[8.5px] text-muted-foreground mt-0.5">Receipt checksum demo</p>
+        <p className="text-[8.5px] text-muted-foreground mt-0.5">Sample receipt reference · not a checksum</p>
       </div>
 
       {/* Right Bottom Badge: Offline-first storage */}

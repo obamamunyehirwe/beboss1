@@ -845,3 +845,150 @@
     scroll-behavior: auto !important;
   }
 }
+
+
+/* ── BeBoss brand + hardware emulator experience ─────────────────────────── */
+.brand-mark {
+  box-shadow: 0 8px 22px -12px color-mix(in srgb, var(--primary) 65%, transparent);
+  transition: transform 220ms ease, box-shadow 220ms ease;
+}
+a:hover .brand-mark {
+  transform: translateY(-1px) rotate(-2deg);
+  box-shadow: 0 12px 26px -12px color-mix(in srgb, var(--primary) 75%, transparent);
+}
+.market-frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(330px, 0.92fr);
+  align-items: center;
+  gap: clamp(24px, 4vw, 76px);
+  min-height: clamp(650px, 57vw, 790px);
+}
+.market-copy {
+  width: 100%;
+  max-width: 680px;
+  position: relative;
+  z-index: 2;
+}
+.market-device {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 12px 4px 28px;
+  perspective: 1600px;
+}
+.market-device-glow {
+  position: absolute;
+  z-index: -1;
+  width: min(90%, 390px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ff914a36 0%, #f8a35d15 44%, transparent 72%);
+  filter: blur(16px);
+  pointer-events: none;
+}
+.market-phone-shell {
+  transform-style: preserve-3d;
+  animation: market-phone-float 7s ease-in-out infinite;
+  will-change: transform;
+}
+.market-phone-shell > div {
+  transform: rotateY(-7deg) rotateX(2deg);
+  transform-origin: 50% 50%;
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 32px 34px #0008);
+  transition: transform 380ms cubic-bezier(.2,.7,.2,1);
+}
+.market-phone-shell:hover > div {
+  transform: rotateY(-2deg) rotateX(0deg) translateY(-5px);
+}
+.market-caption {
+  align-self: center;
+  width: min(100%, 320px);
+  justify-content: space-between;
+  margin-top: 14px;
+  padding: 9px 12px;
+  border: 1px solid #ffffff30;
+  border-radius: 14px;
+  background: #141a16b8;
+  backdrop-filter: blur(14px);
+  text-shadow: none;
+}
+.market-caption span {
+  font-size: 11px;
+}
+.market-caption small {
+  font-size: 8px;
+}
+.market-hero .market-photo {
+  transition: opacity 260ms ease, transform 1s ease;
+}
+.market-hero:hover .market-photo {
+  transform: scale(1.025);
+}
+.market-hero .market-shade {
+  background:
+    linear-gradient(90deg, #171b18 3%, rgba(23,27,24,.98) 25%, rgba(23,27,24,.86) 48%, rgba(23,27,24,.35) 76%, rgba(23,27,24,.18) 100%),
+    linear-gradient(0deg, #101711c7, transparent 45%);
+}
+@keyframes market-phone-float {
+  0%, 100% { transform: translateY(0) rotateZ(-0.5deg); }
+  50% { transform: translateY(-9px) rotateZ(0.5deg); }
+}
+@media (max-width: 900px) {
+  .market-frame {
+    grid-template-columns: minmax(0, 1fr) minmax(290px, .9fr);
+    gap: 18px;
+    min-height: 650px;
+  }
+  .market-copy h1 {
+    font-size: clamp(54px, 7vw, 82px);
+  }
+  .market-device {
+    transform: scale(.94);
+    transform-origin: center;
+  }
+}
+@media (max-width: 680px) {
+  .market-frame {
+    display: flex;
+    min-height: auto;
+    align-items: center;
+    flex-direction: column;
+    padding-top: 34px;
+    padding-bottom: 24px;
+    gap: 18px;
+  }
+  .market-copy {
+    width: 100%;
+  }
+  .market-copy h1 {
+    font-size: clamp(64px, 13vw, 85px);
+  }
+  .market-device {
+    width: 100%;
+    padding-top: 6px;
+    transform: none;
+  }
+  .market-phone-shell > div {
+    transform: none;
+  }
+  .market-phone-shell:hover > div {
+    transform: translateY(-3px);
+  }
+  .market-caption {
+    margin-top: 4px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .market-phone-shell {
+    animation: none;
+  }
+  .market-phone-shell > div,
+  .brand-mark {
+    transition: none;
+  }
+}

@@ -3,6 +3,6 @@
     <item
         android:width="72dp"
         android:height="72dp"
-        android:drawable="@drawable/beboss_app_logo_1787833759468"
+        android:drawable="@drawable/beboss_brand_mark"
         android:gravity="center" />
 </layer-list>
