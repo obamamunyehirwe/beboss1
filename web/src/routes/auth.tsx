@@ -107,9 +107,17 @@ function AuthPage() {
     try {
       const { data, error } = await supabase.functions.invoke("bootstrap-first-admin", { body: {} });
       if (error) throw new Error(error.message || "Could not contact the secure invitation service.");
-      const result = data as { status?: string; email?: string; message?: string };
+      const result = data as { status?: string; email?: string; message?: string; retryAfterSeconds?: number; resent?: boolean };
       if (result.status === "sent") {
-        toast.success(`A secure setup invitation was sent to ${result.email}. Open the email and choose your own password.`);
+        toast.success(
+          result.resent
+            ? `A fresh confirmation email was sent to ${result.email}. Open it to confirm your account and finish setting your password.`
+            : `A secure setup invitation was sent to ${result.email}. Open the email and choose your own password.`,
+        );
+      } else if (result.status === "cooldown") {
+        const seconds = Math.max(1, Number(result.retryAfterSeconds) || 60);
+        const minutes = Math.ceil(seconds / 60);
+        toast.info(result.message || `A setup email was sent recently. Please wait about ${minutes} minute(s) before requesting another.`);
       } else if (result.status === "already_sent") {
         toast.info(`The one-time invitation has already been issued to ${result.email}. Check that mailbox and its spam folder.`);
       } else if (result.status === "account_exists") {
