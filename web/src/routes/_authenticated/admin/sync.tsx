@@ -74,9 +74,20 @@ function SyncMonitor() {
         if (!latest) return current;
         return Date.parse(current.created_at) > Date.parse(latest.created_at) ? current : latest;
       }, null);
+      // Payment/admin audit events are not device sync heartbeats. Count only
+      // snapshot uploads, device syncs, shop heartbeats and persisted device times.
+      const syncSignals = shopEvents.filter((event) =>
+        (event.entity === "SNAPSHOT" && event.action === "UPLOADED") ||
+        (event.entity === "DEVICE" && event.action === "SYNCED") ||
+        (event.entity === "SHOP" && event.action === "HEARTBEAT")
+      );
+      const latestSyncSignal = syncSignals.reduce<SyncEvent | null>((latest, current) => {
+        if (!latest) return current;
+        return Date.parse(current.created_at) > Date.parse(latest.created_at) ? current : latest;
+      }, null);
       const deviceLastSync = shopDevices.reduce((latest, d) => Math.max(latest, Number(d.last_synced_at) || 0), 0);
       const snapshotLastSync = shopSnapshots.reduce((latest, s) => Math.max(latest, Number(s.updated_at) || 0), 0);
-      const eventLastSync = latestEvent ? Date.parse(latestEvent.created_at) || 0 : 0;
+      const eventLastSync = latestSyncSignal ? Date.parse(latestSyncSignal.created_at) || 0 : 0;
       const lastSyncAt = Math.max(deviceLastSync, snapshotLastSync, eventLastSync);
       return {
         ...shop,
