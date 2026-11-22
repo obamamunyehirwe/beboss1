@@ -14,6 +14,7 @@ import { getBb3SigningStatus, saveAppConfig, setSigningSecret } from "@/lib/admi
 import { configQuery } from "@/lib/admin-queries";
 import { getDatashareKeyStatus, setDatashareKey } from "@/lib/insights.functions";
 import { DOWNLOAD_PATH } from "@/lib/queries";
+import { useAdminText } from "@/lib/admin-copy";
 import { buildAirtelUssd, buildMtnUssd } from "@/lib/pricing";
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
@@ -35,6 +36,7 @@ type Cfg = {
 
 function SettingsPage() {
   const ctx = useAdminCtx();
+  const a = useAdminText();
   const isAdmin = !!ctx.data?.isAdmin;
   const { data, isLoading } = useQuery(configQuery);
   const qc = useQueryClient();
@@ -72,7 +74,7 @@ function SettingsPage() {
       >
         <div className="space-y-4">
           <h2 className="flex items-center gap-2 font-semibold">
-            <Wallet className="size-4 text-primary" /> Mobile money & support
+            <Wallet className="size-4 text-primary" /> {a("Mobile money & support")}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <F label="MTN MoMo merchant / pay code" v={cfg.mtn_momo_code} on={(v) => set("mtn_momo_code", v)} hint="Used in *182*8*1*CODE*AMOUNT#. Leave empty to use the fallback phone." />
@@ -90,7 +92,7 @@ function SettingsPage() {
         </div>
         <div className="flex flex-col gap-4">
           <h2 className="flex items-center gap-2 font-semibold">
-            <Smartphone className="size-4 text-primary" /> App update channel
+            <Smartphone className="size-4 text-primary" /> {a("App update channel")}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <F label="Latest app version" v={cfg.apk_version} on={(v) => set("apk_version", v)} />
@@ -99,11 +101,11 @@ function SettingsPage() {
           <div className="rounded-2xl border border-border bg-muted/40 p-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Live USSD payment preview</p>
-                <p className="mt-1 text-sm text-muted-foreground">Updates instantly as you edit the merchant code or receiving phone.</p>
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{a("Live USSD payment preview")}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{a("Updates instantly as you edit the merchant code or receiving phone.")}</p>
               </div>
               <div className="w-36 space-y-1">
-                <Label htmlFor="ussd-preview-amount">Test amount (FRw)</Label>
+                <Label htmlFor="ussd-preview-amount">{a("Test amount (FRw)")}</Label>
                 <Input
                   id="ussd-preview-amount"
                   type="number"
@@ -126,11 +128,11 @@ function SettingsPage() {
               <UssdPreview label="MTN MoMo · *182#" value={buildMtnUssd(previewAmount, cfg)} />
               <UssdPreview label="Airtel Money · *500#" value={buildAirtelUssd(previewAmount, cfg)} />
             </div>
-            <p className="mt-3 text-xs text-muted-foreground">These are dial strings only. BeBoss records payment claims; an admin must still verify the transaction with the mobile-money provider before approving it.</p>
+            <p className="mt-3 text-xs text-muted-foreground">{a("These are dial strings only. BeBoss records payment claims; an admin must still verify the transaction with the mobile-money provider before approving it.")}</p>
           </div>
           {isAdmin ? (
             <Button type="submit" variant="hero" className="mt-auto" disabled={save.isPending}>
-              {save.isPending ? <Loader2 className="animate-spin" /> : <Save />} Save configuration
+              {save.isPending ? <Loader2 className="animate-spin" /> : <Save />} {a("Save configuration")}
             </Button>
           ) : null}
         </div>
@@ -179,10 +181,11 @@ function SettingsPage() {
 
 function UssdPreview({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
+  const a = useAdminText();
   return (
     <div className="min-w-0 rounded-xl border border-border bg-card p-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold text-muted-foreground">{label}</p>
+        <p className="text-xs font-semibold text-muted-foreground">{a(label)}</p>
         <Button
           type="button"
           size="sm"
@@ -191,14 +194,14 @@ function UssdPreview({ label, value }: { label: string; value: string }) {
             try {
               await navigator.clipboard.writeText(value);
               setCopied(true);
-              toast.success(`${label} copied`);
+              toast.success(a(`${label} copied`));
             } catch {
               toast.error("Clipboard access is unavailable in this browser.");
             }
           }}
         >
           {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
-          Copy
+          {a("Copy")}
         </Button>
       </div>
       <p className="mt-2 break-all font-mono text-sm font-semibold text-primary">{value}</p>
@@ -207,6 +210,7 @@ function UssdPreview({ label, value }: { label: string; value: string }) {
 }
 
 function ConnectionPanel({ origin }: { origin: string }) {
+  const a = useAdminText();
   const url = import.meta.env["VITE_SUPABASE_URL"] as string;
   const key = import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] as string;
   const lines = [
@@ -217,7 +221,7 @@ function ConnectionPanel({ origin }: { origin: string }) {
   return (
     <section className="rounded-2xl border border-border bg-card p-5">
       <h2 className="flex items-center gap-2 font-semibold">
-        <Smartphone className="size-4 text-primary" /> Connect the Android app
+        <Smartphone className="size-4 text-primary" /> {a("Connect the Android app")}
       </h2>
       <p className="mt-2 text-sm text-muted-foreground">
         Put these values in the app's <span className="font-mono">.env</span> file and rebuild the APK. Existing app code works unchanged — shops, payments, codes, devices, staff and branch sync all flow into this admin center. These are public app values, not secrets.
@@ -234,6 +238,7 @@ function ConnectionPanel({ origin }: { origin: string }) {
 
 function CopyRow({ k, v }: { k: string; v: string }) {
   const [done, setDone] = useState(false);
+  const a = useAdminText();
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-4 py-2.5">
       <div className="min-w-0">
@@ -258,11 +263,12 @@ function CopyRow({ k, v }: { k: string; v: string }) {
 }
 
 function F({ label, v, on, hint }: { label: string; v: string; on: (v: string) => void; hint?: string }) {
+  const a = useAdminText();
   return (
     <div className="space-y-1.5">
-      <Label>{label}</Label>
+      <Label>{a(label)}</Label>
       <Input value={v} onChange={(e) => on(e.target.value)} />
-      {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="text-[11px] text-muted-foreground">{a(hint)}</p> : null}
     </div>
   );
 }
