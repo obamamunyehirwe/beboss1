@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import {
   Activity,
   ArrowDownToLine,
+  ChevronDown,
   ArrowUpRight,
   Check,
   Languages,
@@ -198,9 +199,13 @@ export function ModernHero() {
             <div className="market-ops-orbit market-ops-orbit-one" aria-hidden="true" />
             <div className="market-ops-orbit market-ops-orbit-two" aria-hidden="true" />
           </div>
+          <a className="market-scroll-cue" href="#home-content">
+            <span>{t("navHow")}</span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </a>
         </div>
       </section>
-      <div className="cap-strip">
+      <div className="cap-strip" id="home-content">
         <div className="cap-inner">
           {capabilityIcons.map((Icon, i) => (
             <div className="cap-item" key={c.caps[i]}>
