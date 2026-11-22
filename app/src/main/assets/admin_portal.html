@@ -1329,7 +1329,7 @@
           'MTN MoMo (*182#) and Airtel Money (*500#) codes automatically pull the live Admin merchant code, phone numbers, and WhatsApp receiver from Supabase app_config.',
           'When submitting payment proof, include your Shop @username, registered phone, sender MoMo phone and full sender name, selected plan, payment time and optional payment note. The administrator verifies payment with the provider.',
           'Option 1 (BB3 Unlock Code): Admin verifies your proof and generates a signed BB3-... code bound strictly to your username + phone. Paste it in BeBoss to unlock even 100% offline.',
-          'Option 2 (Admin Direct Auto-Unlock): Admin clicks Direct Auto-Unlock in the portal; BeBoss unlocks automatically on the next foreground or background sync and sends a notification.'
+          'Each approved payment receives its own signed BB3 code bound to the submitted shop, payer details, selected subscription plan and payment request. The admin must verify settlement directly with MTN or Airtel before issuing the code.'
         ]
       },
       {
@@ -1427,7 +1427,7 @@
           'Kode za MTN MoMo (*182#) na Airtel (*500#) zikurura numero nshya za Admin muri Supabase app_config.',
           'Iyo wohereza icyemezo cyo kwishyura, shyiramo @username y’iduka, Telefoni yanditse ku iduka, Telefoni yishyuye, Amazina yanditse kuri iyo telefoni yishyuye, umubare wa telefoni zikoreshwa, na Reference ya MoMo.',
           'Uburyo bwa 1 (Kode ya BB3): Admin areba ubwishyu akagukorera kode ya BB3-... ifungura iduka ryawe gusa na offline.',
-          'Uburyo bwa 2 (Auto-Unlock): Admin akanda Direct Auto-Unlock, BeBoss igahita yifungura yonyine interineti igeze kuri telefoni.'
+          'Buri bwishyu bwemejwe buhabwa kode ya BB3 yihariye ihujwe n’iduka, uwishyuye na gahunda yatoranyijwe. Umuyobozi agomba kubanza kwemeza ubwishyu kuri MTN cyangwa Airtel.'
         ]
       },
       {
@@ -1525,7 +1525,7 @@
           'Les codes USSD MTN (*182#) et Airtel (*500#) récupèrent dynamiquement les coordonnées Admin depuis Supabase app_config.',
           'Lors de l’envoi de preuve : précisez @username, téléphone du magasin, téléphone payeur, Noms complets sur le numéro payeur, nombre d’appareils et référence MoMo.',
           'Option 1 (Code BB3) : l’Admin émet un code BB3-... lié à votre compte, activable même 100% hors ligne.',
-          'Option 2 (Déblocage Direct) : l’Admin clique Direct Auto-Unlock et votre boutique se débloque automatiquement à la synchronisation.'
+          'Chaque paiement approuvé reçoit un code BB3 signé et unique, lié à la boutique, au payeur et au forfait soumis. L’administrateur doit vérifier le règlement auprès de MTN ou Airtel avant de délivrer le code.'
         ]
       },
       {
@@ -1623,7 +1623,7 @@
           'Namba za MTN MoMo (*182#) na Airtel (*500#) hupatikana moja kwa moja kutoka Supabase app_config.',
           'Unapotuma uthibitisho, weka @username ya duka, namba iliyosajiliwa, jina na namba ya mlipaji, tarehe/saa ya malipo, mpango uliochagua na maelezo ya hiari. TxID haihitajiki.',
           'Njia ya 1 (Kode ya BB3): Admin hutoa kode ya BB3-... inayofungua akaunti yako pekee hata bila mtandao.',
-          'Njia ya 2 (Auto-Unlock): Admin anabofya Direct Auto-Unlock na app inajifungua yenyewe ikisawazisha mtandaoni.'
+          'Kila malipo yaliyoidhinishwa hupata msimbo wa BB3 wa kipekee unaounganishwa na duka, mlipaji na mpango uliowasilishwa. Msimamizi lazima athibitishe malipo kwa MTN au Airtel kabla ya kutoa msimbo.'
         ]
       },
       {
@@ -2356,23 +2356,6 @@ create table if not exists public.payment_requests (
       } catch (err) { notify(`Approve failed: ${err.message}`); }
     };
 
-    const handleDirectAutoUnlock = async (_req) => {
-      notify('Every verified payment must receive its own signed BB3 unlock code. Use the BB3 Code action in the payment queue.');
-    };
-
-    const handleBatchApprove = async () => {
-      const pendingList = requests.filter(r => r.status === 'PENDING_VERIFICATION');
-      if (!pendingList.length) return;
-      let ok = 0;
-      for (const req of pendingList) {
-        try {
-          await handleApproveWithCode(req);
-          ok++;
-        } catch (_) {}
-      }
-      notify(`Batch approved ${ok}/${pendingList.length} pending claims.`);
-    };
-
     const handleConfirmReject = async () => {
       if (!rejectTarget) return;
       try {
@@ -3007,11 +2990,6 @@ create table if not exists public.payment_requests (
                             >
                               Send Code via WhatsApp
                             </a>
-                          )}
-                          {req.status === 'PENDING_VERIFICATION' && !isDirect && (
-                            <button type="button" className="btn btn-primary btn-sm" onClick={() => handleDirectAutoUnlock(req)}>
-                              Option 2: Auto-Unlock Directly (No Code)
-                            </button>
                           )}
                           {req.status === 'PENDING_VERIFICATION' && (
                             <button type="button" className="btn btn-red btn-sm" onClick={() => { setRejectTarget(req); setRejectReason('Payment could not be confirmed with the mobile-money provider'); }}>
@@ -4165,9 +4143,9 @@ create table if not exists public.payment_requests (
                 </div>
                 <div className="card">
                   <span className="badge b-green">STEP 3 • DUAL ADMIN UNLOCK</span>
-                  <h3 style={{ margin: '10px 0 6px', fontSize: 16 }}>Unlock Code OR Direct Auto-Unlock</h3>
+                  <h3 style={{ margin: '10px 0 6px', fontSize: 16 }}>Unique BB3 Unlock Code</h3>
                   <p style={{ color: 'var(--muted)', fontSize: 13 }}>
-                    Admin verifies your MoMo receipt and chooses <strong>Option 1</strong> (issue offline cryptographic <span className="mono">BB3-...</span> code) OR <strong>Option 2</strong> (Direct Auto-Unlock so your phone unlocks automatically when internet syncs — zero code typing needed).
+                    Admin verifies your payment with the mobile-money provider, then issues one signed <strong>BB3-...</strong> code linked to your exact payment request and selected subscription plan. Each payment claim has its own code; no code is issued before provider verification.
                   </p>
                 </div>
               </div>
