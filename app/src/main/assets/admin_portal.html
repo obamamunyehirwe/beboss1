@@ -2356,52 +2356,8 @@ create table if not exists public.payment_requests (
       } catch (err) { notify(`Approve failed: ${err.message}`); }
     };
 
-    const handleDirectAutoUnlock = async (req) => {
-      const calc = calculateSubscriptionFee(
-        req.branch_count,
-        req.worker_count,
-        req.duration_months,
-        req.device_count || 1,
-        Number(req.fee_per_device_rwf) > 0 ? req.fee_per_device_rwf : payConfig.per_device_fee_rwf
-      );
-      if (Number(req.amount_rwf) !== calc.total) throw new Error('Payment amount does not match the saved submitted plan.');
-      const now = Date.now();
-      const adminLabel = `${session.fullName} (${session.email})`;
-      try {
-        await sbFetch(`payment_requests?id=eq.${encodeURIComponent(req.id)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            status: 'APPROVED',
-            approval_mode: 'DIRECT_AUTO_UNLOCK',
-            amount_rwf: calc.total,
-            generated_unlock_code: '',
-            verified_by_admin: adminLabel,
-            updated_at: now
-          })
-        });
-        await extendOrActivateShop(computeShopKey(req.owner_username, req.owner_phone), {
-          addDays: calc.days,
-          branches: req.branch_count,
-          workers: req.worker_count,
-          deviceLimit: req.device_count || 1,
-          monthlyFee: calc.monthly,
-          markAutoUnlock: true
-        });
-        await logAudit('DIRECT_AUTO_UNLOCK', req.owner_username, `Auto-Unlocked ${req.shop_name} without code (+${calc.days}d, ${calc.total} FRw, ${req.device_count || 1} devices)`);
-        setLatestGenerated({
-          mode: 'DIRECT',
-          code: 'DIRECT_AUTO_UNLOCK (No Code Needed)',
-          shopName: req.shop_name,
-          username: req.owner_username,
-          phone: req.owner_phone || req.payer_phone,
-          days: calc.days,
-          tier: `${calc.tier} (${calc.total.toLocaleString()} FRw)`
-        });
-        await refreshAll(false);
-        notify(`Direct Auto-Unlocked @${req.owner_username} without code!`);
-      } catch (err) {
-        notify(`Auto-unlock failed: ${err.message}`);
-      }
+    const handleDirectAutoUnlock = async (_req) => {
+      notify('Every verified payment must receive its own signed BB3 unlock code. Use the BB3 Code action in the payment queue.');
     };
 
     const handleBatchApprove = async () => {
@@ -2908,7 +2864,6 @@ create table if not exists public.payment_requests (
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button className="btn btn-green btn-sm" onClick={() => handleApproveWithCode(r)}>BB3 Code</button>
-                          <button className="btn btn-primary btn-sm" onClick={() => handleDirectAutoUnlock(r)}>Auto-Unlock</button>
                         </div>
                       </div>
                     ))}
