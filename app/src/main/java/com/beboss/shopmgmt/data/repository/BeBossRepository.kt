@@ -925,6 +925,9 @@ class BeBossRepository(private val database: AppDatabase) {
             var directAutoUnlocked = false
 
             var effectiveProfile = shopProfile
+            // Remember when the shop row already carries the license extension
+            // so the payment-request fallback below cannot add the same days twice.
+            var cloudSubscriptionAlreadyUpdated = false
 
             // 1. Fetch Admin's global live WhatsApp & MoMo/Airtel USSD numbers
             val appCfg = SupabaseAdminClient.fetchPublicAppConfig()
@@ -947,9 +950,12 @@ class BeBossRepository(private val database: AppDatabase) {
                     remoteShop.subscriptionStatus == ShopProfile.STATUS_EXPIRED) &&
                     remoteShop.updatedAt > effectiveProfile.updatedAt &&
                     remoteShop.autoUnlockedAt <= effectiveProfile.lastAppliedCloudUnlockAt
+                cloudSubscriptionAlreadyUpdated = isDirectUnlockUpdate || isRemoteExtension
 
                 if (isDirectUnlockUpdate || isRemoteExtension || isRemoteLock || remoteShop.updatedAt > effectiveProfile.updatedAt) {
-                    if (isDirectUnlockUpdate || isRemoteExtension) directAutoUnlocked = true
+                    // A normal paid BB3 code also extends the cloud license. Only
+                    // the direct-auto marker should produce a direct-unlock notice.
+                    if (isDirectUnlockUpdate) directAutoUnlocked = true
                     effectiveProfile = effectiveProfile.copy(
                         subscriptionStatus = if (isDirectUnlockUpdate || isRemoteExtension) ShopProfile.STATUS_ACTIVE else remoteShop.subscriptionStatus,
                         subscriptionExpiresAt = if (isRemoteLock) remoteShop.subscriptionExpiresAt else maxOf(effectiveProfile.subscriptionExpiresAt, remoteShop.subscriptionExpiresAt),
@@ -1085,7 +1091,7 @@ class BeBossRepository(private val database: AppDatabase) {
                 }
 
                 // If Admin chose Option 2 (DIRECT_AUTO_UNLOCK), ensure local ShopProfile is unlocked even without a BB2 code!
-                if (dto.approvalMode == "DIRECT_AUTO_UNLOCK" && dto.updatedAt > effectiveProfile.lastAppliedCloudUnlockAt) {
+                if (dto.approvalMode == "DIRECT_AUTO_UNLOCK" && dto.updatedAt > effectiveProfile.lastAppliedCloudUnlockAt && !cloudSubscriptionAlreadyUpdated) {
                     val now = System.currentTimeMillis()
                     val daysAdded = dto.durationMonths.coerceAtLeast(1) * 30L
                     val minExpiry = maxOf(effectiveProfile.subscriptionExpiresAt, now) + daysAdded * 86_400_000L
