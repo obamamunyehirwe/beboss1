@@ -133,8 +133,34 @@ function SyncMonitor() {
         }).length,
       });
     }
-    // Count activity that is actually emitted by the mobile-to-cloud sync triggers.
-    const activeShops = shopRows.filter((shop) => shop.lastSyncAt > 0 && now - shop.lastSyncAt < 15 * 60_000).length;
+    // Derive this KPI from the query results directly. Do not make the stats
+    // memo depend on the separately-created shopRows memo (prevents TDZ regressions).
+    const knownShopIds = new Set((shops.data ?? []).map((shop) => shop.id));
+    const activeSince = now - 15 * 60_000;
+    const activeShopIds = new Set<string>();
+    for (const device of dv) {
+      const lastSync = Number(device.last_synced_at) || 0;
+      if (device.is_active && lastSync >= activeSince && knownShopIds.has(device.shop_sync_key)) {
+        activeShopIds.add(device.shop_sync_key);
+      }
+    }
+    for (const snapshot of snaps.data ?? []) {
+      const lastSync = Number(snapshot.updated_at) || 0;
+      if (lastSync >= activeSince && knownShopIds.has(snapshot.shop_sync_key)) {
+        activeShopIds.add(snapshot.shop_sync_key);
+      }
+    }
+    for (const event of ev) {
+      const isSyncHeartbeat =
+        (event.entity === "SNAPSHOT" && event.action === "UPLOADED") ||
+        (event.entity === "DEVICE" && event.action === "SYNCED") ||
+        (event.entity === "SHOP" && event.action === "HEARTBEAT");
+      const createdAt = Date.parse(event.created_at);
+      if (isSyncHeartbeat && createdAt >= activeSince && knownShopIds.has(event.shop_sync_key)) {
+        activeShopIds.add(event.shop_sync_key);
+      }
+    }
+    const activeShops = activeShopIds.size;
 
     // Failure telemetry is not yet uploaded by the offline Android outbox. Never
     // turn the absence of cloud failure events into a misleading 0% failure rate.
@@ -166,7 +192,7 @@ function SyncMonitor() {
       totalTransfers,
       staleDevices,
     };
-  }, [events.data, shops.data, devices.data, staff.data, snaps.data, branches.data, transfers.data, shopRows, now]);
+  }, [events.data, shops.data, devices.data, staff.data, snaps.data, branches.data, transfers.data, now]);
 
   return (
     <div className="space-y-6">

@@ -51,7 +51,9 @@ object CloudSyncScheduler {
                 .build()
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
                 IMMEDIATE_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
+                // Serialize refreshes instead of cancelling a sync already uploading
+                // a snapshot. New outbox changes are picked up by the next worker run.
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
                 request
             )
         } catch (e: Exception) {

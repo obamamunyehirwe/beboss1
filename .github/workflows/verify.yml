@@ -57,8 +57,16 @@ jobs:
       - name: Run unit tests
         run: npm run test
 
-      - name: Build production web app
+      - name: Build production web app for Vercel
         run: npm run build
+        env:
+          VERCEL: "1"
+
+      - name: Verify Vercel server-function output
+        run: |
+          test -s .vercel/output/config.json
+          test -d .vercel/output/functions
+          test -d .vercel/output/static
 
   android:
     name: Android JVM unit tests
