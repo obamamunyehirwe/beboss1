@@ -97,7 +97,8 @@ class MultiDeviceAndPaymentFlowTest {
             deviceCount = 2,
             payerPhone = "0789112233",
             payerFullName = "Marie Rose Mukamana",
-            telcoReference = "FT251109.1234.A12345",
+            paymentTimeMs = 1_795_000_000_000L,
+            paymentNote = "Payment sent from the registered payer",
             requestId = "req-12345678"
         )
 
@@ -108,7 +109,6 @@ class MultiDeviceAndPaymentFlowTest {
         assertTrue(message.contains("*USSD Dialed:* *182*8*1*054321*7000#"))
         assertTrue(message.contains("*Amount Paid:* 7000 FRw"))
         assertTrue(message.contains("2 Device(s)"))
-        assertTrue(message.contains("FT251109.1234.A12345"))
     }
 
     @Test
