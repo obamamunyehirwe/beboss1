@@ -384,6 +384,10 @@ const words: Record<string, readonly [string, string, string]> = {
   "Cashier": ["Umunyab cashier","Caissier","Mhasibu wa mauzo"],
   "Delete this snapshot?": ["Siba iyi snapshot?","Supprimer cet instantané ?","Futa picha hii ya data?"],
   "Release notes placeholder": ["• Kugurisha byihuse\n• Ubusemuzi bushya bwa Kiswahili", "• Encaissement plus rapide\n• Nouvelles traductions en swahili", "• Malipo ya haraka zaidi\n• Tafsiri mpya za Kiswahili"],
+  "Toggle visibility": ["Erekana cyangwa uhishe","Afficher ou masquer","Onyesha au ficha"],
+  "Configured": ["Byashyizweho","Configuré","Imesanidiwa"],
+  "Optional": ["Ntibisabwa","Facultatif","Si lazima"],
+  "Save snapshot key": ["Bika urufunguzo rwa snapshot","Enregistrer la clé d’instantané","Hifadhi ufunguo wa picha ya data"],
 };
 export function useAdminText() {
   const { lang } = useI18n();
