@@ -951,11 +951,20 @@ class BeBossRepository(private val database: AppDatabase) {
             )
         }
         try {
-            val username = ownerUser?.username?.trim().orEmpty().ifBlank { "owner" }
-            val phone = ownerUser?.phone?.ifBlank { shopProfile.phone } ?: shopProfile.phone
+            val username = ownerUser?.username?.trim()?.lowercase(Locale.ROOT).orEmpty()
+            val phone = ownerUser?.phone?.ifBlank { shopProfile.phone }?.trim().orEmpty()
+            val phoneDigits = phone.filter { it.isDigit() }.takeLast(9)
+            if (ownerUser?.role != UserRole.OWNER || username.length < 2 ||
+                !username.matches(Regex("[a-z0-9._-]{2,80}")) ||
+                phoneDigits.length != 9 || shopProfile.shopName.isBlank()) {
+                return@withContext SupabaseSyncResult(
+                    success = false,
+                    message = "Cloud sync paused: complete the registered shop owner's name, username and 9-digit phone on this device. No placeholder shop identity was uploaded."
+                )
+            }
             val shopSyncKey = SupabaseAdminClient.computeShopSyncKey(username, phone)
             var directAutoUnlocked = false
-            var allDevicesUploaded = true
+            var allDevicesUploaded = false
             var allPaymentRequestsUploaded = true
 
             var effectiveProfile = shopProfile
@@ -1034,7 +1043,9 @@ class BeBossRepository(private val database: AppDatabase) {
                 }
             }
             val effectiveDeviceCount = maxOf(deviceCount, shopDeviceDao.getActiveDevicesCount()).coerceAtLeast(1)
-            for (ld in shopDeviceDao.getAllDevicesList()) {
+            val localDevices = shopDeviceDao.getAllDevicesList()
+            allDevicesUploaded = localDevices.isNotEmpty()
+            for (ld in localDevices) {
                 if (!ld.syncedToSupabase) {
                     if (SupabaseAdminClient.upsertShopDevice(shopSyncKey, effectiveProfile.shopName, ld)) {
                         shopDeviceDao.insertOrUpdate(ld.copy(syncedToSupabase = true))
@@ -1073,11 +1084,12 @@ class BeBossRepository(private val database: AppDatabase) {
                 deviceCount = effectiveDeviceCount
             )
             val localUsers = userDao.getAllUsersDirect()
-            val usersUploaded = localUsers.isEmpty() || SupabaseAdminClient.upsertShopUsers(
-                shopSyncKey = shopSyncKey,
-                shopName = effectiveProfile.shopName,
-                users = localUsers
-            )
+            val usersUploaded = localUsers.any { it.role == UserRole.OWNER } &&
+                SupabaseAdminClient.upsertShopUsers(
+                    shopSyncKey = shopSyncKey,
+                    shopName = effectiveProfile.shopName,
+                    users = localUsers
+                )
 
             // 6. Push all unsynced offline payment requests
             val unsynced = paymentVerificationDao.getUnsyncedRequests()
