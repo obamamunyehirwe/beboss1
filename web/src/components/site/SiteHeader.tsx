@@ -93,10 +93,18 @@ export function SiteHeader() {
     { to: "/admin" as const, label: t("navAdmin"), description: c.headerAdminDesc, icon: ShieldCheck, keywords: ["administrator", "management", "admin login"] },
   ];
 
-  const query = searchQuery.trim().toLocaleLowerCase();
-  const filteredLinks = query
+  const normalizeSearchText = (value: string) =>
+    value.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLocaleLowerCase();
+  const query = normalizeSearchText(searchQuery.trim());
+  const queryTerms = query.split(/\\s+/).filter(Boolean);
+  const filteredLinks = queryTerms.length
     ? allLinks
-        .filter((item) => `${item.label} ${item.description} ${item.to} ${(item.keywords ?? []).join(" ")}`.toLocaleLowerCase().includes(query))
+        .filter((item) => {
+          const searchable = normalizeSearchText(
+            `${item.label} ${item.description} ${item.to} ${(item.keywords ?? []).join(" ")}`,
+          );
+          return queryTerms.every((term) => searchable.includes(term));
+        })
         .slice(0, 10)
     : allLinks.slice(0, 6);
 
