@@ -7,6 +7,8 @@ export type ShopAccount = Tables["shop_accounts"]["Row"];
 export type PaymentRequest = Tables["payment_requests"]["Row"];
 export type ShopDevice = Tables["shop_devices"]["Row"];
 export type ShopUser = Tables["shop_users"]["Row"];
+export type ShopBranch = Tables["shop_branches"]["Row"];
+export type ShopStockTransfer = Tables["shop_stock_transfers"]["Row"];
 export type UnlockCode = Tables["unlock_codes"]["Row"];
 export type Snapshot = Tables["branch_sync_snapshots"]["Row"];
 export type AuditLog = Tables["admin_audit_logs"]["Row"];
@@ -34,6 +36,8 @@ export const adminKeys = {
   shops: ["admin", "shops"] as const,
   payments: ["admin", "payments"] as const,
   devices: ["admin", "devices"] as const,
+  branches: ["admin", "branches"] as const,
+  transfers: ["admin", "stock-transfers"] as const,
   users: ["admin", "users"] as const,
   codes: ["admin", "codes"] as const,
   snapshots: ["admin", "snapshots"] as const,
@@ -59,6 +63,18 @@ export const paymentsQuery = queryOptions({
 export const devicesQuery = queryOptions({
   queryKey: adminKeys.devices,
   queryFn: () => all<ShopDevice>((a, b) => supabase.from("shop_devices").select("*").order("updated_at", { ascending: false }).range(a, b)),
+  staleTime: 5_000,
+  refetchInterval: 15_000,
+});
+export const branchesQuery = queryOptions({
+  queryKey: adminKeys.branches,
+  queryFn: () => all<ShopBranch>((a, b) => supabase.from("shop_branches").select("*").order("updated_at", { ascending: false }).range(a, b)),
+  staleTime: 5_000,
+  refetchInterval: 15_000,
+});
+export const stockTransfersQuery = queryOptions({
+  queryKey: adminKeys.transfers,
+  queryFn: () => all<ShopStockTransfer>((a, b) => supabase.from("shop_stock_transfers").select("*").order("updated_at", { ascending: false }).range(a, b)),
   staleTime: 5_000,
   refetchInterval: 15_000,
 });

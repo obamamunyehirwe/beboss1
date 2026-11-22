@@ -349,19 +349,18 @@ create index idx_payment_requests_username on public.payment_requests(owner_user
 create index idx_payment_requests_created on public.payment_requests(created_at desc);
 
 create or replace function public.enforce_payment_request_server_fee()
-returns trigger language plpgsql set search_path = public
+returns trigger language plpgsql security definer set search_path = public
 as $$
 begin
   new.branch_count := greatest(coalesce(new.branch_count, 1), 1);
   new.worker_count := greatest(coalesce(new.worker_count, 1), 1);
   new.device_count := greatest(coalesce(new.device_count, 1), 1);
   new.duration_months := greatest(coalesce(new.duration_months, 1), 1);
-  if coalesce(new.fee_per_device_rwf, 0) <= 0 then
-    select coalesce(nullif(per_device_fee_rwf, 0), 2000)
-      into new.fee_per_device_rwf
-      from public.app_config where id = 'global';
-    new.fee_per_device_rwf := coalesce(nullif(new.fee_per_device_rwf, 0), 2000);
-  end if;
+  -- Always overwrite a client-provided rate with the trusted database config.
+  select coalesce(nullif(per_device_fee_rwf, 0), 2000)
+    into new.fee_per_device_rwf
+    from public.app_config where id = 'global';
+  new.fee_per_device_rwf := coalesce(nullif(new.fee_per_device_rwf, 0), 2000);
   new.payment_time_ms := coalesce(nullif(new.payment_time_ms, 0), nullif(new.created_at, 0), public.now_ms());
   new.payment_note := coalesce(new.payment_note, '');
   new.amount_rwf := public.compute_expected_subscription_fee_with_rate(
