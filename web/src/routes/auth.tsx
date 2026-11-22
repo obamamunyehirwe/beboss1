@@ -47,7 +47,6 @@ function AuthPage() {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
-  const [resetBusy, setResetBusy] = useState(false);
 
   useEffect(() => {
     if (!liveConfigured) {
@@ -100,26 +99,6 @@ function AuthPage() {
     }
   };
 
-  const forgot = async () => {
-    if (!liveConfigured || resetBusy) return;
-    if (!email.trim()) {
-      toast.error("Enter your admin email first.");
-      return;
-    }
-    setResetBusy(true);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      if (error) toast.error(error.message);
-      else toast.success("Password reset link sent. Check your inbox.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not send the password reset email.");
-    } finally {
-      setResetBusy(false);
-    }
-  };
-
   return (
     <div className="admin-auth-shell">
       <div className="admin-auth-atmosphere" aria-hidden="true" />
@@ -167,10 +146,6 @@ function AuthPage() {
               <div className="space-y-2">
                 <div className="admin-auth-password-label">
                   <Label htmlFor="admin-password">{a("Password")}</Label>
-                  <button type="button" onClick={forgot} disabled={!liveConfigured || resetBusy}>
-                    {resetBusy ? <Loader2 size={13} className="animate-spin" /> : null}
-                    {a("Forgot password?")}
-                  </button>
                 </div>
                 <div className="admin-auth-password-wrap">
                   <Input id="admin-password" type={passwordVisible ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" disabled={!liveConfigured || busy || checkingSession} />
@@ -197,7 +172,7 @@ function AuthPage() {
             </div>
             <div className="admin-auth-method-note">
               <LockKeyhole size={15} />
-              <span>Email and password authentication only. Public registration is disabled.</span>
+              <span>Password-only sign-in. No invitation, magic link, OTP, or password-reset email is used on this screen. A project owner resets passwords directly in Supabase.</span>
             </div>
             <div className="admin-auth-access-note">
               <ShieldCheck size={16} />
