@@ -483,7 +483,6 @@ export type Database = {
           shop_name?: string
           source?: string
           status?: string
-          telco_reference?: string
           updated_at?: number
           ussd_code?: string
           verified_by_admin?: string
