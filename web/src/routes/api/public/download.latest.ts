@@ -65,10 +65,17 @@ export const Route = createFileRoute("/api/public/download/latest")({
           });
         } catch (error) {
           console.error("[BeBoss APK] Download handler failed", error);
-          return new Response("The BeBoss download service is not ready. Please contact the administrator.", {
-            status: 503,
-            headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
-          });
+          const message = error instanceof Error ? error.message : "";
+          const missingServerConfig = message.includes("Missing Supabase environment variable");
+          return new Response(
+            missingServerConfig
+              ? "BeBoss download is missing its private Supabase server key. Add SUPABASE_SERVICE_ROLE_KEY as a Secret environment variable in the Vercel project, enable it for Production, and redeploy."
+              : "The BeBoss download service is temporarily unavailable. Please contact the administrator.",
+            {
+              status: 503,
+              headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
+            },
+          );
         }
       },
     },

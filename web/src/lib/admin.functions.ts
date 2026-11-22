@@ -849,7 +849,7 @@ const paymentPhoneSchema = z.string().trim().max(20).refine(
 const configSchema = z.object({
   admin_whatsapp_number: z.string().trim().max(30),
   mtn_momo_code: z.string().trim().max(20).refine(
-    (value) => !value || /^\\d{4,20}$/.test(value),
+    (value) => !value || /^\d{4,20}$/.test(value),
     "MTN merchant code must contain 4–20 digits.",
   ),
   mtn_momo_phone: paymentPhoneSchema,
