@@ -473,7 +473,7 @@ class AdminConsoleCoordinator(
                 )
                 refreshAdminDashboardData()
             } else {
-                emitSnackbar("Failed generating BB2 code Ã¢â‚¬â€ verify secret & Admin session.")
+                emitSnackbar("Failed generating BB3 code — verify the server signing key and Admin session.")
             }
             _isAdminLoading.value = false
             onGenerated(ok, code)
