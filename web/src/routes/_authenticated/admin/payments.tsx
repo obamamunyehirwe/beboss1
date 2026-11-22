@@ -92,7 +92,7 @@ function PaymentsPage() {
                   </Button>
                 }
                 title={`Approve ${pending.length} pending claims?`}
-                description="Each claim gets a signed BB2 unlock code and its shop is extended. Only do this after confirming every transaction in your MoMo/Airtel statement."
+                description="Each claim gets a signed BB3 unlock code and its shop is extended. Only do this after confirming every transaction in your MoMo/Airtel statement."
                 confirmLabel="Approve all"
                 onConfirm={batch}
               />
@@ -167,7 +167,7 @@ function PaymentsPage() {
                     {r.status === "PENDING_VERIFICATION" || r.status === "REJECTED" ? (
                       <>
                         <Button size="sm" variant="success" disabled={busy} onClick={() => doApprove(r)}>
-                          {busy ? <Loader2 className="animate-spin" /> : <KeyRound />} Verify & issue BB2 code
+                          {busy ? <Loader2 className="animate-spin" /> : <KeyRound />} Verify & issue BB3 code
                         </Button>
                         <Button size="sm" variant="soft" disabled={busy} onClick={() => doDirect(r)}>
                           <Zap /> Direct auto-unlock
