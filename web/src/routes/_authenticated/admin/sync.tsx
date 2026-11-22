@@ -23,6 +23,7 @@ import { devicesQuery, shopsQuery, snapshotsQuery, syncEventsQuery, type SyncEve
 import { formatDateTime, relativeTime } from "@/lib/format";
 import { DAY, HEALTH_LABEL, HOUR, deviceHealth, type DeviceHealth } from "@/lib/sync-health";
 import { cn } from "@/lib/utils";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/sync")({
   component: SyncMonitor,
@@ -115,12 +116,12 @@ function SyncMonitor() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Cloud sync monitor"
+        title={a("Cloud sync monitor")}
         sub="Every phone → cloud sync as it happens: shop registrations, devices, staff, branch data, payments and code redemptions."
         actions={
           <span className="flex items-center gap-2 rounded-full border border-success/40 bg-success/10 px-3 py-1.5 text-xs text-success">
             <Radio className="size-3.5 animate-pulse" />
-            {stats.lastEvent ? `Last cloud event ${relativeTime(stats.lastEvent.created_at, now)}` : "Listening for cloud events"}
+            {stats.lastEvent ? `${a("Last cloud event")} ${relativeTime(stats.lastEvent.created_at, now)}` : "{a("Listening for cloud events")}"}
           </span>
         }
       />
@@ -134,7 +135,7 @@ function SyncMonitor() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5">
-        <h2 className="font-semibold">Cloud activity — last 24 hours</h2>
+        <h2 className="font-semibold">{a("Cloud activity — last 24 hours")}</h2>
         <div className="mt-3 h-36">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={stats.hours}>
@@ -148,9 +149,9 @@ function SyncMonitor() {
 
       <Tabs defaultValue="live">
         <TabsList className="flex-wrap">
-          <TabsTrigger value="live">Live activity</TabsTrigger>
-          <TabsTrigger value="devices">Device health ({(devices.data ?? []).length})</TabsTrigger>
-          <TabsTrigger value="snapshots">Branch snapshots ({(snaps.data ?? []).length})</TabsTrigger>
+          <TabsTrigger value="live">{a("Live activity")}</TabsTrigger>
+          <TabsTrigger value="devices">{a("Device health")} ({(devices.data ?? []).length})</TabsTrigger>
+          <TabsTrigger value="snapshots">{a("Branch snapshots")} ({(snaps.data ?? []).length})</TabsTrigger>
         </TabsList>
         <TabsContent value="live">
           <LiveActivity events={events.data ?? []} loading={events.isLoading} now={now} />
@@ -167,6 +168,7 @@ function SyncMonitor() {
 }
 
 function LiveActivity({ events, loading, now }: { events: SyncEvent[]; loading: boolean; now: number }) {
+  const a = useAdminText();
   const [f, setF] = useState<EntityFilter>("ALL");
   const [q, setQ] = useState("");
   const rows = events.filter((e) => (f === "ALL" || e.entity === f) && matches(q, e.shop_name, e.shop_sync_key, e.action, e.detail, e.device_id));
@@ -181,7 +183,7 @@ function LiveActivity({ events, loading, now }: { events: SyncEvent[]; loading: 
           options={[{ value: "ALL", label: "All", count: events.length }, ...Object.keys(ENTITY_LABEL).map((k) => ({ value: k as EntityFilter, label: ENTITY_LABEL[k] ?? k, count: count(k) }))]}
         />
         <Button size="sm" variant="glass" className="ml-auto" onClick={() => downloadCsv(`beboss-sync-${Date.now()}.csv`, rows.map((r) => ({ ...r })))}>
-          <Download /> Export
+          <Download /> {a("Export")}
         </Button>
       </div>
       {loading ? (
@@ -228,6 +230,7 @@ function LiveActivity({ events, loading, now }: { events: SyncEvent[]; loading: 
 }
 
 function DeviceHealthTable({ now }: { now: number }) {
+  const a = useAdminText();
   const { data, isLoading } = useQuery(devicesQuery);
   const [f, setF] = useState<HealthFilter>("ALL");
   const [q, setQ] = useState("");
@@ -301,6 +304,7 @@ function DeviceHealthTable({ now }: { now: number }) {
 }
 
 function Snapshots({ now }: { now: number }) {
+  const a = useAdminText();
   const { data, isLoading } = useQuery(snapshotsQuery);
   const isAdmin = !!useAdminCtx().data?.isAdmin;
   const [q, setQ] = useState("");
@@ -315,11 +319,11 @@ function Snapshots({ now }: { now: number }) {
           <ConfirmAction
             trigger={
               <Button size="sm" variant="glass">
-                <Trash2 /> Prune {stale.length} stale (14d+)
+                <Trash2 /> {a("Prune stale snapshots")} ({stale.length})
               </Button>
             }
-            title={`Remove ${stale.length} stale snapshots?`}
-            description="Snapshots not refreshed for 14+ days are deleted. Active devices re-upload fresh ones on their next sync."
+            title={a("Remove stale snapshots?")}
+            description={a("Snapshots not refreshed for 14+ days are deleted. Active devices re-upload fresh ones on their next sync.")}
             confirmLabel="Prune"
             destructive
             onConfirm={() => stale.forEach((s) => del.mutate({ id: s.id }))}
@@ -367,7 +371,7 @@ function Snapshots({ now }: { now: number }) {
                             <Trash2 />
                           </Button>
                         }
-                        title="Delete this snapshot?"
+                        title={a("Delete this snapshot?")}
                         description="The branch device re-uploads it on its next sync."
                         destructive
                         confirmLabel="Delete"
