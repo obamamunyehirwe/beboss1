@@ -39,19 +39,19 @@ class AdminAndPermissionsTest {
 
     @Test
     fun `master admin email is locked strictly to reponsekdz at gmail dot com`() = runBlocking {
-        assertEquals("reponsekdz@gmail.com", SupabaseAdminClient.MASTER_ADMIN_EMAIL)
-        assertEquals("reponsekdz@gmail.com", SupabaseAdminClient.getDefaultAdminEmail())
-        assertTrue(SupabaseAdminClient.isAllowedMasterAdminEmail("reponsekdz@gmail.com"))
+        assertEquals("obamamunyehirwe@gmail.com", SupabaseAdminClient.MASTER_ADMIN_EMAIL)
+        assertEquals("obamamunyehirwe@gmail.com", SupabaseAdminClient.getDefaultAdminEmail())
+        assertTrue(SupabaseAdminClient.isAllowedMasterAdminEmail("obamamunyehirwe@gmail.com"))
         assertTrue(SupabaseAdminClient.isAllowedMasterAdminEmail("  REPONSEKDZ@GMAIL.COM "))
         assertFalse(SupabaseAdminClient.isAllowedMasterAdminEmail("other@beboss.app"))
         assertFalse(SupabaseAdminClient.isAllowedMasterAdminEmail("admin@beboss.app"))
 
         val signInRes = SupabaseAdminClient.signInAdmin("unauthorized@example.com", "secret123")
         assertTrue(signInRes.isFailure)
-        assertTrue(signInRes.exceptionOrNull()?.message?.contains("reponsekdz@gmail.com") == true)
+        assertTrue(signInRes.exceptionOrNull()?.message?.contains("obamamunyehirwe@gmail.com") == true)
 
         val signUpRes = SupabaseAdminClient.signUpAdmin("unauthorized@example.com", "secret123", "Fake Admin")
         assertTrue(signUpRes.isFailure)
-        assertTrue(signUpRes.exceptionOrNull()?.message?.contains("reponsekdz@gmail.com") == true)
+        assertTrue(signUpRes.exceptionOrNull()?.message?.contains("obamamunyehirwe@gmail.com") == true)
     }
 }
