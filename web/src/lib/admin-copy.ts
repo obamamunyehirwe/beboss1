@@ -105,7 +105,7 @@ const words: Record<string, readonly [string, string, string]> = {
   "Payment provider": ["Umuyoboro w’ubwishyu","Prestataire de paiement","Mtoa huduma wa malipo"],
   "Payer full name": ["Amazina y’uwishyuye","Nom complet du payeur","Jina kamili la mlipaji"],
   "Payer phone": ["Telefoni y’uwishyuye","Téléphone du payeur","Simu ya mlipaji"],
-  "Mobile-money transaction reference": ["Reference y’ihererekanya rya Mobile Money","Référence de transaction Mobile Money","Nambari ya kumbukumbu ya muamala wa Mobile Money"],
+  "Payment time and note": ["Igihe n’inyongera ku bwishyu","Date et note du paiement","Muda na maelezo ya malipo"],
   "Duration": ["Igihe","Durée","Muda"],
   "Staff count": ["Umubare w’abakozi","Nombre d’employés","Idadi ya wafanyakazi"],
   "Device count": ["Umubare w’ibikoresho","Nombre d’appareils","Idadi ya vifaa"],
