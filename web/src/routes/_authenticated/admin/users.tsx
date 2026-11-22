@@ -11,6 +11,7 @@ import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { deleteShopUser, updateShopUser } from "@/lib/admin.functions";
 import { usersQuery } from "@/lib/admin-queries";
 import { relativeTime } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   component: UsersPage,
@@ -19,6 +20,7 @@ export const Route = createFileRoute("/_authenticated/admin/users")({
 type F = "ALL" | "OWNER" | "MANAGER" | "CASHIER" | "SUSPENDED";
 
 function UsersPage() {
+  const a = useAdminText();
   const { data, isLoading } = useQuery(usersQuery);
   const isAdmin = !!useAdminCtx().data?.isAdmin;
   const [q, setQ] = useState("");
@@ -35,7 +37,7 @@ function UsersPage() {
         sub="Owners, managers and cashiers synced from every shop. PINs and passwords never leave the phones."
         actions={
           <Button size="sm" variant="glass" onClick={() => downloadCsv(`beboss-staff-${Date.now()}.csv`, rows)}>
-            <Download /> Export
+            <Download /> {a("Export")}
           </Button>
         }
       />
@@ -62,12 +64,12 @@ function UsersPage() {
           <table className="w-full text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">Person</th>
-                <th className="px-4 py-3">Shop</th>
-                <th className="px-4 py-3">Branch</th>
-                <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">Active</th>
-                <th className="px-4 py-3">Updated</th>
+                <th className="px-4 py-3">{a("Person")}</th>
+                <th className="px-4 py-3">{a("Shop")}</th>
+                <th className="px-4 py-3">{a("Branch")}</th>
+                <th className="px-4 py-3">{a("Role")}</th>
+                <th className="px-4 py-3">{a("Active")}</th>
+                <th className="px-4 py-3">{a("Updated")}</th>
                 {isAdmin ? <th className="px-4 py-3" /> : null}
               </tr>
             </thead>
@@ -93,9 +95,9 @@ function UsersPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="OWNER">Owner</SelectItem>
-                          <SelectItem value="MANAGER">Manager</SelectItem>
-                          <SelectItem value="CASHIER">Cashier</SelectItem>
+                          <SelectItem value="OWNER">{a("Owner")}</SelectItem>
+                          <SelectItem value="MANAGER">{a("Manager")}</SelectItem>
+                          <SelectItem value="CASHIER">{a("Cashier")}</SelectItem>
                         </SelectContent>
                       </Select>
                     ) : (
@@ -108,12 +110,12 @@ function UsersPage() {
                     <td className="px-4 py-3 text-right">
                       <ConfirmAction
                         trigger={
-                          <Button size="icon" variant="ghost" aria-label="Remove staff account">
+                          <Button size="icon" variant="ghost" aria-label={a("Remove staff account")}>
                             <Trash2 />
                           </Button>
                         }
-                        title={`Remove @${u.username}?`}
-                        description="Removes this person from the cloud directory. The shop owner can re-add them from the app."
+                        title={a("Remove staff account?")}
+                        description={a("Removes this person from the cloud directory. The shop owner can re-add them from the app.")}
                         destructive
                         confirmLabel="Remove"
                         onConfirm={() => del.mutate({ id: u.id })}
