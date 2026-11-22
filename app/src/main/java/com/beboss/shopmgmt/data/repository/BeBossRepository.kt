@@ -1050,7 +1050,7 @@ class BeBossRepository(private val database: AppDatabase) {
                 }
             }
 
-            // 7. Pull approved requests (either BB2 Unlock Code OR Admin Direct Auto-Unlock)
+            // 7. Pull approved requests (payment-linked BB3 code OR Admin Direct Auto-Unlock)
             val approvedDtos = SupabaseAdminClient.fetchApprovedRequestsForUser(username, phone)
             for (dto in approvedDtos) {
                 val local = paymentVerificationDao.getRequestById(dto.id)
@@ -1092,7 +1092,7 @@ class BeBossRepository(private val database: AppDatabase) {
                     )
                 }
 
-                // If Admin chose Option 2 (DIRECT_AUTO_UNLOCK), ensure local ShopProfile is unlocked even without a BB2 code!
+                // If Admin chose Option 2 (DIRECT_AUTO_UNLOCK), ensure local ShopProfile is unlocked even without a BB3 code!
                 if (dto.approvalMode == "DIRECT_AUTO_UNLOCK" && dto.updatedAt > effectiveProfile.lastAppliedCloudUnlockAt && !cloudSubscriptionAlreadyUpdated) {
                     val now = System.currentTimeMillis()
                     val daysAdded = dto.durationMonths.coerceAtLeast(1) * 30L
