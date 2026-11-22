@@ -140,7 +140,36 @@ begin
   v_discount := case when v_months = 12 then 20 when v_months = 3 then 10 else 0 end;
   return v_gross - ((v_gross * v_discount) / 100);
 end;
-$$;
+$;
+
+-- Use the exact per-device rate captured when a customer submits their plan.
+-- The four-argument helper above remains for existing shop pricing screens.
+create or replace function public.compute_expected_subscription_fee_with_rate(
+  p_branch_count integer,
+  p_worker_count integer,
+  p_duration_months integer,
+  p_device_count integer,
+  p_device_rate integer
+) returns integer language plpgsql stable set search_path = public
+as $
+declare
+  v_branches integer := greatest(coalesce(p_branch_count, 1), 1);
+  v_workers integer := greatest(coalesce(p_worker_count, 1), 1);
+  v_devices integer := greatest(coalesce(p_device_count, 1), 1);
+  v_months integer := greatest(coalesce(p_duration_months, 1), 1);
+  v_rate integer := greatest(coalesce(p_device_rate, 2000), 0);
+  v_monthly integer;
+  v_gross integer;
+  v_discount integer;
+begin
+  v_monthly := (case when v_branches <= 1 then 5000 when v_branches = 2 then 10000 else 20000 end)
+    + (case when v_workers <= 1 then 0 when v_workers <= 3 then 2000 when v_workers <= 5 then 4000 else 4000 + (v_workers - 5) * 1000 end)
+    + greatest(v_devices - 1, 0) * v_rate;
+  v_gross := v_monthly * v_months;
+  v_discount := case when v_months = 12 then 20 when v_months = 3 then 10 else 0 end;
+  return v_gross - ((v_gross * v_discount) / 100);
+end;
+$;
 
 -- ============ SHOP ACCOUNTS ============
 create table public.shop_accounts (
@@ -299,7 +328,9 @@ create table public.payment_requests (
   branch_count integer not null default 1,
   worker_count integer not null default 1,
   device_count integer not null default 1,
-  telco_reference text not null default '',
+  fee_per_device_rwf integer not null default 0,
+  payment_time_ms bigint not null default 0,
+  payment_note text not null default '',
   status text not null default 'PENDING_VERIFICATION',
   approval_mode text not null default '',
   generated_unlock_code text not null default '',
@@ -325,7 +356,17 @@ begin
   new.worker_count := greatest(coalesce(new.worker_count, 1), 1);
   new.device_count := greatest(coalesce(new.device_count, 1), 1);
   new.duration_months := greatest(coalesce(new.duration_months, 1), 1);
-  new.amount_rwf := public.compute_expected_subscription_fee(new.branch_count, new.worker_count, new.duration_months, new.device_count);
+  if coalesce(new.fee_per_device_rwf, 0) <= 0 then
+    select coalesce(nullif(per_device_fee_rwf, 0), 2000)
+      into new.fee_per_device_rwf
+      from public.app_config where id = 'global';
+    new.fee_per_device_rwf := coalesce(nullif(new.fee_per_device_rwf, 0), 2000);
+  end if;
+  new.payment_time_ms := coalesce(nullif(new.payment_time_ms, 0), nullif(new.created_at, 0), public.now_ms());
+  new.payment_note := coalesce(new.payment_note, '');
+  new.amount_rwf := public.compute_expected_subscription_fee_with_rate(
+    new.branch_count, new.worker_count, new.duration_months, new.device_count, new.fee_per_device_rwf
+  );
   return new;
 end;
 $$;
@@ -354,6 +395,17 @@ create table public.unlock_codes (
   tier_code text not null default 'SINGLE',
   plan_days integer not null default 30,
   amount_rwf integer not null default 5000,
+  payment_request_id text references public.payment_requests(id) on delete set null,
+  duration_months integer not null default 1,
+  branch_count integer not null default 1,
+  worker_count integer not null default 1,
+  device_count integer not null default 1,
+  payment_time_ms bigint not null default 0,
+  payment_provider text not null default '',
+  payer_phone text not null default '',
+  payer_full_name text not null default '',
+  payment_note text not null default '',
+  plan_digest text not null default '',
   status text not null default 'ISSUED',
   issued_by_admin text not null default 'BeBoss Master Admin',
   issued_at bigint not null default (extract(epoch from now()) * 1000)::bigint,
@@ -365,6 +417,9 @@ grant all on public.unlock_codes to service_role;
 alter table public.unlock_codes enable row level security;
 create index idx_unlock_codes_username on public.unlock_codes(shop_username);
 create index idx_unlock_codes_issued on public.unlock_codes(issued_at desc);
+create unique index unlock_codes_one_active_per_payment_request_uidx
+  on public.unlock_codes(payment_request_id)
+  where payment_request_id is not null and status <> 'REVOKED';
 create policy "Tenant or staff read unlock_codes" on public.unlock_codes for select
   using (public.is_beboss_staff() or public.computed_shop_sync_key(shop_username, shop_phone) = public.current_shop_sync_key());
 create policy "Admin insert unlock_codes" on public.unlock_codes for insert to authenticated
@@ -644,7 +699,7 @@ begin
     elsif tg_table_name = 'payment_requests' then
       v_key := public.computed_shop_sync_key(r.owner_username, r.owner_phone); v_shop := r.shop_name; v_entity := 'PAYMENT';
       if tg_op = 'INSERT' then
-        v_action := 'SUBMITTED'; v_detail := r.provider || ' • ' || r.amount_rwf || ' FRw • ref ' || r.telco_reference;
+        v_action := 'SUBMITTED'; v_detail := r.provider || ' • ' || r.amount_rwf || ' FRw';
         if r.source = 'WEB' and v_actor = 'APP' then v_actor := 'WEB'; end if;
       elsif tg_op = 'DELETE' then v_action := 'DELETED';
       else
