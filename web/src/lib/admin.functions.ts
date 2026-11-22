@@ -459,7 +459,8 @@ const whatsappClaimSchema = z.object({
   provider: z.enum(["MTN MoMo", "Airtel Money"]),
   payerPhone: z.string().trim().min(9).max(30),
   payerName: z.string().trim().min(2).max(120),
-  telcoReference: z.string().trim().min(4).max(60).regex(/^[a-zA-Z0-9._/-]+$/),
+  paymentTimeMs: z.number().int().positive().optional(),
+  paymentNote: z.string().trim().max(1000).default(""),
   months: z.number().int().refine((value) => [1, 3, 6, 12].includes(value)),
   branches: z.number().int().min(1).max(100),
   workers: z.number().int().min(1).max(500),
@@ -473,16 +474,6 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
     const provider = data.provider;
-    const reference = data.telcoReference.trim().toUpperCase();
-
-    const { data: duplicate, error: duplicateError } = await ctx.supabase
-      .from("payment_requests")
-      .select("id")
-      .eq("provider", provider)
-      .eq("telco_reference", reference)
-      .limit(1);
-    if (duplicateError) throw new Error(`Could not check transaction reference: ${duplicateError.message}`);
-    if (duplicate?.length) throw new Error("This mobile-money transaction reference is already registered in BeBoss.");
 
     const { data: config } = await ctx.supabase
       .from("app_config")
@@ -514,7 +505,8 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
         branch_count: data.branches,
         worker_count: data.workers,
         device_count: data.devices,
-        telco_reference: reference,
+        payment_time_ms: Number(data.paymentTimeMs || now),
+        payment_note: data.paymentNote.trim(),
         status: "PENDING_VERIFICATION",
         approval_mode: "",
         generated_unlock_code: "",
@@ -528,7 +520,6 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
       .single();
 
     if (error) {
-      if (error.code === "23505") throw new Error("This mobile-money transaction reference is already registered in BeBoss.");
       throw new Error(`Could not save this WhatsApp payment claim: ${error.message}`);
     }
     await audit(
@@ -536,7 +527,7 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
       admin.email,
       "CREATE_WHATSAPP_PAYMENT_CLAIM",
       id,
-      `Manual WhatsApp proof recorded for @${data.username} / ${reference} (${calc.total} FRw).`,
+      `Manual WhatsApp proof recorded for @${data.username} (${calc.total} FRw; ${data.months} months; ${data.branches} branches; ${data.workers} staff; ${data.devices} devices).`,
     );
     return { ok: true, id: claim.id, amount: calc.total, days: calc.days, tier: calc.tier };
   });
