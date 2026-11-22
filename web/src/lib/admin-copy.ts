@@ -245,6 +245,22 @@ const words: Record<string, readonly [string, string, string]> = {
   "Shops appear here automatically when the BeBoss app syncs with internet.": ["Amaduka agaragara hano ako kanya iyo app ya BeBoss ihujije amakuru na internet.","Les boutiques apparaissent ici automatiquement lorsque l’application BeBoss se synchronise.","Maduka huonekana hapa moja kwa moja programu ya BeBoss inaposawazisha kupitia intaneti."],
   "Create one to show a banner on the website and inside shop owners' My shop page. The app can read the same messages.": ["Kora itangazo rigaragare ku rubuga no ku rupapuro rwa My shop rwa nyir'iduka. App na yo ibona ayo makuru.","Créez une annonce pour afficher une bannière sur le site et dans la page Ma boutique. L’application lit les mêmes messages.","Unda tangazo lionekane kwenye tovuti na ukurasa wa My shop wa mmiliki. Programu itasoma ujumbe huohuo."],
   "New messages from the Contact page show up here instantly.": ["Ubutumwa bushya bwo kuri Contact bugaragara hano ako kanya.","Les nouveaux messages de la page Contact apparaissent ici immédiatement.","Ujumbe mpya kutoka ukurasa wa Mawasiliano huonekana hapa mara moja."],
+  "MTN MoMo fallback phone": ["Telefoni isimbura code ya MTN MoMo","Téléphone MTN MoMo de secours","Simu mbadala ya MTN MoMo"],
+  "MTN recipient name": ["Izina ry'uwakira MTN","Nom du bénéficiaire MTN","Jina la mpokeaji wa MTN"],
+  "Airtel recipient name": ["Izina ry'uwakira Airtel","Nom du bénéficiaire Airtel","Jina la mpokeaji wa Airtel"],
+  "Admin WhatsApp (with country code)": ["WhatsApp y'ubuyobozi (hamwe na code y'igihugu)","WhatsApp admin (avec indicatif pays)","WhatsApp ya msimamizi (pamoja na msimbo wa nchi)"],
+  "Support email": ["Imeri y'ubufasha","E-mail d’assistance","Barua pepe ya usaidizi"],
+  "Latest app version": ["Verisiyo ya porogaramu igezweho","Dernière version de l’application","Toleo la hivi karibuni la programu"],
+  "APK download link": ["Link yo gukuramo APK","Lien de téléchargement APK","Kiungo cha kupakua APK"],
+  "MTN MoMo · *182#": ["MTN MoMo · *182#","MTN MoMo · *182#","MTN MoMo · *182#"],
+  "Airtel Money · *500#": ["Airtel Money · *500#","Airtel Money · *500#","Airtel Money · *500#"],
+  "Extra device fee (FRw / month)": ["Amafaranga y'igikoresho cy'inyongera (FRw / ukwezi)","Frais d’appareil supplémentaire (FRw / mois)","Ada ya kifaa cha ziada (FRw / mwezi)"],
+  "Updates instantly as you edit the merchant code or receiving phone.": ["Ihinduka ako kanya iyo uhinduye code y'umucuruzi cyangwa telefoni yakira.","Mise à jour immédiate lorsque vous modifiez le code marchand ou le téléphone destinataire.","Husasishwa mara moja unapobadilisha msimbo wa mfanyabiashara au simu ya kupokea."],
+  "Test amount (FRw)": ["Amafaranga yo kugerageza (FRw)","Montant de test (FRw)","Kiasi cha majaribio (FRw)"],
+  "These are dial strings only. BeBoss records payment claims; an admin must still verify the transaction with the mobile-money provider before approving it.": ["Izi ni kode zo guhamagara gusa. BeBoss ibika ubusabe bw'ubwishyu; umuyobozi agomba kubanza kugenzura ihererekanya kuri Mobile Money mbere yo kuryemeza.","Ce sont uniquement des codes USSD. BeBoss enregistre les demandes, mais un administrateur doit vérifier la transaction auprès de l’opérateur avant approbation.","Hizi ni misimbo ya kupiga tu. BeBoss huhifadhi madai ya malipo; msimamizi lazima athibitishe muamala kwa mtoa huduma kabla ya kuidhinisha."],
+  "Checking key…": ["Igenzura urufunguzo…","Vérification de la clé…","Inakagua ufunguo…"],
+  "Checking whether the current server key matches the Android app…": ["Igenzura niba urufunguzo rwa server ruhuye na app ya Android…","Vérification de la correspondance entre la clé serveur et l’application Android…","Inakagua kama ufunguo wa seva unalingana na programu ya Android…"],
+  "Verify & save BB3 key": ["Genzura kandi ubike urufunguzo rwa BB3","Vérifier et enregistrer la clé BB3","Hakiki na uhifadhi ufunguo wa BB3"],
 };
 export function useAdminText() {
   const { lang } = useI18n();
