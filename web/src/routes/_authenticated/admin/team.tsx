@@ -11,12 +11,14 @@ import { ConfirmAction, EmptyState, LoadingBlock, PageHeader, useAdminAction } f
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { grantTeamRole, listTeam, revokeTeamRole } from "@/lib/admin.functions";
 import { formatDateTime } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/team")({
   component: TeamPage,
 });
 
 function TeamPage() {
+  const a = useAdminText();
   const isAdmin = !!useAdminCtx().data?.isAdmin;
   const list = useServerFn(listTeam);
   const team = useQuery({ queryKey: ["admin", "team"], queryFn: () => list(), enabled: isAdmin });
@@ -38,16 +40,16 @@ function TeamPage() {
         className="flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-card p-5"
       >
         <div className="min-w-[240px] flex-1 space-y-1.5">
-          <label className="text-sm font-medium">Team member email</label>
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="teammate@example.com" />
+          <label className="text-sm font-medium">{a("Team member email")}</label>
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder={a("teammate@example.com")} />
         </div>
         <Select value={role} onValueChange={(v) => setRole(v as typeof role)}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="support">Support</SelectItem>
-            <SelectItem value="admin">Master admin</SelectItem>
+            <SelectItem value="support">{a("Support")}</SelectItem>
+            <SelectItem value="admin">{a("Master admin")}</SelectItem>
           </SelectContent>
         </Select>
         <Button type="submit" variant="hero" disabled={grant.isPending}>
@@ -63,22 +65,22 @@ function TeamPage() {
             <div key={`${m.userId}-${m.role}`} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
               <div>
                 <p className="font-medium">
-                  {m.email} {m.userId === team.data?.me ? <span className="text-xs text-muted-foreground">(you)</span> : null}
+                  {m.email} {m.userId === team.data?.me ? <span className="text-xs text-muted-foreground">({a("you")})</span> : null}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Since {formatDateTime(m.since)} • last sign-in {m.lastSignIn ? formatDateTime(m.lastSignIn) : "never"}
+                  {a("Since")} {formatDateTime(m.since)} • {a("last sign-in")} {m.lastSignIn ? formatDateTime(m.lastSignIn) : a("never")}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={m.role === "admin" ? "brand" : "info"}>{m.role === "admin" ? "Master admin" : "Support"}</Badge>
+                <Badge variant={m.role === "admin" ? "brand" : "info"}>{a(m.role === "admin" ? "Master admin" : "Support")}</Badge>
                 <ConfirmAction
                   trigger={
-                    <Button size="icon" variant="ghost" aria-label="Remove access">
+                    <Button size="icon" variant="ghost" aria-label={a("Remove access")}>
                       <UserX />
                     </Button>
                   }
-                  title={`Remove ${m.role} access for ${m.email}?`}
-                  description="They keep their account but lose access to the admin center immediately."
+                  title={a("Remove admin-team access?")}
+                  description={a("They keep their account but lose access to the admin center immediately.")}
                   destructive
                   confirmLabel="Remove access"
                   onConfirm={() => revoke.mutate({ userId: m.userId, role: m.role })}
