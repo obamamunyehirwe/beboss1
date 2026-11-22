@@ -172,7 +172,7 @@ function ReleasesPage() {
           <div className="flex flex-col gap-4">
             <div className="flex-1 space-y-1.5">
               <Label>{a("What's new")}</Label>
-              <Textarea rows={6} value={form.release_notes} onChange={(e) => setForm({ ...form, release_notes: e.target.value })} maxLength={5000} placeholder={a("• Faster checkout&#10;• New Kiswahili translations")} />
+              <Textarea rows={6} value={form.release_notes} onChange={(e) => setForm({ ...form, release_notes: e.target.value })} maxLength={5000} placeholder={a("Release notes placeholder")} />
             </div>
             <label className="flex items-center gap-3 text-sm">
               <Switch checked={form.make_current} onCheckedChange={(v) => setForm({ ...form, make_current: v })} />
