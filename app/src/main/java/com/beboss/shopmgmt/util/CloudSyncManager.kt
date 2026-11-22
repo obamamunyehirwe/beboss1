@@ -319,6 +319,7 @@ class CloudSyncManager(private val database: AppDatabase) {
 
                 val shopDeviceDao = database.shopDeviceDao()
                 val remoteDevices = SupabaseAdminClient.fetchShopDevicesForShop(shopSyncKey)
+                val remoteDeviceIds = remoteDevices.map { it.id }.toSet()
                 for (rd in remoteDevices) {
                     val localDev = shopDeviceDao.getDeviceById(rd.id)
                     if (localDev == null || rd.updatedAt > localDev.updatedAt) {
@@ -353,7 +354,9 @@ class CloudSyncManager(private val database: AppDatabase) {
                 // must not be treated as a successful upload.
                 var allDevicesUploaded = localDevices.isNotEmpty()
                 for (ld in localDevices) {
-                    if (!ld.syncedToSupabase || ld.deviceId == deviceId) {
+                    // Recreate a missing cloud registry row after server-side deletion or
+                    // an interrupted restore, even when Room previously marked it synced.
+                    if (!ld.syncedToSupabase || ld.deviceId == deviceId || ld.id !in remoteDeviceIds) {
                         val toPush = if (ld.deviceId == deviceId) ld.copy(lastSyncedAt = now, syncedToSupabase = true) else ld.copy(syncedToSupabase = true)
                         if (SupabaseAdminClient.upsertShopDevice(shopSyncKey, profile.shopName, toPush)) {
                             shopDeviceDao.insertOrUpdate(toPush)
