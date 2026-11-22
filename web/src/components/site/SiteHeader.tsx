@@ -24,6 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -66,6 +67,7 @@ export function SiteHeader() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSearchResult, setActiveSearchResult] = useState(0);
   const searchInput = useRef<HTMLInputElement>(null);
+  const searchTrigger = useRef<HTMLButtonElement>(null);
 
   const productLinks = [
     { to: "/features" as const, label: t("navFeatures"), description: c.headerFeaturesDesc, icon: Boxes, keywords: ["pos", "point of sale", "inventory", "stock", "sales", "reports", "staff", "branches", "offline"] },
@@ -137,8 +139,14 @@ export function SiteHeader() {
 
   useEffect(() => {
     if (!searchOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const frame = window.requestAnimationFrame(() => searchInput.current?.focus());
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.body.style.overflow = previousOverflow;
+      searchTrigger.current?.focus({ preventScroll: true });
+    };
   }, [searchOpen]);
 
   const goTo = (to: SitePath) => {
@@ -247,9 +255,12 @@ export function SiteHeader() {
             <Button
               type="button"
               variant="outline"
+              ref={searchTrigger}
               className="site-search-trigger"
               onClick={() => { setMobileOpen(false); setActiveSearchResult(0); setSearchOpen(true); }}
               aria-label={c.headerSearch}
+              aria-haspopup="dialog"
+              aria-expanded={searchOpen}
             >
               <Search size={17} />
               <span>{c.headerSearch}</span>
@@ -330,7 +341,7 @@ export function SiteHeader() {
         </div>
       </div>
 
-      {searchOpen ? (
+      {searchOpen ? createPortal(
         <div className="site-search-overlay" onMouseDown={() => setSearchOpen(false)}>
           <section
             className="site-search-dialog"
@@ -338,6 +349,21 @@ export function SiteHeader() {
             aria-modal="true"
             aria-label={c.headerSearch}
             onMouseDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key !== "Tab") return;
+              const focusable = event.currentTarget.querySelectorAll<HTMLElement>(
+                'input:not([disabled]), button:not([disabled]), a[href]',
+              );
+              const first = focusable.item(0);
+              const last = focusable.item(focusable.length - 1);
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
+              }
+            }}
           >
             <div className="site-search-topline">
               <span><Search size={16} /> {c.headerSearchHint}</span>
@@ -394,7 +420,8 @@ export function SiteHeader() {
               <span>{c.headerPageCount}</span>
             </div>
           </section>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </header>
   );
