@@ -10,8 +10,25 @@ export const getPublicSite = createServerFn({ method: "GET" }).handler(async () 
     sb.from("app_config").select("admin_whatsapp_number, mtn_momo_code, mtn_momo_phone, mtn_recipient_name, airtel_money_phone, airtel_recipient_name, per_device_fee_rwf, apk_version, support_email").eq("id", "global").maybeSingle(),
     sb.from("app_releases").select("id, version_name, version_code, file_name, size_bytes, sha256, min_android, release_notes, published_at, download_count").order("published_at", { ascending: false }).limit(8),
   ]);
+  if (cfg.error) {
+    console.error("[BeBoss public site] Could not load app_config from Supabase", cfg.error);
+    throw new Error("BeBoss public configuration could not be loaded from the database.");
+  }
+  if (rel.error) {
+    console.error("[BeBoss public site] Could not load app_releases from Supabase", rel.error);
+    throw new Error("BeBoss release information could not be loaded from the database.");
+  }
+
   const releases = rel.data ?? [];
-  const { data: currentRow } = await sb.from("app_releases").select("id").eq("is_current", true).maybeSingle();
+  const { data: currentRow, error: currentError } = await sb
+    .from("app_releases")
+    .select("id")
+    .eq("is_current", true)
+    .maybeSingle();
+  if (currentError) {
+    console.error("[BeBoss public site] Could not resolve the current release", currentError);
+    throw new Error("The current BeBoss release could not be resolved from the database.");
+  }
   const current = releases.find((r) => r.id === currentRow?.id) ?? null;
   return { config: cfg.data ?? null, current, releases };
 });
