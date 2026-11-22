@@ -63,7 +63,6 @@ export function ModernHero() {
         <div className="market-hero-grid" aria-hidden="true" />
         <div className="market-frame">
           <div className="market-copy">
-            <div className="market-label"><span />{c.kicker}</div>
             <h1 id="market-title">{c.first}<br /><em>{c.second}</em></h1>
             <p>{c.intro}</p>
             <div className="market-actions">

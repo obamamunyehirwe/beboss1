@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { invokeSupabaseEdgeFunction } from "./admin-guard.server";
 import { calculateSubscriptionFee, computeShopKey, extendExpiry, DAY_MS, TRIAL_DAYS } from "./pricing";
 
-type Ctx = { supabase: any; userId: string; claims: any };
+type Ctx = { supabase: any; userId: string; claims: any; accessToken: string };
 
 async function requireAdmin(context: Ctx, allowSupport = false) {
   const fn = allowSupport ? "is_beboss_staff" : "is_beboss_admin";
@@ -73,85 +74,6 @@ const BB3_ANDROID_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEnH8Qg10M7lur8WocoKgklEJ98F6
 UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
 -----END PUBLIC KEY-----`;
-
-async function assertBb3KeyMatchesAndroid(pem: string): Promise<void> {
-  const { createPrivateKey, createPublicKey } = await import("node:crypto");
-  let privateKey;
-  try {
-    privateKey = createPrivateKey(pem);
-  } catch {
-    throw new Error("Invalid private key PEM. Paste a complete PKCS#8 P-256 private key.");
-  }
-  if (privateKey.asymmetricKeyType !== "ec" || privateKey.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
-    throw new Error("The BB3 signing key must be an ECDSA P-256 private key.");
-  }
-  const derivedPublic = createPublicKey(privateKey)
-    .export({ type: "spki", format: "pem" })
-    .toString()
-    .replace(/\s+/g, "");
-  const androidPublic = createPublicKey(BB3_ANDROID_PUBLIC_KEY_PEM)
-    .export({ type: "spki", format: "pem" })
-    .toString()
-    .replace(/\s+/g, "");
-  if (derivedPublic !== androidPublic) {
-    throw new Error("This private key does not match the public verification key in the current Android APK. Do not save or rotate it; use the original matching server private key.");
-  }
-}
-
-async function loadBb3PrivateKeyPem(): Promise<string> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data, error } = await supabaseAdmin
-    .from("app_secrets")
-    .select("value")
-    .eq("name", "BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM")
-    .maybeSingle();
-  if (error) throw new Error("Could not load the server-only BB3 signing key.");
-  const pem = String(data?.value ?? "").trim();
-  if (!pem.startsWith("-----BEGIN PRIVATE KEY-----") || !pem.includes("-----END PRIVATE KEY-----")) {
-    throw new Error("The server-only BB3 signing key is missing. Add the original Android-matching P-256 key in Admin → Settings.");
-  }
-  await assertBb3KeyMatchesAndroid(pem);
-  return pem;
-}
-
-async function generateBB3UnlockCode(input: Bb3Input): Promise<{ code: string; planDigest: string }> {
-  const username = input.username.trim();
-  const normalizedPhone = normalizePlanPhone(input.phone);
-  const tier = input.tier.trim().toUpperCase();
-  const days = Math.floor(input.days);
-  if (!input.requestId.trim() || !username || normalizedPhone.length !== 9) {
-    throw new Error("A payment request, registered username and phone are required.");
-  }
-  if (!["SINGLE", "DUAL", "MULTI", "ANNUAL", "TRIAL"].includes(tier) || days < 1 || days > 800) {
-    throw new Error("The requested BB3 subscription tier or duration is invalid.");
-  }
-  if (![1, 3, 6, 12].includes(input.months) || input.branches < 1 || input.workers < 1 || input.devices < 1 || input.amountRwf < 1) {
-    throw new Error("The submitted payment plan is incomplete or invalid.");
-  }
-
-  const pem = await loadBb3PrivateKeyPem();
-  const { createPrivateKey, createSign, createHash } = await import("node:crypto");
-  const accountHash = createHash("sha256")
-    .update(`${username.toLowerCase()}:${normalizedPhone}`, "utf8")
-    .digest("hex")
-    .slice(0, 6)
-    .toUpperCase();
-  const planDigest = createHash("sha256")
-    .update(paymentPlanCanonical(input), "utf8")
-    .digest("hex")
-    .toUpperCase();
-  // Bind the legacy-compatible BB3 nonce to the exact payment request and its
-  // plan; the Android seven-field BB3 verifier remains unchanged.
-  const nonce = planDigest.slice(0, 24);
-  const issuedDay = Math.floor(Date.now() / 86_400_000);
-  const expiryHex = (issuedDay + 14).toString(16).toUpperCase();
-  const payload = `BB3:${tier}:${days}:${expiryHex}:${accountHash}:${nonce}`;
-  const signer = createSign("SHA256");
-  signer.update(payload, "utf8");
-  signer.end();
-  const signature = signer.sign({ key: createPrivateKey(pem), dsaEncoding: "der" }).toString("base64");
-  return { code: `BB3-${tier}-${days}-${expiryHex}-${accountHash}-${nonce}-${signature}`, planDigest };
-}
 
 /**
  * Ensure admin session is valid and refresh if near expiry.
@@ -246,10 +168,10 @@ export const getAdminContext = createServerFn({ method: "POST" })
     let signingKeyConfigured = false;
     if (isAdmin) {
       try {
-        await loadBb3PrivateKeyPem();
-        signingKeyConfigured = true;
-      } catch {
-        signingKeyConfigured = false;
+        const status = await invokeSupabaseEdgeFunction<{ configured?: boolean }>(ctx, "manage-app-secrets", { action: "bb3_status" });
+        signingKeyConfigured = status.configured === true;
+      } catch (error) {
+        console.error("[BeBoss admin auth] BB3 key status is temporarily unavailable", error);
       }
     }
     return { isAdmin: !!isAdmin, isStaff: !!isStaff, email: String(ctx.claims?.email ?? ""), signingKeyConfigured };
@@ -299,11 +221,33 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
       throw new Error(`This payment claim is ${String(req.status).toLowerCase().replaceAll("_", " ")} and cannot be approved again.`);
     }
 
-    const signed = await generateBB3UnlockCode({
+    const signingInput: Bb3Input = {
       requestId: String(req.id), username: String(req.owner_username), phone: String(req.owner_phone), tier: calc.tier, days: calc.days,
       provider: String(req.provider || ""), payerPhone, payerFullName, amountRwf: calc.total, months: Number(req.duration_months),
       branches: Number(req.branch_count), workers: Number(req.worker_count), devices: Number(req.device_count || 1), paymentTimeMs, paymentNote,
+    };
+    const { createHash } = await import("node:crypto");
+    const expectedPlanDigest = createHash("sha256")
+      .update(paymentPlanCanonical(signingInput), "utf8")
+      .digest("hex")
+      .toUpperCase();
+    const issued = await invokeSupabaseEdgeFunction<{
+      code?: string; planDigest?: string; requestId?: string; shopId?: string; amountRwf?: number;
+    }>(ctx, "issue-bb3-unlock", {
+      paymentRequestId: String(req.id),
+      providerVerified: true,
+      verificationNote,
     });
+    if (
+      !issued.code?.startsWith("BB3-") ||
+      issued.planDigest !== expectedPlanDigest ||
+      String(issued.requestId ?? "") !== String(req.id) ||
+      String(issued.shopId ?? "") !== shopId ||
+      Number(issued.amountRwf) !== calc.total
+    ) {
+      throw new Error("The Supabase BB3 signer returned a code that does not match this verified payment plan. No code was issued.");
+    }
+    const signed = { code: issued.code, planDigest: expectedPlanDigest };
     const now = Date.now();
     let codeToUse = signed.code;
     let unlockCodeId = crypto.randomUUID();
@@ -544,6 +488,138 @@ export const issueManualCode = createServerFn({ method: "POST" })
     throw new Error("Unlock codes can only be issued from an existing, manually verified payment request in the Payments queue.");
   });
 
+export type UnlockCodeLookupResult = {
+  found: boolean;
+  code: string;
+  format: "BB3" | "BB2" | "UNKNOWN";
+  valid: boolean;
+  message: string;
+  status: string;
+  shopUsername?: string;
+  shopPhone?: string;
+  tier?: string;
+  days?: number;
+  amountRwf?: number;
+  issuedAt?: number | string | null;
+  redeemedAt?: number | string | null;
+  issuedBy?: string | null;
+  signatureValid: boolean | null;
+  accountBindingValid: boolean;
+  expired: boolean;
+};
+
+export const lookupUnlockCode = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { code: string }) =>
+    z.object({ code: z.string().trim().min(8).max(512) }).parse(d),
+  )
+  .handler(async ({ data, context }): Promise<UnlockCodeLookupResult> => {
+    const ctx = context as unknown as Ctx;
+    await requireAdmin(ctx);
+    const raw = data.code.replace(/\\s+/g, "");
+    const rawParts = raw.split("-");
+    const prefix = String(rawParts[0] ?? "").toUpperCase();
+    const code = prefix === "BB3" && rawParts.length === 7
+      ? [prefix, rawParts[1]?.toUpperCase(), rawParts[2], rawParts[3]?.toUpperCase(), rawParts[4]?.toUpperCase(), rawParts[5]?.toUpperCase(), rawParts[6]].join("-")
+      : prefix === "BB2" ? rawParts.map((part) => part.toUpperCase()).join("-") : raw;
+    const { data: row, error } = await ctx.supabase
+      .from("unlock_codes")
+      .select("id,unlock_code,shop_username,shop_phone,tier_code,plan_days,amount_rwf,status,issued_at,redeemed_at,issued_by_admin,plan_digest")
+      .eq("unlock_code", code)
+      .maybeSingle();
+    if (error) throw new Error("Could not search the BeBoss unlock-code registry: " + error.message);
+    if (!row) {
+      return {
+        found: false, code, format: prefix === "BB3" || prefix === "BB2" ? prefix : "UNKNOWN",
+        valid: false, message: "No issued BeBoss record matches this code. Check every character and try again.",
+        status: "NOT_FOUND", signatureValid: null, accountBindingValid: false, expired: false,
+      };
+    }
+
+    const { createHash, createPublicKey, createVerify } = await import("node:crypto");
+    const parts = code.split("-");
+    const format = parts[0] === "BB3" ? "BB3" : parts[0] === "BB2" ? "BB2" : "UNKNOWN";
+    const username = String(row.shop_username ?? "").trim().toLowerCase();
+    const phone = normalizePlanPhone(String(row.shop_phone ?? ""));
+    const accountHash = createHash("sha256").update(username + ":" + phone, "utf8").digest("hex").slice(0, 6).toUpperCase();
+    const tier = String(row.tier_code ?? "").trim().toUpperCase();
+    const days = Number(row.plan_days);
+    const status = String(row.status ?? "UNKNOWN").toUpperCase();
+    const expiryText = String(parts[3] ?? "");
+    const expiryDay = /^[A-F0-9]{3,8}$/i.test(expiryText) ? Number.parseInt(expiryText, 16) : Number.NaN;
+    const expired = !Number.isFinite(expiryDay) || Math.floor(Date.now() / 86_400_000) > expiryDay;
+    let signatureValid: boolean | null = null;
+    let accountBindingValid = false;
+
+    if (format === "BB3" && parts.length === 7) {
+      const [kind, codeTier, codeDays, codeExpiry, codeAccount, nonce, signature] = parts;
+      const formatValid = kind === "BB3" &&
+        /^[A-Z]{2,12}$/.test(codeTier ?? "") &&
+        /^\\d{1,3}$/.test(codeDays ?? "") &&
+        /^[A-F0-9]{3,8}$/.test(codeExpiry ?? "") &&
+        /^[A-F0-9]{6}$/.test(codeAccount ?? "") &&
+        /^[A-F0-9]{24}$/.test(nonce ?? "") &&
+        /^[A-Za-z0-9+/]+={0,2}$/.test(signature ?? "");
+      accountBindingValid = formatValid &&
+        codeTier === tier &&
+        Number(codeDays) === days &&
+        codeAccount === accountHash &&
+        nonce === String(row.plan_digest ?? "").slice(0, 24).toUpperCase();
+      if (formatValid) {
+        try {
+          const verifier = createVerify("SHA256");
+          verifier.update("BB3:" + codeTier + ":" + codeDays + ":" + codeExpiry + ":" + codeAccount + ":" + nonce, "utf8");
+          verifier.end();
+          signatureValid = verifier.verify(
+            { key: createPublicKey(BB3_ANDROID_PUBLIC_KEY_PEM), dsaEncoding: "der" },
+            Buffer.from(signature, "base64"),
+          );
+        } catch {
+          signatureValid = false;
+        }
+      } else {
+        signatureValid = false;
+      }
+    } else if (format === "BB2" && parts.length === 6) {
+      const [kind, codeTier, codeDays, codeExpiry, codeAccount, nonce] = parts;
+      accountBindingValid = kind === "BB2" &&
+        /^[A-Z]{2,12}$/.test(codeTier ?? "") &&
+        /^\\d{1,3}$/.test(codeDays ?? "") &&
+        /^[A-F0-9]{3,8}$/.test(codeExpiry ?? "") &&
+        /^[A-F0-9]{6}$/.test(codeAccount ?? "") &&
+        /^[A-F0-9]{8}$/.test(nonce ?? "") &&
+        codeTier === tier &&
+        Number(codeDays) === days &&
+        codeAccount === accountHash;
+    }
+
+    const valid = format !== "UNKNOWN" &&
+      (format === "BB3" ? signatureValid === true : accountBindingValid) &&
+      accountBindingValid &&
+      !expired &&
+      status === "ISSUED";
+    const message = !accountBindingValid
+      ? "The code does not match the account, plan or original issue record."
+      : format === "BB3" && signatureValid !== true
+        ? "The BB3 ECDSA signature is invalid. Do not activate this code."
+        : expired
+          ? "The code's embedded expiry date has passed."
+          : status !== "ISSUED"
+            ? "The code exists, but its registry state is " + status + ". It cannot be redeemed again."
+            : format === "BB2"
+              ? "Legacy BB2 code verified against its original BeBoss issue record. This lookup did not redeem it."
+              : "BB3 signature and account binding are valid. This lookup did not redeem the code.";
+
+    return {
+      found: true, code, format, valid, message, status,
+      shopUsername: String(row.shop_username ?? ""),
+      shopPhone: String(row.shop_phone ?? ""),
+      tier, days, amountRwf: Number(row.amount_rwf) || 0,
+      issuedAt: row.issued_at ?? null, redeemedAt: row.redeemed_at ?? null,
+      issuedBy: row.issued_by_admin ?? null, signatureValid, accountBindingValid, expired,
+    };
+  });
+
 export const revokeCode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().min(1).max(200) }).parse(d))
@@ -769,23 +845,23 @@ export const saveAppConfig = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const getBb3SigningStatus = createServerFn({ method: "GET" })
+export const getBb3SigningStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const ctx = context as unknown as Ctx;
     await requireAdmin(ctx);
     try {
-      await loadBb3PrivateKeyPem();
-      return {
-        configured: true,
-        message: "Ready: the server-only P-256 private key matches the public verification key pinned in the current Android app.",
-      };
+      return await invokeSupabaseEdgeFunction<{ configured: boolean; message: string }>(
+        ctx,
+        "manage-app-secrets",
+        { action: "bb3_status" },
+      );
     } catch (error) {
       return {
         configured: false,
         message: error instanceof Error
           ? error.message
-          : "The BB3 signing key could not be validated. Check the server-only key in Supabase.",
+          : "The BB3 signing service could not be reached. Check the Supabase Edge Function deployment.",
       };
     }
   });
@@ -796,16 +872,13 @@ export const setSigningSecret = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await assertBb3KeyMatchesAndroid(data.value);
-    const { error } = await supabaseAdmin.from("app_secrets").upsert({
-      name: "BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM",
-      value: data.value,
-      updated_by: admin.email,
-      updated_at: new Date().toISOString(),
-    });
-    if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, "SET_BB3_PRIVATE_KEY", "BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM", "BB3 private key rotated (value never logged)");
+    const result = await invokeSupabaseEdgeFunction<{ ok: boolean; message?: string }>(
+      ctx,
+      "manage-app-secrets",
+      { action: "bb3_save", value: data.value },
+    );
+    if (result.ok !== true) throw new Error(result.message || "The BB3 private key could not be saved.");
+    await audit(ctx, admin.email, "SET_BB3_PRIVATE_KEY", "BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM", "Android-matching BB3 private key verified and stored in Supabase (value never logged)");
     return { ok: true };
   });
 
