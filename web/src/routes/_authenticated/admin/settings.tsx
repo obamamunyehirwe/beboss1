@@ -43,6 +43,7 @@ function SettingsPage() {
   const setKey = useAdminAction(useServerFn(setSigningSecret), { success: "BB3 signing key saved", invalidate: [["admin", "ctx"]] });
   const [secret, setSecret] = useState("");
   const [show, setShow] = useState(false);
+  const [previewAmount, setPreviewAmount] = useState(5000);
 
   useEffect(() => {
     if (data) {
@@ -71,10 +72,10 @@ function SettingsPage() {
             <Wallet className="size-4 text-primary" /> Mobile money & support
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <F label="MTN MoMo merchant code" v={cfg.mtn_momo_code} on={(v) => set("mtn_momo_code", v)} hint="Leave empty to use phone transfer" />
-            <F label="MTN MoMo phone" v={cfg.mtn_momo_phone} on={(v) => set("mtn_momo_phone", v)} />
+            <F label="MTN MoMo merchant / pay code" v={cfg.mtn_momo_code} on={(v) => set("mtn_momo_code", v)} hint="Used in *182*8*1*CODE*AMOUNT#. Leave empty to use the fallback phone." />
+            <F label="MTN MoMo fallback phone" v={cfg.mtn_momo_phone} on={(v) => set("mtn_momo_phone", v)} hint="Used in *182*1*1*PHONE*AMOUNT# only when the merchant code is empty." />
             <F label="MTN recipient name" v={cfg.mtn_recipient_name} on={(v) => set("mtn_recipient_name", v)} />
-            <F label="Airtel Money phone" v={cfg.airtel_money_phone} on={(v) => set("airtel_money_phone", v)} />
+            <F label="Airtel Money receiving phone" v={cfg.airtel_money_phone} on={(v) => set("airtel_money_phone", v)} hint="Used in *500*1*1*PHONE*AMOUNT#." />
             <F label="Airtel recipient name" v={cfg.airtel_recipient_name} on={(v) => set("airtel_recipient_name", v)} />
             <div className="space-y-1.5">
               <Label>Extra device fee (FRw / month)</Label>
@@ -92,10 +93,37 @@ function SettingsPage() {
             <F label="Latest app version" v={cfg.apk_version} on={(v) => set("apk_version", v)} />
             <F label="APK download link" v={cfg.apk_download_url} on={(v) => set("apk_download_url", v)} hint="Set automatically when you publish a release" />
           </div>
-          <div className="rounded-xl bg-muted/50 p-4 text-sm">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">Preview for 5,000 FRw</p>
-            <p className="mt-2 font-mono text-primary">{buildMtnUssd(5000, cfg)}</p>
-            <p className="font-mono text-primary">{buildAirtelUssd(5000, cfg)}</p>
+          <div className="rounded-2xl border border-border bg-muted/40 p-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Live USSD payment preview</p>
+                <p className="mt-1 text-sm text-muted-foreground">Updates instantly as you edit the merchant code or receiving phone.</p>
+              </div>
+              <div className="w-36 space-y-1">
+                <Label htmlFor="ussd-preview-amount">Test amount (FRw)</Label>
+                <Input
+                  id="ussd-preview-amount"
+                  type="number"
+                  min={1}
+                  max={10000000}
+                  step={1}
+                  value={previewAmount}
+                  onChange={(e) => setPreviewAmount(Math.min(10000000, Math.max(1, Math.floor(Number(e.target.value) || 1))))}
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[5000, 10000, 20000, 50000].map((amount) => (
+                <Button key={amount} type="button" size="sm" variant={previewAmount === amount ? "soft" : "ghost"} onClick={() => setPreviewAmount(amount)}>
+                  {amount.toLocaleString("en-RW")} FRw
+                </Button>
+              ))}
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <UssdPreview label="MTN MoMo · *182#" value={buildMtnUssd(previewAmount, cfg)} />
+              <UssdPreview label="Airtel Money · *500#" value={buildAirtelUssd(previewAmount, cfg)} />
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">These are dial strings only. BeBoss records payment claims; an admin must still verify the transaction with the mobile-money provider before approving it.</p>
           </div>
           {isAdmin ? (
             <Button type="submit" variant="hero" className="mt-auto" disabled={save.isPending}>
@@ -110,10 +138,10 @@ function SettingsPage() {
           <div>
             <h2 className="flex items-center gap-2 font-semibold">
               <KeyRound className="size-4 text-primary" /> BB3 signing private key
-              {ctx.data?.signingKeyConfigured ? <Badge variant="success">Configured</Badge> : <Badge variant="warning">Missing</Badge>}
+              {ctx.data?.signingKeyConfigured ? <Badge variant="success">Configured · Android key matched</Badge> : <Badge variant="warning">Missing or not matched</Badge>}
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              P-256 private key used to sign new BB3 unlock codes. It remains in the server-only Supabase app_secrets table and is never included in Android builds. Android apps contain only the matching public verification key. Do not paste this private key into mobile .env files or VITE_ variables. Rotate only after the matching new public key has shipped in an app update.
+              New unlock codes are BB3 ECDSA P-256 signatures. The private key stays server-side in Supabase; Android contains only the matching public key. The saved private key must match the public key already pinned in your installed APK. Legacy BB2 codes are verified online against their original issued database record, so no BB2 shared HMAC key is needed. Never paste a private key into Android files, browser storage, or VITE_ variables.
             </p>
           </div>
           <form
@@ -124,13 +152,13 @@ function SettingsPage() {
             className="flex flex-col gap-3"
           >
             <div className="relative">
-              <Input type={show ? "text" : "password"} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={ctx.data?.signingKeyConfigured ? "Paste a replacement PKCS#8 P-256 private key PEM" : "Paste the server-only PKCS#8 P-256 private key PEM"} minLength={120} required autoComplete="off" className="pr-10" />
+              <Input type={show ? "text" : "password"} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={ctx.data?.signingKeyConfigured ? "Paste a replacement matching PKCS#8 P-256 private key PEM" : "Paste the existing Android-matching PKCS#8 P-256 private key PEM"} minLength={120} required autoComplete="off" className="pr-10" />
               <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShow(!show)} aria-label="Toggle visibility">
                 {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
             <Button type="submit" variant="soft" disabled={setKey.isPending}>
-              {setKey.isPending ? <Loader2 className="animate-spin" /> : <Save />} Save BB3 private key
+              {setKey.isPending ? <Loader2 className="animate-spin" /> : <Save />} Verify & save BB3 key
             </Button>
           </form>
         </section>
@@ -139,6 +167,35 @@ function SettingsPage() {
       {isAdmin ? <DatashareKeyPanel /> : null}
 
       {isAdmin ? <ConnectionPanel origin={origin} /> : null}
+    </div>
+  );
+}
+
+function UssdPreview({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="min-w-0 rounded-xl border border-border bg-card p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-muted-foreground">{label}</p>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(value);
+              setCopied(true);
+              toast.success(`${label} copied`);
+            } catch {
+              toast.error("Clipboard access is unavailable in this browser.");
+            }
+          }}
+        >
+          {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+          Copy
+        </Button>
+      </div>
+      <p className="mt-2 break-all font-mono text-sm font-semibold text-primary">{value}</p>
     </div>
   );
 }
