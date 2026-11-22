@@ -383,6 +383,7 @@ const words: Record<string, readonly [string, string, string]> = {
   "Manager": ["Umuyobozi","Responsable","Meneja"],
   "Cashier": ["Umunyab cashier","Caissier","Mhasibu wa mauzo"],
   "Delete this snapshot?": ["Siba iyi snapshot?","Supprimer cet instantané ?","Futa picha hii ya data?"],
+  "Release notes placeholder": ["• Kugurisha byihuse\n• Ubusemuzi bushya bwa Kiswahili", "• Encaissement plus rapide\n• Nouvelles traductions en swahili", "• Malipo ya haraka zaidi\n• Tafsiri mpya za Kiswahili"],
 };
 export function useAdminText() {
   const { lang } = useI18n();
