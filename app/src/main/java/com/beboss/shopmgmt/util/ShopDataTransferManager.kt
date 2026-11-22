@@ -1072,7 +1072,7 @@ object ShopDataTransferManager {
             type = "text/html"
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_SUBJECT, "BeBoss Admin Verification Web Platform")
-            putExtra(Intent.EXTRA_TEXT, "Open BeBoss_Admin_Web_Portal.html in Chrome/Edge to verify MoMo payments in Supabase and generate BB2 unlock codes.")
+            putExtra(Intent.EXTRA_TEXT, "Open BeBoss_Admin_Web_Portal.html in Chrome/Edge to verify MoMo payment claims in Supabase and issue payment-linked BB3 unlock codes.")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(intent, "Open / Share BeBoss Admin Web Platform"))
