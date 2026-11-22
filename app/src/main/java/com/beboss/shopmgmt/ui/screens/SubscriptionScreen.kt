@@ -131,7 +131,7 @@ fun SubscriptionScreen(
     language: AppLanguage,
     onActivateVoucher: (String) -> Unit,
     onProcessDirectPayment: ((provider: String, phone: String, durationMonths: Int, userReference: String?, onSuccess: (PaymentProcessingResult, SubscriptionPriceBreakdown) -> Unit) -> Unit)? = null,
-    onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
+    onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, paymentNote: String, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
     onCheckCloudApproval: () -> Unit = {},
     onClose: () -> Unit = {}
 ) {
@@ -168,6 +168,7 @@ fun SubscriptionScreen(
     var payerFullNameInput by remember(ownerAccount?.name, shopProfile.name) {
         mutableStateOf(ownerAccount?.name?.ifBlank { shopProfile.name } ?: shopProfile.name)
     }
+    var paymentNoteInput by remember { mutableStateOf("") }
     var proofError by remember { mutableStateOf<String?>(null) }
 
     var voucherInput by remember { mutableStateOf("") }
@@ -751,6 +752,17 @@ fun SubscriptionScreen(
                             shape = RoundedCornerShape(10.dp),
                             singleLine = true
                         )
+                    }
+                    OutlinedTextField(
+                        value = paymentNoteInput,
+                        onValueChange = { paymentNoteInput = it; proofError = null },
+                        label = { Text("Payment note (optional)") },
+                        placeholder = { Text("e.g. payment confirmation details") },
+                        modifier = Modifier.fillMaxWidth().testTag("payment_proof_note_input"),
+                        shape = RoundedCornerShape(10.dp),
+                        minLines = 2,
+                        maxLines = 3
+                    )
 
                     if (proofError != null) {
                         Surface(
@@ -794,6 +806,7 @@ fun SubscriptionScreen(
                                     selectedBranchCount,
                                     selectedWorkerCount,
                                     selectedDeviceCount,
+                                    paymentNoteInput.trim()
                                 ) { req, _ ->
                                     OfflineSubscriptionManager.sendPaymentProofViaWhatsApp(
                                         context = context,
@@ -810,6 +823,8 @@ fun SubscriptionScreen(
                                         payerPhone = cleanPayerPhone,
                                         payerFullName = cleanPayerName,
                                         requestId = req.id,
+                                        paymentTimeMs = req.paymentTimeMs,
+                                        paymentNote = paymentNoteInput.trim(),
                                         adminWhatsAppNumber = resolvedAdminWa
                                     )
                                 }
@@ -828,6 +843,8 @@ fun SubscriptionScreen(
                                     deviceCount = selectedDeviceCount,
                                     payerPhone = cleanPayerPhone,
                                     payerFullName = cleanPayerName,
+                                    paymentTimeMs = System.currentTimeMillis(),
+                                    paymentNote = paymentNoteInput.trim(),
                                     adminWhatsAppNumber = resolvedAdminWa
                                 )
                             }
@@ -1201,7 +1218,7 @@ fun SubscriptionPaywallDialog(
     language: AppLanguage,
     onActivateVoucher: (String) -> Unit,
     onProcessDirectPayment: ((provider: String, phone: String, durationMonths: Int, userReference: String?, onSuccess: (PaymentProcessingResult, SubscriptionPriceBreakdown) -> Unit) -> Unit)? = null,
-    onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
+    onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, paymentNote: String, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
     onCheckCloudApproval: () -> Unit = {},
     onOpenAdminConsole: (() -> Unit)? = null
 ) {
