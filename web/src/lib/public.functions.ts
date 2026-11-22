@@ -103,7 +103,7 @@ export const submitPaymentProof = createServerFn({ method: "POST" })
       .from("payment_requests")
       .select("id")
       .eq("provider", data.provider)
-      .ilike("telco_reference", reference)
+      .eq("telco_reference", reference)
       .limit(1);
     if (dupError) throw new Error("Could not check this transaction reference. Please try again.");
     if (dup?.length) throw new Error("This transaction reference was already submitted for this shop.");
