@@ -142,8 +142,8 @@ function SettingsPage() {
         <section className="grid gap-5 rounded-2xl border border-border bg-card p-5 lg:grid-cols-2">
           <div>
             <h2 className="flex items-center gap-2 font-semibold">
-              <KeyRound className="size-4 text-primary" /> BB3 signing private key
-              {signingStatus.isLoading ? <Badge variant="muted">Checking key…</Badge> : keyIsReady ? <Badge variant="success">Configured · Android key matched</Badge> : <Badge variant="warning">Missing or not matched</Badge>}
+              <KeyRound className="size-4 text-primary" /> {a("BB3 signing private key")}
+              {signingStatus.isLoading ? <Badge variant="muted">{a("Checking key…")}</Badge> : keyIsReady ? <Badge variant="success">{a("Configured · Android key matched")}</Badge> : <Badge variant="warning">{a("Missing or not matched")}</Badge>}
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
               New unlock codes are BB3 ECDSA P-256 signatures. The private key stays server-side in Supabase; Android contains only the matching public key. The saved private key must match the public key already pinned in your installed APK. Legacy BB2 codes are verified online against their original issued database record, so no BB2 shared HMAC key is needed. Never paste a private key into Android files, browser storage, or VITE_ variables.
@@ -161,12 +161,12 @@ function SettingsPage() {
           >
             <div className="relative">
               <Input type={show ? "text" : "password"} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={ctx.data?.signingKeyConfigured ? "Paste a replacement matching PKCS#8 P-256 private key PEM" : "Paste the existing Android-matching PKCS#8 P-256 private key PEM"} minLength={120} required autoComplete="off" className="pr-10" />
-              <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShow(!show)} aria-label="Toggle visibility">
+              <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShow(!show)} aria-label={a("Toggle visibility")}>
                 {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
             <Button type="submit" variant="soft" disabled={setKey.isPending}>
-              {setKey.isPending ? <Loader2 className="animate-spin" /> : <Save />} Verify & save BB3 key
+              {setKey.isPending ? <Loader2 className="animate-spin" /> : <Save />} {a("Verify & save BB3 key")}
             </Button>
           </form>
         </section>
@@ -283,7 +283,7 @@ function DatashareKeyPanel() {
       <div>
         <h2 className="flex items-center gap-2 font-semibold">
           <KeyRound className="size-4 text-primary" /> Snapshot verification key
-          {q.data?.configured ? <Badge variant="success">Configured</Badge> : <Badge variant="muted">Optional</Badge>}
+          {q.data?.configured ? <Badge variant="success">{a("Configured")}</Badge> : <Badge variant="muted">{a("Optional")}</Badge>}
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
           The value built into the app as <span className="font-mono">BEBOSS_DATASHARE_HMAC_SECRET</span>. With it, every shop's Retail insights tab confirms the phone's branch data was not altered on the way. Insights still work without it.
@@ -296,9 +296,9 @@ function DatashareKeyPanel() {
         }}
         className="flex flex-col gap-3"
       >
-        <Input type="password" value={value} onChange={(e) => setValue(e.target.value)} placeholder={q.data?.configured ? "Enter a new key to replace it" : "Paste the app's data-share key"} minLength={8} required autoComplete="off" />
+        <Input type="password" value={value} onChange={(e) => setValue(e.target.value)} placeholder={a(q.data?.configured ? "Enter a new key to replace it" : "Paste the app data-share key")} minLength={8} required autoComplete="off" />
         <Button type="submit" variant="soft" disabled={save.isPending}>
-          {save.isPending ? <Loader2 className="animate-spin" /> : <Save />} Save snapshot key
+          {save.isPending ? <Loader2 className="animate-spin" /> : <Save />} {a("Save snapshot key")}
         </Button>
       </form>
     </section>
