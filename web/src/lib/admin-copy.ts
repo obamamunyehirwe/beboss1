@@ -210,6 +210,20 @@ const words: Record<string, readonly [string, string, string]> = {
   "Direct auto-unlock — no code needed": ["Gufungura ako kanya — nta kode ikenewe","Déverrouillage direct — aucun code requis","Kufungua moja kwa moja — hakuna msimbo unaohitajika"],
   "Rejected:": ["Byanzwe:","Rejeté :","Imekataliwa:"],
   "By": ["Na","Par","Na"],
+  "Select a registered shop (optional)": ["Hitamo iduka ryamaze kwiyandikisha (ntibisabwa)","Sélectionner une boutique enregistrée (facultatif)","Chagua duka lililosajiliwa (si lazima)"],
+  "Choose an existing shop to fill owner and plan details": ["Hitamo iduka rihari kugira ngo amakuru ya nyiraryo na gahunda yuzure","Choisir une boutique existante pour remplir le propriétaire et le forfait","Chagua duka lililopo ili kujaza mmiliki na mpango"],
+  "You can still enter a new or not-yet-synced shop manually below.": ["Ushobora kwandika amakuru y'iduka rishya cyangwa ritarahuzwa na cloud hasi.","Vous pouvez aussi saisir ci-dessous une nouvelle boutique ou une boutique non synchronisée.","Bado unaweza kuingiza mwenyewe duka jipya au ambalo halijasawazishwa hapa chini."],
+  "Provider": ["Umuyoboro","Opérateur","Mtoa huduma"],
+  "Payer": ["Uwishyuye","Payeur","Mlipaji"],
+  "Transaction reference": ["Reference y'ihererekanya","Référence de transaction","Kumbukumbu ya muamala"],
+  "Plan": ["Gahunda","Forfait","Mpango"],
+  "1 month": ["Ukwezi 1","1 mois","Mwezi 1"],
+  "3 months": ["Amezi 3","3 mois","Miezi 3"],
+  "6 months": ["Amezi 6","6 mois","Miezi 6"],
+  "12 months": ["Amezi 12","12 mois","Miezi 12"],
+  "Copy code": ["Koporora kode","Copier le code","Nakili msimbo"],
+  "Current pricing for this plan is": ["Igiciro cy'ubu kuri iyi gahunda ni","Le tarif actuel de ce forfait est","Bei ya sasa ya mpango huu ni"],
+  "approving will record that amount.": ["kwemeza bizabika ayo mafaranga.","l’approbation enregistrera ce montant.","kuidhinisha kutarekodi kiasi hicho."],
 };
 export function useAdminText() {
   const { lang } = useI18n();
