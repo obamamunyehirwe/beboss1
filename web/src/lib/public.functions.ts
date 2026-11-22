@@ -101,12 +101,13 @@ export const submitPaymentProof = createServerFn({ method: "POST" })
       .select("per_device_fee_rwf")
       .eq("id", "global")
       .maybeSingle();
+    const feePerDeviceRwf = Math.max(0, Number(config?.per_device_fee_rwf) || 2000);
     const amount = calculateSubscriptionFee(
       data.branches,
       data.workers,
       data.months,
       data.devices,
-      Number(config?.per_device_fee_rwf) || 2000,
+      feePerDeviceRwf,
     ).total;
     const now = Date.now();
     const { error } = await sb.from("payment_requests").insert({
@@ -123,6 +124,7 @@ export const submitPaymentProof = createServerFn({ method: "POST" })
       branch_count: data.branches,
       worker_count: data.workers,
       device_count: data.devices,
+      fee_per_device_rwf: feePerDeviceRwf,
       payment_time_ms: Number(data.paymentTimeMs || now),
       payment_note: data.paymentNote.trim(),
       status: "PENDING_VERIFICATION",
