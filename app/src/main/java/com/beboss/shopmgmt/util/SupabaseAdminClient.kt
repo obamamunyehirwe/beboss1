@@ -1812,7 +1812,7 @@ object SupabaseAdminClient {
 
     private suspend fun findUnlockCodeRecordForPayment(paymentRequestId: String): JSONObject? = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(paymentRequestId, "UTF-8")
-        val request = buildRestRequest("unlock_codes?payment_request_id=eq.$encoded&select=id,unlock_code,plan_digest,status&limit=1", useAdminJwtIfAvailable = true).get().build()
+        val request = buildRestRequest("unlock_codes?payment_request_id=eq.$encoded&status=in.(ISSUED,REDEEMED)&select=id,unlock_code,plan_digest,status,issued_at&order=issued_at.desc&limit=1", useAdminJwtIfAvailable = true).get().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@withContext null
             JSONArray(response.body?.string().orEmpty().ifBlank { "[]" }).optJSONObject(0)
@@ -1851,13 +1851,20 @@ object SupabaseAdminClient {
             val now = System.currentTimeMillis()
             val days = request.durationMonths.coerceAtLeast(1) * 30
             val operatorLabel = "${session.fullName} (${session.email})".ifBlank { adminName }
+            val savedFeeRate = request.feePerDeviceRwf.takeIf { it > 0 }
+                ?: OfflineSubscriptionManager.getCurrentPaymentConfig().perDeviceFeeRwf.coerceAtLeast(0)
             val recomputedBreakdown = OfflineSubscriptionManager.calculateSubscriptionPrice(
                 branchCount = request.branchCount.coerceAtLeast(1),
                 workerCount = request.workerCount.coerceAtLeast(1),
                 durationMonths = request.durationMonths.coerceAtLeast(1),
-                deviceCount = request.deviceCount.coerceAtLeast(1)
+                deviceCount = request.deviceCount.coerceAtLeast(1),
+                perDeviceRateRwf = savedFeeRate
             )
             val verifiedAmountRwf = recomputedBreakdown.totalPayable
+            if (request.amountRwf != verifiedAmountRwf) {
+                Log.w(TAG, "Direct auto-unlock blocked: submitted amount does not match saved plan snapshot.")
+                return@withContext false
+            }
 
             val prPatch = JSONObject().apply {
                 put("status", "APPROVED")
