@@ -1968,6 +1968,7 @@ object SupabaseAdminClient {
         }
     }
 
+    @Deprecated("Standalone unlock-code issuance is disabled. Codes must be linked to manually verified payment requests.")
     suspend fun issueManualUnlockCode(
         username: String,
         registeredPhone: String,
@@ -1978,46 +1979,9 @@ object SupabaseAdminClient {
         adminName: String
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         if (!isConfigured() || ensureValidAdminSession() == null) {
-            return@withContext Pair(false, "Admin authentication expired or unavailable.")
-        }
-        val code = requestServerSignedBB3Code(
-            username = username,
-            registeredPhone = registeredPhone,
-            tierCode = tierCode,
-            days = days
-        ).getOrElse { error ->
-            return@withContext Pair(false, error.message ?: "Unable to sign a secure BB3 unlock code.")
-        }
-
-        try {
-            val operatorLabel = activeAdminSession?.let { "${it.fullName} (${it.email})" } ?: adminName
-            val payload = JSONObject().apply {
-                put("id", UUID.randomUUID().toString())
-                put("unlock_code", code)
-                put("shop_username", username.trim().lowercase(Locale.ROOT))
-                put("shop_phone", registeredPhone.trim())
-                put("device_challenge", deviceChallenge)
-                put("tier_code", tierCode)
-                put("plan_days", days)
-                put("amount_rwf", amountRwf)
-                put("status", "ISSUED")
-                put("issued_by_admin", operatorLabel)
-                put("issued_at", System.currentTimeMillis())
-            }
-            val req = buildRestRequest("unlock_codes", useAdminJwtIfAvailable = true)
-                .addHeader("Prefer", "return=minimal")
-                .post(payload.toString().toRequestBody(jsonMediaType))
-                .build()
-            val ok = client.newCall(req).execute().use { it.isSuccessful }
-            if (ok) {
-                val shopKey = computeShopSyncKey(username, registeredPhone)
-                extendShopExpiryInternal(shopKey, days)
-                logAdminAudit("ISSUE_CODE", username, "Issued $code (+$days d, $amountRwf FRw)")
-            }
-            Pair(ok, code)
-        } catch (e: Exception) {
-            Log.e(TAG, "issueManualUnlockCode error: ${e.message}")
-            Pair(false, code)
+            Pair(false, "Admin authentication expired or unavailable.")
+        } else {
+            Pair(false, "Standalone unlock codes are disabled. Submit the payment proof first, then verify it in the Payments queue to issue the unique BB3 code.")
         }
     }
 
