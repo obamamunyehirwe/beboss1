@@ -822,7 +822,7 @@ fun AdminVerificationConsoleDialog(
                                                 color = OrangePrimary
                                             )
                                             Text(
-                                                text = "${req.provider} Ã¢â‚¬Â¢ ${req.amountRwf} FRw (${req.durationMonths * 30}d Ã¢â‚¬Â¢ ${req.branchCount} br / ${req.workerCount} stf / $effectiveDevices dev)",
+                                                text = Localization.format("admin_plan_fmt", language, req.provider, req.amountRwf, req.durationMonths * 30, req.branchCount, req.workerCount, effectiveDevices),
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = MaterialTheme.colorScheme.onSurface
@@ -944,7 +944,7 @@ fun AdminVerificationConsoleDialog(
                                                                 if (ok) {
                                                                     Toast.makeText(
                                                                         context,
-                                                                        "Shop @${req.ownerUsername} auto-unlocked directly!",
+                                                                        Localization.format("admin_shop_auto_unlocked_fmt", language, req.ownerUsername),
                                                                         Toast.LENGTH_SHORT
                                                                     ).show()
                                                                 }
