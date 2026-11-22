@@ -1,5 +1,5 @@
 /* Server-only helpers shared by admin server functions: role checks + audit trail. */
-export type AdminCtx = { supabase: any; userId: string; claims: any };
+export type AdminCtx = { supabase: any; userId: string; claims: any; accessToken: string };
 
 export async function requireStaffRole(context: AdminCtx, adminOnly: boolean) {
   const { data, error } = await context.supabase.rpc(adminOnly ? "is_beboss_admin" : "is_beboss_staff");
