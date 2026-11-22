@@ -127,21 +127,44 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "info" | "danger" |
 };
 
 export function StatusBadge({ status }: { status: string }) {
-  return <Badge variant={STATUS_VARIANT[status] ?? "muted"}>{status.replaceAll("_", " ")}</Badge>;
+  const a = useAdminText();
+  const labels: Record<string, string> = {
+    PENDING_VERIFICATION: "Pending verification",
+    APPROVED: "Approved",
+    REJECTED: "Rejected",
+    REDEEMED: "Redeemed",
+    ISSUED: "Issued",
+    REVOKED: "Revoked",
+    ACTIVE: "Active",
+    INACTIVE: "Inactive",
+    SUSPENDED: "Suspended",
+    EXPIRED: "Expired",
+    TRIAL: "Trial",
+    NEW: "New",
+    IN_PROGRESS: "In progress",
+    RESOLVED: "Resolved",
+    SPAM: "Spam",
+    SUCCESS: "Success",
+    FAILED: "Failed",
+    QUEUED: "Queued",
+  };
+  return <Badge variant={STATUS_VARIANT[status] ?? "muted"}>{a(labels[status] ?? status.replaceAll("_", " "))}</Badge>;
 }
 
 // ─── SearchInput ──────────────────────────────────────────────────────────────
 export function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const a = useAdminText();
   return (
     <div className="relative min-w-[220px] flex-1">
       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input aria-label={placeholder} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="pl-9" />
+      <Input aria-label={placeholder} value={value} onChange={(e) => onChange(e.target.value)} placeholder={a(placeholder)} className="pl-9" />
     </div>
   );
 }
 
 // ─── FilterChips ──────────────────────────────────────────────────────────────
 export function FilterChips<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { value: T; label: string; count?: number }[] }) {
+  const a = useAdminText();
   return (
     <div className="flex flex-wrap gap-1.5">
       {options.map((o) => (
@@ -155,7 +178,7 @@ export function FilterChips<T extends string>({ value, onChange, options }: { va
             value === o.value ? "border-primary bg-primary/12 text-primary" : "border-border text-muted-foreground hover:text-foreground",
           )}
         >
-          {o.label}
+          {a(o.label)}
           {o.count != null ? <span className="ml-1.5 font-mono opacity-70">{o.count}</span> : null}
         </button>
       ))}
@@ -165,6 +188,7 @@ export function FilterChips<T extends string>({ value, onChange, options }: { va
 
 // ─── EmptyState ───────────────────────────────────────────────────────────────
 export function EmptyState({ title, sub }: { title: string; sub?: string }) {
+  const a = useAdminText();
   return (
     <div className="grid place-items-center rounded-2xl border border-dashed border-border px-6 py-14 text-center">
       <Inbox className="size-10 text-muted-foreground" />
@@ -186,10 +210,11 @@ export function LoadingBlock() {
 // ─── useAdminAction ───────────────────────────────────────────────────────────
 export function useAdminAction<TIn, TOut>(fn: (args: { data: TIn }) => Promise<TOut>, opts: { success?: string | ((r: TOut) => string); invalidate?: readonly (readonly string[])[] } = {}) {
   const qc = useQueryClient();
+  const a = useAdminText();
   return useMutation({
     mutationFn: (input: TIn) => fn({ data: input }),
     onSuccess: (r) => {
-      if (opts.success) toast.success(typeof opts.success === "function" ? opts.success(r) : opts.success);
+      if (opts.success) toast.success(typeof opts.success === "function" ? opts.success(r) : a(opts.success));
       (opts.invalidate ?? [["admin"]]).forEach((k) => qc.invalidateQueries({ queryKey: k as string[] }));
       qc.invalidateQueries({ queryKey: ["admin", "audit"] });
     },
@@ -200,16 +225,17 @@ export function useAdminAction<TIn, TOut>(fn: (args: { data: TIn }) => Promise<T
 // ─── ConfirmAction ────────────────────────────────────────────────────────────
 export function ConfirmAction({ trigger, title, description, confirmLabel = "Confirm", destructive, onConfirm }: { trigger: ReactNode; title: string; description: ReactNode; confirmLabel?: string; destructive?: boolean; onConfirm: () => void }) {
   const [open, setOpen] = useState(false);
+  const a = useAdminText();
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogTitle>{a(title)}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel>{a("Cancel")}</AlertDialogCancel>
           <AlertDialogAction
             className={destructive ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : undefined}
             onClick={() => {
