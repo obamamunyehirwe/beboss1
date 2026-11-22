@@ -925,12 +925,19 @@ class BeBossRepository(private val database: AppDatabase) {
             if (SupabaseAdminClient.isConfigured()) {
                 val updatedProf = shopProfileDao.getShopProfileDirect() ?: shopProfile
                 val activeDevices = getActiveDevicesCount()
+                val primaryDevice = shopDeviceDao.getAllDevicesList().firstOrNull { it.isOwnerPrimary }
+                val canonicalOwnerUsername = primaryDevice?.assignedUsername?.takeIf { it.isNotBlank() }
+                    ?: ownerUser?.takeIf { it.role == UserRole.OWNER }?.username.orEmpty()
+                val canonicalShopKey = primaryDevice?.shopSyncKey?.takeIf { it.isNotBlank() }
+                    ?: SupabaseAdminClient.computeShopSyncKey(canonicalOwnerUsername, updatedProf.phone)
                 SupabaseAdminClient.upsertShopAccount(
                     shopProfile = updatedProf,
-                    ownerUser = ownerUser,
+                    ownerUser = ownerUser?.takeIf { it.role == UserRole.OWNER },
                     branchCount = branchCount,
                     workerCount = workerCount,
-                    deviceCount = activeDevices
+                    deviceCount = activeDevices,
+                    shopSyncKeyOverride = canonicalShopKey,
+                    shopOwnerUsernameOverride = canonicalOwnerUsername
                 )
             }
         }
@@ -948,17 +955,24 @@ class BeBossRepository(private val database: AppDatabase) {
         // 2. Sync to Supabase if configured & reachable
         if (SupabaseAdminClient.isConfigured()) {
             val uploaded = SupabaseAdminClient.submitPaymentRequest(request)
-            SupabaseAdminClient.upsertShopAccount(
+            val primaryDevice = shopDeviceDao.getAllDevicesList().firstOrNull { it.isOwnerPrimary }
+            val canonicalOwnerUsername = primaryDevice?.assignedUsername?.takeIf { it.isNotBlank() }
+                ?: ownerUser?.takeIf { it.role == UserRole.OWNER }?.username.orEmpty()
+            val canonicalShopKey = primaryDevice?.shopSyncKey?.takeIf { it.isNotBlank() }
+                ?: SupabaseAdminClient.computeShopSyncKey(canonicalOwnerUsername, shopProfile.phone)
+            val accountUploaded = SupabaseAdminClient.upsertShopAccount(
                 shopProfile = shopProfile,
-                ownerUser = ownerUser,
+                ownerUser = ownerUser?.takeIf { it.role == UserRole.OWNER },
                 branchCount = request.branchCount,
                 workerCount = request.workerCount,
-                deviceCount = request.deviceCount.coerceAtLeast(1)
+                deviceCount = request.deviceCount.coerceAtLeast(1),
+                shopSyncKeyOverride = canonicalShopKey,
+                shopOwnerUsernameOverride = canonicalOwnerUsername
             )
-            if (uploaded) {
+            if (uploaded && accountUploaded) {
                 paymentVerificationDao.markSynced(request.id)
             }
-            return@withContext uploaded
+            return@withContext uploaded && accountUploaded
         }
         false
     }
