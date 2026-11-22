@@ -69,7 +69,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -108,10 +107,7 @@ import com.beboss.shopmgmt.ui.theme.ProfitGreen
 import com.beboss.shopmgmt.util.AdminPaymentConfig
 import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.Localization
-import com.beboss.shopmgmt.util.MoMoPaymentGateway
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
-import com.beboss.shopmgmt.util.PaymentProcessingResult
-import com.beboss.shopmgmt.util.ReceiptGenerator
 import com.beboss.shopmgmt.util.SubscriptionPriceBreakdown
 import com.beboss.shopmgmt.util.SubscriptionSecurityManager
 import kotlinx.coroutines.launch
@@ -130,7 +126,6 @@ fun SubscriptionScreen(
     livePaymentConfig: AdminPaymentConfig = OfflineSubscriptionManager.getCurrentPaymentConfig(),
     language: AppLanguage,
     onActivateVoucher: (String) -> Unit,
-    onProcessDirectPayment: ((provider: String, phone: String, durationMonths: Int, userReference: String?, onSuccess: (PaymentProcessingResult, SubscriptionPriceBreakdown) -> Unit) -> Unit)? = null,
     onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, paymentNote: String, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
     onCheckCloudApproval: () -> Unit = {},
     onClose: () -> Unit = {}
@@ -186,9 +181,6 @@ fun SubscriptionScreen(
             onActivateVoucher(clean)
         }
     }
-    var showDirectPaymentDialog by remember { mutableStateOf(false) }
-    var showInvoiceDialog by remember { mutableStateOf(false) }
-    var latestInvoiceText by remember { mutableStateOf("") }
 
     val daysLeft = shopProfile.daysRemaining
     val isActive = shopProfile.isSubscriptionActive
@@ -865,24 +857,7 @@ fun SubscriptionScreen(
                         )
                     }
 
-                    if (onProcessDirectPayment != null) {
-                        OutlinedButton(
-                            onClick = { showDirectPaymentDialog = true },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(Icons.Default.VerifiedUser, contentDescription = null, modifier = Modifier.size(16.dp), tint = OrangePrimary)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = Localization.get("sub_submit_direct_ref_btn", language),
-                                color = OrangePrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
+
                 }
             }
 
@@ -1138,72 +1113,7 @@ fun SubscriptionScreen(
         }
     }
 
-    if (showDirectPaymentDialog) {
-        DirectMoMoPaymentDialog(
-            shopProfile = shopProfile,
-            breakdown = breakdown,
-            language = language,
-            onDismiss = { showDirectPaymentDialog = false },
-            onSubmitOnlinePayment = onProcessDirectPayment,
-            onPaymentCompleted = { result ->
-                showDirectPaymentDialog = false
-                val invoice = ReceiptGenerator.generateSubscriptionInvoice(
-                    profile = shopProfile,
-                    breakdown = breakdown,
-                    txRef = result.transactionRef,
-                    provider = result.provider,
-                    payerPhone = result.payerPhone,
-                    planDays = result.planDays
-                )
-                latestInvoiceText = invoice
-                showInvoiceDialog = true
-            }
-        )
-    }
 
-    if (showInvoiceDialog) {
-        AlertDialog(
-            onDismissRequest = { showInvoiceDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ProfitGreen)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(Localization.get("sub_official_receipt_title", language), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
-            },
-            text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFF8FAFC),
-                        border = BorderStroke(1.dp, Color(0xFFCBD5E1))
-                    ) {
-                        Text(
-                            text = latestInvoiceText,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { ReceiptGenerator.shareReceipt(context, latestInvoiceText) },
-                    colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(Localization.get("sub_share_print_invoice", language))
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { showInvoiceDialog = false }) {
-                    Text(Localization.get("close", language))
-                }
-            }
-        )
-    }
 }
 
 @Composable
@@ -1217,7 +1127,6 @@ fun SubscriptionPaywallDialog(
     livePaymentConfig: AdminPaymentConfig = OfflineSubscriptionManager.getCurrentPaymentConfig(),
     language: AppLanguage,
     onActivateVoucher: (String) -> Unit,
-    onProcessDirectPayment: ((provider: String, phone: String, durationMonths: Int, userReference: String?, onSuccess: (PaymentProcessingResult, SubscriptionPriceBreakdown) -> Unit) -> Unit)? = null,
     onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, paymentNote: String, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
     onCheckCloudApproval: () -> Unit = {},
     onOpenAdminConsole: (() -> Unit)? = null
@@ -1349,267 +1258,10 @@ fun SubscriptionPaywallDialog(
                             livePaymentConfig = livePaymentConfig,
                             language = language,
                             onActivateVoucher = onActivateVoucher,
-                            onProcessDirectPayment = onProcessDirectPayment,
                             onSubmitPaymentVerification = onSubmitPaymentVerification,
                             onCheckCloudApproval = onCheckCloudApproval
                         )
                     }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DirectMoMoPaymentDialog(
-    shopProfile: ShopProfile,
-    breakdown: SubscriptionPriceBreakdown,
-    language: AppLanguage = AppLanguage.ENGLISH,
-    onDismiss: () -> Unit,
-    onSubmitOnlinePayment: ((provider: String, phone: String, durationMonths: Int, userReference: String?, onSuccess: (PaymentProcessingResult, SubscriptionPriceBreakdown) -> Unit) -> Unit)? = null,
-    onPaymentCompleted: (PaymentProcessingResult) -> Unit
-) {
-    var selectedProvider by remember { mutableStateOf("MTN MoMo") }
-    var phoneInput by remember { mutableStateOf(shopProfile.phone) }
-    var smsRefInput by remember { mutableStateOf("") }
-    var isProcessing by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var statusMessage by remember { mutableStateOf<String?>(null) }
-    val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
-
-    val activeUssdCode = if (selectedProvider.contains("AIRTEL", ignoreCase = true)) {
-        breakdown.ussdAirtelCode
-    } else {
-        breakdown.ussdMtnCode
-    }
-
-    Dialog(onDismissRequest = { if (!isProcessing) onDismiss() }) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = Localization.get("sub_momo_proof_title", language),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = DarkNavy
-                    )
-                    if (!isProcessing) {
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = Localization.get("close", language), tint = InkMedium)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFFFFF7ED),
-                    border = BorderStroke(1.dp, OrangePrimary.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(text = breakdown.branchTierName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
-                        Text(text = breakdown.workerTierName, fontSize = 11.sp, color = InkMedium)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = Localization.format("sub_total_days_fmt", language, breakdown.totalPayable, breakdown.durationMonths * 30),
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Black,
-                            color = DarkNavy
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("MTN MoMo", "Airtel Money").forEach { prov ->
-                        val isSelected = selectedProvider == prov
-                        Surface(
-                            onClick = {
-                                if (!isProcessing) {
-                                    selectedProvider = prov
-                                    errorMessage = null
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) {
-                                if (prov == "MTN MoMo") Color(0xFFFFCC00) else Color(0xFFDC2626)
-                            } else Color(0xFFF1F5F9)
-                        ) {
-                            Text(
-                                text = prov,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isSelected) {
-                                    if (prov == "MTN MoMo") Color(0xFF0F172A) else Color.White
-                                } else InkDark,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = phoneInput,
-                    onValueChange = {
-                        phoneInput = it
-                        errorMessage = null
-                    },
-                    label = { Text(Localization.get("sub_payer_phone_hint", language)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    enabled = !isProcessing
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedButton(
-                    onClick = {
-                        MoMoPaymentGateway.openUssdDialer(context, activeUssdCode)
-                        statusMessage = Localization.format("sub_dialer_status_fmt", language, selectedProvider)
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(Localization.format("sub_dial_ussd_fmt", language, activeUssdCode), fontSize = 11.5.sp)
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = smsRefInput,
-                    onValueChange = {
-                        smsRefInput = it
-                        errorMessage = null
-                    },
-                    label = { Text(Localization.get("sub_tx_ref_label", language)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    enabled = !isProcessing
-                )
-                Text(
-                    text = Localization.get("sub_ref_format_note", language),
-                    fontSize = 11.sp,
-                    color = InkMedium
-                )
-
-                if (errorMessage != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFFEF2F2),
-                        border = BorderStroke(1.dp, LossRed.copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = errorMessage ?: "", color = LossRed, fontSize = 11.sp, modifier = Modifier.padding(8.dp))
-                    }
-                }
-
-                if (statusMessage != null && errorMessage == null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFF0FDF4),
-                        border = BorderStroke(1.dp, ProfitGreen.copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(text = statusMessage ?: "", color = DarkNavy, fontSize = 11.sp, modifier = Modifier.padding(8.dp))
-                    }
-                }
-
-                if (isProcessing) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = OrangePrimary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(Localization.get("sub_checking_ref", language), fontSize = 11.5.sp, color = DarkNavy)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Button(
-                    onClick = {
-                        isProcessing = true
-                        errorMessage = null
-                        val refArg = smsRefInput.trim().ifBlank { null }
-                        if (onSubmitOnlinePayment != null) {
-                            onSubmitOnlinePayment(
-                                selectedProvider,
-                                phoneInput.trim(),
-                                breakdown.durationMonths,
-                                refArg
-                            ) { result, _ ->
-                                isProcessing = false
-                                if (result.isSuccess) {
-                                    onPaymentCompleted(result)
-                                } else {
-                                    errorMessage = result.message
-                                }
-                            }
-                        } else {
-                            coroutineScope.launch {
-                                val pastRefs = setOfNotNull(shopProfile.lastPaymentRef.takeIf { it.isNotBlank() })
-                                val result = OfflineSubscriptionManager.processMoMoPaymentAsync(
-                                    context = context,
-                                    shopProfile = shopProfile,
-                                    payerPhone = phoneInput.trim(),
-                                    provider = selectedProvider,
-                                    branchCount = breakdown.branchCount,
-                                    workerCount = breakdown.workerCount,
-                                    durationMonths = breakdown.durationMonths,
-                                    deviceCount = breakdown.deviceCount,
-                                    userEnteredReference = refArg,
-                                    alreadyUsedRefs = pastRefs
-                                )
-                                isProcessing = false
-                                if (result.isSuccess) {
-                                    onPaymentCompleted(result)
-                                } else {
-                                    errorMessage = result.message
-                                }
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .testTag("momo_verify_activate_button"),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
-                    enabled = !isProcessing && (phoneInput.isNotBlank() || smsRefInput.isNotBlank())
-                ) {
-                    Text(
-                        text = if (isProcessing) Localization.get("sub_checking_btn", language)
-                        else Localization.format("sub_check_ref_btn_fmt", language, breakdown.totalPayable),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
                 }
             }
         }

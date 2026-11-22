@@ -690,9 +690,6 @@ private fun BeBossMainContent(
                                 onAdminApprovePayment = { req, onDone ->
                                     viewModel.adminApproveAndGenerateCode(req, onDone)
                                 },
-                                onAdminDirectAutoUnlock = { req, onDone ->
-                                    viewModel.adminDirectAutoUnlockPayment(req, onDone)
-                                },
                                 onAdminSavePaymentConfig = { cfg, onDone ->
                                     viewModel.adminSavePaymentConfig(cfg, onDone)
                                 },
@@ -702,14 +699,8 @@ private fun BeBossMainContent(
                                 onAdminDeleteShopDevice = { dev ->
                                     viewModel.adminDeleteShopDevice(dev)
                                 },
-                                onAdminApproveBatch = { onDone ->
-                                    viewModel.adminApproveBatchPendingPayments(onDone)
-                                },
                                 onAdminRejectPayment = { req, reason ->
                                     viewModel.adminRejectPayment(req, reason)
-                                },
-                                onAdminIssueManualCode = { username, regPhone, tier, days, amt, onDone ->
-                                    viewModel.adminIssueManualCode(username, regPhone, tier, days, amt, onDone)
                                 },
                                 onAdminRevokeCode = { codeDto ->
                                     viewModel.adminRevokeCode(codeDto)
@@ -884,15 +875,10 @@ private fun BeBossMainContent(
             onSignOutAdmin = { viewModel.signOutSupabaseAdmin() },
             onRefresh = { viewModel.refreshAdminDashboardData() },
             onApprovePayment = { req, onDone -> viewModel.adminApproveAndGenerateCode(req, onDone) },
-            onDirectAutoUnlock = { req, onDone -> viewModel.adminDirectAutoUnlockPayment(req, onDone) },
             onSavePaymentConfig = { cfg, onDone -> viewModel.adminSavePaymentConfig(cfg, onDone) },
             onToggleShopDeviceActive = { dev, active -> viewModel.adminToggleShopDeviceActive(dev, active) },
             onDeleteShopDevice = { dev -> viewModel.adminDeleteShopDevice(dev) },
-            onBatchApprovePending = { onDone -> viewModel.adminApproveBatchPendingPayments(onDone) },
             onRejectPayment = { req, reason -> viewModel.adminRejectPayment(req, reason) },
-            onIssueManualCode = { username, regPhone, tier, days, amt, onDone ->
-                viewModel.adminIssueManualCode(username, regPhone, tier, days, amt, onDone)
-            },
             onRevokeCode = { codeDto -> viewModel.adminRevokeCode(codeDto) },
             onExtendShopSubscription = { shop, addDays -> viewModel.adminExtendShopSubscription(shop, addDays) },
             onResetShopTrial = { shop -> viewModel.adminResetShopTrial(shop) },

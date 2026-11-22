@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, Copy, Download, KeyRound, Loader2, MessageCircle, Plus, Trash2, X, Zap } from "lucide-react";
+import { Check, Copy, Download, KeyRound, Loader2, MessageCircle, Plus, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -10,9 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, SearchInput, StatusBadge, downloadCsv, matches, useAdminAction } from "@/components/admin/ui";
-import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, directAutoUnlock, rejectPayment } from "@/lib/admin.functions";
+import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, rejectPayment } from "@/lib/admin.functions";
 import { configQuery, paymentsQuery, shopsQuery, type PaymentRequest } from "@/lib/admin-queries";
-import { buildDirectUnlockReplyText, buildUnlockReplyText, buildWhatsAppUrl, calculateSubscriptionFee } from "@/lib/pricing";
+import { buildUnlockReplyText, buildWhatsAppUrl, calculateSubscriptionFee } from "@/lib/pricing";
 import { formatDateTime, formatRwf, relativeTime } from "@/lib/format";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { useAdminText } from "@/lib/admin-copy";
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_authenticated/admin/payments")({
   component: PaymentsPage,
 });
 
-type Result = { mode: "CODE" | "DIRECT"; code?: string; days: number; tier: string; total: number; shopName: string; username: string; phone: string };
+type Result = { code: string; days: number; tier: string; total: number; shopName: string; username: string; phone: string };
 type Status = "PENDING_VERIFICATION" | "APPROVED" | "REJECTED" | "REDEEMED" | "ALL";
 type ClaimSource = "ALL" | "APP" | "WEB" | "WHATSAPP";
 
@@ -30,7 +30,6 @@ function PaymentsPage() {
   const { data: cfg } = useQuery(configQuery);
   const { data: shops } = useQuery(shopsQuery);
   const ctx = useAdminCtx();
-  const qc = useQueryClient();
   const isAdmin = !!ctx.data?.isAdmin;
   const a = useAdminText();
   const [status, setStatus] = useState<Status>("PENDING_VERIFICATION");
@@ -42,12 +41,8 @@ function PaymentsPage() {
   const [result, setResult] = useState<Result | null>(null);
   const [rejecting, setRejecting] = useState<PaymentRequest | null>(null);
   const [reason, setReason] = useState("");
-  const [batching, setBatching] = useState(false);
-
   const approveFn = useServerFn(approvePaymentWithCode);
-  const directFn = useServerFn(directAutoUnlock);
   const approve = useAdminAction(approveFn, { invalidate: [["admin"]] });
-  const direct = useAdminAction(directFn, { invalidate: [["admin"]] });
   const reject = useAdminAction(useServerFn(rejectPayment), { success: "Payment claim rejected", invalidate: [["admin", "payments"]] });
   const remove = useAdminAction(useServerFn(deletePaymentRequest), { success: "Claim removed", invalidate: [["admin", "payments"]] });
   const createManual = useAdminAction(useServerFn(createWhatsAppPaymentClaim), { success: "WhatsApp payment proof added to the review queue", invalidate: [["admin", "payments"], ["admin", "shops"]] });
@@ -66,24 +61,6 @@ function PaymentsPage() {
     approve.mutate({ requestId: r.id }, {
       onSuccess: (res) => setResult({ mode: "CODE", code: res.code, days: res.days, tier: res.tier, total: res.total, shopName: res.shopName, username: res.username, phone: res.phone }),
     });
-  const doDirect = (r: PaymentRequest) =>
-    direct.mutate({ requestId: r.id }, { onSuccess: (res) => setResult({ mode: "DIRECT", days: res.days, tier: res.tier, total: res.total, shopName: res.shopName, username: res.username, phone: res.phone }) });
-
-  const batch = async () => {
-    setBatching(true);
-    let ok = 0;
-    for (const r of pending) {
-      try {
-        await approveFn({ data: { requestId: r.id } });
-        ok++;
-      } catch (e) {
-        toast.error(`${r.shop_name}: ${e instanceof Error ? e.message : "failed"}`);
-      }
-    }
-    setBatching(false);
-    await qc.invalidateQueries({ queryKey: ["admin"] });
-    toast.success(`Approved ${ok} of ${pending.length} claims`);
-  };
 
   return (
     <div>
@@ -95,18 +72,8 @@ function PaymentsPage() {
             <Button size="sm" variant="glass" onClick={() => downloadCsv(`beboss-payments-${Date.now()}.csv`, filtered)}>
               <Download /> {a("Export")}
             </Button>
-            {isAdmin && pending.length > 1 ? (
-              <ConfirmAction
-                trigger={
-                  <Button size="sm" variant="hero" disabled={batching}>
-                    {batching ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Approve all")} {pending.length}
-                  </Button>
-                }
-                title={`Approve ${pending.length} pending claims?`}
-                description={a("Each claim gets a signed BB3 unlock code and its shop is extended. Only do this after confirming every transaction in your MoMo/Airtel statement.")}
-                confirmLabel="Approve all"
-                onConfirm={batch}
-              />
+            {isAdmin && pending.length > 0 ? (
+              <span className="text-xs text-muted-foreground">{pending.length} claims require individual provider verification before code issuance.</span>
             ) : null}
           </>
         }
@@ -265,7 +232,7 @@ function PaymentsPage() {
         <div className="grid gap-3">
           {filtered.map((r) => {
             const calc = calculateSubscriptionFee(r.branch_count, r.worker_count, r.duration_months, r.device_count, Number(r.fee_per_device_rwf) > 0 ? r.fee_per_device_rwf : rate);
-            const busy = (approve.isPending && approve.variables?.requestId === r.id) || (direct.isPending && direct.variables?.requestId === r.id);
+            const busy = (approve.isPending && approve.variables?.requestId === r.id);
             return (
               <div key={r.id} className="rounded-2xl border border-border bg-card p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -311,9 +278,7 @@ function PaymentsPage() {
                         <Button size="sm" variant="success" disabled={busy} onClick={() => doApprove(r)}>
                           {busy ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Verify & issue BB3 code")}
                         </Button>
-                        <Button size="sm" variant="soft" disabled={busy} onClick={() => doDirect(r)}>
-                          <Zap /> {a("Direct auto-unlock")}
-                        </Button>
+
                         {r.status === "PENDING_VERIFICATION" ? (
                           <Button size="sm" variant="ghost" onClick={() => { setRejecting(r); setReason(""); }}>
                             <X /> {a("Reject")}
@@ -391,35 +356,29 @@ function ResultDialog({ result, onClose }: { result: Result | null; onClose: () 
   const [copied, setCopied] = useState(false);
   const a = useAdminText();
   if (!result) return null;
-  const msg = result.mode === "CODE" && result.code ? buildUnlockReplyText(result.shopName, result.username, result.code, result.days, result.tier) : buildDirectUnlockReplyText(result.shopName, result.username, result.days, result.tier);
+  const msg = buildUnlockReplyText(result.shopName, result.username, result.code, result.days, result.tier);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{a(result.mode === "CODE" ? "Unlock code issued" : "Shop auto-unlocked")}</DialogTitle>
+          <DialogTitle>{a("Unlock code issued")}</DialogTitle>
           <DialogDescription>
             {result.shopName} (@{result.username}) • +{result.days} days • {formatRwf(result.total)}
           </DialogDescription>
         </DialogHeader>
-        {result.code ? (
-          <div className="rounded-2xl border border-success/30 bg-success/10 p-4 text-center">
-            <p className="break-all font-mono text-lg font-semibold text-success">{result.code}</p>
-          </div>
-        ) : (
-          <p className="rounded-2xl border border-success/30 bg-success/10 p-4 text-sm text-success">{a("The app unlocks automatically on its next sync — no code needed.")}</p>
-        )}
+        <div className="rounded-2xl border border-success/30 bg-success/10 p-4 text-center">
+          <p className="break-all font-mono text-lg font-semibold text-success">{result.code}</p>
+        </div>
         <DialogFooter className="gap-2 sm:gap-2">
-          {result.code ? (
-            <Button
-              variant="glass"
-              onClick={async () => {
-                await navigator.clipboard.writeText(result.code!);
-                setCopied(true);
-              }}
-            >
-              {copied ? <Check className="text-success" /> : <Copy />} {a("Copy code")}
-            </Button>
-          ) : null}
+          <Button
+            variant="glass"
+            onClick={async () => {
+              await navigator.clipboard.writeText(result.code);
+              setCopied(true);
+            }}
+          >
+            {copied ? <Check className="text-success" /> : <Copy />} {a("Copy code")}
+          </Button>
           <Button variant="success" asChild>
             <a href={buildWhatsAppUrl(result.phone, msg)} target="_blank" rel="noreferrer">
               <MessageCircle /> {a("Send on WhatsApp")}

@@ -313,8 +313,8 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
       .maybeSingle();
     if (priorError) throw new Error("Could not check the existing unlock record for this payment.");
     if (priorCode) {
-      if (priorCode.status !== "ISSUED" || priorCode.plan_digest !== signed.planDigest || !priorCode.unlock_code) {
-        throw new Error("This payment already has a revoked or mismatched unlock record. A second code will not be created.");
+      if (!["ISSUED", "REDEEMED"].includes(String(priorCode.status)) || priorCode.plan_digest !== signed.planDigest || !priorCode.unlock_code) {
+        throw new Error("This payment already has an active or redeemed unlock record with different plan details. A second code will not be created.");
       }
       codeToUse = String(priorCode.unlock_code);
       unlockCodeId = String(priorCode.id);
@@ -330,7 +330,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
       if (ins.error) {
         if (ins.error.code === "23505") {
           const { data: winner } = await ctx.supabase.from("unlock_codes").select("id,unlock_code,plan_digest,status").eq("payment_request_id", req.id).in("status", ["ISSUED", "REDEEMED"]).maybeSingle();
-          if (!winner || winner.status !== "ISSUED" || winner.plan_digest !== signed.planDigest || !winner.unlock_code) {
+          if (!winner || !["ISSUED", "REDEEMED"].includes(String(winner.status)) || winner.plan_digest !== signed.planDigest || !winner.unlock_code) {
             throw new Error("A conflicting unlock-code record already exists for this payment. No duplicate was issued.");
           }
           codeToUse = String(winner.unlock_code);
@@ -495,32 +495,6 @@ export const deletePaymentRequest = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     await audit(ctx, admin.email, "DELETE_PAYMENT", data.requestId, "Removed payment claim");
     return { ok: true };
-  });
-
-/**
- * Batch approve multiple payments with individual results.
- * Each payment is processed independently; failures don't block others.
- */
-export const approveBatchPayments = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { requestIds: string[] }) => z.object({ requestIds: z.array(z.string().min(1).max(200)).min(1).max(50) }).parse(d))
-  .handler(async ({ data, context }) => {
-    const ctx = context as unknown as Ctx;
-    const admin = await requireAdmin(ctx);
-    
-    const results = [];
-    for (const requestId of data.requestIds) {
-      try {
-        const result = await approvePaymentWithCode({ requestId }, { context });
-        results.push({ requestId, success: true, code: result.code, alreadyApproved: result.alreadyApproved });
-      } catch (e) {
-        results.push({ requestId, success: false, error: e instanceof Error ? e.message : "Unknown error" });
-      }
-    }
-    
-    await audit(ctx, admin.email, "APPROVE_BATCH_PAYMENTS", "multiple", `Processed ${data.requestIds.length} payments: ${results.filter(r => r.success).length} succeeded, ${results.filter(r => !r.success).length} failed`);
-    
-    return { results, successCount: results.filter(r => r.success).length };
   });
 
 /**
