@@ -61,13 +61,20 @@ function ContactPage() {
       return;
     }
     setSending(true);
-    const { error } = await supabase.from("contact_messages").insert(parsed.data);
-    setSending(false);
-    if (error) {
+    try {
+      const { error } = await supabase.from("contact_messages").insert(parsed.data);
+      if (error) {
+        console.error("[BeBoss contact] Supabase insert failed", error);
+        toast.error(p.contact.sendFailed);
+        return;
+      }
+      setDone(true);
+    } catch (error) {
+      console.error("[BeBoss contact] Message submission failed", error);
       toast.error(p.contact.sendFailed);
-      return;
+    } finally {
+      setSending(false);
     }
-    setDone(true);
   };
 
   return (

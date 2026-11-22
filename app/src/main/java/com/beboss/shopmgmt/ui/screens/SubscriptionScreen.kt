@@ -126,6 +126,9 @@ fun SubscriptionScreen(
     livePaymentConfig: AdminPaymentConfig = OfflineSubscriptionManager.getCurrentPaymentConfig(),
     language: AppLanguage,
     onActivateVoucher: (String) -> Unit,
+    // Compatibility callback retained for configured direct-payment backends.
+    // The default subscription UI uses the safer proof-and-admin-verification flow.
+    onProcessDirectPayment: ((provider: String, phone: String, durationMonths: Int, userReference: String?, onSuccess: (com.beboss.shopmgmt.util.PaymentProcessingResult, com.beboss.shopmgmt.util.SubscriptionPriceBreakdown) -> Unit) -> Unit)? = null,
     onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, paymentNote: String, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
     onCheckCloudApproval: () -> Unit = {},
     onClose: () -> Unit = {}
@@ -1127,6 +1130,8 @@ fun SubscriptionPaywallDialog(
     livePaymentConfig: AdminPaymentConfig = OfflineSubscriptionManager.getCurrentPaymentConfig(),
     language: AppLanguage,
     onActivateVoucher: (String) -> Unit,
+    // Keep the same callback available to hard-lock and Settings subscription surfaces.
+    onProcessDirectPayment: ((provider: String, phone: String, durationMonths: Int, userReference: String?, onSuccess: (com.beboss.shopmgmt.util.PaymentProcessingResult, com.beboss.shopmgmt.util.SubscriptionPriceBreakdown) -> Unit) -> Unit)? = null,
     onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, paymentNote: String, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
     onCheckCloudApproval: () -> Unit = {},
     onOpenAdminConsole: (() -> Unit)? = null
@@ -1258,6 +1263,7 @@ fun SubscriptionPaywallDialog(
                             livePaymentConfig = livePaymentConfig,
                             language = language,
                             onActivateVoucher = onActivateVoucher,
+                            onProcessDirectPayment = onProcessDirectPayment,
                             onSubmitPaymentVerification = onSubmitPaymentVerification,
                             onCheckCloudApproval = onCheckCloudApproval
                         )

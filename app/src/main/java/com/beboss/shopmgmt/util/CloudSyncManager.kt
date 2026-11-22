@@ -199,6 +199,42 @@ class CloudSyncManager(private val database: AppDatabase) {
                 ?: branches.firstOrNull { it.isMainBranch }
                 ?: branches.firstOrNull()
 
+            // The owner's primary-device row carries the canonical tenant username
+            // on paired manager/cashier phones, which do not store the owner as a local user.
+            val primaryDeviceForIdentity = database.shopDeviceDao().getAllDevicesList()
+                .firstOrNull { it.isOwnerPrimary }
+            val registeredOwner = ownerUser?.takeIf { it.role == UserRole.OWNER }
+            val cloudOwnerUsername = registeredOwner?.username?.trim()?.lowercase()
+                ?: primaryDeviceForIdentity?.assignedUsername?.trim()?.lowercase().orEmpty()
+            val cloudOwnerPhone = registeredOwner?.phone?.ifBlank { profile.phone }?.trim() ?: profile.phone.trim()
+
+            // Never create or sync the shared owner_000000000 fallback tenant when
+            // Room is incomplete. Keep the existing owner key on paired devices.
+            if (SupabaseAdminClient.isConfigured()) {
+                val ownerPhoneDigits = cloudOwnerPhone.filter { it.isDigit() }.takeLast(9)
+                if (cloudOwnerUsername.length < 2 ||
+                    !cloudOwnerUsername.matches(Regex("[a-z0-9._-]{2,80}")) ||
+                    ownerPhoneDigits.length != 9 || profile.shopName.isBlank()) {
+                    val message = "Cloud sync paused: restore or complete the registered shop owner identity before syncing. Local data is kept on this device; no placeholder tenant was uploaded."
+                    addAuditLog(
+                        type = "BRANCH_AUTO_SYNC",
+                        status = "FAILED",
+                        summary = message,
+                        latencyMs = System.currentTimeMillis() - startTime
+                    )
+                    return@withContext CloudSyncReport(
+                        state = CloudSyncState.ERROR,
+                        lastSyncTimestamp = profile.lastSyncedAt,
+                        message = message,
+                        branchesCount = branches.size,
+                        productsCount = products.size,
+                        salesCount = sales.size,
+                        debtsCount = customers.count { it.debtBalance > 0 },
+                        latencyMs = System.currentTimeMillis() - startTime
+                    )
+                }
+            }
+
             val tombstones = database.syncTombstoneDao().getAllTombstonesList()
 
             // Process due outbox items
@@ -243,9 +279,10 @@ class CloudSyncManager(private val database: AppDatabase) {
                     )
                 }
                 
-                val ownerUsername = ownerUser?.username ?: "owner"
-                val ownerPhone = ownerUser?.phone?.ifBlank { profile.phone } ?: profile.phone
-                val shopSyncKey = SupabaseAdminClient.computeShopSyncKey(ownerUsername, ownerPhone)
+                val ownerUsername = cloudOwnerUsername
+                val ownerPhone = cloudOwnerPhone
+                val shopSyncKey = primaryDeviceForIdentity?.shopSyncKey?.takeIf { it.isNotBlank() }
+                    ?: SupabaseAdminClient.computeShopSyncKey(ownerUsername, ownerPhone)
                 val recordsSummary = "${branches.size} branches Ã¢â‚¬Â¢ ${products.size} items Ã¢â‚¬Â¢ ${sales.size} sales Ã¢â‚¬Â¢ ${customers.size} clients (${chunkedTokens.size} chunk(s))"
                 val syncGeneration = UUID.randomUUID().toString()
 
@@ -290,6 +327,7 @@ class CloudSyncManager(private val database: AppDatabase) {
 
                 val shopDeviceDao = database.shopDeviceDao()
                 val remoteDevices = SupabaseAdminClient.fetchShopDevicesForShop(shopSyncKey)
+                val remoteDeviceIds = remoteDevices.map { it.id }.toSet()
                 for (rd in remoteDevices) {
                     val localDev = shopDeviceDao.getDeviceById(rd.id)
                     if (localDev == null || rd.updatedAt > localDev.updatedAt) {
@@ -320,9 +358,13 @@ class CloudSyncManager(private val database: AppDatabase) {
                 }
                 val localDevices = shopDeviceDao.getAllDevicesList()
                 val activeDeviceCount = localDevices.count { it.isActive }.coerceAtLeast(1)
-                var allDevicesUploaded = true
+                // Every registered shop has a primary device row. Empty local registry
+                // must not be treated as a successful upload.
+                var allDevicesUploaded = localDevices.isNotEmpty()
                 for (ld in localDevices) {
-                    if (!ld.syncedToSupabase || ld.deviceId == deviceId) {
+                    // Recreate a missing cloud registry row after server-side deletion or
+                    // an interrupted restore, even when Room previously marked it synced.
+                    if (!ld.syncedToSupabase || ld.deviceId == deviceId || ld.id !in remoteDeviceIds) {
                         val toPush = if (ld.deviceId == deviceId) ld.copy(lastSyncedAt = now, syncedToSupabase = true) else ld.copy(syncedToSupabase = true)
                         if (SupabaseAdminClient.upsertShopDevice(shopSyncKey, profile.shopName, toPush)) {
                             shopDeviceDao.insertOrUpdate(toPush)
@@ -398,11 +440,12 @@ class CloudSyncManager(private val database: AppDatabase) {
                     workerCount = latestUsers.count { it.isActive }.coerceAtLeast(1),
                     deviceCount = activeDeviceCount
                 )
-                val usersUploaded = latestUsers.isEmpty() || SupabaseAdminClient.upsertShopUsers(
-                    shopSyncKey = shopSyncKey,
-                    shopName = profile.shopName,
-                    users = latestUsers
-                )
+                val usersUploaded = latestUsers.isNotEmpty() &&
+                    SupabaseAdminClient.upsertShopUsers(
+                        shopSyncKey = shopSyncKey,
+                        shopName = profile.shopName,
+                        users = latestUsers
+                    )
 
                 val peerSnapshots = SupabaseAdminClient.latestCompleteSnapshotChunks(
                     SupabaseAdminClient.fetchShopBranchSnapshots(

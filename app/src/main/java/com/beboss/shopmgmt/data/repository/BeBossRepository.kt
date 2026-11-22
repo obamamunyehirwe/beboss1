@@ -484,23 +484,55 @@ class BeBossRepository(private val database: AppDatabase) {
         ownerUser: User?,
         mainBranch: Branch?
     ): ShopDevice = withContext(Dispatchers.IO) {
+        require(deviceId.isNotBlank()) { "A stable device ID is required before cloud registration." }
         val existing = shopDeviceDao.getAllDevicesList()
-        val existingPrimary = existing.firstOrNull { it.isOwnerPrimary }
-        if (existingPrimary != null) return@withContext existingPrimary
 
-        val username = ownerUser?.username?.ifBlank { "owner" } ?: "owner"
-        val phone = ownerUser?.phone?.ifBlank { shopProfile.phone } ?: shopProfile.phone
-        val shopSyncKey = SupabaseAdminClient.computeShopSyncKey(username, phone)
+        // A paired terminal keeps its own registry row. Never turn a joined cashier/manager
+        // phone into the shop owner's primary device.
+        existing.firstOrNull { it.deviceId == deviceId }?.let { return@withContext it }
+
+        val existingPrimary = existing.firstOrNull { it.isOwnerPrimary }
+        val owner = ownerUser?.takeIf { it.role == UserRole.OWNER }
+            ?: throw IllegalStateException("A registered shop owner is required before the primary device can sync.")
+        val username = owner.username.trim().lowercase(Locale.ROOT)
+        val phone = owner.phone.ifBlank { shopProfile.phone }.trim()
+        val normalizedPhone = phone.filter { it.isDigit() }.takeLast(9)
+        require(username.length >= 2 && normalizedPhone.length == 9 && shopProfile.shopName.isNotBlank()) {
+            "Complete the shop owner's username, shop name and registered 9-digit phone number before cloud sync. Local records remain on this device."
+        }
+        val shopSyncKey = existingPrimary?.shopSyncKey?.takeIf { it.isNotBlank() }
+            ?: SupabaseAdminClient.computeShopSyncKey(username, phone)
+
+        if (existingPrimary != null) {
+            // Reinstalling BeBoss creates a new local device ID. Rebind the owner primary
+            // only when no existing local row already owns the current device ID.
+            val refreshed = existingPrimary.copy(
+                shopSyncKey = shopSyncKey,
+                deviceId = deviceId,
+                assignedUserId = owner.id,
+                assignedUsername = username,
+                assignedUserName = owner.name,
+                role = owner.role.name,
+                branchId = mainBranch?.id ?: existingPrimary.branchId,
+                branchName = mainBranch?.name ?: existingPrimary.branchName,
+                isActive = true,
+                syncedToSupabase = false,
+                updatedAt = System.currentTimeMillis()
+            )
+            shopDeviceDao.insertOrUpdate(refreshed)
+            return@withContext refreshed
+        }
+
         val primary = ShopDevice(
             id = "${shopSyncKey}::PRIMARY",
             shopSyncKey = shopSyncKey,
             deviceId = deviceId,
             deviceName = android.os.Build.MODEL?.ifBlank { "Owner Terminal" } ?: "Owner Terminal",
             joinCode = "OWNER",
-            assignedUserId = ownerUser?.id.orEmpty(),
+            assignedUserId = owner.id,
             assignedUsername = username,
-            assignedUserName = ownerUser?.name?.ifBlank { shopProfile.name } ?: shopProfile.name,
-            role = ownerUser?.role?.name ?: "OWNER",
+            assignedUserName = owner.name,
+            role = owner.role.name,
             branchId = mainBranch?.id ?: "main_branch",
             branchName = mainBranch?.name ?: "Main Store",
             isOwnerPrimary = true,
@@ -522,11 +554,17 @@ class BeBossRepository(private val database: AppDatabase) {
         }
         val profile = getShopProfileDirect()
         val allUsers = userDao.getAllUsersDirect()
-        val ownerUser = allUsers.firstOrNull { it.role == UserRole.OWNER } ?: allUsers.firstOrNull()
-        val shopSyncKey = SupabaseAdminClient.computeShopSyncKey(
-            ownerUser?.username.orEmpty(),
-            ownerUser?.phone?.ifBlank { profile.phone } ?: profile.phone
-        )
+        val ownerUser = allUsers.firstOrNull { it.role == UserRole.OWNER }
+        val primaryDevice = shopDeviceDao.getAllDevicesList().firstOrNull { it.isOwnerPrimary }
+        val ownerUsername = ownerUser?.username?.trim()?.lowercase(Locale.ROOT)
+            ?: primaryDevice?.assignedUsername?.trim()?.lowercase(Locale.ROOT).orEmpty()
+        val ownerPhone = ownerUser?.phone?.ifBlank { profile.phone } ?: profile.phone
+        require(ownerUsername.length >= 2 && ownerUsername.matches(Regex("[a-z0-9._-]{2,80}")) &&
+            ownerPhone.filter { it.isDigit() }.takeLast(9).length == 9 && profile.shopName.isNotBlank()) {
+            "Complete the registered shop owner's username and phone before adding another device."
+        }
+        val shopSyncKey = primaryDevice?.shopSyncKey?.takeIf { it.isNotBlank() }
+            ?: SupabaseAdminClient.computeShopSyncKey(ownerUsername, ownerPhone)
         val codeSuffix = UUID.randomUUID().toString().replace("-", "").take(6).uppercase(Locale.ROOT)
         val joinCode = "BB-$codeSuffix"
         val now = System.currentTimeMillis()
@@ -919,10 +957,24 @@ class BeBossRepository(private val database: AppDatabase) {
             )
         }
         try {
-            val username = ownerUser?.username?.trim().orEmpty().ifBlank { "owner" }
-            val phone = ownerUser?.phone?.ifBlank { shopProfile.phone } ?: shopProfile.phone
-            val shopSyncKey = SupabaseAdminClient.computeShopSyncKey(username, phone)
+            val identityPrimary = shopDeviceDao.getAllDevicesList().firstOrNull { it.isOwnerPrimary }
+            val registeredOwner = ownerUser?.takeIf { it.role == UserRole.OWNER }
+            val username = registeredOwner?.username?.trim()?.lowercase(Locale.ROOT)
+                ?: identityPrimary?.assignedUsername?.trim()?.lowercase(Locale.ROOT).orEmpty()
+            val phone = registeredOwner?.phone?.ifBlank { shopProfile.phone }?.trim() ?: shopProfile.phone.trim()
+            val phoneDigits = phone.filter { it.isDigit() }.takeLast(9)
+            if (username.length < 2 || !username.matches(Regex("[a-z0-9._-]{2,80}")) ||
+                phoneDigits.length != 9 || shopProfile.shopName.isBlank()) {
+                return@withContext SupabaseSyncResult(
+                    success = false,
+                    message = "Cloud sync paused: complete the registered shop owner's name, username and 9-digit phone on this device. No placeholder shop identity was uploaded."
+                )
+            }
+            val shopSyncKey = identityPrimary?.shopSyncKey?.takeIf { it.isNotBlank() }
+                ?: SupabaseAdminClient.computeShopSyncKey(username, phone)
             var directAutoUnlocked = false
+            var allDevicesUploaded = false
+            var allPaymentRequestsUploaded = true
 
             var effectiveProfile = shopProfile
             // Remember when the shop row already carries the license extension
@@ -972,6 +1024,7 @@ class BeBossRepository(private val database: AppDatabase) {
 
             // 3. Bidirectional Shop Devices sync (+2,000 FRw/device billing)
             val remoteDevices = SupabaseAdminClient.fetchShopDevicesForShop(shopSyncKey)
+            val remoteDeviceIds = remoteDevices.map { it.id }.toSet()
             for (rd in remoteDevices) {
                 val localDev = shopDeviceDao.getDeviceById(rd.id)
                 if (localDev == null || rd.updatedAt > localDev.updatedAt) {
@@ -1000,10 +1053,15 @@ class BeBossRepository(private val database: AppDatabase) {
                 }
             }
             val effectiveDeviceCount = maxOf(deviceCount, shopDeviceDao.getActiveDevicesCount()).coerceAtLeast(1)
-            for (ld in shopDeviceDao.getAllDevicesList()) {
-                if (!ld.syncedToSupabase) {
+            val localDevices = shopDeviceDao.getAllDevicesList()
+            allDevicesUploaded = localDevices.isNotEmpty()
+            for (ld in localDevices) {
+                if (!ld.syncedToSupabase || ld.id !in remoteDeviceIds) {
                     if (SupabaseAdminClient.upsertShopDevice(shopSyncKey, effectiveProfile.shopName, ld)) {
                         shopDeviceDao.insertOrUpdate(ld.copy(syncedToSupabase = true))
+                    } else {
+                        // Keep the local row pending so a later WorkManager run retries it.
+                        allDevicesUploaded = false
                     }
                 }
             }
@@ -1026,19 +1084,22 @@ class BeBossRepository(private val database: AppDatabase) {
                 }
             }
 
-            // 5. Push shop account & user directory cleanly to Supabase
-            SupabaseAdminClient.upsertShopAccount(
+            // 5. Push shop account & user directory cleanly to Supabase.
+            // A returned false is a failed cloud write, not a successful sync.
+            val accountUploaded = SupabaseAdminClient.upsertShopAccount(
                 shopProfile = effectiveProfile,
                 ownerUser = ownerUser,
                 branchCount = branchCount,
                 workerCount = workerCount,
                 deviceCount = effectiveDeviceCount
             )
-            SupabaseAdminClient.upsertShopUsers(
-                shopSyncKey = shopSyncKey,
-                shopName = effectiveProfile.shopName,
-                users = userDao.getAllUsersDirect()
-            )
+            val localUsers = userDao.getAllUsersDirect()
+            val usersUploaded = localUsers.isNotEmpty() &&
+                SupabaseAdminClient.upsertShopUsers(
+                    shopSyncKey = shopSyncKey,
+                    shopName = effectiveProfile.shopName,
+                    users = localUsers
+                )
 
             // 6. Push all unsynced offline payment requests
             val unsynced = paymentVerificationDao.getUnsyncedRequests()
@@ -1047,6 +1108,9 @@ class BeBossRepository(private val database: AppDatabase) {
                 if (SupabaseAdminClient.submitPaymentRequest(req)) {
                     paymentVerificationDao.markSynced(req.id)
                     pushed++
+                } else {
+                    // Leave the request in Room's unsynced list for the next retry.
+                    allPaymentRequestsUploaded = false
                 }
             }
 
@@ -1112,6 +1176,21 @@ class BeBossRepository(private val database: AppDatabase) {
                     shopProfileDao.insertOrUpdateProfile(effectiveProfile)
                     directAutoUnlocked = true
                 }
+            }
+
+            // Return success only after every required cloud write has actually completed.
+            // The WorkManager worker uses this signal to schedule a retry on a later run.
+            val failedUploads = buildList {
+                if (!accountUploaded) add("shop account")
+                if (!allDevicesUploaded) add("device registry")
+                if (!usersUploaded) add("staff directory")
+                if (!allPaymentRequestsUploaded) add("payment request(s)")
+            }
+            if (failedUploads.isNotEmpty()) {
+                return@withContext SupabaseSyncResult(
+                    success = false,
+                    message = "Cloud sync pending: could not upload ${failedUploads.joinToString()}. Local records remain saved and will be retried."
+                )
             }
 
             val codeReadyCount = approvedDtos.count { it.generatedUnlockCode.isNotBlank() }

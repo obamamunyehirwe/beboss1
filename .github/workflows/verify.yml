@@ -48,8 +48,14 @@ jobs:
           src/lib/admin.functions.ts
           src/lib/bb2.ts
           src/lib/bb2.test.ts
-          src/routes/auth.tsx
+          src/lib/public.functions.ts
+          src/lib/server/public-client.ts
+          src/integrations/supabase/auth-middleware.ts
+          src/components/site/ModernHero.tsx
+          src/components/site/SiteHeader.tsx
           src/routes/_authenticated/admin/settings.tsx
+          src/routes/_authenticated/admin/sync.tsx
+          src/routes/auth.tsx
           supabase/functions/bootstrap-first-admin/index.ts
           supabase/functions/issue-bb3-unlock/index.ts
           supabase/functions/verify-legacy-bb2/index.ts
