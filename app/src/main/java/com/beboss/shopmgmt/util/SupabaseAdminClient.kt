@@ -1665,20 +1665,41 @@ object SupabaseAdminClient {
         val signed = requestServerSignedBB3Code(request.id).getOrElse { error ->
             return@withContext Pair(false, error.message ?: "Unable to sign a secure payment-linked BB3 unlock code.")
         }
-        if (signed.requestId != request.id || signed.amountRwf != request.amountRwf || signed.days <= 0 || signed.planDigest.length != 64) {
-            return@withContext Pair(false, "The server signing response does not match the submitted payment plan. No code was issued.")
+
+        val paymentTimeMs = request.paymentTimeMs.takeIf { it > 0L } ?: request.createdAt.takeIf { it > 0L } ?: signed.paymentTimeMs
+        val savedFeeRate = request.feePerDeviceRwf.takeIf { it > 0 }
+            ?: OfflineSubscriptionManager.getCurrentPaymentConfig().perDeviceFeeRwf.coerceAtLeast(0)
+        val recomputedBreakdown = OfflineSubscriptionManager.calculateSubscriptionPrice(
+            branchCount = request.branchCount.coerceAtLeast(1),
+            workerCount = request.workerCount.coerceAtLeast(1),
+            durationMonths = request.durationMonths.coerceAtLeast(1),
+            deviceCount = request.deviceCount.coerceAtLeast(1),
+            perDeviceRateRwf = savedFeeRate
+        )
+        val verifiedAmountRwf = recomputedBreakdown.totalPayable
+        val expectedTier = when {
+            request.durationMonths >= 12 -> "ANNUAL"
+            request.branchCount >= 3 -> "MULTI"
+            request.branchCount == 2 -> "DUAL"
+            else -> "SINGLE"
+        }
+        val expectedPlanDigest = paymentPlanDigest(request, verifiedAmountRwf, paymentTimeMs)
+        val expectedShopId = computeShopSyncKey(request.ownerUsername, request.ownerPhone)
+        if (request.amountRwf != verifiedAmountRwf ||
+            signed.requestId != request.id ||
+            signed.shopId != expectedShopId ||
+            signed.amountRwf != verifiedAmountRwf ||
+            signed.days != request.durationMonths.coerceAtLeast(1) * 30 ||
+            signed.tierCode != expectedTier ||
+            signed.paymentTimeMs != paymentTimeMs ||
+            signed.planDigest != expectedPlanDigest
+        ) {
+            return@withContext Pair(false, "The signed server plan does not exactly match this submitted payment. No code was issued.")
         }
 
         try {
             val now = System.currentTimeMillis()
             val operatorLabel = "${session.fullName} (${session.email})".ifBlank { adminName }
-            val recomputedBreakdown = OfflineSubscriptionManager.calculateSubscriptionPrice(
-                branchCount = request.branchCount.coerceAtLeast(1),
-                workerCount = request.workerCount.coerceAtLeast(1),
-                durationMonths = request.durationMonths.coerceAtLeast(1),
-                deviceCount = request.deviceCount.coerceAtLeast(1)
-            )
-            val verifiedAmountRwf = signed.amountRwf
             var insertedNewCode = false
             var codeToUse = signed.code
             var codeId = UUID.randomUUID().toString()
