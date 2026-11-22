@@ -10,7 +10,7 @@ Set these environment variables for Production, Preview and Development as appro
 |---|---|---|
 | `SUPABASE_URL` | Supabase project URL | Public URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Web Supabase client / server-side user requests | Public publishable key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Trusted server functions only (admin invitations, private storage, privileged operations) | Server-only secret |
+| `SUPABASE_SERVICE_ROLE_KEY` | Trusted server functions only (admin invitations, private storage, privileged operations); use the Supabase Secret API key (`sb_secret_...`) where available | Server-only Secret in Vercel |
 | `BEBOSS_SECURITY_PEPPER` | Security hashing/derivation | Server-only secret |
 | `BEBOSS_DATASHARE_HMAC_SECRET` | Signed data-share requests | Server-only secret |
 | `BEBOSS_LAN_SYNC_SECRET` | LAN sync authentication | Server-only secret |
@@ -19,7 +19,7 @@ Set these environment variables for Production, Preview and Development as appro
 
 The BB3 ECDSA P-256 private key is provisioned in the live Supabase `app_secrets` table as `BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM`. It is not a Vercel environment variable and must never be placed in an Android Gradle property, APK asset, browser bundle, or `VITE_*` variable. Android contains only the matching public verification key.
 
-Never add a `VITE_` prefix to `SUPABASE_SERVICE_ROLE_KEY`. The Vite configuration intentionally injects only the Supabase URL and publishable key into browser code. Keep `.env.example` as a template; never commit actual service-role keys, signing secrets, or passwords.
+To resolve a missing `SUPABASE_SERVICE_ROLE_KEY` on Vercel, open Supabase → Project Settings → API Keys and copy the project Secret API key (`sb_secret_...`; the legacy `service_role` key is supported during migration). In Vercel → BeBoss project → Settings → Environment Variables, add the exact variable name `SUPABASE_SERVICE_ROLE_KEY`, choose **Secret**, paste the key as its value, and enable **Production** (also Preview/Development only when those environments need the admin server). Keep `SUPABASE_URL` present for the same environment. Save and create a new Production deployment; changed environment variables do not modify existing deployments. Never add a `VITE_` prefix to this variable. The Vite configuration intentionally injects only the URL and publishable key into browser code. Never paste this value into chat, source code, Android, browser storage, or a `VITE_*` variable.
 
 Build and deploy from the `web` directory:
 
