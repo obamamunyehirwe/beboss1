@@ -131,7 +131,7 @@ fun SubscriptionScreen(
     language: AppLanguage,
     onActivateVoucher: (String) -> Unit,
     onProcessDirectPayment: ((provider: String, phone: String, durationMonths: Int, userReference: String?, onSuccess: (PaymentProcessingResult, SubscriptionPriceBreakdown) -> Unit) -> Unit)? = null,
-    onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, telcoRef: String, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
+    onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
     onCheckCloudApproval: () -> Unit = {},
     onClose: () -> Unit = {}
 ) {
@@ -168,7 +168,6 @@ fun SubscriptionScreen(
     var payerFullNameInput by remember(ownerAccount?.name, shopProfile.name) {
         mutableStateOf(ownerAccount?.name?.ifBlank { shopProfile.name } ?: shopProfile.name)
     }
-    var telcoRefInput by remember { mutableStateOf("") }
     var proofError by remember { mutableStateOf<String?>(null) }
 
     var voucherInput by remember { mutableStateOf("") }
@@ -752,15 +751,6 @@ fun SubscriptionScreen(
                             shape = RoundedCornerShape(10.dp),
                             singleLine = true
                         )
-                        OutlinedTextField(
-                            value = telcoRefInput,
-                            onValueChange = { telcoRefInput = it },
-                            label = { Text(Localization.get("sub_momo_ref_opt_label", language)) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            singleLine = true
-                        )
-                    }
 
                     if (proofError != null) {
                         Surface(
@@ -804,7 +794,6 @@ fun SubscriptionScreen(
                                     selectedBranchCount,
                                     selectedWorkerCount,
                                     selectedDeviceCount,
-                                    telcoRefInput
                                 ) { req, _ ->
                                     OfflineSubscriptionManager.sendPaymentProofViaWhatsApp(
                                         context = context,
@@ -820,7 +809,6 @@ fun SubscriptionScreen(
                                         deviceCount = selectedDeviceCount,
                                         payerPhone = cleanPayerPhone,
                                         payerFullName = cleanPayerName,
-                                        telcoReference = telcoRefInput,
                                         requestId = req.id,
                                         adminWhatsAppNumber = resolvedAdminWa
                                     )
@@ -840,7 +828,6 @@ fun SubscriptionScreen(
                                     deviceCount = selectedDeviceCount,
                                     payerPhone = cleanPayerPhone,
                                     payerFullName = cleanPayerName,
-                                    telcoReference = telcoRefInput,
                                     adminWhatsAppNumber = resolvedAdminWa
                                 )
                             }
@@ -1214,7 +1201,7 @@ fun SubscriptionPaywallDialog(
     language: AppLanguage,
     onActivateVoucher: (String) -> Unit,
     onProcessDirectPayment: ((provider: String, phone: String, durationMonths: Int, userReference: String?, onSuccess: (PaymentProcessingResult, SubscriptionPriceBreakdown) -> Unit) -> Unit)? = null,
-    onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, telcoRef: String, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
+    onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
     onCheckCloudApproval: () -> Unit = {},
     onOpenAdminConsole: (() -> Unit)? = null
 ) {
