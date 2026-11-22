@@ -713,7 +713,6 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         durationMonths: Int,
         branchCount: Int,
         workerCount: Int,
-        telcoReference: String = "",
         payerFullName: String = "",
         deviceCount: Int = 1,
         onSubmitted: (PaymentVerificationRequest, Boolean) -> Unit = { _, _ -> }
@@ -725,7 +724,6 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         durationMonths = durationMonths,
         branchCount = branchCount,
         workerCount = workerCount,
-        telcoReference = telcoReference,
         payerFullName = payerFullName,
         deviceCount = deviceCount,
         onSubmitted = onSubmitted
