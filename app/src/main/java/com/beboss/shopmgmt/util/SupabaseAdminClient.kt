@@ -1327,6 +1327,48 @@ object SupabaseAdminClient {
     suspend fun submitPaymentRequest(request: PaymentVerificationRequest): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext false
         try {
+            val shopSyncKey = computeShopSyncKey(request.ownerUsername, request.ownerPhone)
+            val cleanId = URLEncoder.encode(request.id.trim(), "UTF-8")
+            val existingRequest = buildRestRequest(
+                "payment_requests?id=eq.$cleanId&select=id&limit=1",
+                tenantSyncKey = shopSyncKey
+            ).get().build()
+
+            // A retry after a timeout must never merge the old local PENDING
+            // payload over a payment that an administrator has already approved.
+            val alreadyUploaded = client.newCall(existingRequest).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "submitPaymentRequest lookup HTTP ${response.code}")
+                    return@withContext false
+                }
+                val rows = JSONArray(response.body?.string().orEmpty().ifBlank { "[]" })
+                rows.length() > 0
+            }
+            if (alreadyUploaded) return@withContext true
+
+            val reference = request.telcoReference.trim().uppercase(Locale.ROOT)
+            if (reference.isBlank()) {
+                Log.w(TAG, "submitPaymentRequest rejected: transaction reference is blank")
+                return@withContext false
+            }
+            val provider = URLEncoder.encode(request.provider.trim(), "UTF-8")
+            val encodedReference = URLEncoder.encode(reference, "UTF-8")
+            val duplicateLookup = buildRestRequest(
+                "payment_requests?provider=eq.$provider&telco_reference=eq.$encodedReference&select=id&limit=1",
+                tenantSyncKey = shopSyncKey
+            ).get().build()
+            val duplicateExists = client.newCall(duplicateLookup).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "submitPaymentRequest duplicate check HTTP ${response.code}")
+                    return@withContext false
+                }
+                JSONArray(response.body?.string().orEmpty().ifBlank { "[]" }).length() > 0
+            }
+            if (duplicateExists) {
+                Log.w(TAG, "submitPaymentRequest duplicate provider/reference rejected for request ${request.id}")
+                return@withContext false
+            }
+
             val payload = JSONObject().apply {
                 put("id", request.id)
                 put("shop_name", request.shopName)
@@ -1342,25 +1384,37 @@ object SupabaseAdminClient {
                 put("branch_count", request.branchCount)
                 put("worker_count", request.workerCount)
                 put("device_count", request.deviceCount.coerceAtLeast(1))
-                put("telco_reference", request.telcoReference)
-                put("status", request.status)
-                put("approval_mode", request.approvalMode)
-                put("generated_unlock_code", request.generatedUnlockCode)
+                put("telco_reference", reference)
+                put("status", "PENDING_VERIFICATION")
+                put("approval_mode", "")
+                put("generated_unlock_code", "")
+                put("source", "APP")
                 put("created_at", request.createdAt)
                 put("updated_at", request.updatedAt)
             }
 
-            val shopSyncKey = computeShopSyncKey(request.ownerUsername, request.ownerPhone)
-            val req = buildRestRequest("payment_requests?on_conflict=id", tenantSyncKey = shopSyncKey)
-                .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
+            // Plain INSERT only. The database primary key and unique
+            // provider/reference index handle races; never upsert/merge.
+            val req = buildRestRequest("payment_requests", tenantSyncKey = shopSyncKey)
+                .addHeader("Prefer", "return=minimal")
                 .post(payload.toString().toRequestBody(jsonMediaType))
                 .build()
 
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) {
-                    Log.w(TAG, "submitPaymentRequest HTTP ${resp.code}: ${resp.body?.string()}")
+            client.newCall(req).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "submitPaymentRequest INSERT HTTP ${response.code}: ${response.body?.string()}")
+                    if (response.code == 409) {
+                        val retryLookup = buildRestRequest(
+                            "payment_requests?id=eq.$cleanId&select=id&limit=1",
+                            tenantSyncKey = shopSyncKey
+                        ).get().build()
+                        return@withContext client.newCall(retryLookup).execute().use { retry ->
+                            if (!retry.isSuccessful) false
+                            else JSONArray(retry.body?.string().orEmpty().ifBlank { "[]" }).length() > 0
+                        }
+                    }
                 }
-                resp.isSuccessful
+                response.isSuccessful
             }
         } catch (e: Exception) {
             Log.e(TAG, "submitPaymentRequest error: ${e.message}")
