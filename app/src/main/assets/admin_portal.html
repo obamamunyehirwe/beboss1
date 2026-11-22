@@ -1426,7 +1426,7 @@
         bullets: [
           'Kode za MTN MoMo (*182#) na Airtel (*500#) zikurura numero nshya za Admin muri Supabase app_config.',
           'Iyo wohereza icyemezo cyo kwishyura, shyiramo @username y’iduka, Telefoni yanditse ku iduka, Telefoni yishyuye, Amazina yanditse kuri iyo telefoni yishyuye, umubare wa telefoni zikoreshwa, na Reference ya MoMo.',
-          'Uburyo bwa 1 (Kode ya BB2): Admin areba ubwishyu akagukorera kode ya BB3-... ifungura iduka ryawe gusa na offline.',
+          'Uburyo bwa 1 (Kode ya BB3): Admin areba ubwishyu akagukorera kode ya BB3-... ifungura iduka ryawe gusa na offline.',
           'Uburyo bwa 2 (Auto-Unlock): Admin akanda Direct Auto-Unlock, BeBoss igahita yifungura yonyine interineti igeze kuri telefoni.'
         ]
       },
@@ -1524,7 +1524,7 @@
         bullets: [
           'Les codes USSD MTN (*182#) et Airtel (*500#) récupèrent dynamiquement les coordonnées Admin depuis Supabase app_config.',
           'Lors de l’envoi de preuve : précisez @username, téléphone du magasin, téléphone payeur, Noms complets sur le numéro payeur, nombre d’appareils et référence MoMo.',
-          'Option 1 (Code BB2) : l’Admin émet un code BB3-... lié à votre compte, activable même 100% hors ligne.',
+          'Option 1 (Code BB3) : l’Admin émet un code BB3-... lié à votre compte, activable même 100% hors ligne.',
           'Option 2 (Déblocage Direct) : l’Admin clique Direct Auto-Unlock et votre boutique se débloque automatiquement à la synchronisation.'
         ]
       },
@@ -1622,7 +1622,7 @@
         bullets: [
           'Namba za MTN MoMo (*182#) na Airtel (*500#) hupatikana moja kwa moja kutoka Supabase app_config.',
           'Unapotuma uthibitisho, weka @username, namba iliyosajiliwa, namba iliyolipa, Majina Kamili yaliyosajiliwa kwenye namba iliyolipa, idadi ya vifaa na Reference.',
-          'Njia ya 1 (Kode ya BB2): Admin hutoa kode ya BB3-... inayofungua akaunti yako pekee hata bila mtandao.',
+          'Njia ya 1 (Kode ya BB3): Admin hutoa kode ya BB3-... inayofungua akaunti yako pekee hata bila mtandao.',
           'Njia ya 2 (Auto-Unlock): Admin anabofya Direct Auto-Unlock na app inajifungua yenyewe ikisawazisha mtandaoni.'
         ]
       },
@@ -1748,7 +1748,9 @@ create table if not exists public.payment_requests (
   branch_count integer not null default 1,
   worker_count integer not null default 1,
   device_count integer not null default 1,
-  telco_reference text not null default '',
+  fee_per_device_rwf integer not null default 0,
+  payment_time_ms bigint not null default 0,
+  payment_note text not null default '',
   status text not null default 'PENDING_VERIFICATION',
   approval_mode text not null default '',
   generated_unlock_code text not null default '',
@@ -3193,7 +3195,7 @@ create table if not exists public.payment_requests (
                                     amount: s.monthly_fee_rwf || 5000
                                   });
                                   setActiveView('codes');
-                                }}>Issue BB2</button>
+                                }}>Issue BB3</button>
                                 <button type="button" className="btn btn-dark btn-sm" onClick={() => handleSetShopStatus(s, isLocked ? 'ACTIVE' : 'SUSPENDED')}>
                                   {isLocked ? 'Unlock' : 'Lock'}
                                 </button>
