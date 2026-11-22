@@ -82,7 +82,8 @@ const proofSchema = z.object({
   provider: z.enum(["MTN MoMo", "Airtel Money"]),
   payerPhone: z.string().trim().min(9).max(30),
   payerName: z.string().trim().min(2).max(120),
-  telcoReference: z.string().trim().min(4).max(60),
+  paymentTimeMs: z.number().int().positive().optional(),
+  paymentNote: z.string().trim().max(1000).default(""),
   months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]),
   branches: z.number().int().min(1).max(100),
   workers: z.number().int().min(1).max(500),
@@ -95,19 +96,6 @@ export const submitPaymentProof = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const key = computeShopKey(data.username, data.phone);
     const sb = createPublicClient(key);
-    const reference = data.telcoReference.trim().toUpperCase();
-    // Keep duplicate checks tenant-scoped and case-insensitive. The database
-    // unique index is the final guard when Android, web and WhatsApp submit
-    // the same reference at nearly the same time.
-    const { data: dup, error: dupError } = await sb
-      .from("payment_requests")
-      .select("id")
-      .eq("provider", data.provider)
-      .eq("telco_reference", reference)
-      .limit(1);
-    if (dupError) throw new Error("Could not check this transaction reference. Please try again.");
-    if (dup?.length) throw new Error("This transaction reference was already submitted for this shop.");
-
     const { data: config } = await sb
       .from("app_config")
       .select("per_device_fee_rwf")
@@ -135,14 +123,14 @@ export const submitPaymentProof = createServerFn({ method: "POST" })
       branch_count: data.branches,
       worker_count: data.workers,
       device_count: data.devices,
-      telco_reference: reference,
+      payment_time_ms: Number(data.paymentTimeMs || now),
+      payment_note: data.paymentNote.trim(),
       status: "PENDING_VERIFICATION",
       source: "WEB",
       created_at: now,
       updated_at: now,
     });
     if (error) {
-      if (error.code === "23505") throw new Error("This mobile-money transaction reference was already submitted.");
       throw new Error("Could not submit your payment proof. Please try again.");
     }
     return { ok: true, amount };
