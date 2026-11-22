@@ -1056,7 +1056,7 @@ class BeBossRepository(private val database: AppDatabase) {
             val localDevices = shopDeviceDao.getAllDevicesList()
             allDevicesUploaded = localDevices.isNotEmpty()
             for (ld in localDevices) {
-                if (!ld.syncedToSupabase || ld.id !in remoteDeviceIds || ld.deviceId.isNotBlank() && ld.deviceId == SupabaseAdminClient.getOrCreateDeviceId(context ?: throw IllegalStateException("Application context is required to identify this device."))) {
+                if (!ld.syncedToSupabase || ld.id !in remoteDeviceIds) {
                     if (SupabaseAdminClient.upsertShopDevice(shopSyncKey, effectiveProfile.shopName, ld)) {
                         shopDeviceDao.insertOrUpdate(ld.copy(syncedToSupabase = true))
                     } else {
