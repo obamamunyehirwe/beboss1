@@ -179,7 +179,7 @@ fun AdminVerificationConsoleDialog(
     var lastTargetDays by remember { mutableIntStateOf(30) }
 
     // Single Master Admin Auth Form State (Email locked strictly to MASTER_ADMIN_EMAIL)
-    val masterEmail = SupabaseAdminClient.MASTER_ADMIN_EMAIL
+    var adminEmail by remember { mutableStateOf(SupabaseAdminClient.getDefaultAdminEmail()) }
     var adminPassword by remember { mutableStateOf("") }
     var showAdminPassword by remember { mutableStateOf(false) }
 
@@ -258,7 +258,7 @@ fun AdminVerificationConsoleDialog(
                                 text = if (adminSession != null) {
                                     "Master Session: ${adminSession.email}"
                                 } else {
-                                    "Single Master Admin: $masterEmail"
+                                    "Administrator account • Role verified by Supabase"
                                 },
                                 fontSize = 11.sp,
                                 color = if (adminSession != null) ProfitGreen else OrangePrimary,
@@ -288,16 +288,15 @@ fun AdminVerificationConsoleDialog(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
-                                text = "Sign in with the approved Master Administrator account ($masterEmail). First-time setup is invitation-only: request the secure setup invitation from the BeBoss web admin sign-in page, then choose your password using the email link. Public self-registration is disabled.",
+                                text = "Sign in with any existing BeBoss administrator account. Supabase checks the signed-in account for an active admin role and SUPER_ADMIN profile. Account creation and role assignment remain restricted to authorized administrators.",
                                 fontSize = 11.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
                             OutlinedTextField(
-                                value = masterEmail,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Authorized Master Admin Email") },
+                                value = adminEmail,
+                                onValueChange = { adminEmail = it },
+                                label = { Text("Administrator Email") },
                                 leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = OrangePrimary) },
                                 singleLine = true,
                                 modifier = Modifier
@@ -345,7 +344,7 @@ fun AdminVerificationConsoleDialog(
                             }
 
                             Button(
-                                onClick = { onSignInAdmin(masterEmail, adminPassword) },
+                                onClick = { onSignInAdmin(adminEmail.trim(), adminPassword) },
                                 enabled = !isAdminAuthenticating && adminPassword.length >= 6,
                                 modifier = Modifier
                                     .fillMaxWidth()
