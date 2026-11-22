@@ -1,12 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Ban, Copy, Download, MessageCircle } from "lucide-react";
-import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { Ban, Copy, Download, KeyRound, MessageCircle } from "lucide-react";
+import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, SearchInput, StatusBadge, TableShell, downloadCsv, matches, useAdminAction } from "@/components/admin/ui";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
-import { revokeCode } from "@/lib/admin.functions";
+import { lookupUnlockCode, revokeCode, type UnlockCodeLookupResult } from "@/lib/admin.functions";
+import { Input } from "@/components/ui/input";
 import { codesQuery } from "@/lib/admin-queries";
 import { buildUnlockReplyText, buildWhatsAppUrl } from "@/lib/pricing";
 import { formatDateTime, formatRwf } from "@/lib/format";
@@ -33,7 +35,29 @@ function CodesPage() {
   const [q, setQ] = useState("");
   const [f, setF] = useState<F>("ALL");
   const revoke = useAdminAction(useServerFn(revokeCode), { success: "Code revoked", invalidate: [["admin", "codes"]] });
+  const lookupFn = useServerFn(lookupUnlockCode);
+  const [lookupValue, setLookupValue] = useState("");
+  const [lookupResult, setLookupResult] = useState<UnlockCodeLookupResult | null>(null);
+  const [lookupError, setLookupError] = useState("");
+  const [lookupPending, setLookupPending] = useState(false);
   const all = codes.data ?? [];
+
+  const submitLookup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const value = lookupValue.trim();
+    if (!value) return;
+    setLookupPending(true);
+    setLookupError("");
+    setLookupResult(null);
+    try {
+      const result = await lookupFn({ data: { code: value } });
+      setLookupResult(result);
+    } catch (error) {
+      setLookupError(error instanceof Error ? error.message : "Code lookup failed. Please retry.");
+    } finally {
+      setLookupPending(false);
+    }
+  };
   const rows = all.filter((c) => (f === "ALL" || c.status === f) && matches(q, c.unlock_code, c.shop_username, c.shop_phone, c.tier_code, c.issued_by_admin));
 
   return (
@@ -50,6 +74,55 @@ function CodesPage() {
           </Button>
         </section>
       ) : null}
+      <section className="rounded-2xl border border-primary/20 bg-card p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 font-semibold">
+              <KeyRound className="size-4 text-primary" /> BB3 / BB2 code verification
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+              Look up the original Supabase issue record. BB3 codes are checked with the Android-pinned ECDSA P-256 public key; legacy BB2 codes are checked against their original issued record. Lookup never redeems a code.
+            </p>
+          </div>
+          <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">Admin-only · Read-only</span>
+        </div>
+        <form onSubmit={submitLookup} className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <Input
+            value={lookupValue}
+            onChange={(event) => setLookupValue(event.target.value)}
+            placeholder="Paste the complete BB3 or BB2 unlock code"
+            className="min-w-0 flex-1 font-mono text-xs sm:text-sm"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Unlock code to verify"
+          />
+          <Button type="submit" disabled={lookupPending || !lookupValue.trim()}>
+            {lookupPending ? "Checking…" : "Verify code"}
+          </Button>
+        </form>
+        {lookupError ? <p role="alert" className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{lookupError}</p> : null}
+        {lookupResult ? (
+          <div className={lookupResult.valid ? "mt-4 rounded-xl border border-success/30 bg-success/5 p-4" : "mt-4 rounded-xl border border-warning/30 bg-warning/5 p-4"}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-semibold">{lookupResult.valid ? "Verified · ready for one-time redemption" : lookupResult.found ? "Issued record found · not redeemable" : "No matching issue record"}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{lookupResult.message}</p>
+              </div>
+              {lookupResult.found ? <StatusBadge status={lookupResult.status} /> : <span className="rounded-full border border-border px-3 py-1 text-xs">NOT FOUND</span>}
+            </div>
+            {lookupResult.found ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Shop account</p><p className="mt-1 text-sm font-medium">@{lookupResult.shopUsername}</p><p className="text-xs text-muted-foreground">{lookupResult.shopPhone}</p></div>
+                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Plan</p><p className="mt-1 text-sm font-medium">{lookupResult.tier} · {lookupResult.days} days</p><p className="text-xs text-muted-foreground">{formatRwf(lookupResult.amountRwf ?? 0)}</p></div>
+                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Code verification</p><p className="mt-1 text-sm font-medium">{lookupResult.format === "BB3" ? (lookupResult.signatureValid ? "ECDSA signature valid" : "ECDSA signature invalid") : "Legacy registry match"}</p><p className="text-xs text-muted-foreground">{lookupResult.accountBindingValid ? "Account and plan match" : "Account or plan mismatch"}</p></div>
+                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Issue details</p><p className="mt-1 text-sm">{lookupResult.issuedAt ? formatDateTime(lookupResult.issuedAt) : "Issue date unavailable"}</p><p className="text-xs text-muted-foreground">{lookupResult.issuedBy || "Issuer unavailable"}</p></div>
+                {lookupResult.redeemedAt ? <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Redeemed</p><p className="mt-1 text-sm">{formatDateTime(lookupResult.redeemedAt)}</p></div> : null}
+                {lookupResult.expired ? <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Expiry</p><p className="mt-1 text-sm text-destructive">Expired</p></div> : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
       <div className="flex flex-wrap items-center gap-3">
         <SearchInput value={q} onChange={setQ} placeholder="Search code, @username, phone, tier…" />
         <FilterChips<F>

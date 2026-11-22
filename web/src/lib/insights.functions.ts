@@ -1,8 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { computeRetailInsights, decodeShareToken, extractShopRecords, mergeShareJson, parseShareToken, pickLatestChunkSet, shareSignature, type RetailInsights, type ShopRecords } from "./snapshot-analytics";
-import { readServerSecret, requireStaffRole, writeAudit, type AdminCtx } from "./admin-guard.server";
+import { computeRetailInsights, decodeShareToken, extractShopRecords, mergeShareJson, parseShareToken, pickLatestChunkSet, type RetailInsights, type ShopRecords } from "./snapshot-analytics";
+import { invokeSupabaseEdgeFunction, requireStaffRole, writeAudit, type AdminCtx } from "./admin-guard.server";
 
 const DATASHARE_SECRET = "BEBOSS_DATASHARE_HMAC_SECRET";
 const SNAPSHOT_PAGE_SIZE = 1000;
@@ -61,15 +61,24 @@ export const getShopInsights = createServerFn({ method: "POST" })
     const head = set.find((r) => !r.device_id.includes("#")) ?? set[0]!;
     const base = { ...empty, chunks: set.length, deviceId: head.device_id, branchName: head.branch_name, uploadedAt: Math.max(...set.map((r) => Number(r.updated_at))) };
     try {
-      const secret = await readServerSecret(DATASHARE_SECRET).catch(() => null);
       let signature: ShopInsightsResult["signature"] = "UNCHECKED";
-      if (secret) {
-        signature = "VERIFIED";
-        for (const r of set) {
-          const { sig, payload } = parseShareToken(r.payload_token);
-          const expected = (await shareSignature(payload, secret)).slice(0, Math.min(Math.max(sig.length, 8), 16));
-          if (expected !== sig) signature = "MISMATCH";
-        }
+      try {
+        const checks = set.map((r) => {
+          try {
+            const { sig, payload } = parseShareToken(r.payload_token);
+            return { signature: sig, payload };
+          } catch {
+            return { signature: "", payload: "" };
+          }
+        });
+        const verification = await invokeSupabaseEdgeFunction<{ configured: boolean; verified: boolean }>(
+          ctx,
+          "manage-app-secrets",
+          { action: "verify_snapshot", checks },
+        );
+        if (verification.configured) signature = verification.verified ? "VERIFIED" : "MISMATCH";
+      } catch (verificationError) {
+        console.warn("[BeBoss insights] Snapshot verification is temporarily unavailable", verificationError);
       }
       const parts = await Promise.all(set.map((r) => decodeShareToken(r.payload_token)));
       return { ...base, signature, insights: computeRetailInsights(mergeShareJson(parts)) };
@@ -83,7 +92,11 @@ export const getDatashareKeyStatus = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const ctx = context as unknown as AdminCtx;
     await requireStaffRole(ctx, true);
-    return { configured: !!(await readServerSecret(DATASHARE_SECRET).catch(() => null)) };
+    return await invokeSupabaseEdgeFunction<{ configured: boolean }>(
+      ctx,
+      "manage-app-secrets",
+      { action: "snapshot_status" },
+    );
   });
 
 export const setDatashareKey = createServerFn({ method: "POST" })
@@ -92,9 +105,11 @@ export const setDatashareKey = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as AdminCtx;
     const admin = await requireStaffRole(ctx, true);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("app_secrets").upsert({ name: DATASHARE_SECRET, value: data.value, updated_by: admin.email, updated_at: new Date().toISOString() });
-    if (error) throw new Error(error.message);
+    await invokeSupabaseEdgeFunction(
+      ctx,
+      "manage-app-secrets",
+      { action: "snapshot_save", value: data.value },
+    );
     await writeAudit(ctx, admin.email, "SET_DATASHARE_KEY", DATASHARE_SECRET, "Snapshot verification key updated (value not logged)");
     return { ok: true };
   });

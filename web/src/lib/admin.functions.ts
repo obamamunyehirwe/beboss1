@@ -79,21 +79,6 @@ UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
  * Ensure admin session is valid and refresh if near expiry.
  * Returns true if session is valid, false if expired and could not be refreshed.
  */
-async function ensureValidAdminSession(context: Ctx): Promise<boolean> {
-  const { data: { session } } = await context.supabase.auth.getSession();
-  if (!session) return false;
-
-  const expiresIn = session.expires_in || 3600;
-  const expiresAt = session.created_at + expiresIn * 1000;
-
-  // Refresh if within 5 minutes of expiry
-  if (Date.now() > expiresAt - 300_000) {
-    const { error } = await context.supabase.auth.refreshSession();
-    return !error;
-  }
-  return true;
-}
-
 async function perDeviceRate(context: Ctx): Promise<number> {
   const { data } = await context.supabase.from("app_config").select("per_device_fee_rwf").eq("id", "global").maybeSingle();
   return Number(data?.per_device_fee_rwf) || 2000;
@@ -184,7 +169,6 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     z.object({ requestId: z.string().min(1).max(200), providerVerified: z.literal(true), verificationNote: z.string().trim().min(5).max(500) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    if (!(await ensureValidAdminSession(ctx))) throw new Error("Admin session expired. Please sign in again.");
     const admin = await requireAdmin(ctx);
     const { data: req, error } = await ctx.supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,payment_time_ms,payment_note,admin_verification_note,fee_per_device_rwf,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,ussd_code").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
@@ -530,7 +514,7 @@ export const lookupUnlockCode = createServerFn({ method: "POST" })
     if (error) throw new Error("Could not search the BeBoss unlock-code registry: " + error.message);
     if (!row) {
       return {
-        found: false, code, format: prefix === "BB3" || prefix === "BB2" ? prefix : "UNKNOWN",
+        found: false, code, format: prefix === "BB3" ? "BB3" : prefix === "BB2" ? "BB2" : "UNKNOWN",
         valid: false, message: "No issued BeBoss record matches this code. Check every character and try again.",
         status: "NOT_FOUND", signatureValid: null, accountBindingValid: false, expired: false,
       };

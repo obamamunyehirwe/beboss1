@@ -2,80 +2,48 @@ import { createFileRoute } from "@tanstack/react-router";
 
 const noStore = { "Cache-Control": "no-store, max-age=0", "X-Content-Type-Options": "nosniff" };
 
-// Stable APK link used by the website, QR codes and the Android app's update check.
-// Release objects stay private; only this server handler can mint a short-lived signed URL.
+// Stable public APK link. Supabase signs the private Storage object inside its
+// Edge Function; the Vercel server never needs a service-role credential.
 export const Route = createFileRoute("/api/public/download/latest")({
   server: {
     handlers: {
       GET: async ({ request }) => {
         try {
-          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-          const url = new URL(request.url);
-          const requested = url.searchParams.get("release");
-          const channel = (url.searchParams.get("ch") ?? "web").replace(/[^a-z0-9_-]/gi, "").slice(0, 20) || "web";
-
-          const query = supabaseAdmin.from("app_releases").select("id, file_path, file_name");
-          const { data: rel, error: releaseError } = requested && /^[0-9a-f-]{36}$/i.test(requested)
-            ? await query.eq("id", requested).maybeSingle()
-            : await query.eq("is_current", true).maybeSingle();
-
-          if (releaseError) {
-            console.error("[BeBoss APK] Could not load release metadata", releaseError);
-            return new Response("The BeBoss download service could not verify the published release. Please try again later.", {
+          const supabaseUrl = process.env["SUPABASE_URL"] || import.meta.env["VITE_SUPABASE_URL"];
+          const publishableKey = process.env["SUPABASE_PUBLISHABLE_KEY"] || import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"];
+          if (!supabaseUrl || !publishableKey) {
+            return new Response("The BeBoss download service is missing its public Supabase configuration.", {
               status: 503,
               headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
             });
           }
 
-          if (!rel) {
-            return new Response("No BeBoss APK release is currently published.", {
-              status: 404,
-              headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
-            });
+          const incoming = new URL(request.url);
+          const params = new URLSearchParams();
+          const requested = incoming.searchParams.get("release");
+          const channel = (incoming.searchParams.get("ch") ?? "web").replace(/[^a-z0-9_-]/gi, "").slice(0, 20) || "web";
+          if (requested && /^[0-9a-f-]{36}$/i.test(requested)) params.set("release", requested);
+          params.set("ch", channel);
+
+          const upstream = await fetch(
+            supabaseUrl.replace(/\/+$/, "") + "/functions/v1/public-apk-download?" + params.toString(),
+            { method: "GET", headers: { apikey: publishableKey }, redirect: "manual" },
+          );
+          const location = upstream.headers.get("location");
+          if (upstream.status === 302 && location) {
+            return new Response(null, { status: 302, headers: { ...noStore, Location: location } });
           }
-
-          const { data: signed, error: storageError } = await supabaseAdmin.storage
-            .from("releases")
-            .createSignedUrl(rel.file_path, 900, { download: rel.file_name });
-
-          if (storageError || !signed?.signedUrl) {
-            console.error("[BeBoss APK] Published release has no downloadable storage object", {
-              releaseId: rel.id,
-              filePath: rel.file_path,
-              error: storageError,
-            });
-            return new Response(
-              "The release is listed, but its signed APK file has not been uploaded to BeBoss private release storage. A master admin must publish the real APK from Admin → App releases.",
-              {
-                status: 503,
-                headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
-              },
-            );
-          }
-
-          const { error: countError } = await supabaseAdmin.rpc("record_apk_download", {
-            p_release_id: rel.id,
-            p_channel: channel,
-          });
-          if (countError) console.warn("[BeBoss APK] Download succeeded but its counter could not be recorded", countError);
-
-          return new Response(null, {
-            status: 302,
-            headers: { ...noStore, Location: signed.signedUrl },
+          const message = await upstream.text().catch(() => "The download service returned an unreadable response.");
+          return new Response(message, {
+            status: upstream.status,
+            headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
           });
         } catch (error) {
-          console.error("[BeBoss APK] Download handler failed", error);
-          const message = error instanceof Error ? error.message : "";
-          const missingServerConfig = message.includes("Missing Supabase environment variable");
-          return new Response(
-            missingServerConfig
-              ? "BeBoss download is missing its private Supabase server key. Add SUPABASE_SERVICE_ROLE_KEY as a Secret environment variable in the Vercel project, enable it for Production, and redeploy."
-              : "The BeBoss download service is temporarily unavailable. Please contact the administrator.",
-            {
-              status: 503,
-              headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
-            },
-          );
+          console.error("[BeBoss APK] Download Edge Function could not be reached", error);
+          return new Response("The BeBoss download service is temporarily unavailable. Please contact the administrator.", {
+            status: 503,
+            headers: { ...noStore, "Content-Type": "text/plain; charset=utf-8" },
+          });
         }
       },
     },
