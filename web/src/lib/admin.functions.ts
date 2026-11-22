@@ -266,130 +266,66 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     const { data: req, error } = await ctx.supabase.from("payment_requests").select("*").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
 
-    const shopId = computeShopKey(req.owner_username, req.owner_phone);
-    const calc = calculateSubscriptionFee(
-      req.branch_count,
-      req.worker_count,
-      req.duration_months,
-      req.device_count || 1,
-      await perDeviceRate(ctx),
-    );
+    const { shopId } = await requireRegisteredPaymentShop(ctx, req);
+    const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, await perDeviceRate(ctx));
+    if (Number(req.amount_rwf) !== calc.total) {
+      throw new Error(`Payment amount mismatch. Submitted ${Number(req.amount_rwf || 0)} FRw; this plan calculates to ${calc.total} FRw. Refresh and verify the payment details before issuing a code.`);
+    }
 
-    // A retry after the payment row was approved returns the same code and
-    // repairs a failed shop activation only when the shop row is still older.
+    const paymentTimeMs = Math.max(0, Number(req.payment_time_ms || req.created_at || Date.now()));
+    const payerPhone = String(req.payer_phone || req.owner_phone);
+    const payerFullName = String(req.payer_full_name || "");
+    const paymentNote = String(req.payment_note || "");
+
     if (req.status === "APPROVED") {
-      if (!req.generated_unlock_code) {
-        throw new Error("This payment was already approved by direct auto-unlock. It cannot also receive a code.");
+      if (!req.generated_unlock_code || req.approval_mode !== "UNLOCK_CODE") {
+        throw new Error("This payment was already approved using direct auto-unlock.");
       }
-      const existingShop = await getShop(ctx, shopId);
-      let expiresAt = Number(existingShop?.subscription_expires_at ?? 0);
-      if (!existingShop || Number(existingShop.updated_at ?? 0) < Number(req.updated_at ?? 0)) {
-        expiresAt = await activateShop(ctx, shopId, {
-          addDays: calc.days,
-          branches: req.branch_count,
-          workers: req.worker_count,
-          devices: req.device_count || 1,
-          monthly: calc.monthly,
-          fallback: {
-            shop_name: req.shop_name,
-            owner_username: String(req.owner_username).toLowerCase(),
-            owner_phone: req.owner_phone,
-            device_challenge: req.device_challenge || "",
-          },
-        });
+      const { data: existingCode, error: codeError } = await ctx.supabase
+        .from("unlock_codes").select("payment_request_id, unlock_code")
+        .eq("unlock_code", req.generated_unlock_code).maybeSingle();
+      if (codeError || !existingCode || existingCode.payment_request_id !== req.id) {
+        throw new Error("This approved payment has no matching payment-linked unlock record. Contact the master administrator.");
       }
-      return {
-        code: req.generated_unlock_code,
-        alreadyApproved: true,
-        days: calc.days,
-        tier: calc.tier,
-        total: Number(req.amount_rwf || calc.total),
-        expiresAt,
-        shopName: req.shop_name,
-        username: req.owner_username,
-        phone: req.payer_phone || req.owner_phone,
-      };
+      const shop = await getShop(ctx, shopId);
+      return { code: req.generated_unlock_code, alreadyApproved: true, days: calc.days, tier: calc.tier, total: calc.total, expiresAt: Number(shop?.subscription_expires_at ?? 0), shopName: req.shop_name, username: req.owner_username, phone: payerPhone };
     }
     if (!["PENDING_VERIFICATION", "REJECTED"].includes(String(req.status))) {
       throw new Error(`This payment claim is ${String(req.status).toLowerCase().replaceAll("_", " ")} and cannot be approved again.`);
     }
 
-    const code = await generateBB3UnlockCode({
-      username: req.owner_username,
-      phone: req.owner_phone,
-      tier: calc.tier,
-      days: calc.days,
+    const signed = await generateBB3UnlockCode({
+      requestId: String(req.id), username: String(req.owner_username), phone: String(req.owner_phone), tier: calc.tier, days: calc.days,
+      provider: String(req.provider || ""), payerPhone, payerFullName, amountRwf: calc.total, months: Number(req.duration_months),
+      branches: Number(req.branch_count), workers: Number(req.worker_count), devices: Number(req.device_count || 1), paymentTimeMs, paymentNote,
     });
     const now = Date.now();
     const ins = await ctx.supabase.from("unlock_codes").insert({
-      id: crypto.randomUUID(),
-      unlock_code: code,
-      shop_username: String(req.owner_username).trim().toLowerCase(),
-      shop_phone: String(req.owner_phone).trim(),
-      device_challenge: req.device_challenge || "",
-      tier_code: calc.tier,
-      plan_days: calc.days,
-      amount_rwf: calc.total,
-      status: "ISSUED",
-      issued_by_admin: admin.label,
-      issued_at: now,
+      id: crypto.randomUUID(), unlock_code: signed.code, payment_request_id: req.id,
+      shop_username: String(req.owner_username).trim().toLowerCase(), shop_phone: String(req.owner_phone).trim(),
+      device_challenge: req.device_challenge || "", tier_code: calc.tier, plan_days: calc.days, amount_rwf: calc.total,
+      duration_months: Number(req.duration_months), branch_count: Number(req.branch_count), worker_count: Number(req.worker_count), device_count: Number(req.device_count || 1),
+      payment_time_ms: paymentTimeMs, payment_provider: String(req.provider || ""), payer_phone: payerPhone, payer_full_name: payerFullName, payment_note: paymentNote,
+      plan_digest: signed.planDigest, status: "ISSUED", issued_by_admin: admin.label, issued_at: now,
     });
-    if (ins.error) throw new Error(ins.error.message);
+    if (ins.error) {
+      if (ins.error.code === "23505") throw new Error("This payment already has its one permitted unlock-code record. Refresh the queue.");
+      throw new Error(ins.error.message);
+    }
 
-    // Compare-and-set prevents two admins (or a fast double click) issuing
-    // two different codes for the same claim.
-    const claim = await ctx.supabase
-      .from("payment_requests")
-      .update({
-        status: "APPROVED",
-        approval_mode: "UNLOCK_CODE",
-        amount_rwf: calc.total,
-        generated_unlock_code: code,
-        verified_by_admin: admin.label,
-        rejection_reason: "",
-        updated_at: now,
-      })
-      .eq("id", req.id)
-      .eq("status", req.status)
-      .select("id")
-      .maybeSingle();
+    const claim = await ctx.supabase.from("payment_requests").update({
+      status: "APPROVED", approval_mode: "UNLOCK_CODE", amount_rwf: calc.total, generated_unlock_code: signed.code,
+      verified_by_admin: admin.label, rejection_reason: "", updated_at: now,
+    }).eq("id", req.id).eq("status", req.status).select("id").maybeSingle();
 
     if (claim.error || !claim.data) {
-      await ctx.supabase.from("unlock_codes").update({ status: "REVOKED" }).eq("unlock_code", code).eq("status", "ISSUED");
+      await ctx.supabase.from("unlock_codes").update({ status: "REVOKED" }).eq("payment_request_id", req.id).eq("status", "ISSUED");
       throw new Error("Another administrator changed this payment first. Refresh the queue before trying again.");
     }
 
-    const expiresAt = await activateShop(ctx, shopId, {
-      addDays: calc.days,
-      branches: req.branch_count,
-      workers: req.worker_count,
-      devices: req.device_count || 1,
-      monthly: calc.monthly,
-      fallback: {
-        shop_name: req.shop_name,
-        owner_username: String(req.owner_username).toLowerCase(),
-        owner_phone: req.owner_phone,
-        device_challenge: req.device_challenge || "",
-      },
-    });
-    await audit(
-      ctx,
-      admin.email,
-      "APPROVE_PAYMENT",
-      `@${req.owner_username}`,
-      `Verified ${req.payer_full_name || req.payer_phone} / reference ${req.telco_reference} (${calc.total} FRw); BB3 code issued.`,
-    );
-    return {
-      code,
-      days: calc.days,
-      tier: calc.tier,
-      total: calc.total,
-      expiresAt,
-      shopName: req.shop_name,
-      username: req.owner_username,
-      phone: req.payer_phone || req.owner_phone,
-      alreadyApproved: false,
-    };
+    const expiresAt = await activateShop(ctx, shopId, { addDays: calc.days, branches: req.branch_count, workers: req.worker_count, devices: req.device_count || 1, monthly: calc.monthly });
+    await audit(ctx, admin.email, "APPROVE_PAYMENT", `@${req.owner_username}`, `Verified ${payerFullName || payerPhone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. Unique BB3 code issued for ${req.id}.`);
+    return { code: signed.code, days: calc.days, tier: calc.tier, total: calc.total, expiresAt, shopName: req.shop_name, username: req.owner_username, phone: payerPhone, alreadyApproved: false };
   });
 
 export const directAutoUnlock = createServerFn({ method: "POST" })
