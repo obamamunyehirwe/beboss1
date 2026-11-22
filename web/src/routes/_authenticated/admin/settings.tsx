@@ -196,7 +196,7 @@ function UssdPreview({ label, value }: { label: string; value: string }) {
               setCopied(true);
               toast.success(a(`${label} copied`));
             } catch {
-              toast.error("Clipboard access is unavailable in this browser.");
+              toast.error(a("Clipboard access is unavailable in this browser."));
             }
           }}
         >
@@ -249,11 +249,11 @@ function CopyRow({ k, v }: { k: string; v: string }) {
         type="button"
         size="icon"
         variant="ghost"
-        aria-label={`Copy ${k}`}
+        aria-label={a("Copy")}
         onClick={async () => {
           await navigator.clipboard.writeText(v);
           setDone(true);
-          toast.success("Copied");
+          toast.success(a("Copied"));
         }}
       >
         {done ? <Check className="text-success" /> : <Copy />}
@@ -274,6 +274,7 @@ function F({ label, v, on, hint }: { label: string; v: string; on: (v: string) =
 }
 
 function DatashareKeyPanel() {
+  const a = useAdminText();
   const status = useServerFn(getDatashareKeyStatus);
   const q = useQuery({ queryKey: ["admin", "datashare-key"], queryFn: () => status() });
   const save = useAdminAction(useServerFn(setDatashareKey), { success: "Snapshot key saved", invalidate: [["admin", "datashare-key"], ["admin", "insights"]] });
@@ -282,7 +283,7 @@ function DatashareKeyPanel() {
     <section className="grid gap-5 rounded-2xl border border-border bg-card p-5 lg:grid-cols-2">
       <div>
         <h2 className="flex items-center gap-2 font-semibold">
-          <KeyRound className="size-4 text-primary" /> Snapshot verification key
+          <KeyRound className="size-4 text-primary" /> {a("Snapshot verification key")}
           {q.data?.configured ? <Badge variant="success">{a("Configured")}</Badge> : <Badge variant="muted">{a("Optional")}</Badge>}
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
