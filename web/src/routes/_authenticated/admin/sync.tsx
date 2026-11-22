@@ -101,7 +101,7 @@ function SyncMonitor() {
         latestEvent,
       };
     }).sort((left, right) => right.lastSyncAt - left.lastSyncAt);
-  }, [events.data, shops.data, devices.data, staff.data, snaps.data, shopRows, now]);
+  }, [events.data, shops.data, devices.data, staff.data, snaps.data, now]);
 
   const retryAll = () => Promise.all([
     events.refetch(), shops.refetch(), devices.refetch(), staff.refetch(), snaps.refetch(),
