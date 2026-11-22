@@ -2956,10 +2956,8 @@ create table if not exists public.payment_requests (
                       </button>
                     ))}
                   </div>
-                  {stats.pendingCount > 1 && (
-                    <button type="button" className="btn btn-green btn-sm" onClick={handleBatchApprove}>
-                      Batch Issue BB3 ({stats.pendingCount})
-                    </button>
+                  {stats.pendingCount > 0 && (
+                    <span style={{ color: 'var(--muted)', fontSize: 12 }}>Review and verify each payment individually with the mobile-money provider before approval.</span>
                   )}
                 </div>
 
@@ -2991,6 +2989,10 @@ create table if not exists public.payment_requests (
                             </div>
                             <div style={{ fontSize: 13, marginTop: 4 }}>
                               Sender MoMo Name: <strong style={{ color: '#fdba74' }}>{req.payer_full_name || 'Not entered'}</strong> • Sender Phone: <strong>{req.payer_phone}</strong>
+                            </div>
+                            <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
+                              Payment time: <strong>{formatTime(req.payment_time_ms || req.created_at)}</strong>
+                              {req.payment_note ? <> • Note: <strong>{req.payment_note}</strong></> : null}
                             </div>
                             <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
                               {req.provider} • <strong>{Number(req.amount_rwf || 0).toLocaleString()} FRw</strong> ({req.duration_months * 30}d • {req.branch_count} br / {req.worker_count} stf / {req.device_count || 1} dev) • USSD: <span className="mono">{req.ussd_code || 'Manual'}</span>
@@ -3183,19 +3185,6 @@ create table if not exists public.payment_requests (
                                 <button type="button" className="btn btn-green btn-sm" onClick={() => handleShopExtend(s, 30)}>+30d</button>
                                 <button type="button" className="btn btn-dark btn-sm" onClick={() => handleShopExtend(s, 90)}>+90d</button>
                                 <button type="button" className="btn btn-primary btn-sm" onClick={() => handleShopAutoUnlockNow(s)}>Auto-Unlock</button>
-                                <button type="button" className="btn btn-dark btn-sm" onClick={() => {
-                                  setGenForm({
-                                    shopName: s.shop_name,
-                                    username: s.owner_username,
-                                    phone: s.owner_phone,
-                                    branches: s.branch_count || 1,
-                                    workers: s.worker_count || 1,
-                                    devices: s.device_limit || 1,
-                                    months: 1,
-                                    amount: s.monthly_fee_rwf || 5000
-                                  });
-                                  setActiveView('codes');
-                                }}>Issue BB3</button>
                                 <button type="button" className="btn btn-dark btn-sm" onClick={() => handleSetShopStatus(s, isLocked ? 'ACTIVE' : 'SUSPENDED')}>
                                   {isLocked ? 'Unlock' : 'Lock'}
                                 </button>
