@@ -25,7 +25,46 @@ async function audit(context: Ctx, email: string, action: string, target: string
   });
 }
 
-type Bb3Input = { username: string; phone: string; tier: string; days: number };
+type Bb3Input = {
+  requestId: string;
+  username: string;
+  phone: string;
+  tier: string;
+  days: number;
+  provider: string;
+  payerPhone: string;
+  payerFullName: string;
+  amountRwf: number;
+  months: number;
+  branches: number;
+  workers: number;
+  devices: number;
+  paymentTimeMs: number;
+  paymentNote: string;
+};
+
+function normalizePlanPhone(value: string): string {
+  return String(value ?? "").replace(/\D/g, "").slice(-9);
+}
+
+function paymentPlanCanonical(input: Bb3Input): string {
+  return [
+    "BEBOSS-PAYMENT-PLAN-V1",
+    input.requestId.trim(),
+    input.username.trim().toLowerCase(),
+    normalizePlanPhone(input.phone),
+    input.provider.trim().toUpperCase(),
+    normalizePlanPhone(input.payerPhone),
+    input.payerFullName.trim().normalize("NFKC"),
+    Math.floor(input.amountRwf),
+    Math.floor(input.months),
+    Math.floor(input.branches),
+    Math.floor(input.workers),
+    Math.floor(input.devices),
+    Math.floor(input.paymentTimeMs),
+    input.paymentNote.trim().normalize("NFKC"),
+  ].join("\n");
+}
 
 // This public key is already pinned in SubscriptionSecurityManager.kt.
 // Only a private key whose derived public key matches this exact APK key can sign
@@ -75,31 +114,43 @@ async function loadBb3PrivateKeyPem(): Promise<string> {
   return pem;
 }
 
-async function generateBB3UnlockCode(input: Bb3Input): Promise<string> {
+async function generateBB3UnlockCode(input: Bb3Input): Promise<{ code: string; planDigest: string }> {
   const username = input.username.trim();
-  const normalizedPhone = input.phone.trim().replace(/\D/g, "").slice(-9);
+  const normalizedPhone = normalizePlanPhone(input.phone);
   const tier = input.tier.trim().toUpperCase();
   const days = Math.floor(input.days);
-  if (!username || normalizedPhone.length !== 9) throw new Error("A shop username and registered phone are required.");
+  if (!input.requestId.trim() || !username || normalizedPhone.length !== 9) {
+    throw new Error("A payment request, registered username and phone are required.");
+  }
   if (!["SINGLE", "DUAL", "MULTI", "ANNUAL", "TRIAL"].includes(tier) || days < 1 || days > 800) {
     throw new Error("The requested BB3 subscription tier or duration is invalid.");
   }
+  if (![1, 3, 6, 12].includes(input.months) || input.branches < 1 || input.workers < 1 || input.devices < 1 || input.amountRwf < 1) {
+    throw new Error("The submitted payment plan is incomplete or invalid.");
+  }
 
   const pem = await loadBb3PrivateKeyPem();
-  const { createPrivateKey, createSign, createHash, randomBytes } = await import("node:crypto");
+  const { createPrivateKey, createSign, createHash } = await import("node:crypto");
   const accountHash = createHash("sha256")
     .update(`${username.toLowerCase()}:${normalizedPhone}`, "utf8")
     .digest("hex")
     .slice(0, 6)
     .toUpperCase();
-  const expiryHex = (Math.floor(Date.now() / 86_400_000) + 14).toString(16).toUpperCase();
-  const nonce = randomBytes(12).toString("hex").toUpperCase();
+  const planDigest = createHash("sha256")
+    .update(paymentPlanCanonical(input), "utf8")
+    .digest("hex")
+    .toUpperCase();
+  // Bind the legacy-compatible BB3 nonce to the exact payment request and its
+  // plan; the Android seven-field BB3 verifier remains unchanged.
+  const nonce = planDigest.slice(0, 24);
+  const issuedDay = Math.floor(Date.now() / 86_400_000);
+  const expiryHex = (issuedDay + 14).toString(16).toUpperCase();
   const payload = `BB3:${tier}:${days}:${expiryHex}:${accountHash}:${nonce}`;
   const signer = createSign("SHA256");
   signer.update(payload, "utf8");
   signer.end();
   const signature = signer.sign({ key: createPrivateKey(pem), dsaEncoding: "der" }).toString("base64");
-  return `BB3-${tier}-${days}-${expiryHex}-${accountHash}-${nonce}-${signature}`;
+  return { code: `BB3-${tier}-${days}-${expiryHex}-${accountHash}-${nonce}-${signature}`, planDigest };
 }
 
 /**
