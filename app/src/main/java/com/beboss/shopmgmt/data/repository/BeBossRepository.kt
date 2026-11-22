@@ -923,6 +923,8 @@ class BeBossRepository(private val database: AppDatabase) {
             val phone = ownerUser?.phone?.ifBlank { shopProfile.phone } ?: shopProfile.phone
             val shopSyncKey = SupabaseAdminClient.computeShopSyncKey(username, phone)
             var directAutoUnlocked = false
+            var allDevicesUploaded = true
+            var allPaymentRequestsUploaded = true
 
             var effectiveProfile = shopProfile
             // Remember when the shop row already carries the license extension
@@ -1004,6 +1006,9 @@ class BeBossRepository(private val database: AppDatabase) {
                 if (!ld.syncedToSupabase) {
                     if (SupabaseAdminClient.upsertShopDevice(shopSyncKey, effectiveProfile.shopName, ld)) {
                         shopDeviceDao.insertOrUpdate(ld.copy(syncedToSupabase = true))
+                    } else {
+                        // Keep the local row pending so a later WorkManager run retries it.
+                        allDevicesUploaded = false
                     }
                 }
             }
@@ -1026,18 +1031,20 @@ class BeBossRepository(private val database: AppDatabase) {
                 }
             }
 
-            // 5. Push shop account & user directory cleanly to Supabase
-            SupabaseAdminClient.upsertShopAccount(
+            // 5. Push shop account & user directory cleanly to Supabase.
+            // A returned false is a failed cloud write, not a successful sync.
+            val accountUploaded = SupabaseAdminClient.upsertShopAccount(
                 shopProfile = effectiveProfile,
                 ownerUser = ownerUser,
                 branchCount = branchCount,
                 workerCount = workerCount,
                 deviceCount = effectiveDeviceCount
             )
-            SupabaseAdminClient.upsertShopUsers(
+            val localUsers = userDao.getAllUsersDirect()
+            val usersUploaded = localUsers.isEmpty() || SupabaseAdminClient.upsertShopUsers(
                 shopSyncKey = shopSyncKey,
                 shopName = effectiveProfile.shopName,
-                users = userDao.getAllUsersDirect()
+                users = localUsers
             )
 
             // 6. Push all unsynced offline payment requests
@@ -1047,6 +1054,9 @@ class BeBossRepository(private val database: AppDatabase) {
                 if (SupabaseAdminClient.submitPaymentRequest(req)) {
                     paymentVerificationDao.markSynced(req.id)
                     pushed++
+                } else {
+                    // Leave the request in Room's unsynced list for the next retry.
+                    allPaymentRequestsUploaded = false
                 }
             }
 
@@ -1112,6 +1122,21 @@ class BeBossRepository(private val database: AppDatabase) {
                     shopProfileDao.insertOrUpdateProfile(effectiveProfile)
                     directAutoUnlocked = true
                 }
+            }
+
+            // Return success only after every required cloud write has actually completed.
+            // The WorkManager worker uses this signal to schedule a retry on a later run.
+            val failedUploads = buildList {
+                if (!accountUploaded) add("shop account")
+                if (!allDevicesUploaded) add("device registry")
+                if (!usersUploaded) add("staff directory")
+                if (!allPaymentRequestsUploaded) add("payment request(s)")
+            }
+            if (failedUploads.isNotEmpty()) {
+                return@withContext SupabaseSyncResult(
+                    success = false,
+                    message = "Cloud sync pending: could not upload ${failedUploads.joinToString()}. Local records remain saved and will be retried."
+                )
             }
 
             val codeReadyCount = approvedDtos.count { it.generatedUnlockCode.isNotBlank() }
