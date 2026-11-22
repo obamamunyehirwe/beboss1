@@ -484,23 +484,55 @@ class BeBossRepository(private val database: AppDatabase) {
         ownerUser: User?,
         mainBranch: Branch?
     ): ShopDevice = withContext(Dispatchers.IO) {
+        require(deviceId.isNotBlank()) { "A stable device ID is required before cloud registration." }
         val existing = shopDeviceDao.getAllDevicesList()
-        val existingPrimary = existing.firstOrNull { it.isOwnerPrimary }
-        if (existingPrimary != null) return@withContext existingPrimary
 
-        val username = ownerUser?.username?.ifBlank { "owner" } ?: "owner"
-        val phone = ownerUser?.phone?.ifBlank { shopProfile.phone } ?: shopProfile.phone
-        val shopSyncKey = SupabaseAdminClient.computeShopSyncKey(username, phone)
+        // A paired terminal keeps its own registry row. Never turn a joined cashier/manager
+        // phone into the shop owner's primary device.
+        existing.firstOrNull { it.deviceId == deviceId }?.let { return@withContext it }
+
+        val existingPrimary = existing.firstOrNull { it.isOwnerPrimary }
+        val owner = ownerUser?.takeIf { it.role == UserRole.OWNER }
+            ?: throw IllegalStateException("A registered shop owner is required before the primary device can sync.")
+        val username = owner.username.trim().lowercase(Locale.ROOT)
+        val phone = owner.phone.ifBlank { shopProfile.phone }.trim()
+        val normalizedPhone = phone.filter { it.isDigit() }.takeLast(9)
+        require(username.length >= 2 && normalizedPhone.length == 9 && shopProfile.shopName.isNotBlank()) {
+            "Complete the shop owner's username, shop name and registered 9-digit phone number before cloud sync. Local records remain on this device."
+        }
+        val shopSyncKey = existingPrimary?.shopSyncKey?.takeIf { it.isNotBlank() }
+            ?: SupabaseAdminClient.computeShopSyncKey(username, phone)
+
+        if (existingPrimary != null) {
+            // Reinstalling BeBoss creates a new local device ID. Rebind the owner primary
+            // only when no existing local row already owns the current device ID.
+            val refreshed = existingPrimary.copy(
+                shopSyncKey = shopSyncKey,
+                deviceId = deviceId,
+                assignedUserId = owner.id,
+                assignedUsername = username,
+                assignedUserName = owner.name,
+                role = owner.role.name,
+                branchId = mainBranch?.id ?: existingPrimary.branchId,
+                branchName = mainBranch?.name ?: existingPrimary.branchName,
+                isActive = true,
+                syncedToSupabase = false,
+                updatedAt = System.currentTimeMillis()
+            )
+            shopDeviceDao.insertOrUpdate(refreshed)
+            return@withContext refreshed
+        }
+
         val primary = ShopDevice(
             id = "${shopSyncKey}::PRIMARY",
             shopSyncKey = shopSyncKey,
             deviceId = deviceId,
             deviceName = android.os.Build.MODEL?.ifBlank { "Owner Terminal" } ?: "Owner Terminal",
             joinCode = "OWNER",
-            assignedUserId = ownerUser?.id.orEmpty(),
+            assignedUserId = owner.id,
             assignedUsername = username,
-            assignedUserName = ownerUser?.name?.ifBlank { shopProfile.name } ?: shopProfile.name,
-            role = ownerUser?.role?.name ?: "OWNER",
+            assignedUserName = owner.name,
+            role = owner.role.name,
             branchId = mainBranch?.id ?: "main_branch",
             branchName = mainBranch?.name ?: "Main Store",
             isOwnerPrimary = true,
