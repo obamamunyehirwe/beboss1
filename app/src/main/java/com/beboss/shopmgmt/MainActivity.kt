@@ -655,7 +655,7 @@ private fun BeBossMainContent(
                                 onExportFullBranchPackage = { branchFilter, onReady ->
                                     viewModel.exportFullBranchPackage(context, branchFilter, onReady)
                                 },
-                                onSubmitPaymentVerification = { provider, payerPhone, payerFullName, username, regPhone, months, branchCount, workerCount, deviceCount, telcoRef, onDone ->
+                                onSubmitPaymentVerification = { provider, payerPhone, payerFullName, username, regPhone, months, branchCount, workerCount, deviceCount, onDone ->
                                     viewModel.submitUssdPaymentProof(
                                         provider = provider,
                                         payerPhone = payerPhone,
@@ -664,7 +664,6 @@ private fun BeBossMainContent(
                                         durationMonths = months,
                                         branchCount = branchCount,
                                         workerCount = workerCount,
-                                        telcoReference = telcoRef,
                                         payerFullName = payerFullName,
                                         deviceCount = deviceCount,
                                         onSubmitted = onDone
