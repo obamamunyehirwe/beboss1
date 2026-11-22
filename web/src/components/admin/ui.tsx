@@ -244,7 +244,7 @@ export function ConfirmAction({ trigger, title, description, confirmLabel = "Con
               setOpen(false);
             }}
           >
-            {confirmLabel}
+            {a(confirmLabel)}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
