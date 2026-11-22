@@ -19,7 +19,7 @@ import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, Searc
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { useNow } from "@/hooks/use-now";
 import { deleteSnapshot } from "@/lib/admin.functions";
-import { devicesQuery, shopsQuery, snapshotsQuery, syncEventsQuery, type SyncEvent } from "@/lib/admin-queries";
+import { devicesQuery, shopsQuery, snapshotsQuery, syncEventsQuery, usersQuery, type ShopAccount, type ShopDevice, type ShopUser, type Snapshot, type SyncEvent } from "@/lib/admin-queries";
 import { formatDateTime, relativeTime } from "@/lib/format";
 import { DAY, HEALTH_LABEL, HOUR, deviceHealth, type DeviceHealth } from "@/lib/sync-health";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,7 @@ import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/sync")({
   component: SyncMonitor,
+  errorComponent: SyncRouteError,
 });
 
 const ENTITY_ICON: Record<string, typeof Store> = {
@@ -56,7 +57,44 @@ function SyncMonitor() {
   const events = useQuery(syncEventsQuery);
   const shops = useQuery(shopsQuery);
   const devices = useQuery(devicesQuery);
+  const staff = useQuery(usersQuery);
   const snaps = useQuery(snapshotsQuery);
+
+  const shopRows = useMemo<ShopSyncRow[]>(() => {
+    const eventRows = events.data ?? [];
+    const deviceRows = devices.data ?? [];
+    const staffRows = staff.data ?? [];
+    const snapshotRows = snaps.data ?? [];
+    return (shops.data ?? []).map((shop) => {
+      const shopDevices = deviceRows.filter((d) => d.shop_sync_key === shop.id);
+      const shopStaff = staffRows.filter((u) => u.shop_sync_key === shop.id);
+      const shopSnapshots = snapshotRows.filter((s) => s.shop_sync_key === shop.id);
+      const shopEvents = eventRows.filter((e) => e.shop_sync_key === shop.id);
+      const latestEvent = shopEvents.reduce<SyncEvent | null>((latest, current) => {
+        if (!latest) return current;
+        return Date.parse(current.created_at) > Date.parse(latest.created_at) ? current : latest;
+      }, null);
+      const deviceLastSync = shopDevices.reduce((latest, d) => Math.max(latest, Number(d.last_synced_at) || 0), 0);
+      const snapshotLastSync = shopSnapshots.reduce((latest, s) => Math.max(latest, Number(s.updated_at) || 0), 0);
+      const eventLastSync = latestEvent ? Date.parse(latestEvent.created_at) || 0 : 0;
+      const lastSyncAt = Math.max(deviceLastSync, snapshotLastSync, eventLastSync);
+      return {
+        ...shop,
+        devicesTotal: shopDevices.length,
+        activeDevices: shopDevices.filter((d) => d.is_active).length,
+        staffTotal: shopStaff.length,
+        activeStaff: shopStaff.filter((u) => u.is_active).length,
+        snapshotsTotal: shopSnapshots.length,
+        lastSyncAt,
+        health: deviceHealth(lastSyncAt, now),
+        latestEvent,
+      };
+    }).sort((left, right) => right.lastSyncAt - left.lastSyncAt);
+  }, [events.data, shops.data, devices.data, staff.data, snaps.data, now]);
+
+  const retryAll = () => Promise.all([
+    events.refetch(), shops.refetch(), devices.refetch(), staff.refetch(), snaps.refetch(),
+  ]);
 
   const stats = useMemo(() => {
     const ev = events.data ?? [];
@@ -98,6 +136,7 @@ function SyncMonitor() {
     // paired device row while its first snapshot is still being provisioned.
     const totalShops = (shops.data ?? []).length;
     const snapshots = (snaps.data ?? []).length;
+    const activeStaff = (staff.data ?? []).filter((u) => u.is_active).length;
     const staleDevices = dv.filter((d) => d.is_active && deviceHealth(d.last_synced_at, now) === "STALE").length;
 
     return {
@@ -107,12 +146,14 @@ function SyncMonitor() {
       activeShops,
       lastEvent: ev[0] ?? null,
       totalShops,
+      activeStaff,
+      totalStaff: (staff.data ?? []).length,
       reportedFailures,
       snapshotUploads24h,
       snapshots,
       staleDevices,
     };
-  }, [events.data, shops.data, devices.data, snaps.data, now]);
+  }, [events.data, shops.data, devices.data, staff.data, snaps.data, now]);
 
   return (
     <div className="space-y-6">
@@ -126,14 +167,41 @@ function SyncMonitor() {
           </span>
         }
       />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-7">
         <StatCard label="Total Shops" value={stats.totalShops} sub="registered businesses" icon={Store} tone="brand" />
         <StatCard label="Active Now" value={stats.activeShops} sub="sync signal in last 15 min" icon={Wifi} tone="success" />
+        <StatCard label="Synced Staff" value={stats.activeStaff} sub={`${stats.totalStaff} staff accounts across shops`} icon={Users} tone="info" />
         <StatCard label="Snapshot Uploads (24h)" value={stats.snapshotUploads24h} sub="uploaded phone datasets" icon={Activity} tone="info" />
         <StatCard label="Reported Failures" value={stats.reportedFailures} sub="cloud-reported only; local retries stay on device" icon={AlertTriangle} tone={stats.reportedFailures > 0 ? "danger" : "info"} />
         <StatCard label="Branch Snapshots" value={stats.snapshots} sub="stored phone datasets" icon={Boxes} tone="brand" />
         <StatCard label="Stale Devices" value={stats.staleDevices} sub="active, no sync for 7+ days" icon={Clock} tone={stats.staleDevices > 0 ? "danger" : "success"} />
       </div>
+
+      {[
+        { label: "Cloud events", query: events },
+        { label: "Shops", query: shops },
+        { label: "Devices", query: devices },
+        { label: "Staff", query: staff },
+        { label: "Snapshots", query: snaps },
+      ].some(({ query }) => query.isError) ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 bg-warning/10 p-4">
+          <div className="min-w-0">
+            <p className="font-semibold text-warning">{a("Some cloud sync data could not be loaded")}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {[
+                ["Cloud events", events.error],
+                ["Shops", shops.error],
+                ["Devices", devices.error],
+                ["Staff", staff.error],
+                ["Snapshots", snaps.error],
+              ].filter(([, error]) => Boolean(error)).map(([label, error]) => `${label}: ${error instanceof Error ? error.message : "request failed"}`).join(" · ")}
+            </p>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => void retryAll()}>
+            <Radio /> {a("Retry cloud data")}
+          </Button>
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-border bg-card p-5">
         <h2 className="font-semibold">{a("Cloud activity — last 24 hours")}</h2>
@@ -150,12 +218,20 @@ function SyncMonitor() {
 
       <Tabs defaultValue="live">
         <TabsList className="flex-wrap">
-          <TabsTrigger value="live">{a("Live activity")}</TabsTrigger>
+          <TabsTrigger value="live">{a("Live activity")} ({(events.data ?? []).length})</TabsTrigger>
+          <TabsTrigger value="shops">{a("Shops")} ({(shops.data ?? []).length})</TabsTrigger>
+          <TabsTrigger value="users">{a("Synced users")} ({(staff.data ?? []).length})</TabsTrigger>
           <TabsTrigger value="devices">{a("Device health")} ({(devices.data ?? []).length})</TabsTrigger>
           <TabsTrigger value="snapshots">{a("Branch snapshots")} ({(snaps.data ?? []).length})</TabsTrigger>
         </TabsList>
         <TabsContent value="live">
           <LiveActivity events={events.data ?? []} loading={events.isLoading} now={now} />
+        </TabsContent>
+        <TabsContent value="shops">
+          <ShopSyncTable rows={shopRows} loading={shops.isLoading || devices.isLoading || staff.isLoading || snaps.isLoading} />
+        </TabsContent>
+        <TabsContent value="users">
+          <SyncedUsersTable rows={staff.data ?? []} loading={staff.isLoading} />
         </TabsContent>
         <TabsContent value="devices">
           <DeviceHealthTable now={now} />
@@ -164,6 +240,202 @@ function SyncMonitor() {
           <Snapshots now={now} />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+type ShopSyncRow = ShopAccount & {
+  devicesTotal: number;
+  activeDevices: number;
+  staffTotal: number;
+  activeStaff: number;
+  snapshotsTotal: number;
+  lastSyncAt: number;
+  health: DeviceHealth;
+  latestEvent: SyncEvent | null;
+};
+
+function ShopSyncTable({ rows, loading }: { rows: ShopSyncRow[]; loading: boolean }) {
+  const a = useAdminText();
+  const [q, setQ] = useState("");
+  const [health, setHealth] = useState<HealthFilter>("ALL");
+  const filtered = rows.filter((shop) =>
+    (health === "ALL" || shop.health === health) &&
+    matches(q, shop.shop_name, shop.owner_name, shop.owner_username, shop.owner_phone, shop.id, shop.subscription_status),
+  );
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput value={q} onChange={setQ} placeholder={a("Search shop, owner, phone or sync status…")} />
+        <FilterChips<HealthFilter>
+          value={health}
+          onChange={setHealth}
+          options={[
+            { value: "ALL", label: a("All shops"), count: rows.length },
+            ...(["ONLINE", "TODAY", "IDLE", "STALE", "NEVER"] as const).map((value) => ({
+              value,
+              label: HEALTH_LABEL[value],
+              count: rows.filter((shop) => shop.health === value).length,
+            })),
+          ]}
+        />
+        <Button size="sm" variant="glass" className="ml-auto" onClick={() => downloadCsv(
+          `beboss-shop-sync-${Date.now()}.csv`,
+          filtered.map((shop) => ({
+            shop: shop.shop_name, owner: shop.owner_name, username: shop.owner_username,
+            phone: shop.owner_phone, status: shop.subscription_status, syncHealth: shop.health,
+            lastSync: shop.lastSyncAt ? new Date(shop.lastSyncAt).toISOString() : "",
+            devices: shop.devicesTotal, activeDevices: shop.activeDevices,
+            users: shop.staffTotal, activeUsers: shop.activeStaff, snapshots: shop.snapshotsTotal,
+            latestEvent: shop.latestEvent?.action ?? "",
+          })),
+        )}>
+          <Download /> {a("Export shops")}
+        </Button>
+      </div>
+      {loading ? <LoadingBlock /> : !filtered.length ? (
+        <EmptyState title={a("No registered shops match")} sub={a("Shops appear here after their account or first cloud sync is registered.")} />
+      ) : (
+        <TableShell>
+          <table className="w-full min-w-[1050px] text-sm">
+            <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3">{a("Shop / owner")}</th>
+                <th className="px-4 py-3">{a("Subscription")}</th>
+                <th className="px-4 py-3">{a("Sync health")}</th>
+                <th className="px-4 py-3">{a("Devices")}</th>
+                <th className="px-4 py-3">{a("Users")}</th>
+                <th className="px-4 py-3">{a("Snapshots")}</th>
+                <th className="px-4 py-3">{a("Last cloud sync")}</th>
+                <th className="px-4 py-3">{a("Latest event")}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((shop) => (
+                <tr key={shop.id} className="hover:bg-accent/40">
+                  <td className="px-4 py-3">
+                    <Link to="/admin/shops/$shopId" params={{ shopId: shop.id }} className="font-medium hover:text-primary">
+                      {shop.shop_name}
+                    </Link>
+                    <p className="text-xs text-muted-foreground">@{shop.owner_username} · {shop.owner_phone}</p>
+                  </td>
+                  <td className="px-4 py-3"><StatusBadge status={shop.subscription_status} /></td>
+                  <td className="px-4 py-3"><StatusBadge status={shop.health} /></td>
+                  <td className="px-4 py-3 font-mono">{shop.activeDevices}/{shop.devicesTotal}</td>
+                  <td className="px-4 py-3 font-mono">{shop.activeStaff}/{shop.staffTotal}</td>
+                  <td className="px-4 py-3 font-mono">{shop.snapshotsTotal}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground" title={shop.lastSyncAt ? formatDateTime(shop.lastSyncAt) : a("No cloud sync recorded")}>
+                    {shop.lastSyncAt ? relativeTime(shop.lastSyncAt) : a("Never")}
+                  </td>
+                  <td className="px-4 py-3 text-xs">
+                    {shop.latestEvent ? (
+                      <span title={shop.latestEvent.detail}>
+                        {shop.latestEvent.entity} · {shop.latestEvent.action.replaceAll("_", " ").toLowerCase()}
+                      </span>
+                    ) : <span className="text-muted-foreground">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableShell>
+      )}
+      <p className="text-xs text-muted-foreground">{a("Showing")} {filtered.length.toLocaleString()} {a("of")} {rows.length.toLocaleString()} {a("shops")}.</p>
+    </div>
+  );
+}
+
+function SyncedUsersTable({ rows, loading }: { rows: ShopUser[]; loading: boolean }) {
+  const a = useAdminText();
+  const [q, setQ] = useState("");
+  const [role, setRole] = useState<"ALL" | "OWNER" | "MANAGER" | "CASHIER">("ALL");
+  const filtered = rows.filter((user) =>
+    (role === "ALL" || user.role === role) &&
+    matches(q, user.full_name, user.username, user.phone, user.shop_name, user.shop_sync_key, user.assigned_branch_name),
+  );
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput value={q} onChange={setQ} placeholder={a("Search name, username, phone, shop or branch…")} />
+        <FilterChips
+          value={role}
+          onChange={setRole}
+          options={[
+            { value: "ALL", label: a("All roles"), count: rows.length },
+            { value: "OWNER", label: a("Owners"), count: rows.filter((u) => u.role === "OWNER").length },
+            { value: "MANAGER", label: a("Managers"), count: rows.filter((u) => u.role === "MANAGER").length },
+            { value: "CASHIER", label: a("Cashiers"), count: rows.filter((u) => u.role === "CASHIER").length },
+          ]}
+        />
+        <Button size="sm" variant="glass" className="ml-auto" onClick={() => downloadCsv(
+          `beboss-synced-users-${Date.now()}.csv`,
+          filtered.map((user) => ({
+            name: user.full_name, username: user.username, phone: user.phone,
+            role: user.role, shop: user.shop_name, shopKey: user.shop_sync_key,
+            branch: user.assigned_branch_name, active: user.is_active,
+            updatedAt: new Date(user.updated_at).toISOString(),
+          })),
+        )}>
+          <Download /> {a("Export users")}
+        </Button>
+      </div>
+      {loading ? <LoadingBlock /> : !filtered.length ? (
+        <EmptyState title={a("No synced shop users match")} sub={a("Owner, manager and cashier accounts appear after their shop syncs with BeBoss Cloud.")} />
+      ) : (
+        <TableShell>
+          <table className="w-full min-w-[850px] text-sm">
+            <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3">{a("Person")}</th>
+                <th className="px-4 py-3">{a("Shop")}</th>
+                <th className="px-4 py-3">{a("Role")}</th>
+                <th className="px-4 py-3">{a("Branch")}</th>
+                <th className="px-4 py-3">{a("Status")}</th>
+                <th className="px-4 py-3">{a("Last updated")}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((user) => (
+                <tr key={user.id} className="hover:bg-accent/40">
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{user.full_name || user.username}</p>
+                    <p className="text-xs text-muted-foreground">@{user.username} · {user.phone || "—"}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Link to="/admin/shops/$shopId" params={{ shopId: user.shop_sync_key }} className="hover:text-primary">
+                      {user.shop_name || user.shop_sync_key}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3"><StatusBadge status={user.role} /></td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{user.assigned_branch_name || "—"}</td>
+                  <td className="px-4 py-3"><StatusBadge status={user.is_active ? "ACTIVE" : "SUSPENDED"} /></td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground" title={formatDateTime(user.updated_at)}>
+                    {relativeTime(user.updated_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableShell>
+      )}
+      <p className="text-xs text-muted-foreground">{a("Showing")} {filtered.length.toLocaleString()} {a("of")} {rows.length.toLocaleString()} {a("synced staff accounts")}.</p>
+    </div>
+  );
+}
+
+function SyncRouteError({ error, reset }: { error: Error; reset: () => void }) {
+  const a = useAdminText();
+  return (
+    <div role="alert" className="mx-auto max-w-2xl space-y-4 rounded-3xl border border-warning/40 bg-card p-8">
+      <div className="flex items-center gap-3 text-warning">
+        <AlertTriangle className="size-6" />
+        <h1 className="text-xl font-bold">{a("Cloud sync page could not load")}</h1>
+      </div>
+      <p className="text-sm text-muted-foreground">{error.message || a("An unexpected error interrupted this page.")}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={reset}><Radio /> {a("Try again")}</Button>
+        <Button asChild variant="outline"><Link to="/admin">{a("Back to admin overview")}</Link></Button>
+      </div>
     </div>
   );
 }
