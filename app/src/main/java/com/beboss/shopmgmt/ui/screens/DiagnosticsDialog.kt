@@ -498,7 +498,7 @@ private fun DatabaseSyncTab(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isOnline) "Network Online \u2022 Cloud Sync Ready" else "Offline Mode \u2022 Outbox Queuing Active",
+                        text = if (isOnline) "Internet available • Sync queue status below" else "Offline • Pending changes remain queued",
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
