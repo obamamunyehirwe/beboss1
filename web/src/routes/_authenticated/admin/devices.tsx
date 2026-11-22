@@ -106,7 +106,7 @@ function DevicesPage() {
                       <div className="flex justify-end gap-1">
                         <Button size="sm" variant="ghost" onClick={() => toggle.mutate({ id: d.id, active: !d.is_active })}>
                           {d.is_active ? <Pause /> : <Play />}
-                          {d.is_active ? "Pause" : "Resume"}
+                          {a(d.is_active ? "Pause" : "Resume")}
                         </Button>
                         <ConfirmAction
                           trigger={
