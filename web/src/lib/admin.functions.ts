@@ -263,11 +263,12 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     if (!(await ensureValidAdminSession(ctx))) throw new Error("Admin session expired. Please sign in again.");
     const admin = await requireAdmin(ctx);
-    const { data: req, error } = await ctx.supabase.from("payment_requests").select("*").eq("id", data.requestId).maybeSingle();
+    const { data: req, error } = await ctx.supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,payment_time_ms,payment_note,fee_per_device_rwf,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,ussd_code").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
-    const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, await perDeviceRate(ctx));
+    const submittedFeeRate = Number(req.fee_per_device_rwf) > 0 ? Number(req.fee_per_device_rwf) : await perDeviceRate(ctx);
+    const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, submittedFeeRate);
     if (Number(req.amount_rwf) !== calc.total) {
       throw new Error(`Payment amount mismatch. Submitted ${Number(req.amount_rwf || 0)} FRw; this plan calculates to ${calc.total} FRw. Refresh and verify the payment details before issuing a code.`);
     }
@@ -338,12 +339,13 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
     if (error || !req) throw new Error("Payment request not found.");
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
+    const submittedFeeRate = Number(req.fee_per_device_rwf) > 0 ? Number(req.fee_per_device_rwf) : await perDeviceRate(ctx);
     const calc = calculateSubscriptionFee(
       req.branch_count,
       req.worker_count,
       req.duration_months,
       req.device_count || 1,
-      await perDeviceRate(ctx),
+      submittedFeeRate,
     );
 
     if (Number(req.amount_rwf) !== calc.total) throw new Error("Payment amount does not match the submitted subscription plan.");
@@ -480,12 +482,13 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
       .select("per_device_fee_rwf")
       .eq("id", "global")
       .maybeSingle();
+    const feePerDeviceRwf = Math.max(0, Number(config?.per_device_fee_rwf) || 2000);
     const calc = calculateSubscriptionFee(
       data.branches,
       data.workers,
       data.months,
       data.devices,
-      Number(config?.per_device_fee_rwf) || 2000,
+      feePerDeviceRwf,
     );
     const now = Date.now();
     const id = `WA-${crypto.randomUUID()}`;
@@ -505,6 +508,7 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
         branch_count: data.branches,
         worker_count: data.workers,
         device_count: data.devices,
+        fee_per_device_rwf: feePerDeviceRwf,
         payment_time_ms: Number(data.paymentTimeMs || now),
         payment_note: data.paymentNote.trim(),
         status: "PENDING_VERIFICATION",
