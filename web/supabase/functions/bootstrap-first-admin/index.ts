@@ -33,9 +33,18 @@ async function rest(path: string, init: RequestInit = {}) {
 
 type InviteReservation = { token: string; previousValue: string | null };
 
-function markerAgeMs(value: string): number | null {
+function markerAgeMs(value: string, email: string): number | null {
   if (value.startsWith("SENT:")) {
-    const date = Date.parse(value.slice("SENT:".length));
+    const sentValue = value.slice("SENT:".length);
+    const separator = sentValue.indexOf(":");
+    // Legacy SENT:<timestamp> markers are treated as project-wide until migrated.
+    if (separator === -1) {
+      const legacyDate = Date.parse(sentValue);
+      return Number.isFinite(legacyDate) ? Date.now() - legacyDate : null;
+    }
+    const sentEmail = sentValue.slice(0, separator).trim().toLowerCase();
+    if (sentEmail !== email) return null;
+    const date = Date.parse(sentValue.slice(separator + 1));
     return Number.isFinite(date) ? Date.now() - date : null;
   }
   if (value.startsWith("LIMITED:")) {
@@ -49,7 +58,7 @@ function markerAgeMs(value: string): number | null {
   return null;
 }
 
-async function reserveInvite(): Promise<
+async function reserveInvite(email: string): Promise<
   | { reservation: InviteReservation }
   | { cooldownSeconds: number }
 > {
@@ -63,7 +72,7 @@ async function reserveInvite(): Promise<
     : null;
 
   if (previousValue) {
-    const age = markerAgeMs(previousValue);
+    const age = markerAgeMs(previousValue, email);
     if (
       age !== null &&
       (previousValue.startsWith("SENT:") || previousValue.startsWith("LIMITED:")) &&
@@ -119,6 +128,7 @@ async function reserveInvite(): Promise<
 async function finishInvite(
   reservation: InviteReservation,
   result: "sent" | "limited" | "restore",
+  email: string,
 ) {
   const query = new URLSearchParams({
     name: `eq.${INVITE_MARKER}`,
@@ -128,7 +138,9 @@ async function finishInvite(
     await rest(`app_secrets?${query.toString()}`, {
       method: "PATCH",
       body: JSON.stringify({
-        value: `${result === "sent" ? "SENT" : "LIMITED"}:${new Date().toISOString()}`,
+        value: result === "sent"
+          ? "SENT:" + email + ":" + new Date().toISOString()
+          : "LIMITED:" + new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }),
     });
@@ -215,13 +227,13 @@ Deno.serve(async (request: Request) => {
       return json(200, { status: "account_repaired", email });
     }
 
-    const reserved = await reserveInvite();
+    const reserved = await reserveInvite(email);
     if ("cooldownSeconds" in reserved) {
       return json(200, {
         status: "cooldown",
         email,
         retryAfterSeconds: reserved.cooldownSeconds,
-        message: "The original administrator invitation was already sent to the approved inbox. Check your inbox and spam folder; another email request is temporarily paused to respect the provider limit.",
+        message: "An invitation request for this exact inbox (" + email + ") was accepted recently. This click did not send another email. Check Inbox and Spam/Junk before requesting another invitation.",
       });
     }
 
@@ -264,22 +276,22 @@ Deno.serve(async (request: Request) => {
           "Supabase could not send the administrator setup email.",
         );
         if (invite.status === 429) {
-          await finishInvite(reservation, "limited");
+          await finishInvite(reservation, "limited", email);
           return json(200, {
             status: "email_rate_limited",
             email,
             retryAfterSeconds: Math.ceil(RESEND_COOLDOWN_MS / 1000),
-            message: "Supabase has temporarily reached its email-sending limit. The original setup invitation was already issued; check your inbox and spam folder before requesting another email.",
+            message: "Supabase rejected this attempt because the project email quota is exhausted. No new invitation was sent to " + email + ". Wait for the cooldown or configure a custom SMTP provider.",
           });
         }
-        await finishInvite(reservation, "restore");
+        await finishInvite(reservation, "restore", email);
         return json(502, { status: "error", message });
       }
 
-      await finishInvite(reservation, "sent");
+      await finishInvite(reservation, "sent", email);
       return json(200, { status: "sent", email, resent: Boolean(existingUser) });
     } catch (error) {
-      await finishInvite(reservation, "restore");
+      await finishInvite(reservation, "restore", email);
       throw error;
     }
   } catch (error) {
