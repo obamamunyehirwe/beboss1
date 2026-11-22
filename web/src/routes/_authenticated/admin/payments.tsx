@@ -91,17 +91,17 @@ function PaymentsPage() {
         actions={
           <>
             <Button size="sm" variant="glass" onClick={() => downloadCsv(`beboss-payments-${Date.now()}.csv`, filtered)}>
-              <Download /> Export
+              <Download /> {a("Export")}
             </Button>
             {isAdmin && pending.length > 1 ? (
               <ConfirmAction
                 trigger={
                   <Button size="sm" variant="hero" disabled={batching}>
-                    {batching ? <Loader2 className="animate-spin" /> : <KeyRound />} Approve all {pending.length}
+                    {batching ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Approve all")} {pending.length}
                   </Button>
                 }
                 title={`Approve ${pending.length} pending claims?`}
-                description="Each claim gets a signed BB3 unlock code and its shop is extended. Only do this after confirming every transaction in your MoMo/Airtel statement."
+                description={a("Each claim gets a signed BB3 unlock code and its shop is extended. Only do this after confirming every transaction in your MoMo/Airtel statement.")}
                 confirmLabel="Approve all"
                 onConfirm={batch}
               />
@@ -256,33 +256,33 @@ function PaymentsPage() {
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
                   <Info label="Provider" value={r.provider} />
                   <Info label="Payer" value={r.payer_full_name || "—"} sub={r.payer_phone} />
-                  <Info label="Transaction ref" value={r.telco_reference || "—"} mono />
-                  <Info label="Registered phone" value={r.owner_phone} mono />
+                  <Info label="Transaction reference" value={r.telco_reference || "—"} mono />
+                  <Info label="Registered owner phone" value={r.owner_phone} mono />
                   <Info label="Plan" value={`${r.branch_count} br • ${r.worker_count} staff • ${r.device_count} dev`} />
                 </dl>
                 {r.amount_rwf !== calc.total ? (
                   <p className="mt-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-                    Current pricing for this plan is {formatRwf(calc.total)} — approving will record that amount.
+                    {a("Current pricing for this plan is")} {formatRwf(calc.total)} — {a("approving will record that amount.")}
                   </p>
                 ) : null}
                 {r.generated_unlock_code ? <p className="mt-3 font-mono text-sm text-success">{r.generated_unlock_code}</p> : null}
-                {r.approval_mode === "DIRECT_AUTO_UNLOCK" ? <p className="mt-3 text-sm text-success">Direct auto-unlock — no code needed</p> : null}
-                {r.rejection_reason ? <p className="mt-3 text-sm text-destructive">Rejected: {r.rejection_reason}</p> : null}
-                {r.verified_by_admin ? <p className="mt-1 text-xs text-muted-foreground">By {r.verified_by_admin}</p> : null}
+                {r.approval_mode === "DIRECT_AUTO_UNLOCK" ? <p className="mt-3 text-sm text-success">{a("Direct auto-unlock — no code needed")}</p> : null}
+                {r.rejection_reason ? <p className="mt-3 text-sm text-destructive">{a("Rejected:")} {r.rejection_reason}</p> : null}
+                {r.verified_by_admin ? <p className="mt-1 text-xs text-muted-foreground">{a("By")} {r.verified_by_admin}</p> : null}
 
                 {isAdmin ? (
                   <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
                     {r.status === "PENDING_VERIFICATION" || r.status === "REJECTED" ? (
                       <>
                         <Button size="sm" variant="success" disabled={busy} onClick={() => doApprove(r)}>
-                          {busy ? <Loader2 className="animate-spin" /> : <KeyRound />} Verify & issue BB3 code
+                          {busy ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Verify & issue BB3 code")}
                         </Button>
                         <Button size="sm" variant="soft" disabled={busy} onClick={() => doDirect(r)}>
-                          <Zap /> Direct auto-unlock
+                          <Zap /> {a("Direct auto-unlock")}
                         </Button>
                         {r.status === "PENDING_VERIFICATION" ? (
                           <Button size="sm" variant="ghost" onClick={() => { setRejecting(r); setReason(""); }}>
-                            <X /> Reject
+                            <X /> {a("Reject")}
                           </Button>
                         ) : null}
                       </>
@@ -290,7 +290,7 @@ function PaymentsPage() {
                     {r.status === "APPROVED" && r.generated_unlock_code ? (
                       <Button size="sm" variant="glass" asChild>
                         <a href={buildWhatsAppUrl(r.payer_phone || r.owner_phone, buildUnlockReplyText(r.shop_name, r.owner_username, r.generated_unlock_code, calc.days, calc.tier))} target="_blank" rel="noreferrer">
-                          <MessageCircle /> Resend on WhatsApp
+                          <MessageCircle /> {a("Resend on WhatsApp")}
                         </a>
                       </Button>
                     ) : null}
@@ -300,8 +300,8 @@ function PaymentsPage() {
                           <Trash2 />
                         </Button>
                       }
-                      title="Delete this payment claim?"
-                      description="This removes the claim from the queue permanently. Issued codes are not affected."
+                      title={a("Delete this payment claim?")}
+                      description={a("This removes the claim from the queue permanently. Issued codes are not affected.")}
                       destructive
                       confirmLabel="Delete"
                       onConfirm={() => remove.mutate({ requestId: r.id })}
@@ -317,12 +317,12 @@ function PaymentsPage() {
       <Dialog open={!!rejecting} onOpenChange={(o) => !o && setRejecting(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reject payment claim</DialogTitle>
+            <DialogTitle>{a("Reject payment claim")}</DialogTitle>
             <DialogDescription>
-              {rejecting?.shop_name} — {formatRwf(rejecting?.amount_rwf)} ref {rejecting?.telco_reference || "—"}. The owner sees this reason in the app and on the website.
+              {rejecting?.shop_name} — {formatRwf(rejecting?.amount_rwf)} ref {rejecting?.telco_reference || "—"}. {a("The owner sees this reason in the app and on the website.")}
             </DialogDescription>
           </DialogHeader>
-          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="MoMo transaction could not be confirmed" maxLength={500} />
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder={a("MoMo transaction could not be confirmed")} maxLength={500} />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRejecting(null)}>
               Cancel
@@ -355,13 +355,14 @@ function ManualField({ label, value, onChange, required = false }: { label: stri
 
 function ResultDialog({ result, onClose }: { result: Result | null; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
+  const a = useAdminText();
   if (!result) return null;
   const msg = result.mode === "CODE" && result.code ? buildUnlockReplyText(result.shopName, result.username, result.code, result.days, result.tier) : buildDirectUnlockReplyText(result.shopName, result.username, result.days, result.tier);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{result.mode === "CODE" ? "Unlock code issued" : "Shop auto-unlocked"}</DialogTitle>
+          <DialogTitle>{a(result.mode === "CODE" ? "Unlock code issued" : "Shop auto-unlocked")}</DialogTitle>
           <DialogDescription>
             {result.shopName} (@{result.username}) • +{result.days} days • {formatRwf(result.total)}
           </DialogDescription>
@@ -371,7 +372,7 @@ function ResultDialog({ result, onClose }: { result: Result | null; onClose: () 
             <p className="break-all font-mono text-lg font-semibold text-success">{result.code}</p>
           </div>
         ) : (
-          <p className="rounded-2xl border border-success/30 bg-success/10 p-4 text-sm text-success">The app unlocks automatically on its next sync — no code needed.</p>
+          <p className="rounded-2xl border border-success/30 bg-success/10 p-4 text-sm text-success">{a("The app unlocks automatically on its next sync — no code needed.")}</p>
         )}
         <DialogFooter className="gap-2 sm:gap-2">
           {result.code ? (
@@ -387,7 +388,7 @@ function ResultDialog({ result, onClose }: { result: Result | null; onClose: () 
           ) : null}
           <Button variant="success" asChild>
             <a href={buildWhatsAppUrl(result.phone, msg)} target="_blank" rel="noreferrer">
-              <MessageCircle /> Send on WhatsApp
+              <MessageCircle /> {a("Send on WhatsApp")}
             </a>
           </Button>
         </DialogFooter>
@@ -397,9 +398,10 @@ function ResultDialog({ result, onClose }: { result: Result | null; onClose: () 
 }
 
 function Info({ label, value, sub, mono }: { label: string; value: string; sub?: string; mono?: boolean }) {
+  const a = useAdminText();
   return (
     <div className="rounded-xl bg-muted/50 px-3 py-2">
-      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</dt>
+      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">{a(label)}</dt>
       <dd className={mono ? "font-mono text-sm" : "text-sm"}>{value}</dd>
       {sub ? <dd className="font-mono text-xs text-muted-foreground">{sub}</dd> : null}
     </div>
