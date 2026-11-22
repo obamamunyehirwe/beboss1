@@ -52,7 +52,7 @@ create table public.admin_bootstrap_emails (
 );
 grant all on public.admin_bootstrap_emails to service_role;
 alter table public.admin_bootstrap_emails enable row level security;
-insert into public.admin_bootstrap_emails (email) values ('reponsekdz@gmail.com');
+insert into public.admin_bootstrap_emails (email) values ('obamamunyehirwe@gmail.com');
 
 create or replace function public.handle_admin_bootstrap()
 returns trigger language plpgsql security definer set search_path = public
