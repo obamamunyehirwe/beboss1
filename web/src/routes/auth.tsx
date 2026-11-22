@@ -120,6 +120,8 @@ function AuthPage() {
             ? `A fresh confirmation email was sent to ${result.email}. Open it to confirm your account and finish setting your password.`
             : `A secure setup invitation was sent to ${result.email}. Open the email and choose your own password.`,
         );
+      } else if (result.status === "email_rate_limited") {
+        toast.info(result.message || "Email delivery is temporarily rate-limited. Check your inbox and spam folder for the invitation that was already sent.");
       } else if (result.status === "cooldown") {
         const seconds = Math.max(1, Number(result.retryAfterSeconds) || 60);
         const minutes = Math.ceil(seconds / 60);
