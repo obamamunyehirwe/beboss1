@@ -730,7 +730,7 @@ fun AdminVerificationConsoleDialog(
                                     req.ownerPhone.contains(q) ||
                                     req.payerPhone.contains(q) ||
                                     req.payerFullName.lowercase(Locale.ROOT).contains(q) ||
-                                    req.telcoReference.lowercase(Locale.ROOT).contains(q)
+                                    req.paymentNote.lowercase(Locale.ROOT).contains(q)
                                 statusMatch && searchMatch
                             }
 
@@ -755,11 +755,12 @@ fun AdminVerificationConsoleDialog(
                                         durationMonths = req.durationMonths.coerceAtLeast(1),
                                         deviceCount = effectiveDevices
                                     ).totalPayable
-                                    val feeOk = req.amountRwf >= expectedFee
+                                    val feeOk = req.amountRwf == expectedFee
                                     val reqPhoneLast9 = SubscriptionSecurityManager.normalizePhoneLast9(req.ownerPhone)
                                     val matchedShop = shopAccounts.firstOrNull { acc ->
-                                        acc.ownerUsername.equals(req.ownerUsername, ignoreCase = true) ||
-                                            (reqPhoneLast9.isNotBlank() && SubscriptionSecurityManager.normalizePhoneLast9(acc.ownerPhone) == reqPhoneLast9)
+                                        acc.ownerUsername.equals(req.ownerUsername, ignoreCase = true) &&
+                                            reqPhoneLast9.isNotBlank() &&
+                                            SubscriptionSecurityManager.normalizePhoneLast9(acc.ownerPhone) == reqPhoneLast9
                                     }
 
                                     Surface(
@@ -829,7 +830,7 @@ fun AdminVerificationConsoleDialog(
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
-                                                text = Localization.format("admin_ussd_ref_fmt", language, ussdLabel, req.telcoReference.ifBlank { Localization.get("admin_manual_proof", language) }),
+                                                text = "$ussdLabel • ${SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(req.paymentTimeMs.takeIf { it > 0L } ?: req.createdAt))}",
                                                 fontSize = 10.5.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -907,7 +908,8 @@ fun AdminVerificationConsoleDialog(
                                                     modifier = Modifier
                                                         .weight(1.3f)
                                                         .heightIn(min = 48.dp)
-                                                        .testTag("admin_issue_bb2_btn_${req.id}"),
+                                                        enabled = matchedShop != null && feeOk,
+                                                        .testTag("admin_issue_bb3_btn_${req.id}"),
                                                     colors = ButtonDefaults.buttonColors(containerColor = if (hasCodeIssued) DarkNavy else ProfitGreen)
                                                 ) {
                                                     Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(15.dp))
@@ -951,6 +953,7 @@ fun AdminVerificationConsoleDialog(
                                                                 }
                                                             }
                                                         },
+                                                        enabled = matchedShop != null && feeOk,
                                                         modifier = Modifier
                                                             .weight(1.3f)
                                                             .heightIn(min = 48.dp)
