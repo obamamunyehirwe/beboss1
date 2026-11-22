@@ -498,32 +498,6 @@ export const deletePaymentRequest = createServerFn({ method: "POST" })
   });
 
 /**
- * Batch approve multiple payments with individual results.
- * Each payment is processed independently; failures don't block others.
- */
-export const approveBatchPayments = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { requestIds: string[] }) => z.object({ requestIds: z.array(z.string().min(1).max(200)).min(1).max(50) }).parse(d))
-  .handler(async ({ data, context }) => {
-    const ctx = context as unknown as Ctx;
-    const admin = await requireAdmin(ctx);
-    
-    const results = [];
-    for (const requestId of data.requestIds) {
-      try {
-        const result = await approvePaymentWithCode({ requestId }, { context });
-        results.push({ requestId, success: true, code: result.code, alreadyApproved: result.alreadyApproved });
-      } catch (e) {
-        results.push({ requestId, success: false, error: e instanceof Error ? e.message : "Unknown error" });
-      }
-    }
-    
-    await audit(ctx, admin.email, "APPROVE_BATCH_PAYMENTS", "multiple", `Processed ${data.requestIds.length} payments: ${results.filter(r => r.success).length} succeeded, ${results.filter(r => !r.success).length} failed`);
-    
-    return { results, successCount: results.filter(r => r.success).length };
-  });
-
-/**
  * Check app version for automatic update detection.
  * Returns current version, minimum required version, and download URL.
  */
