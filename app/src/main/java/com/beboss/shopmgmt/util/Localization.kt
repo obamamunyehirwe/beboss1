@@ -602,7 +602,7 @@ object Localization {
         "admin_tab_users" to locEntry("Users", "Abakoresha", "Utilisateurs", "Watumiaji"),
         "admin_tab_shops" to locEntry("Shops", "Amaduka", "Boutiques", "Maduka"),
         "admin_tab_issue" to locEntry("Issue Code", "Tanga Kode", "Générer Code", "Toa Msimbo"),
-        "admin_tab_codes" to locEntry("Codes", "Amakode", "Codes BB2", "Misimbo"),
+        "admin_tab_codes" to locEntry("Unlock Codes", "Kode zo Gufungura", "Codes d’activation", "Misimbo ya Kufungua"),
         "admin_tab_branches" to locEntry("Branches", "Amashami", "Agences", "Matawi"),
         "admin_tab_audit" to locEntry("Audit & Sec", "Ubugenzuzi", "Audit & Séc", "Ukaguzi"),
         "admin_pick_registered_shop" to locEntry(
@@ -617,7 +617,6 @@ object Localization {
             "Générer un code BB3 signé",
             "Toa msimbo wa BB3 uliotiwa saini"
         ),
-        "admin_tab_codes" to locEntry("Unlock Codes", "Kode zo Gufungura", "Codes d’activation", "Misimbo ya Kufungua"),
         "admin_signin_help" to locEntry(
             "Sign in with an existing BeBoss administrator account. Supabase checks the account's admin role and active Super Admin profile. Account creation and role assignment stay restricted to authorized administrators.",
             "Injira ukoresheje konti isanzwe y'umuyobozi wa BeBoss. Supabase igenzura uruhare rwa admin n'umwirondoro wa Super Admin ukora. Gukora konti no gutanga uburenganzira bigenewe abayobozi babifitiye ububasha.",
