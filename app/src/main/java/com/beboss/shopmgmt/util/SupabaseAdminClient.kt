@@ -525,12 +525,12 @@ object SupabaseAdminClient {
     }
 
     /**
-     * Public admin self-registration is deliberately disabled. The first admin is
-     * created only through the one-time allow-listed email invitation flow.
+     * Public admin self-registration is deliberately disabled. Existing team
+     * members are granted roles only by an authenticated master administrator.
      */
     suspend fun signUpAdmin(email: String, password: String, fullName: String): Result<SupabaseAdminSession> =
         Result.failure(
-            IllegalStateException("Admin self-registration is disabled. Open the BeBoss web admin sign-in page and request the secure first-admin invitation for $MASTER_ADMIN_EMAIL.")
+            IllegalStateException("Admin self-registration is disabled. Ask an existing BeBoss master admin to add this account in Admin Team.")
         )
 
     suspend fun signOutAdmin() = withContext(Dispatchers.IO) {
@@ -1875,10 +1875,16 @@ object SupabaseAdminClient {
                 put("updated_at", System.currentTimeMillis())
             }
             val req = buildRestRequest(
-                "payment_requests?id=eq.${URLEncoder.encode(request.id, "UTF-8")}",
+                "payment_requests?id=eq.${URLEncoder.encode(request.id, "UTF-8")}&status=eq.PENDING_VERIFICATION",
                 useAdminJwtIfAvailable = true
-            ).patch(prPatch.toString().toRequestBody(jsonMediaType)).build()
-            val ok = client.newCall(req).execute().use { it.isSuccessful }
+            )
+                .addHeader("Prefer", "return=representation")
+                .patch(prPatch.toString().toRequestBody(jsonMediaType))
+                .build()
+            val ok = client.newCall(req).execute().use { response ->
+                if (!response.isSuccessful) false
+                else JSONArray(response.body?.string().orEmpty().ifBlank { "[]" }).length() > 0
+            }
             if (ok) {
                 logAdminAudit("REJECT_PAYMENT", request.ownerUsername, cleanReason)
             }
