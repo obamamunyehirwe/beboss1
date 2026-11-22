@@ -146,7 +146,7 @@ function IssueForm() {
   const [hash, setHash] = useState("");
   const [issued, setIssued] = useState<{ code: string; amount: number } | null>(null);
   const [copied, setCopied] = useState(false);
-  const issue = useAdminAction(useServerFn(issueManualCode), { success: "Signed BB2 code issued", invalidate: [["admin", "codes"], ["admin", "shops"]] });
+  const issue = useAdminAction(useServerFn(issueManualCode), { success: "Signed BB3 code issued", invalidate: [["admin", "codes"], ["admin", "shops"]] });
 
   useEffect(() => {
     let live = true;
