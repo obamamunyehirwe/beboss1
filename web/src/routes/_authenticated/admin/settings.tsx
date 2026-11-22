@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingBlock, PageHeader, useAdminAction } from "@/components/admin/ui";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
-import { saveAppConfig, setSigningSecret } from "@/lib/admin.functions";
+import { getBb3SigningStatus, saveAppConfig, setSigningSecret } from "@/lib/admin.functions";
 import { configQuery } from "@/lib/admin-queries";
 import { getDatashareKeyStatus, setDatashareKey } from "@/lib/insights.functions";
 import { DOWNLOAD_PATH } from "@/lib/queries";
@@ -40,7 +40,10 @@ function SettingsPage() {
   const qc = useQueryClient();
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const save = useAdminAction(useServerFn(saveAppConfig), { success: "Saved — every app picks this up on its next sync", invalidate: [["admin", "config"], ["public-site"]] });
-  const setKey = useAdminAction(useServerFn(setSigningSecret), { success: "BB3 signing key saved", invalidate: [["admin", "ctx"]] });
+  const signingStatusFn = useServerFn(getBb3SigningStatus);
+  const signingStatus = useQuery({ queryKey: ["admin", "bb3-signing-status"], queryFn: () => signingStatusFn(), enabled: isAdmin, refetchOnWindowFocus: true });
+  const keyIsReady = signingStatus.data?.configured ?? !!ctx.data?.signingKeyConfigured;
+  const setKey = useAdminAction(useServerFn(setSigningSecret), { success: "BB3 signing key verified and saved", invalidate: [["admin", "ctx"], ["admin", "bb3-signing-status"]] });
   const [secret, setSecret] = useState("");
   const [show, setShow] = useState(false);
   const [previewAmount, setPreviewAmount] = useState(5000);
@@ -138,10 +141,13 @@ function SettingsPage() {
           <div>
             <h2 className="flex items-center gap-2 font-semibold">
               <KeyRound className="size-4 text-primary" /> BB3 signing private key
-              {ctx.data?.signingKeyConfigured ? <Badge variant="success">Configured · Android key matched</Badge> : <Badge variant="warning">Missing or not matched</Badge>}
+              {signingStatus.isLoading ? <Badge variant="muted">Checking key…</Badge> : keyIsReady ? <Badge variant="success">Configured · Android key matched</Badge> : <Badge variant="warning">Missing or not matched</Badge>}
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
               New unlock codes are BB3 ECDSA P-256 signatures. The private key stays server-side in Supabase; Android contains only the matching public key. The saved private key must match the public key already pinned in your installed APK. Legacy BB2 codes are verified online against their original issued database record, so no BB2 shared HMAC key is needed. Never paste a private key into Android files, browser storage, or VITE_ variables.
+            </p>
+            <p className={keyIsReady ? "mt-3 rounded-xl border border-success/30 bg-success/10 p-3 text-sm text-success" : "mt-3 rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning"}>
+              {signingStatus.data?.message ?? "Checking whether the current server key matches the Android app…"}
             </p>
           </div>
           <form
