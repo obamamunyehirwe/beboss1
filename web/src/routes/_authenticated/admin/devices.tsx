@@ -9,6 +9,7 @@ import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { deleteDevice, setDeviceActive } from "@/lib/admin.functions";
 import { devicesQuery } from "@/lib/admin-queries";
 import { formatRwf, relativeTime } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/devices")({
   component: DevicesPage,
@@ -17,6 +18,7 @@ export const Route = createFileRoute("/_authenticated/admin/devices")({
 type F = "ALL" | "ACTIVE" | "PAUSED" | "STALE";
 
 function DevicesPage() {
+  const a = useAdminText();
   const { data, isLoading } = useQuery(devicesQuery);
   const isAdmin = !!useAdminCtx().data?.isAdmin;
   const [q, setQ] = useState("");
@@ -38,7 +40,7 @@ function DevicesPage() {
         sub={`Paired terminals across all shops • extra-device add-ons ${formatRwf(addonMrr)} / month`}
         actions={
           <Button size="sm" variant="glass" onClick={() => downloadCsv(`beboss-devices-${Date.now()}.csv`, rows)}>
-            <Download /> Export
+            <Download /> {a("Export")}
           </Button>
         }
       />
@@ -108,12 +110,12 @@ function DevicesPage() {
                         </Button>
                         <ConfirmAction
                           trigger={
-                            <Button size="icon" variant="ghost" aria-label="Remove device">
+                            <Button size="icon" variant="ghost" aria-label={a("Remove device")}>
                               <Trash2 />
                             </Button>
                           }
-                          title={`Remove ${d.device_name || "this device"}?`}
-                          description="The device is unpaired from the shop. It will need a new join code to sync again."
+                          title={a(`Remove ${d.device_name || "this device"}?`)}
+                          description={a("The device is unpaired from the shop. It will need a new join code to sync again.")}
                           destructive
                           confirmLabel="Remove"
                           onConfirm={() => del.mutate({ id: d.id })}
