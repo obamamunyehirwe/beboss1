@@ -693,6 +693,13 @@ object Localization {
         "admin_tier_dual" to locEntry("Dual", "Amaduka abiri", "Double", "Maduka mawili"),
         "admin_tier_multi" to locEntry("Multi", "Amaduka menshi", "Multi", "Maduka mengi"),
         "admin_tier_annual" to locEntry("Annual", "Umwaka", "Annuel", "Mwaka"),
+        "admin_tier_trial" to locEntry("Trial", "Igerageza", "Essai", "Jaribio"),
+        "admin_default_reject_reason" to locEntry(
+            "MoMo transaction reference could not be confirmed",
+            "Reference y'ihererekanya rya MoMo ntiyashoboye kwemezwa",
+            "La référence de transaction MoMo n’a pas pu être confirmée",
+            "Kumbukumbu ya muamala wa MoMo haikuweza kuthibitishwa"
+        ),
         "admin_days_label" to locEntry("Days", "Iminsi", "Jours", "Siku"),
         "admin_amount_label" to locEntry("Amount (FRw)", "Amafaranga (FRw)", "Montant (FRw)", "Kiasi (FRw)"),
         "admin_binding_ready" to locEntry("Cryptographic account binding ready", "Konti ihujwe mu buryo bw'umutekano", "Liaison cryptographique du compte prête", "Ufungamanisho salama wa akaunti uko tayari"),
