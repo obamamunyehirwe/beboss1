@@ -37,7 +37,7 @@ export type PageCopy = {
   };
   myShop: {
     lookupFailed: string; proofSent: string; sendFailed: string; payerName: string; payerPhone: string;
-    txRef: string; amountNote: string; ref: string; status: Record<string, string>;
+    amountNote: string; ref: string; status: Record<string, string>;
   };
 };
 
@@ -161,8 +161,8 @@ const en: PageCopy = {
     lookupFailed: "Lookup failed. Check the username and phone, then try again.",
     proofSent: "Payment proof sent. You'll be unlocked as soon as it's verified.",
     sendFailed: "Could not send your proof. Check the details and try again.",
-    payerName: "Payer full name (as on MoMo)", payerPhone: "Payer phone", txRef: "Transaction reference (TxID)",
-    amountNote: "BeBoss recalculates the plan amount, but a submitted reference is only a claim until an admin verifies settlement. Use the same shop username and registered phone so approval reaches the right account.",
+    payerName: "Payer full name (as on MoMo)", payerPhone: "Payer phone",
+    amountNote: "BeBoss saves your payer details, payment time and selected plan. Your shop is unlocked only after an administrator verifies the payment with the mobile-money provider. Use the same shop username and registered phone so approval reaches the right account.",
     ref: "Ref",
     status: { ACTIVE: "Active", TRIAL: "Free trial", EXPIRED: "Expired", SUSPENDED: "Suspended", APPROVED: "Approved", PENDING_VERIFICATION: "Waiting for verification", REJECTED: "Rejected", REDEEMED: "Used", ISSUED: "Ready to use", REVOKED: "Cancelled" },
   },
@@ -288,8 +288,8 @@ const rw: PageCopy = {
     lookupFailed: "Gushakisha byanze. Reba izina ukoresha na telefoni, wongere ugerageze.",
     proofSent: "Icyemezo cy'ubwishyu cyoherejwe. Urafungurirwa nikimara kugenzurwa.",
     sendFailed: "Ntitwashoboye kohereza icyemezo. Reba amakuru wongere ugerageze.",
-    payerName: "Amazina y'uwishyuye (nk'uko ari kuri MoMo)", payerPhone: "Telefoni y'uwishyuye", txRef: "Nimero y'igikorwa (TxID)",
-    amountNote: "BeBoss yongera kubara amafaranga ya gahunda, ariko nimero y'igikorwa iba ari ikirego kugeza umuyobozi agenzuye ubwishyu. Koresha izina ry'iduka na telefoni byanditswe muri porogaramu kugira ngo icyemezo kigere kuri konti nyayo.",
+    payerName: "Amazina y'uwishyuye (nk'uko ari kuri MoMo)", payerPhone: "Telefoni y'uwishyuye",
+    amountNote: "BeBoss ibika amakuru y'uwishyuye, igihe yishyuye na gahunda yahisemo. Iduka rifungurwa ari uko umuyobozi agenzuye ubwishyu kuri MTN cyangwa Airtel. Koresha izina ry'iduka na telefoni byanditswe muri porogaramu.",
     ref: "Nimero",
     status: { ACTIVE: "Rirakora", TRIAL: "Igerageza", EXPIRED: "Ryarangiye", SUSPENDED: "Ryahagaritswe", APPROVED: "Byemejwe", PENDING_VERIFICATION: "Bitegereje kugenzurwa", REJECTED: "Byanzwe", REDEEMED: "Yakoreshejwe", ISSUED: "Iteguye gukoreshwa", REVOKED: "Yahagaritswe" },
   },
@@ -415,8 +415,8 @@ const fr: PageCopy = {
     lookupFailed: "Recherche impossible. Vérifiez l'identifiant et le téléphone, puis réessayez.",
     proofSent: "Preuve de paiement envoyée. Vous serez débloqué dès sa vérification.",
     sendFailed: "Impossible d'envoyer la preuve. Vérifiez les informations et réessayez.",
-    payerName: "Nom complet du payeur (comme sur MoMo)", payerPhone: "Téléphone du payeur", txRef: "Référence de transaction (TxID)",
-    amountNote: "BeBoss recalcule le prix du forfait, mais une référence soumise reste une déclaration jusqu'à la vérification du règlement par un administrateur. Utilisez l'identifiant et le téléphone enregistrés pour lier l'approbation au bon compte.",
+    payerName: "Nom complet du payeur (comme sur MoMo)", payerPhone: "Téléphone du payeur",
+    amountNote: "BeBoss enregistre les coordonnées du payeur, l'heure du paiement et le forfait choisi. Le compte est activé uniquement après vérification du paiement auprès de l'opérateur mobile par un administrateur. Utilisez le nom et le téléphone enregistrés.",
     ref: "Réf.",
     status: { ACTIVE: "Active", TRIAL: "Essai gratuit", EXPIRED: "Expirée", SUSPENDED: "Suspendue", APPROVED: "Approuvé", PENDING_VERIFICATION: "En attente de vérification", REJECTED: "Refusé", REDEEMED: "Utilisé", ISSUED: "Prêt à l'emploi", REVOKED: "Annulé" },
   },
@@ -542,8 +542,8 @@ const sw: PageCopy = {
     lookupFailed: "Utafutaji umeshindikana. Angalia jina la mtumiaji na simu, kisha jaribu tena.",
     proofSent: "Uthibitisho wa malipo umetumwa. Utafunguliwa mara utakapothibitishwa.",
     sendFailed: "Imeshindikana kutuma uthibitisho. Angalia taarifa na ujaribu tena.",
-    payerName: "Jina kamili la mlipaji (kama kwenye MoMo)", payerPhone: "Simu ya mlipaji", txRef: "Namba ya muamala (TxID)",
-    amountNote: "BeBoss huhesabu upya bei ya mpango, lakini namba iliyotumwa ni dai tu hadi msimamizi athibitishe malipo. Tumia jina la duka na simu iliyosajiliwa ili idhini ifike kwenye akaunti sahihi.",
+    payerName: "Jina kamili la mlipaji (kama kwenye MoMo)", payerPhone: "Simu ya mlipaji",
+    amountNote: "BeBoss huhifadhi jina na simu ya mlipaji, muda wa malipo na mpango uliochaguliwa. Akaunti hufunguliwa baada ya msimamizi kuthibitisha malipo moja kwa moja kwa mtoa huduma wa simu. Tumia jina na simu iliyosajiliwa.",
     ref: "Namba",
     status: { ACTIVE: "Hai", TRIAL: "Majaribio ya bure", EXPIRED: "Imeisha", SUSPENDED: "Imesimamishwa", APPROVED: "Imeidhinishwa", PENDING_VERIFICATION: "Inasubiri uthibitisho", REJECTED: "Imekataliwa", REDEEMED: "Imetumika", ISSUED: "Tayari kutumika", REVOKED: "Imeghairiwa" },
   },
