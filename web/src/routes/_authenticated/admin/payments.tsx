@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, SearchInput, StatusBadge, downloadCsv, matches, useAdminAction } from "@/components/admin/ui";
 import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, directAutoUnlock, rejectPayment } from "@/lib/admin.functions";
-import { configQuery, paymentsQuery, type PaymentRequest } from "@/lib/admin-queries";
+import { configQuery, paymentsQuery, shopsQuery, type PaymentRequest } from "@/lib/admin-queries";
 import { buildDirectUnlockReplyText, buildUnlockReplyText, buildWhatsAppUrl, calculateSubscriptionFee } from "@/lib/pricing";
 import { formatDateTime, formatRwf, relativeTime } from "@/lib/format";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
@@ -28,6 +28,7 @@ type ClaimSource = "ALL" | "APP" | "WEB" | "WHATSAPP";
 function PaymentsPage() {
   const { data, isLoading } = useQuery(paymentsQuery);
   const { data: cfg } = useQuery(configQuery);
+  const { data: shops } = useQuery(shopsQuery);
   const ctx = useAdminCtx();
   const qc = useQueryClient();
   const isAdmin = !!ctx.data?.isAdmin;
@@ -35,6 +36,7 @@ function PaymentsPage() {
   const [status, setStatus] = useState<Status>("PENDING_VERIFICATION");
   const [source, setSource] = useState<ClaimSource>("ALL");
   const [manualOpen, setManualOpen] = useState(false);
+  const [selectedShopId, setSelectedShopId] = useState("");
   const [manual, setManual] = useState({ shopName: "", username: "", ownerPhone: "", provider: "MTN MoMo" as "MTN MoMo" | "Airtel Money", payerPhone: "", payerName: "", telcoReference: "", months: 1, branches: 1, workers: 1, devices: 1 });
   const [q, setQ] = useState("");
   const [result, setResult] = useState<Result | null>(null);
@@ -131,11 +133,43 @@ function PaymentsPage() {
                 createManual.mutate(manual, {
                   onSuccess: () => {
                     setManual({ shopName: "", username: "", ownerPhone: "", provider: "MTN MoMo", payerPhone: "", payerName: "", telcoReference: "", months: 1, branches: 1, workers: 1, devices: 1 });
+                    setSelectedShopId("");
                     setManualOpen(false);
                   },
                 });
               }}
             >
+              <div className="space-y-1.5">
+                <Label>{a("Select a registered shop (optional)")}</Label>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={selectedShopId}
+                  onChange={(event) => {
+                    const id = event.target.value;
+                    setSelectedShopId(id);
+                    const shop = (shops ?? []).find((item) => item.id === id);
+                    if (shop) {
+                      setManual((current) => ({
+                        ...current,
+                        shopName: shop.shop_name,
+                        username: shop.owner_username,
+                        ownerPhone: shop.owner_phone,
+                        branches: Math.max(1, shop.branch_count),
+                        workers: Math.max(1, shop.worker_count),
+                        devices: Math.max(1, shop.device_limit),
+                      }));
+                    }
+                  }}
+                >
+                  <option value="">{a("Choose an existing shop to fill owner and plan details")}</option>
+                  {(shops ?? []).map((shop) => (
+                    <option key={shop.id} value={shop.id}>
+                      {shop.shop_name} — @{shop.owner_username}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">{a("You can still enter a new or not-yet-synced shop manually below.")}</p>
+              </div>
               <p className="text-sm text-muted-foreground">{a("Enter the customer's registered BeBoss shop details and the transaction information shown in the WhatsApp proof. The claim will enter the same queue as Android and website submissions; payment still needs to be verified against the provider statement.")}</p>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <ManualField label="Shop name" value={manual.shopName} onChange={(shopName) => setManual({ ...manual, shopName })} required />
