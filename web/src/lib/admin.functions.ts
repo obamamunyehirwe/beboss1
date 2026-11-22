@@ -186,28 +186,46 @@ async function getShop(context: Ctx, shopId: string) {
 async function activateShop(
   context: Ctx,
   shopId: string,
-  opts: { addDays: number; branches?: number; workers?: number; devices?: number; monthly?: number; autoUnlock?: boolean; fallback?: any },
+  opts: { addDays: number; branches?: number; workers?: number; devices?: number; monthly?: number; autoUnlock?: boolean },
 ) {
   const now = Date.now();
   const shop = await getShop(context, shopId);
+  if (!shop) throw new Error("This shop is not registered in BeBoss Cloud. Sync/register the shop before activating a paid plan.");
   const patch: Record<string, unknown> = {
     subscription_status: "ACTIVE",
-    subscription_expires_at: extendExpiry(shop?.subscription_expires_at ?? 0, opts.addDays, now),
+    subscription_expires_at: extendExpiry(shop.subscription_expires_at ?? 0, opts.addDays, now),
     updated_at: now,
   };
   if (opts.branches != null) patch["branch_count"] = Math.max(1, opts.branches);
   if (opts.workers != null) patch["worker_count"] = Math.max(1, opts.workers);
-  if (opts.devices != null) patch["device_limit"] = Math.max(1, opts.devices, shop?.device_limit ?? 1);
+  if (opts.devices != null) {
+    const exactDevices = Math.max(1, opts.devices);
+    patch["device_count"] = exactDevices;
+    patch["device_limit"] = exactDevices;
+  }
   if (opts.monthly != null) patch["monthly_fee_rwf"] = Math.max(5000, opts.monthly);
   if (opts.autoUnlock) patch["auto_unlocked_at"] = now;
-  if (shop) {
-    const { error } = await context.supabase.from("shop_accounts").update(patch).eq("id", shopId);
-    if (error) throw new Error(error.message);
-  } else if (opts.fallback) {
-    const { error } = await context.supabase.from("shop_accounts").insert({ id: shopId, ...opts.fallback, ...patch, created_at: now });
-    if (error) throw new Error(error.message);
-  }
+  const { error } = await context.supabase.from("shop_accounts").update(patch).eq("id", shopId);
+  if (error) throw new Error(error.message);
   return patch["subscription_expires_at"] as number;
+}
+
+function normalizePaymentPhone(value: string): string {
+  return String(value ?? "").replace(/\D/g, "").slice(-9);
+}
+
+async function requireRegisteredPaymentShop(context: Ctx, request: any) {
+  const shopId = computeShopKey(String(request.owner_username ?? ""), String(request.owner_phone ?? ""));
+  const shop = await getShop(context, shopId);
+  if (!shop) {
+    throw new Error("No registered BeBoss shop matches this payment. Sync/register the mobile shop first; no unlock code was issued.");
+  }
+  const usernameMatches = String(shop.owner_username ?? "").trim().toLowerCase() === String(request.owner_username ?? "").trim().toLowerCase();
+  const phoneMatches = normalizePaymentPhone(String(shop.owner_phone ?? "")) === normalizePaymentPhone(String(request.owner_phone ?? ""));
+  if (!usernameMatches || !phoneMatches) {
+    throw new Error("The payment owner details do not exactly match the registered BeBoss shop. Correct the shop account before approval.");
+  }
+  return { shopId, shop };
 }
 
 // ---------------- Context ----------------
