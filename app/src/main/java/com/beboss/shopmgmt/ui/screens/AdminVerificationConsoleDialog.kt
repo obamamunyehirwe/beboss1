@@ -850,7 +850,7 @@ fun AdminVerificationConsoleDialog(
                                                             color = ProfitGreen
                                                         )
                                                         Text(
-                                                            text = "Status: ${matchedShop.subscriptionStatus} (${matchedDays}d left) Ã¢â‚¬Â¢ Quotas: ${matchedShop.branchCount}br/${matchedShop.workerCount}stf/${matchedShop.deviceLimit}dev (${matchedShop.monthlyFeeRwf} FRw/mo)",
+                                                            text = Localization.format("admin_matched_status_fmt", language, matchedShop.subscriptionStatus, matchedDays, matchedShop.branchCount, matchedShop.workerCount, matchedShop.deviceLimit, matchedShop.monthlyFeeRwf),
                                                             fontSize = 10.sp,
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                                         )
@@ -868,7 +868,7 @@ fun AdminVerificationConsoleDialog(
 
                                             if (hasCodeIssued) {
                                                 Text(
-                                                    text = "Code: ${req.generatedUnlockCode}",
+                                                    text = Localization.format("admin_code_fmt", language, req.generatedUnlockCode),
                                                     fontFamily = FontFamily.Monospace,
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
@@ -876,14 +876,14 @@ fun AdminVerificationConsoleDialog(
                                                 )
                                             } else if (isDirectUnlocked) {
                                                 Text(
-                                                    text = "Direct Auto-Unlocked by Admin (No Code Required) Ã¢â‚¬Â¢ Unlocks automatically on client sync.",
+                                                    text = Localization.get("admin_direct_unlocked_note", language),
                                                     fontSize = 10.5.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = ProfitGreen
                                                 )
                                             } else if (isRejected && req.rejectionReason.isNotBlank()) {
                                                 Text(
-                                                    text = "Rejected: ${req.rejectionReason}",
+                                                    text = Localization.format("admin_rejected_fmt", language, req.rejectionReason),
                                                     fontSize = 11.sp,
                                                     color = LossRed,
                                                     fontWeight = FontWeight.Medium
@@ -912,7 +912,7 @@ fun AdminVerificationConsoleDialog(
                                                     Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(15.dp))
                                                     Spacer(modifier = Modifier.width(4.dp))
                                                     Text(
-                                                        text = if (hasCodeIssued) "Re-send BB2" else "Verify & Issue BB2",
+                                                        text = if (hasCodeIssued) Localization.get("admin_resend_bb3", language) else Localization.get("admin_verify_issue_bb3", language),
                                                         fontSize = 10.5.sp,
                                                         fontWeight = FontWeight.Bold
                                                     )
@@ -932,7 +932,7 @@ fun AdminVerificationConsoleDialog(
                                                         },
                                                         modifier = Modifier.size(48.dp)
                                                     ) {
-                                                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send BB2 code on WhatsApp", tint = ProfitGreen)
+                                                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = Localization.get("admin_send_bb3_whatsapp", language), tint = ProfitGreen)
                                                     }
                                                 }
 
@@ -958,7 +958,7 @@ fun AdminVerificationConsoleDialog(
                                                     ) {
                                                         Icon(Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.size(15.dp))
                                                         Spacer(modifier = Modifier.width(4.dp))
-                                                        Text("Auto-Unlock", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                        Text(Localization.get("admin_auto_unlock", language), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                                                     }
                                                 }
 
@@ -1404,7 +1404,7 @@ fun AdminVerificationConsoleDialog(
                                                 }
                                             }
 
-                                            // Controls Row: BB2 Code, Remote Lock/Activate, WhatsApp, Delete
+                                            // Controls Row: BB3 code, remote lock/activate, WhatsApp, delete
                                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 OutlinedButton(
                                                     onClick = {
@@ -1420,7 +1420,7 @@ fun AdminVerificationConsoleDialog(
                                                 ) {
                                                     Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(14.dp))
                                                     Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Issue BB2", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                    Text(Localization.get("admin_verify_issue_bb3", language), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                                                 }
 
                                                 OutlinedButton(
@@ -1468,7 +1468,7 @@ fun AdminVerificationConsoleDialog(
                         }
 
                         3 -> {
-                            // Real Account-Bound BB2 Unlock Code Generator with Registered Shop Picker & Duration Presets
+                            // Server-signed BB3 unlock code generator with registered-shop picker and duration presets
                             val previewBindingHash = remember(manualUsername, manualPhone) {
                                 if (manualUsername.trim().isNotEmpty() && SubscriptionSecurityManager.normalizePhoneLast9(manualPhone).isNotEmpty()) {
                                     SubscriptionSecurityManager.computeAccountBindingHash(manualUsername, manualPhone)
@@ -1708,7 +1708,7 @@ fun AdminVerificationConsoleDialog(
                                 OutlinedTextField(
                                     value = codeSearchQuery,
                                     onValueChange = { codeSearchQuery = it },
-                                    label = { Text("Search BB2 code, @username, phone or tier") },
+                                    label = { Text(Localization.get("admin_code_search", language)) },
                                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth(),
@@ -1748,7 +1748,7 @@ fun AdminVerificationConsoleDialog(
 
                                 if (filteredCodes.isEmpty()) {
                                     Text(
-                                        text = "No BB2 unlock codes match the filter.",
+                                        text = Localization.get("admin_no_codes", language),
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(8.dp)
