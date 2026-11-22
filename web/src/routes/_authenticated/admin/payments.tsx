@@ -37,7 +37,7 @@ function PaymentsPage() {
   const [source, setSource] = useState<ClaimSource>("ALL");
   const [manualOpen, setManualOpen] = useState(false);
   const [selectedShopId, setSelectedShopId] = useState("");
-  const [manual, setManual] = useState({ shopName: "", username: "", ownerPhone: "", provider: "MTN MoMo" as "MTN MoMo" | "Airtel Money", payerPhone: "", payerName: "", telcoReference: "", months: 1, branches: 1, workers: 1, devices: 1 });
+  const [manual, setManual] = useState({ shopName: "", username: "", ownerPhone: "", provider: "MTN MoMo" as "MTN MoMo" | "Airtel Money", payerPhone: "", payerName: "", paymentTimeMs: Date.now(), paymentNote: "", months: 1, branches: 1, workers: 1, devices: 1 });
   const [q, setQ] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const [rejecting, setRejecting] = useState<PaymentRequest | null>(null);
@@ -58,7 +58,7 @@ function PaymentsPage() {
     rows.forEach((r) => (c[r.status] = (c[r.status] ?? 0) + 1));
     return c;
   }, [rows]);
-  const filtered = rows.filter((r) => (status === "ALL" || r.status === status) && (source === "ALL" || (r.source || "APP") === source) && matches(q, r.shop_name, r.owner_username, r.owner_phone, r.payer_phone, r.payer_full_name, r.telco_reference, r.generated_unlock_code));
+  const filtered = rows.filter((r) => (status === "ALL" || r.status === status) && (source === "ALL" || (r.source || "APP") === source) && matches(q, r.shop_name, r.owner_username, r.owner_phone, r.payer_phone, r.payer_full_name, r.generated_unlock_code, r.payment_note));
   const pending = rows.filter((r) => r.status === "PENDING_VERIFICATION");
   const rate = Number(cfg?.per_device_fee_rwf) || 2000;
 
@@ -132,7 +132,7 @@ function PaymentsPage() {
                 event.preventDefault();
                 createManual.mutate(manual, {
                   onSuccess: () => {
-                    setManual({ shopName: "", username: "", ownerPhone: "", provider: "MTN MoMo", payerPhone: "", payerName: "", telcoReference: "", months: 1, branches: 1, workers: 1, devices: 1 });
+                    setManual({ shopName: "", username: "", ownerPhone: "", provider: "MTN MoMo", payerPhone: "", payerName: "", paymentTimeMs: Date.now(), paymentNote: "", months: 1, branches: 1, workers: 1, devices: 1 });
                     setSelectedShopId("");
                     setManualOpen(false);
                   },
@@ -170,7 +170,7 @@ function PaymentsPage() {
                 </select>
                 <p className="text-xs text-muted-foreground">{a("You can still enter a new or not-yet-synced shop manually below.")}</p>
               </div>
-              <p className="text-sm text-muted-foreground">{a("Enter the customer's registered BeBoss shop details and the transaction information shown in the WhatsApp proof. The claim will enter the same queue as Android and website submissions; payment still needs to be verified against the provider statement.")}</p>
+              <p className="text-sm text-muted-foreground">{a("Enter the customer's registered BeBoss shop, payer details, payment date/time and plan shown in the WhatsApp proof. The claim enters the same queue as Android and website submissions; verify payment against the provider statement before issuing a code.")}</p>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <ManualField label="Shop name" value={manual.shopName} onChange={(shopName) => setManual({ ...manual, shopName })} required />
                 <ManualField label="Registered owner username" value={manual.username} onChange={(username) => setManual({ ...manual, username })} required />
@@ -188,7 +188,7 @@ function PaymentsPage() {
                 </div>
                 <ManualField label="Payer full name" value={manual.payerName} onChange={(payerName) => setManual({ ...manual, payerName })} required />
                 <ManualField label="Payer phone" value={manual.payerPhone} onChange={(payerPhone) => setManual({ ...manual, payerPhone })} required />
-                <ManualField label="Mobile-money transaction reference" value={manual.telcoReference} onChange={(telcoReference) => setManual({ ...manual, telcoReference: telcoReference.toUpperCase() })} required />
+                <div className="space-y-1.5"><Label>Payment date and time</Label><Input type="datetime-local" value={new Date(manual.paymentTimeMs - new Date(manual.paymentTimeMs).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setManual({ ...manual, paymentTimeMs: event.target.value ? new Date(event.target.value).getTime() : Date.now() })} required /></div><ManualField label="Payment note (optional)" value={manual.paymentNote} onChange={(paymentNote) => setManual({ ...manual, paymentNote })} />
                 <div className="space-y-1.5">
                   <Label>{a("Duration")}</Label>
                   <select
@@ -233,7 +233,7 @@ function PaymentsPage() {
       ) : null}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder="Search shop, @username, phone, payer, reference…" />
+        <SearchInput value={q} onChange={setQ} placeholder="Search shop, @username, phone, payer, payment note…" />
         <FilterChips<Status>
           value={status}
           onChange={setStatus}
@@ -290,9 +290,9 @@ function PaymentsPage() {
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
                   <Info label="Provider" value={r.provider} />
                   <Info label="Payer" value={r.payer_full_name || "—"} sub={r.payer_phone} />
-                  <Info label="Transaction reference" value={r.telco_reference || "—"} mono />
+                  <Info label="Payment details" value={formatDateTime(r.payment_time_ms || r.created_at)} sub={r.payment_note || "No additional note"} />
                   <Info label="Registered owner phone" value={r.owner_phone} mono />
-                  <Info label="Plan" value={`${r.branch_count} br • ${r.worker_count} staff • ${r.device_count} dev`} />
+                  <Info label="Plan" value={`${r.duration_months} mo • ${r.branch_count} br • ${r.worker_count} staff • ${r.device_count} dev`} />
                 </dl>
                 {r.amount_rwf !== calc.total ? (
                   <p className="mt-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
