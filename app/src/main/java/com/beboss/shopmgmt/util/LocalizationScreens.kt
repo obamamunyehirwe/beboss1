@@ -1088,7 +1088,7 @@ internal object LocalizationScreens {
             "Tuma Uthibitisho & WhatsApp"
         ),
         "sub_proof_err_missing" to locEntry(
-            "Enter sender phone, full registered name, and MoMo transaction reference.",
+            "Enter the payer phone, full registered name, and payment date/time. No transaction reference is required.",
             "Injiza nimero yohereje, amazina yuzuye na kode y'ubutumwa bwa MoMo.",
             "Entrez le numéro payeur, le nom complet et la référence de transaction.",
             "Weka namba iliyotuma, jina kamili na kumbukumbu ya muamala."
