@@ -6,6 +6,10 @@ const corsHeaders = {
 };
 
 const encoder = new TextEncoder();
+const BB3_ANDROID_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEnH8Qg10M7lur8WocoKgklEJ98F6
+UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
+-----END PUBLIC KEY-----`;
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -23,7 +27,7 @@ async function adminRest(path: string, init: RequestInit = {}) {
 }
 
 function decodePem(pem: string): Uint8Array {
-  const b64 = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
+  const b64 = pem.replace(/-----BEGIN [^-]+-----|-----END [^-]+-----|\s/g, "");
   const binary = atob(b64);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
@@ -75,13 +79,26 @@ async function loadPrivateKey(): Promise<CryptoKey> {
   if (!pem.startsWith("-----BEGIN PRIVATE KEY-----") || !pem.includes("-----END PRIVATE KEY-----")) {
     throw new Error("The server-only BB3 signing key is missing or invalid. Ask the master administrator to provision it.");
   }
-  return crypto.subtle.importKey(
+  const privateKey = await crypto.subtle.importKey(
     "pkcs8",
     decodePem(pem),
     { name: "ECDSA", namedCurve: "P-256" },
-    false,
+    true,
     ["sign"],
   );
+  const privateJwk = await crypto.subtle.exportKey("jwk", privateKey);
+  const expectedPublicKey = await crypto.subtle.importKey(
+    "spki",
+    decodePem(BB3_ANDROID_PUBLIC_KEY_PEM),
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["verify"],
+  );
+  const expectedPublicJwk = await crypto.subtle.exportKey("jwk", expectedPublicKey);
+  if (!privateJwk.x || !privateJwk.y || privateJwk.x !== expectedPublicJwk.x || privateJwk.y !== expectedPublicJwk.y) {
+    throw new Error("The saved BB3 private key does not match the public key pinned in the installed BeBoss APK.");
+  }
+  return privateKey;
 }
 
 Deno.serve(async (request: Request) => {
@@ -222,7 +239,7 @@ Deno.serve(async (request: Request) => {
       Math.floor(devices),
       Math.floor(paymentTimeMs),
       paymentNote,
-    ].join("\\n");
+    ].join("\n");
     const planDigest = hex(await sha256(canonicalPlan));
     if (!/^[0-9A-F]{64}$/.test(planDigest)) throw new Error("Could not create the payment plan digest.");
     const nonce = planDigest.slice(0, 24);
