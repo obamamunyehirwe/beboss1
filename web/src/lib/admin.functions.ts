@@ -27,6 +27,38 @@ async function audit(context: Ctx, email: string, action: string, target: string
 
 type Bb3Input = { username: string; phone: string; tier: string; days: number };
 
+// This public key is already pinned in SubscriptionSecurityManager.kt.
+// Only a private key whose derived public key matches this exact APK key can sign
+// BB3 vouchers accepted by currently installed BeBoss Android builds.
+const BB3_ANDROID_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEnH8Qg10M7lur8WocoKgklEJ98F6
+UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
+-----END PUBLIC KEY-----`;
+
+async function assertBb3KeyMatchesAndroid(pem: string): Promise<void> {
+  const { createPrivateKey, createPublicKey } = await import("node:crypto");
+  let privateKey;
+  try {
+    privateKey = createPrivateKey(pem);
+  } catch {
+    throw new Error("Invalid private key PEM. Paste a complete PKCS#8 P-256 private key.");
+  }
+  if (privateKey.asymmetricKeyType !== "ec" || privateKey.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
+    throw new Error("The BB3 signing key must be an ECDSA P-256 private key.");
+  }
+  const derivedPublic = createPublicKey(privateKey)
+    .export({ type: "spki", format: "pem" })
+    .toString()
+    .replace(/\\s+/g, "");
+  const androidPublic = createPublicKey(BB3_ANDROID_PUBLIC_KEY_PEM)
+    .export({ type: "spki", format: "pem" })
+    .toString()
+    .replace(/\\s+/g, "");
+  if (derivedPublic !== androidPublic) {
+    throw new Error("This private key does not match the public verification key in the current Android APK. Do not save or rotate it; use the original matching server private key.");
+  }
+}
+
 async function loadBb3PrivateKeyPem(): Promise<string> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data, error } = await supabaseAdmin
@@ -37,13 +69,9 @@ async function loadBb3PrivateKeyPem(): Promise<string> {
   if (error) throw new Error("Could not load the server-only BB3 signing key.");
   const pem = String(data?.value ?? "").trim();
   if (!pem.startsWith("-----BEGIN PRIVATE KEY-----") || !pem.includes("-----END PRIVATE KEY-----")) {
-    throw new Error("The server-only BB3 signing key is missing. Provision the P-256 private key in Supabase app_secrets.");
+    throw new Error("The server-only BB3 signing key is missing. Add the original Android-matching P-256 key in Admin → Settings.");
   }
-  const { createPrivateKey } = await import("node:crypto");
-  const key = createPrivateKey(pem);
-  if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
-    throw new Error("The BB3 server signing key must be an ECDSA P-256 private key.");
-  }
+  await assertBb3KeyMatchesAndroid(pem);
   return pem;
 }
 
@@ -550,12 +578,20 @@ export const deleteSnapshot = createServerFn({ method: "POST" })
   });
 
 // ---------------- Config & secrets ----------------
+const paymentPhoneSchema = z.string().trim().max(20).refine(
+  (value) => !value || /^\\+?[0-9\\s()-]{9,20}$/.test(value),
+  "Enter a valid mobile-money phone number (include country code when needed).",
+);
+
 const configSchema = z.object({
   admin_whatsapp_number: z.string().trim().max(30),
-  mtn_momo_code: z.string().trim().max(20),
-  mtn_momo_phone: z.string().trim().max(20),
+  mtn_momo_code: z.string().trim().max(20).refine(
+    (value) => !value || /^\\d{4,20}$/.test(value),
+    "MTN merchant code must contain 4–20 digits.",
+  ),
+  mtn_momo_phone: paymentPhoneSchema,
   mtn_recipient_name: z.string().trim().max(80),
-  airtel_money_phone: z.string().trim().max(20),
+  airtel_money_phone: paymentPhoneSchema,
   airtel_recipient_name: z.string().trim().max(80),
   per_device_fee_rwf: z.number().int().min(0).max(1_000_000),
   apk_download_url: z.string().trim().max(500),
@@ -582,11 +618,7 @@ export const setSigningSecret = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { createPrivateKey } = await import("node:crypto");
-    const key = createPrivateKey(data.value);
-    if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
-      throw new Error("Use an ECDSA P-256 private key in PKCS#8 PEM format. The matching public key must also be pinned in Android before rotation.");
-    }
+    await assertBb3KeyMatchesAndroid(data.value);
     const { error } = await supabaseAdmin.from("app_secrets").upsert({
       name: "BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM",
       value: data.value,
