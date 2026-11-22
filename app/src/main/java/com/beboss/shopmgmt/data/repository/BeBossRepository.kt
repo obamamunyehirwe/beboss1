@@ -260,8 +260,11 @@ class BeBossRepository(private val database: AppDatabase) {
     suspend fun getUserByUsername(username: String): User? = staffAuthManager.getUserByUsername(username)
 
     suspend fun saveUser(user: User, actor: User? = null) {
-        requirePermission(actor, "MANAGE_STAFF", user.id) {
-            it.role == UserRole.OWNER || it.canManageCollaborators
+        val userCount = userDao.getUserCount()
+        if (userCount > 0) {
+            requirePermission(actor, "MANAGE_STAFF", user.id) {
+                it.role == UserRole.OWNER || it.canManageCollaborators
+            }
         }
         staffAuthManager.saveUser(user)
     }

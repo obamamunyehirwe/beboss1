@@ -78,7 +78,11 @@ export const getShopInsights = createServerFn({ method: "POST" })
         );
         if (verification.configured) signature = verification.verified ? "VERIFIED" : "MISMATCH";
       } catch (verificationError) {
-        console.warn("[BeBoss insights] Snapshot verification is temporarily unavailable", verificationError);
+        console.warn("[BeBoss insights] Snapshot verification failed", verificationError);
+        signature = "MISMATCH";
+      }
+      if (signature !== "VERIFIED") {
+        return { ...base, signature, error: "Snapshot integrity verification failed or unverified (fail-closed policy enforced)." };
       }
       const parts = await Promise.all(set.map((r) => decodeShareToken(r.payload_token)));
       return { ...base, signature, insights: computeRetailInsights(mergeShareJson(parts)) };
@@ -181,6 +185,23 @@ export const getShopRecords = createServerFn({ method: "POST" })
     }
     const uploadedAt = Math.max(...set.map((r) => Number(r.updated_at)));
     try {
+      const checks = set.map((r) => {
+        try {
+          const { sig, payload } = parseShareToken(r.payload_token);
+          return { signature: sig, payload };
+        } catch {
+          return { signature: "", payload: "" };
+        }
+      });
+      const verification = await invokeSupabaseEdgeFunction<{ configured: boolean; verified: boolean }>(
+        ctx,
+        "manage-app-secrets",
+        { action: "verify_snapshot", checks },
+      );
+      if (!verification.configured || !verification.verified) {
+        return { records: null, uploadedAt, error: "Snapshot integrity verification failed (fail-closed policy enforced)." };
+      }
+
       const parts = await Promise.all(set.map((r) => decodeShareToken(r.payload_token)));
       const records = extractShopRecords(mergeShareJson(parts));
       // Overlay live cloud tables when present.

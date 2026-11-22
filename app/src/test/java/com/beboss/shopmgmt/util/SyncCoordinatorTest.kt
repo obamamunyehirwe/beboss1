@@ -9,6 +9,8 @@ import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.Sale
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.data.model.SyncQueueItem
+import com.beboss.shopmgmt.data.model.User
+import com.beboss.shopmgmt.data.model.UserRole
 import com.beboss.shopmgmt.data.repository.BeBossRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -107,7 +109,8 @@ class SyncCoordinatorTest {
             branchId = "main_branch"
         )
 
-        repository.saveProduct(product)
+        val owner = User.defaultForRole("Owner", "owner", UserRole.OWNER)
+        repository.saveProduct(product, actor = owner)
 
         val queueItems = database.syncQueueDao().getPendingQueueDirect()
         val productItems = queueItems.filter { it.tableName == "products" && it.recordId == product.id }
