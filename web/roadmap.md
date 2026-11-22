@@ -15,4 +15,4 @@
 - [ ] Existing records from the old backend (per-table CSV/JSON export) — blocked on export
 - [ ] BB2 unlock signing key + optional snapshot key entered in Admin → Settings — blocked on owner
 - [ ] Android app rebuilt with this backend's URL/key (Admin → Settings shows the values) — blocked on APK rebuild
-- [ ] Master admin signs up with reponsekdz@gmail.com and confirms email (admin role is granted automatically)
+- [ ] Master admin signs up with obamamunyehirwe@gmail.com and confirms email (admin role is granted automatically)
