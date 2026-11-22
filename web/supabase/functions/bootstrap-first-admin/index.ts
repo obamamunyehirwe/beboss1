@@ -14,7 +14,9 @@ const CORS_HEADERS = {
 const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/[/]+$/, "");
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const INVITE_MARKER = "BEBOSS_INITIAL_ADMIN_INVITE_SENT";
-const RESEND_COOLDOWN_MS = 10 * 60 * 1000;
+// Supabase's built-in SMTP quota is shared project-wide (2 emails/hour).
+// Keep a 65-minute safety window between successful sends to avoid hammering Auth.
+const RESEND_COOLDOWN_MS = 65 * 60 * 1000;
 const STALE_PENDING_MS = 2 * 60 * 1000;
 
 function json(status: number, body: Record<string, unknown>) {
@@ -34,6 +36,10 @@ type InviteReservation = { token: string; previousValue: string | null };
 function markerAgeMs(value: string): number | null {
   if (value.startsWith("SENT:")) {
     const date = Date.parse(value.slice("SENT:".length));
+    return Number.isFinite(date) ? Date.now() - date : null;
+  }
+  if (value.startsWith("LIMITED:")) {
+    const date = Date.parse(value.slice("LIMITED:".length));
     return Number.isFinite(date) ? Date.now() - date : null;
   }
   if (value.startsWith("PENDING:")) {
@@ -58,7 +64,12 @@ async function reserveInvite(): Promise<
 
   if (previousValue) {
     const age = markerAgeMs(previousValue);
-    if (age !== null && previousValue.startsWith("SENT:") && age >= 0 && age < RESEND_COOLDOWN_MS) {
+    if (
+      age !== null &&
+      (previousValue.startsWith("SENT:") || previousValue.startsWith("LIMITED:")) &&
+      age >= 0 &&
+      age < RESEND_COOLDOWN_MS
+    ) {
       return { cooldownSeconds: Math.max(1, Math.ceil((RESEND_COOLDOWN_MS - age) / 1000)) };
     }
     if (previousValue.startsWith("PENDING:") && age !== null && age >= 0 && age < STALE_PENDING_MS) {
@@ -105,16 +116,19 @@ async function reserveInvite(): Promise<
   return { reservation: { token, previousValue } };
 }
 
-async function finishInvite(reservation: InviteReservation, sent: boolean) {
+async function finishInvite(
+  reservation: InviteReservation,
+  result: "sent" | "limited" | "restore",
+) {
   const query = new URLSearchParams({
     name: `eq.${INVITE_MARKER}`,
     value: `eq.${reservation.token}`,
   });
-  if (sent) {
+  if (result === "sent" || result === "limited") {
     await rest(`app_secrets?${query.toString()}`, {
       method: "PATCH",
       body: JSON.stringify({
-        value: `SENT:${new Date().toISOString()}`,
+        value: `${result === "sent" ? "SENT" : "LIMITED"}:${new Date().toISOString()}`,
         updated_at: new Date().toISOString(),
       }),
     });
@@ -249,14 +263,23 @@ Deno.serve(async (request: Request) => {
           inviteBody?.msg ?? inviteBody?.message ?? inviteBody?.error_description ??
           "Supabase could not send the administrator setup email.",
         );
-        await finishInvite(reservation, false);
-        return json(invite.status === 429 ? 429 : 502, { status: "error", message });
+        if (invite.status === 429) {
+          await finishInvite(reservation, "limited");
+          return json(200, {
+            status: "email_rate_limited",
+            email,
+            retryAfterSeconds: Math.ceil(RESEND_COOLDOWN_MS / 1000),
+            message: "Supabase has temporarily reached its email-sending limit. The original setup invitation was already issued; check your inbox and spam folder before requesting another email.",
+          });
+        }
+        await finishInvite(reservation, "restore");
+        return json(502, { status: "error", message });
       }
 
-      await finishInvite(reservation, true);
+      await finishInvite(reservation, "sent");
       return json(200, { status: "sent", email, resent: Boolean(existingUser) });
     } catch (error) {
-      await finishInvite(reservation, false);
+      await finishInvite(reservation, "restore");
       throw error;
     }
   } catch (error) {
