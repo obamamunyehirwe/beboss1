@@ -41,6 +41,9 @@ function PaymentsPage() {
   const [result, setResult] = useState<Result | null>(null);
   const [rejecting, setRejecting] = useState<PaymentRequest | null>(null);
   const [reason, setReason] = useState("");
+  const [verifyingPayment, setVerifyingPayment] = useState<PaymentRequest | null>(null);
+  const [providerVerified, setProviderVerified] = useState(false);
+  const [verificationNote, setVerificationNote] = useState("");
   const approveFn = useServerFn(approvePaymentWithCode);
   const approve = useAdminAction(approveFn, { invalidate: [["admin"]] });
   const reject = useAdminAction(useServerFn(rejectPayment), { success: "Payment claim rejected", invalidate: [["admin", "payments"]] });
@@ -53,13 +56,18 @@ function PaymentsPage() {
     rows.forEach((r) => (c[r.status] = (c[r.status] ?? 0) + 1));
     return c;
   }, [rows]);
-  const filtered = rows.filter((r) => (status === "ALL" || r.status === status) && (source === "ALL" || (r.source || "APP") === source) && matches(q, r.shop_name, r.owner_username, r.owner_phone, r.payer_phone, r.payer_full_name, r.generated_unlock_code, r.payment_note));
+  const filtered = rows.filter((r) => (status === "ALL" || r.status === status) && (source === "ALL" || (r.source || "APP") === source) && matches(q, r.shop_name, r.owner_username, r.owner_phone, r.payer_phone, r.payer_full_name, r.generated_unlock_code, r.payment_note, r.admin_verification_note));
   const pending = rows.filter((r) => r.status === "PENDING_VERIFICATION");
   const rate = Number(cfg?.per_device_fee_rwf) || 2000;
 
-  const doApprove = (r: PaymentRequest) =>
-    approve.mutate({ requestId: r.id }, {
-      onSuccess: (res) => setResult({ mode: "CODE", code: res.code, days: res.days, tier: res.tier, total: res.total, shopName: res.shopName, username: res.username, phone: res.phone }),
+  const doApprove = (r: PaymentRequest, note: string) =>
+    approve.mutate({ requestId: r.id, providerVerified: true, verificationNote: note }, {
+      onSuccess: (res) => {
+        setVerifyingPayment(null);
+        setProviderVerified(false);
+        setVerificationNote("");
+        setResult({ mode: "CODE", code: res.code, days: res.days, tier: res.tier, total: res.total, shopName: res.shopName, username: res.username, phone: res.phone });
+      },
     });
 
   return (
@@ -257,10 +265,15 @@ function PaymentsPage() {
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
                   <Info label="Provider" value={r.provider} />
                   <Info label="Payer" value={r.payer_full_name || "—"} sub={r.payer_phone} />
-                  <Info label="Payment details" value={formatDateTime(r.payment_time_ms || r.created_at)} sub={r.payment_note || "No additional note"} />
+                  <Info label="Payment time" value={formatDateTime(r.payment_time_ms || r.created_at)} />
                   <Info label="Registered owner phone" value={r.owner_phone} mono />
                   <Info label="Plan" value={`${r.duration_months} mo • ${r.branch_count} br • ${r.worker_count} staff • ${r.device_count} dev`} />
                 </dl>
+                <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer MTN MoMo / Airtel Money confirmation SMS</p>
+                  <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{r.payment_note?.trim() || "No confirmation SMS was supplied. Check the merchant transaction history directly before approving."}</pre>
+                </div>
+                {r.admin_verification_note ? <p className="mt-2 text-xs text-muted-foreground">Admin verification: {r.admin_verification_note}</p> : null}
                 {r.amount_rwf !== calc.total ? (
                   <p className="mt-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                     {a("Submitted plan amount")} {formatRwf(calc.total)} — {a("must match the provider statement before approval.")}
@@ -275,8 +288,8 @@ function PaymentsPage() {
                   <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
                     {r.status === "PENDING_VERIFICATION" || r.status === "REJECTED" ? (
                       <>
-                        <Button size="sm" variant="success" disabled={busy} onClick={() => doApprove(r)}>
-                          {busy ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Verify & issue BB3 code")}
+                        <Button size="sm" variant="success" disabled={busy} onClick={() => { setVerifyingPayment(r); setProviderVerified(false); setVerificationNote(""); }}>
+                          {busy ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Review SMS & verify payment")}
                         </Button>
 
                         {r.status === "PENDING_VERIFICATION" ? (
@@ -337,6 +350,35 @@ function PaymentsPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!verifyingPayment} onOpenChange={(open) => { if (!open) { setVerifyingPayment(null); setProviderVerified(false); setVerificationNote(""); } }}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Verify {verifyingPayment?.provider} payment</DialogTitle>
+            <DialogDescription>Review the customer's SMS, then independently confirm the funds in the official provider merchant transaction history or balance before issuing a BB3 code.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-56 overflow-auto rounded-xl border border-border bg-muted/30 p-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer-submitted confirmation SMS</p>
+            <pre className="whitespace-pre-wrap break-words font-sans text-sm">{verifyingPayment?.payment_note?.trim() || "No SMS was submitted. Do not approve from a claim alone; verify the incoming transaction directly in your merchant account."}</pre>
+          </div>
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted/30 p-3 text-sm">
+            <p><span className="text-muted-foreground">Shop:</span> {verifyingPayment?.shop_name}</p>
+            <p><span className="text-muted-foreground">Amount:</span> {formatRwf(verifyingPayment?.amount_rwf ?? 0)}</p>
+            <p><span className="text-muted-foreground">Payer:</span> {verifyingPayment?.payer_full_name || "—"}</p>
+            <p><span className="text-muted-foreground">Phone:</span> {verifyingPayment?.payer_phone}</p>
+          </div>
+          <Textarea value={verificationNote} onChange={(event) => setVerificationNote(event.target.value)} rows={3} maxLength={500} placeholder="Record what you confirmed in MTN MoMo / Airtel Money merchant history: amount received, sender and time." />
+          <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed">
+            <input type="checkbox" className="mt-1 size-4 accent-current" checked={providerVerified} onChange={(event) => setProviderVerified(event.target.checked)} />
+            <span>I independently confirmed that the exact amount was received by BeBoss in the official provider account. The submitted SMS alone is not proof of settlement.</span>
+          </label>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setVerifyingPayment(null)}>Cancel</Button>
+            <Button variant="success" disabled={!providerVerified || verificationNote.trim().length < 5 || approve.isPending} onClick={() => verifyingPayment && doApprove(verifyingPayment, verificationNote.trim())}>
+              {approve.isPending ? <Loader2 className="animate-spin" /> : <KeyRound />} Confirm payment & issue BB3
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ResultDialog result={result} onClose={() => setResult(null)} />
     </div>
   );

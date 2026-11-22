@@ -258,13 +258,17 @@ export const getAdminContext = createServerFn({ method: "POST" })
 // ---------------- Payments ----------------
 export const approvePaymentWithCode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { requestId: string }) => z.object({ requestId: z.string().min(1).max(200) }).parse(d))
+  .inputValidator((d: { requestId: string; providerVerified: true; verificationNote: string }) =>
+    z.object({ requestId: z.string().min(1).max(200), providerVerified: z.literal(true), verificationNote: z.string().trim().min(5).max(500) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     if (!(await ensureValidAdminSession(ctx))) throw new Error("Admin session expired. Please sign in again.");
     const admin = await requireAdmin(ctx);
-    const { data: req, error } = await ctx.supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,payment_time_ms,payment_note,fee_per_device_rwf,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,ussd_code").eq("id", data.requestId).maybeSingle();
+    const { data: req, error } = await ctx.supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,payment_time_ms,payment_note,admin_verification_note,fee_per_device_rwf,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,ussd_code").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
+    if (data.providerVerified !== true) throw new Error("A manual provider-payment verification is required before issuing an unlock code.");
+    const verificationNote = data.verificationNote.trim();
+    if (verificationNote.length < 5) throw new Error("Record what you confirmed in the MTN MoMo or Airtel Money merchant transaction history.");
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
     const trustedFeeRate = Number(req.fee_per_device_rwf) > 0 ? Math.floor(Number(req.fee_per_device_rwf)) : await perDeviceRate(ctx);
@@ -345,7 +349,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
 
     const claim = await ctx.supabase.from("payment_requests").update({
       status: "APPROVED", approval_mode: "UNLOCK_CODE", amount_rwf: calc.total, generated_unlock_code: codeToUse,
-      verified_by_admin: admin.label, rejection_reason: "", updated_at: now,
+      verified_by_admin: admin.label, admin_verification_note: verificationNote, rejection_reason: "", updated_at: now,
     }).eq("id", req.id).eq("status", req.status).select("id").maybeSingle();
 
     if (claim.error || !claim.data) {
@@ -361,7 +365,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     }
 
     const expiresAt = await activateShop(ctx, shopId, { addDays: calc.days, branches: req.branch_count, workers: req.worker_count, devices: req.device_count || 1, monthly: calc.monthly });
-    await audit(ctx, admin.email, "APPROVE_PAYMENT", `@${req.owner_username}`, `Verified ${payerFullName || payerPhone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. Unique BB3 code issued for ${req.id}.`);
+    await audit(ctx, admin.email, "APPROVE_PAYMENT", `@${req.owner_username}`, `Manually confirmed in provider records: ${verificationNote}. Customer SMS: ${paymentNote || "not supplied"}. ${payerFullName || payerPhone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. Unique BB3 code issued for ${req.id}.`);
     return { code: codeToUse, days: calc.days, tier: calc.tier, total: calc.total, expiresAt, shopName: req.shop_name, username: req.owner_username, phone: payerPhone, alreadyApproved: false };
   });
 

@@ -442,7 +442,7 @@ object SupabaseAdminClient {
      * Ask the trusted Supabase Edge Function to sign a BB3 code. The ECDSA private
      * key never enters this Android process or BuildConfig.
      */
-    private suspend fun requestServerSignedBB3Code(paymentRequestId: String): Result<SupabaseSignedPaymentUnlock> = withContext(Dispatchers.IO) {
+    private suspend fun requestServerSignedBB3Code(paymentRequestId: String, verificationNote: String): Result<SupabaseSignedPaymentUnlock> = withContext(Dispatchers.IO) {
         val session = ensureValidAdminSession()
             ?: return@withContext Result.failure(IllegalStateException("Admin session expired. Sign in again."))
         if (!isConfigured()) {
@@ -452,7 +452,10 @@ object SupabaseAdminClient {
             return@withContext Result.failure(IllegalArgumentException("A valid payment request is required to issue a BB3 code."))
         }
         try {
-            val payload = JSONObject().put("paymentRequestId", paymentRequestId.trim())
+            val payload = JSONObject()
+                .put("paymentRequestId", paymentRequestId.trim())
+                .put("providerVerified", true)
+                .put("verificationNote", verificationNote.trim())
             val req = Request.Builder()
                 .url("${getSupabaseUrl()}/functions/v1/issue-bb3-unlock")
                 .addHeader("apikey", getSupabaseAnonKey())
@@ -1662,9 +1665,12 @@ object SupabaseAdminClient {
         }
     }
 
-    suspend fun approvePaymentAndIssueCode(request: SupabasePaymentRequestDto, adminName: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+    suspend fun approvePaymentAndIssueCode(request: SupabasePaymentRequestDto, adminName: String, verificationNote: String = ""): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val session = ensureValidAdminSession()
         if (!isConfigured() || session == null) return@withContext Pair(false, "Admin authentication expired or unavailable.")
+        if (request.status != "APPROVED" && verificationNote.trim().length < 5) {
+            return@withContext Pair(false, "Record the result of checking the official MTN MoMo / Airtel Money merchant transaction before issuing BB3.")
+        }
         if (request.status == "APPROVED") {
             if (request.generatedUnlockCode.isBlank() || request.approvalMode != "UNLOCK_CODE") {
                 return@withContext Pair(false, "This payment has already been approved using direct auto-unlock.")
@@ -1677,7 +1683,7 @@ object SupabaseAdminClient {
             return@withContext Pair(false, "This payment claim is no longer awaiting approval.")
         }
 
-        val signed = requestServerSignedBB3Code(request.id).getOrElse { error ->
+        val signed = requestServerSignedBB3Code(request.id, verificationNote).getOrElse { error ->
             return@withContext Pair(false, error.message ?: "Unable to sign a secure payment-linked BB3 unlock code.")
         }
 
@@ -1771,6 +1777,7 @@ object SupabaseAdminClient {
                 put("amount_rwf", verifiedAmountRwf)
                 put("generated_unlock_code", codeToUse)
                 put("verified_by_admin", operatorLabel)
+                put("admin_verification_note", verificationNote.trim())
                 put("rejection_reason", "")
                 put("updated_at", now)
             }
@@ -1815,7 +1822,7 @@ object SupabaseAdminClient {
             logAdminAudit(
                 action = "APPROVE_PAYMENT",
                 targetId = request.ownerUsername,
-                details = "Verified ${request.provider} payment ${verifiedAmountRwf} FRw for ${request.durationMonths} months, ${request.branchCount} branches, ${request.workerCount} staff, ${request.deviceCount} devices; unique BB3 code linked to ${request.id}."
+                details = "Manually confirmed in provider records: ${verificationNote.trim()}. Customer SMS: ${request.paymentNote.ifBlank { "not supplied" }}. Verified ${request.provider} payment ${verifiedAmountRwf} FRw for ${request.durationMonths} months, ${request.branchCount} branches, ${request.workerCount} staff, ${request.deviceCount} devices; unique BB3 code linked to ${request.id}."
             )
             Pair(true, codeToUse)
         } catch (e: Exception) {

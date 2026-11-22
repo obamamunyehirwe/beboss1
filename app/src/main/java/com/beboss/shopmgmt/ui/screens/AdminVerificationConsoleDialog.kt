@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -149,7 +150,7 @@ fun AdminVerificationConsoleDialog(
     onSignUpAdmin: (email: String, password: String, fullName: String) -> Unit,
     onSignOutAdmin: () -> Unit,
     onRefresh: () -> Unit,
-    onApprovePayment: (SupabasePaymentRequestDto, (Boolean, String) -> Unit) -> Unit,
+    onApprovePayment: (SupabasePaymentRequestDto, String, (Boolean, String) -> Unit) -> Unit,
     onSavePaymentConfig: (AdminPaymentConfig, (Boolean) -> Unit) -> Unit = { _, _ -> },
     onToggleShopDeviceActive: (SupabaseShopDeviceDto, Boolean) -> Unit = { _, _ -> },
     onDeleteShopDevice: (SupabaseShopDeviceDto) -> Unit = {},
@@ -191,7 +192,10 @@ fun AdminVerificationConsoleDialog(
     var codeStatusFilter by remember { mutableStateOf("ALL") }
     var auditSubTab by remember { mutableIntStateOf(0) } // 0 = Cloud, 1 = Local Security, 2 = Security Diagnostics
 
-    // Reject Modal State
+    // Manual provider-payment verification and reject modal state.
+    var requestToVerify by remember { mutableStateOf<SupabasePaymentRequestDto?>(null) }
+    var providerVerified by remember { mutableStateOf(false) }
+    var providerVerificationNote by remember { mutableStateOf("") }
     var requestToReject by remember { mutableStateOf<SupabasePaymentRequestDto?>(null) }
     var rejectReasonInput by remember { mutableStateOf("Payment could not be confirmed in the provider statement") }
 
@@ -811,6 +815,12 @@ fun AdminVerificationConsoleDialog(
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
 
+                                            Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
+                                                Column(modifier = Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                                    Text("CUSTOMER MOBILE MONEY SMS", fontSize = 9.5.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Text(req.paymentNote.ifBlank { "No SMS text was submitted. Check the actual provider transaction history before approval." }, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface, lineHeight = 15.sp)
+                                                }
+                                            }
                                             // Matching System Account Inspector (Compare WhatsApp Proof vs Cloud Shop Account)
                                             Surface(
                                                 shape = RoundedCornerShape(8.dp),
@@ -873,14 +883,10 @@ fun AdminVerificationConsoleDialog(
                                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Button(
                                                     onClick = {
-                                                        onApprovePayment(req) { _, code ->
-                                                            lastGeneratedCode = code
-                                                            lastTargetUsername = req.ownerUsername
-                                                            lastTargetPhone = req.ownerPhone
-                                                            lastTargetAmount = req.amountRwf
-                                                            lastTargetDays = req.durationMonths * 30
-                                                        }
-                                                    },
+                                                    requestToVerify = req
+                                                    providerVerified = false
+                                                    providerVerificationNote = ""
+                                                },
                                                     modifier = Modifier
                                                         .weight(1.3f)
                                                         .heightIn(min = 48.dp)
@@ -2135,6 +2141,43 @@ fun AdminVerificationConsoleDialog(
                 }
             }
         }
+    }
+
+    if (requestToVerify != null) {
+        val selectedPayment = requestToVerify!!
+        AlertDialog(
+            onDismissRequest = { requestToVerify = null },
+            title = { Text("Verify ${selectedPayment.provider} payment", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("Customer-submitted confirmation SMS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+                        Text(selectedPayment.paymentNote.ifBlank { "No SMS provided. Confirm the incoming transaction directly in the official merchant account." }, modifier = Modifier.padding(9.dp), fontSize = 11.sp, lineHeight = 15.sp)
+                    }
+                    Text("Compare the payer, exact amount and payment time with the MTN MoMo / Airtel Money merchant transaction history. A customer SMS alone can be forged.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(value = providerVerificationNote, onValueChange = { providerVerificationNote = it }, label = { Text("What did you confirm in the provider account?") }, placeholder = { Text("Received amount, sender and transaction time...") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = providerVerified, onCheckedChange = { providerVerified = it })
+                        Text("I independently confirmed that the funds were received in the official merchant account.", fontSize = 11.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onApprovePayment(selectedPayment, providerVerificationNote.trim()) { _, code ->
+                        lastGeneratedCode = code
+                        lastTargetUsername = selectedPayment.ownerUsername
+                        lastTargetPhone = selectedPayment.ownerPhone
+                        lastTargetAmount = selectedPayment.amountRwf
+                        lastTargetDays = selectedPayment.durationMonths * 30
+                    }
+                    requestToVerify = null
+                }, enabled = providerVerified && providerVerificationNote.trim().length >= 5, colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen)) {
+                    Text("Confirm payment & issue BB3", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = { OutlinedButton(onClick = { requestToVerify = null }) { Text(Localization.get("admin_cancel", language)) } }
+        )
     }
 
     if (requestToReject != null) {

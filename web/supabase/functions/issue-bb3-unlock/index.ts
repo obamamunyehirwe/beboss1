@@ -136,6 +136,11 @@ Deno.serve(async (request: Request) => {
     // The mobile admin client supplies only the request ID. All customer, payer,
     // amount and plan values are read from Supabase so the device cannot alter them.
     const input = await request.json();
+    const providerVerified = input?.providerVerified === true;
+    const verificationNote = String(input?.verificationNote ?? "").trim();
+    if (!providerVerified || verificationNote.length < 5 || verificationNote.length > 500) {
+      return json(403, { message: "Manual MTN MoMo / Airtel Money provider verification is required before BB3 signing." });
+    }
     const paymentRequestId = String(input?.paymentRequestId ?? "").trim();
     if (!paymentRequestId || paymentRequestId.length > 200) {
       return json(400, { message: "A valid payment request ID is required." });

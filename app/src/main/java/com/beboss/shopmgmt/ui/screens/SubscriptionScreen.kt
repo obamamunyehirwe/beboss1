@@ -748,15 +748,20 @@ fun SubscriptionScreen(
                             singleLine = true
                         )
                     }
+                    Text(
+                        text = "After paying, open Messages, copy the successful MTN MoMo or Airtel Money confirmation SMS, and paste its full text below. No screenshot is required. Never share your Mobile Money PIN.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     OutlinedTextField(
                         value = paymentNoteInput,
                         onValueChange = { paymentNoteInput = it; proofError = null },
-                        label = { Text("Payment note (optional)") },
-                        placeholder = { Text("e.g. payment confirmation details") },
+                        label = { Text("MTN MoMo / Airtel Money confirmation SMS") },
+                        placeholder = { Text("Paste the full successful payment SMS here...") },
                         modifier = Modifier.fillMaxWidth().testTag("payment_proof_note_input"),
                         shape = RoundedCornerShape(10.dp),
-                        minLines = 2,
-                        maxLines = 3
+                        minLines = 3,
+                        maxLines = 5
                     )
 
                     if (proofError != null) {
@@ -787,6 +792,10 @@ fun SubscriptionScreen(
                             val cleanPayerName = payerFullNameInput.trim()
                             if (cleanUser.isBlank() || cleanPhone.isBlank() || cleanPayerName.isBlank()) {
                                 proofError = Localization.get("sub_proof_err_required", language)
+                                return@Button
+                            }
+                            if (paymentNoteInput.trim().length < 8) {
+                                proofError = "Paste the successful MTN MoMo or Airtel Money confirmation SMS before submitting. No screenshot is needed."
                                 return@Button
                             }
                             proofError = null

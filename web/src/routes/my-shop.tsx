@@ -8,6 +8,7 @@ import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -965,8 +966,9 @@ function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>
           />
         </div>
         <div className="space-y-2 sm:col-span-2">
-          <Label>Payment note (optional)</Label>
-          <Input value={f.paymentNote} onChange={(e) => set("paymentNote", e.target.value)} maxLength={1000} placeholder="e.g. Mobile money confirmation message or other details" />
+          <Label>MTN MoMo / Airtel Money confirmation SMS</Label>
+          <p className="text-xs text-muted-foreground">After paying, copy the successful payment SMS from your phone's Messages app and paste its full text here. No screenshot is required. Never include your mobile money PIN.</p>
+          <Textarea value={f.paymentNote} onChange={(e) => set("paymentNote", e.target.value)} required minLength={8} maxLength={1000} rows={4} placeholder="Paste the full successful MTN MoMo or Airtel Money confirmation SMS..." />
         </div>
         <div className="space-y-2">
           <Label>{t("calcCycle")}</Label>
