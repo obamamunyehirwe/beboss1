@@ -715,6 +715,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         workerCount: Int,
         payerFullName: String = "",
         deviceCount: Int = 1,
+        paymentNote: String = "",
         onSubmitted: (PaymentVerificationRequest, Boolean) -> Unit = { _, _ -> }
     ) = adminCoordinator.submitUssdPaymentProof(
         provider = provider,
@@ -726,6 +727,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         workerCount = workerCount,
         payerFullName = payerFullName,
         deviceCount = deviceCount,
+        paymentNote = paymentNote,
         onSubmitted = onSubmitted
     )
 

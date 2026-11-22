@@ -1,20 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
-import { Ban, Check, Copy, Download, KeyRound, Loader2, MessageCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Ban, Copy, Download, MessageCircle } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, SearchInput, StatusBadge, TableShell, downloadCsv, matches, useAdminAction } from "@/components/admin/ui";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
-import { issueManualCode, revokeCode } from "@/lib/admin.functions";
-import { codesQuery, configQuery, shopsQuery } from "@/lib/admin-queries";
-import { computeAccountBindingHash } from "@/lib/bb2";
-import { buildUnlockReplyText, buildWhatsAppUrl, calculateSubscriptionFee, normalizePhoneLast9 } from "@/lib/pricing";
+import { revokeCode } from "@/lib/admin.functions";
+import { codesQuery } from "@/lib/admin-queries";
+import { buildUnlockReplyText, buildWhatsAppUrl } from "@/lib/pricing";
 import { formatDateTime, formatRwf } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
 
@@ -45,7 +39,17 @@ function CodesPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Unlock codes" sub="New BB3 codes use ECDSA P-256 and verify offline with the Android-pinned public key. Legacy BB2 codes are verified online against their original server-issued record." />
-      {isAdmin ? <IssueForm /> : null}
+      {isAdmin ? (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4">
+          <div>
+            <p className="font-semibold">Unlock codes are payment-linked</p>
+            <p className="mt-1 text-sm text-muted-foreground">New BB3 codes are created only after a submitted payment is manually verified in the Payments queue. Each code is bound to that payment request, shop owner and exact plan.</p>
+          </div>
+          <Button asChild size="sm" variant="hero">
+            <Link to="/admin/payments">Review payment proofs</Link>
+          </Button>
+        </section>
+      ) : null}
       <div className="flex flex-wrap items-center gap-3">
         <SearchInput value={q} onChange={setQ} placeholder="Search code, @username, phone, tier…" />
         <FilterChips<F>
@@ -135,146 +139,3 @@ function CodesPage() {
   );
 }
 
-function IssueForm() {
-  const a = useAdminText();
-  const shops = useQuery(shopsQuery);
-  const { data: cfg } = useQuery(configQuery);
-  const [shopId, setShopId] = useState<string>("");
-  const [username, setUsername] = useState("");
-  const [phone, setPhone] = useState("");
-  const [tier, setTier] = useState<Tier>("SINGLE");
-  const [dur, setDur] = useState(DURATIONS[1]!);
-  const [plan, setPlan] = useState({ branches: 1, workers: 1, devices: 1 });
-  const [extendCloud, setExtendCloud] = useState(true);
-  const [hash, setHash] = useState("");
-  const [issued, setIssued] = useState<{ code: string; amount: number } | null>(null);
-  const [copied, setCopied] = useState(false);
-  const issue = useAdminAction(useServerFn(issueManualCode), { success: "Signed BB3 code issued", invalidate: [["admin", "codes"], ["admin", "shops"]] });
-
-  useEffect(() => {
-    let live = true;
-    if (username.trim() && normalizePhoneLast9(phone).length >= 9) computeAccountBindingHash(username, phone).then((h) => live && setHash(h));
-    else setHash("");
-    return () => {
-      live = false;
-    };
-  }, [username, phone]);
-
-  const pick = (id: string) => {
-    setShopId(id);
-    const s = (shops.data ?? []).find((x) => x.id === id);
-    if (!s) return;
-    setUsername(s.owner_username);
-    setPhone(s.owner_phone);
-    setPlan({ branches: s.branch_count, workers: s.worker_count, devices: s.device_limit });
-    setTier(s.branch_count >= 3 ? "MULTI" : s.branch_count === 2 ? "DUAL" : "SINGLE");
-  };
-
-  const amount = useMemo(() => (dur.months === 0 ? 0 : calculateSubscriptionFee(plan.branches, plan.workers, dur.months, plan.devices, Number(cfg?.per_device_fee_rwf) || 2000).total), [plan, dur, cfg]);
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    issue.mutate(
-      { username, phone, months: dur.months, days: dur.days, ...plan, tier: dur.days === 365 && tier !== "TRIAL" ? "ANNUAL" : tier, extendCloud },
-      { onSuccess: (r) => setIssued({ code: r.code, amount: r.amount }) },
-    );
-  };
-
-  return (
-    <form onSubmit={submit} className="grid gap-5 rounded-2xl border border-border bg-card p-5 xl:grid-cols-[1.6fr_1fr]">
-      <div className="space-y-4">
-        <h2 className="flex items-center gap-2 font-semibold">
-          <KeyRound className="size-4 text-primary" /> {a("Issue a code manually")}
-        </h2>
-        <div className="space-y-1.5">
-          <Label>{a("Registered shop")}</Label>
-          <Select value={shopId} onValueChange={pick}>
-            <SelectTrigger>
-              <SelectValue placeholder={a("Pick a shop to auto-fill (optional)")} />
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              {(shops.data ?? []).map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.shop_name} — @{s.owner_username}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label>{a("Owner username")}</Label>
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} required maxLength={80} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>{a("Registered phone")}</Label>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} required maxLength={30} />
-          </div>
-        </div>
-        <div>
-          <Label>{a("Duration")}</Label>
-          <div className="mt-1.5 flex flex-wrap gap-2">
-            {DURATIONS.map((d) => (
-              <Button key={d.days} type="button" size="sm" variant={dur.days === d.days ? "soft" : "glass"} onClick={() => { setDur(d); if (d.days === 4) setTier("TRIAL"); else if (tier === "TRIAL") setTier("SINGLE"); }}>
-                {d.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label>{a("Tier")}</Label>
-            <Select value={tier} onValueChange={(v) => setTier(v as Tier)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {["SINGLE", "DUAL", "MULTI", "ANNUAL", "TRIAL"].map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {(["branches", "workers", "devices"] as const).map((k) => (
-            <div key={k} className="space-y-1.5">
-              <Label className="capitalize">{a(k === "workers" ? "Staff" : k)}</Label>
-              <Input type="number" min={1} max={k === "workers" ? 500 : 100} value={plan[k]} onChange={(e) => setPlan({ ...plan, [k]: Math.max(1, Number(e.target.value) || 1) })} />
-            </div>
-          ))}
-        </div>
-        <label className="flex items-center gap-3 text-sm">
-          <Switch checked={extendCloud} onCheckedChange={setExtendCloud} />
-          {a("Also extend the shop cloud license so it auto-unlocks on sync")}'s cloud license so it auto-unlocks on sync
-        </label>
-      </div>
-      <div className="flex flex-col gap-3 rounded-2xl border border-primary/30 bg-surface-2 p-5">
-        <p className="text-xs uppercase tracking-widest text-muted-foreground">{a("Binding preview")}</p>
-        <p className="font-mono text-sm">
-          @{username.trim().toLowerCase() || "username"} + *{normalizePhoneLast9(phone) || "#########"} → <span className="text-primary">#{hash || "------"}</span>
-        </p>
-        <p className="text-xs uppercase tracking-widest text-muted-foreground">{a("Amount recorded")}</p>
-        <p className="font-display text-3xl font-bold">{formatRwf(amount)}</p>
-        <Button type="submit" variant="hero" disabled={issue.isPending || !hash} className="mt-auto">
-          {issue.isPending ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Generate signed BB3 code")}
-        </Button>
-        {issued ? (
-          <div className="rounded-xl border border-success/30 bg-success/10 p-3">
-            <p className="break-all font-mono text-sm font-semibold text-success">{issued.code}</p>
-            <div className="mt-2 flex gap-2">
-              <Button type="button" size="sm" variant="glass" onClick={async () => { await navigator.clipboard.writeText(issued.code); setCopied(true); }}>
-                {copied ? <Check className="text-success" /> : <Copy />} Copy
-              </Button>
-              <Button type="button" size="sm" variant="success" asChild>
-                <a href={buildWhatsAppUrl(phone, buildUnlockReplyText(username, username, issued.code, dur.days, tier))} target="_blank" rel="noreferrer">
-                  <MessageCircle /> {a("WhatsApp")}
-                </a>
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </form>
-  );
-}

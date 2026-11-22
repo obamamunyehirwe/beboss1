@@ -1327,8 +1327,8 @@
         summary: 'Live Admin payment numbers and two fast ways to unlock your shop.',
         bullets: [
           'MTN MoMo (*182#) and Airtel Money (*500#) codes automatically pull the live Admin merchant code, phone numbers, and WhatsApp receiver from Supabase app_config.',
-          'When submitting payment proof, include your Shop @username, Registered Phone, Sender MoMo Phone, Full Names Registered on the Sender Phone, Device Count, and Telco Reference.',
-          'Option 1 (BB2 Unlock Code): Admin verifies your proof and generates a signed BB2-... code bound strictly to your username + phone. Paste it in BeBoss to unlock even 100% offline.',
+          'When submitting payment proof, include your Shop @username, registered phone, sender MoMo phone and full sender name, selected plan, payment time and optional payment note. The administrator verifies payment with the provider.',
+          'Option 1 (BB3 Unlock Code): Admin verifies your proof and generates a signed BB3-... code bound strictly to your username + phone. Paste it in BeBoss to unlock even 100% offline.',
           'Option 2 (Admin Direct Auto-Unlock): Admin clicks Direct Auto-Unlock in the portal; BeBoss unlocks automatically on the next foreground or background sync and sends a notification.'
         ]
       },
@@ -1426,7 +1426,7 @@
         bullets: [
           'Kode za MTN MoMo (*182#) na Airtel (*500#) zikurura numero nshya za Admin muri Supabase app_config.',
           'Iyo wohereza icyemezo cyo kwishyura, shyiramo @username y’iduka, Telefoni yanditse ku iduka, Telefoni yishyuye, Amazina yanditse kuri iyo telefoni yishyuye, umubare wa telefoni zikoreshwa, na Reference ya MoMo.',
-          'Uburyo bwa 1 (Kode ya BB2): Admin areba ubwishyu akagukorera kode ya BB2-... ifungura iduka ryawe gusa na offline.',
+          'Uburyo bwa 1 (Kode ya BB2): Admin areba ubwishyu akagukorera kode ya BB3-... ifungura iduka ryawe gusa na offline.',
           'Uburyo bwa 2 (Auto-Unlock): Admin akanda Direct Auto-Unlock, BeBoss igahita yifungura yonyine interineti igeze kuri telefoni.'
         ]
       },
@@ -1524,7 +1524,7 @@
         bullets: [
           'Les codes USSD MTN (*182#) et Airtel (*500#) récupèrent dynamiquement les coordonnées Admin depuis Supabase app_config.',
           'Lors de l’envoi de preuve : précisez @username, téléphone du magasin, téléphone payeur, Noms complets sur le numéro payeur, nombre d’appareils et référence MoMo.',
-          'Option 1 (Code BB2) : l’Admin émet un code BB2-... lié à votre compte, activable même 100% hors ligne.',
+          'Option 1 (Code BB2) : l’Admin émet un code BB3-... lié à votre compte, activable même 100% hors ligne.',
           'Option 2 (Déblocage Direct) : l’Admin clique Direct Auto-Unlock et votre boutique se débloque automatiquement à la synchronisation.'
         ]
       },
@@ -1622,7 +1622,7 @@
         bullets: [
           'Namba za MTN MoMo (*182#) na Airtel (*500#) hupatikana moja kwa moja kutoka Supabase app_config.',
           'Unapotuma uthibitisho, weka @username, namba iliyosajiliwa, namba iliyolipa, Majina Kamili yaliyosajiliwa kwenye namba iliyolipa, idadi ya vifaa na Reference.',
-          'Njia ya 1 (Kode ya BB2): Admin hutoa kode ya BB2-... inayofungua akaunti yako pekee hata bila mtandao.',
+          'Njia ya 1 (Kode ya BB2): Admin hutoa kode ya BB3-... inayofungua akaunti yako pekee hata bila mtandao.',
           'Njia ya 2 (Auto-Unlock): Admin anabofya Direct Auto-Unlock na app inajifungua yenyewe ikisawazisha mtandaoni.'
         ]
       },
@@ -1781,9 +1781,9 @@ create table if not exists public.payment_requests (
     return toHexUpper(digest).slice(0, 6);
   }
 
-  async function generateBB3UnlockCode(session, username, phone, tierCode, days) {
-    if (!session?.url || !session?.anonKey || !session?.accessToken) {
-      throw new Error('An authenticated BeBoss admin session is required to issue a secure BB3 code.');
+  async function generateBB3UnlockCode(session, paymentRequestId) {
+    if (!session?.url || !session?.anonKey || !session?.accessToken || !paymentRequestId) {
+      throw new Error('An authenticated BeBoss admin session and payment request are required.');
     }
     const response = await fetch(`${session.url}/functions/v1/issue-bb3-unlock`, {
       method: 'POST',
@@ -1792,18 +1792,17 @@ create table if not exists public.payment_requests (
         Authorization: `Bearer ${session.accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        username: String(username || '').trim(),
-        phone: String(phone || '').trim(),
-        tier: String(tierCode || 'SINGLE').trim().toUpperCase(),
-        days: Math.max(1, Math.floor(Number(days) || 0))
-      })
+      body: JSON.stringify({ paymentRequestId: String(paymentRequestId) })
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.message || `Secure BB3 signing failed (HTTP ${response.status}).`);
     const code = String(body.code || '').trim();
-    if (!code.startsWith('BB3-')) throw new Error('The BB3 signing service returned an invalid unlock code.');
-    return code;
+    const digest = String(body.planDigest || '').trim().toUpperCase();
+    if (!code.startsWith('BB3-') || body.requestId !== paymentRequestId ||
+        !/^[0-9A-F]{64}$/.test(digest) || Number(body.amountRwf) < 1 || Number(body.days) < 1) {
+      throw new Error('The BB3 signing service returned an invalid or unbound payment code.');
+    }
+    return body;
   }
 
   function calculateSubscriptionFee(branches, workers, months, devices = 1, perDeviceRate = 2000) {
@@ -2104,7 +2103,7 @@ create table if not exists public.payment_requests (
     const [loading, setLoading] = useState(false);
     const [lastSyncedAt, setLastSyncedAt] = useState(0);
     const [rejectTarget, setRejectTarget] = useState(null);
-    const [rejectReason, setRejectReason] = useState('MoMo transaction reference not found on statement');
+    const [rejectReason, setRejectReason] = useState('Payment could not be confirmed with the mobile-money provider');
 
     const [requests, setRequests] = useState([]);
     const [shops, setShops] = useState([]);
@@ -2213,7 +2212,7 @@ create table if not exists public.payment_requests (
       setLoading(true);
       try {
         const [reqs, shps, devs, usrs, cds, snaps, auds, cfgRows] = await Promise.all([
-          sbFetch('payment_requests?order=created_at.desc&limit=200').catch(() => []),
+          sbFetch('payment_requests?select=id,shop_name,owner_username,owner_phone,device_challenge,provider,ussd_code,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at&order=created_at.desc&limit=200').catch(() => []),
           sbFetch('shop_accounts?order=updated_at.desc&limit=200').catch(() => []),
           sbFetch('shop_devices?order=updated_at.desc&limit=300').catch(() => []),
           sbFetch('shop_users?order=updated_at.desc&limit=400').catch(() => []),
@@ -2274,68 +2273,85 @@ create table if not exists public.payment_requests (
     };
 
     const handleApproveWithCode = async (req) => {
-      const calc = calculateSubscriptionFee(
-        req.branch_count,
-        req.worker_count,
-        req.duration_months,
-        req.device_count || 1,
-        payConfig.per_device_fee_rwf
-      );
-      const code = await generateBB3UnlockCode(session, req.owner_username, req.owner_phone, calc.tier, calc.days);
-      const now = Date.now();
-      const adminLabel = `${session.fullName} (${session.email})`;
-      try {
-        await sbFetch('unlock_codes', {
-          method: 'POST',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            id: crypto.randomUUID(),
-            unlock_code: code,
-            shop_username: String(req.owner_username || '').trim().toLowerCase(),
-            shop_phone: String(req.owner_phone || '').trim(),
-            device_challenge: req.device_challenge || '',
-            tier_code: calc.tier,
-            plan_days: calc.days,
-            amount_rwf: calc.total,
-            status: 'ISSUED',
-            issued_by_admin: adminLabel,
-            issued_at: now
-          })
-        });
-        await sbFetch(`payment_requests?id=eq.${encodeURIComponent(req.id)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            status: 'APPROVED',
-            approval_mode: 'UNLOCK_CODE',
-            amount_rwf: calc.total,
-            generated_unlock_code: code,
-            verified_by_admin: adminLabel,
-            updated_at: now
-          })
-        });
-        await extendOrActivateShop(computeShopKey(req.owner_username, req.owner_phone), {
-          addDays: calc.days,
-          branches: req.branch_count,
-          workers: req.worker_count,
-          deviceLimit: req.device_count || 1,
-          monthlyFee: calc.monthly,
-          markAutoUnlock: false
-        });
-        await logAudit('APPROVE_PAYMENT', req.owner_username, `Verified ${req.payer_full_name || req.payer_phone} (${calc.total} FRw) -> issued ${code}`);
-        setLatestGenerated({
-          mode: 'CODE',
-          code,
-          shopName: req.shop_name,
-          username: req.owner_username,
-          phone: req.owner_phone || req.payer_phone,
-          days: calc.days,
-          tier: `${calc.tier} (${calc.total.toLocaleString()} FRw)`
-        });
-        await refreshAll(false);
-        notify(`Issued BB2 code ${code} for @${req.owner_username}`);
-      } catch (err) {
-        notify(`Approve failed: ${err.message}`);
+      if (!['PENDING_VERIFICATION', 'REJECTED'].includes(String(req.status))) {
+        notify('Only a pending payment can receive a new unlock code.'); return;
       }
+      const feeRate = Number(req.fee_per_device_rwf) > 0 ? Number(req.fee_per_device_rwf) : Number(payConfig.per_device_fee_rwf) || 2000;
+      const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, feeRate);
+      if (Number(req.amount_rwf) !== calc.total) {
+        notify(`Payment amount mismatch: this submitted plan calculates to ${calc.total.toLocaleString()} FRw. Verify the provider statement and claim details first.`); return;
+      }
+      try {
+        const signed = await generateBB3UnlockCode(session, req.id);
+        if (Number(signed.amountRwf) !== calc.total || Number(signed.days) !== calc.days || String(signed.tier) !== calc.tier) {
+          throw new Error('The signed plan does not match this submitted payment. No code was issued.');
+        }
+        const now = Date.now(), adminLabel = `${session.fullName} (${session.email})`;
+        let code = String(signed.code), codeId = '', insertedNewCode = false;
+        const lookup = `unlock_codes?payment_request_id=eq.${encodeURIComponent(req.id)}&status=in.(ISSUED,REDEEMED)&select=id,unlock_code,plan_digest,status&limit=1`;
+        const existing = await sbFetch(lookup);
+        if (Array.isArray(existing) && existing.length) {
+          const prior = existing[0];
+          if (prior.plan_digest !== signed.planDigest || !prior.unlock_code) throw new Error('A different unlock code is already linked to this payment. No second code was created.');
+          code = String(prior.unlock_code); codeId = String(prior.id);
+        } else {
+          codeId = crypto.randomUUID();
+          try {
+            await sbFetch('unlock_codes', {
+              method: 'POST', headers: { Prefer: 'return=minimal' },
+              body: JSON.stringify({
+                id: codeId, unlock_code: code, payment_request_id: req.id,
+                shop_username: String(req.owner_username || '').trim().toLowerCase(),
+                shop_phone: String(req.owner_phone || '').trim(), device_challenge: req.device_challenge || '',
+                tier_code: calc.tier, plan_days: calc.days, amount_rwf: calc.total,
+                duration_months: req.duration_months, branch_count: req.branch_count,
+                worker_count: req.worker_count, device_count: req.device_count || 1,
+                payment_time_ms: Number(req.payment_time_ms || req.created_at || Date.now()),
+                payment_provider: req.provider, payer_phone: req.payer_phone || req.owner_phone,
+                payer_full_name: req.payer_full_name || '', payment_note: req.payment_note || '',
+                plan_digest: signed.planDigest, status: 'ISSUED', issued_by_admin: adminLabel, issued_at: now
+              })
+            });
+            insertedNewCode = true;
+          } catch (insertError) {
+            const winner = await sbFetch(lookup).catch(() => []);
+            if (!Array.isArray(winner) || !winner.length || winner[0].plan_digest !== signed.planDigest || !winner[0].unlock_code) throw insertError;
+            code = String(winner[0].unlock_code); codeId = String(winner[0].id);
+          }
+        }
+        const updated = await sbFetch(
+          `payment_requests?id=eq.${encodeURIComponent(req.id)}&status=eq.${encodeURIComponent(req.status)}`,
+          {
+            method: 'PATCH', headers: { Prefer: 'return=representation' },
+            body: JSON.stringify({
+              status: 'APPROVED', approval_mode: 'UNLOCK_CODE', amount_rwf: calc.total,
+              generated_unlock_code: code, verified_by_admin: adminLabel, rejection_reason: '', updated_at: now
+            })
+          }
+        );
+        if (!Array.isArray(updated) || updated.length === 0) {
+          const latest = await sbFetch(`payment_requests?id=eq.${encodeURIComponent(req.id)}&select=status,generated_unlock_code&limit=1`).catch(() => []);
+          if (latest?.[0]?.status === 'APPROVED' && latest[0].generated_unlock_code === code) {
+            notify('This payment was already approved with its existing code.'); await refreshAll(false); return;
+          }
+          if (insertedNewCode && codeId) {
+            await sbFetch(`unlock_codes?id=eq.${encodeURIComponent(codeId)}&status=eq.ISSUED`, {
+              method: 'PATCH', body: JSON.stringify({ status: 'REVOKED' })
+            }).catch(() => null);
+          }
+          throw new Error('Another administrator processed this payment first. Refresh the queue.');
+        }
+        await extendOrActivateShop(computeShopKey(req.owner_username, req.owner_phone), {
+          addDays: calc.days, branches: req.branch_count, workers: req.worker_count,
+          deviceLimit: req.device_count || 1, monthlyFee: calc.monthly, markAutoUnlock: false
+        });
+        await logAudit('APPROVE_PAYMENT', req.owner_username,
+          `Provider-verified ${req.provider} payment ${calc.total} FRw; ${req.duration_months} months; BB3 code linked to payment ${req.id}.`);
+        setLatestGenerated({ mode: 'CODE', code, shopName: req.shop_name, username: req.owner_username,
+          phone: req.payer_phone || req.owner_phone, days: calc.days, tier: `${calc.tier} (${calc.total.toLocaleString()} FRw)` });
+        await refreshAll(false);
+        notify(`Issued unique BB3 code for @${req.owner_username}`);
+      } catch (err) { notify(`Approve failed: ${err.message}`); }
     };
 
     const handleDirectAutoUnlock = async (req) => {
@@ -2344,8 +2360,9 @@ create table if not exists public.payment_requests (
         req.worker_count,
         req.duration_months,
         req.device_count || 1,
-        payConfig.per_device_fee_rwf
+        Number(req.fee_per_device_rwf) > 0 ? req.fee_per_device_rwf : payConfig.per_device_fee_rwf
       );
+      if (Number(req.amount_rwf) !== calc.total) throw new Error('Payment amount does not match the saved submitted plan.');
       const now = Date.now();
       const adminLabel = `${session.fullName} (${session.email})`;
       try {
@@ -2578,62 +2595,6 @@ create table if not exists public.payment_requests (
       }
     };
 
-    const handleIssueManualCode = async (e) => {
-      e.preventDefault();
-      const username = genForm.username.trim().toLowerCase();
-      const phone = genForm.phone.trim();
-      if (!username || normalizePhoneLast9(phone).length < 7) {
-        notify('Enter valid created @username and registered phone number.');
-        return;
-      }
-      const calc = calculateSubscriptionFee(genForm.branches, genForm.workers, genForm.months, genForm.devices, payConfig.per_device_fee_rwf);
-      const amount = Number(genForm.amount) >= 0 ? Number(genForm.amount) : calc.total;
-      const code = await generateBB3UnlockCode(session, username, phone, calc.tier, calc.days);
-      const adminLabel = `${session.fullName} (${session.email})`;
-
-      try {
-        await sbFetch('unlock_codes', {
-          method: 'POST',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            id: crypto.randomUUID(),
-            unlock_code: code,
-            shop_username: username,
-            shop_phone: phone,
-            device_challenge: '',
-            tier_code: calc.tier,
-            plan_days: calc.days,
-            amount_rwf: amount,
-            status: 'ISSUED',
-            issued_by_admin: adminLabel,
-            issued_at: Date.now()
-          })
-        });
-        await extendOrActivateShop(computeShopKey(username, phone), {
-          addDays: calc.days,
-          branches: genForm.branches,
-          workers: genForm.workers,
-          deviceLimit: genForm.devices,
-          monthlyFee: calc.monthly,
-          markAutoUnlock: false
-        });
-        await logAudit('ISSUE_CODE', username, `Issued ${code} (+${calc.days}d, ${amount} FRw, ${genForm.devices} dev)`);
-        setLatestGenerated({
-          mode: 'CODE',
-          code,
-          shopName: genForm.shopName || 'BeBoss Shop',
-          username,
-          phone,
-          days: calc.days,
-          tier: `${calc.tier} (${amount.toLocaleString()} FRw)`
-        });
-        await refreshAll(false);
-        notify(`Issued unlock code ${code} for @${username}`);
-      } catch (err) {
-        notify(`Failed issuing code: ${err.message}`);
-      }
-    };
-
     const handleRevokeCode = async (c) => {
       try {
         await sbFetch(`unlock_codes?id=eq.${encodeURIComponent(c.id)}`, {
@@ -2736,7 +2697,7 @@ create table if not exists public.payment_requests (
       { id: 'shops', label: 'Shops & Quotas', pill: shops.length },
       { id: 'devices', label: 'Shop Devices (+2k)', pill: devices.length },
       { id: 'users', label: 'Users Directory', pill: users.length },
-      { id: 'codes', label: 'BB2 Codes & Engine', pill: codes.length },
+      { id: 'codes', label: 'BB3 Codes & Ledger', pill: codes.length },
       { id: 'snapshots', label: 'Branch Sync', pill: snapshots.length },
       { id: 'config', label: 'Payment, WA & APK', pill: null },
       { id: 'audit', label: 'Audit Logs', pill: audits.length }
@@ -2747,7 +2708,7 @@ create table if not exists public.payment_requests (
     const filteredQueue = requests.filter(r => {
       const stOk = queueStatusFilter === 'ALL' || r.status === queueStatusFilter;
       const q = queueSearch.trim().toLowerCase();
-      const qOk = !q || [r.shop_name, r.owner_username, r.owner_phone, r.payer_phone, r.payer_full_name, r.telco_reference]
+      const qOk = !q || [r.shop_name, r.owner_username, r.owner_phone, r.payer_phone, r.payer_full_name, r.payment_note, r.provider]
         .some(v => String(v || '').toLowerCase().includes(q));
       return stOk && qOk;
     });
@@ -2872,7 +2833,7 @@ create table if not exists public.payment_requests (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#34d399', textTransform: 'uppercase' }}>
-                      {latestGenerated.mode === 'DIRECT' ? 'Direct Auto-Unlock Completed' : `Latest Issued BB2 Unlock Code (@${latestGenerated.username})`}
+                      {latestGenerated.mode === 'DIRECT' ? 'Direct Auto-Unlock Completed' : `Latest Issued BB3 Unlock Code (@${latestGenerated.username})`}
                     </div>
                     <div className="mono" style={{ fontSize: 16, fontWeight: 900, marginTop: 4 }}>{latestGenerated.code}</div>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
@@ -2882,7 +2843,7 @@ create table if not exists public.payment_requests (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {latestGenerated.mode === 'CODE' && (
                       <button className="btn btn-dark btn-sm" onClick={() => copyAndNotify(latestGenerated.code, 'Unlock code copied!')}>
-                        Copy BB2 Code
+                        Copy BB3 Code
                       </button>
                     )}
                     <a
@@ -2944,7 +2905,7 @@ create table if not exists public.payment_requests (
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn btn-green btn-sm" onClick={() => handleApproveWithCode(r)}>BB2 Code</button>
+                          <button className="btn btn-green btn-sm" onClick={() => handleApproveWithCode(r)}>BB3 Code</button>
                           <button className="btn btn-primary btn-sm" onClick={() => handleDirectAutoUnlock(r)}>Auto-Unlock</button>
                         </div>
                       </div>
@@ -2977,7 +2938,7 @@ create table if not exists public.payment_requests (
                   <input
                     className="input"
                     style={{ flex: '1 1 260px' }}
-                    placeholder="Search shop, @username, registered phone, sender MoMo phone, sender name, telco ref..."
+                    placeholder="Search shop, @username, registered phone, sender MoMo phone, sender name or payment note..."
                     value={queueSearch}
                     onChange={e => setQueueSearch(e.target.value)}
                   />
@@ -2995,7 +2956,7 @@ create table if not exists public.payment_requests (
                   </div>
                   {stats.pendingCount > 1 && (
                     <button type="button" className="btn btn-green btn-sm" onClick={handleBatchApprove}>
-                      Batch Issue BB2 ({stats.pendingCount})
+                      Batch Issue BB3 ({stats.pendingCount})
                     </button>
                   )}
                 </div>
@@ -3005,8 +2966,9 @@ create table if not exists public.payment_requests (
                     <div className="card" style={{ textAlign: 'center', color: 'var(--muted)' }}>No payment claims match this filter.</div>
                   )}
                   {filteredQueue.map(req => {
-                    const expected = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, payConfig.per_device_fee_rwf).total;
-                    const feeOk = Number(req.amount_rwf || 0) >= expected;
+                    const feeRate = Number(req.fee_per_device_rwf) > 0 ? Number(req.fee_per_device_rwf) : Number(payConfig.per_device_fee_rwf) || 2000;
+                    const expected = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, feeRate).total;
+                    const feeOk = Number(req.amount_rwf || 0) === expected;
                     const reqLast9 = normalizePhoneLast9(req.owner_phone);
                     const matchedShop = shops.find(s =>
                       String(s.owner_username || '').toLowerCase() === String(req.owner_username || '').toLowerCase() ||
@@ -3029,7 +2991,7 @@ create table if not exists public.payment_requests (
                               Sender MoMo Name: <strong style={{ color: '#fdba74' }}>{req.payer_full_name || 'Not entered'}</strong> • Sender Phone: <strong>{req.payer_phone}</strong>
                             </div>
                             <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
-                              {req.provider} • <strong>{Number(req.amount_rwf || 0).toLocaleString()} FRw</strong> ({req.duration_months * 30}d • {req.branch_count} br / {req.worker_count} stf / {req.device_count || 1} dev) • USSD: <span className="mono">{req.ussd_code || 'Manual'}</span> • Ref: <span className="mono">{req.telco_reference || 'WhatsApp'}</span>
+                              {req.provider} • <strong>{Number(req.amount_rwf || 0).toLocaleString()} FRw</strong> ({req.duration_months * 30}d • {req.branch_count} br / {req.worker_count} stf / {req.device_count || 1} dev) • USSD: <span className="mono">{req.ussd_code || 'Manual'}</span>
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -3069,9 +3031,9 @@ create table if not exists public.payment_requests (
                         )}
 
                         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {req.status !== 'REJECTED' && (
+                          {(req.status === 'PENDING_VERIFICATION' || req.status === 'REJECTED') && (
                             <button type="button" className="btn btn-green btn-sm" onClick={() => handleApproveWithCode(req)}>
-                              {hasCode ? 'Re-issue BB2 Unlock Code' : 'Option 1: Verify & Issue BB2 Code'}
+                              Verify & Issue BB3 Code
                             </button>
                           )}
                           {hasCode && (
@@ -3087,13 +3049,13 @@ create table if not exists public.payment_requests (
                               Send Code via WhatsApp
                             </a>
                           )}
-                          {!isDirect && req.status !== 'REJECTED' && (
+                          {req.status === 'PENDING_VERIFICATION' && !isDirect && (
                             <button type="button" className="btn btn-primary btn-sm" onClick={() => handleDirectAutoUnlock(req)}>
                               Option 2: Auto-Unlock Directly (No Code)
                             </button>
                           )}
                           {req.status === 'PENDING_VERIFICATION' && (
-                            <button type="button" className="btn btn-red btn-sm" onClick={() => { setRejectTarget(req); setRejectReason('MoMo transaction reference mismatch'); }}>
+                            <button type="button" className="btn btn-red btn-sm" onClick={() => { setRejectTarget(req); setRejectReason('Payment could not be confirmed with the mobile-money provider'); }}>
                               Reject
                             </button>
                           )}
@@ -3404,104 +3366,11 @@ create table if not exists public.payment_requests (
             {activeView === 'codes' && (
               <div style={{ display: 'grid', gap: 16 }}>
                 <div className="card">
-                  <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Issue Account-Bound Cryptographic Unlock Code (BB2)</h3>
-                  {shops.length > 0 && (
-                    <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 10, marginBottom: 10 }}>
-                      {shops.map(s => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          className="btn btn-dark btn-sm"
-                          onClick={() => {
-                            const nextCalc = calculateSubscriptionFee(s.branch_count || 1, s.worker_count || 1, 1, s.device_limit || 1, payConfig.per_device_fee_rwf);
-                            setGenForm({
-                              shopName: s.shop_name,
-                              username: s.owner_username,
-                              phone: s.owner_phone,
-                              branches: s.branch_count || 1,
-                              workers: s.worker_count || 1,
-                              devices: s.device_limit || 1,
-                              months: 1,
-                              amount: nextCalc.total
-                            });
-                          }}
-                        >
-                          {s.shop_name} (@{s.owner_username})
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <form onSubmit={handleIssueManualCode} style={{ display: 'grid', gap: 12 }}>
-                    <div className="grid-3">
-                      <div>
-                        <label className="field-label">Shop Name</label>
-                        <input className="input" value={genForm.shopName} onChange={e => setGenForm(f => ({ ...f, shopName: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label className="field-label">Owner Username *</label>
-                        <input className="input" required placeholder="jeanpaul" value={genForm.username} onChange={e => setGenForm(f => ({ ...f, username: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label className="field-label">Owner Registered Phone *</label>
-                        <input className="input" required placeholder="0788123456" value={genForm.phone} onChange={e => setGenForm(f => ({ ...f, phone: e.target.value }))} />
-                      </div>
-                    </div>
-                    <div className="grid-3">
-                      <div>
-                        <label className="field-label">Branches</label>
-                        <input type="number" min={1} className="input" value={genForm.branches} onChange={e => {
-                          const branches = Math.max(1, Number(e.target.value) || 1);
-                          const c = calculateSubscriptionFee(branches, genForm.workers, genForm.months, genForm.devices, payConfig.per_device_fee_rwf);
-                          setGenForm(f => ({ ...f, branches, amount: c.total }));
-                        }} />
-                      </div>
-                      <div>
-                        <label className="field-label">Workers</label>
-                        <input type="number" min={1} className="input" value={genForm.workers} onChange={e => {
-                          const workers = Math.max(1, Number(e.target.value) || 1);
-                          const c = calculateSubscriptionFee(genForm.branches, workers, genForm.months, genForm.devices, payConfig.per_device_fee_rwf);
-                          setGenForm(f => ({ ...f, workers, amount: c.total }));
-                        }} />
-                      </div>
-                      <div>
-                        <label className="field-label">Paired Devices (+2k/extra)</label>
-                        <input type="number" min={1} className="input" value={genForm.devices} onChange={e => {
-                          const devices = Math.max(1, Number(e.target.value) || 1);
-                          const c = calculateSubscriptionFee(genForm.branches, genForm.workers, genForm.months, devices, payConfig.per_device_fee_rwf);
-                          setGenForm(f => ({ ...f, devices, amount: c.total }));
-                        }} />
-                      </div>
-                    </div>
-                    <div className="grid-2">
-                      <div>
-                        <label className="field-label">Months</label>
-                        <select className="select" value={genForm.months} onChange={e => {
-                          const months = Number(e.target.value);
-                          const c = calculateSubscriptionFee(genForm.branches, genForm.workers, months, genForm.devices, payConfig.per_device_fee_rwf);
-                          setGenForm(f => ({ ...f, months, amount: c.total }));
-                        }}>
-                          <option value={1}>1 Month (+30 days)</option>
-                          <option value={3}>3 Months (+90 days • 10% OFF)</option>
-                          <option value={6}>6 Months (+180 days)</option>
-                          <option value={12}>12 Months (+365 days • 20% OFF)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="field-label">Verified Amount (FRw)</label>
-                        <input type="number" min={0} className="input" value={genForm.amount} onChange={e => setGenForm(f => ({ ...f, amount: e.target.value }))} />
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                      <div style={{ fontSize: 12.5, color: '#fdba74', fontWeight: 700 }}>
-                        Calculated: {genCalc.tier} • +{genCalc.days}d • Monthly {genCalc.monthly.toLocaleString()} FRw • Discount {genCalc.discount}% • Total {genCalc.total.toLocaleString()} FRw
-                      </div>
-                      <button type="submit" className="btn btn-green">Generate Signed BB2 Unlock Code</button>
-                    </div>
-                  </form>
+                  <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Payment-linked BB3 Unlock Codes</h3>
+                  <p style={{ margin: 0, color: 'var(--muted)' }}>A code can only be issued from its own submitted payment claim after verifying the payment with the mobile-money provider. Open the Payments queue to review the plan and issue its unique BB3 code. Standalone code generation is disabled.</p>
                 </div>
-
                 <div className="card" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <input className="input" style={{ flex: '1 1 240px' }} placeholder="Search BB2 code, @username, phone or tier..." value={codeSearch} onChange={e => setCodeSearch(e.target.value)} />
+                  <input className="input" style={{ flex: '1 1 240px' }} placeholder="Search BB3 code, @username, phone or tier..." value={codeSearch} onChange={e => setCodeSearch(e.target.value)} />
                   <div style={{ display: 'flex', gap: 6 }}>
                     {['ALL', 'ISSUED', 'REDEEMED', 'REVOKED'].map(st => (
                       <button key={st} type="button" className={`btn btn-sm ${codeStatusFilter === st ? 'btn-primary' : 'btn-dark'}`} onClick={() => setCodeStatusFilter(st)}>{st}</button>
@@ -4352,7 +4221,7 @@ create table if not exists public.payment_requests (
                   <span className="badge b-green">STEP 3 • DUAL ADMIN UNLOCK</span>
                   <h3 style={{ margin: '10px 0 6px', fontSize: 16 }}>Unlock Code OR Direct Auto-Unlock</h3>
                   <p style={{ color: 'var(--muted)', fontSize: 13 }}>
-                    Admin verifies your MoMo receipt and chooses <strong>Option 1</strong> (issue offline cryptographic <span className="mono">BB2-...</span> code) OR <strong>Option 2</strong> (Direct Auto-Unlock so your phone unlocks automatically when internet syncs — zero code typing needed).
+                    Admin verifies your MoMo receipt and chooses <strong>Option 1</strong> (issue offline cryptographic <span className="mono">BB3-...</span> code) OR <strong>Option 2</strong> (Direct Auto-Unlock so your phone unlocks automatically when internet syncs — zero code typing needed).
                   </p>
                 </div>
               </div>

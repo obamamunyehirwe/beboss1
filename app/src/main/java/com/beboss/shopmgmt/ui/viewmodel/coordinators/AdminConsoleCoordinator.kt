@@ -200,17 +200,21 @@ class AdminConsoleCoordinator(
         workerCount: Int,
         payerFullName: String = "",
         deviceCount: Int = 1,
+        paymentNote: String = "",
         onSubmitted: (PaymentVerificationRequest, Boolean) -> Unit = { _, _ -> }
     ) {
         scope.launch {
             val profile = shopProfile.value
             val owner = resolveOwnerUser()
             val safeDevices = deviceCount.coerceAtLeast(1)
+            val feePerDeviceRwf = OfflineSubscriptionManager.getCurrentPaymentConfig().perDeviceFeeRwf.coerceAtLeast(0)
+            val paymentTimeMs = System.currentTimeMillis()
             val breakdown = OfflineSubscriptionManager.calculateSubscriptionPrice(
                 branchCount = branchCount,
                 workerCount = workerCount,
                 durationMonths = durationMonths,
-                deviceCount = safeDevices
+                deviceCount = safeDevices,
+                perDeviceRateRwf = feePerDeviceRwf
             )
             val ussd = if (provider.contains("AIRTEL", ignoreCase = true)) breakdown.ussdAirtelCode else breakdown.ussdMtnCode
             val cleanUsername = username.trim().lowercase().ifBlank { owner?.username ?: "owner" }
@@ -229,6 +233,9 @@ class AdminConsoleCoordinator(
                 branchCount = branchCount.coerceAtLeast(1),
                 workerCount = workerCount.coerceAtLeast(1),
                 deviceCount = safeDevices,
+                paymentTimeMs = paymentTimeMs,
+                paymentNote = paymentNote.trim(),
+                feePerDeviceRwf = feePerDeviceRwf,
                 status = "PENDING_VERIFICATION",
                 syncedToSupabase = false
             )
