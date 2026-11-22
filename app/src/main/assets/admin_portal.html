@@ -1621,7 +1621,7 @@
         summary: 'Namba mpya za Admin na njia mbili za haraka za kufungua leseni.',
         bullets: [
           'Namba za MTN MoMo (*182#) na Airtel (*500#) hupatikana moja kwa moja kutoka Supabase app_config.',
-          'Unapotuma uthibitisho, weka @username, namba iliyosajiliwa, namba iliyolipa, Majina Kamili yaliyosajiliwa kwenye namba iliyolipa, idadi ya vifaa na Reference.',
+          'Unapotuma uthibitisho, weka @username ya duka, namba iliyosajiliwa, jina na namba ya mlipaji, tarehe/saa ya malipo, mpango uliochagua na maelezo ya hiari. TxID haihitajiki.',
           'Njia ya 1 (Kode ya BB3): Admin hutoa kode ya BB3-... inayofungua akaunti yako pekee hata bila mtandao.',
           'Njia ya 2 (Auto-Unlock): Admin anabofya Direct Auto-Unlock na app inajifungua yenyewe ikisawazisha mtandaoni.'
         ]
@@ -2276,9 +2276,9 @@ create table if not exists public.payment_requests (
 
     const handleApproveWithCode = async (req) => {
       if (!['PENDING_VERIFICATION', 'REJECTED'].includes(String(req.status))) {
-        notify('Only a pending payment can receive a new unlock code.'); return;
+        notify('Only a pending or rejected payment claim can receive its unlock code.'); return;
       }
-      const feeRate = Number(req.fee_per_device_rwf) > 0 ? Number(req.fee_per_device_rwf) : Number(payConfig.per_device_fee_rwf) || 2000;
+      const feeRate = Number(payConfig.per_device_fee_rwf) || 2000;
       const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, feeRate);
       if (Number(req.amount_rwf) !== calc.total) {
         notify(`Payment amount mismatch: this submitted plan calculates to ${calc.total.toLocaleString()} FRw. Verify the provider statement and claim details first.`); return;
@@ -2424,7 +2424,7 @@ create table if not exists public.payment_requests (
           method: 'PATCH',
           body: JSON.stringify({
             status: 'REJECTED',
-            rejection_reason: rejectReason.trim() || 'MoMo transaction could not be confirmed',
+            rejection_reason: rejectReason.trim() || 'Payment details could not be verified with the mobile-money provider',
             verified_by_admin: `${session.fullName} (${session.email})`,
             updated_at: Date.now()
           })
