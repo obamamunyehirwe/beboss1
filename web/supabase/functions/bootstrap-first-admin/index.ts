@@ -60,7 +60,7 @@ function markerAgeMs(value: string, email: string): number | null {
 
 async function reserveInvite(email: string): Promise<
   | { reservation: InviteReservation }
-  | { cooldownSeconds: number }
+  | { cooldownSeconds: number; reason: "sent" | "limited" | "pending" }
 > {
   const lookup = await rest(
     `app_secrets?select=value&name=eq.${encodeURIComponent(INVITE_MARKER)}&limit=1`,
@@ -74,15 +74,32 @@ async function reserveInvite(email: string): Promise<
   if (previousValue) {
     const age = markerAgeMs(previousValue, email);
     if (
+      previousValue.startsWith("SENT:") &&
       age !== null &&
-      (previousValue.startsWith("SENT:") || previousValue.startsWith("LIMITED:")) &&
       age >= 0 &&
       age < RESEND_COOLDOWN_MS
     ) {
-      return { cooldownSeconds: Math.max(1, Math.ceil((RESEND_COOLDOWN_MS - age) / 1000)) };
+      return {
+        cooldownSeconds: Math.max(1, Math.ceil((RESEND_COOLDOWN_MS - age) / 1000)),
+        reason: "sent",
+      };
+    }
+    if (
+      previousValue.startsWith("LIMITED:") &&
+      age !== null &&
+      age >= 0 &&
+      age < RESEND_COOLDOWN_MS
+    ) {
+      return {
+        cooldownSeconds: Math.max(1, Math.ceil((RESEND_COOLDOWN_MS - age) / 1000)),
+        reason: "limited",
+      };
     }
     if (previousValue.startsWith("PENDING:") && age !== null && age >= 0 && age < STALE_PENDING_MS) {
-      return { cooldownSeconds: Math.max(1, Math.ceil((STALE_PENDING_MS - age) / 1000)) };
+      return {
+        cooldownSeconds: Math.max(1, Math.ceil((STALE_PENDING_MS - age) / 1000)),
+        reason: "pending",
+      };
     }
   }
 
@@ -229,11 +246,17 @@ Deno.serve(async (request: Request) => {
 
     const reserved = await reserveInvite(email);
     if ("cooldownSeconds" in reserved) {
+      const status = reserved.reason === "limited" ? "email_rate_limited" : "cooldown";
+      const message = reserved.reason === "limited"
+        ? "Supabase's project-wide email quota is temporarily exhausted. No new invitation was sent to " + email + ". Wait for the cooldown or configure a custom SMTP provider."
+        : reserved.reason === "sent"
+        ? "Supabase accepted an invitation request for this exact inbox (" + email + ") recently. This click did not send another email. Check Inbox and Spam/Junk."
+        : "Another first-admin invitation request is still being processed. This click did not send another email; retry shortly.";
       return json(200, {
-        status: "cooldown",
+        status,
         email,
         retryAfterSeconds: reserved.cooldownSeconds,
-        message: "An invitation request for this exact inbox (" + email + ") was accepted recently. This click did not send another email. Check Inbox and Spam/Junk before requesting another invitation.",
+        message,
       });
     }
 
