@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
+import { useServerFn } from "@/lib/use-server-fn";
 import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, Save, Smartphone, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";

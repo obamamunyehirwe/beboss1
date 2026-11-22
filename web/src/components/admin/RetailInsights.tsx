@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
+import { useServerFn } from "@/lib/use-server-fn";
 import { AlertTriangle, ArrowLeftRight, BadgeCheck, Boxes, HandCoins, PackageX, Receipt, RefreshCw, ShieldQuestion, TrendingUp, Truck, Wallet } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
