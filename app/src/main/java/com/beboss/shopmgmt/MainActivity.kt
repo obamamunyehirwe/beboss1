@@ -839,7 +839,7 @@ private fun BeBossMainContent(
                     onResult = onSuccess
                 )
             },
-            onSubmitPaymentVerification = { provider, payerPhone, payerFullName, username, regPhone, months, branchCount, workerCount, deviceCount, telcoRef, onDone ->
+            onSubmitPaymentVerification = { provider, payerPhone, payerFullName, username, regPhone, months, branchCount, workerCount, deviceCount, paymentNote, onDone ->
                 viewModel.submitUssdPaymentProof(
                     provider = provider,
                     payerPhone = payerPhone,
@@ -848,7 +848,7 @@ private fun BeBossMainContent(
                     durationMonths = months,
                     branchCount = branchCount,
                     workerCount = workerCount,
-                    telcoReference = telcoRef,
+                    paymentNote = paymentNote,
                     payerFullName = payerFullName,
                     deviceCount = deviceCount,
                     onSubmitted = onDone
