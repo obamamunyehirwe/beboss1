@@ -4,8 +4,8 @@
 
 The live Supabase project currently has this single bootstrap allow-list entry:
 
-- Email: `reponsekdz@gmail.com`
-- Password: **not created yet**. Supabase has created the Auth user in the invited state (`invited_at` is set; `email_confirmed_at` is still null). The one-time invitation was successfully sent on 2026-11-21. There is no existing password to disclose; the administrator must accept the email link and choose a private password.
+- Email: `obamamunyehirwe@gmail.com`
+- Invitation status: **not yet sent to this address**. Supabase still contains an unconfirmed invitation for the previous address, which is no longer on the allow-list and must not be used for administrator access. The new administrator must receive and accept an invitation at this address, then choose a private password.
 
 Do not add a default password, seed a password in source code, or enable public self-registration.
 
@@ -28,7 +28,7 @@ Add `https://admin.beboss.rw/reset-password?invite=1` to Supabase Auth's allowed
 
 1. Open `/auth` on `https://admin.beboss.rw`.
 2. Choose **Send first-admin setup invitation**. The Edge Function accepts requests only from the canonical admin origin and reads the one approved address from `admin_bootstrap_emails`; the browser cannot choose another email or submit a password.
-3. Open the invitation sent to `reponsekdz@gmail.com`, follow the secure link, and set a new password on `/reset-password` (at least 10 characters).
+3. Open the invitation sent to `obamamunyehirwe@gmail.com`, follow the secure link, and set a new password on `/reset-password` (at least 10 characters).
 4. After Supabase confirms the invited email, the existing `handle_admin_bootstrap()` trigger grants the `admin` role and creates the admin profile.
 5. Return to `/auth` and sign in with the approved email and the password you just created.
 
