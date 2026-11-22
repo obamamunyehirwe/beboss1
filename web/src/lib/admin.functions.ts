@@ -267,7 +267,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     if (error || !req) throw new Error("Payment request not found.");
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
-    const trustedFeeRate = await perDeviceRate(ctx);
+    const trustedFeeRate = Number(req.fee_per_device_rwf) > 0 ? Math.floor(Number(req.fee_per_device_rwf)) : await perDeviceRate(ctx);
     const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, trustedFeeRate);
     if (Number(req.amount_rwf) !== calc.total) {
       throw new Error(`Payment amount mismatch. Submitted ${Number(req.amount_rwf || 0)} FRw; this plan calculates to ${calc.total} FRw. Refresh and verify the payment details before issuing a code.`);
@@ -309,6 +309,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     const { data: priorCode, error: priorError } = await ctx.supabase.from("unlock_codes")
       .select("id,unlock_code,plan_digest,status")
       .eq("payment_request_id", req.id)
+      .in("status", ["ISSUED", "REDEEMED"])
       .maybeSingle();
     if (priorError) throw new Error("Could not check the existing unlock record for this payment.");
     if (priorCode) {
@@ -370,11 +371,11 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
-    const { data: req, error } = await ctx.supabase.from("payment_requests").select("*").eq("id", data.requestId).maybeSingle();
+    const { data: req, error } = await ctx.supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,payment_time_ms,payment_note,fee_per_device_rwf,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,ussd_code").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
-    const trustedFeeRate = await perDeviceRate(ctx);
+    const trustedFeeRate = Number(req.fee_per_device_rwf) > 0 ? Math.floor(Number(req.fee_per_device_rwf)) : await perDeviceRate(ctx);
     const calc = calculateSubscriptionFee(
       req.branch_count,
       req.worker_count,
