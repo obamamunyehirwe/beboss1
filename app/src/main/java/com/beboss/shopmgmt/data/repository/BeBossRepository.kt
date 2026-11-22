@@ -744,14 +744,33 @@ class BeBossRepository(private val database: AppDatabase) {
                 OfflineSubscriptionManager.saveDynamicPaymentConfig(context, appCfg)
             }
 
-            // Pull all existing branch snapshots for this shop and merge into local SQLite
-            val snapshots = SupabaseAdminClient.fetchShopBranchSnapshots(shopSyncKey)
-            for (snap in snapshots) {
-                try {
-                    val decoded = ShopDataTransferManager.parseShopPackageString(snap.payloadToken)
-                    mergeShopDataPackageLww(decoded)
-                } catch (_: Exception) {
+            // Restore only the newest complete snapshot generation from each device.
+            // A chunked backup is not recoverable until every chunk in its generation exists;
+            // older/partial generations must never be merged into a clean installation.
+            val receivedSnapshots = SupabaseAdminClient.fetchShopBranchSnapshots(shopSyncKey)
+            val snapshots = SupabaseAdminClient.latestCompleteSnapshotChunks(receivedSnapshots)
+            if (snapshots.isEmpty()) {
+                val reason = if (receivedSnapshots.isEmpty()) {
+                    "No cloud backup has been uploaded for this shop yet."
+                } else {
+                    "Cloud backups were found, but none has a complete, valid chunk generation."
                 }
+                return@withContext JoinShopCloudResult(
+                    success = false,
+                    message = "$reason Keep the original device safe, connect it to the internet, run Sync now, then retry recovery. No shop profile or local data was changed."
+                )
+            }
+
+            // Do not silently skip malformed chunks: doing so would report a false successful
+            // recovery with missing products, customers, sales, debts, or branch records.
+            var restoredChunks = 0
+            for (snap in snapshots) {
+                val decoded = ShopDataTransferManager.parseShopPackageString(snap.payloadToken)
+                mergeShopDataPackageLww(decoded)
+                restoredChunks++
+            }
+            check(restoredChunks == snapshots.size) {
+                "Cloud recovery stopped before every complete backup chunk was restored."
             }
 
             // Ensure ShopProfile exists and mirrors cloud subscription state
