@@ -455,7 +455,6 @@ object OfflineSubscriptionManager {
         deviceCount: Int = 1,
         payerPhone: String = "",
         payerFullName: String = "",
-        telcoReference: String = "",
         requestId: String = ""
     ): String {
         val deviceCode = getDeviceChallengeCode(shopProfile)
@@ -475,8 +474,6 @@ object OfflineSubscriptionManager {
             append("Ã¢â‚¬Â¢ *USSD Dialed:* $ussdCode\n")
             append("Ã¢â‚¬Â¢ *Amount Paid:* $amountRwf FRw\n")
             append("Ã¢â‚¬Â¢ *Tier:* $branchCount Branch(es) Ã¢â‚¬Â¢ $workerCount Staff Ã¢â‚¬Â¢ $deviceCount Device(s) ($durationMonths Month(s))\n")
-            if (telcoReference.isNotBlank()) {
-                append("Ã¢â‚¬Â¢ *MoMo SMS Ref:* ${telcoReference.trim().uppercase()}\n")
             }
             if (requestId.isNotBlank()) {
                 append("Ã¢â‚¬Â¢ *Request ID:* ${requestId.take(8).uppercase()}\n")
@@ -500,7 +497,6 @@ object OfflineSubscriptionManager {
         deviceCount: Int = 1,
         payerPhone: String = "",
         payerFullName: String = "",
-        telcoReference: String = "",
         requestId: String = "",
         adminWhatsAppNumber: String = ""
     ) {
@@ -521,7 +517,6 @@ object OfflineSubscriptionManager {
             deviceCount = deviceCount,
             payerPhone = payerPhone,
             payerFullName = payerFullName,
-            telcoReference = telcoReference,
             requestId = requestId
         )
         if (resolvedAdminWa.isBlank()) {
