@@ -9,6 +9,7 @@ import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.data.model.StockTransfer
 import com.beboss.shopmgmt.data.model.Branch
 import com.beboss.shopmgmt.data.model.User
+import com.beboss.shopmgmt.data.model.UserRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.CertificatePinner
