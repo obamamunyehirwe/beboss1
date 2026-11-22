@@ -458,7 +458,7 @@ function LookupPanel() {
                     {pay.provider} • {formatRwf(pay.amount_rwf)} • {pay.duration_months} {t("calcMonths")}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {p.myShop.ref} {pay.telco_reference || "—"} • {formatDateTime(pay.created_at)}
+                    {formatDateTime(pay.payment_time_ms || pay.created_at)}{pay.payment_note ? ` • ${pay.payment_note}` : ""}
                     {pay.rejection_reason ? ` • ${pay.rejection_reason}` : ""}
                   </p>
                 </div>
@@ -907,7 +907,8 @@ function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>
     provider: "MTN MoMo" as "MTN MoMo" | "Airtel Money",
     payerPhone: "",
     payerName: "",
-    telcoReference: "",
+    paymentTimeMs: Date.now(),
+    paymentNote: "",
     months: ([1, 3, 6, 12].includes(Number(initial.m)) ? Number(initial.m) : 1) as 1 | 3 | 6 | 12,
     branches: initial.b ?? 1,
     workers: initial.w ?? 1,
@@ -923,7 +924,7 @@ function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>
     e.preventDefault();
     setSending(true);
     try {
-      await submit({ data: { ...f, ussd } });
+      await submit({ data: { ...f, ussd, paymentTimeMs: f.paymentTimeMs, paymentNote: f.paymentNote } });
       toast.success(p.myShop.proofSent);
       onDone();
     } catch (err) {
@@ -954,7 +955,19 @@ function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>
         </div>
         <Field label={p.myShop.payerName} value={f.payerName} onChange={(v) => set("payerName", v)} min={2} max={120} />
         <Field label={p.myShop.payerPhone} value={f.payerPhone} onChange={(v) => set("payerPhone", v)} min={9} max={30} tel />
-        <Field label={p.myShop.txRef} value={f.telcoReference} onChange={(v) => set("telcoReference", v)} min={4} max={60} />
+        <div className="space-y-2">
+          <Label>Payment date and time</Label>
+          <Input
+            type="datetime-local"
+            value={new Date(f.paymentTimeMs - new Date(f.paymentTimeMs).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)}
+            onChange={(e) => set("paymentTimeMs", e.target.value ? new Date(e.target.value).getTime() : Date.now())}
+            required
+          />
+        </div>
+        <div className="space-y-2 sm:col-span-2">
+          <Label>Payment note (optional)</Label>
+          <Input value={f.paymentNote} onChange={(e) => set("paymentNote", e.target.value)} maxLength={1000} placeholder="e.g. Mobile money confirmation message or other details" />
+        </div>
         <div className="space-y-2">
           <Label>{t("calcCycle")}</Label>
           <Select value={String(f.months)} onValueChange={(v) => set("months", Number(v) as typeof f.months)}>
