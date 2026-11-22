@@ -55,7 +55,7 @@ function TeamPage() {
         <Button type="submit" variant="hero" disabled={grant.isPending}>
           {grant.isPending ? <Loader2 className="animate-spin" /> : <UserPlus />} Invite / grant access
         </Button>
-        <p className="w-full text-xs text-muted-foreground">If the email has no account yet, BeBoss sends a secure invitation. Their selected role is ready when they accept it.</p>
+        <p className="w-full text-xs text-muted-foreground">{a("If the email has no account yet, BeBoss sends a secure invitation. Their selected role is ready when they accept it.")}</p>
       </form>
       {team.isLoading ? (
         <LoadingBlock />
