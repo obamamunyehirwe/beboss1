@@ -22,7 +22,31 @@ import { CommandPalette } from "@/components/admin/CommandPalette";
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "BeBoss Admin Center" }, { name: "robots", content: "noindex" }] }),
   component: AdminLayout,
+  errorComponent: AdminRouteError,
 });
+
+function AdminRouteError({ error, reset }: { error: Error; reset: () => void }) {
+  return (
+    <div role="alert" className="grid min-h-[70vh] place-items-center bg-background px-4 py-10">
+      <div className="w-full max-w-xl rounded-3xl border border-warning/40 bg-card p-8 shadow-xl">
+        <div className="flex items-center gap-3 text-warning">
+          <ShieldAlert className="size-7" />
+          <h1 className="text-xl font-bold">Admin page could not load</h1>
+        </div>
+        <p className="mt-3 text-sm text-muted-foreground">
+          The admin page encountered an error. Your Supabase records and shop data have not been reset.
+        </p>
+        <pre className="mt-4 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
+          {error.message || "Unexpected admin page error"}
+        </pre>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Button onClick={reset}><RefreshCw /> Retry page</Button>
+          <Button variant="outline" asChild><Link to="/admin">Admin overview</Link></Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const NAV = [
   { to: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
