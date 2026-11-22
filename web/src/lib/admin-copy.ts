@@ -388,6 +388,7 @@ const words: Record<string, readonly [string, string, string]> = {
   "Configured": ["Byashyizweho","Configuré","Imesanidiwa"],
   "Optional": ["Ntibisabwa","Facultatif","Si lazima"],
   "Save snapshot key": ["Bika urufunguzo rwa snapshot","Enregistrer la clé d’instantané","Hifadhi ufunguo wa picha ya data"],
+  "Clipboard access is unavailable in this browser.": ["Gukoporora ntibishobotse muri iyi browser.", "Le presse-papiers n’est pas disponible dans ce navigateur.", "Ubao wa kunakili haupatikani kwenye kivinjari hiki."],
 };
 export function useAdminText() {
   const { lang } = useI18n();
