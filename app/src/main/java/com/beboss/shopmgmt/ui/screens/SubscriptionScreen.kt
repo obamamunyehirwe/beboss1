@@ -910,7 +910,7 @@ fun SubscriptionScreen(
                         value = voucherInput,
                         onValueChange = { voucherInput = it },
                         label = { Text(Localization.get("enter_voucher_code", language)) },
-                        placeholder = { Text("BB2-SINGLE-30-...") },
+                        placeholder = { Text("BB3-SINGLE-30-...") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("unlock_code_input"),
@@ -1143,7 +1143,7 @@ fun SubscriptionPaywallDialog(
     }
 
     Dialog(
-        onDismissRequest = { /* Hard lock: non-dismissible until valid payment or BB2 unlock code */ },
+        onDismissRequest = { /* Hard lock: non-dismissible until verified payment approval or a valid unlock code */ },
         properties = DialogProperties(
             dismissOnBackPress = false,
             dismissOnClickOutside = false,
