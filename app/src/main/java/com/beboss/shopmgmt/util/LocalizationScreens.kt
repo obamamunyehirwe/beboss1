@@ -1194,10 +1194,10 @@ internal object LocalizationScreens {
             "Usawazishaji mwisho: %s • Rekodi %d"
         ),
         "set_admin_console_desc" to locEntry(
-            "Verify MoMo payments, approve shops, issue BB2 unlock codes & view cloud logs.",
-            "Genzura ubwishyu bwa MoMo, wemeze amaduka, utange kode za BB2.",
-            "Vérifiez les paiements MoMo, approuvez les boutiques et gérez les codes BB2.",
-            "Kagua malipo ya MoMo, idhinisha maduka na toa misimbo ya BB2."
+            "Verify MoMo payments, approve shops, issue signed BB3 unlock codes or direct-unlock shops, and view cloud logs.",
+            "Genzura ubwishyu bwa MoMo, wemeze amaduka, utange kode za BB3 zisinywe cyangwa ufungure iduka ako kanya, urebe amakuru ya cloud.",
+            "Vérifiez les paiements MoMo, approuvez les boutiques, émettez des codes BB3 signés ou déverrouillez directement les boutiques, et consultez les journaux cloud.",
+            "Hakiki malipo ya MoMo, idhinisha maduka, toa misimbo ya BB3 iliyotiwa saini au fungua duka moja kwa moja, na uangalie kumbukumbu za wingu."
         ),
         "set_shop_address_label" to locEntry("Shop Address", "Aho Ububiko Buherereye", "Adresse boutique", "Anwani ya Duka"),
         "set_shop_phone_label" to locEntry("Business Phone", "Terefone y'Ubucuruzi", "Tél. boutique", "Simu ya Biashara"),
