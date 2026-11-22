@@ -1472,241 +1472,25 @@ fun AdminVerificationConsoleDialog(
                         }
 
                         3 -> {
-                            // Server-signed BB3 unlock code generator with registered-shop picker and duration presets
-                            val previewBindingHash = remember(manualUsername, manualPhone) {
-                                if (manualUsername.trim().isNotEmpty() && SubscriptionSecurityManager.normalizePhoneLast9(manualPhone).isNotEmpty()) {
-                                    SubscriptionSecurityManager.computeAccountBindingHash(manualUsername, manualPhone)
-                                } else null
-                            }
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text(Localization.get("admin_manual_issue_title", language), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                                if (shopAccounts.isNotEmpty()) {
-                                    Text(
-                                        text = Localization.get("admin_pick_registered_shop", language),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        items(shopAccounts) { acc ->
-                                            val isPicked = manualUsername.equals(acc.ownerUsername, ignoreCase = true) &&
-                                                SubscriptionSecurityManager.normalizePhoneLast9(manualPhone) ==
-                                                SubscriptionSecurityManager.normalizePhoneLast9(acc.ownerPhone)
-                                            Surface(
-                                                onClick = {
-                                                    manualUsername = acc.ownerUsername
-                                                    manualPhone = acc.ownerPhone
-                                                    manualTier = when {
-                                                        acc.branchCount >= 3 -> "MULTI"
-                                                        acc.branchCount == 2 -> "DUAL"
-                                                        else -> "SINGLE"
-                                                    }
-                                                    val months = ((manualDaysText.toIntOrNull() ?: 30) / 30).coerceAtLeast(1)
-                                                    val calc = OfflineSubscriptionManager.calculateSubscriptionPrice(
-                                                        branchCount = acc.branchCount.coerceAtLeast(1),
-                                                        workerCount = acc.workerCount.coerceAtLeast(1),
-                                                        durationMonths = months,
-                                                        deviceCount = acc.deviceLimit.coerceAtLeast(1)
-                                                    )
-                                                    manualAmountText = calc.totalPayable.toString()
-                                                },
-                                                shape = RoundedCornerShape(10.dp),
-                                                color = if (isPicked) OrangePrimary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                                                border = BorderStroke(1.dp, if (isPicked) OrangePrimary else MaterialTheme.colorScheme.outlineVariant),
-                                                modifier = Modifier.heightIn(min = 42.dp)
-                                            ) {
-                                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                                                    Text(acc.shopName, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                                                    Text("@${acc.ownerUsername} Ã¢â‚¬Â¢ ${acc.ownerPhone}", fontSize = 9.5.sp, color = if (isPicked) OrangePrimary else MaterialTheme.colorScheme.onSurfaceVariant)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                OutlinedTextField(
-                                    value = manualUsername,
-                                    onValueChange = { manualUsername = it },
-                                    label = { Text(Localization.get("admin_manual_username_label", language) + " *") },
-                                    placeholder = { Text(Localization.get("admin_manual_username_placeholder", language)) },
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("admin_manual_username_input")
-                                )
-                                OutlinedTextField(
-                                    value = manualPhone,
-                                    onValueChange = { manualPhone = it },
-                                    label = { Text(Localization.get("admin_manual_phone_label", language) + " *") },
-                                    placeholder = { Text(Localization.get("admin_manual_phone_placeholder", language)) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("admin_manual_phone_input")
-                                )
-
-                                // Tier Selector
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    listOf(
-                                        Triple("SINGLE", 1, 5000),
-                                        Triple("DUAL", 2, 10000),
-                                        Triple("MULTI", 3, 20000),
-                                        Triple("ANNUAL", 1, 48000)
-                                    ).forEach { (tier, br, baseAmt) ->
-                                        val selected = manualTier == tier
-                                        OutlinedButton(
-                                            onClick = {
-                                                manualTier = tier
-                                                if (tier == "ANNUAL") {
-                                                    manualDaysText = "365"
-                                                    manualAmountText = baseAmt.toString()
-                                                } else {
-                                                    val months = ((manualDaysText.toIntOrNull() ?: 30) / 30).coerceAtLeast(1)
-                                                    val calc = OfflineSubscriptionManager.calculateSubscriptionPrice(
-                                                        branchCount = br,
-                                                        workerCount = 1,
-                                                        durationMonths = months
-                                                    )
-                                                    manualAmountText = calc.totalPayable.toString()
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .heightIn(min = 44.dp),
-                                            contentPadding = PaddingValues(horizontal = 4.dp),
-                                            colors = ButtonDefaults.outlinedButtonColors(
-                                                containerColor = if (selected) OrangePrimary.copy(alpha = 0.15f) else Color.Transparent
-                                            )
-                                        ) {
-                                            Text(Localization.get("admin_tier_${tier.lowercase(Locale.ROOT)}", language), fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = if (selected) OrangePrimary else MaterialTheme.colorScheme.onSurface)
-                                        }
-                                    }
-                                }
-
-                                // Duration Presets (4d Trial, 30d, 90d, 180d, 365d)
-                                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    listOf(
-                                        Triple("4d", 4, 0),
-                                        Triple("30d", 30, 1),
-                                        Triple("90d", 90, 3),
-                                        Triple("180d", 180, 6),
-                                        Triple("365d", 365, 12)
-                                    ).forEach { (label, daysVal, monthsVal) ->
-                                        val isCurrent = manualDaysText == daysVal.toString()
-                                        Surface(
-                                            onClick = {
-                                                manualDaysText = daysVal.toString()
-                                                if (monthsVal == 0) {
-                                                    manualAmountText = "0"
-                                                } else {
-                                                    val br = when (manualTier) {
-                                                        "MULTI" -> 3
-                                                        "DUAL" -> 2
-                                                        else -> 1
-                                                    }
-                                                    val calc = OfflineSubscriptionManager.calculateSubscriptionPrice(
-                                                        branchCount = br,
-                                                        workerCount = 1,
-                                                        durationMonths = monthsVal
-                                                    )
-                                                    manualAmountText = calc.totalPayable.toString()
-                                                }
-                                            },
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = if (isCurrent) DarkNavy else MaterialTheme.colorScheme.surfaceVariant,
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .heightIn(min = 40.dp)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Text(
-                                                    text = label,
-                                                    fontSize = 10.5.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (isCurrent) Color.White else MaterialTheme.colorScheme.onSurface
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedTextField(
-                                        value = manualDaysText,
-                                        onValueChange = { manualDaysText = it.filter { ch -> ch.isDigit() } },
-                                        label = { Text(Localization.get("admin_days_label", language)) },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    OutlinedTextField(
-                                        value = manualAmountText,
-                                        onValueChange = { manualAmountText = it.filter { ch -> ch.isDigit() } },
-                                        label = { Text(Localization.get("admin_amount_label", language)) },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-
-                                if (previewBindingHash != null) {
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = ProfitGreen.copy(alpha = 0.08f),
-                                        border = BorderStroke(1.dp, ProfitGreen.copy(alpha = 0.35f)),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(10.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = Localization.get("admin_binding_ready", language),
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = ProfitGreen
-                                                )
-                                                Text(
-                                                    text = "@${manualUsername.trim().lowercase(Locale.ROOT)} + *${SubscriptionSecurityManager.normalizePhoneLast9(manualPhone)} Ã¢â€ â€™ Hash #$previewBindingHash",
-                                                    fontFamily = FontFamily.Monospace,
-                                                    fontSize = 10.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                            Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = ProfitGreen, modifier = Modifier.size(18.dp))
-                                        }
-                                    }
-                                }
-
-                                Button(
-                                    onClick = {
-                                        val days = manualDaysText.toIntOrNull()?.coerceAtLeast(1) ?: 30
-                                        val amt = manualAmountText.toIntOrNull() ?: 5000
-                                        onIssueManualCode(manualUsername.trim(), manualPhone.trim(), manualTier, days, amt) { _, code ->
-                                            lastGeneratedCode = code
-                                            lastTargetUsername = manualUsername.trim()
-                                            lastTargetPhone = manualPhone.trim()
-                                            lastTargetAmount = amt
-                                            lastTargetDays = days
-                                        }
-                                    },
-                                    enabled = manualUsername.isNotBlank() && SubscriptionSecurityManager.normalizePhoneLast9(manualPhone).length >= 7,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(min = 48.dp)
-                                        .testTag("admin_generate_manual_bb2_btn"),
-                                    colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen)
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                    border = BorderStroke(1.dp, OrangePrimary.copy(alpha = 0.35f)),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(Localization.get("admin_generate_bb2_cta", language), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(26.dp))
+                                        Text("Payment-linked unlock codes only", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                        Text(
+                                            "To issue a code, open the Payments queue, select the customer payment, verify the payer, amount and plan with the mobile-money provider, then choose Verify & Issue BB3. BeBoss signs one code for that exact payment request and registered shop. Standalone codes are disabled.",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
-
                         4 -> {
                             // Unlock Codes Ledger with Search, Status Filter, Copy, WhatsApp & Revoke
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
