@@ -203,13 +203,14 @@ object OfflineSubscriptionManager {
         branchCount: Int,
         workerCount: Int,
         durationMonths: Int = 1,
-        deviceCount: Int = 1
+        deviceCount: Int = 1,
+        perDeviceRateRwf: Int? = null
     ): SubscriptionPriceBreakdown {
         val effectiveBranches = branchCount.coerceAtLeast(1)
         val effectiveWorkers = workerCount.coerceAtLeast(1)
         val effectiveDevices = deviceCount.coerceAtLeast(1)
         val extraDevices = (effectiveDevices - 1).coerceAtLeast(0)
-        val perDeviceRate = cachedConfig.perDeviceFeeRwf.takeIf { it > 0 } ?: PER_EXTRA_DEVICE_FEE_RWF
+        val perDeviceRate = (perDeviceRateRwf ?: cachedConfig.perDeviceFeeRwf).takeIf { it > 0 } ?: PER_EXTRA_DEVICE_FEE_RWF
 
         // 1. Branch Base Tier
         val (branchBasePrice, branchTierName) = when {
@@ -455,7 +456,9 @@ object OfflineSubscriptionManager {
         deviceCount: Int = 1,
         payerPhone: String = "",
         payerFullName: String = "",
-        requestId: String = ""
+        requestId: String = "",
+        paymentTimeMs: Long = System.currentTimeMillis(),
+        paymentNote: String = ""
     ): String {
         val deviceCode = getDeviceChallengeCode(shopProfile)
         return buildString {
@@ -474,7 +477,8 @@ object OfflineSubscriptionManager {
             append("Ã¢â‚¬Â¢ *USSD Dialed:* $ussdCode\n")
             append("Ã¢â‚¬Â¢ *Amount Paid:* $amountRwf FRw\n")
             append("Ã¢â‚¬Â¢ *Tier:* $branchCount Branch(es) Ã¢â‚¬Â¢ $workerCount Staff Ã¢â‚¬Â¢ $deviceCount Device(s) ($durationMonths Month(s))\n")
-            }
+            append("*Payment time:* " + java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(paymentTimeMs)) + "\\n")
+            if (paymentNote.isNotBlank()) append("*Payment note:* " + paymentNote.trim() + "\\n")
             if (requestId.isNotBlank()) {
                 append("Ã¢â‚¬Â¢ *Request ID:* ${requestId.take(8).uppercase()}\n")
             }
@@ -498,6 +502,8 @@ object OfflineSubscriptionManager {
         payerPhone: String = "",
         payerFullName: String = "",
         requestId: String = "",
+        paymentTimeMs: Long = System.currentTimeMillis(),
+        paymentNote: String = "",
         adminWhatsAppNumber: String = ""
     ) {
         val resolvedAdminWa = adminWhatsAppNumber.trim()
@@ -517,7 +523,9 @@ object OfflineSubscriptionManager {
             deviceCount = deviceCount,
             payerPhone = payerPhone,
             payerFullName = payerFullName,
-            requestId = requestId
+            requestId = requestId,
+            paymentTimeMs = paymentTimeMs,
+            paymentNote = paymentNote
         )
         if (resolvedAdminWa.isBlank()) {
             Toast.makeText(
