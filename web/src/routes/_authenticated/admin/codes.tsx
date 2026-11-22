@@ -42,7 +42,7 @@ function CodesPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Unlock codes" sub="Account-bound, HMAC-signed BB2 codes. The app verifies them offline and never accepts the same code twice." />
+      <PageHeader title="Unlock codes" sub="New BB3 codes use ECDSA P-256 and verify offline with the Android-pinned public key. Legacy BB2 codes are verified online against their original server-issued record." />
       {isAdmin ? <IssueForm /> : null}
       <div className="flex flex-wrap items-center gap-3">
         <SearchInput value={q} onChange={setQ} placeholder="Search code, @username, phone, tier…" />
