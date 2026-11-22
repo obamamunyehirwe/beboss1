@@ -158,7 +158,7 @@ export function SearchInput({ value, onChange, placeholder }: { value: string; o
   return (
     <div className="relative min-w-[220px] flex-1">
       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input aria-label={placeholder} value={value} onChange={(e) => onChange(e.target.value)} placeholder={a(placeholder)} className="pl-9" />
+      <Input aria-label={a(placeholder)} value={value} onChange={(e) => onChange(e.target.value)} placeholder={a(placeholder)} className="pl-9" />
     </div>
   );
 }
@@ -193,8 +193,8 @@ export function EmptyState({ title, sub }: { title: string; sub?: string }) {
   return (
     <div className="grid place-items-center rounded-2xl border border-dashed border-border px-6 py-14 text-center">
       <Inbox className="size-10 text-muted-foreground" />
-      <p className="mt-3 font-semibold">{title}</p>
-      {sub ? <p className="mt-1 max-w-md text-sm text-muted-foreground">{sub}</p> : null}
+      <p className="mt-3 font-semibold">{a(title)}</p>
+      {sub ? <p className="mt-1 max-w-md text-sm text-muted-foreground">{a(sub)}</p> : null}
     </div>
   );
 }
@@ -233,7 +233,7 @@ export function ConfirmAction({ trigger, title, description, confirmLabel = "Con
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{a(title)}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
+          <AlertDialogDescription>{typeof description === "string" ? a(description) : description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{a("Cancel")}</AlertDialogCancel>
