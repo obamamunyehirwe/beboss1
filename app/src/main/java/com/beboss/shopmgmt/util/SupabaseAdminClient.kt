@@ -107,6 +107,17 @@ data class SupabasePaymentRequestDto(
     val updatedAt: Long
 )
 
+data class SupabaseSignedPaymentUnlock(
+    val code: String,
+    val planDigest: String,
+    val requestId: String,
+    val shopId: String,
+    val tierCode: String,
+    val days: Int,
+    val amountRwf: Int,
+    val paymentTimeMs: Long
+)
+
 data class SupabaseUnlockCodeDto(
     val id: String,
     val unlockCode: String,
@@ -430,28 +441,17 @@ object SupabaseAdminClient {
      * Ask the trusted Supabase Edge Function to sign a BB3 code. The ECDSA private
      * key never enters this Android process or BuildConfig.
      */
-    private suspend fun requestServerSignedBB3Code(
-        username: String,
-        registeredPhone: String,
-        tierCode: String,
-        days: Int,
-        paymentRequestId: String = "",
-        planDigest: String = ""
-    ): Result<String> = withContext(Dispatchers.IO) {
+    private suspend fun requestServerSignedBB3Code(paymentRequestId: String): Result<SupabaseSignedPaymentUnlock> = withContext(Dispatchers.IO) {
         val session = ensureValidAdminSession()
             ?: return@withContext Result.failure(IllegalStateException("Admin session expired. Sign in again."))
         if (!isConfigured()) {
             return@withContext Result.failure(IllegalStateException("Supabase connection is not configured."))
         }
+        if (paymentRequestId.isBlank() || paymentRequestId.length > 200) {
+            return@withContext Result.failure(IllegalArgumentException("A valid payment request is required to issue a BB3 code."))
+        }
         try {
-            val payload = JSONObject().apply {
-                put("username", username.trim())
-                put("phone", registeredPhone.trim())
-                put("tier", tierCode.trim().uppercase(Locale.ROOT))
-                put("days", days.coerceIn(1, 800))
-                if (paymentRequestId.isNotBlank()) put("requestId", paymentRequestId.trim())
-                if (planDigest.isNotBlank()) put("planDigest", planDigest.uppercase(Locale.ROOT))
-            }
+            val payload = JSONObject().put("paymentRequestId", paymentRequestId.trim())
             val req = Request.Builder()
                 .url("${getSupabaseUrl()}/functions/v1/issue-bb3-unlock")
                 .addHeader("apikey", getSupabaseAnonKey())
@@ -459,21 +459,36 @@ object SupabaseAdminClient {
                 .addHeader("Content-Type", "application/json")
                 .post(payload.toString().toRequestBody(jsonMediaType))
                 .build()
-
             client.newCall(req).execute().use { response ->
                 val raw = response.body?.string().orEmpty()
                 val json = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
                 if (!response.isSuccessful) {
                     val message = json.optString("message")
                         .ifBlank { json.optString("error") }
-                        .ifBlank { "Secure BB3 signing service failed (HTTP ${response.code})." }
+                        .ifBlank { "Secure BB3 payment signing failed (HTTP ${response.code})." }
                     return@withContext Result.failure(IllegalStateException(message))
                 }
                 val code = json.optString("code").trim()
+                val digest = json.optString("planDigest").trim().uppercase(Locale.ROOT)
+                val returnedRequestId = json.optString("requestId").trim()
                 if (!SubscriptionSecurityManager.isCompleteUnlockCodeFormat(code) || !code.startsWith("BB3-")) {
                     return@withContext Result.failure(IllegalStateException("The BB3 signing service returned an invalid code."))
                 }
-                Result.success(code)
+                if (digest.length != 64 || !digest.all { it in "0123456789ABCDEF" } || returnedRequestId != paymentRequestId) {
+                    return@withContext Result.failure(IllegalStateException("The signing service did not bind this code to the submitted payment request."))
+                }
+                Result.success(
+                    SupabaseSignedPaymentUnlock(
+                        code = code,
+                        planDigest = digest,
+                        requestId = returnedRequestId,
+                        shopId = json.optString("shopId"),
+                        tierCode = json.optString("tier"),
+                        days = json.optInt("days", 0),
+                        amountRwf = json.optInt("amountRwf", 0),
+                        paymentTimeMs = json.optLong("paymentTimeMs", 0L)
+                    )
+                )
             }
         } catch (error: Exception) {
             Result.failure(error)
