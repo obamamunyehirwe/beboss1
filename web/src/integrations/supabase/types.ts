@@ -415,6 +415,7 @@ export type Database = {
           device_challenge: string
           device_count: number
           duration_months: number
+          fee_per_device_rwf: number
           generated_unlock_code: string
           id: string
           owner_phone: string
@@ -442,6 +443,7 @@ export type Database = {
           device_challenge?: string
           device_count?: number
           duration_months?: number
+          fee_per_device_rwf?: number
           generated_unlock_code?: string
           id: string
           owner_phone: string
