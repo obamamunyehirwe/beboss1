@@ -16,6 +16,7 @@ import { codesQuery, configQuery, shopsQuery } from "@/lib/admin-queries";
 import { computeAccountBindingHash } from "@/lib/bb2";
 import { buildUnlockReplyText, buildWhatsAppUrl, calculateSubscriptionFee, normalizePhoneLast9 } from "@/lib/pricing";
 import { formatDateTime, formatRwf } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/codes")({
   component: CodesPage,
@@ -32,6 +33,7 @@ type Tier = "SINGLE" | "DUAL" | "MULTI" | "ANNUAL" | "TRIAL";
 type F = "ALL" | "ISSUED" | "REDEEMED" | "REVOKED";
 
 function CodesPage() {
+  const a = useAdminText();
   const isAdmin = !!useAdminCtx().data?.isAdmin;
   const codes = useQuery(codesQuery);
   const [q, setQ] = useState("");
@@ -57,7 +59,7 @@ function CodesPage() {
           ]}
         />
         <Button size="sm" variant="glass" onClick={() => downloadCsv(`beboss-codes-${Date.now()}.csv`, rows)}>
-          <Download /> Export
+          <Download /> {a("Export")}
         </Button>
       </div>
       {codes.isLoading ? (
@@ -69,11 +71,11 @@ function CodesPage() {
           <table className="w-full text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">Code</th>
-                <th className="px-4 py-3">Account</th>
-                <th className="px-4 py-3">Plan</th>
-                <th className="px-4 py-3">Issued</th>
-                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">{a("Code")}</th>
+                <th className="px-4 py-3">{a("Account")}</th>
+                <th className="px-4 py-3">{a("Plan")}</th>
+                <th className="px-4 py-3">{a("Issued")}</th>
+                <th className="px-4 py-3">{a("Status")}</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -92,17 +94,17 @@ function CodesPage() {
                     {formatDateTime(c.issued_at)}
                     <br />
                     {c.issued_by_admin}
-                    {c.redeemed_at ? <><br />Redeemed {formatDateTime(c.redeemed_at)}</> : null}
+                    {c.redeemed_at ? <><br />{a("Redeemed")} {formatDateTime(c.redeemed_at)}</> : null}
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={c.status} />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
-                      <Button size="icon" variant="ghost" aria-label="Copy code" onClick={async () => { await navigator.clipboard.writeText(c.unlock_code); toast.success("Copied"); }}>
+                      <Button size="icon" variant="ghost" aria-label={a("Copy code")} onClick={async () => { await navigator.clipboard.writeText(c.unlock_code); toast.success(a("Copied")); }}>
                         <Copy />
                       </Button>
-                      <Button size="icon" variant="ghost" asChild aria-label="Send on WhatsApp">
+                      <Button size="icon" variant="ghost" asChild aria-label={a("Send on WhatsApp")}>
                         <a href={buildWhatsAppUrl(c.shop_phone, buildUnlockReplyText(c.shop_username, c.shop_username, c.unlock_code, c.plan_days, c.tier_code))} target="_blank" rel="noreferrer">
                           <MessageCircle />
                         </a>
@@ -110,11 +112,11 @@ function CodesPage() {
                       {isAdmin && c.status === "ISSUED" ? (
                         <ConfirmAction
                           trigger={
-                            <Button size="icon" variant="ghost" aria-label="Revoke code">
+                            <Button size="icon" variant="ghost" aria-label={a("Revoke code")}>
                               <Ban />
                             </Button>
                           }
-                          title="Revoke this code?"
+                          title={a("Revoke this code?")}
                           description="The code is marked revoked in the registry. Codes already pasted into an offline phone can't be pulled back, so also suspend the shop if needed."
                           destructive
                           confirmLabel="Revoke"
@@ -134,6 +136,7 @@ function CodesPage() {
 }
 
 function IssueForm() {
+  const a = useAdminText();
   const shops = useQuery(shopsQuery);
   const { data: cfg } = useQuery(configQuery);
   const [shopId, setShopId] = useState<string>("");
@@ -181,13 +184,13 @@ function IssueForm() {
     <form onSubmit={submit} className="grid gap-5 rounded-2xl border border-border bg-card p-5 xl:grid-cols-[1.6fr_1fr]">
       <div className="space-y-4">
         <h2 className="flex items-center gap-2 font-semibold">
-          <KeyRound className="size-4 text-primary" /> Issue a code manually
+          <KeyRound className="size-4 text-primary" /> {a("Issue a code manually")}
         </h2>
         <div className="space-y-1.5">
-          <Label>Registered shop</Label>
+          <Label>{a("Registered shop")}</Label>
           <Select value={shopId} onValueChange={pick}>
             <SelectTrigger>
-              <SelectValue placeholder="Pick a shop to auto-fill (optional)" />
+              <SelectValue placeholder={a("Pick a shop to auto-fill (optional)")} />
             </SelectTrigger>
             <SelectContent className="max-h-72">
               {(shops.data ?? []).map((s) => (
@@ -200,16 +203,16 @@ function IssueForm() {
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label>Owner username</Label>
+            <Label>{a("Owner username")}</Label>
             <Input value={username} onChange={(e) => setUsername(e.target.value)} required maxLength={80} />
           </div>
           <div className="space-y-1.5">
-            <Label>Registered phone</Label>
+            <Label>{a("Registered phone")}</Label>
             <Input value={phone} onChange={(e) => setPhone(e.target.value)} required maxLength={30} />
           </div>
         </div>
         <div>
-          <Label>Duration</Label>
+          <Label>{a("Duration")}</Label>
           <div className="mt-1.5 flex flex-wrap gap-2">
             {DURATIONS.map((d) => (
               <Button key={d.days} type="button" size="sm" variant={dur.days === d.days ? "soft" : "glass"} onClick={() => { setDur(d); if (d.days === 4) setTier("TRIAL"); else if (tier === "TRIAL") setTier("SINGLE"); }}>
@@ -220,7 +223,7 @@ function IssueForm() {
         </div>
         <div className="grid gap-3 sm:grid-cols-4">
           <div className="space-y-1.5">
-            <Label>Tier</Label>
+            <Label>{a("Tier")}</Label>
             <Select value={tier} onValueChange={(v) => setTier(v as Tier)}>
               <SelectTrigger>
                 <SelectValue />
@@ -236,25 +239,25 @@ function IssueForm() {
           </div>
           {(["branches", "workers", "devices"] as const).map((k) => (
             <div key={k} className="space-y-1.5">
-              <Label className="capitalize">{k === "workers" ? "Staff" : k}</Label>
+              <Label className="capitalize">{a(k === "workers" ? "Staff" : k)}</Label>
               <Input type="number" min={1} max={k === "workers" ? 500 : 100} value={plan[k]} onChange={(e) => setPlan({ ...plan, [k]: Math.max(1, Number(e.target.value) || 1) })} />
             </div>
           ))}
         </div>
         <label className="flex items-center gap-3 text-sm">
           <Switch checked={extendCloud} onCheckedChange={setExtendCloud} />
-          Also extend the shop's cloud license so it auto-unlocks on sync
+          {a("Also extend the shop cloud license so it auto-unlocks on sync")}'s cloud license so it auto-unlocks on sync
         </label>
       </div>
       <div className="flex flex-col gap-3 rounded-2xl border border-primary/30 bg-surface-2 p-5">
-        <p className="text-xs uppercase tracking-widest text-muted-foreground">Binding preview</p>
+        <p className="text-xs uppercase tracking-widest text-muted-foreground">{a("Binding preview")}</p>
         <p className="font-mono text-sm">
           @{username.trim().toLowerCase() || "username"} + *{normalizePhoneLast9(phone) || "#########"} → <span className="text-primary">#{hash || "------"}</span>
         </p>
-        <p className="text-xs uppercase tracking-widest text-muted-foreground">Amount recorded</p>
+        <p className="text-xs uppercase tracking-widest text-muted-foreground">{a("Amount recorded")}</p>
         <p className="font-display text-3xl font-bold">{formatRwf(amount)}</p>
         <Button type="submit" variant="hero" disabled={issue.isPending || !hash} className="mt-auto">
-          {issue.isPending ? <Loader2 className="animate-spin" /> : <KeyRound />} Generate signed code
+          {issue.isPending ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Generate signed BB3 code")}
         </Button>
         {issued ? (
           <div className="rounded-xl border border-success/30 bg-success/10 p-3">
@@ -265,7 +268,7 @@ function IssueForm() {
               </Button>
               <Button type="button" size="sm" variant="success" asChild>
                 <a href={buildWhatsAppUrl(phone, buildUnlockReplyText(username, username, issued.code, dur.days, tier))} target="_blank" rel="noreferrer">
-                  <MessageCircle /> WhatsApp
+                  <MessageCircle /> {a("WhatsApp")}
                 </a>
               </Button>
             </div>
