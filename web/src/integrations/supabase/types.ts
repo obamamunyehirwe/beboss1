@@ -228,9 +228,9 @@ export type Database = {
         Insert: {
           created_by?: string
           download_count?: number
-          file_name: string
-          file_path: string
-          file_url: string
+          file_name?: string
+          file_path?: string
+          file_url?: string
           id?: string
           is_current?: boolean
           min_android?: string
@@ -415,12 +415,15 @@ export type Database = {
           device_challenge: string
           device_count: number
           duration_months: number
+          fee_per_device_rwf: number
           generated_unlock_code: string
           id: string
           owner_phone: string
           owner_username: string
           payer_full_name: string
           payer_phone: string
+          payment_note: string
+          payment_time_ms: number
           provider: string
           rejection_reason: string
           shop_name: string
@@ -440,12 +443,15 @@ export type Database = {
           device_challenge?: string
           device_count?: number
           duration_months?: number
+          fee_per_device_rwf?: number
           generated_unlock_code?: string
           id: string
           owner_phone: string
           owner_username: string
           payer_full_name?: string
           payer_phone?: string
+          payment_note?: string
+          payment_time_ms?: number
           provider?: string
           rejection_reason?: string
           shop_name: string
@@ -471,6 +477,8 @@ export type Database = {
           owner_username?: string
           payer_full_name?: string
           payer_phone?: string
+          payment_note?: string
+          payment_time_ms?: number
           provider?: string
           rejection_reason?: string
           shop_name?: string
@@ -553,195 +561,6 @@ export type Database = {
           subscription_status?: string
           updated_at?: number
           worker_count?: number
-        }
-        Relationships: []
-      }
-      shop_devices: {
-        Row: {
-          assigned_user_id: string
-          assigned_user_name: string
-          assigned_username: string
-          branch_id: string
-          branch_name: string
-          created_at: number
-          device_id: string
-          device_name: string
-          id: string
-          is_active: boolean
-          is_owner_primary: boolean
-          join_code: string
-          last_synced_at: number
-          monthly_fee_addon_rwf: number
-          role: string
-          shop_name: string
-          shop_sync_key: string
-          updated_at: number
-        }
-        Insert: {
-          assigned_user_id?: string
-          assigned_user_name?: string
-          assigned_username?: string
-          branch_id?: string
-          branch_name?: string
-          created_at?: number
-          device_id?: string
-          device_name?: string
-          id: string
-          is_active?: boolean
-          is_owner_primary?: boolean
-          join_code?: string
-          last_synced_at?: number
-          monthly_fee_addon_rwf?: number
-          role?: string
-          shop_name?: string
-          shop_sync_key: string
-          updated_at?: number
-        }
-        Update: {
-          assigned_user_id?: string
-          assigned_user_name?: string
-          assigned_username?: string
-          branch_id?: string
-          branch_name?: string
-          created_at?: number
-          device_id?: string
-          device_name?: string
-          id?: string
-          is_active?: boolean
-          is_owner_primary?: boolean
-          join_code?: string
-          last_synced_at?: number
-          monthly_fee_addon_rwf?: number
-          role?: string
-          shop_name?: string
-          shop_sync_key?: string
-          updated_at?: number
-        }
-        Relationships: []
-      }
-      shop_users: {
-        Row: {
-          assigned_branch_id: string
-          assigned_branch_name: string
-          full_name: string
-          id: string
-          is_active: boolean
-          phone: string
-          role: string
-          shop_name: string
-          shop_sync_key: string
-          updated_at: number
-          user_id: string
-          username: string
-        }
-        Insert: {
-          assigned_branch_id?: string
-          assigned_branch_name?: string
-          full_name?: string
-          id: string
-          is_active?: boolean
-          phone?: string
-          role?: string
-          shop_name?: string
-          shop_sync_key: string
-          updated_at?: number
-          user_id: string
-          username: string
-        }
-        Update: {
-          assigned_branch_id?: string
-          assigned_branch_name?: string
-          full_name?: string
-          id?: string
-          is_active?: boolean
-          phone?: string
-          role?: string
-          shop_name?: string
-          shop_sync_key?: string
-          updated_at?: number
-          user_id?: string
-          username?: string
-        }
-        Relationships: []
-      }
-      shop_stock_transfers: {
-        Row: {
-          cost_value_rwf: number
-          created_at: number
-          from_branch_id: string
-          from_branch_name: string
-          hlc_timestamp: number
-          id: string
-          last_modified_device_id: string
-          notes: string
-          product_id: string
-          product_name: string
-          quantity: number
-          received_at: number
-          received_by: string
-          shop_name: string
-          shop_sync_key: string
-          status: string
-          synced: boolean
-          to_branch_id: string
-          to_branch_name: string
-          transfer_date: number
-          transfer_number: string
-          transferred_by: string
-          unit: string
-          updated_at: number
-        }
-        Insert: {
-          cost_value_rwf?: number
-          created_at?: number
-          from_branch_id?: string
-          from_branch_name?: string
-          hlc_timestamp?: number
-          id: string
-          last_modified_device_id?: string
-          notes?: string
-          product_id?: string
-          product_name?: string
-          quantity?: number
-          received_at?: number
-          received_by?: string
-          shop_name?: string
-          shop_sync_key: string
-          status?: string
-          synced?: boolean
-          to_branch_id?: string
-          to_branch_name?: string
-          transfer_date?: number
-          transfer_number?: string
-          transferred_by?: string
-          unit?: string
-          updated_at?: number
-        }
-        Update: {
-          cost_value_rwf?: number
-          created_at?: number
-          from_branch_id?: string
-          from_branch_name?: string
-          hlc_timestamp?: number
-          id?: string
-          last_modified_device_id?: string
-          notes?: string
-          product_id?: string
-          product_name?: string
-          quantity?: number
-          received_at?: number
-          received_by?: string
-          shop_name?: string
-          shop_sync_key?: string
-          status?: string
-          synced?: boolean
-          to_branch_id?: string
-          to_branch_name?: string
-          transfer_date?: number
-          transfer_number?: string
-          transferred_by?: string
-          unit?: string
-          updated_at?: number
         }
         Relationships: []
       }
@@ -829,50 +648,298 @@ export type Database = {
         }
         Relationships: []
       }
+      shop_devices: {
+        Row: {
+          assigned_user_id: string
+          assigned_user_name: string
+          assigned_username: string
+          branch_id: string
+          branch_name: string
+          created_at: number
+          device_id: string
+          device_name: string
+          id: string
+          is_active: boolean
+          is_owner_primary: boolean
+          join_code: string
+          last_synced_at: number
+          monthly_fee_addon_rwf: number
+          role: string
+          shop_name: string
+          shop_sync_key: string
+          updated_at: number
+        }
+        Insert: {
+          assigned_user_id?: string
+          assigned_user_name?: string
+          assigned_username?: string
+          branch_id?: string
+          branch_name?: string
+          created_at?: number
+          device_id?: string
+          device_name?: string
+          id: string
+          is_active?: boolean
+          is_owner_primary?: boolean
+          join_code?: string
+          last_synced_at?: number
+          monthly_fee_addon_rwf?: number
+          role?: string
+          shop_name?: string
+          shop_sync_key: string
+          updated_at?: number
+        }
+        Update: {
+          assigned_user_id?: string
+          assigned_user_name?: string
+          assigned_username?: string
+          branch_id?: string
+          branch_name?: string
+          created_at?: number
+          device_id?: string
+          device_name?: string
+          id?: string
+          is_active?: boolean
+          is_owner_primary?: boolean
+          join_code?: string
+          last_synced_at?: number
+          monthly_fee_addon_rwf?: number
+          role?: string
+          shop_name?: string
+          shop_sync_key?: string
+          updated_at?: number
+        }
+        Relationships: []
+      }
+      shop_stock_transfers: {
+        Row: {
+          cost_value_rwf: number
+          created_at: number
+          from_branch_id: string
+          from_branch_name: string
+          hlc_timestamp: number
+          id: string
+          last_modified_device_id: string
+          notes: string
+          product_id: string
+          product_name: string
+          quantity: number
+          received_at: number
+          received_by: string
+          shop_name: string
+          shop_sync_key: string
+          status: string
+          synced: boolean
+          to_branch_id: string
+          to_branch_name: string
+          transfer_date: number
+          transfer_number: string
+          transferred_by: string
+          unit: string
+          updated_at: number
+        }
+        Insert: {
+          cost_value_rwf?: number
+          created_at?: number
+          from_branch_id?: string
+          from_branch_name?: string
+          hlc_timestamp?: number
+          id: string
+          last_modified_device_id?: string
+          notes?: string
+          product_id?: string
+          product_name?: string
+          quantity?: number
+          received_at?: number
+          received_by?: string
+          shop_name?: string
+          shop_sync_key: string
+          status?: string
+          synced?: boolean
+          to_branch_id?: string
+          to_branch_name?: string
+          transfer_date?: number
+          transfer_number?: string
+          transferred_by?: string
+          unit?: string
+          updated_at?: number
+        }
+        Update: {
+          cost_value_rwf?: number
+          created_at?: number
+          from_branch_id?: string
+          from_branch_name?: string
+          hlc_timestamp?: number
+          id?: string
+          last_modified_device_id?: string
+          notes?: string
+          product_id?: string
+          product_name?: string
+          quantity?: number
+          received_at?: number
+          received_by?: string
+          shop_name?: string
+          shop_sync_key?: string
+          status?: string
+          synced?: boolean
+          to_branch_id?: string
+          to_branch_name?: string
+          transfer_date?: number
+          transfer_number?: string
+          transferred_by?: string
+          unit?: string
+          updated_at?: number
+        }
+        Relationships: []
+      }
+      shop_users: {
+        Row: {
+          assigned_branch_id: string
+          assigned_branch_name: string
+          full_name: string
+          id: string
+          is_active: boolean
+          phone: string
+          role: string
+          shop_name: string
+          shop_sync_key: string
+          updated_at: number
+          user_id: string
+          username: string
+        }
+        Insert: {
+          assigned_branch_id?: string
+          assigned_branch_name?: string
+          full_name?: string
+          id: string
+          is_active?: boolean
+          phone?: string
+          role?: string
+          shop_name?: string
+          shop_sync_key: string
+          updated_at?: number
+          user_id: string
+          username: string
+        }
+        Update: {
+          assigned_branch_id?: string
+          assigned_branch_name?: string
+          full_name?: string
+          id?: string
+          is_active?: boolean
+          phone?: string
+          role?: string
+          shop_name?: string
+          shop_sync_key?: string
+          updated_at?: number
+          user_id?: string
+          username?: string
+        }
+        Relationships: []
+      }
+      unlock_code_verification_attempts: {
+        Row: {
+          created_at: string
+          id: string
+          ip_hash: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ip_hash: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ip_hash?: string
+        }
+        Relationships: []
+      }
       unlock_codes: {
         Row: {
           amount_rwf: number
+          branch_count: number
           device_challenge: string
+          device_count: number
+          duration_months: number
           id: string
           issued_at: number
           issued_by_admin: string
+          payer_full_name: string
+          payer_phone: string
+          payment_note: string
+          payment_provider: string
+          payment_request_id: string | null
+          payment_time_ms: number
           plan_days: number
+          plan_digest: string
           redeemed_at: number | null
           shop_phone: string
           shop_username: string
           status: string
           tier_code: string
           unlock_code: string
+          worker_count: number
         }
         Insert: {
           amount_rwf?: number
+          branch_count?: number
           device_challenge?: string
+          device_count?: number
+          duration_months?: number
           id: string
           issued_at?: number
           issued_by_admin?: string
+          payer_full_name?: string
+          payer_phone?: string
+          payment_note?: string
+          payment_provider?: string
+          payment_request_id?: string | null
+          payment_time_ms?: number
           plan_days?: number
+          plan_digest?: string
           redeemed_at?: number | null
           shop_phone: string
           shop_username: string
           status?: string
           tier_code?: string
           unlock_code: string
+          worker_count?: number
         }
         Update: {
           amount_rwf?: number
+          branch_count?: number
           device_challenge?: string
+          device_count?: number
+          duration_months?: number
           id?: string
           issued_at?: number
           issued_by_admin?: string
+          payer_full_name?: string
+          payer_phone?: string
+          payment_note?: string
+          payment_provider?: string
+          payment_request_id?: string | null
+          payment_time_ms?: number
           plan_days?: number
+          plan_digest?: string
           redeemed_at?: number | null
           shop_phone?: string
           shop_username?: string
           status?: string
           tier_code?: string
           unlock_code?: string
+          worker_count?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "unlock_codes_payment_request_id_fkey"
+            columns: ["payment_request_id"]
+            isOneToOne: false
+            referencedRelation: "payment_requests"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {

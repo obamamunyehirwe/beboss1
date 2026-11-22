@@ -25,7 +25,46 @@ async function audit(context: Ctx, email: string, action: string, target: string
   });
 }
 
-type Bb3Input = { username: string; phone: string; tier: string; days: number };
+type Bb3Input = {
+  requestId: string;
+  username: string;
+  phone: string;
+  tier: string;
+  days: number;
+  provider: string;
+  payerPhone: string;
+  payerFullName: string;
+  amountRwf: number;
+  months: number;
+  branches: number;
+  workers: number;
+  devices: number;
+  paymentTimeMs: number;
+  paymentNote: string;
+};
+
+function normalizePlanPhone(value: string): string {
+  return String(value ?? "").replace(/\D/g, "").slice(-9);
+}
+
+function paymentPlanCanonical(input: Bb3Input): string {
+  return [
+    "BEBOSS-PAYMENT-PLAN-V1",
+    input.requestId.trim(),
+    input.username.trim().toLowerCase(),
+    normalizePlanPhone(input.phone),
+    input.provider.trim().toUpperCase(),
+    normalizePlanPhone(input.payerPhone),
+    input.payerFullName.trim().normalize("NFKC"),
+    Math.floor(input.amountRwf),
+    Math.floor(input.months),
+    Math.floor(input.branches),
+    Math.floor(input.workers),
+    Math.floor(input.devices),
+    Math.floor(input.paymentTimeMs),
+    input.paymentNote.trim().normalize("NFKC"),
+  ].join("\n");
+}
 
 // This public key is already pinned in SubscriptionSecurityManager.kt.
 // Only a private key whose derived public key matches this exact APK key can sign
@@ -75,31 +114,43 @@ async function loadBb3PrivateKeyPem(): Promise<string> {
   return pem;
 }
 
-async function generateBB3UnlockCode(input: Bb3Input): Promise<string> {
+async function generateBB3UnlockCode(input: Bb3Input): Promise<{ code: string; planDigest: string }> {
   const username = input.username.trim();
-  const normalizedPhone = input.phone.trim().replace(/\D/g, "").slice(-9);
+  const normalizedPhone = normalizePlanPhone(input.phone);
   const tier = input.tier.trim().toUpperCase();
   const days = Math.floor(input.days);
-  if (!username || normalizedPhone.length !== 9) throw new Error("A shop username and registered phone are required.");
+  if (!input.requestId.trim() || !username || normalizedPhone.length !== 9) {
+    throw new Error("A payment request, registered username and phone are required.");
+  }
   if (!["SINGLE", "DUAL", "MULTI", "ANNUAL", "TRIAL"].includes(tier) || days < 1 || days > 800) {
     throw new Error("The requested BB3 subscription tier or duration is invalid.");
   }
+  if (![1, 3, 6, 12].includes(input.months) || input.branches < 1 || input.workers < 1 || input.devices < 1 || input.amountRwf < 1) {
+    throw new Error("The submitted payment plan is incomplete or invalid.");
+  }
 
   const pem = await loadBb3PrivateKeyPem();
-  const { createPrivateKey, createSign, createHash, randomBytes } = await import("node:crypto");
+  const { createPrivateKey, createSign, createHash } = await import("node:crypto");
   const accountHash = createHash("sha256")
     .update(`${username.toLowerCase()}:${normalizedPhone}`, "utf8")
     .digest("hex")
     .slice(0, 6)
     .toUpperCase();
-  const expiryHex = (Math.floor(Date.now() / 86_400_000) + 14).toString(16).toUpperCase();
-  const nonce = randomBytes(12).toString("hex").toUpperCase();
+  const planDigest = createHash("sha256")
+    .update(paymentPlanCanonical(input), "utf8")
+    .digest("hex")
+    .toUpperCase();
+  // Bind the legacy-compatible BB3 nonce to the exact payment request and its
+  // plan; the Android seven-field BB3 verifier remains unchanged.
+  const nonce = planDigest.slice(0, 24);
+  const issuedDay = Math.floor(Date.now() / 86_400_000);
+  const expiryHex = (issuedDay + 14).toString(16).toUpperCase();
   const payload = `BB3:${tier}:${days}:${expiryHex}:${accountHash}:${nonce}`;
   const signer = createSign("SHA256");
   signer.update(payload, "utf8");
   signer.end();
   const signature = signer.sign({ key: createPrivateKey(pem), dsaEncoding: "der" }).toString("base64");
-  return `BB3-${tier}-${days}-${expiryHex}-${accountHash}-${nonce}-${signature}`;
+  return { code: `BB3-${tier}-${days}-${expiryHex}-${accountHash}-${nonce}-${signature}`, planDigest };
 }
 
 /**
@@ -135,28 +186,46 @@ async function getShop(context: Ctx, shopId: string) {
 async function activateShop(
   context: Ctx,
   shopId: string,
-  opts: { addDays: number; branches?: number; workers?: number; devices?: number; monthly?: number; autoUnlock?: boolean; fallback?: any },
+  opts: { addDays: number; branches?: number; workers?: number; devices?: number; monthly?: number; autoUnlock?: boolean },
 ) {
   const now = Date.now();
   const shop = await getShop(context, shopId);
+  if (!shop) throw new Error("This shop is not registered in BeBoss Cloud. Sync/register the shop before activating a paid plan.");
   const patch: Record<string, unknown> = {
     subscription_status: "ACTIVE",
-    subscription_expires_at: extendExpiry(shop?.subscription_expires_at ?? 0, opts.addDays, now),
+    subscription_expires_at: extendExpiry(shop.subscription_expires_at ?? 0, opts.addDays, now),
     updated_at: now,
   };
   if (opts.branches != null) patch["branch_count"] = Math.max(1, opts.branches);
   if (opts.workers != null) patch["worker_count"] = Math.max(1, opts.workers);
-  if (opts.devices != null) patch["device_limit"] = Math.max(1, opts.devices, shop?.device_limit ?? 1);
+  if (opts.devices != null) {
+    const exactDevices = Math.max(1, opts.devices);
+    patch["device_count"] = exactDevices;
+    patch["device_limit"] = exactDevices;
+  }
   if (opts.monthly != null) patch["monthly_fee_rwf"] = Math.max(5000, opts.monthly);
   if (opts.autoUnlock) patch["auto_unlocked_at"] = now;
-  if (shop) {
-    const { error } = await context.supabase.from("shop_accounts").update(patch).eq("id", shopId);
-    if (error) throw new Error(error.message);
-  } else if (opts.fallback) {
-    const { error } = await context.supabase.from("shop_accounts").insert({ id: shopId, ...opts.fallback, ...patch, created_at: now });
-    if (error) throw new Error(error.message);
-  }
+  const { error } = await context.supabase.from("shop_accounts").update(patch).eq("id", shopId);
+  if (error) throw new Error(error.message);
   return patch["subscription_expires_at"] as number;
+}
+
+function normalizePaymentPhone(value: string): string {
+  return String(value ?? "").replace(/\D/g, "").slice(-9);
+}
+
+async function requireRegisteredPaymentShop(context: Ctx, request: any) {
+  const shopId = computeShopKey(String(request.owner_username ?? ""), String(request.owner_phone ?? ""));
+  const shop = await getShop(context, shopId);
+  if (!shop) {
+    throw new Error("No registered BeBoss shop matches this payment. Sync/register the mobile shop first; no unlock code was issued.");
+  }
+  const usernameMatches = String(shop.owner_username ?? "").trim().toLowerCase() === String(request.owner_username ?? "").trim().toLowerCase();
+  const phoneMatches = normalizePaymentPhone(String(shop.owner_phone ?? "")) === normalizePaymentPhone(String(request.owner_phone ?? ""));
+  if (!usernameMatches || !phoneMatches) {
+    throw new Error("The payment owner details do not exactly match the registered BeBoss shop. Correct the shop account before approval.");
+  }
+  return { shopId, shop };
 }
 
 // ---------------- Context ----------------
@@ -194,133 +263,70 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     if (!(await ensureValidAdminSession(ctx))) throw new Error("Admin session expired. Please sign in again.");
     const admin = await requireAdmin(ctx);
-    const { data: req, error } = await ctx.supabase.from("payment_requests").select("*").eq("id", data.requestId).maybeSingle();
+    const { data: req, error } = await ctx.supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,payment_time_ms,payment_note,fee_per_device_rwf,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,ussd_code").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
 
-    const shopId = computeShopKey(req.owner_username, req.owner_phone);
-    const calc = calculateSubscriptionFee(
-      req.branch_count,
-      req.worker_count,
-      req.duration_months,
-      req.device_count || 1,
-      await perDeviceRate(ctx),
-    );
+    const { shopId } = await requireRegisteredPaymentShop(ctx, req);
+    const submittedFeeRate = Number(req.fee_per_device_rwf) > 0 ? Number(req.fee_per_device_rwf) : await perDeviceRate(ctx);
+    const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, submittedFeeRate);
+    if (Number(req.amount_rwf) !== calc.total) {
+      throw new Error(`Payment amount mismatch. Submitted ${Number(req.amount_rwf || 0)} FRw; this plan calculates to ${calc.total} FRw. Refresh and verify the payment details before issuing a code.`);
+    }
 
-    // A retry after the payment row was approved returns the same code and
-    // repairs a failed shop activation only when the shop row is still older.
+    const paymentTimeMs = Math.max(0, Number(req.payment_time_ms || req.created_at || Date.now()));
+    const payerPhone = String(req.payer_phone || req.owner_phone);
+    const payerFullName = String(req.payer_full_name || "");
+    const paymentNote = String(req.payment_note || "");
+
     if (req.status === "APPROVED") {
-      if (!req.generated_unlock_code) {
-        throw new Error("This payment was already approved by direct auto-unlock. It cannot also receive a code.");
+      if (!req.generated_unlock_code || req.approval_mode !== "UNLOCK_CODE") {
+        throw new Error("This payment was already approved using direct auto-unlock.");
       }
-      const existingShop = await getShop(ctx, shopId);
-      let expiresAt = Number(existingShop?.subscription_expires_at ?? 0);
-      if (!existingShop || Number(existingShop.updated_at ?? 0) < Number(req.updated_at ?? 0)) {
-        expiresAt = await activateShop(ctx, shopId, {
-          addDays: calc.days,
-          branches: req.branch_count,
-          workers: req.worker_count,
-          devices: req.device_count || 1,
-          monthly: calc.monthly,
-          fallback: {
-            shop_name: req.shop_name,
-            owner_username: String(req.owner_username).toLowerCase(),
-            owner_phone: req.owner_phone,
-            device_challenge: req.device_challenge || "",
-          },
-        });
+      const { data: existingCode, error: codeError } = await ctx.supabase
+        .from("unlock_codes").select("payment_request_id, unlock_code")
+        .eq("unlock_code", req.generated_unlock_code).maybeSingle();
+      if (codeError || !existingCode || existingCode.payment_request_id !== req.id) {
+        throw new Error("This approved payment has no matching payment-linked unlock record. Contact the master administrator.");
       }
-      return {
-        code: req.generated_unlock_code,
-        alreadyApproved: true,
-        days: calc.days,
-        tier: calc.tier,
-        total: Number(req.amount_rwf || calc.total),
-        expiresAt,
-        shopName: req.shop_name,
-        username: req.owner_username,
-        phone: req.payer_phone || req.owner_phone,
-      };
+      const shop = await getShop(ctx, shopId);
+      return { code: req.generated_unlock_code, alreadyApproved: true, days: calc.days, tier: calc.tier, total: calc.total, expiresAt: Number(shop?.subscription_expires_at ?? 0), shopName: req.shop_name, username: req.owner_username, phone: payerPhone };
     }
     if (!["PENDING_VERIFICATION", "REJECTED"].includes(String(req.status))) {
       throw new Error(`This payment claim is ${String(req.status).toLowerCase().replaceAll("_", " ")} and cannot be approved again.`);
     }
 
-    const code = await generateBB3UnlockCode({
-      username: req.owner_username,
-      phone: req.owner_phone,
-      tier: calc.tier,
-      days: calc.days,
+    const signed = await generateBB3UnlockCode({
+      requestId: String(req.id), username: String(req.owner_username), phone: String(req.owner_phone), tier: calc.tier, days: calc.days,
+      provider: String(req.provider || ""), payerPhone, payerFullName, amountRwf: calc.total, months: Number(req.duration_months),
+      branches: Number(req.branch_count), workers: Number(req.worker_count), devices: Number(req.device_count || 1), paymentTimeMs, paymentNote,
     });
     const now = Date.now();
     const ins = await ctx.supabase.from("unlock_codes").insert({
-      id: crypto.randomUUID(),
-      unlock_code: code,
-      shop_username: String(req.owner_username).trim().toLowerCase(),
-      shop_phone: String(req.owner_phone).trim(),
-      device_challenge: req.device_challenge || "",
-      tier_code: calc.tier,
-      plan_days: calc.days,
-      amount_rwf: calc.total,
-      status: "ISSUED",
-      issued_by_admin: admin.label,
-      issued_at: now,
+      id: crypto.randomUUID(), unlock_code: signed.code, payment_request_id: req.id,
+      shop_username: String(req.owner_username).trim().toLowerCase(), shop_phone: String(req.owner_phone).trim(),
+      device_challenge: req.device_challenge || "", tier_code: calc.tier, plan_days: calc.days, amount_rwf: calc.total,
+      duration_months: Number(req.duration_months), branch_count: Number(req.branch_count), worker_count: Number(req.worker_count), device_count: Number(req.device_count || 1),
+      payment_time_ms: paymentTimeMs, payment_provider: String(req.provider || ""), payer_phone: payerPhone, payer_full_name: payerFullName, payment_note: paymentNote,
+      plan_digest: signed.planDigest, status: "ISSUED", issued_by_admin: admin.label, issued_at: now,
     });
-    if (ins.error) throw new Error(ins.error.message);
+    if (ins.error) {
+      if (ins.error.code === "23505") throw new Error("This payment already has its one permitted unlock-code record. Refresh the queue.");
+      throw new Error(ins.error.message);
+    }
 
-    // Compare-and-set prevents two admins (or a fast double click) issuing
-    // two different codes for the same claim.
-    const claim = await ctx.supabase
-      .from("payment_requests")
-      .update({
-        status: "APPROVED",
-        approval_mode: "UNLOCK_CODE",
-        amount_rwf: calc.total,
-        generated_unlock_code: code,
-        verified_by_admin: admin.label,
-        rejection_reason: "",
-        updated_at: now,
-      })
-      .eq("id", req.id)
-      .eq("status", req.status)
-      .select("id")
-      .maybeSingle();
+    const claim = await ctx.supabase.from("payment_requests").update({
+      status: "APPROVED", approval_mode: "UNLOCK_CODE", amount_rwf: calc.total, generated_unlock_code: signed.code,
+      verified_by_admin: admin.label, rejection_reason: "", updated_at: now,
+    }).eq("id", req.id).eq("status", req.status).select("id").maybeSingle();
 
     if (claim.error || !claim.data) {
-      await ctx.supabase.from("unlock_codes").update({ status: "REVOKED" }).eq("unlock_code", code).eq("status", "ISSUED");
+      await ctx.supabase.from("unlock_codes").update({ status: "REVOKED" }).eq("payment_request_id", req.id).eq("status", "ISSUED");
       throw new Error("Another administrator changed this payment first. Refresh the queue before trying again.");
     }
 
-    const expiresAt = await activateShop(ctx, shopId, {
-      addDays: calc.days,
-      branches: req.branch_count,
-      workers: req.worker_count,
-      devices: req.device_count || 1,
-      monthly: calc.monthly,
-      fallback: {
-        shop_name: req.shop_name,
-        owner_username: String(req.owner_username).toLowerCase(),
-        owner_phone: req.owner_phone,
-        device_challenge: req.device_challenge || "",
-      },
-    });
-    await audit(
-      ctx,
-      admin.email,
-      "APPROVE_PAYMENT",
-      `@${req.owner_username}`,
-      `Verified ${req.payer_full_name || req.payer_phone} / reference ${req.telco_reference} (${calc.total} FRw); BB3 code issued.`,
-    );
-    return {
-      code,
-      days: calc.days,
-      tier: calc.tier,
-      total: calc.total,
-      expiresAt,
-      shopName: req.shop_name,
-      username: req.owner_username,
-      phone: req.payer_phone || req.owner_phone,
-      alreadyApproved: false,
-    };
+    const expiresAt = await activateShop(ctx, shopId, { addDays: calc.days, branches: req.branch_count, workers: req.worker_count, devices: req.device_count || 1, monthly: calc.monthly });
+    await audit(ctx, admin.email, "APPROVE_PAYMENT", `@${req.owner_username}`, `Verified ${payerFullName || payerPhone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. Unique BB3 code issued for ${req.id}.`);
+    return { code: signed.code, days: calc.days, tier: calc.tier, total: calc.total, expiresAt, shopName: req.shop_name, username: req.owner_username, phone: payerPhone, alreadyApproved: false };
   });
 
 export const directAutoUnlock = createServerFn({ method: "POST" })
@@ -332,14 +338,17 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
     const { data: req, error } = await ctx.supabase.from("payment_requests").select("*").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
 
-    const shopId = computeShopKey(req.owner_username, req.owner_phone);
+    const { shopId } = await requireRegisteredPaymentShop(ctx, req);
+    const submittedFeeRate = Number(req.fee_per_device_rwf) > 0 ? Number(req.fee_per_device_rwf) : await perDeviceRate(ctx);
     const calc = calculateSubscriptionFee(
       req.branch_count,
       req.worker_count,
       req.duration_months,
       req.device_count || 1,
-      await perDeviceRate(ctx),
+      submittedFeeRate,
     );
+
+    if (Number(req.amount_rwf) !== calc.total) throw new Error("Payment amount does not match the submitted subscription plan.");
 
     // Direct auto-unlock is idempotent. Repair only if the shop's cloud
     // auto_unlocked_at marker proves the activation did not complete.
@@ -357,12 +366,6 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
           devices: req.device_count || 1,
           monthly: calc.monthly,
           autoUnlock: true,
-          fallback: {
-            shop_name: req.shop_name,
-            owner_username: String(req.owner_username).toLowerCase(),
-            owner_phone: req.owner_phone,
-            device_challenge: req.device_challenge || "",
-          },
         });
       }
       return {
@@ -408,12 +411,6 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
       devices: req.device_count || 1,
       monthly: calc.monthly,
       autoUnlock: true,
-      fallback: {
-        shop_name: req.shop_name,
-        owner_username: String(req.owner_username).toLowerCase(),
-        owner_phone: req.owner_phone,
-        device_challenge: req.device_challenge || "",
-      },
     });
     await audit(ctx, admin.email, "DIRECT_AUTO_UNLOCK", `@${req.owner_username}`, `Auto-unlocked ${req.shop_name} (+${calc.days}d, ${calc.total} FRw, ${req.device_count || 1} devices)`);
     return {
@@ -464,7 +461,8 @@ const whatsappClaimSchema = z.object({
   provider: z.enum(["MTN MoMo", "Airtel Money"]),
   payerPhone: z.string().trim().min(9).max(30),
   payerName: z.string().trim().min(2).max(120),
-  telcoReference: z.string().trim().min(4).max(60).regex(/^[a-zA-Z0-9._/-]+$/),
+  paymentTimeMs: z.number().int().positive().optional(),
+  paymentNote: z.string().trim().max(1000).default(""),
   months: z.number().int().refine((value) => [1, 3, 6, 12].includes(value)),
   branches: z.number().int().min(1).max(100),
   workers: z.number().int().min(1).max(500),
@@ -478,28 +476,19 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
     const provider = data.provider;
-    const reference = data.telcoReference.trim().toUpperCase();
-
-    const { data: duplicate, error: duplicateError } = await ctx.supabase
-      .from("payment_requests")
-      .select("id")
-      .eq("provider", provider)
-      .eq("telco_reference", reference)
-      .limit(1);
-    if (duplicateError) throw new Error(`Could not check transaction reference: ${duplicateError.message}`);
-    if (duplicate?.length) throw new Error("This mobile-money transaction reference is already registered in BeBoss.");
 
     const { data: config } = await ctx.supabase
       .from("app_config")
       .select("per_device_fee_rwf")
       .eq("id", "global")
       .maybeSingle();
+    const feePerDeviceRwf = Math.max(0, Number(config?.per_device_fee_rwf) || 2000);
     const calc = calculateSubscriptionFee(
       data.branches,
       data.workers,
       data.months,
       data.devices,
-      Number(config?.per_device_fee_rwf) || 2000,
+      feePerDeviceRwf,
     );
     const now = Date.now();
     const id = `WA-${crypto.randomUUID()}`;
@@ -519,7 +508,9 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
         branch_count: data.branches,
         worker_count: data.workers,
         device_count: data.devices,
-        telco_reference: reference,
+        fee_per_device_rwf: feePerDeviceRwf,
+        payment_time_ms: Number(data.paymentTimeMs || now),
+        payment_note: data.paymentNote.trim(),
         status: "PENDING_VERIFICATION",
         approval_mode: "",
         generated_unlock_code: "",
@@ -533,7 +524,6 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
       .single();
 
     if (error) {
-      if (error.code === "23505") throw new Error("This mobile-money transaction reference is already registered in BeBoss.");
       throw new Error(`Could not save this WhatsApp payment claim: ${error.message}`);
     }
     await audit(
@@ -541,7 +531,7 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
       admin.email,
       "CREATE_WHATSAPP_PAYMENT_CLAIM",
       id,
-      `Manual WhatsApp proof recorded for @${data.username} / ${reference} (${calc.total} FRw).`,
+      `Manual WhatsApp proof recorded for @${data.username} (${calc.total} FRw; ${data.months} months; ${data.branches} branches; ${data.workers} staff; ${data.devices} devices).`,
     );
     return { ok: true, id: claim.id, amount: calc.total, days: calc.days, tier: calc.tier };
   });

@@ -29,7 +29,7 @@ export const lookupMyShop = createServerFn({ method: "POST" })
     const sb = createPublicClient(key);
     const [shop, pays, codes, devices, news, snaps, branchRows, transferRows] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, owner_name, owner_username, branch_count, worker_count, device_count, device_limit, monthly_fee_rwf, subscription_status, subscription_expires_at, remote_kill_switch, updated_at").eq("id", key).maybeSingle(),
-      sb.from("payment_requests").select("id, provider, amount_rwf, duration_months, telco_reference, status, approval_mode, generated_unlock_code, rejection_reason, created_at, updated_at").order("created_at", { ascending: false }).limit(20),
+      sb.from("payment_requests").select("id, provider, amount_rwf, duration_months, payment_time_ms, payment_note, status, approval_mode, generated_unlock_code, rejection_reason, created_at, updated_at").order("created_at", { ascending: false }).limit(20),
       sb.from("unlock_codes").select("unlock_code, tier_code, plan_days, status, issued_at, redeemed_at").order("issued_at", { ascending: false }).limit(20),
       sb.from("shop_devices").select("id, device_name, device_id, role, branch_name, is_active, is_owner_primary, assigned_user_name, last_synced_at").eq("shop_sync_key", key).order("last_synced_at", { ascending: false }).limit(50),
       sb.from("announcements").select("*").in("audience", ["ALL", "APP"]).order("starts_at", { ascending: false }).limit(5),
@@ -82,7 +82,8 @@ const proofSchema = z.object({
   provider: z.enum(["MTN MoMo", "Airtel Money"]),
   payerPhone: z.string().trim().min(9).max(30),
   payerName: z.string().trim().min(2).max(120),
-  telcoReference: z.string().trim().min(4).max(60),
+  paymentTimeMs: z.number().int().positive().optional(),
+  paymentNote: z.string().trim().max(1000).default(""),
   months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]),
   branches: z.number().int().min(1).max(100),
   workers: z.number().int().min(1).max(500),
@@ -95,30 +96,18 @@ export const submitPaymentProof = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const key = computeShopKey(data.username, data.phone);
     const sb = createPublicClient(key);
-    const reference = data.telcoReference.trim().toUpperCase();
-    // Keep duplicate checks tenant-scoped and case-insensitive. The database
-    // unique index is the final guard when Android, web and WhatsApp submit
-    // the same reference at nearly the same time.
-    const { data: dup, error: dupError } = await sb
-      .from("payment_requests")
-      .select("id")
-      .eq("provider", data.provider)
-      .eq("telco_reference", reference)
-      .limit(1);
-    if (dupError) throw new Error("Could not check this transaction reference. Please try again.");
-    if (dup?.length) throw new Error("This transaction reference was already submitted for this shop.");
-
     const { data: config } = await sb
       .from("app_config")
       .select("per_device_fee_rwf")
       .eq("id", "global")
       .maybeSingle();
+    const feePerDeviceRwf = Math.max(0, Number(config?.per_device_fee_rwf) || 2000);
     const amount = calculateSubscriptionFee(
       data.branches,
       data.workers,
       data.months,
       data.devices,
-      Number(config?.per_device_fee_rwf) || 2000,
+      feePerDeviceRwf,
     ).total;
     const now = Date.now();
     const { error } = await sb.from("payment_requests").insert({
@@ -135,14 +124,15 @@ export const submitPaymentProof = createServerFn({ method: "POST" })
       branch_count: data.branches,
       worker_count: data.workers,
       device_count: data.devices,
-      telco_reference: reference,
+      fee_per_device_rwf: feePerDeviceRwf,
+      payment_time_ms: Number(data.paymentTimeMs || now),
+      payment_note: data.paymentNote.trim(),
       status: "PENDING_VERIFICATION",
       source: "WEB",
       created_at: now,
       updated_at: now,
     });
     if (error) {
-      if (error.code === "23505") throw new Error("This mobile-money transaction reference was already submitted.");
       throw new Error("Could not submit your payment proof. Please try again.");
     }
     return { ok: true, amount };

@@ -4,7 +4,7 @@ import type { Database } from "@/integrations/supabase/types";
 
 export type Tables = Database["public"]["Tables"];
 export type ShopAccount = Tables["shop_accounts"]["Row"];
-export type PaymentRequest = Tables["payment_requests"]["Row"];
+export type PaymentRequest = Omit<Tables["payment_requests"]["Row"], "telco_reference">;
 export type ShopDevice = Tables["shop_devices"]["Row"];
 export type ShopUser = Tables["shop_users"]["Row"];
 export type UnlockCode = Tables["unlock_codes"]["Row"];
@@ -52,7 +52,7 @@ export const shopsQuery = queryOptions({
 });
 export const paymentsQuery = queryOptions({
   queryKey: adminKeys.payments,
-  queryFn: () => all<PaymentRequest>((a, b) => supabase.from("payment_requests").select("*").order("created_at", { ascending: false }).range(a, b)),
+  queryFn: () => all<PaymentRequest>((a, b) => supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,ussd_code,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at").order("created_at", { ascending: false }).range(a, b)),
   staleTime: 5_000,
   refetchInterval: 10_000,
 });

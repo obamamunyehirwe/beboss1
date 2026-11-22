@@ -241,7 +241,7 @@ function ShopDetail() {
           <MiniList empty="No staff synced" rows={shopUsers.map((u) => ({ k: u.id, a: `${u.full_name} (@${u.username})`, b: `${u.role} • ${u.assigned_branch_name} • ${u.phone}`, c: u.is_active ? "ACTIVE" : "SUSPENDED", d: relativeTime(u.updated_at) }))} />
         </TabsContent>
         <TabsContent value="payments">
-          <MiniList empty="No payments" rows={shopPays.map((p) => ({ k: p.id, a: `${formatRwf(p.amount_rwf)} • ${p.provider}`, b: `Ref ${p.telco_reference || "—"} • ${p.duration_months} mo`, c: p.status, d: formatDateTime(p.created_at) }))} />
+          <MiniList empty="No payments" rows={shopPays.map((p) => ({ k: p.id, a: `${formatRwf(p.amount_rwf)} • ${p.provider}`, b: `${p.duration_months} mo • ${p.branch_count} branches • ${p.device_count} devices`, c: p.status, d: formatDateTime(p.created_at) }))} />
         </TabsContent>
         <TabsContent value="codes">
           <MiniList empty="No codes" rows={shopCodes.map((x) => ({ k: x.id, a: x.unlock_code, b: `${x.tier_code} • +${x.plan_days}d • ${formatRwf(x.amount_rwf)}`, c: x.status, d: formatDateTime(x.issued_at), mono: true }))} />
