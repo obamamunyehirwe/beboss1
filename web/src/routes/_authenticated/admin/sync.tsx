@@ -121,7 +121,7 @@ function SyncMonitor() {
         actions={
           <span className="flex items-center gap-2 rounded-full border border-success/40 bg-success/10 px-3 py-1.5 text-xs text-success">
             <Radio className="size-3.5 animate-pulse" />
-            {stats.lastEvent ? `${a("Last cloud event")} ${relativeTime(stats.lastEvent.created_at, now)}` : "{a("Listening for cloud events")}"}
+            {stats.lastEvent ? `${a("Last cloud event")} ${relativeTime(stats.lastEvent.created_at, now)}` : a("Listening for cloud events")}
           </span>
         }
       />
