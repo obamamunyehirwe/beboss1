@@ -264,7 +264,7 @@ function PaymentsPage() {
       ) : (
         <div className="grid gap-3">
           {filtered.map((r) => {
-            const calc = calculateSubscriptionFee(r.branch_count, r.worker_count, r.duration_months, r.device_count, rate);
+            const calc = calculateSubscriptionFee(r.branch_count, r.worker_count, r.duration_months, r.device_count, Number(r.fee_per_device_rwf) > 0 ? r.fee_per_device_rwf : rate);
             const busy = (approve.isPending && approve.variables?.requestId === r.id) || (direct.isPending && direct.variables?.requestId === r.id);
             return (
               <div key={r.id} className="rounded-2xl border border-border bg-card p-5">
@@ -296,7 +296,7 @@ function PaymentsPage() {
                 </dl>
                 {r.amount_rwf !== calc.total ? (
                   <p className="mt-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-                    {a("Current pricing for this plan is")} {formatRwf(calc.total)} — {a("approving will record that amount.")}
+                    {a("Submitted plan amount")} {formatRwf(calc.total)} — {a("must match the provider statement before approval.")}
                   </p>
                 ) : null}
                 {r.generated_unlock_code ? <p className="mt-3 font-mono text-sm text-success">{r.generated_unlock_code}</p> : null}
@@ -353,7 +353,7 @@ function PaymentsPage() {
           <DialogHeader>
             <DialogTitle>{a("Reject payment claim")}</DialogTitle>
             <DialogDescription>
-              {rejecting?.shop_name} — {formatRwf(rejecting?.amount_rwf)} ref {rejecting?.telco_reference || "—"}. {a("The owner sees this reason in the app and on the website.")}
+              {rejecting?.shop_name} — {formatRwf(rejecting?.amount_rwf)}. {a("The owner sees this reason in the app and on the website.")}
             </DialogDescription>
           </DialogHeader>
           <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder={a("MoMo transaction could not be confirmed")} maxLength={500} />
