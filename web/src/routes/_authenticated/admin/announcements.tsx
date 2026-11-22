@@ -16,6 +16,7 @@ import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { announcementsAdminQuery, type Announcement } from "@/lib/announcements";
 import { deleteAnnouncement, saveAnnouncement, type AnnouncementInput } from "@/lib/announcements.functions";
 import { formatDateTime } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/announcements")({
   head: () => ({ meta: [{ title: "Announcements — BeBoss Admin" }, { name: "robots", content: "noindex" }] }),
@@ -33,6 +34,7 @@ function liveState(a: Announcement, now = Date.now()) {
 }
 
 function AnnouncementsPage() {
+  const a = useAdminText();
   const isAdmin = !!useAdminCtx().data?.isAdmin;
   const { data, isLoading } = useQuery(announcementsAdminQuery);
   const [editing, setEditing] = useState<Announcement | "new" | null>(null);
@@ -64,19 +66,19 @@ function AnnouncementsPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={st === "LIVE" ? "ACTIVE" : st === "SCHEDULED" ? "PENDING_VERIFICATION" : "REVOKED"} />
                   <span className="text-xs text-muted-foreground">{st.toLowerCase()} · {a.audience.toLowerCase()} {a.target_shop_key ? `· shop ${a.target_shop_key}` : "· everyone"}</span>
-                  {a.translations && Object.keys(a.translations as object).length ? <span className="text-xs text-success">· translated RW · FR · SW</span> : <span className="text-xs text-muted-foreground">· English only</span>}
+                  {a.translations && Object.keys(a.translations as object).length ? <span className="text-xs text-success">· {a("translated RW · FR · SW")}</span> : <span className="text-xs text-muted-foreground">· English only</span>}
                 </div>
                 <div className="mt-3">
                   <AnnouncementCard a={a} />
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                   <span>
-                    {formatDateTime(a.starts_at)} → {a.ends_at ? formatDateTime(a.ends_at) : "no end"} · by {a.created_by || "admin"}
+                    {formatDateTime(a.starts_at)} → {a.ends_at ? formatDateTime(a.ends_at) : a("no end")} · {a("by")} {a.created_by || "admin"}
                   </span>
                   {isAdmin ? (
                     <span className="flex gap-1">
                       <Button size="sm" variant="ghost" onClick={() => setEditing(a)}>
-                        <Pencil /> Edit
+                        <Pencil /> {a("Edit")}
                       </Button>
                       <ConfirmAction
                         trigger={
@@ -84,8 +86,8 @@ function AnnouncementsPage() {
                             <Trash2 />
                           </Button>
                         }
-                        title="Delete announcement?"
-                        description="It disappears from the website and apps immediately."
+                        title={a("Delete announcement?")}
+                        description={a("It disappears from the website and apps immediately.")}
                         destructive
                         confirmLabel="Delete"
                         onConfirm={() => del.mutate({ id: a.id })}
@@ -102,7 +104,7 @@ function AnnouncementsPage() {
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Megaphone className="size-4 text-primary" /> {editing === "new" ? "New announcement" : "Edit announcement"}
+              <Megaphone className="size-4 text-primary" /> {a(editing === "new" ? "New announcement" : "Edit announcement")}
             </DialogTitle>
           </DialogHeader>
           {editing ? <Editor initial={editing === "new" ? null : editing} onDone={() => setEditing(null)} /> : null}
@@ -113,6 +115,7 @@ function AnnouncementsPage() {
 }
 
 function Editor({ initial, onDone }: { initial: Announcement | null; onDone: () => void }) {
+  const a = useAdminText();
   const save = useAdminAction(useServerFn(saveAnnouncement), { success: "Announcement saved and translated — it's live for everyone it targets", invalidate: [["admin", "announcements"], ["announcements"]] });
   const [f, setF] = useState({
     title: initial?.title ?? "",
@@ -167,16 +170,16 @@ function Editor({ initial, onDone }: { initial: Announcement | null; onDone: () 
       }}
     >
       <div className="space-y-1.5">
-        <Label>Headline</Label>
-        <Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} required minLength={2} maxLength={160} placeholder="e.g. 20% off 12-month plans this week" />
+        <Label>{a("Headline")}</Label>
+        <Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} required minLength={2} maxLength={160} placeholder={a("e.g. 20% off 12-month plans this week")} />
       </div>
       <div className="space-y-1.5">
-        <Label>Message</Label>
-        <Textarea value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} rows={3} maxLength={2000} placeholder="Optional details" />
+        <Label>{a("Message")}</Label>
+        <Textarea value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} rows={3} maxLength={2000} placeholder={a("Optional details")} />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label>Style</Label>
+          <Label>{a("Style")}</Label>
           <Select value={f.severity} onValueChange={(v) => setF({ ...f, severity: v as AnnouncementInput["severity"] })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -185,7 +188,7 @@ function Editor({ initial, onDone }: { initial: Announcement | null; onDone: () 
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>Show on</Label>
+          <Label>{a("Show on")}</Label>
           <Select value={f.audience} onValueChange={(v) => setF({ ...f, audience: v as AnnouncementInput["audience"] })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -197,24 +200,24 @@ function Editor({ initial, onDone }: { initial: Announcement | null; onDone: () 
         </div>
         <div className="space-y-1.5">
           <Label>Button label</Label>
-          <Input value={f.cta_label} onChange={(e) => setF({ ...f, cta_label: e.target.value })} maxLength={40} placeholder="e.g. See pricing" />
+          <Input value={f.cta_label} onChange={(e) => setF({ ...f, cta_label: e.target.value })} maxLength={40} placeholder={a("e.g. See pricing")} />
         </div>
         <div className="space-y-1.5">
           <Label>Button link</Label>
-          <Input value={f.cta_url} onChange={(e) => setF({ ...f, cta_url: e.target.value })} maxLength={500} placeholder="/pricing or https://…" />
+          <Input value={f.cta_url} onChange={(e) => setF({ ...f, cta_url: e.target.value })} maxLength={500} placeholder={a("/pricing or https://…")} />
         </div>
         <div className="space-y-1.5">
-          <Label>Starts</Label>
+          <Label>{a("Starts")}</Label>
           <Input type="datetime-local" value={f.starts} onChange={(e) => setF({ ...f, starts: e.target.value })} required />
         </div>
         <div className="space-y-1.5">
-          <Label>Ends (optional)</Label>
+          <Label>{a("Ends (optional)")}</Label>
           <Input type="datetime-local" value={f.ends} onChange={(e) => setF({ ...f, ends: e.target.value })} />
         </div>
       </div>
       <div className="space-y-1.5">
         <Label>Only for one shop (optional)</Label>
-        <Input value={f.target_shop_key} onChange={(e) => setF({ ...f, target_shop_key: e.target.value })} maxLength={200} placeholder="shop key, e.g. mama_788123456 — leave empty for everyone" />
+        <Input value={f.target_shop_key} onChange={(e) => setF({ ...f, target_shop_key: e.target.value })} maxLength={200} placeholder={a("shop key, e.g. mama_788123456 — leave empty for everyone")} />
       </div>
       <label className="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm">
         Active
