@@ -1015,6 +1015,7 @@ class BeBossRepository(private val database: AppDatabase) {
 
             // 3. Bidirectional Shop Devices sync (+2,000 FRw/device billing)
             val remoteDevices = SupabaseAdminClient.fetchShopDevicesForShop(shopSyncKey)
+            val remoteDeviceIds = remoteDevices.map { it.id }.toSet()
             for (rd in remoteDevices) {
                 val localDev = shopDeviceDao.getDeviceById(rd.id)
                 if (localDev == null || rd.updatedAt > localDev.updatedAt) {
@@ -1046,7 +1047,7 @@ class BeBossRepository(private val database: AppDatabase) {
             val localDevices = shopDeviceDao.getAllDevicesList()
             allDevicesUploaded = localDevices.isNotEmpty()
             for (ld in localDevices) {
-                if (!ld.syncedToSupabase) {
+                if (!ld.syncedToSupabase || ld.id !in remoteDeviceIds) {
                     if (SupabaseAdminClient.upsertShopDevice(shopSyncKey, effectiveProfile.shopName, ld)) {
                         shopDeviceDao.insertOrUpdate(ld.copy(syncedToSupabase = true))
                     } else {
