@@ -115,17 +115,13 @@ function AuthPage() {
       }
       const result = data as { status?: string; email?: string; message?: string; retryAfterSeconds?: number; resent?: boolean };
       if (result.status === "sent") {
-        toast.success(
-          result.resent
-            ? `A fresh confirmation email was sent to ${result.email}. Open it to confirm your account and finish setting your password.`
-            : `A secure setup invitation was sent to ${result.email}. Open the email and choose your own password.`,
-        );
+        toast.success("Supabase accepted the secure invitation request for " + result.email + ". This does not confirm mailbox delivery; check Inbox and Spam/Junk.");
       } else if (result.status === "email_rate_limited") {
-        toast.info(result.message || "Email delivery is temporarily rate-limited. Check your inbox and spam folder for the invitation that was already sent.");
+        toast.info(result.message || "The email provider rejected this request because its sending quota is exhausted. No new invitation was sent.");
       } else if (result.status === "cooldown") {
         const seconds = Math.max(1, Number(result.retryAfterSeconds) || 60);
         const minutes = Math.ceil(seconds / 60);
-        toast.info(result.message || `A setup email was sent recently. Please wait about ${minutes} minute(s) before requesting another.`);
+        toast.info(result.message || "An invitation request for this exact inbox was accepted recently; this click did not send another email. Wait about " + minutes + " minute(s) before trying again.");
       } else if (result.status === "already_sent") {
         toast.info(`The one-time invitation has already been issued to ${result.email}. Check that mailbox and its spam folder.`);
       } else if (result.status === "account_exists") {
