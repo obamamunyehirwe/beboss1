@@ -435,10 +435,25 @@ export const rejectPayment = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
     const reason = data.reason.trim() || "MoMo transaction could not be confirmed";
-    const { data: req } = await ctx.supabase.from("payment_requests").select("owner_username").eq("id", data.requestId).maybeSingle();
-    const { error } = await ctx.supabase.from("payment_requests").update({ status: "REJECTED", rejection_reason: reason, verified_by_admin: admin.label, updated_at: Date.now() }).eq("id", data.requestId);
+    const { data: req, error: readError } = await ctx.supabase
+      .from("payment_requests")
+      .select("owner_username,status")
+      .eq("id", data.requestId)
+      .maybeSingle();
+    if (readError || !req) throw new Error("Payment request not found.");
+    if (req.status !== "PENDING_VERIFICATION") {
+      throw new Error("Only pending payment claims can be rejected. Refresh the queue to see the latest status.");
+    }
+    const { data: rejected, error } = await ctx.supabase
+      .from("payment_requests")
+      .update({ status: "REJECTED", rejection_reason: reason, verified_by_admin: admin.label, updated_at: Date.now() })
+      .eq("id", data.requestId)
+      .eq("status", "PENDING_VERIFICATION")
+      .select("id")
+      .maybeSingle();
     if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, "REJECT_PAYMENT", `@${req?.owner_username ?? data.requestId}`, reason);
+    if (!rejected) throw new Error("Another administrator changed this payment first. Refresh the queue.");
+    await audit(ctx, admin.email, "REJECT_PAYMENT", `@${req.owner_username ?? data.requestId}`, reason);
     return { ok: true };
   });
 
@@ -469,7 +484,7 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
       .from("payment_requests")
       .select("id")
       .eq("provider", provider)
-      .ilike("telco_reference", reference)
+      .eq("telco_reference", reference)
       .limit(1);
     if (duplicateError) throw new Error(`Could not check transaction reference: ${duplicateError.message}`);
     if (duplicate?.length) throw new Error("This mobile-money transaction reference is already registered in BeBoss.");
