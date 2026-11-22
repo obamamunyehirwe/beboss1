@@ -1,10 +1,12 @@
 package com.beboss.shopmgmt.domain
 
+import androidx.room.withTransaction
 import com.beboss.shopmgmt.data.dao.CustomerDao
 import com.beboss.shopmgmt.data.dao.CustomerPaymentDao
 import com.beboss.shopmgmt.data.dao.SaleDao
 import com.beboss.shopmgmt.data.dao.SyncQueueDao
 import com.beboss.shopmgmt.data.dao.SyncTombstoneDao
+import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.data.model.Customer
 import com.beboss.shopmgmt.data.model.CustomerPayment
 import com.beboss.shopmgmt.data.model.Sale
@@ -26,7 +28,8 @@ class CustomerDebtManager(
     private val customerPaymentDao: CustomerPaymentDao,
     private val saleDao: SaleDao,
     private val syncQueueDao: SyncQueueDao,
-    private val syncTombstoneDao: SyncTombstoneDao? = null
+    private val syncTombstoneDao: SyncTombstoneDao? = null,
+    private val database: AppDatabase? = null
 ) {
     val allCustomers: Flow<List<Customer>> = customerDao.getAllCustomers()
     val customersWithDebt: Flow<List<Customer>> = customerDao.getCustomersWithDebt()
@@ -77,33 +80,41 @@ class CustomerDebtManager(
 
     suspend fun recordCustomerPayment(payment: CustomerPayment): CustomerPayment = withContext(Dispatchers.IO) {
         DbWriteMutex.withLock {
-            val now = ClockGuard.effectiveNowMs()
-            val customer = customerDao.getCustomerById(payment.customerId)
-            val currentDebtCents = MoneyUtils.toCents(customer?.debtBalance ?: 0.0)
-            val payCents = MoneyUtils.toCents(payment.amount)
-            val remainingCents = (currentDebtCents - payCents).coerceAtLeast(0L)
-            val currentDebt = MoneyUtils.centsToDouble(currentDebtCents)
-            val remaining = MoneyUtils.centsToDouble(remainingCents)
+            val executePayment: suspend () -> CustomerPayment = {
+                val now = ClockGuard.effectiveNowMs()
+                val customer = customerDao.getCustomerById(payment.customerId)
+                val currentDebtCents = MoneyUtils.toCents(customer?.debtBalance ?: 0.0)
+                val payCents = MoneyUtils.toCents(payment.amount)
+                val remainingCents = (currentDebtCents - payCents).coerceAtLeast(0L)
+                val currentDebt = MoneyUtils.centsToDouble(currentDebtCents)
+                val remaining = MoneyUtils.centsToDouble(remainingCents)
 
-            val updatedPayment = payment.copy(
-                amount = MoneyUtils.centsToDouble(payCents),
-                previousDebt = currentDebt,
-                remainingDebt = remaining,
-                paymentDate = now
-            )
-
-            customerPaymentDao.insertPayment(updatedPayment)
-            customerDao.recordDebtPayment(payment.customerId, updatedPayment.amount, now)
-            syncQueueDao.enqueue(
-                SyncQueueItem(
-                    tableName = "customer_payments",
-                    recordId = updatedPayment.id,
-                    operation = "CREATE",
-                    payloadJson = """{"customerId":"${updatedPayment.customerId}","amount":${updatedPayment.amount},"prevDebt":$currentDebt,"remDebt":$remaining,"method":"${updatedPayment.paymentMethod}"}"""
+                val updatedPayment = payment.copy(
+                    amount = MoneyUtils.centsToDouble(payCents),
+                    previousDebt = currentDebt,
+                    remainingDebt = remaining,
+                    paymentDate = now
                 )
-            )
 
-            updatedPayment
+                customerPaymentDao.insertPayment(updatedPayment)
+                customerDao.recordDebtPayment(payment.customerId, updatedPayment.amount, now)
+                syncQueueDao.enqueue(
+                    SyncQueueItem(
+                        tableName = "customer_payments",
+                        recordId = updatedPayment.id,
+                        operation = "CREATE",
+                        payloadJson = """{"customerId":"${updatedPayment.customerId}","amount":${updatedPayment.amount},"prevDebt":$currentDebt,"remDebt":$remaining,"method":"${updatedPayment.paymentMethod}"}"""
+                    )
+                )
+
+                updatedPayment
+            }
+
+            if (database != null) {
+                database.withTransaction { executePayment() }
+            } else {
+                executePayment()
+            }
         }
     }
 

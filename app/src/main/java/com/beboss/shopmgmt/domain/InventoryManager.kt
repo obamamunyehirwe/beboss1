@@ -1,9 +1,11 @@
 package com.beboss.shopmgmt.domain
 
+import androidx.room.withTransaction
 import com.beboss.shopmgmt.data.dao.ProductDao
 import com.beboss.shopmgmt.data.dao.PurchaseDao
 import com.beboss.shopmgmt.data.dao.SyncQueueDao
 import com.beboss.shopmgmt.data.dao.SyncTombstoneDao
+import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.data.model.InventoryValuation
 import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.PurchaseRecord
@@ -30,7 +32,8 @@ class InventoryManager(
     private val productDao: ProductDao,
     private val purchaseDao: PurchaseDao,
     private val syncQueueDao: SyncQueueDao,
-    private val syncTombstoneDao: SyncTombstoneDao? = null
+    private val syncTombstoneDao: SyncTombstoneDao? = null,
+    private val database: AppDatabase? = null
 ) {
     val allProducts: Flow<List<Product>> = productDao.getAllProducts()
     val lowStockProducts: Flow<List<Product>> = productDao.getLowStockProducts()
@@ -160,65 +163,73 @@ class InventoryManager(
         buyerName: String = "Store Manager"
     ): PurchaseRecord = withContext(Dispatchers.IO) {
         DbWriteMutex.withLock {
-            val now = ClockGuard.effectiveNowMs()
-            val product = productDao.getProductById(productId)
-            val prodName = product?.name ?: "Stock Inflow Item"
-            val category = product?.category ?: "General"
-            val activeSellingPrice = newSellingPrice ?: product?.sellingPrice ?: 0.0
-            val totalCost = MoneyUtils.centsToDouble(
-                MoneyUtils.multiplyPriceQuantityCents(unitCostPrice.coerceAtLeast(0.0), quantity.coerceAtLeast(0.0))
-            )
+            val executePurchase: suspend () -> PurchaseRecord = {
+                val now = ClockGuard.effectiveNowMs()
+                val product = productDao.getProductById(productId)
+                val prodName = product?.name ?: "Stock Inflow Item"
+                val category = product?.category ?: "General"
+                val activeSellingPrice = newSellingPrice ?: product?.sellingPrice ?: 0.0
+                val totalCost = MoneyUtils.centsToDouble(
+                    MoneyUtils.multiplyPriceQuantityCents(unitCostPrice.coerceAtLeast(0.0), quantity.coerceAtLeast(0.0))
+                )
 
-            val invNum = invoiceNumber.trim().ifBlank {
-                "INV-BUY-" + SimpleDateFormat("yyMMdd-HHmmss", Locale.getDefault()).format(Date(now))
+                val invNum = invoiceNumber.trim().ifBlank {
+                    "INV-BUY-" + SimpleDateFormat("yyMMdd-HHmmss", Locale.getDefault()).format(Date(now))
+                }
+
+                val purchase = PurchaseRecord(
+                    id = UUID.randomUUID().toString(),
+                    productId = productId,
+                    productName = prodName,
+                    category = category,
+                    supplierName = supplierName.trim().ifBlank { "Direct Supplier" },
+                    supplierPhone = supplierPhone.trim(),
+                    quantityPurchased = quantity.coerceAtLeast(0.0),
+                    unitCostPrice = MoneyUtils.roundMoney(unitCostPrice.coerceAtLeast(0.0)),
+                    totalPurchaseCost = totalCost,
+                    sellingPriceAtPurchase = MoneyUtils.roundMoney(activeSellingPrice),
+                    paymentStatus = paymentStatus,
+                    invoiceNumber = invNum,
+                    branchId = branchId,
+                    branchName = branchName,
+                    purchasedByUserId = buyerId,
+                    purchasedByName = buyerName,
+                    notes = notes.trim(),
+                    purchaseDate = now,
+                    createdAt = now
+                )
+
+                purchaseDao.insertPurchase(purchase)
+
+                if (product != null) {
+                    val updatedProduct = product.copy(
+                        quantityInStock = (product.quantityInStock + quantity).coerceAtLeast(0.0),
+                        costPrice = if (unitCostPrice > 0) unitCostPrice else product.costPrice,
+                        sellingPrice = if (newSellingPrice != null && newSellingPrice > 0) newSellingPrice else product.sellingPrice,
+                        updatedAt = now,
+                        syncVersion = product.syncVersion + 1L,
+                        hlcTimestamp = HlcClock.tick(now)
+                    )
+                    productDao.insertProduct(updatedProduct)
+                }
+
+                syncQueueDao.enqueue(
+                    SyncQueueItem(
+                        tableName = "purchases",
+                        recordId = purchase.id,
+                        operation = "CREATE",
+                        payloadJson = """{"productId":"$productId","qty":$quantity,"unitCost":$unitCostPrice,"total":${purchase.totalPurchaseCost},"supplier":"$supplierName"}"""
+                    )
+                )
+
+                purchase
             }
 
-            val purchase = PurchaseRecord(
-                id = UUID.randomUUID().toString(),
-                productId = productId,
-                productName = prodName,
-                category = category,
-                supplierName = supplierName.trim().ifBlank { "Direct Supplier" },
-                supplierPhone = supplierPhone.trim(),
-                quantityPurchased = quantity.coerceAtLeast(0.0),
-                unitCostPrice = MoneyUtils.roundMoney(unitCostPrice.coerceAtLeast(0.0)),
-                totalPurchaseCost = totalCost,
-                sellingPriceAtPurchase = MoneyUtils.roundMoney(activeSellingPrice),
-                paymentStatus = paymentStatus,
-                invoiceNumber = invNum,
-                branchId = branchId,
-                branchName = branchName,
-                purchasedByUserId = buyerId,
-                purchasedByName = buyerName,
-                notes = notes.trim(),
-                purchaseDate = now,
-                createdAt = now
-            )
-
-            purchaseDao.insertPurchase(purchase)
-
-            if (product != null) {
-                val updatedProduct = product.copy(
-                    quantityInStock = (product.quantityInStock + quantity).coerceAtLeast(0.0),
-                    costPrice = if (unitCostPrice > 0) unitCostPrice else product.costPrice,
-                    sellingPrice = if (newSellingPrice != null && newSellingPrice > 0) newSellingPrice else product.sellingPrice,
-                    updatedAt = now,
-                    syncVersion = product.syncVersion + 1L,
-                    hlcTimestamp = HlcClock.tick(now)
-                )
-                productDao.insertProduct(updatedProduct)
+            if (database != null) {
+                database.withTransaction { executePurchase() }
+            } else {
+                executePurchase()
             }
-
-            syncQueueDao.enqueue(
-                SyncQueueItem(
-                    tableName = "purchases",
-                    recordId = purchase.id,
-                    operation = "CREATE",
-                    payloadJson = """{"productId":"$productId","qty":$quantity,"unitCost":$unitCostPrice,"total":${purchase.totalPurchaseCost},"supplier":"$supplierName"}"""
-                )
-            )
-
-            purchase
         }
     }
 

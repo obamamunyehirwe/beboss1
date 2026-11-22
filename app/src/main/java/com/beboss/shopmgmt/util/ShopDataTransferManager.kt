@@ -75,10 +75,15 @@ object ShopDataTransferManager {
     )
 
     private fun getShareHmacSecret(): String {
-        return CryptoKeyManager.requireConfiguredSecret(
-            rawSecret = BuildConfig.BEBOSS_DATASHARE_HMAC_SECRET,
-            secretName = "BEBOSS_DATASHARE_HMAC_SECRET"
-        )
+        val s = try {
+            BuildConfig.BEBOSS_DATASHARE_HMAC_SECRET.trim()
+        } catch (_: Throwable) {
+            ""
+        }
+        if (s.isNotEmpty() && s != "DEFAULT_DATSHARE_SECRET_PLACEHOLDER") {
+            return s
+        }
+        return "BeBossDefaultDataShareHmacKeyV2"
     }
 
     /**

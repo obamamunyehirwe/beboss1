@@ -107,8 +107,8 @@ class BeBossRepository(private val database: AppDatabase) {
 
     // Domain Managers
     val salesManager = SalesManager(saleDao, productDao, customerDao, syncQueueDao, database, syncTombstoneDao)
-    val inventoryManager = InventoryManager(productDao, purchaseDao, syncQueueDao, syncTombstoneDao)
-    val customerDebtManager = CustomerDebtManager(customerDao, customerPaymentDao, saleDao, syncQueueDao, syncTombstoneDao)
+    val inventoryManager = InventoryManager(productDao, purchaseDao, syncQueueDao, syncTombstoneDao, database)
+    val customerDebtManager = CustomerDebtManager(customerDao, customerPaymentDao, saleDao, syncQueueDao, syncTombstoneDao, database)
     val staffAuthManager = StaffAuthManager(userDao, syncQueueDao, syncTombstoneDao)
     val branchTransferManager = BranchTransferManager(branchDao, stockTransferDao, productDao, shopProfileDao, syncQueueDao, syncTombstoneDao, database)
     val subscriptionManager = SubscriptionManager(shopProfileDao, redeemedVoucherDao)
@@ -142,16 +142,17 @@ class BeBossRepository(private val database: AppDatabase) {
         targetId: String = "",
         allowed: (User) -> Boolean
     ) {
-        if (actor == null) return
-        if (!actor.isActive || !allowed(actor)) {
+        val principal = actor
+            ?: throw SecurityException("Authenticated user required for action: $action")
+        if (!principal.isActive || !allowed(principal)) {
             recordLocalAudit(
-                actorName = actor.name,
-                actorRole = actor.role.name,
+                actorName = principal.name,
+                actorRole = principal.role.name,
                 action = "RBAC_DENIED",
                 targetId = targetId,
                 details = "Blocked unauthorized action: $action"
             )
-            throw SecurityException("Access denied: '${actor.name}' lacks permission for $action.")
+            throw SecurityException("Access denied: '${principal.name}' lacks permission for $action.")
         }
     }
 

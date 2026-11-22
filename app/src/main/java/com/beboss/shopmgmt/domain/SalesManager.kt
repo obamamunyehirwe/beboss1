@@ -151,9 +151,12 @@ class SalesManager(
                 saleDao.insertSale(sale)
                 saleDao.insertSaleItems(saleItems)
 
-                // Decrement product inventory safely
+                // Decrement product inventory safely and atomically
                 for (item in items) {
-                    productDao.decrementStock(item.product.id, item.quantity, now)
+                    val updatedRows = productDao.decrementStock(item.product.id, item.quantity, now)
+                    if (updatedRows <= 0) {
+                        throw IllegalStateException("Insufficient stock or product deleted for '${item.product.name}' (Requested: ${item.quantity}).")
+                    }
                 }
 
                 // Update customer debt if applicable

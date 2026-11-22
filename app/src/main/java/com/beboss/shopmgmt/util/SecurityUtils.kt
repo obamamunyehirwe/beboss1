@@ -14,16 +14,18 @@ import javax.crypto.spec.PBEKeySpec
 object SecurityUtils {
 
     private const val PBKDF2_ALGORITHM = "PBKDF2WithHmacSHA256"
-    private const val ITERATIONS = 30000
+    private const val ITERATIONS = 60000
     private const val KEY_LENGTH = 256 // in bits
     private const val SALT_BYTES = 16
 
     private fun getAppPepper(): String {
-        return try {
+        val p = try {
             BuildConfig.BEBOSS_SECURITY_PEPPER.trim()
         } catch (_: Throwable) {
             ""
         }
+        if (p.isNotEmpty() && p != "DEFAULT_PEPPER_PLACEHOLDER") return p
+        return "BeBossRuntimeHardwarePepperV2"
     }
 
     /**
@@ -78,10 +80,14 @@ object SecurityUtils {
     }
 
     /**
-     * Checks whether a credential value is missing PBKDF2 encoding and needs hashing/re-hashing.
+     * Checks whether a credential value is missing PBKDF2 encoding or has an outdated work factor.
      */
     fun needsUpgrade(storedHash: String): Boolean {
-        return !storedHash.startsWith("pbkdf2:")
+        if (!storedHash.startsWith("pbkdf2:")) return true
+        val parts = storedHash.split(":")
+        if (parts.size != 4) return true
+        val iter = parts[1].toIntOrNull() ?: 0
+        return iter < ITERATIONS
     }
 
     /**

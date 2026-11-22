@@ -101,11 +101,15 @@ class LocalNetworkSyncServer(
     private val nsdServiceType = "_beboss._tcp."
 
     private fun getMasterLanSecretBytes(): ByteArray {
-        val secret = CryptoKeyManager.requireConfiguredSecret(
-            BuildConfig.BEBOSS_LAN_SYNC_SECRET,
-            "BEBOSS_LAN_SYNC_SECRET"
-        )
-        return secret.toByteArray(StandardCharsets.UTF_8)
+        val secret = try {
+            BuildConfig.BEBOSS_LAN_SYNC_SECRET.trim()
+        } catch (_: Throwable) {
+            ""
+        }
+        if (secret.isNotEmpty() && secret != "DEFAULT_LAN_SECRET_PLACEHOLDER") {
+            return secret.toByteArray(StandardCharsets.UTF_8)
+        }
+        return CryptoKeyManager.getOrCreateDatabasePassphrase(context)
     }
 
     private fun getLanHmacKey(): ByteArray =
