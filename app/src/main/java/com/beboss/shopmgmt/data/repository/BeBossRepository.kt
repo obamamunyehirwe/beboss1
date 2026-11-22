@@ -615,7 +615,9 @@ class BeBossRepository(private val database: AppDatabase) {
                 ownerUser = ownerUser,
                 branchCount = branchesCount,
                 workerCount = workersCount,
-                deviceCount = devicesCount
+                deviceCount = devicesCount,
+                shopSyncKeyOverride = shopSyncKey,
+                shopOwnerUsernameOverride = ownerUsername
             )
         }
         recordLocalAudit(
@@ -641,7 +643,8 @@ class BeBossRepository(private val database: AppDatabase) {
 
             val profile = getShopProfileDirect()
             val users = userDao.getAllUsersDirect()
-            val ownerUser = users.firstOrNull { it.role == UserRole.OWNER } ?: users.firstOrNull()
+            val ownerUser = users.firstOrNull { it.role == UserRole.OWNER }
+            val primaryDevice = shopDeviceDao.getAllDevicesList().firstOrNull { it.isOwnerPrimary }
             val devicesCount = shopDeviceDao.getActiveDevicesCount().coerceAtLeast(1)
             val branchesCount = branchDao.getBranchCount().coerceAtLeast(1)
             val workersCount = users.count { it.isActive }.coerceAtLeast(1)
@@ -652,7 +655,15 @@ class BeBossRepository(private val database: AppDatabase) {
             if (SupabaseAdminClient.isConfigured()) {
                 val ok = SupabaseAdminClient.upsertShopDevice(existing.shopSyncKey, profile.shopName, updated)
                 if (ok) shopDeviceDao.insertOrUpdate(updated.copy(syncedToSupabase = true))
-                SupabaseAdminClient.upsertShopAccount(updatedProf, ownerUser, branchesCount, workersCount, devicesCount)
+                SupabaseAdminClient.upsertShopAccount(
+                    shopProfile = updatedProf,
+                    ownerUser = ownerUser,
+                    branchCount = branchesCount,
+                    workerCount = workersCount,
+                    deviceCount = devicesCount,
+                    shopSyncKeyOverride = existing.shopSyncKey,
+                    shopOwnerUsernameOverride = primaryDevice?.assignedUsername
+                )
             }
         }
 
@@ -665,7 +676,8 @@ class BeBossRepository(private val database: AppDatabase) {
         shopDeviceDao.deleteById(deviceRecordId)
         val profile = getShopProfileDirect()
         val users = userDao.getAllUsersDirect()
-        val ownerUser = users.firstOrNull { it.role == UserRole.OWNER } ?: users.firstOrNull()
+        val ownerUser = users.firstOrNull { it.role == UserRole.OWNER }
+        val primaryDevice = shopDeviceDao.getAllDevicesList().firstOrNull { it.isOwnerPrimary }
         val devicesCount = shopDeviceDao.getActiveDevicesCount().coerceAtLeast(1)
         val branchesCount = branchDao.getBranchCount().coerceAtLeast(1)
         val workersCount = users.count { it.isActive }.coerceAtLeast(1)
@@ -674,7 +686,15 @@ class BeBossRepository(private val database: AppDatabase) {
         shopProfileDao.insertOrUpdateProfile(updatedProf)
         if (SupabaseAdminClient.isConfigured()) {
             SupabaseAdminClient.deleteShopDeviceInCloud(existing.shopSyncKey, deviceRecordId)
-            SupabaseAdminClient.upsertShopAccount(updatedProf, ownerUser, branchesCount, workersCount, devicesCount)
+            SupabaseAdminClient.upsertShopAccount(
+                shopProfile = updatedProf,
+                ownerUser = ownerUser,
+                branchCount = branchesCount,
+                workerCount = workersCount,
+                deviceCount = devicesCount,
+                shopSyncKeyOverride = existing.shopSyncKey,
+                shopOwnerUsernameOverride = primaryDevice?.assignedUsername
+            )
         }
     }
 
