@@ -270,7 +270,7 @@ fun SettingsScreen(
     onStopLanDiscovery: () -> Unit = {},
     onGenerateBranchShareToken: ((String?, (String) -> Unit) -> Unit)? = null,
     onExportFullBranchPackage: ((String?, (File) -> Unit) -> Unit)? = null,
-    onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, telcoRef: String, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
+    onSubmitPaymentVerification: ((provider: String, payerPhone: String, payerFullName: String, username: String, registeredPhone: String, durationMonths: Int, branchCount: Int, workerCount: Int, deviceCount: Int, paymentNote: String, onDone: (PaymentVerificationRequest, Boolean) -> Unit) -> Unit)? = null,
     onCheckCloudApproval: () -> Unit = {},
     adminSession: SupabaseAdminSession? = null,
     adminAuthError: String? = null,
