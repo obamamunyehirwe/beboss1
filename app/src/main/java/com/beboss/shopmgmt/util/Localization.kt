@@ -703,7 +703,6 @@ object Localization {
         "admin_code_status_fmt" to locEntry("%s • %dd • %d FRw • %s", "%s • iminsi %d • %d FRw • %s", "%s • %d j • %d FRw • %s", "%s • siku %d • %d FRw • %s"),
         "admin_issue_code" to locEntry("Issue code", "Tanga kode", "Émettre un code", "Toa msimbo"),
         "admin_revoke_code_cd" to locEntry("Revoke unlock code", "Hagarika kode yo gufungura", "Révoquer le code d’activation", "Batilisha msimbo wa kufungua"),
-        "admin_issue_code" to locEntry("Issue Code", "Tanga kode", "Générer un code", "Toa msimbo"),
         "shop_devices_title" to locEntry(
             "Shop Devices",
             "Telefoni z'Ububiko",
@@ -769,12 +768,6 @@ object Localization {
             "Nimero ya Airtel Money (*500#)",
             "Numéro Airtel Money (*500#)",
             "Namba ya Airtel Money (*500#)"
-        ),
-        "admin_tab_devices" to locEntry(
-            "Devices",
-            "Telefoni",
-            "Appareils",
-            "Vifaa"
         ),
         "admin_tab_payconfig" to locEntry(
             "Pay Config",
