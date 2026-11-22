@@ -967,7 +967,7 @@ fun AdminVerificationConsoleDialog(
                                                     OutlinedButton(
                                                         onClick = {
                                                             requestToReject = req
-                                                            rejectReasonInput = Localization.get("admin_reject_reason", language)
+                                                            rejectReasonInput = Localization.get("admin_default_reject_reason", language)
                                                         },
                                                         modifier = Modifier
                                                             .weight(0.9f)
