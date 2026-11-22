@@ -24,14 +24,31 @@ if (publicSupabaseKey) {
   publicSupabaseDefine["import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY"] = JSON.stringify(publicSupabaseKey);
 }
 
+// Vercel sets VERCEL=1 during its build. The Lovable wrapper otherwise keeps
+// its preview-oriented Cloudflare Nitro target, which cannot serve this app's
+// TanStack server functions as Vercel Functions. Emit Vercel's server and static
+// output directories explicitly while leaving the Lovable preview target alone.
+const isVercelBuild = process.env.VERCEL === "1";
+
 export default defineConfig({
+  ...(isVercelBuild
+    ? {
+        nitro: {
+          preset: "vercel",
+          output: {
+            dir: ".vercel/output",
+            serverDir: ".vercel/output/functions/__server.func",
+            publicDir: ".vercel/output/static",
+          },
+        },
+      }
+    : {}),
   vite: {
     ...(Object.keys(publicSupabaseDefine).length ? { define: publicSupabaseDefine } : {}),
     server: { allowedHosts: ['workspace-zkvm7tks-8b08c7aa60177527.v0.build'] },
   },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
     server: { entry: "server" },
   },
 });
