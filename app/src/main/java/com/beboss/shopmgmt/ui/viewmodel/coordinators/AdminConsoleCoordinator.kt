@@ -198,7 +198,6 @@ class AdminConsoleCoordinator(
         durationMonths: Int,
         branchCount: Int,
         workerCount: Int,
-        telcoReference: String = "",
         payerFullName: String = "",
         deviceCount: Int = 1,
         onSubmitted: (PaymentVerificationRequest, Boolean) -> Unit = { _, _ -> }
@@ -230,7 +229,6 @@ class AdminConsoleCoordinator(
                 branchCount = branchCount.coerceAtLeast(1),
                 workerCount = workerCount.coerceAtLeast(1),
                 deviceCount = safeDevices,
-                telcoReference = telcoReference.trim().uppercase(),
                 status = "PENDING_VERIFICATION",
                 syncedToSupabase = false
             )
