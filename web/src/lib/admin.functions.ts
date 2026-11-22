@@ -192,22 +192,65 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
   .inputValidator((d: { requestId: string }) => z.object({ requestId: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    
-    // Ensure admin session is valid
-    const sessionValid = await ensureValidAdminSession(ctx);
-    if (!sessionValid) throw new Error("Admin session expired. Please sign in again.");
-    
+    if (!(await ensureValidAdminSession(ctx))) throw new Error("Admin session expired. Please sign in again.");
     const admin = await requireAdmin(ctx);
     const { data: req, error } = await ctx.supabase.from("payment_requests").select("*").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
-    
-    // Idempotency check: if already approved, return existing code
-    if (req.status === "APPROVED" && req.generated_unlock_code) {
-      return { code: req.generated_unlock_code, alreadyApproved: true, days: req.duration_months * 30, tier: req.tier_code || "SINGLE", total: req.amount_rwf, expiresAt: req.subscription_expires_at, shopName: req.shop_name, username: req.owner_username, phone: req.payer_phone || req.owner_phone };
+
+    const shopId = computeShopKey(req.owner_username, req.owner_phone);
+    const calc = calculateSubscriptionFee(
+      req.branch_count,
+      req.worker_count,
+      req.duration_months,
+      req.device_count || 1,
+      await perDeviceRate(ctx),
+    );
+
+    // A retry after the payment row was approved returns the same code and
+    // repairs a failed shop activation only when the shop row is still older.
+    if (req.status === "APPROVED") {
+      if (!req.generated_unlock_code) {
+        throw new Error("This payment was already approved by direct auto-unlock. It cannot also receive a code.");
+      }
+      const existingShop = await getShop(ctx, shopId);
+      let expiresAt = Number(existingShop?.subscription_expires_at ?? 0);
+      if (!existingShop || Number(existingShop.updated_at ?? 0) < Number(req.updated_at ?? 0)) {
+        expiresAt = await activateShop(ctx, shopId, {
+          addDays: calc.days,
+          branches: req.branch_count,
+          workers: req.worker_count,
+          devices: req.device_count || 1,
+          monthly: calc.monthly,
+          fallback: {
+            shop_name: req.shop_name,
+            owner_username: String(req.owner_username).toLowerCase(),
+            owner_phone: req.owner_phone,
+            device_challenge: req.device_challenge || "",
+          },
+        });
+      }
+      return {
+        code: req.generated_unlock_code,
+        alreadyApproved: true,
+        days: calc.days,
+        tier: calc.tier,
+        total: Number(req.amount_rwf || calc.total),
+        expiresAt,
+        shopName: req.shop_name,
+        username: req.owner_username,
+        phone: req.payer_phone || req.owner_phone,
+      };
     }
-    
-    const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, await perDeviceRate(ctx));
-    const code = await generateBB3UnlockCode({ username: req.owner_username, phone: req.owner_phone, tier: calc.tier, days: calc.days });
+    if (!["PENDING_VERIFICATION", "REJECTED"].includes(String(req.status))) {
+      throw new Error(`This payment claim is ${String(req.status).toLowerCase().replaceAll("_", " ")} and cannot be approved again.`);
+    }
+
+    const code = await generateBB3UnlockCode({
+      username: req.owner_username,
+      phone: req.owner_phone,
+      tier: calc.tier,
+      days: calc.days,
+    });
     const now = Date.now();
     const ins = await ctx.supabase.from("unlock_codes").insert({
       id: crypto.randomUUID(),
@@ -223,22 +266,61 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
       issued_at: now,
     });
     if (ins.error) throw new Error(ins.error.message);
-    const upd = await ctx.supabase
+
+    // Compare-and-set prevents two admins (or a fast double click) issuing
+    // two different codes for the same claim.
+    const claim = await ctx.supabase
       .from("payment_requests")
-      .update({ status: "APPROVED", approval_mode: "UNLOCK_CODE", amount_rwf: calc.total, generated_unlock_code: code, verified_by_admin: admin.label, rejection_reason: "", updated_at: now })
-      .eq("id", req.id);
-    if (upd.error) throw new Error(upd.error.message);
-    const shopId = computeShopKey(req.owner_username, req.owner_phone);
+      .update({
+        status: "APPROVED",
+        approval_mode: "UNLOCK_CODE",
+        amount_rwf: calc.total,
+        generated_unlock_code: code,
+        verified_by_admin: admin.label,
+        rejection_reason: "",
+        updated_at: now,
+      })
+      .eq("id", req.id)
+      .eq("status", req.status)
+      .select("id")
+      .maybeSingle();
+
+    if (claim.error || !claim.data) {
+      await ctx.supabase.from("unlock_codes").update({ status: "REVOKED" }).eq("unlock_code", code).eq("status", "ISSUED");
+      throw new Error("Another administrator changed this payment first. Refresh the queue before trying again.");
+    }
+
     const expiresAt = await activateShop(ctx, shopId, {
       addDays: calc.days,
       branches: req.branch_count,
       workers: req.worker_count,
       devices: req.device_count || 1,
       monthly: calc.monthly,
-      fallback: { shop_name: req.shop_name, owner_username: String(req.owner_username).toLowerCase(), owner_phone: req.owner_phone, device_challenge: req.device_challenge || "" },
+      fallback: {
+        shop_name: req.shop_name,
+        owner_username: String(req.owner_username).toLowerCase(),
+        owner_phone: req.owner_phone,
+        device_challenge: req.device_challenge || "",
+      },
     });
-    await audit(ctx, admin.email, "APPROVE_PAYMENT", `@${req.owner_username}`, `Verified ${req.payer_full_name || req.payer_phone} ${req.telco_reference} (${calc.total} FRw) -> issued ${code}`);
-    return { code, days: calc.days, tier: calc.tier, total: calc.total, expiresAt, shopName: req.shop_name, username: req.owner_username, phone: req.payer_phone || req.owner_phone, alreadyApproved: false };
+    await audit(
+      ctx,
+      admin.email,
+      "APPROVE_PAYMENT",
+      `@${req.owner_username}`,
+      `Verified ${req.payer_full_name || req.payer_phone} / reference ${req.telco_reference} (${calc.total} FRw); BB3 code issued.`,
+    );
+    return {
+      code,
+      days: calc.days,
+      tier: calc.tier,
+      total: calc.total,
+      expiresAt,
+      shopName: req.shop_name,
+      username: req.owner_username,
+      phone: req.payer_phone || req.owner_phone,
+      alreadyApproved: false,
+    };
   });
 
 export const directAutoUnlock = createServerFn({ method: "POST" })
@@ -247,26 +329,103 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
-    const { data: req } = await ctx.supabase.from("payment_requests").select("*").eq("id", data.requestId).maybeSingle();
-    if (!req) throw new Error("Payment request not found.");
-    const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, await perDeviceRate(ctx));
+    const { data: req, error } = await ctx.supabase.from("payment_requests").select("*").eq("id", data.requestId).maybeSingle();
+    if (error || !req) throw new Error("Payment request not found.");
+
+    const shopId = computeShopKey(req.owner_username, req.owner_phone);
+    const calc = calculateSubscriptionFee(
+      req.branch_count,
+      req.worker_count,
+      req.duration_months,
+      req.device_count || 1,
+      await perDeviceRate(ctx),
+    );
+
+    // Direct auto-unlock is idempotent. Repair only if the shop's cloud
+    // auto_unlocked_at marker proves the activation did not complete.
+    if (req.status === "APPROVED") {
+      if (req.approval_mode !== "DIRECT_AUTO_UNLOCK") {
+        throw new Error("This payment was already approved with an unlock code.");
+      }
+      const existingShop = await getShop(ctx, shopId);
+      let expiresAt = Number(existingShop?.subscription_expires_at ?? 0);
+      if (!existingShop || Number(existingShop.auto_unlocked_at ?? 0) < Number(req.updated_at ?? 0)) {
+        expiresAt = await activateShop(ctx, shopId, {
+          addDays: calc.days,
+          branches: req.branch_count,
+          workers: req.worker_count,
+          devices: req.device_count || 1,
+          monthly: calc.monthly,
+          autoUnlock: true,
+          fallback: {
+            shop_name: req.shop_name,
+            owner_username: String(req.owner_username).toLowerCase(),
+            owner_phone: req.owner_phone,
+            device_challenge: req.device_challenge || "",
+          },
+        });
+      }
+      return {
+        days: calc.days,
+        tier: calc.tier,
+        total: Number(req.amount_rwf || calc.total),
+        expiresAt,
+        shopName: req.shop_name,
+        username: req.owner_username,
+        phone: req.payer_phone || req.owner_phone,
+        alreadyApproved: true,
+      };
+    }
+    if (!["PENDING_VERIFICATION", "REJECTED"].includes(String(req.status))) {
+      throw new Error(`This payment claim is ${String(req.status).toLowerCase().replaceAll("_", " ")} and cannot be approved again.`);
+    }
+
     const now = Date.now();
-    const upd = await ctx.supabase
+    const claim = await ctx.supabase
       .from("payment_requests")
-      .update({ status: "APPROVED", approval_mode: "DIRECT_AUTO_UNLOCK", amount_rwf: calc.total, generated_unlock_code: "", verified_by_admin: admin.label, rejection_reason: "", updated_at: now })
-      .eq("id", req.id);
-    if (upd.error) throw new Error(upd.error.message);
-    const expiresAt = await activateShop(ctx, computeShopKey(req.owner_username, req.owner_phone), {
+      .update({
+        status: "APPROVED",
+        approval_mode: "DIRECT_AUTO_UNLOCK",
+        amount_rwf: calc.total,
+        generated_unlock_code: "",
+        verified_by_admin: admin.label,
+        rejection_reason: "",
+        updated_at: now,
+      })
+      .eq("id", req.id)
+      .eq("status", req.status)
+      .select("id")
+      .maybeSingle();
+
+    if (claim.error || !claim.data) {
+      throw new Error("Another administrator changed this payment first. Refresh the queue before trying again.");
+    }
+
+    const expiresAt = await activateShop(ctx, shopId, {
       addDays: calc.days,
       branches: req.branch_count,
       workers: req.worker_count,
       devices: req.device_count || 1,
       monthly: calc.monthly,
       autoUnlock: true,
-      fallback: { shop_name: req.shop_name, owner_username: String(req.owner_username).toLowerCase(), owner_phone: req.owner_phone, device_challenge: req.device_challenge || "" },
+      fallback: {
+        shop_name: req.shop_name,
+        owner_username: String(req.owner_username).toLowerCase(),
+        owner_phone: req.owner_phone,
+        device_challenge: req.device_challenge || "",
+      },
     });
     await audit(ctx, admin.email, "DIRECT_AUTO_UNLOCK", `@${req.owner_username}`, `Auto-unlocked ${req.shop_name} (+${calc.days}d, ${calc.total} FRw, ${req.device_count || 1} devices)`);
-    return { days: calc.days, tier: calc.tier, total: calc.total, expiresAt, shopName: req.shop_name, username: req.owner_username, phone: req.payer_phone || req.owner_phone };
+    return {
+      days: calc.days,
+      tier: calc.tier,
+      total: calc.total,
+      expiresAt,
+      shopName: req.shop_name,
+      username: req.owner_username,
+      phone: req.payer_phone || req.owner_phone,
+      alreadyApproved: false,
+    };
   });
 
 export const rejectPayment = createServerFn({ method: "POST" })
@@ -281,6 +440,95 @@ export const rejectPayment = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     await audit(ctx, admin.email, "REJECT_PAYMENT", `@${req?.owner_username ?? data.requestId}`, reason);
     return { ok: true };
+  });
+
+const whatsappClaimSchema = z.object({
+  shopName: z.string().trim().min(2).max(120),
+  username: z.string().trim().min(2).max(80).regex(/^[a-zA-Z0-9._-]+$/),
+  ownerPhone: z.string().trim().min(9).max(30),
+  provider: z.enum(["MTN MoMo", "Airtel Money"]),
+  payerPhone: z.string().trim().min(9).max(30),
+  payerName: z.string().trim().min(2).max(120),
+  telcoReference: z.string().trim().min(4).max(60).regex(/^[a-zA-Z0-9._/-]+$/),
+  months: z.number().int().refine((value) => [1, 3, 6, 12].includes(value)),
+  branches: z.number().int().min(1).max(100),
+  workers: z.number().int().min(1).max(500),
+  devices: z.number().int().min(1).max(100),
+});
+
+export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: z.infer<typeof whatsappClaimSchema>) => whatsappClaimSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requireAdmin(ctx);
+    const provider = data.provider;
+    const reference = data.telcoReference.trim().toUpperCase();
+
+    const { data: duplicate, error: duplicateError } = await ctx.supabase
+      .from("payment_requests")
+      .select("id")
+      .eq("provider", provider)
+      .ilike("telco_reference", reference)
+      .limit(1);
+    if (duplicateError) throw new Error(`Could not check transaction reference: ${duplicateError.message}`);
+    if (duplicate?.length) throw new Error("This mobile-money transaction reference is already registered in BeBoss.");
+
+    const { data: config } = await ctx.supabase
+      .from("app_config")
+      .select("per_device_fee_rwf")
+      .eq("id", "global")
+      .maybeSingle();
+    const calc = calculateSubscriptionFee(
+      data.branches,
+      data.workers,
+      data.months,
+      data.devices,
+      Number(config?.per_device_fee_rwf) || 2000,
+    );
+    const now = Date.now();
+    const id = `WA-${crypto.randomUUID()}`;
+    const { data: claim, error } = await ctx.supabase
+      .from("payment_requests")
+      .insert({
+        id,
+        shop_name: data.shopName,
+        owner_username: data.username.trim().toLowerCase(),
+        owner_phone: data.ownerPhone.trim(),
+        provider,
+        ussd_code: "MANUAL_WHATSAPP_PROOF",
+        payer_phone: data.payerPhone.trim(),
+        payer_full_name: data.payerName.trim(),
+        amount_rwf: calc.total,
+        duration_months: data.months,
+        branch_count: data.branches,
+        worker_count: data.workers,
+        device_count: data.devices,
+        telco_reference: reference,
+        status: "PENDING_VERIFICATION",
+        approval_mode: "",
+        generated_unlock_code: "",
+        verified_by_admin: admin.label,
+        rejection_reason: "",
+        source: "WHATSAPP",
+        created_at: now,
+        updated_at: now,
+      })
+      .select("id, shop_name, owner_username, amount_rwf")
+      .single();
+
+    if (error) {
+      if (error.code === "23505") throw new Error("This mobile-money transaction reference is already registered in BeBoss.");
+      throw new Error(`Could not save this WhatsApp payment claim: ${error.message}`);
+    }
+    await audit(
+      ctx,
+      admin.email,
+      "CREATE_WHATSAPP_PAYMENT_CLAIM",
+      id,
+      `Manual WhatsApp proof recorded for @${data.username} / ${reference} (${calc.total} FRw).`,
+    );
+    return { ok: true, id: claim.id, amount: calc.total, days: calc.days, tier: calc.tier };
   });
 
 export const deletePaymentRequest = createServerFn({ method: "POST" })
