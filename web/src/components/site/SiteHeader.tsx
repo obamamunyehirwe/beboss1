@@ -53,7 +53,7 @@ type SitePath =
   | "/contact"
   | "/admin";
 
-type HeaderLink = { to: SitePath; label: string; description: string; icon: LucideIcon };
+type HeaderLink = { to: SitePath; label: string; description: string; icon: LucideIcon; keywords?: string[] };
 
 export function SiteHeader() {
   const { t, p, lang } = useI18n();
@@ -64,40 +64,45 @@ export function SiteHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeSearchResult, setActiveSearchResult] = useState(0);
   const searchInput = useRef<HTMLInputElement>(null);
 
   const productLinks = [
-    { to: "/features" as const, label: t("navFeatures"), description: c.headerFeaturesDesc, icon: Boxes },
-    { to: "/how-it-works" as const, label: t("navHow"), description: c.headerHowDesc, icon: Zap },
-    { to: "/pricing" as const, label: t("navPricing"), description: c.headerPricingDesc, icon: ShoppingBag },
+    { to: "/features" as const, label: t("navFeatures"), description: c.headerFeaturesDesc, icon: Boxes, keywords: ["pos", "point of sale", "inventory", "stock", "sales", "reports", "staff", "branches", "offline"] },
+    { to: "/how-it-works" as const, label: t("navHow"), description: c.headerHowDesc, icon: Zap, keywords: ["workflow", "setup", "tutorial", "steps", "sync", "how to"] },
+    { to: "/pricing" as const, label: t("navPricing"), description: c.headerPricingDesc, icon: ShoppingBag, keywords: ["price", "plans", "subscription", "monthly", "payment", "mtn", "airtel", "momo", "cost"] },
   ];
 
   const resourceLinks = [
-    { to: "/guide" as const, label: t("navGuide"), description: c.headerGuideDesc, icon: BookOpen },
-    { to: "/faq" as const, label: t("navFaq"), description: c.headerFaqDesc, icon: CircleHelp },
-    { to: "/changelog" as const, label: t("navChangelog"), description: c.headerUpdatesDesc, icon: FileText },
-    { to: "/status" as const, label: t("navStatus"), description: c.headerStatusDesc, icon: Activity },
-    { to: "/contact" as const, label: t("navContact"), description: c.headerContactDesc, icon: LifeBuoy },
+    { to: "/guide" as const, label: t("navGuide"), description: c.headerGuideDesc, icon: BookOpen, keywords: ["manual", "documentation", "help", "instructions", "how to use"] },
+    { to: "/faq" as const, label: t("navFaq"), description: c.headerFaqDesc, icon: CircleHelp, keywords: ["questions", "answers", "support", "troubleshooting"] },
+    { to: "/changelog" as const, label: t("navChangelog"), description: c.headerUpdatesDesc, icon: FileText, keywords: ["updates", "versions", "release notes", "new features"] },
+    { to: "/status" as const, label: t("navStatus"), description: c.headerStatusDesc, icon: Activity, keywords: ["uptime", "availability", "outage", "health"] },
+    { to: "/contact" as const, label: t("navContact"), description: c.headerContactDesc, icon: LifeBuoy, keywords: ["contact", "email", "phone", "whatsapp", "sales team"] },
   ];
 
   const productActive = productLinks.some((item) => location.pathname === item.to);
   const resourcesActive = resourceLinks.some((item) => location.pathname === item.to);
 
   const allLinks = [
-    { to: "/" as const, label: p.common.goHome, description: c.headerHomeDesc, icon: Home },
+    { to: "/" as const, label: p.common.goHome, description: c.headerHomeDesc, icon: Home, keywords: ["home", "homepage", "start", "overview", "welcome"] },
     ...productLinks,
-    { to: "/download" as const, label: t("navDownload"), description: c.headerDownloadDesc, icon: Download },
+    { to: "/download" as const, label: t("navDownload"), description: c.headerDownloadDesc, icon: Download, keywords: ["apk", "android", "install", "installer", "app update", "latest version"] },
     ...resourceLinks,
-    { to: "/my-shop" as const, label: t("navMyShop"), description: c.headerShopDesc, icon: Store },
-    { to: "/admin" as const, label: t("navAdmin"), description: c.headerAdminDesc, icon: ShieldCheck },
+    { to: "/my-shop" as const, label: t("navMyShop"), description: c.headerShopDesc, icon: Store, keywords: ["my shop", "payment proof", "unlock", "activation", "subscription status", "owner account"] },
+    { to: "/admin" as const, label: t("navAdmin"), description: c.headerAdminDesc, icon: ShieldCheck, keywords: ["administrator", "management", "admin login"] },
   ];
 
   const query = searchQuery.trim().toLocaleLowerCase();
   const filteredLinks = query
     ? allLinks
-        .filter((item) => `${item.label} ${item.description} ${item.to}`.toLocaleLowerCase().includes(query))
-        .slice(0, 8)
+        .filter((item) => `${item.label} ${item.description} ${item.to} ${(item.keywords ?? []).join(" ")}`.toLocaleLowerCase().includes(query))
+        .slice(0, 10)
     : allLinks.slice(0, 6);
+
+  useEffect(() => {
+    setActiveSearchResult(0);
+  }, [query]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -110,6 +115,7 @@ export function SiteHeader() {
     const onShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        setActiveSearchResult(0);
         setSearchOpen(true);
       }
       if (event.key === "Escape") {
@@ -234,7 +240,7 @@ export function SiteHeader() {
               type="button"
               variant="outline"
               className="site-search-trigger"
-              onClick={() => { setMobileOpen(false); setSearchOpen(true); }}
+              onClick={() => { setMobileOpen(false); setActiveSearchResult(0); setSearchOpen(true); }}
               aria-label={c.headerSearch}
             >
               <Search size={17} />
@@ -336,16 +342,38 @@ export function SiteHeader() {
                 type="search"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown" && filteredLinks.length) {
+                    event.preventDefault();
+                    setActiveSearchResult((current) => (current + 1) % filteredLinks.length);
+                  } else if (event.key === "ArrowUp" && filteredLinks.length) {
+                    event.preventDefault();
+                    setActiveSearchResult((current) => (current - 1 + filteredLinks.length) % filteredLinks.length);
+                  } else if (event.key === "Enter" && filteredLinks[activeSearchResult]) {
+                    event.preventDefault();
+                    goTo(filteredLinks[activeSearchResult].to);
+                  }
+                }}
                 placeholder={c.headerSearchPlaceholder}
                 aria-label={c.headerSearchPlaceholder}
+                aria-controls="site-search-results"
+                aria-activedescendant={filteredLinks[activeSearchResult] ? `site-search-result-${activeSearchResult}` : undefined}
               />
               <kbd>ESC</kbd>
             </div>
-            <div className="site-search-results">
+            <div className="site-search-results" id="site-search-results" aria-live="polite">
               <p>{searchQuery.trim() ? c.headerSearchResults : c.headerQuickAccess}</p>
-              {filteredLinks.length ? filteredLinks.map((item) => (
-                <button type="button" key={item.to} className="site-search-result" onClick={() => goTo(item.to)}>
-                  <span className="site-search-result-icon"><item.icon size={17} /></span>
+              {filteredLinks.length ? filteredLinks.map((item, index) => (
+                <button
+                  type="button"
+                  id={`site-search-result-${index}`}
+                  key={item.to}
+                  className={activeSearchResult === index ? "site-search-result site-search-result-active" : "site-search-result"}
+                  aria-current={activeSearchResult === index ? "page" : undefined}
+                  onMouseEnter={() => setActiveSearchResult(index)}
+                  onClick={() => goTo(item.to)}
+                >
+                  <span className="site-search-result-icon"><item.icon size={18} /></span>
                   <span><strong>{item.label}</strong><small>{item.description}</small></span>
                   <ArrowUpRight size={15} />
                 </button>
