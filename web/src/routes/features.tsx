@@ -89,10 +89,10 @@ function FeaturesPage() {
             </div>
             <div className="rounded-2xl border border-border bg-surface p-5 space-y-2">
               <div className="flex items-center gap-2 text-primary font-bold text-sm">
-                <KeyRound className="size-4" /> Constant-Time BB2 Unlock
+                <KeyRound className="size-4" /> Payment-linked BB3 ECDSA Unlock
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                HMAC-SHA256 account-bound unlock codes are compared using MessageDigest.isEqual to reduce timing leakage during code checks.
+                New unlock codes use server-side ECDSA P-256 signatures and bind one verified payment request to its exact plan and registered shop. Historical BB2 codes are verified online against their original issued record.
               </p>
             </div>
           </div>
