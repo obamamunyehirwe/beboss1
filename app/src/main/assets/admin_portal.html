@@ -1781,8 +1781,8 @@ create table if not exists public.payment_requests (
     return toHexUpper(digest).slice(0, 6);
   }
 
-  async function generateBB3UnlockCode(session, paymentRequestId) {
-    if (!session?.url || !session?.anonKey || !session?.accessToken || !paymentRequestId) {
+  async function generateBB3UnlockCode(session, paymentRequestId, verificationNote) {
+    if (!session?.url || !session?.anonKey || !session?.accessToken || !paymentRequestId || String(verificationNote || '').trim().length < 5) {
       throw new Error('An authenticated BeBoss admin session and payment request are required.');
     }
     const response = await fetch(`${session.url}/functions/v1/issue-bb3-unlock`, {
@@ -1792,7 +1792,7 @@ create table if not exists public.payment_requests (
         Authorization: `Bearer ${session.accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ paymentRequestId: String(paymentRequestId) })
+      body: JSON.stringify({ paymentRequestId: String(paymentRequestId), providerVerified: true, verificationNote: String(verificationNote).trim() })
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.message || `Secure BB3 signing failed (HTTP ${response.status}).`);
@@ -2287,7 +2287,7 @@ create table if not exists public.payment_requests (
         notify(`Payment amount mismatch: this submitted plan calculates to ${calc.total.toLocaleString()} FRw. Verify the provider statement and claim details first.`); return;
       }
       try {
-        const signed = await generateBB3UnlockCode(session, req.id);
+        const signed = await generateBB3UnlockCode(session, req.id, verifiedNote);
         if (Number(signed.amountRwf) !== calc.total || Number(signed.days) !== calc.days || String(signed.tier) !== calc.tier) {
           throw new Error('The signed plan does not match this submitted payment. No code was issued.');
         }

@@ -442,7 +442,7 @@ object SupabaseAdminClient {
      * Ask the trusted Supabase Edge Function to sign a BB3 code. The ECDSA private
      * key never enters this Android process or BuildConfig.
      */
-    private suspend fun requestServerSignedBB3Code(paymentRequestId: String): Result<SupabaseSignedPaymentUnlock> = withContext(Dispatchers.IO) {
+    private suspend fun requestServerSignedBB3Code(paymentRequestId: String, verificationNote: String): Result<SupabaseSignedPaymentUnlock> = withContext(Dispatchers.IO) {
         val session = ensureValidAdminSession()
             ?: return@withContext Result.failure(IllegalStateException("Admin session expired. Sign in again."))
         if (!isConfigured()) {
@@ -452,7 +452,10 @@ object SupabaseAdminClient {
             return@withContext Result.failure(IllegalArgumentException("A valid payment request is required to issue a BB3 code."))
         }
         try {
-            val payload = JSONObject().put("paymentRequestId", paymentRequestId.trim())
+            val payload = JSONObject()
+                .put("paymentRequestId", paymentRequestId.trim())
+                .put("providerVerified", true)
+                .put("verificationNote", verificationNote.trim())
             val req = Request.Builder()
                 .url("${getSupabaseUrl()}/functions/v1/issue-bb3-unlock")
                 .addHeader("apikey", getSupabaseAnonKey())
@@ -1680,7 +1683,7 @@ object SupabaseAdminClient {
             return@withContext Pair(false, "This payment claim is no longer awaiting approval.")
         }
 
-        val signed = requestServerSignedBB3Code(request.id).getOrElse { error ->
+        val signed = requestServerSignedBB3Code(request.id, verificationNote).getOrElse { error ->
             return@withContext Pair(false, error.message ?: "Unable to sign a secure payment-linked BB3 unlock code.")
         }
 
