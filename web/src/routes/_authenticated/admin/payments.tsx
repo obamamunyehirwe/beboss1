@@ -196,10 +196,10 @@ function PaymentsPage() {
                     value={manual.months}
                     onChange={(event) => setManual({ ...manual, months: Number(event.target.value) })}
                   >
-                    <option value={1}>1 month</option>
-                    <option value={3}>3 months</option>
-                    <option value={6}>6 months</option>
-                    <option value={12}>12 months</option>
+                    <option value={1}>{a("1 month")}</option>
+                    <option value={3}>{a("3 months")}</option>
+                    <option value={6}>{a("6 months")}</option>
+                    <option value={12}>{a("12 months")}</option>
                   </select>
                 </div>
                 {(["branches", "workers", "devices"] as const).map((field) => (
@@ -417,7 +417,7 @@ function ResultDialog({ result, onClose }: { result: Result | null; onClose: () 
                 setCopied(true);
               }}
             >
-              {copied ? <Check className="text-success" /> : <Copy />} Copy code
+              {copied ? <Check className="text-success" /> : <Copy />} {a("Copy code")}
             </Button>
           ) : null}
           <Button variant="success" asChild>
