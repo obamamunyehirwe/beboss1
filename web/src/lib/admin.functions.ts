@@ -267,8 +267,8 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     if (error || !req) throw new Error("Payment request not found.");
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
-    const submittedFeeRate = Number(req.fee_per_device_rwf) > 0 ? Number(req.fee_per_device_rwf) : await perDeviceRate(ctx);
-    const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, submittedFeeRate);
+    const trustedFeeRate = await perDeviceRate(ctx);
+    const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, trustedFeeRate);
     if (Number(req.amount_rwf) !== calc.total) {
       throw new Error(`Payment amount mismatch. Submitted ${Number(req.amount_rwf || 0)} FRw; this plan calculates to ${calc.total} FRw. Refresh and verify the payment details before issuing a code.`);
     }
@@ -339,13 +339,13 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
     if (error || !req) throw new Error("Payment request not found.");
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
-    const submittedFeeRate = Number(req.fee_per_device_rwf) > 0 ? Number(req.fee_per_device_rwf) : await perDeviceRate(ctx);
+    const trustedFeeRate = await perDeviceRate(ctx);
     const calc = calculateSubscriptionFee(
       req.branch_count,
       req.worker_count,
       req.duration_months,
       req.device_count || 1,
-      submittedFeeRate,
+      trustedFeeRate,
     );
 
     if (Number(req.amount_rwf) !== calc.total) throw new Error("Payment amount does not match the submitted subscription plan.");
@@ -611,32 +611,10 @@ const manualCodeSchema = z.object({
 export const issueManualCode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof manualCodeSchema>) => manualCodeSchema.parse(d))
-  .handler(async ({ data, context }) => {
+  .handler(async ({ context }) => {
     const ctx = context as unknown as Ctx;
-    const admin = await requireAdmin(ctx);
-    const calc = calculateSubscriptionFee(data.branches, data.workers, Math.max(1, data.months), data.devices, await perDeviceRate(ctx));
-    const amount = data.months === 0 ? 0 : calc.total;
-    const code = await generateBB3UnlockCode({ username: data.username, phone: data.phone, tier: data.tier, days: data.days });
-    const { error } = await ctx.supabase.from("unlock_codes").insert({
-      id: crypto.randomUUID(),
-      unlock_code: code,
-      shop_username: data.username.toLowerCase(),
-      shop_phone: data.phone,
-      tier_code: data.tier,
-      plan_days: data.days,
-      amount_rwf: amount,
-      status: "ISSUED",
-      issued_by_admin: admin.label,
-      issued_at: Date.now(),
-    });
-    if (error) throw new Error(error.message);
-    const shopId = computeShopKey(data.username, data.phone);
-    if (data.extendCloud) {
-      const shop = await getShop(ctx, shopId);
-      if (shop) await activateShop(ctx, shopId, { addDays: data.days, branches: data.branches, workers: data.workers, devices: data.devices, monthly: calc.monthly });
-    }
-    await audit(ctx, admin.email, "ISSUE_MANUAL_CODE", `@${data.username}`, `${code} (${data.tier}, +${data.days}d, ${amount} FRw)`);
-    return { code, amount, shopId };
+    await requireAdmin(ctx);
+    throw new Error("Unlock codes can only be issued from an existing, manually verified payment request in the Payments queue.");
   });
 
 export const revokeCode = createServerFn({ method: "POST" })
