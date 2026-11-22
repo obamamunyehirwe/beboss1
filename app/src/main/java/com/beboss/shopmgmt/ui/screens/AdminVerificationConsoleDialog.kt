@@ -939,33 +939,6 @@ fun AdminVerificationConsoleDialog(
                                                     }
                                                 }
 
-                                                // Option 2: Auto-Unlock Directly Without Code
-                                                if (!isDirectUnlocked && !isRejected) {
-                                                    Button(
-                                                        onClick = {
-                                                            onDirectAutoUnlock(req) { ok ->
-                                                                if (ok) {
-                                                                    Toast.makeText(
-                                                                        context,
-                                                                        Localization.format("admin_shop_auto_unlocked_fmt", language, req.ownerUsername),
-                                                                        Toast.LENGTH_SHORT
-                                                                    ).show()
-                                                                }
-                                                            }
-                                                        },
-                                                        enabled = matchedShop != null && feeOk,
-                                                        modifier = Modifier
-                                                            .weight(1.3f)
-                                                            .heightIn(min = 48.dp)
-                                                            .testTag("admin_direct_unlock_btn_${req.id}"),
-                                                        colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
-                                                    ) {
-                                                        Icon(Icons.Default.FlashOn, contentDescription = null, modifier = Modifier.size(15.dp))
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                        Text(Localization.get("admin_auto_unlock", language), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                                                    }
-                                                }
-
                                                 if (!isApprovedAny && !isRejected) {
                                                     OutlinedButton(
                                                         onClick = {
