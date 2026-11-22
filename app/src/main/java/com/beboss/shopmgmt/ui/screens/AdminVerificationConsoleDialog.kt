@@ -258,7 +258,7 @@ fun AdminVerificationConsoleDialog(
                                 text = if (adminSession != null) {
                                     "Master Session: ${adminSession.email}"
                                 } else {
-                                    "Administrator account • Role verified by Supabase"
+                                    Localization.get("admin_role_verified", language)
                                 },
                                 fontSize = 11.sp,
                                 color = if (adminSession != null) ProfitGreen else OrangePrimary,
@@ -268,7 +268,7 @@ fun AdminVerificationConsoleDialog(
                     }
 
                     IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Close admin console")
+                        Icon(Icons.Default.Close, contentDescription = Localization.get("close", language))
                     }
                 }
 
@@ -288,7 +288,7 @@ fun AdminVerificationConsoleDialog(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
-                                text = "Sign in with any existing BeBoss administrator account. Supabase checks the signed-in account for an active admin role and SUPER_ADMIN profile. Account creation and role assignment remain restricted to authorized administrators.",
+                                text = Localization.get("admin_signin_help", language),
                                 fontSize = 11.5.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -296,7 +296,7 @@ fun AdminVerificationConsoleDialog(
                             OutlinedTextField(
                                 value = adminEmail,
                                 onValueChange = { adminEmail = it },
-                                label = { Text("Administrator Email") },
+                                label = { Text(Localization.get("admin_email_label", language)) },
                                 leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = OrangePrimary) },
                                 singleLine = true,
                                 modifier = Modifier
@@ -308,13 +308,13 @@ fun AdminVerificationConsoleDialog(
                             OutlinedTextField(
                                 value = adminPassword,
                                 onValueChange = { adminPassword = it },
-                                label = { Text("Admin Password *") },
+                                label = { Text(Localization.get("admin_password_label", language)) },
                                 leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = OrangePrimary) },
                                 trailingIcon = {
                                     IconButton(onClick = { showAdminPassword = !showAdminPassword }) {
                                         Icon(
                                             imageVector = if (showAdminPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            contentDescription = "Toggle password visibility"
+                                            contentDescription = Localization.get("admin_toggle_password_cd", language)
                                         )
                                     }
                                 },
@@ -356,11 +356,11 @@ fun AdminVerificationConsoleDialog(
                                 if (isAdminAuthenticating) {
                                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Authenticating...", fontWeight = FontWeight.Bold)
+                                    Text(Localization.get("admin_authenticating", language), fontWeight = FontWeight.Bold)
                                 } else {
                                     Icon(Icons.Default.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Sign In as Master Admin", fontWeight = FontWeight.Bold)
+                                    Text(Localization.get("admin_signin_button", language), fontWeight = FontWeight.Bold)
                                 }
                             }
 
@@ -374,7 +374,7 @@ fun AdminVerificationConsoleDialog(
                             ) {
                                 Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(16.dp), tint = OrangePrimary)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Export Admin Portal HTML", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
+                                Text(Localization.get("admin_export_portal", language), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
                             }
                         }
                     }
@@ -449,25 +449,25 @@ fun AdminVerificationConsoleDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         AdminKpiCard(
-                            label = "Pending",
+                            label = Localization.get("admin_kpi_pending", language),
                             value = "$pendingCount",
                             accent = if (pendingCount > 0) WarningAmber else ProfitGreen,
                             modifier = Modifier.weight(1f)
                         )
                         AdminKpiCard(
-                            label = "Queue FRw",
+                            label = Localization.get("admin_kpi_queue_rwf", language),
                             value = "${pendingTotalRwf / 1000}k",
                             accent = OrangePrimary,
                             modifier = Modifier.weight(1f)
                         )
                         AdminKpiCard(
-                            label = "Paid Active",
+                            label = Localization.get("admin_kpi_paid_active", language),
                             value = "${paidActiveShops.size}",
                             accent = ProfitGreen,
                             modifier = Modifier.weight(1f)
                         )
                         AdminKpiCard(
-                            label = "MRR FRw",
+                            label = Localization.get("admin_kpi_mrr", language),
                             value = "${monthlyMrrRwf / 1000}k",
                             accent = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f)
@@ -482,19 +482,19 @@ fun AdminVerificationConsoleDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         AdminKpiCard(
-                            label = "4-Day Trials",
+                            label = Localization.get("admin_kpi_trials", language),
                             value = "$activeTrialShopsCount",
                             accent = Color(0xFF0284C7),
                             modifier = Modifier.weight(1f)
                         )
                         AdminKpiCard(
-                            label = "Locked Shops",
+                            label = Localization.get("admin_kpi_locked", language),
                             value = "$lockedShopsCount",
                             accent = if (lockedShopsCount > 0) LossRed else ProfitGreen,
                             modifier = Modifier.weight(1f)
                         )
                         AdminKpiCard(
-                            label = "BB2 Issued",
+                            label = Localization.get("admin_kpi_bb3_issued", language),
                             value = "${unlockCodes.size}",
                             accent = OrangePrimary,
                             modifier = Modifier.weight(1f)
@@ -579,13 +579,13 @@ fun AdminVerificationConsoleDialog(
                             selected = selectedTab == 7,
                             onClick = { selectedTab = 7 },
                             modifier = Modifier.testTag("admin_tab_devices"),
-                            text = { Text("Devices (${shopDevices.size})", fontSize = 11.5.sp, fontWeight = FontWeight.Bold) }
+                            text = { Text("${Localization.get("admin_tab_devices", language)} (${shopDevices.size})", fontSize = 11.5.sp, fontWeight = FontWeight.Bold) }
                         )
                         Tab(
                             selected = selectedTab == 8,
                             onClick = { selectedTab = 8 },
                             modifier = Modifier.testTag("admin_tab_pay_config"),
-                            text = { Text("Pay Config", fontSize = 11.5.sp, fontWeight = FontWeight.Bold) }
+                            text = { Text(Localization.get("admin_tab_pay_config", language), fontSize = 11.5.sp, fontWeight = FontWeight.Bold) }
                         )
                     }
 
@@ -656,7 +656,7 @@ fun AdminVerificationConsoleDialog(
                                 OutlinedTextField(
                                     value = queueSearchQuery,
                                     onValueChange = { queueSearchQuery = it },
-                                    label = { Text("Search queue by shop, @username, ref or phone") },
+                                    label = { Text(Localization.get("admin_queue_search", language)) },
                                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                                     singleLine = true,
                                     modifier = Modifier
@@ -670,10 +670,10 @@ fun AdminVerificationConsoleDialog(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     listOf(
-                                        "ALL" to "All",
-                                        "PENDING_VERIFICATION" to "Pending",
-                                        "APPROVED" to "Approved",
-                                        "REJECTED" to "Rejected"
+                                        "ALL" to "admin_filter_all",
+                                        "PENDING_VERIFICATION" to "admin_filter_pending",
+                                        "APPROVED" to "admin_filter_approved",
+                                        "REJECTED" to "admin_filter_rejected"
                                     ).forEach { (statusKey, label) ->
                                         val selected = queueStatusFilter == statusKey
                                         OutlinedButton(
@@ -687,7 +687,7 @@ fun AdminVerificationConsoleDialog(
                                             )
                                         ) {
                                             Text(
-                                                text = label,
+                                                text = Localization.get(label, language),
                                                 fontSize = 10.5.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (selected) OrangePrimary else MaterialTheme.colorScheme.onSurface
@@ -736,7 +736,7 @@ fun AdminVerificationConsoleDialog(
 
                             if (filteredQueue.isEmpty()) {
                                 Text(
-                                    text = "No payment requests match the current filter. Pull 'Sync All' or switch to 'Issue Code'.",
+                                    text = Localization.get("admin_queue_empty", language),
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(8.dp)
@@ -797,7 +797,7 @@ fun AdminVerificationConsoleDialog(
                                                         )
                                                     }
                                                     Text(
-                                                        text = if (isDirectUnlocked) "AUTO-UNLOCKED" else req.status,
+                                                        text = if (isDirectUnlocked) Localization.get("admin_status_auto_unlocked", language) else when (req.status) { "PENDING_VERIFICATION" -> Localization.get("admin_filter_pending", language); "APPROVED" -> Localization.get("admin_filter_approved", language); "REJECTED" -> Localization.get("admin_filter_rejected", language); else -> req.status },
                                                         fontSize = 10.sp,
                                                         fontWeight = FontWeight.Black,
                                                         color = when {
@@ -810,13 +810,13 @@ fun AdminVerificationConsoleDialog(
                                             }
 
                                             Text(
-                                                text = "Account: @${req.ownerUsername} Ã¢â‚¬Â¢ Reg Phone: ${req.ownerPhone}",
+                                                text = Localization.format("admin_account_phone_fmt", language, req.ownerUsername, req.ownerPhone),
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                             Text(
-                                                text = "Sender Name: ${req.payerFullName.ifBlank { "Not specified" }} Ã¢â‚¬Â¢ Sender Phone: ${req.payerPhone}",
+                                                text = Localization.format("admin_sender_fmt", language, req.payerFullName.ifBlank { "Not specified" }, req.payerPhone),
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = OrangePrimary
@@ -828,7 +828,7 @@ fun AdminVerificationConsoleDialog(
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
-                                                text = "USSD: ${req.ussdCode.ifBlank { "Manual" }} Ã¢â‚¬Â¢ Ref: ${req.telcoReference.ifBlank { "WhatsApp Proof" }}",
+                                                text = Localization.format("admin_ussd_ref_fmt", language, req.ussdCode.ifBlank { "Manual" }, req.telcoReference.ifBlank { "WhatsApp Proof" }),
                                                 fontSize = 10.5.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -844,7 +844,7 @@ fun AdminVerificationConsoleDialog(
                                                     val matchedDays = ((matchedShop.subscriptionExpiresAt - nowMs).coerceAtLeast(0L) / 86_400_000L).toInt()
                                                     Column(modifier = Modifier.padding(8.dp)) {
                                                         Text(
-                                                            text = "Matched Shop: ${matchedShop.shopName} (${matchedShop.ownerName}) Ã¢â‚¬Â¢ @${matchedShop.ownerUsername}",
+                                                            text = Localization.format("admin_matched_shop_fmt", language, matchedShop.shopName, matchedShop.ownerName, matchedShop.ownerUsername),
                                                             fontSize = 10.5.sp,
                                                             fontWeight = FontWeight.Bold,
                                                             color = ProfitGreen
@@ -857,7 +857,7 @@ fun AdminVerificationConsoleDialog(
                                                     }
                                                 } else {
                                                     Text(
-                                                        text = "No matching shop_accounts row yet Ã¢â‚¬â€ ask owner to sync internet or verify @${req.ownerUsername} / ${req.ownerPhone}.",
+                                                        text = Localization.format("admin_no_matching_shop_fmt", language, req.ownerUsername, req.ownerPhone),
                                                         fontSize = 10.sp,
                                                         color = WarningAmber,
                                                         fontWeight = FontWeight.Medium,
@@ -891,7 +891,7 @@ fun AdminVerificationConsoleDialog(
                                             }
 
                                             Spacer(modifier = Modifier.height(4.dp))
-                                            // Option 1: Issue BB2 Unlock Code (+ WhatsApp reply button if issued)
+                                            // Option 1: Issue a server-signed BB3 code (+ WhatsApp reply button if issued)
                                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Button(
                                                     onClick = {
@@ -2337,7 +2337,7 @@ fun AdminVerificationConsoleDialog(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                        Text("LIVE USSD AUTO-FILL PREVIEW (5,000 FRw Example)", fontSize = 9.5.sp, fontWeight = FontWeight.Black, color = OrangePrimary)
+                                        Text(Localization.get("admin_live_ussd_preview", language), fontSize = 9.5.sp, fontWeight = FontWeight.Black, color = OrangePrimary)
                                         Text(
                                             text = "MTN: ${OfflineSubscriptionManager.buildMtnUssdCode(5000, draftConfig)} (${draftConfig.mtnRecipientName})",
                                             fontSize = 11.sp,
@@ -2365,8 +2365,8 @@ fun AdminVerificationConsoleDialog(
                                             savingCfg = false
                                             Toast.makeText(
                                                 context,
-                                                if (ok) "Global payment & WhatsApp config saved to Supabase!"
-                                                else "Failed to save payment config to Supabase.",
+                                                if (ok) Localization.get("admin_global_config_saved", language)
+                                                else Localization.get("admin_global_config_failed", language),
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         }
@@ -2384,7 +2384,7 @@ fun AdminVerificationConsoleDialog(
                                         Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
                                     }
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Save Global Config to Supabase", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text(Localization.get("admin_save_global_config", language), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 }
                             }
                         }
@@ -2401,7 +2401,7 @@ fun AdminVerificationConsoleDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Warning, contentDescription = null, tint = LossRed)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Reject Payment Claim", fontWeight = FontWeight.Bold)
+                    Text(Localization.get("admin_reject_payment_title", language), fontWeight = FontWeight.Bold)
                 }
             },
             text = {
@@ -2413,7 +2413,7 @@ fun AdminVerificationConsoleDialog(
                     OutlinedTextField(
                         value = rejectReasonInput,
                         onValueChange = { rejectReasonInput = it },
-                        label = { Text("Rejection Reason") },
+                        label = { Text(Localization.get("admin_reject_reason", language)) },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -2426,12 +2426,12 @@ fun AdminVerificationConsoleDialog(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed)
                 ) {
-                    Text("Confirm Reject", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(Localization.get("admin_confirm_reject", language), color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { requestToReject = null }) {
-                    Text("Cancel")
+                    Text(Localization.get("admin_cancel", language))
                 }
             }
         )
