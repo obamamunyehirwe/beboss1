@@ -298,9 +298,14 @@ object SupabaseAdminClient {
 
     fun getDefaultAdminEmail(): String = MASTER_ADMIN_EMAIL
 
-    fun isAllowedMasterAdminEmail(email: String): Boolean {
-        return email.trim().lowercase(Locale.ROOT) == MASTER_ADMIN_EMAIL
+    fun isValidAdminLoginEmail(email: String): Boolean {
+        val value = email.trim()
+        return value.length in 6..200 &&
+            Regex("^[A-Za-z0-9.!#$%&'*+/=?^`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$").matches(value)
     }
+
+    /** Legacy name retained for callers; authorization is role-based, not email-based. */
+    fun isAllowedMasterAdminEmail(email: String): Boolean = isValidAdminLoginEmail(email)
 
     fun isConfigured(): Boolean {
         val url = getSupabaseUrl()
@@ -366,7 +371,7 @@ object SupabaseAdminClient {
                 }
                 val raw = resp.body?.string().orEmpty()
                 val refreshed = parseAuthSession(JSONObject(raw), session.email, session.fullName)
-                if (refreshed != null && isAllowedMasterAdminEmail(refreshed.email)) {
+                if (refreshed != null && isValidAdminLoginEmail(refreshed.email) && verifyAdminAccess(refreshed)) {
                     activeAdminSession = refreshed
                     refreshed
                 } else {
@@ -470,17 +475,19 @@ object SupabaseAdminClient {
     // REAL SUPABASE ADMIN AUTHENTICATION (GoTrue Email/Password JWT)
     // -------------------------------------------------------------------------
     suspend fun signInAdmin(email: String, password: String): Result<SupabaseAdminSession> = withContext(Dispatchers.IO) {
-        if (!isAllowedMasterAdminEmail(email)) {
-            return@withContext Result.failure(
-                IllegalStateException("Access restricted to single master administrator ($MASTER_ADMIN_EMAIL).")
-            )
+        val cleanEmail = email.trim().lowercase(Locale.ROOT)
+        if (!isValidAdminLoginEmail(cleanEmail)) {
+            return@withContext Result.failure(IllegalStateException("Enter a valid BeBoss administrator email address."))
+        }
+        if (password.isBlank()) {
+            return@withContext Result.failure(IllegalStateException("Enter your administrator password."))
         }
         if (!isConfigured()) {
             return@withContext Result.failure(IllegalStateException("Configure SUPABASE_URL and SUPABASE_ANON_KEY in app secrets."))
         }
         try {
             val payload = JSONObject().apply {
-                put("email", MASTER_ADMIN_EMAIL)
+                put("email", cleanEmail)
                 put("password", password)
             }
             val req = Request.Builder()
@@ -499,13 +506,15 @@ object SupabaseAdminClient {
                         .ifBlank { json.optString("message") }
                         .ifBlank { "Sign in failed (HTTP ${resp.code})" }
                     val msg = if (rawMessage.contains("invalid login credentials", ignoreCase = true)) {
-                        "No valid Master Admin email/password pair was found. For first-time setup, the approved account must first receive and accept the secure invitation sent to $MASTER_ADMIN_EMAIL. If you already accepted it, use password recovery and check your email confirmation."
+                        "Email or password is incorrect. Only accounts with an active BeBoss Super Admin role can sign in here."
                     } else rawMessage
                     return@withContext Result.failure(IllegalStateException(msg))
                 }
-                val session = parseAuthSession(json, MASTER_ADMIN_EMAIL)
+                val session = parseAuthSession(json, cleanEmail)
                     ?: return@withContext Result.failure(IllegalStateException("Missing access token in Supabase response."))
-                ensureAdminProfile(session)
+                if (!verifyAdminAccess(session)) {
+                    return@withContext Result.failure(IllegalStateException("This account does not have an active BeBoss Super Admin role. Ask an existing master admin to grant access in Admin Team."))
+                }
                 activeAdminSession = session
                 logAdminAudit("ADMIN_LOGIN", session.email, "Signed in via Android Admin Console")
                 Result.success(session)
@@ -560,49 +569,41 @@ object SupabaseAdminClient {
         )
     }
 
-    private fun ensureAdminProfile(session: SupabaseAdminSession) {
-        if (!isAllowedMasterAdminEmail(session.email)) {
-            throw IllegalStateException("Unauthorized admin identity: ${session.email}")
-        }
-        if (session.userId.isBlank()) return
-        val checkReq = Request.Builder()
-            .url("${getSupabaseUrl()}/rest/v1/admin_profiles?user_id=eq.${URLEncoder.encode(session.userId, "UTF-8")}&limit=1")
+    /**
+     * The app never self-creates administrator roles. Access requires both
+     * public.user_roles(role=admin) and an active SUPER_ADMIN profile from the
+     * authenticated Supabase identity. RLS limits these reads to the signed-in user.
+     */
+    private fun verifyAdminAccess(session: SupabaseAdminSession): Boolean {
+        if (!isValidAdminLoginEmail(session.email) || session.userId.isBlank()) return false
+        val encodedUserId = URLEncoder.encode(session.userId, "UTF-8")
+        val roleRequest = Request.Builder()
+            .url("${getSupabaseUrl()}/rest/v1/user_roles?user_id=eq.$encodedUserId&role=eq.admin&select=user_id&limit=1")
             .addHeader("apikey", getSupabaseAnonKey())
             .addHeader("Authorization", "Bearer ${session.accessToken}")
             .get()
             .build()
-        client.newCall(checkReq).execute().use { resp ->
-            if (resp.isSuccessful) {
-                val arr = JSONArray(resp.body?.string().orEmpty().ifBlank { "[]" })
-                if (arr.length() > 0) {
-                    val row = arr.getJSONObject(0)
-                    if (!row.optBoolean("is_active", true)) {
-                        throw IllegalStateException("This admin operator account is deactivated.")
-                    }
-                    return
-                }
+        val hasAdminRole = client.newCall(roleRequest).execute().use { response ->
+            if (!response.isSuccessful) {
+                Log.w(TAG, "Admin role lookup rejected (HTTP ${response.code})")
+                return false
             }
+            JSONArray(response.body?.string().orEmpty().ifBlank { "[]" }).length() > 0
         }
+        if (!hasAdminRole) return false
 
-        val payload = JSONObject().apply {
-            put("user_id", session.userId)
-            put("email", session.email)
-            put("full_name", session.fullName)
-            put("role", "SUPER_ADMIN")
-            put("is_active", true)
-            put("created_at", System.currentTimeMillis())
-        }
-        val insReq = Request.Builder()
-            .url("${getSupabaseUrl()}/rest/v1/admin_profiles")
+        val profileRequest = Request.Builder()
+            .url("${getSupabaseUrl()}/rest/v1/admin_profiles?user_id=eq.$encodedUserId&role=eq.SUPER_ADMIN&is_active=eq.true&select=user_id&limit=1")
             .addHeader("apikey", getSupabaseAnonKey())
             .addHeader("Authorization", "Bearer ${session.accessToken}")
-            .addHeader("Content-Type", "application/json")
-            .addHeader("Prefer", "return=minimal")
-            .post(payload.toString().toRequestBody(jsonMediaType))
+            .get()
             .build()
-        client.newCall(insReq).execute().use { resp ->
-            if (!resp.isSuccessful) {
-                throw IllegalStateException("Admin profile authorization rejected (${resp.code}). Confirm your user in public.admin_profiles.")
+        return client.newCall(profileRequest).execute().use { response ->
+            if (!response.isSuccessful) {
+                Log.w(TAG, "Admin profile lookup rejected (HTTP ${response.code})")
+                false
+            } else {
+                JSONArray(response.body?.string().orEmpty().ifBlank { "[]" }).length() > 0
             }
         }
     }
