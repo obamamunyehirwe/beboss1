@@ -256,7 +256,7 @@ fun AdminVerificationConsoleDialog(
                             )
                             Text(
                                 text = if (adminSession != null) {
-                                    "Master Session: ${adminSession.email}"
+                                    Localization.format("admin_session_fmt", language, adminSession.email)
                                 } else {
                                     Localization.get("admin_role_verified", language)
                                 },
@@ -599,7 +599,7 @@ fun AdminVerificationConsoleDialog(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("Latest Issued Unlock Code (@$lastTargetUsername)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ProfitGreen)
+                                Text("${Localization.get("admin_kpi_bb3_issued", language)} (@$lastTargetUsername)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ProfitGreen)
                                 Text(
                                     text = lastGeneratedCode!!,
                                     fontFamily = FontFamily.Monospace,
@@ -711,7 +711,7 @@ fun AdminVerificationConsoleDialog(
                                         Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = "Batch Approve All Pending ($pendingCount Claims)",
+                                            text = Localization.format("admin_batch_approve_fmt", language, pendingCount),
                                             fontSize = 11.5.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -789,7 +789,7 @@ fun AdminVerificationConsoleDialog(
                                                         color = if (feeOk) ProfitGreen.copy(alpha = 0.14f) else WarningAmber.copy(alpha = 0.16f)
                                                     ) {
                                                         Text(
-                                                            text = if (feeOk) "FEE OK" else "CHECK ($expectedFee)",
+                                                            text = if (feeOk) Localization.get("admin_fee_ok", language) else Localization.format("admin_fee_check_fmt", language, expectedFee),
                                                             fontSize = 9.5.sp,
                                                             fontWeight = FontWeight.Bold,
                                                             color = if (feeOk) ProfitGreen else WarningAmber,
