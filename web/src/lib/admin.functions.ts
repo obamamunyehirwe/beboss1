@@ -301,32 +301,67 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
       branches: Number(req.branch_count), workers: Number(req.worker_count), devices: Number(req.device_count || 1), paymentTimeMs, paymentNote,
     });
     const now = Date.now();
-    const ins = await ctx.supabase.from("unlock_codes").insert({
-      id: crypto.randomUUID(), unlock_code: signed.code, payment_request_id: req.id,
-      shop_username: String(req.owner_username).trim().toLowerCase(), shop_phone: String(req.owner_phone).trim(),
-      device_challenge: req.device_challenge || "", tier_code: calc.tier, plan_days: calc.days, amount_rwf: calc.total,
-      duration_months: Number(req.duration_months), branch_count: Number(req.branch_count), worker_count: Number(req.worker_count), device_count: Number(req.device_count || 1),
-      payment_time_ms: paymentTimeMs, payment_provider: String(req.provider || ""), payer_phone: payerPhone, payer_full_name: payerFullName, payment_note: paymentNote,
-      plan_digest: signed.planDigest, status: "ISSUED", issued_by_admin: admin.label, issued_at: now,
-    });
-    if (ins.error) {
-      if (ins.error.code === "23505") throw new Error("This payment already has its one permitted unlock-code record. Refresh the queue.");
-      throw new Error(ins.error.message);
+    let codeToUse = signed.code;
+    let unlockCodeId = crypto.randomUUID();
+    let insertedNewCode = false;
+
+    // A retry after an insert/CAS interruption reuses the one code already linked to this payment.
+    const { data: priorCode, error: priorError } = await ctx.supabase.from("unlock_codes")
+      .select("id,unlock_code,plan_digest,status")
+      .eq("payment_request_id", req.id)
+      .maybeSingle();
+    if (priorError) throw new Error("Could not check the existing unlock record for this payment.");
+    if (priorCode) {
+      if (priorCode.status !== "ISSUED" || priorCode.plan_digest !== signed.planDigest || !priorCode.unlock_code) {
+        throw new Error("This payment already has a revoked or mismatched unlock record. A second code will not be created.");
+      }
+      codeToUse = String(priorCode.unlock_code);
+      unlockCodeId = String(priorCode.id);
+    } else {
+      const ins = await ctx.supabase.from("unlock_codes").insert({
+        id: unlockCodeId, unlock_code: signed.code, payment_request_id: req.id,
+        shop_username: String(req.owner_username).trim().toLowerCase(), shop_phone: String(req.owner_phone).trim(),
+        device_challenge: req.device_challenge || "", tier_code: calc.tier, plan_days: calc.days, amount_rwf: calc.total,
+        duration_months: Number(req.duration_months), branch_count: Number(req.branch_count), worker_count: Number(req.worker_count), device_count: Number(req.device_count || 1),
+        payment_time_ms: paymentTimeMs, payment_provider: String(req.provider || ""), payer_phone: payerPhone, payer_full_name: payerFullName, payment_note: paymentNote,
+        plan_digest: signed.planDigest, status: "ISSUED", issued_by_admin: admin.label, issued_at: now,
+      });
+      if (ins.error) {
+        if (ins.error.code === "23505") {
+          const { data: winner } = await ctx.supabase.from("unlock_codes").select("id,unlock_code,plan_digest,status").eq("payment_request_id", req.id).maybeSingle();
+          if (!winner || winner.status !== "ISSUED" || winner.plan_digest !== signed.planDigest || !winner.unlock_code) {
+            throw new Error("A conflicting unlock-code record already exists for this payment. No duplicate was issued.");
+          }
+          codeToUse = String(winner.unlock_code);
+          unlockCodeId = String(winner.id);
+        } else {
+          throw new Error(ins.error.message);
+        }
+      } else {
+        insertedNewCode = true;
+      }
     }
 
     const claim = await ctx.supabase.from("payment_requests").update({
-      status: "APPROVED", approval_mode: "UNLOCK_CODE", amount_rwf: calc.total, generated_unlock_code: signed.code,
+      status: "APPROVED", approval_mode: "UNLOCK_CODE", amount_rwf: calc.total, generated_unlock_code: codeToUse,
       verified_by_admin: admin.label, rejection_reason: "", updated_at: now,
     }).eq("id", req.id).eq("status", req.status).select("id").maybeSingle();
 
     if (claim.error || !claim.data) {
-      await ctx.supabase.from("unlock_codes").update({ status: "REVOKED" }).eq("payment_request_id", req.id).eq("status", "ISSUED");
+      const { data: latest } = await ctx.supabase.from("payment_requests").select("status,generated_unlock_code").eq("id", req.id).maybeSingle();
+      if (latest?.status === "APPROVED" && latest.generated_unlock_code === codeToUse) {
+        const { data: activeShop } = await ctx.supabase.from("shop_accounts").select("subscription_expires_at").eq("id", shopId).maybeSingle();
+        return { code: codeToUse, days: calc.days, tier: calc.tier, total: calc.total, expiresAt: Number(activeShop?.subscription_expires_at ?? 0), shopName: req.shop_name, username: req.owner_username, phone: payerPhone, alreadyApproved: true };
+      }
+      if (insertedNewCode) {
+        await ctx.supabase.from("unlock_codes").update({ status: "REVOKED" }).eq("id", unlockCodeId).eq("status", "ISSUED");
+      }
       throw new Error("Another administrator changed this payment first. Refresh the queue before trying again.");
     }
 
     const expiresAt = await activateShop(ctx, shopId, { addDays: calc.days, branches: req.branch_count, workers: req.worker_count, devices: req.device_count || 1, monthly: calc.monthly });
     await audit(ctx, admin.email, "APPROVE_PAYMENT", `@${req.owner_username}`, `Verified ${payerFullName || payerPhone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. Unique BB3 code issued for ${req.id}.`);
-    return { code: signed.code, days: calc.days, tier: calc.tier, total: calc.total, expiresAt, shopName: req.shop_name, username: req.owner_username, phone: payerPhone, alreadyApproved: false };
+    return { code: codeToUse, days: calc.days, tier: calc.tier, total: calc.total, expiresAt, shopName: req.shop_name, username: req.owner_username, phone: payerPhone, alreadyApproved: false };
   });
 
 export const directAutoUnlock = createServerFn({ method: "POST" })
