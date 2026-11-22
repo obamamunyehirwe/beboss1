@@ -16,7 +16,7 @@ const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const INVITE_MARKER = "BEBOSS_INITIAL_ADMIN_INVITE_SENT";
 // Supabase's built-in SMTP quota is shared project-wide (2 emails/hour).
 // Keep a 65-minute safety window between successful sends to avoid hammering Auth.
-const RESEND_COOLDOWN_MS = 65 * 60 * 1000;
+const RESEND_COOLDOWN_MS = 90 * 60 * 1000;
 const STALE_PENDING_MS = 2 * 60 * 1000;
 
 function json(status: number, body: Record<string, unknown>) {
@@ -221,7 +221,7 @@ Deno.serve(async (request: Request) => {
         status: "cooldown",
         email,
         retryAfterSeconds: reserved.cooldownSeconds,
-        message: "A setup email was sent recently. Wait before requesting another one.",
+        message: "The original administrator invitation was already sent to the approved inbox. Check your inbox and spam folder; another email request is temporarily paused to respect the provider limit.",
       });
     }
 
