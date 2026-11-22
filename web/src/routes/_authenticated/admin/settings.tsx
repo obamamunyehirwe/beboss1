@@ -149,7 +149,7 @@ function ConnectionPanel({ origin }: { origin: string }) {
   const lines = [
     ["SUPABASE_URL", url],
     ["SUPABASE_ANON_KEY", key],
-    ["SUPABASE_ADMIN_EMAIL", "reponsekdz@gmail.com"],
+    ["SUPABASE_ADMIN_EMAIL", "obamamunyehirwe@gmail.com"],
   ] as const;
   return (
     <section className="rounded-2xl border border-border bg-card p-5">
