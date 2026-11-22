@@ -196,7 +196,7 @@ fun AdminVerificationConsoleDialog(
 
     // Reject Modal State
     var requestToReject by remember { mutableStateOf<SupabasePaymentRequestDto?>(null) }
-    var rejectReasonInput by remember { mutableStateOf("Payment reference not found on MoMo statement") }
+    var rejectReasonInput by remember { mutableStateOf("Payment could not be confirmed in the provider statement") }
 
     // Manual Generator Form State
     var manualUsername by remember { mutableStateOf("") }
