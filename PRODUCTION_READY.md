@@ -73,7 +73,7 @@
 ### For Administrators
 
 1. **Access**: https://admin.beboss.rw
-2. **Sign In**: Email: `reponsekdz@gmail.com`
+2. **Sign In**: Email: `obamamunyehirwe@gmail.com`
 3. **Verify Payments**: Approve MTN MoMo / Airtel Money transfers
 4. **Issue Codes**: Generate BB2 unlock codes
 5. **Monitor**: Track all shops in real-time
