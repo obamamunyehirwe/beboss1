@@ -313,8 +313,8 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
       .maybeSingle();
     if (priorError) throw new Error("Could not check the existing unlock record for this payment.");
     if (priorCode) {
-      if (priorCode.status !== "ISSUED" || priorCode.plan_digest !== signed.planDigest || !priorCode.unlock_code) {
-        throw new Error("This payment already has a revoked or mismatched unlock record. A second code will not be created.");
+      if (!["ISSUED", "REDEEMED"].includes(String(priorCode.status)) || priorCode.plan_digest !== signed.planDigest || !priorCode.unlock_code) {
+        throw new Error("This payment already has an active or redeemed unlock record with different plan details. A second code will not be created.");
       }
       codeToUse = String(priorCode.unlock_code);
       unlockCodeId = String(priorCode.id);
@@ -330,7 +330,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
       if (ins.error) {
         if (ins.error.code === "23505") {
           const { data: winner } = await ctx.supabase.from("unlock_codes").select("id,unlock_code,plan_digest,status").eq("payment_request_id", req.id).in("status", ["ISSUED", "REDEEMED"]).maybeSingle();
-          if (!winner || winner.status !== "ISSUED" || winner.plan_digest !== signed.planDigest || !winner.unlock_code) {
+          if (!winner || !["ISSUED", "REDEEMED"].includes(String(winner.status)) || winner.plan_digest !== signed.planDigest || !winner.unlock_code) {
             throw new Error("A conflicting unlock-code record already exists for this payment. No duplicate was issued.");
           }
           codeToUse = String(winner.unlock_code);
