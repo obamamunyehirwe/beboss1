@@ -115,7 +115,7 @@ function AdminLayout() {
         <main className="admin-main-content mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
           {!ctx.data.signingKeyConfigured && ctx.data.isAdmin ? (
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
-              <span className="text-warning">Unlock codes can't be issued until you add the BB2 signing key used in your Android app.</span>
+              <span className="text-warning">New unlock codes require the matching BB3 ECDSA P-256 private key. Add or verify it in Settings. Legacy BB2 codes are validated online against their original issued record; they do not use a shared signing key.</span>
               <Button asChild size="sm" variant="soft">
                 <Link to="/admin/settings">Add signing key</Link>
               </Button>
