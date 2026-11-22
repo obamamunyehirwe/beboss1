@@ -18,6 +18,7 @@ import { deleteRelease, publishRelease, setCurrentRelease } from "@/lib/admin.fu
 import { downloadsQuery, releasesQuery } from "@/lib/admin-queries";
 import { DOWNLOAD_PATH } from "@/lib/queries";
 import { formatBytes, formatDateTime } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/releases")({
   component: ReleasesPage,
@@ -32,6 +33,7 @@ async function sha256Hex(file: File) {
 }
 
 function ReleasesPage() {
+  const a = useAdminText();
   const isAdmin = !!useAdminCtx().data?.isAdmin;
   const releases = useQuery(releasesQuery);
   const downloads = useQuery(downloadsQuery);
@@ -78,20 +80,20 @@ function ReleasesPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
-      toast.error("Choose the APK file");
+      toast.error(a("Choose the APK file"));
       return;
     }
     if (!file.name.toLowerCase().endsWith(".apk")) {
-      toast.error("The file must be an .apk");
+      toast.error(a("The file must be an .apk"));
       return;
     }
     if (file.size > MAX_APK_BYTES) {
-      toast.error("The APK must be 100 MB or smaller.");
+      toast.error(a("The APK must be 100 MB or smaller."));
       return;
     }
     const signature = new Uint8Array(await file.slice(0, 4).arrayBuffer());
     if (signature[0] !== 0x50 || signature[1] !== 0x4b) {
-      toast.error("This file does not have a valid APK/ZIP package signature.");
+      toast.error(a("This file does not have a valid APK/ZIP package signature."));
       return;
     }
     try {
@@ -110,7 +112,7 @@ function ReleasesPage() {
       qc.invalidateQueries({ queryKey: ["admin", "releases"] });
       qc.invalidateQueries({ queryKey: ["public-site"] });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
+      toast.error(err instanceof Error ? err.message : a("Upload failed"));
     } finally {
       setStage("");
     }
@@ -128,7 +130,7 @@ function ReleasesPage() {
         <StatCard label="Current version" value={rows.find((r) => r.is_current)?.version_name ?? "—"} sub={<span className="break-all font-mono">{downloadUrl}</span>} icon={Star} />
       </div>
       <div className="rounded-2xl border border-border bg-card p-5">
-        <h2 className="font-semibold">Downloads per day</h2>
+        <h2 className="font-semibold">{a("Downloads per day")}</h2>
         <div className="mt-3 h-44">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={daily}>
@@ -145,7 +147,7 @@ function ReleasesPage() {
         <form onSubmit={submit} className="grid gap-4 rounded-2xl border border-border bg-card p-5 lg:grid-cols-2">
           <div className="space-y-4">
             <h2 className="flex items-center gap-2 font-semibold">
-              <UploadCloud className="size-4 text-primary" /> Publish a new version
+              <UploadCloud className="size-4 text-primary" /> {a("Publish a new version")}
             </h2>
             <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border px-4 py-8 text-center hover:border-primary/50">
               <UploadCloud className="size-8 text-muted-foreground" />
@@ -154,31 +156,31 @@ function ReleasesPage() {
             </label>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
-                <Label>Version name</Label>
+                <Label>{a("Version name")}</Label>
                 <Input value={form.version_name} onChange={(e) => setForm({ ...form, version_name: e.target.value })} placeholder="2.1.0" required pattern="^[0-9]+(\.[0-9]+){0,3}$" />
               </div>
               <div className="space-y-1.5">
-                <Label>Version code</Label>
+                <Label>{a("Version code")}</Label>
                 <Input type="number" min={1} value={form.version_code} onChange={(e) => setForm({ ...form, version_code: Math.max(1, Number(e.target.value) || 1) })} />
               </div>
               <div className="space-y-1.5">
-                <Label>Minimum</Label>
+                <Label>{a("Minimum")}</Label>
                 <Input value={form.min_android} onChange={(e) => setForm({ ...form, min_android: e.target.value })} />
               </div>
             </div>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex-1 space-y-1.5">
-              <Label>What's new</Label>
-              <Textarea rows={6} value={form.release_notes} onChange={(e) => setForm({ ...form, release_notes: e.target.value })} maxLength={5000} placeholder="• Faster checkout&#10;• New Kiswahili translations" />
+              <Label>{a("What's new")}</Label>
+              <Textarea rows={6} value={form.release_notes} onChange={(e) => setForm({ ...form, release_notes: e.target.value })} maxLength={5000} placeholder={a("• Faster checkout&#10;• New Kiswahili translations")} />
             </div>
             <label className="flex items-center gap-3 text-sm">
               <Switch checked={form.make_current} onCheckedChange={(v) => setForm({ ...form, make_current: v })} />
-              Make this the current download and push the update to apps
+              {a("Make this the current download and push the update to apps")}
             </label>
             <Button type="submit" variant="hero" disabled={!!stage}>
               {stage ? <Loader2 className="animate-spin" /> : <UploadCloud />}
-              {stage === "hashing" ? "Verifying file…" : stage === "uploading" ? "Uploading…" : stage === "publishing" ? "Publishing…" : "Upload & publish"}
+              {stage === "hashing" ? a("Verifying file…") : stage === "uploading" ? a("Uploading…") : stage === "publishing" ? a("Publishing…") : a("Upload & publish")}
             </Button>
           </div>
         </form>
@@ -198,7 +200,7 @@ function ReleasesPage() {
                   <span className="font-mono text-xs text-muted-foreground">({r.version_code})</span>
                   {r.is_current ? (
                     <Badge variant="success">
-                      <CheckCircle2 className="mr-1 size-3" /> Current
+                      <CheckCircle2 className="mr-1 size-3" /> {a("Current")}
                     </Badge>
                   ) : null}
                 </div>
@@ -210,26 +212,26 @@ function ReleasesPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="mr-2 text-sm">
-                  <span className="font-display text-xl font-bold">{r.download_count}</span> <span className="text-muted-foreground">downloads</span>
+                  <span className="font-display text-xl font-bold">{r.download_count}</span> <span className="text-muted-foreground">{a("downloads")}</span>
                 </span>
                 <Button size="sm" variant="glass" asChild>
                   <a href={`${DOWNLOAD_PATH}?release=${r.id}&ch=admin`}>
-                    <Download /> APK
+                    <Download /> {a("APK")}
                   </a>
                 </Button>
                 {isAdmin && !r.is_current ? (
                   <>
                     <Button size="sm" variant="soft" onClick={() => setCurrent.mutate({ id: r.id, public_download_url: downloadUrl })}>
-                      <Star /> Make current
+                      <Star /> {a("Make current")}
                     </Button>
                     <ConfirmAction
                       trigger={
-                        <Button size="icon" variant="ghost" aria-label="Delete release">
+                        <Button size="icon" variant="ghost" aria-label={a("Delete release")}>
                           <Trash2 />
                         </Button>
                       }
-                      title={`Delete v${r.version_name}?`}
-                      description="The APK file is removed from storage and its download link stops working."
+                      title={a("Delete release?")}
+                      description={a("The APK file is removed from storage and its download link stops working.")}
                       destructive
                       confirmLabel="Delete"
                       onConfirm={() => del.mutate({ id: r.id })}
