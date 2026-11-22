@@ -235,7 +235,7 @@ data class BatchApprovalResult(
 object SupabaseAdminClient {
 
     private const val TAG = "SupabaseAdminClient"
-    const val MASTER_ADMIN_EMAIL = "reponsekdz@gmail.com"
+    const val MASTER_ADMIN_EMAIL = "obamamunyehirwe@gmail.com"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     @Volatile
