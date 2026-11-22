@@ -1076,10 +1076,10 @@ internal object LocalizationScreens {
             "Namba Iliyotuma Pesa *"
         ),
         "sub_telco_ref_label" to locEntry(
-            "MoMo / Airtel SMS Reference ID *",
-            "Kode y'Ubutumwa bwa MoMo / Airtel *",
-            "Référence SMS MoMo / Airtel *",
-            "Namba ya Muamala wa SMS *"
+            "Payment note (optional)",
+            "Icyitonderwa ku bwishyu (si ngombwa)",
+            "Note de paiement (facultative)",
+            "Dokezo la malipo (hiari)"
         ),
         "sub_submit_proof_btn" to locEntry(
             "Submit Proof & Notify WhatsApp",
@@ -1089,9 +1089,9 @@ internal object LocalizationScreens {
         ),
         "sub_proof_err_missing" to locEntry(
             "Enter the payer phone, full registered name, and payment date/time. No transaction reference is required.",
-            "Injiza nimero yohereje, amazina yuzuye na kode y'ubutumwa bwa MoMo.",
-            "Entrez le numéro payeur, le nom complet et la référence de transaction.",
-            "Weka namba iliyotuma, jina kamili na kumbukumbu ya muamala."
+            "Injiza amazina yuzuye na telefoni by'uwishyuye hamwe n'igihe yishyuye.",
+            "Saisissez le nom complet du payeur, son téléphone et l'heure du paiement.",
+            "Weka jina kamili na simu ya mlipaji pamoja na muda wa malipo."
         ),
         "sub_proof_submitted_toast" to locEntry(
             "Payment proof queued for Admin verification!",
@@ -1112,10 +1112,10 @@ internal object LocalizationScreens {
             "Huisha leseni kuendelea na mauzo, stoo na usawazishaji"
         ),
         "sub_unlock_waiting_hint" to locEntry(
-            "If you already paid, tap Sync Cloud Approvals or enter your BB2 code below.",
-            "Niba wishyuye, kanda Shakisha Kode kuri Cloud cyangwa winjize kode BB2 hasi.",
-            "Si vous avez déjà payé, touchez Synchroniser Cloud ou entrez le code BB2.",
-            "Kama umeshalipa, gusa Sawazisha Wingu au weka msimbo wa BB2 chini."
+            "If you already paid, sync cloud approvals or enter the BB3 code issued for your payment. Historical BB2 codes are verified online.",
+            "Niba wishyuye, shakisha ibyemejwe kuri Cloud cyangwa winjize kode ya BB3 yahawe ubwishyu bwawe. Kode za kera za BB2 zigenzurwa kuri internet.",
+            "Si vous avez déjà payé, synchronisez les validations cloud ou saisissez le code BB3 de votre paiement. Les anciens BB2 sont vérifiés en ligne.",
+            "Ikiwa tayari umelipa, sawazisha idhini za cloud au weka msimbo wa BB3 wa malipo yako. BB2 za zamani hukaguliwa mtandaoni."
         ),
         "sub_invoice_dialog_title" to locEntry(
             "Official Subscription Invoice",
@@ -1691,10 +1691,10 @@ internal object LocalizationScreens {
         "sub_admin_wa_row_fmt" to locEntry("Admin WhatsApp: %s", "WhatsApp ya Admin: %s", "WhatsApp Admin : %s", "WhatsApp ya Admin: %s"),
         "sub_admin_wa_unset" to locEntry("Set Admin WhatsApp in Admin Console -> Pay Config", "Shyiraho WhatsApp mu Igenamiterere rya Admin", "Définir WhatsApp dans Console Admin -> Config Paiement", "Weka WhatsApp katika Dashibodi ya Admin"),
         "sub_ussd_instructions_fmt" to locEntry(
-            "1) Complete payment in the operator's USSD flow for %d FRw.\n2) Send your username, registered phone, payer details and transaction reference in the app or via WhatsApp. An admin checks settlement, then issues a BB2 code or approves an unlock on sync. Opening USSD alone does not confirm payment.",
-            "1) Ishyura %d FRw ukoresheje USSD ya MTN cyangwa Airtel.\n2) Ohereza username, nimero yanditseho n'amazina y'uwishyuye kuri WhatsApp. Admin agenzura ko byagezeho akaguha kode ya BB2 cyangwa agafungura konti kuri cloud.",
-            "1) Effectuez le paiement USSD de %d FRw.\n2) Envoyez identifiant, téléphone, payeur et référence via l'app ou WhatsApp. L'admin vérifie puis délivre un code BB2 ou approuve la synchro.",
-            "1) Kamilisha malipo ya %d FRw kwa USSD.\n2) Tuma jina la mtumiaji, simu na kumbukumbu kwa WhatsApp. Msimamizi atakagua na kutoa msimbo wa BB2 au kufungua akaunti."
+            "1) Complete the %d FRw payment in the operator's USSD flow.\n2) Submit payer name and phone, payment time, selected plan and an optional note in BeBoss. No transaction reference is required. An admin checks the provider statement before issuing a unique BB3 code or approving cloud unlock. Opening USSD alone does not confirm payment.",
+            "1) Ishyura %d FRw ukoresheje USSD ya MTN cyangwa Airtel.\n2) Ohereza amazina na telefoni by'uwishyuye, igihe yishyuye, gahunda wahisemo n'icyitonderwa niba gihari. Nta nimero y'igikorwa isabwa. Admin agenzura inyandiko za MTN cyangwa Airtel mbere yo gutanga kode ya BB3 cyangwa kwemeza gufungura kuri cloud.",
+            "1) Payez %d FRw via USSD MTN ou Airtel.\n2) Envoyez le nom et le téléphone du payeur, l'heure du paiement, le forfait choisi et une note facultative. Aucune référence de transaction n'est demandée. L'admin vérifie le relevé opérateur avant d'émettre un code BB3 unique ou d'approuver le déblocage cloud.",
+            "1) Kamilisha malipo ya %d FRw kwa USSD.\n2) Tuma jina na simu ya mlipaji, muda wa malipo, mpango uliochaguliwa na dokezo la hiari. Hakuna namba ya muamala inayohitajika. Msimamizi hukagua taarifa za mtoa huduma kabla ya kutoa BB3 ya kipekee au kuidhinisha ufunguaji wa cloud."
         ),
         "sub_mtn_ussd_btn" to locEntry("MTN USSD *182#", "MTN USSD *182#", "USSD MTN *182#", "USSD MTN *182#"),
         "sub_airtel_ussd_btn" to locEntry("Airtel USSD *500#", "Airtel USSD *500#", "USSD Airtel *500#", "USSD Airtel *500#"),
@@ -1702,7 +1702,7 @@ internal object LocalizationScreens {
         "sub_created_username_label" to locEntry("Created Account Username *", "Username ya Konti *", "Nom d'utilisateur du compte *", "Jina la Akaunti (Username) *"),
         "sub_registered_phone_label" to locEntry("Registered Account Phone Number *", "Nimero ya Terefone Yanditseho *", "Téléphone enregistré du compte *", "Namba ya Simu Iliyosajiliwa *"),
         "sub_sender_phone_short_label" to locEntry("Sender MoMo Phone *", "Terefone Yohereje *", "Tél. Payeur *", "Simu Iliyotuma *"),
-        "sub_momo_ref_opt_label" to locEntry("MoMo SMS Ref (Optional)", "Kode ya SMS ya MoMo (Si ngombwa)", "Réf. SMS MoMo (Optionnel)", "Kumbukumbu ya SMS (Hiari)"),
+        "sub_momo_ref_opt_label" to locEntry("Payment note (optional)", "Icyitonderwa ku bwishyu (si ngombwa)", "Note de paiement (facultative)", "Dokezo la malipo (hiari)"),
         "sub_proof_err_required" to locEntry(
             "Please enter Username, Registered Phone, and Full Names on the sender phone.",
             "Injiza Username, Terefone yanditseho n'amazina yuzuye y'uwohereje.",
@@ -1710,12 +1710,12 @@ internal object LocalizationScreens {
             "Weka jina la mtumiaji, simu iliyosajiliwa na majina kamili ya mtumaji."
         ),
         "sub_submit_wa_proof_btn" to locEntry("Submit & Send Proof via WhatsApp", "Ohereza Gihamya kuri WhatsApp", "Soumettre & Envoyer via WhatsApp", "Tuma Uthibitisho kwa WhatsApp"),
-        "sub_submit_direct_ref_btn" to locEntry("Submit MoMo Reference for Verification", "Ohereza Kode ya MoMo Kugenjurwa", "Soumettre Référence MoMo", "Tuma Kumbukumbu ya MoMo"),
+        "sub_submit_direct_ref_btn" to locEntry("Submit payment proof", "Ohereza gihamya y'ubwishyu", "Envoyer la preuve de paiement", "Tuma uthibitisho wa malipo"),
         "sub_paste_bb2_hint_fmt" to locEntry(
-            "Paste or type the BB2-... code bound to @%s (%s). Complete BB2 codes verify and auto-unlock instantly.",
-            "Shyiramo kode ya BB2-... ihujwe na @%s (%s). Kode yuzuye ya BB2 ihita ifungura konti ako kanya.",
-            "Collez ou saisissez le code BB2-... lié à @%s (%s). Les codes BB2 complets déverrouillent instantanément.",
-            "Bandika au chapa msimbo wa BB2-... uliounganishwa na @%s (%s). Misimbo kamili hufungua papo hapo."
+            "Enter the payment-linked BB3 code issued for @%s (%s). Historical BB2 codes are checked online against their original issue record.",
+            "Injiza kode ya BB3 ijyanye n'ubwishyu yatangiwe @%s (%s). Kode za kera za BB2 zigenzurwa kuri internet hakurikijwe inyandiko zatangiweho.",
+            "Saisissez le code BB3 lié au paiement émis pour @%s (%s). Les anciens codes BB2 sont vérifiés en ligne à partir de leur enregistrement d'origine.",
+            "Weka msimbo wa BB3 unaohusishwa na malipo uliotolewa kwa @%s (%s). Misimbo ya zamani ya BB2 hukaguliwa mtandaoni kulingana na rekodi yake ya awali."
         ),
         "sub_recent_requests_fmt" to locEntry("Recent Payment Verification Requests (%d)", "Ibyoherejwe Kugenjurwa (%d)", "Demandes de Vérification (%d)", "Maombi ya Hivi Karibuni (%d)"),
         "sub_req_meta_fmt" to locEntry("@%s (%s) • %d dev • %s • %s", "@%s (%s) • tel %d • %s • %s", "@%s (%s) • %d app. • %s • %s", "@%s (%s) • vifaa %d • %s • %s"),
@@ -1733,20 +1733,20 @@ internal object LocalizationScreens {
         "sub_total_days_fmt" to locEntry("Total: %d FRw (%d Days)", "Yose: %d FRw (Iminsi %d)", "Total : %d FRw (%d Jours)", "Jumla: %d FRw (Siku %d)"),
         "sub_payer_phone_hint" to locEntry("Payer Phone Number (078... / 073...)", "Terefone Yishyura (078... / 073...)", "Numéro Payeur (078... / 073...)", "Namba ya Mlipaji (078... / 073...)"),
         "sub_dialer_status_fmt" to locEntry(
-            "Dialer opened for %s. Complete payment with the operator, then submit your SMS reference for admin review.",
-            "USSD ya %s yafungutse. Rangiza kwishyura, maze wohereze kode y'ubutumwa kuri Admin.",
-            "Composeur ouvert pour %s. Terminez le paiement puis soumettez votre référence SMS à l'admin.",
-            "Piga imefunguliwa kwa %s. Kamilisha malipo kisha tuma kumbukumbu ya SMS kwa Admin."
+            "Dialer opened for %s. Complete payment with the operator, then submit payer details, payment time and plan for admin review.",
+            "USSD ya %s yafungutse. Rangiza kwishyura, wohereze amazina na telefoni by'uwishyuye, igihe na gahunda kuri Admin.",
+            "Composeur ouvert pour %s. Terminez le paiement puis envoyez le payeur, l'heure et le forfait à l'admin.",
+            "Piga imefunguliwa kwa %s. Kamilisha malipo kisha tuma jina na simu ya mlipaji, muda na mpango kwa Admin."
         ),
         "sub_dial_ussd_fmt" to locEntry("Dial USSD (%s)", "Kanda USSD (%s)", "Composer USSD (%s)", "Piga USSD (%s)"),
-        "sub_tx_ref_label" to locEntry("Transaction reference (e.g. MP260903...)", "Kode y'ubutumwa (MP260903...)", "Référence transaction (ex. MP260903...)", "Kumbukumbu ya muamala (MP260903...)"),
+        "sub_tx_ref_label" to locEntry("Payment note (optional)", "Icyitonderwa ku bwishyu (si ngombwa)", "Note de paiement (facultative)", "Dokezo la malipo (hiari)"),
         "sub_ref_format_note" to locEntry(
-            "A reference format check does not verify settlement. Submit payment proof by WhatsApp for admin review.",
-            "Kugenzura imiterere ya kode ntibyemeza ubwishyu. Ohereza gihamya kuri WhatsApp ya Admin.",
-            "Le contrôle de format ne valide pas le paiement. Envoyez la preuve par WhatsApp à l'admin.",
-            "Ukaguzi wa muundo hauthibitishi malipo. Tuma uthibitisho kwa WhatsApp kwa Admin."
+            "A payment note is for context only. An admin must verify the payment against the mobile-money provider statement.",
+            "Icyitonderwa ku bwishyu gitanga amakuru gusa. Umuyobozi agomba kugenzura ko MTN cyangwa Airtel yemeje ubwishyu.",
+            "La note de paiement sert uniquement de contexte. Un administrateur doit vérifier le règlement sur le relevé de l'opérateur mobile.",
+            "Dokezo la malipo ni maelezo tu. Msimamizi lazima ahakiki malipo kwenye taarifa ya mtoa huduma wa simu."
         ),
-        "sub_checking_ref" to locEntry("Checking reference format...", "Kugenzura kode...", "Vérification du format...", "Inakagua muundo wa kumbukumbu..."),
+        "sub_checking_ref" to locEntry("Saving payment proof...", "Kubika gihamya y'ubwishyu...", "Enregistrement de la preuve...", "Inahifadhi uthibitisho wa malipo..."),
         "sub_checking_btn" to locEntry("Checking...", "Birimo kugenzurwa...", "Vérification...", "Inakagua..."),
         "sub_check_ref_btn_fmt" to locEntry("Check reference (%d FRw)", "Genzura kode (%d FRw)", "Vérifier référence (%d FRw)", "Kagua kumbukumbu (%d FRw)")
     )

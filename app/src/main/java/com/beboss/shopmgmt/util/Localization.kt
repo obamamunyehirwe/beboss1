@@ -207,18 +207,18 @@ object Localization {
             "Majaribio ya Bure Siku 4 • Kisha 5,000 FRw / mwezi"
         ),
         "reg_trial_card_desc" to locEntry(
-            "After 4 free days, submit your payment details for admin review. After approval, enter the BB2 code or wait for the shop to unlock on sync.",
-            "Nyuma y'iminsi 4 y'ubuntu, ohereza amakuru y'ubwishyu kugira ngo umuyobozi ayagenzure. Nyuma yo kwemezwa, koresha kode ya BB2 cyangwa utegereze ko iduka rifunguka rimaze guhuza.",
-            "Après 4 jours d'essai, envoyez les détails du paiement pour vérification par un administrateur. Après validation, saisissez le code BB2 ou attendez le déblocage à la synchronisation.",
-            "Baada ya siku 4 za jaribio, tuma taarifa za malipo zikaguliwe na msimamizi. Baada ya kuidhinishwa, weka msimbo wa BB2 au subiri duka lifunguke baada ya kusawazisha."
+            "After 4 free days, submit payment proof for admin review. After approval, use the BB3 code generated for your payment or wait for unlock on sync. Historical BB2 codes are verified online.",
+            "Nyuma y'iminsi 4 y'ubuntu, ohereza gihamya y'ubwishyu igenzurwe n'umuyobozi. Nyuma yo kwemezwa, koresha kode ya BB3 y'ubwishyu bwawe cyangwa utegereze ko iduka rifunguka kuri sync. Kode za kera za BB2 zigenzurwa kuri internet.",
+            "Après 4 jours d'essai, envoyez la preuve de paiement pour vérification. Après validation, utilisez le code BB3 généré pour votre paiement ou attendez la synchronisation. Les anciens BB2 sont vérifiés en ligne.",
+            "Baada ya siku 4 za jaribio, tuma uthibitisho wa malipo ukaguliwe na msimamizi. Baada ya kuidhinishwa, tumia msimbo wa BB3 wa malipo yako au subiri usawazishaji. Misimbo ya zamani ya BB2 hukaguliwa mtandaoni."
         ),
         "reg_owner_name_label" to locEntry("Owner Full Name *", "Amazina Yuzuye ya Nyir'ububiko *", "Nom complet du propriétaire *", "Jina Kamili la Mmiliki *"),
         "reg_owner_name_placeholder" to locEntry("e.g. Jean Paul Mugisha", "urugero: Jean Paul Mugisha", "ex. Jean Paul Mugisha", "mf. Jean Paul Mugisha"),
         "reg_username_label" to locEntry(
             "Owner Username (Bound to Unlock Codes) *",
-            "Izina ry'Ukoresha / Username (Rya Kode BB2) *",
-            "Nom d'utilisateur (Lié aux codes BB2) *",
-            "Jina la Mtumiaji (Kwa Misimbo ya BB2) *"
+            "Izina ry'Ukoresha / Username (Rihuzwa na Kode BB3) *",
+            "Nom d'utilisateur (lié aux codes BB3) *",
+            "Jina la Mtumiaji (kwa misimbo ya BB3) *"
         ),
         "reg_username_placeholder" to locEntry("e.g. jeanpaul", "urugero: jeanpaul", "ex. jeanpaul", "mf. jeanpaul"),
         "reg_account_handle" to locEntry("Account handle", "Konti yawe", "Identifiant du compte", "Kitambulisho cha akaunti"),
@@ -232,10 +232,10 @@ object Localization {
         "reg_create_launch" to locEntry("Create & Launch", "Kora Ububiko & Tangira", "Créer & Lancer", "Unda & Anza"),
         "reg_err_shop_name" to locEntry("Please enter your shop name.", "Injiza izina ry'ububiko bwawe.", "Veuillez entrer le nom de votre boutique.", "Tafadhali weka jina la duka lako."),
         "reg_err_phone" to locEntry(
-            "Please enter a valid owner phone number (for MoMo & BB2 unlock binding).",
-            "Injiza nimero ya terefone y'ukuri (y'ubwishyu na Kode BB2).",
-            "Veuillez entrer un numéro de téléphone valide (pour MoMo et code BB2).",
-            "Tafadhali weka nambari sahihi ya simu (kwa MoMo na msimbo wa BB2)."
+            "Please enter a valid owner phone number for mobile-money matching and account-bound unlocks.",
+            "Injiza nimero y'ukuri ya nyir'iduka kugira ngo ihuzwe n'ubwishyu bwa MoMo na kode yo gufungura konti.",
+            "Veuillez saisir un numéro valide pour rapprocher le paiement mobile et lier le code au compte.",
+            "Tafadhali weka namba sahihi ya mmiliki ili kulinganisha malipo ya simu na kuunganisha msimbo na akaunti."
         ),
         "reg_err_owner_name" to locEntry("Please enter owner full name.", "Injiza amazina ya nyir'ububiko.", "Veuillez entrer le nom complet du propriétaire.", "Tafadhali weka jina kamili la mmiliki."),
         "reg_err_username" to locEntry("Please enter a username.", "Injiza username yawe.", "Veuillez entrer un nom d'utilisateur.", "Tafadhali weka jina la mtumiaji."),
@@ -465,12 +465,12 @@ object Localization {
         "push_to_cloud_now" to locEntry("Push All Data to Cloud Now", "Ohereza Amakuru kuri Cloud Nonaha", "Synchroniser vers le Cloud maintenant", "Tuma Data Zote Kwenye Wingu Sasa"),
         "pushing_to_cloud" to locEntry("Syncing with Cloud...", "Kugenzura no Guhuza...", "Synchronisation en cours...", "Inasawazisha na Wingu..."),
         "open_sync_hub" to locEntry("Open Branch & LAN Sync Hub", "Fungura Urubuga rwo Gusangiza Amashami", "Ouvrir le Hub de Sync Agences", "Fungua Kituo cha Usawazishaji Matawi"),
-        "admin_portal_title" to locEntry("Master Admin & Cloud Licensing", "Ubuyobozi Mukuru & Kode BB2", "Console Admin & Licences Cloud", "Usimamizi Mkuu & Leseni za Wingu"),
+        "admin_portal_title" to locEntry("Master Admin & Cloud Licensing", "Ubuyobozi Mukuru & Kode BB3", "Console Admin & Licences Cloud", "Usimamizi Mkuu & Leseni za Wingu"),
         "open_admin_console" to locEntry("Admin Console", "Ubuyobozi (Admin)", "Console Admin", "Dashibodi ya Admin"),
         "web_admin_portal" to locEntry("Web Admin Portal", "Urubuga rwa Admin", "Portail Web Admin", "Tovuti ya Admin"),
 
         // =====================================================================
-        // SUBSCRIPTION, 4-DAY FREE TRIAL & AUTO-UNLOCK BB2 CODE
+        // SUBSCRIPTION, 4-DAY FREE TRIAL & PAYMENT-LINKED BB3 CODE
         // =====================================================================
         "subscription_title" to locEntry("Monthly Shop License", "Ifatabuguzi ry'Ukwezi", "Licence Mensuelle Boutique", "Leseni ya Mwezi ya Duka"),
         "monthly_fee_desc" to locEntry(
@@ -485,22 +485,22 @@ object Localization {
         "suspended_title" to locEntry("Account Suspended by Admin", "Konti Yahagaritswe na Admin", "Compte Suspendu par l'Admin", "Akaunti Imesimamishwa na Admin"),
         "subscription_expired" to locEntry("License Expired", "Ifatabuguzi Ryararangiye", "Licence Expirée", "Leseni Imeisha Muda"),
         "trial_ended_subtitle" to locEntry(
-            "Your 4-day trial has ended. Pay through the operator and submit proof for admin review. After approval, use your BB2 code or wait for unlock on sync.",
-            "Iminsi 4 yo kugerageza yarangiye. Ishyura ukoresheje ikigo cy'itumanaho wohereze gihamya igenzurwe n'umuyobozi. Nyuma yo kwemezwa, koresha kode ya BB2 cyangwa utegereze ko rifunguka rimaze guhuza.",
-            "Votre essai de 4 jours est terminé. Payez via l'opérateur et envoyez une preuve pour vérification admin. Après validation, utilisez le code BB2 ou attendez le déblocage à la synchro.",
-            "Jaribio la siku 4 limeisha. Lipa kupitia mtoa huduma na utume uthibitisho ukaguliwe na msimamizi. Baada ya kuidhinishwa, tumia msimbo wa BB2 au subiri duka lifunguke baada ya kusawazisha."
+            "Your 4-day trial has ended. Submit payment proof for admin review. After approval, use the BB3 code generated for your payment or wait for unlock on sync. Historical BB2 codes are verified online.",
+            "Iminsi 4 yo kugerageza yarangiye. Ohereza gihamya y'ubwishyu igenzurwe n'umuyobozi. Nyuma yo kwemezwa, koresha kode ya BB3 yakozwe ku bwishyu bwawe cyangwa utegereze ko rifunguka kuri sync. Kode za kera za BB2 zigenzurwa kuri internet.",
+            "Votre essai de 4 jours est terminé. Envoyez la preuve de paiement pour vérification. Après validation, utilisez le code BB3 généré pour votre paiement ou attendez la synchronisation. Les anciens BB2 sont vérifiés en ligne.",
+            "Jaribio la siku 4 limeisha. Tuma uthibitisho wa malipo ukaguliwe na msimamizi. Baada ya kuidhinishwa, tumia msimbo wa BB3 uliotolewa kwa malipo yako au subiri usawazishaji. Misimbo ya zamani ya BB2 hukaguliwa mtandaoni."
         ),
         "expired_subtitle" to locEntry(
-            "Your monthly license has expired. Submit payment details for admin review, then enter the issued BB2 code or sync to receive approval.",
-            "Ifatabuguzi ryarangiye. Ohereza amakuru y'ubwishyu kugira ngo umuyobozi ayagenzure, hanyuma ukoreshe kode ya BB2 cyangwa uhuze kugira ngo ubone iyemezwa.",
-            "Votre licence mensuelle a expiré. Envoyez les détails du paiement pour vérification admin, puis saisissez le code BB2 émis ou synchronisez pour recevoir l'approbation.",
-            "Leseni yako ya mwezi imeisha. Tuma taarifa za malipo zikaguliwe na msimamizi, kisha weka msimbo wa BB2 au sawazisha ili kupokea idhini."
+            "Your monthly license has expired. Submit payment proof for admin review, then enter the BB3 code issued for that payment or sync to receive approval. Historical BB2 codes are checked online.",
+            "Ifatabuguzi ryawe ryarangiye. Ohereza gihamya y'ubwishyu igenzurwe n'umuyobozi, hanyuma ukoreshe kode ya BB3 yatangiwe ubwo bwishyu cyangwa uhuze na cloud. Kode za kera za BB2 zigenzurwa kuri internet.",
+            "Votre licence mensuelle a expiré. Envoyez la preuve pour vérification, puis saisissez le code BB3 émis pour ce paiement ou synchronisez. Les anciens BB2 sont vérifiés en ligne.",
+            "Leseni yako ya mwezi imeisha. Tuma uthibitisho wa malipo ukaguliwe na msimamizi, kisha weka msimbo wa BB3 uliotolewa kwa malipo hayo au sawazisha. Misimbo ya zamani ya BB2 hukaguliwa mtandaoni."
         ),
         "suspended_subtitle" to locEntry(
-            "Contact BeBoss Master Admin on WhatsApp or enter a newly issued BB2 unlock code to restore access.",
-            "Vugana na BeBoss Master Admin kuri WhatsApp cyangwa winjize kode nshya ya BB2 kugira ngo ufungurirwe.",
-            "Contactez l'administrateur BeBoss sur WhatsApp ou entrez un nouveau code BB2 pour rétablir l'accès.",
-            "Wasiliana na Msimamizi Mkuu wa BeBoss kwenye WhatsApp au weka msimbo mpya wa BB2 kurejesha huduma."
+            "Contact BeBoss Master Admin or submit payment proof for review. A newly issued BB3 code is linked to the verified payment; historical BB2 codes are checked online.",
+            "Vugana na Admin wa BeBoss cyangwa wohereze gihamya y'ubwishyu igenzurwe. Kode nshya ya BB3 ihuzwa n'ubwishyu bwemejwe; izo hambere za BB2 zigenzurwa kuri internet.",
+            "Contactez l'administrateur BeBoss ou envoyez une preuve de paiement. Le code BB3 est lié au paiement vérifié ; les anciens BB2 sont vérifiés en ligne.",
+            "Wasiliana na msimamizi wa BeBoss au tuma uthibitisho wa malipo ukaguliwe. Msimbo mpya wa BB3 utaunganishwa na malipo yaliyothibitishwa; BB2 za zamani hukaguliwa mtandaoni."
         ),
         "days_left" to locEntry("days left", "iminsi isigaye", "jours restants", "siku zilizobaki"),
         "renew_subscription" to locEntry("Pay / Renew License", "Ishyura / Vugurura Ifatabuguzi", "Payer / Renouveler", "Lipa / Huisha Leseni"),
@@ -518,12 +518,12 @@ object Localization {
             "Entrer le Code Admin (Déverrouillage Auto)",
             "Weka Msimbo wa Admin (Hufungua Kiotomatiki)"
         ),
-        "enter_voucher_code" to locEntry("Unlock Code (BB2-...)", "Kode yo Gufungura (BB2-...)", "Code de déverrouillage (BB2-...)", "Msimbo wa Kufungua (BB2-...)"),
+        "enter_voucher_code" to locEntry("Unlock Code (BB3-...)", "Kode yo Gufungura (BB3-...)", "Code de déverrouillage (BB3-...)", "Msimbo wa Kufungua (BB3-...)"),
         "auto_unlock_detected" to locEntry(
-            "Valid BB2 unlock code detected — verifying & unlocking automatically...",
-            "Kode ya BB2 ibonetse — iri kugenzurwa no gufungura ako kanya...",
-            "Code BB2 valide détecté — vérification et déverrouillage automatiques...",
-            "Msimbo halali wa BB2 umetambuliwa — inathibitisha na kufungua kiotomatiki..."
+            "Unlock code detected — checking its signature and account binding...",
+            "Kode yo gufungura yabonetse — iri kugenzura umukono n'uko ihujwe na konti...",
+            "Code détecté — vérification de la signature et du compte...",
+            "Msimbo umetambuliwa — inakagua saini na uhusiano wa akaunti..."
         ),
         "activate_code" to locEntry("Verify & Unlock Now", "Emeza & Fungura Nonaha", "Vérifier & Déverrouiller", "Thibitisha & Fungua Sasa"),
         "sync_cloud_approvals" to locEntry("Sync Cloud Approvals", "Shakisha Kode kuri Cloud", "Synchroniser Cloud", "Sawazisha Wingu"),
