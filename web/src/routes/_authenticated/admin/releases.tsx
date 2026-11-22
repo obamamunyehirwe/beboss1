@@ -119,14 +119,14 @@ function ReleasesPage() {
   };
 
   const rows = releases.data ?? [];
-  const total = rows.reduce((a, r) => a + r.download_count, 0);
+  const total = rows.reduce((acc, r) => acc + r.download_count, 0);
 
   return (
     <div className="space-y-6">
       <PageHeader title="App releases" sub="Publish new Android APKs. The website, QR codes and the app's update check all point to the current release." />
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard label="All-time downloads" value={total} icon={Download} tone="brand" />
-        <StatCard label="Last 30 days" value={daily.reduce((a, d) => a + d.n, 0)} sub={Object.entries(byChannel).map(([k, v]) => `${k} ${v}`).join(" • ") || "—"} />
+        <StatCard label="Last 30 days" value={daily.reduce((acc, d) => acc + d.n, 0)} sub={Object.entries(byChannel).map(([k, v]) => `${k} ${v}`).join(" • ") || "—"} />
         <StatCard label="Current version" value={rows.find((r) => r.is_current)?.version_name ?? "—"} sub={<span className="break-all font-mono">{downloadUrl}</span>} icon={Star} />
       </div>
       <div className="rounded-2xl border border-border bg-card p-5">

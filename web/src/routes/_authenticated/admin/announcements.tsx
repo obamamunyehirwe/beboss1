@@ -59,25 +59,25 @@ function AnnouncementsPage() {
         <EmptyState title="No announcements yet" sub="Create one to show a banner on the website and inside shop owners' My shop page. The app can read the same messages." />
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
-          {data.map((a) => {
-            const st = liveState(a);
+          {data.map((item) => {
+            const st = liveState(item);
             return (
-              <div key={a.id} className="rounded-2xl border border-border bg-card p-4">
+              <div key={item.id} className="rounded-2xl border border-border bg-card p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={st === "LIVE" ? "ACTIVE" : st === "SCHEDULED" ? "PENDING_VERIFICATION" : "REVOKED"} />
-                  <span className="text-xs text-muted-foreground">{st.toLowerCase()} · {a.audience.toLowerCase()} {a.target_shop_key ? `· shop ${a.target_shop_key}` : "· everyone"}</span>
-                  {a.translations && Object.keys(a.translations as object).length ? <span className="text-xs text-success">· {a("translated RW · FR · SW")}</span> : <span className="text-xs text-muted-foreground">· English only</span>}
+                  <span className="text-xs text-muted-foreground">{st.toLowerCase()} · {item.audience.toLowerCase()} {item.target_shop_key ? `· shop ${item.target_shop_key}` : "· everyone"}</span>
+                  {item.translations && Object.keys(item.translations as object).length ? <span className="text-xs text-success">· {a("translated RW · FR · SW")}</span> : <span className="text-xs text-muted-foreground">· English only</span>}
                 </div>
                 <div className="mt-3">
-                  <AnnouncementCard a={a} />
+                  <AnnouncementCard a={item} />
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                   <span>
-                    {formatDateTime(a.starts_at)} → {a.ends_at ? formatDateTime(a.ends_at) : a("no end")} · {a("by")} {a.created_by || "admin"}
+                    {formatDateTime(item.starts_at)} → {item.ends_at ? formatDateTime(item.ends_at) : a("no end")} · {a("by")} {item.created_by || "admin"}
                   </span>
                   {isAdmin ? (
                     <span className="flex gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(a)}>
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(item)}>
                         <Pencil /> {a("Edit")}
                       </Button>
                       <ConfirmAction
@@ -90,7 +90,7 @@ function AnnouncementsPage() {
                         description={a("It disappears from the website and apps immediately.")}
                         destructive
                         confirmLabel="Delete"
-                        onConfirm={() => del.mutate({ id: a.id })}
+                        onConfirm={() => del.mutate({ id: item.id })}
                       />
                     </span>
                   ) : null}
