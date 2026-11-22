@@ -38,20 +38,20 @@ class AdminAndPermissionsTest {
     }
 
     @Test
-    fun `master admin email is locked strictly to reponsekdz at gmail dot com`() = runBlocking {
+    fun `android admin login accepts valid emails and relies on Supabase roles`() = runBlocking {
+        // The configured address is only the default pre-filled login value.
+        // Actual authorization is checked against user_roles + active admin_profiles.
         assertEquals("obamamunyehirwe@gmail.com", SupabaseAdminClient.MASTER_ADMIN_EMAIL)
         assertEquals("obamamunyehirwe@gmail.com", SupabaseAdminClient.getDefaultAdminEmail())
-        assertTrue(SupabaseAdminClient.isAllowedMasterAdminEmail("obamamunyehirwe@gmail.com"))
-        assertTrue(SupabaseAdminClient.isAllowedMasterAdminEmail("  REPONSEKDZ@GMAIL.COM "))
-        assertFalse(SupabaseAdminClient.isAllowedMasterAdminEmail("other@beboss.app"))
-        assertFalse(SupabaseAdminClient.isAllowedMasterAdminEmail("admin@beboss.app"))
+        assertTrue(SupabaseAdminClient.isValidAdminLoginEmail("obamamunyehirwe@gmail.com"))
+        assertTrue(SupabaseAdminClient.isValidAdminLoginEmail("reponsekdz01@gmail.com"))
+        assertTrue(SupabaseAdminClient.isValidAdminLoginEmail("  REPO@BEBOSS.APP "))
+        assertFalse(SupabaseAdminClient.isValidAdminLoginEmail("not-an-email"))
+        assertFalse(SupabaseAdminClient.isValidAdminLoginEmail(""))
 
-        val signInRes = SupabaseAdminClient.signInAdmin("unauthorized@example.com", "secret123")
-        assertTrue(signInRes.isFailure)
-        assertTrue(signInRes.exceptionOrNull()?.message?.contains("obamamunyehirwe@gmail.com") == true)
-
-        val signUpRes = SupabaseAdminClient.signUpAdmin("unauthorized@example.com", "secret123", "Fake Admin")
+        // Public self-registration remains disabled; granting an admin role is
+        // still an explicit action in the authenticated web Admin Team workspace.
+        val signUpRes = SupabaseAdminClient.signUpAdmin("other@example.com", "secret123", "Not an admin")
         assertTrue(signUpRes.isFailure)
-        assertTrue(signUpRes.exceptionOrNull()?.message?.contains("obamamunyehirwe@gmail.com") == true)
     }
 }
