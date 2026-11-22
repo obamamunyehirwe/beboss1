@@ -763,14 +763,13 @@ class BeBossRepository(private val database: AppDatabase) {
 
             // Do not silently skip malformed chunks: doing so would report a false successful
             // recovery with missing products, customers, sales, debts, or branch records.
-            var restoredChunks = 0
-            for (snap in snapshots) {
-                val decoded = ShopDataTransferManager.parseShopPackageString(snap.payloadToken)
-                mergeShopDataPackageLww(decoded)
-                restoredChunks++
+            // Parse every chunk before writing any of them, so a corrupt later chunk
+            // cannot leave a fresh installation with a knowingly partial restore.
+            val decodedSnapshots = snapshots.map { snap ->
+                ShopDataTransferManager.parseShopPackageString(snap.payloadToken)
             }
-            check(restoredChunks == snapshots.size) {
-                "Cloud recovery stopped before every complete backup chunk was restored."
+            decodedSnapshots.forEach { decoded ->
+                mergeShopDataPackageLww(decoded)
             }
 
             // Ensure ShopProfile exists and mirrors cloud subscription state
