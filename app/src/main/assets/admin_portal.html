@@ -2595,62 +2595,6 @@ create table if not exists public.payment_requests (
       }
     };
 
-    const handleIssueManualCode = async (e) => {
-      e.preventDefault();
-      const username = genForm.username.trim().toLowerCase();
-      const phone = genForm.phone.trim();
-      if (!username || normalizePhoneLast9(phone).length < 7) {
-        notify('Enter valid created @username and registered phone number.');
-        return;
-      }
-      const calc = calculateSubscriptionFee(genForm.branches, genForm.workers, genForm.months, genForm.devices, payConfig.per_device_fee_rwf);
-      const amount = Number(genForm.amount) >= 0 ? Number(genForm.amount) : calc.total;
-      const code = await generateBB3UnlockCode(session, username, phone, calc.tier, calc.days);
-      const adminLabel = `${session.fullName} (${session.email})`;
-
-      try {
-        await sbFetch('unlock_codes', {
-          method: 'POST',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            id: crypto.randomUUID(),
-            unlock_code: code,
-            shop_username: username,
-            shop_phone: phone,
-            device_challenge: '',
-            tier_code: calc.tier,
-            plan_days: calc.days,
-            amount_rwf: amount,
-            status: 'ISSUED',
-            issued_by_admin: adminLabel,
-            issued_at: Date.now()
-          })
-        });
-        await extendOrActivateShop(computeShopKey(username, phone), {
-          addDays: calc.days,
-          branches: genForm.branches,
-          workers: genForm.workers,
-          deviceLimit: genForm.devices,
-          monthlyFee: calc.monthly,
-          markAutoUnlock: false
-        });
-        await logAudit('ISSUE_CODE', username, `Issued ${code} (+${calc.days}d, ${amount} FRw, ${genForm.devices} dev)`);
-        setLatestGenerated({
-          mode: 'CODE',
-          code,
-          shopName: genForm.shopName || 'BeBoss Shop',
-          username,
-          phone,
-          days: calc.days,
-          tier: `${calc.tier} (${amount.toLocaleString()} FRw)`
-        });
-        await refreshAll(false);
-        notify(`Issued unlock code ${code} for @${username}`);
-      } catch (err) {
-        notify(`Failed issuing code: ${err.message}`);
-      }
-    };
-
     const handleRevokeCode = async (c) => {
       try {
         await sbFetch(`unlock_codes?id=eq.${encodeURIComponent(c.id)}`, {
@@ -3012,7 +2956,7 @@ create table if not exists public.payment_requests (
                   </div>
                   {stats.pendingCount > 1 && (
                     <button type="button" className="btn btn-green btn-sm" onClick={handleBatchApprove}>
-                      Batch Issue BB2 ({stats.pendingCount})
+                      Batch Issue BB3 ({stats.pendingCount})
                     </button>
                   )}
                 </div>
@@ -3089,7 +3033,7 @@ create table if not exists public.payment_requests (
                         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           {req.status !== 'REJECTED' && (
                             <button type="button" className="btn btn-green btn-sm" onClick={() => handleApproveWithCode(req)}>
-                              {hasCode ? 'Re-issue BB2 Unlock Code' : 'Option 1: Verify & Issue BB2 Code'}
+                              {hasCode ? 'Existing Payment-linked BB3 Code' : 'Verify & Issue BB3 Code'}
                             </button>
                           )}
                           {hasCode && (
@@ -3422,104 +3366,10 @@ create table if not exists public.payment_requests (
             {activeView === 'codes' && (
               <div style={{ display: 'grid', gap: 16 }}>
                 <div className="card">
-                  <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Issue Account-Bound Cryptographic Unlock Code (BB2)</h3>
-                  {shops.length > 0 && (
-                    <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 10, marginBottom: 10 }}>
-                      {shops.map(s => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          className="btn btn-dark btn-sm"
-                          onClick={() => {
-                            const nextCalc = calculateSubscriptionFee(s.branch_count || 1, s.worker_count || 1, 1, s.device_limit || 1, payConfig.per_device_fee_rwf);
-                            setGenForm({
-                              shopName: s.shop_name,
-                              username: s.owner_username,
-                              phone: s.owner_phone,
-                              branches: s.branch_count || 1,
-                              workers: s.worker_count || 1,
-                              devices: s.device_limit || 1,
-                              months: 1,
-                              amount: nextCalc.total
-                            });
-                          }}
-                        >
-                          {s.shop_name} (@{s.owner_username})
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <form onSubmit={handleIssueManualCode} style={{ display: 'grid', gap: 12 }}>
-                    <div className="grid-3">
-                      <div>
-                        <label className="field-label">Shop Name</label>
-                        <input className="input" value={genForm.shopName} onChange={e => setGenForm(f => ({ ...f, shopName: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label className="field-label">Owner Username *</label>
-                        <input className="input" required placeholder="jeanpaul" value={genForm.username} onChange={e => setGenForm(f => ({ ...f, username: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label className="field-label">Owner Registered Phone *</label>
-                        <input className="input" required placeholder="0788123456" value={genForm.phone} onChange={e => setGenForm(f => ({ ...f, phone: e.target.value }))} />
-                      </div>
-                    </div>
-                    <div className="grid-3">
-                      <div>
-                        <label className="field-label">Branches</label>
-                        <input type="number" min={1} className="input" value={genForm.branches} onChange={e => {
-                          const branches = Math.max(1, Number(e.target.value) || 1);
-                          const c = calculateSubscriptionFee(branches, genForm.workers, genForm.months, genForm.devices, payConfig.per_device_fee_rwf);
-                          setGenForm(f => ({ ...f, branches, amount: c.total }));
-                        }} />
-                      </div>
-                      <div>
-                        <label className="field-label">Workers</label>
-                        <input type="number" min={1} className="input" value={genForm.workers} onChange={e => {
-                          const workers = Math.max(1, Number(e.target.value) || 1);
-                          const c = calculateSubscriptionFee(genForm.branches, workers, genForm.months, genForm.devices, payConfig.per_device_fee_rwf);
-                          setGenForm(f => ({ ...f, workers, amount: c.total }));
-                        }} />
-                      </div>
-                      <div>
-                        <label className="field-label">Paired Devices (+2k/extra)</label>
-                        <input type="number" min={1} className="input" value={genForm.devices} onChange={e => {
-                          const devices = Math.max(1, Number(e.target.value) || 1);
-                          const c = calculateSubscriptionFee(genForm.branches, genForm.workers, genForm.months, devices, payConfig.per_device_fee_rwf);
-                          setGenForm(f => ({ ...f, devices, amount: c.total }));
-                        }} />
-                      </div>
-                    </div>
-                    <div className="grid-2">
-                      <div>
-                        <label className="field-label">Months</label>
-                        <select className="select" value={genForm.months} onChange={e => {
-                          const months = Number(e.target.value);
-                          const c = calculateSubscriptionFee(genForm.branches, genForm.workers, months, genForm.devices, payConfig.per_device_fee_rwf);
-                          setGenForm(f => ({ ...f, months, amount: c.total }));
-                        }}>
-                          <option value={1}>1 Month (+30 days)</option>
-                          <option value={3}>3 Months (+90 days • 10% OFF)</option>
-                          <option value={6}>6 Months (+180 days)</option>
-                          <option value={12}>12 Months (+365 days • 20% OFF)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="field-label">Verified Amount (FRw)</label>
-                        <input type="number" min={0} className="input" value={genForm.amount} onChange={e => setGenForm(f => ({ ...f, amount: e.target.value }))} />
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                      <div style={{ fontSize: 12.5, color: '#fdba74', fontWeight: 700 }}>
-                        Calculated: {genCalc.tier} • +{genCalc.days}d • Monthly {genCalc.monthly.toLocaleString()} FRw • Discount {genCalc.discount}% • Total {genCalc.total.toLocaleString()} FRw
-                      </div>
-                      <button type="submit" className="btn btn-green">Generate Signed BB2 Unlock Code</button>
-                    </div>
-                  </form>
+                  <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Payment-linked BB3 Unlock Codes</h3>
+                  <p style={{ margin: 0, color: 'var(--muted)' }}>A code can only be issued from its own submitted payment claim after verifying the payment with the mobile-money provider. Open the Payments queue to review the plan and issue its unique BB3 code. Standalone code generation is disabled.</p>
                 </div>
-
-                <div className="card" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <input className="input" style={{ flex: '1 1 240px' }} placeholder="Search BB2 code, @username, phone or tier..." value={codeSearch} onChange={e => setCodeSearch(e.target.value)} />
+                <div className="card" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>earch} onChange={e => setCodeSearch(e.target.value)} />
                   <div style={{ display: 'flex', gap: 6 }}>
                     {['ALL', 'ISSUED', 'REDEEMED', 'REVOKED'].map(st => (
                       <button key={st} type="button" className={`btn btn-sm ${codeStatusFilter === st ? 'btn-primary' : 'btn-dark'}`} onClick={() => setCodeStatusFilter(st)}>{st}</button>
