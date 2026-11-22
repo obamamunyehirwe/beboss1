@@ -19,7 +19,7 @@ import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, Searc
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { useNow } from "@/hooks/use-now";
 import { deleteSnapshot } from "@/lib/admin.functions";
-import { devicesQuery, shopsQuery, snapshotsQuery, syncEventsQuery, usersQuery, type ShopAccount, type ShopDevice, type ShopUser, type Snapshot, type SyncEvent } from "@/lib/admin-queries";
+import { devicesQuery, shopsQuery, snapshotsQuery, syncEventsQuery, usersQuery, type ShopAccount, type ShopUser, type SyncEvent } from "@/lib/admin-queries";
 import { formatDateTime, relativeTime } from "@/lib/format";
 import { DAY, HEALTH_LABEL, HOUR, deviceHealth, type DeviceHealth } from "@/lib/sync-health";
 import { cn } from "@/lib/utils";
@@ -90,7 +90,7 @@ function SyncMonitor() {
         latestEvent,
       };
     }).sort((left, right) => right.lastSyncAt - left.lastSyncAt);
-  }, [events.data, shops.data, devices.data, staff.data, snaps.data, now]);
+  }, [events.data, shops.data, devices.data, staff.data, snaps.data, shopRows, now]);
 
   const retryAll = () => Promise.all([
     events.refetch(), shops.refetch(), devices.refetch(), staff.refetch(), snaps.refetch(),
@@ -115,17 +115,7 @@ function SyncMonitor() {
       });
     }
     // Count activity that is actually emitted by the mobile-to-cloud sync triggers.
-    const syncActivity = last24.filter((e) =>
-      (e.entity === "SNAPSHOT" && e.action === "UPLOADED") ||
-      (e.entity === "DEVICE" && e.action === "SYNCED") ||
-      (e.entity === "SHOP" && ["HEARTBEAT", "REGISTERED"].includes(e.action))
-    );
-    const activeShops = new Set(
-      syncActivity
-        .filter((e) => now - new Date(e.created_at).getTime() < 15 * 60_000)
-        .map((e) => e.shop_sync_key)
-        .filter(Boolean),
-    ).size;
+    const activeShops = shopRows.filter((shop) => shop.lastSyncAt > 0 && now - shop.lastSyncAt < 15 * 60_000).length;
 
     // Failure telemetry is not yet uploaded by the offline Android outbox. Never
     // turn the absence of cloud failure events into a misleading 0% failure rate.
@@ -503,7 +493,6 @@ function LiveActivity({ events, loading, now }: { events: SyncEvent[]; loading: 
 }
 
 function DeviceHealthTable({ now }: { now: number }) {
-  const a = useAdminText();
   const { data, isLoading } = useQuery(devicesQuery);
   const [f, setF] = useState<HealthFilter>("ALL");
   const [q, setQ] = useState("");
