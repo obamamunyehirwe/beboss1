@@ -20,12 +20,42 @@ export async function writeAudit(context: AdminCtx, email: string, action: strin
   });
 }
 
-/** Reads a server-only secret from env first, then the service-role-only app_secrets table. */
-export async function readServerSecret(name: string): Promise<string | null> {
-  const fromEnv = process.env[name];
-  if (fromEnv && fromEnv.trim().length >= 8) return fromEnv.trim();
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data } = await supabaseAdmin.from("app_secrets").select("value").eq("name", name).maybeSingle();
-  const v = String(data?.value ?? "").trim();
-  return v.length >= 8 ? v : null;
+/** Invoke a Supabase Edge Function using the current user's verified JWT.
+ * Privileged secrets stay inside Supabase Edge Functions, never in Vercel or the browser.
+ */
+export async function invokeSupabaseEdgeFunction<T = Record<string, unknown>>(
+  context: AdminCtx,
+  functionName: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const supabaseUrl = process.env["SUPABASE_URL"] || import.meta.env["VITE_SUPABASE_URL"];
+  const publishableKey = process.env["SUPABASE_PUBLISHABLE_KEY"] || import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"];
+  if (!supabaseUrl || !publishableKey) {
+    throw new Error("Supabase URL or publishable key is missing from the server environment.");
+  }
+  if (!context.accessToken) {
+    throw new Error("Your administrator session is missing. Sign in again.");
+  }
+
+  const response = await fetch(supabaseUrl.replace(/\/+$/, "") + "/functions/v1/" + encodeURIComponent(functionName), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": publishableKey,
+      "Authorization": "Bearer " + context.accessToken,
+    },
+    body: JSON.stringify(body),
+  });
+  let result: Record<string, unknown> = {};
+  try {
+    const parsed = await response.json();
+    if (parsed && typeof parsed === "object") result = parsed as Record<string, unknown>;
+  } catch {
+    result = {};
+  }
+  if (!response.ok) {
+    const message = typeof result.message === "string" ? result.message : "Supabase service request failed (" + response.status + ").";
+    throw new Error(message);
+  }
+  return result as T;
 }
