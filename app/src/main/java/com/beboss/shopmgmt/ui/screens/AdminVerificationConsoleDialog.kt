@@ -908,8 +908,8 @@ fun AdminVerificationConsoleDialog(
                                                     modifier = Modifier
                                                         .weight(1.3f)
                                                         .heightIn(min = 48.dp)
-                                                        enabled = matchedShop != null && feeOk,
                                                         .testTag("admin_issue_bb3_btn_${req.id}"),
+                                                    enabled = matchedShop != null && feeOk,
                                                     colors = ButtonDefaults.buttonColors(containerColor = if (hasCodeIssued) DarkNavy else ProfitGreen)
                                                 ) {
                                                     Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(15.dp))
