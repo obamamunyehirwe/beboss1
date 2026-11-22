@@ -32,7 +32,7 @@ use the editor.
 ## BeBoss architecture
 
 - The Android app (Kotlin, offline-first) talks directly to the Cloud REST API with the publishable key plus an `X-Shop-Sync-Key` tenant header; keep table/column names compatible with `SupabaseAdminClient.kt`, because renaming breaks shipped APKs.
-- BB2 unlock codes must stay byte-identical to `SubscriptionSecurityManager.kt` (`src/lib/bb2.ts`); the signing key is read only server-side (env or service-role-only `app_secrets`), never returned to the browser.
+- New unlock codes are BB3 ECDSA P-256: the private key stays server-side in service-role-only `app_secrets`, and the Android APK contains only the matching public key. Legacy BB2 codes are verified online against their exact issued database record; do not reintroduce the retired shared HMAC secret or return any private key to the browser.
 - Subscription math lives in `src/lib/pricing.ts` and is mirrored by a database trigger that recomputes payment amounts server-side; change both together so clients cannot underpay.
 - Admin mutations go through `*.functions.ts` server functions that re-check `user_roles` (admin vs support, see `src/lib/admin-guard.server.ts`) and write an audit row; never mutate admin data from the browser client directly.
 - APKs live in a private `releases` bucket; the public stable link is `/api/public/download/latest`, which signs a short-lived URL and counts the download.
