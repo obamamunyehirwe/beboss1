@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, Copy, Download, KeyRound, Loader2, MessageCircle, Plus, Trash2, X, Zap } from "lucide-react";
+import { Check, Copy, Download, KeyRound, Loader2, MessageCircle, Plus, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -42,8 +42,6 @@ function PaymentsPage() {
   const [result, setResult] = useState<Result | null>(null);
   const [rejecting, setRejecting] = useState<PaymentRequest | null>(null);
   const [reason, setReason] = useState("");
-  const [batching, setBatching] = useState(false);
-
   const approveFn = useServerFn(approvePaymentWithCode);
   const approve = useAdminAction(approveFn, { invalidate: [["admin"]] });
   const reject = useAdminAction(useServerFn(rejectPayment), { success: "Payment claim rejected", invalidate: [["admin", "payments"]] });
@@ -65,22 +63,6 @@ function PaymentsPage() {
       onSuccess: (res) => setResult({ mode: "CODE", code: res.code, days: res.days, tier: res.tier, total: res.total, shopName: res.shopName, username: res.username, phone: res.phone }),
     });
 
-  const batch = async () => {
-    setBatching(true);
-    let ok = 0;
-    for (const r of pending) {
-      try {
-        await approveFn({ data: { requestId: r.id } });
-        ok++;
-      } catch (e) {
-        toast.error(`${r.shop_name}: ${e instanceof Error ? e.message : "failed"}`);
-      }
-    }
-    setBatching(false);
-    await qc.invalidateQueries({ queryKey: ["admin"] });
-    toast.success(`Approved ${ok} of ${pending.length} claims`);
-  };
-
   return (
     <div>
       <PageHeader
@@ -91,18 +73,8 @@ function PaymentsPage() {
             <Button size="sm" variant="glass" onClick={() => downloadCsv(`beboss-payments-${Date.now()}.csv`, filtered)}>
               <Download /> {a("Export")}
             </Button>
-            {isAdmin && pending.length > 1 ? (
-              <ConfirmAction
-                trigger={
-                  <Button size="sm" variant="hero" disabled={batching}>
-                    {batching ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Approve all")} {pending.length}
-                  </Button>
-                }
-                title={`Approve ${pending.length} pending claims?`}
-                description={a("Each claim gets a signed BB3 unlock code and its shop is extended. Only do this after confirming every transaction in your MoMo/Airtel statement.")}
-                confirmLabel="Approve all"
-                onConfirm={batch}
-              />
+            {isAdmin && pending.length > 0 ? (
+              <span className="text-xs text-muted-foreground">{pending.length} claims require individual provider verification before code issuance.</span>
             ) : null}
           </>
         }
