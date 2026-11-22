@@ -66,10 +66,10 @@ fun AppSplashScreen(
     val contentAlpha = remember { Animatable(0f) }
     val arcSweep = remember { Animatable(0f) }
 
-    val bgTop = if (isDarkTheme) Color(0xFF0A0F1D) else Color(0xFFFFFBF7)
-    val bgBottom = if (isDarkTheme) Color(0xFF11192B) else Color(0xFFF6F2EC)
-    val onBg = if (isDarkTheme) Color(0xFFF8FAFC) else Color(0xFF0F172A)
-    val muted = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
+    val bgTop = Color(0xFFFFFBF7)
+    val bgBottom = Color(0xFFF6F2EC)
+    val onBg = Color(0xFF0F172A)
+    val muted = Color(0xFF64748B)
 
     LaunchedEffect(Unit) {
         launch {

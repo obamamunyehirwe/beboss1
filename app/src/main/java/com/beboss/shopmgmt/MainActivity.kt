@@ -59,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.ui.components.BeBossBottomNav
 import com.beboss.shopmgmt.ui.components.BeBossNavigationRail
 import com.beboss.shopmgmt.ui.components.BeBossTopBar
@@ -85,7 +86,9 @@ import com.beboss.shopmgmt.util.BiometricAuthManager
 import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.ConnectivityStatus
 import com.beboss.shopmgmt.util.Localization
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -108,16 +111,35 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
+            var viewModelReady by remember { mutableStateOf(false) }
             val viewModel: BeBossViewModel = viewModel()
-            activeViewModel = viewModel
-            val isDarkTheme by viewModel.isDarkTheme.collectAsState()
+
+            LaunchedEffect(Unit) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        AppDatabase.getDatabase(applicationContext)
+                    } catch (_: Throwable) {}
+                }
+                viewModelReady = true
+            }
+
+            val isDarkTheme by viewModel.isDarkTheme.collectAsState(initial = false)
 
             MyApplicationTheme(darkTheme = isDarkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    BeBossApp(viewModel = viewModel)
+                    if (!viewModelReady) {
+                        AppSplashScreen(
+                            language = AppLanguage.ENGLISH,
+                            durationMs = 300L,
+                            onSplashFinished = {}
+                        )
+                    } else {
+                        activeViewModel = viewModel
+                        BeBossApp(viewModel = viewModel)
+                    }
                 }
             }
         }

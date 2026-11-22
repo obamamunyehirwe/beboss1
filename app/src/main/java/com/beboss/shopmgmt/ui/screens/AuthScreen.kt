@@ -675,21 +675,17 @@ fun ShopRegistrationScreen(
         Triple("€", "EUR", "Euro")
     )
 
-    val bgColors = if (isDarkTheme) {
-        listOf(Color(0xFF0A1020), DarkNavy, Color(0xFF060B16))
-    } else {
-        listOf(Color(0xFFFFFBF7), Color(0xFFF4F6FA), Color(0xFFE8EEF7))
-    }
-    val cardBg = if (isDarkTheme) Color(0xFF172033) else Color.White
-    val cardBorder = if (isDarkTheme) Color(0xFF2B3A55) else Color(0xFFE2E8F0)
-    val fieldBg = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFF8FAFC)
-    val textPrimary = if (isDarkTheme) Color.White else Color(0xFF0F172A)
-    val textSecondary = if (isDarkTheme) Color(0xFF94A3B8) else Color(0xFF64748B)
-    val topPillBg = if (isDarkTheme) Color(0x26FFFFFF) else Color.White
-    val topPillBorder = if (isDarkTheme) Color(0x38FFFFFF) else Color(0xFFCBD5E1)
-    val topPillText = if (isDarkTheme) Color.White else Color(0xFF0F172A)
-    val chipBg = if (isDarkTheme) Color(0xFF0F172A) else Color(0xFFF8FAFC)
-    val chipBorder = if (isDarkTheme) Color(0xFF334155) else Color(0xFFE2E8F0)
+    val bgColors = listOf(Color(0xFFFFFBF7), Color(0xFFF4F6FA), Color(0xFFE8EEF7))
+    val cardBg = Color.White
+    val cardBorder = Color(0xFFE2E8F0)
+    val fieldBg = Color(0xFFF8FAFC)
+    val textPrimary = Color(0xFF0F172A)
+    val textSecondary = Color(0xFF64748B)
+    val topPillBg = Color.White
+    val topPillBorder = Color(0xFFCBD5E1)
+    val topPillText = Color(0xFF0F172A)
+    val chipBg = Color(0xFFF8FAFC)
+    val chipBorder = Color(0xFFE2E8F0)
 
     val stepTitles = listOf(
         Localization.get("reg_step_1", language),
