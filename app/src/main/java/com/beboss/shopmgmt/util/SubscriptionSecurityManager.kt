@@ -325,7 +325,7 @@ UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
         return VoucherValidationResult(
             isValid = false,
             daysToAdd = 0,
-            message = "Unrecognized unlock code. Submit your MoMo transaction reference for admin verification to receive a signed BB3-... code.",
+            message = "Unrecognized unlock code. Submit your payment proof with payer details and payment date/time. An administrator verifies it and issues a payment-linked BB3 code.",
             planName = ""
         )
     }
