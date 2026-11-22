@@ -75,7 +75,7 @@
 1. **Access**: https://admin.beboss.rw
 2. **Sign In**: Email: `obamamunyehirwe@gmail.com`
 3. **Verify Payments**: Approve MTN MoMo / Airtel Money transfers
-4. **Issue Codes**: Generate BB2 unlock codes
+4. **Issue Codes**: Generate BB3 ECDSA-signed unlock codes (legacy BB2 codes are verified online against issued records)
 5. **Monitor**: Track all shops in real-time
 
 ---
