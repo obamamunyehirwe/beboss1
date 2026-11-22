@@ -1476,6 +1476,7 @@ fun AdminVerificationConsoleDialog(
                                 } else null
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(Localization.get("admin_manual_issue_title", language), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                                 if (shopAccounts.isNotEmpty()) {
                                     Text(
                                         text = Localization.get("admin_pick_registered_shop", language),
@@ -1523,8 +1524,8 @@ fun AdminVerificationConsoleDialog(
                                 OutlinedTextField(
                                     value = manualUsername,
                                     onValueChange = { manualUsername = it },
-                                    label = { Text("Shop Owner Created Username *") },
-                                    placeholder = { Text("e.g. jeanpaul") },
+                                    label = { Text(Localization.get("admin_manual_username_label", language) + " *") },
+                                    placeholder = { Text(Localization.get("admin_manual_username_placeholder", language)) },
                                     singleLine = true,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1533,8 +1534,8 @@ fun AdminVerificationConsoleDialog(
                                 OutlinedTextField(
                                     value = manualPhone,
                                     onValueChange = { manualPhone = it },
-                                    label = { Text("Owner Registered Phone *") },
-                                    placeholder = { Text("+250 788 123 456") },
+                                    label = { Text(Localization.get("admin_manual_phone_label", language) + " *") },
+                                    placeholder = { Text(Localization.get("admin_manual_phone_placeholder", language)) },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                                     singleLine = true,
                                     modifier = Modifier
@@ -1575,7 +1576,7 @@ fun AdminVerificationConsoleDialog(
                                                 containerColor = if (selected) OrangePrimary.copy(alpha = 0.15f) else Color.Transparent
                                             )
                                         ) {
-                                            Text(tier, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = if (selected) OrangePrimary else MaterialTheme.colorScheme.onSurface)
+                                            Text(Localization.get("admin_tier_${tier.lowercase(Locale.ROOT)}", language), fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = if (selected) OrangePrimary else MaterialTheme.colorScheme.onSurface)
                                         }
                                     }
                                 }
@@ -1631,7 +1632,7 @@ fun AdminVerificationConsoleDialog(
                                     OutlinedTextField(
                                         value = manualDaysText,
                                         onValueChange = { manualDaysText = it.filter { ch -> ch.isDigit() } },
-                                        label = { Text("Days") },
+                                        label = { Text(Localization.get("admin_days_label", language)) },
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true,
                                         modifier = Modifier.weight(1f)
@@ -1639,7 +1640,7 @@ fun AdminVerificationConsoleDialog(
                                     OutlinedTextField(
                                         value = manualAmountText,
                                         onValueChange = { manualAmountText = it.filter { ch -> ch.isDigit() } },
-                                        label = { Text("Amount (FRw)") },
+                                        label = { Text(Localization.get("admin_amount_label", language)) },
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true,
                                         modifier = Modifier.weight(1f)
@@ -1660,7 +1661,7 @@ fun AdminVerificationConsoleDialog(
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = "Cryptographic Account Binding Ready",
+                                                    text = Localization.get("admin_binding_ready", language),
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = ProfitGreen
@@ -1719,7 +1720,12 @@ fun AdminVerificationConsoleDialog(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    listOf("ALL", "ISSUED", "REDEEMED", "REVOKED").forEach { st ->
+                                    listOf(
+                                        "ALL" to "admin_code_status_all",
+                                        "ISSUED" to "admin_code_status_issued",
+                                        "REDEEMED" to "admin_code_status_redeemed",
+                                        "REVOKED" to "admin_code_status_revoked"
+                                    ).forEach { (st, labelKey) ->
                                         val selected = codeStatusFilter == st
                                         OutlinedButton(
                                             onClick = { codeStatusFilter = st },
@@ -1731,7 +1737,7 @@ fun AdminVerificationConsoleDialog(
                                                 containerColor = if (selected) OrangePrimary.copy(alpha = 0.16f) else Color.Transparent
                                             )
                                         ) {
-                                            Text(st, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (selected) OrangePrimary else MaterialTheme.colorScheme.onSurface)
+                                            Text(Localization.get(labelKey, language), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (selected) OrangePrimary else MaterialTheme.colorScheme.onSurface)
                                         }
                                     }
                                 }
@@ -1787,7 +1793,7 @@ fun AdminVerificationConsoleDialog(
                                                         color = if (isRevoked) LossRed else MaterialTheme.colorScheme.onSurface
                                                     )
                                                     Text(
-                                                        text = "@${codeDto.shopUsername} (${codeDto.shopPhone}) Ã¢â‚¬Â¢ ${codeDto.tierCode} (${codeDto.planDays}d / ${codeDto.amountRwf} FRw) Ã¢â‚¬Â¢ ${codeDto.status}",
+                                                        text = "@${codeDto.shopUsername} (${codeDto.shopPhone}) • " + Localization.format("admin_code_status_fmt", language, codeDto.tierCode, codeDto.planDays, codeDto.amountRwf, when (codeDto.status.uppercase(Locale.ROOT)) { "ISSUED" -> Localization.get("admin_code_status_issued", language); "REDEEMED" -> Localization.get("admin_code_status_redeemed", language); "REVOKED" -> Localization.get("admin_code_status_revoked", language); else -> codeDto.status }),
                                                         fontSize = 10.sp,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
