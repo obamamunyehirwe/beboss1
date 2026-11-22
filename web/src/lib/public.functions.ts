@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { createPublicClient } from "./server/public-client";
-import { computeShopKey, normalizePhoneLast9 } from "./pricing";
+import { calculateSubscriptionFee, computeShopKey, normalizePhoneLast9 } from "./pricing";
 import { decodeShareToken, extractShopRecords, mergeShareJson, pickLatestDeviceChunkSet, type ShopRecords } from "./snapshot-analytics";
 
 export const getPublicSite = createServerFn({ method: "GET" }).handler(async () => {
@@ -95,9 +95,31 @@ export const submitPaymentProof = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const key = computeShopKey(data.username, data.phone);
     const sb = createPublicClient(key);
-    // Refuse duplicate references for the same shop so the queue stays clean.
-    const { data: dup } = await sb.from("payment_requests").select("id").eq("telco_reference", data.telcoReference).limit(1);
-    if (dup && dup.length) throw new Error("This transaction reference was already submitted for your shop.");
+    const reference = data.telcoReference.trim().toUpperCase();
+    // Keep duplicate checks tenant-scoped and case-insensitive. The database
+    // unique index is the final guard when Android, web and WhatsApp submit
+    // the same reference at nearly the same time.
+    const { data: dup, error: dupError } = await sb
+      .from("payment_requests")
+      .select("id")
+      .eq("provider", data.provider)
+      .ilike("telco_reference", reference)
+      .limit(1);
+    if (dupError) throw new Error("Could not check this transaction reference. Please try again.");
+    if (dup?.length) throw new Error("This transaction reference was already submitted for this shop.");
+
+    const { data: config } = await sb
+      .from("app_config")
+      .select("per_device_fee_rwf")
+      .eq("id", "global")
+      .maybeSingle();
+    const amount = calculateSubscriptionFee(
+      data.branches,
+      data.workers,
+      data.months,
+      data.devices,
+      Number(config?.per_device_fee_rwf) || 2000,
+    ).total;
     const now = Date.now();
     const { error } = await sb.from("payment_requests").insert({
       id: `WEB-${crypto.randomUUID()}`,
@@ -108,18 +130,22 @@ export const submitPaymentProof = createServerFn({ method: "POST" })
       ussd_code: data.ussd,
       payer_phone: data.payerPhone,
       payer_full_name: data.payerName,
+      amount_rwf: amount,
       duration_months: data.months,
       branch_count: data.branches,
       worker_count: data.workers,
       device_count: data.devices,
-      telco_reference: data.telcoReference,
+      telco_reference: reference,
       status: "PENDING_VERIFICATION",
       source: "WEB",
       created_at: now,
       updated_at: now,
     });
-    if (error) throw new Error("Could not submit your payment proof. Please try again.");
-    return { ok: true };
+    if (error) {
+      if (error.code === "23505") throw new Error("This mobile-money transaction reference was already submitted.");
+      throw new Error("Could not submit your payment proof. Please try again.");
+    }
+    return { ok: true, amount };
   });
 
 // ---------------------------------------------------------------------------
