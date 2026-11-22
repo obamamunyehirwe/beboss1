@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/admin/ui";
 import { askCopilot } from "@/lib/ai.functions";
 import { cn } from "@/lib/utils";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/copilot")({
   head: () => ({ meta: [{ title: "Copilot — BeBoss Admin" }, { name: "robots", content: "noindex" }] }),
@@ -26,6 +27,7 @@ const SUGGESTIONS = [
 ];
 
 function CopilotPage() {
+  const a = useAdminText();
   const ask = useServerFn(askCopilot);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -65,8 +67,8 @@ function CopilotPage() {
             <span className="grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-primary to-primary-glow text-primary-foreground shadow-lg">
               <Bot className="size-7" />
             </span>
-            <h2 className="mt-4 text-xl font-bold">What do you want to know?</h2>
-            <p className="mt-1 text-sm text-muted-foreground">The copilot reads a fresh summary of shops, payments, codes, devices and sync activity each time you ask.</p>
+            <h2 className="mt-4 text-xl font-bold">{a("What do you want to know?")}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{a("The copilot reads a fresh summary of shops, payments, codes, devices and sync activity each time you ask.")}</p>
             <div className="mt-6 flex flex-wrap justify-center gap-2">
               {SUGGESTIONS.map((s) => (
                 <button key={s} type="button" onClick={() => send(s)} className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground">
@@ -90,7 +92,7 @@ function CopilotPage() {
                 <span className="grid size-8 place-items-center rounded-xl bg-primary/15 text-primary">
                   <Loader2 className="size-4 animate-spin" />
                 </span>
-                Reading your live data…
+                {a("Reading your live data…")}
               </div>
             ) : null}
             <div ref={endRef} />
@@ -114,10 +116,10 @@ function CopilotPage() {
             }
           }}
           rows={1}
-          placeholder="Ask the copilot… (Enter to send, Shift+Enter for a new line)"
+          placeholder={a("Ask the copilot… (Enter to send, Shift+Enter for a new line)") }
           className="max-h-40 min-h-10 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
         />
-        <Button type="submit" size="icon" variant="hero" disabled={!input.trim() || run.isPending} aria-label="Send">
+        <Button type="submit" size="icon" variant="hero" disabled={!input.trim() || run.isPending} aria-label={a("Send")}>
           {run.isPending ? <Loader2 className="animate-spin" /> : <ArrowUp />}
         </Button>
       </form>
