@@ -1089,9 +1089,9 @@ internal object LocalizationScreens {
         ),
         "sub_proof_err_missing" to locEntry(
             "Enter the payer phone, full registered name, and payment date/time. No transaction reference is required.",
-            "Injiza nimero yohereje, amazina yuzuye na kode y'ubutumwa bwa MoMo.",
-            "Entrez le numéro payeur, le nom complet et la référence de transaction.",
-            "Weka namba iliyotuma, jina kamili na kumbukumbu ya muamala."
+            "Injiza amazina yuzuye na telefoni by'uwishyuye hamwe n'igihe yishyuye.",
+            "Saisissez le nom complet du payeur, son téléphone et l'heure du paiement.",
+            "Weka jina kamili na simu ya mlipaji pamoja na muda wa malipo."
         ),
         "sub_proof_submitted_toast" to locEntry(
             "Payment proof queued for Admin verification!",
