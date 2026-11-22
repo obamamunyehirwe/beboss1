@@ -121,6 +121,11 @@ Deno.serve(async (request: Request) => {
     const phone = String(input?.phone ?? "").trim();
     const tier = String(input?.tier ?? "SINGLE").trim().toUpperCase();
     const days = Number(input?.days);
+    const requestId = String(input?.requestId ?? "").trim();
+    const planDigest = String(input?.planDigest ?? "").trim().toUpperCase();
+    if (!!requestId !== !!planDigest || (requestId && (requestId.length > 200 || !/^[0-9A-F]{64}$/.test(planDigest)))) {
+      return json(400, { message: "The payment request and its 64-character plan digest must be supplied together." });
+    }
     if (!username || username.length > 80 || !normalizePhone(phone) || normalizePhone(phone).length !== 9) {
       return json(400, { message: "A valid shop username and registered Rwanda phone are required." });
     }
@@ -128,7 +133,11 @@ Deno.serve(async (request: Request) => {
       return json(400, { message: "The requested plan or subscription length is invalid." });
     }
 
-    const nonce = hex(crypto.getRandomValues(new Uint8Array(12)));
+    // New payment approvals derive the BB3 nonce from the exact submitted payment and plan.
+    // Manual/admin codes without a payment request retain an independent random nonce.
+    const nonce = requestId && planDigest
+      ? planDigest.slice(0, 24)
+      : hex(crypto.getRandomValues(new Uint8Array(12)));
     const accountHash = hex(await sha256(`${username.toLowerCase() }:${normalizePhone(phone)}`)).slice(0, 6);
     const expiryHex = (Math.floor(Date.now() / 86_400_000) + 14).toString(16).toUpperCase();
     const payload = `BB3:${tier}:${days}:${expiryHex}:${accountHash}:${nonce}`;
@@ -141,7 +150,7 @@ Deno.serve(async (request: Request) => {
     const derSignature = rawEcdsaToDer(rawSignature);
     const code = `BB3-${tier}-${days}-${expiryHex}-${accountHash}-${nonce}-${toBase64(derSignature)}`;
 
-    return json(200, { code, tier, days, expiresOnEpochDay: Number.parseInt(expiryHex, 16), algorithm: "ECDSA-P256-SHA256" });
+    return json(200, { code, tier, days, requestId: requestId || undefined, planDigest: planDigest || undefined, expiresOnEpochDay: Number.parseInt(expiryHex, 16), algorithm: "ECDSA-P256-SHA256" });
   } catch (error) {
     console.error("[issue-bb3-unlock]", error);
     return json(500, { message: error instanceof Error ? error.message : "Unable to create a signed BB3 code." });
