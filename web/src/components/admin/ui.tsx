@@ -68,6 +68,7 @@ export function StatCard({
   tone?: "default" | "brand" | "success" | "warning" | "danger" | "info";
   onClick?: () => void;
 }) {
+  const a = useAdminText();
   const toneCls = {
     default: "text-muted-foreground bg-muted",
     brand: "text-primary bg-primary/12",
@@ -85,7 +86,7 @@ export function StatCard({
       onKeyDown={onClick ? (e) => e.key === "Enter" && onClick() : undefined}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm text-muted-foreground">{label}</p>
+        <p className="text-sm text-muted-foreground">{typeof label === "string" ? a(label) : label}</p>
         {Icon ? (
           <span className={cn("grid size-9 place-items-center rounded-xl", toneCls)}>
             <Icon className="size-4" />
@@ -93,7 +94,7 @@ export function StatCard({
         ) : null}
       </div>
       <p className="mt-2 font-display text-2xl font-bold">{value}</p>
-      {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
+      {sub ? <p className="mt-1 text-xs text-muted-foreground">{typeof sub === "string" ? a(sub) : sub}</p> : null}
     </div>
   );
 }
