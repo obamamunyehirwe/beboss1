@@ -337,7 +337,7 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
     const { data: req, error } = await ctx.supabase.from("payment_requests").select("*").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
 
-    const shopId = computeShopKey(req.owner_username, req.owner_phone);
+    const { shopId } = await requireRegisteredPaymentShop(ctx, req);
     const calc = calculateSubscriptionFee(
       req.branch_count,
       req.worker_count,
@@ -345,6 +345,8 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
       req.device_count || 1,
       await perDeviceRate(ctx),
     );
+
+    if (Number(req.amount_rwf) !== calc.total) throw new Error("Payment amount does not match the submitted subscription plan.");
 
     // Direct auto-unlock is idempotent. Repair only if the shop's cloud
     // auto_unlocked_at marker proves the activation did not complete.
@@ -362,12 +364,6 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
           devices: req.device_count || 1,
           monthly: calc.monthly,
           autoUnlock: true,
-          fallback: {
-            shop_name: req.shop_name,
-            owner_username: String(req.owner_username).toLowerCase(),
-            owner_phone: req.owner_phone,
-            device_challenge: req.device_challenge || "",
-          },
         });
       }
       return {
@@ -413,12 +409,6 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
       devices: req.device_count || 1,
       monthly: calc.monthly,
       autoUnlock: true,
-      fallback: {
-        shop_name: req.shop_name,
-        owner_username: String(req.owner_username).toLowerCase(),
-        owner_phone: req.owner_phone,
-        device_challenge: req.device_challenge || "",
-      },
     });
     await audit(ctx, admin.email, "DIRECT_AUTO_UNLOCK", `@${req.owner_username}`, `Auto-unlocked ${req.shop_name} (+${calc.days}d, ${calc.total} FRw, ${req.device_count || 1} devices)`);
     return {
