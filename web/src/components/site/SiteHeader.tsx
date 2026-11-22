@@ -94,9 +94,9 @@ export function SiteHeader() {
   ];
 
   const normalizeSearchText = (value: string) =>
-    value.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLocaleLowerCase();
+    value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
   const query = normalizeSearchText(searchQuery.trim());
-  const queryTerms = query.split(/\\s+/).filter(Boolean);
+  const queryTerms = query.split(/\s+/).filter(Boolean);
   const filteredLinks = queryTerms.length
     ? allLinks
         .filter((item) => {
