@@ -747,6 +747,7 @@ fun AdminVerificationConsoleDialog(
                                     val isDirectUnlocked = req.status == "APPROVED" && req.approvalMode == "DIRECT_AUTO_UNLOCK"
                                     val isApprovedAny = req.status == "APPROVED"
                                     val isRejected = req.status == "REJECTED"
+                                    val ussdLabel = if (req.ussdCode == "MANUAL_WHATSAPP_PROOF") Localization.get("admin_manual_proof", language) else req.ussdCode.ifBlank { "Manual" }
                                     val effectiveDevices = req.deviceCount.coerceAtLeast(1)
                                     val expectedFee = OfflineSubscriptionManager.calculateSubscriptionPrice(
                                         branchCount = req.branchCount.coerceAtLeast(1),
@@ -828,7 +829,7 @@ fun AdminVerificationConsoleDialog(
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                             Text(
-                                                text = Localization.format("admin_ussd_ref_fmt", language, req.ussdCode.ifBlank { "Manual" }, req.telcoReference.ifBlank { "WhatsApp Proof" }),
+                                                text = Localization.format("admin_ussd_ref_fmt", language, ussdLabel, req.telcoReference.ifBlank { Localization.get("admin_manual_proof", language) }),
                                                 fontSize = 10.5.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -966,7 +967,7 @@ fun AdminVerificationConsoleDialog(
                                                     OutlinedButton(
                                                         onClick = {
                                                             requestToReject = req
-                                                            rejectReasonInput = "MoMo transaction reference mismatch"
+                                                            rejectReasonInput = Localization.get("admin_reject_reason", language)
                                                         },
                                                         modifier = Modifier
                                                             .weight(0.9f)
@@ -974,7 +975,7 @@ fun AdminVerificationConsoleDialog(
                                                         contentPadding = PaddingValues(horizontal = 4.dp),
                                                         border = BorderStroke(1.dp, LossRed.copy(alpha = 0.6f))
                                                     ) {
-                                                        Text("Reject", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = LossRed)
+                                                        Text(Localization.get("admin_reject", language), fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = LossRed)
                                                     }
                                                 }
                                             }
