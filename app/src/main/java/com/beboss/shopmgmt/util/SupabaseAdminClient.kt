@@ -1663,13 +1663,24 @@ object SupabaseAdminClient {
         if (!isConfigured() || session == null) {
             return@withContext Pair(false, "Admin authentication expired or unavailable.")
         }
+        if (request.status == "APPROVED") {
+            return@withContext if (request.generatedUnlockCode.isNotBlank() && request.approvalMode == "UNLOCK_CODE") {
+                Pair(true, request.generatedUnlockCode)
+            } else {
+                Pair(false, "This payment has already been approved using direct auto-unlock.")
+            }
+        }
+        if (request.status !in setOf("PENDING_VERIFICATION", "REJECTED")) {
+            return@withContext Pair(false, "This payment claim is no longer awaiting approval.")
+        }
+
         val tierCode = when {
             request.durationMonths >= 12 -> "ANNUAL"
             request.branchCount >= 3 -> "MULTI"
             request.branchCount == 2 -> "DUAL"
             else -> "SINGLE"
         }
-        val days = (request.durationMonths.coerceAtLeast(1)) * 30
+        val days = request.durationMonths.coerceAtLeast(1) * 30
         val generatedCode = requestServerSignedBB3Code(
             username = request.ownerUsername,
             registeredPhone = request.ownerPhone,
@@ -1682,7 +1693,7 @@ object SupabaseAdminClient {
         try {
             val now = System.currentTimeMillis()
             val codeId = UUID.randomUUID().toString()
-            val operatorLabel = activeAdminSession?.let { "${it.fullName} (${it.email})" } ?: adminName
+            val operatorLabel = "${session.fullName} (${session.email})".ifBlank { adminName }
             val recomputedBreakdown = OfflineSubscriptionManager.calculateSubscriptionPrice(
                 branchCount = request.branchCount.coerceAtLeast(1),
                 workerCount = request.workerCount.coerceAtLeast(1),
@@ -1707,7 +1718,11 @@ object SupabaseAdminClient {
                 .addHeader("Prefer", "return=minimal")
                 .post(codePayload.toString().toRequestBody(jsonMediaType))
                 .build()
-            val codeOk = client.newCall(insertCodeReq).execute().use { it.isSuccessful }
+            val codeOk = client.newCall(insertCodeReq).execute().use { response ->
+                if (!response.isSuccessful) Log.w(TAG, "Could not store signed code (HTTP ${response.code})")
+                response.isSuccessful
+            }
+            if (!codeOk) return@withContext Pair(false, "Could not register the signed unlock code in BeBoss.")
 
             val prPatch = JSONObject().apply {
                 put("status", "APPROVED")
@@ -1715,38 +1730,57 @@ object SupabaseAdminClient {
                 put("amount_rwf", verifiedAmountRwf)
                 put("generated_unlock_code", generatedCode)
                 put("verified_by_admin", operatorLabel)
+                put("rejection_reason", "")
                 put("updated_at", now)
             }
             val patchPrReq = buildRestRequest(
-                "payment_requests?id=eq.${URLEncoder.encode(request.id, "UTF-8")}",
+                "payment_requests?id=eq.${URLEncoder.encode(request.id, "UTF-8")}&status=in.(PENDING_VERIFICATION,REJECTED)",
                 useAdminJwtIfAvailable = true
-            ).patch(prPatch.toString().toRequestBody(jsonMediaType)).build()
-            val prOk = client.newCall(patchPrReq).execute().use { it.isSuccessful }
-
-            if (codeOk && prOk) {
-                val shopKey = computeShopSyncKey(request.ownerUsername, request.ownerPhone)
-                extendShopExpiryInternal(
-                    shopId = shopKey,
-                    addDays = days,
-                    branchCount = request.branchCount,
-                    workerCount = request.workerCount,
-                    deviceLimit = request.deviceCount,
-                    monthlyFeeRwf = recomputedBreakdown.monthlySubtotal,
-                    markAutoUnlock = false
-                )
-                val varianceNote = if (request.amountRwf != verifiedAmountRwf) {
-                    " [recomputed from ${request.amountRwf} FRw]"
-                } else ""
-                logAdminAudit(
-                    action = "APPROVE_PAYMENT",
-                    targetId = request.ownerUsername,
-                    details = "Approved $verifiedAmountRwf FRw$varianceNote (${request.provider}) -> $generatedCode (+${days}d)"
-                )
+            )
+                .addHeader("Prefer", "return=representation")
+                .patch(prPatch.toString().toRequestBody(jsonMediaType))
+                .build()
+            val claimWon = client.newCall(patchPrReq).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Payment approval compare-and-set failed (HTTP ${response.code})")
+                    false
+                } else {
+                    JSONArray(response.body?.string().orEmpty().ifBlank { "[]" }).length() > 0
+                }
             }
-            Pair(codeOk && prOk, generatedCode)
+
+            if (!claimWon) {
+                val revokePayload = JSONObject().put("status", "REVOKED")
+                val revoke = buildRestRequest(
+                    "unlock_codes?id=eq.${URLEncoder.encode(codeId, "UTF-8")}",
+                    useAdminJwtIfAvailable = true
+                ).patch(revokePayload.toString().toRequestBody(jsonMediaType)).build()
+                client.newCall(revoke).execute().close()
+                return@withContext Pair(false, "Another administrator processed this payment first. Refresh the queue.")
+            }
+
+            val shopKey = computeShopSyncKey(request.ownerUsername, request.ownerPhone)
+            extendShopExpiryInternal(
+                shopId = shopKey,
+                addDays = days,
+                branchCount = request.branchCount,
+                workerCount = request.workerCount,
+                deviceLimit = request.deviceCount,
+                monthlyFeeRwf = recomputedBreakdown.monthlySubtotal,
+                markAutoUnlock = false
+            )
+            val varianceNote = if (request.amountRwf != verifiedAmountRwf) {
+                " [recomputed from ${request.amountRwf} FRw]"
+            } else ""
+            logAdminAudit(
+                action = "APPROVE_PAYMENT",
+                targetId = request.ownerUsername,
+                details = "Approved ${verifiedAmountRwf} FRw$varianceNote (${request.provider}); BB3 code issued for +${days}d"
+            )
+            Pair(true, generatedCode)
         } catch (e: Exception) {
             Log.e(TAG, "approvePaymentAndIssueCode error: ${e.message}")
-            Pair(false, generatedCode)
+            Pair(false, e.message ?: "Unable to complete payment approval.")
         }
     }
 
@@ -1761,6 +1795,11 @@ object SupabaseAdminClient {
     ): Boolean = withContext(Dispatchers.IO) {
         val session = ensureValidAdminSession()
         if (!isConfigured() || session == null) return@withContext false
+        if (request.status == "APPROVED") {
+            return@withContext request.approvalMode == "DIRECT_AUTO_UNLOCK"
+        }
+        if (request.status !in setOf("PENDING_VERIFICATION", "REJECTED")) return@withContext false
+
         try {
             val now = System.currentTimeMillis()
             val days = request.durationMonths.coerceAtLeast(1) * 30
@@ -1779,14 +1818,25 @@ object SupabaseAdminClient {
                 put("amount_rwf", verifiedAmountRwf)
                 put("generated_unlock_code", "")
                 put("verified_by_admin", operatorLabel)
+                put("rejection_reason", "")
                 put("updated_at", now)
             }
             val patchPrReq = buildRestRequest(
-                "payment_requests?id=eq.${URLEncoder.encode(request.id, "UTF-8")}",
+                "payment_requests?id=eq.${URLEncoder.encode(request.id, "UTF-8")}&status=in.(PENDING_VERIFICATION,REJECTED)",
                 useAdminJwtIfAvailable = true
-            ).patch(prPatch.toString().toRequestBody(jsonMediaType)).build()
-            val prOk = client.newCall(patchPrReq).execute().use { it.isSuccessful }
-            if (!prOk) return@withContext false
+            )
+                .addHeader("Prefer", "return=representation")
+                .patch(prPatch.toString().toRequestBody(jsonMediaType))
+                .build()
+            val claimWon = client.newCall(patchPrReq).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Direct auto-unlock compare-and-set failed (HTTP ${response.code})")
+                    false
+                } else {
+                    JSONArray(response.body?.string().orEmpty().ifBlank { "[]" }).length() > 0
+                }
+            }
+            if (!claimWon) return@withContext false
 
             val shopKey = computeShopSyncKey(request.ownerUsername, request.ownerPhone)
             extendShopExpiryInternal(
@@ -1801,7 +1851,7 @@ object SupabaseAdminClient {
             logAdminAudit(
                 action = "DIRECT_AUTO_UNLOCK",
                 targetId = request.ownerUsername,
-                details = "Direct Auto-Unlocked ${request.shopName} (payer: ${request.payerFullName} / ${request.payerPhone}) for +${days}d ($verifiedAmountRwf FRw, ${request.deviceCount} device(s)) without code"
+                details = "Direct auto-unlocked ${request.shopName} (+${days}d, ${verifiedAmountRwf} FRw, ${request.deviceCount} devices); no code required."
             )
             true
         } catch (e: Exception) {
