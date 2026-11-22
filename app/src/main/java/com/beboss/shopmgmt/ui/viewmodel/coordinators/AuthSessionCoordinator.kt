@@ -88,6 +88,20 @@ class AuthSessionCoordinator(
             try {
                 val cleanPin = pin.trim()
                 val cleanPassword = password.trim()
+                val cleanShopName = shopName.trim()
+                val cleanOwnerName = ownerFullName.trim()
+                val cleanUsername = username.trim().lowercase()
+                val cleanPhone = phone.trim()
+                val phoneDigits = cleanPhone.filter { it.isDigit() }.takeLast(9)
+
+                // Never register or sync a shop with the shared owner_000000000 fallback.
+                // A valid owner identity is required for tenant isolation and cloud recovery.
+                if (cleanShopName.isBlank() || cleanOwnerName.isBlank() || cleanUsername.length < 2 ||
+                    !cleanUsername.matches(Regex("[a-z0-9._-]{2,80}")) || phoneDigits.length != 9) {
+                    _authError.value = "Enter a shop name, owner name, a valid username, and the registered 9-digit Rwandan phone number."
+                    return@launch
+                }
+
                 val pinCheck = SecurityUtils.validatePinStrength(cleanPin)
                 if (!pinCheck.isValid) {
                     _authError.value = pinCheck.message
@@ -103,10 +117,10 @@ class AuthSessionCoordinator(
                 val liveConfig = com.beboss.shopmgmt.util.OfflineSubscriptionManager.getCurrentPaymentConfig()
                 val profile = ShopProfile(
                     id = 1L,
-                    name = ownerFullName.trim(),
-                    phone = phone.trim(),
-                    email = "${username.trim().lowercase()}@beboss.rw",
-                    shopName = shopName.trim(),
+                    name = cleanOwnerName,
+                    phone = cleanPhone,
+                    email = "${cleanUsername}@beboss.rw",
+                    shopName = cleanShopName,
                     address = address.trim().ifBlank { "Kigali, Rwanda" },
                     currencyCode = currencyCode.trim(),
                     currencySymbol = currencySymbol.trim(),
@@ -123,9 +137,9 @@ class AuthSessionCoordinator(
 
                 val ownerUser = User(
                     id = UUID.randomUUID().toString(),
-                    name = ownerFullName.trim(),
-                    username = username.trim().lowercase(),
-                    phone = phone.trim(),
+                    name = cleanOwnerName,
+                    username = cleanUsername,
+                    phone = cleanPhone,
                     pinHash = SecurityUtils.hashPin(cleanPin),
                     password = SecurityUtils.hashPassword(cleanPassword),
                     role = UserRole.OWNER,
@@ -147,11 +161,11 @@ class AuthSessionCoordinator(
 
                 val mainBranch = com.beboss.shopmgmt.data.model.Branch(
                     id = "main_branch",
-                    name = "${shopName.trim()} (HQ)",
+                    name = "${cleanShopName} (HQ)",
                     code = "HQ-01",
                     address = address.trim().ifBlank { "Kigali, Rwanda" },
-                    phone = phone.trim(),
-                    managerName = ownerFullName.trim(),
+                    phone = cleanPhone,
+                    managerName = cleanOwnerName,
                     isMainBranch = true,
                     colorHex = "#FF6B1A"
                 )
