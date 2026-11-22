@@ -13,6 +13,6 @@
 
 ## Waiting on the owner
 - [ ] Existing records from the old backend (per-table CSV/JSON export) — blocked on export
-- [ ] BB2 unlock signing key + optional snapshot key entered in Admin → Settings — blocked on owner
+- [ ] Verify the server-side BB3 P-256 private key matches the public key pinned in the Android APK; optional snapshot key can be configured in Admin → Settings
 - [ ] Android app rebuilt with this backend's URL/key (Admin → Settings shows the values) — blocked on APK rebuild
 - [ ] Master admin signs up with obamamunyehirwe@gmail.com and confirms email (admin role is granted automatically)
