@@ -2,7 +2,8 @@
 -- The legacy telco_reference column remains for backwards compatibility with older APKs.
 alter table public.payment_requests
   add column if not exists payment_time_ms bigint not null default 0,
-  add column if not exists payment_note text not null default '';
+  add column if not exists payment_note text not null default '',
+  add column if not exists fee_per_device_rwf integer not null default 2000;
 
 alter table public.unlock_codes
   add column if not exists payment_request_id text,
@@ -48,3 +49,5 @@ comment on column public.unlock_codes.payment_request_id is
   'Payment request this unique, signed BB3 code was issued for.';
 comment on column public.unlock_codes.plan_digest is
   'SHA-256 commitment to the exact payment request, owner, payer, amount and plan used to issue this BB3 code.';
+
+comment on column public.payment_requests.fee_per_device_rwf is 'Pricing snapshot used for display and audit only; server approval always recalculates against current trusted app_config pricing.';
