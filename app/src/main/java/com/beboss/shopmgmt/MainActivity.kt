@@ -687,8 +687,8 @@ private fun BeBossMainContent(
                                 onAdminSignUp = { email, password, fullName -> viewModel.signUpSupabaseAdmin(email, password, fullName) },
                                 onAdminSignOut = { viewModel.signOutSupabaseAdmin() },
                                 onRefreshAdminDashboard = { viewModel.refreshAdminDashboardData() },
-                                onAdminApprovePayment = { req, onDone ->
-                                    viewModel.adminApproveAndGenerateCode(req, onDone)
+                                onAdminApprovePayment = { req, verificationNote, onDone ->
+                                    viewModel.adminApproveAndGenerateCode(req, verificationNote, onDone)
                                 },
                                 onAdminSavePaymentConfig = { cfg, onDone ->
                                     viewModel.adminSavePaymentConfig(cfg, onDone)
