@@ -207,10 +207,10 @@ object Localization {
             "Majaribio ya Bure Siku 4 • Kisha 5,000 FRw / mwezi"
         ),
         "reg_trial_card_desc" to locEntry(
-            "After 4 free days, submit your payment details for admin review. After approval, enter the BB2 code or wait for the shop to unlock on sync.",
-            "Nyuma y'iminsi 4 y'ubuntu, ohereza amakuru y'ubwishyu kugira ngo umuyobozi ayagenzure. Nyuma yo kwemezwa, koresha kode ya BB2 cyangwa utegereze ko iduka rifunguka rimaze guhuza.",
-            "Après 4 jours d'essai, envoyez les détails du paiement pour vérification par un administrateur. Après validation, saisissez le code BB2 ou attendez le déblocage à la synchronisation.",
-            "Baada ya siku 4 za jaribio, tuma taarifa za malipo zikaguliwe na msimamizi. Baada ya kuidhinishwa, weka msimbo wa BB2 au subiri duka lifunguke baada ya kusawazisha."
+            "After 4 free days, submit payment proof for admin review. After approval, use the BB3 code generated for your payment or wait for unlock on sync. Historical BB2 codes are verified online.",
+            "Nyuma y'iminsi 4 y'ubuntu, ohereza gihamya y'ubwishyu igenzurwe n'umuyobozi. Nyuma yo kwemezwa, koresha kode ya BB3 y'ubwishyu bwawe cyangwa utegereze ko iduka rifunguka kuri sync. Kode za kera za BB2 zigenzurwa kuri internet.",
+            "Après 4 jours d'essai, envoyez la preuve de paiement pour vérification. Après validation, utilisez le code BB3 généré pour votre paiement ou attendez la synchronisation. Les anciens BB2 sont vérifiés en ligne.",
+            "Baada ya siku 4 za jaribio, tuma uthibitisho wa malipo ukaguliwe na msimamizi. Baada ya kuidhinishwa, tumia msimbo wa BB3 wa malipo yako au subiri usawazishaji. Misimbo ya zamani ya BB2 hukaguliwa mtandaoni."
         ),
         "reg_owner_name_label" to locEntry("Owner Full Name *", "Amazina Yuzuye ya Nyir'ububiko *", "Nom complet du propriétaire *", "Jina Kamili la Mmiliki *"),
         "reg_owner_name_placeholder" to locEntry("e.g. Jean Paul Mugisha", "urugero: Jean Paul Mugisha", "ex. Jean Paul Mugisha", "mf. Jean Paul Mugisha"),
