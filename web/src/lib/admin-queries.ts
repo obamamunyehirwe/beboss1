@@ -4,7 +4,7 @@ import type { Database } from "@/integrations/supabase/types";
 
 export type Tables = Database["public"]["Tables"];
 export type ShopAccount = Tables["shop_accounts"]["Row"];
-export type PaymentRequest = Omit<Tables["payment_requests"]["Row"], "telco_reference">;
+export type PaymentRequest = Tables["payment_requests"]["Row"];
 export type ShopDevice = Tables["shop_devices"]["Row"];
 export type ShopUser = Tables["shop_users"]["Row"];
 export type UnlockCode = Tables["unlock_codes"]["Row"];

@@ -114,88 +114,25 @@ object MoMoPaymentGateway {
      * Checks a submitted reference's format and prevents local reuse.
      * It cannot verify settlement or confirm the paid amount with the operator.
      */
+    @Deprecated("Subscription proof no longer collects transaction references. Use payer and payment-time details.")
     fun verifyTelcoTransactionReference(
         rawReference: String,
         provider: String,
         amount: Int,
         alreadyUsedRefs: Set<String>
     ): GatewayTransactionResult {
-        val cleanRef = rawReference.trim().uppercase(Locale.ROOT)
-
-        if (cleanRef.isBlank()) {
-            return GatewayTransactionResult(
-                isSuccess = false,
-                isPending = false,
-                status = "INVALID_REFERENCE",
-                transactionReference = "",
-                financialId = null,
-                amount = amount,
-                provider = provider,
-                payerPhone = "",
-                message = "Please enter the transaction reference code from your MoMo confirmation SMS."
-            )
-        }
-
-        // Anti-Replay protection: reject already redeemed or processed transaction IDs
-        if (alreadyUsedRefs.contains(cleanRef)) {
-            return GatewayTransactionResult(
-                isSuccess = false,
-                isPending = false,
-                status = "REPLAY_DETECTED",
-                transactionReference = cleanRef,
-                financialId = null,
-                amount = amount,
-                provider = provider,
-                payerPhone = "",
-                message = "Transaction reference $cleanRef has already been recorded and cannot be reused (Anti-Replay)."
-            )
-        }
-
-        val isMtn = provider.contains("MTN", ignoreCase = true)
-        val isAirtel = provider.contains("Airtel", ignoreCase = true)
-
-        val isValidFormat = when {
-            isMtn -> {
-                // MTN Rwanda format: MP followed by date/time sequence and hex/alphanumeric code
-                (cleanRef.startsWith("MP") && cleanRef.length >= 12) ||
-                        (cleanRef.startsWith("MOMO") && cleanRef.length >= 10) ||
-                        (cleanRef.all { it.isDigit() } && cleanRef.length in 10..18)
-            }
-            isAirtel -> {
-                // Airtel Money Rwanda format: TX followed by digits or pure numeric string
-                (cleanRef.startsWith("TX") && cleanRef.length >= 10) ||
-                        (cleanRef.all { it.isDigit() } && cleanRef.length in 10..18)
-            }
-            else -> cleanRef.length in 10..24
-        }
-
-        if (!isValidFormat) {
-            return GatewayTransactionResult(
-                isSuccess = false,
-                isPending = false,
-                status = "INVALID_REFERENCE",
-                transactionReference = cleanRef,
-                financialId = null,
-                amount = amount,
-                provider = provider,
-                payerPhone = "",
-                message = "Invalid $provider reference format. Example: MTN 'MP260903.0852.A123' or Airtel 'TX2609038812'."
-            )
-        }
-
         return GatewayTransactionResult(
             isSuccess = false,
             isPending = true,
             status = "PENDING_VERIFICATION",
-            transactionReference = cleanRef,
-            financialId = cleanRef,
+            transactionReference = "",
+            financialId = null,
             amount = amount,
             provider = provider,
             payerPhone = "",
-            message = "$provider reference format looks valid, but settlement has not been verified. Send the reference and payer details through the payment proof form or WhatsApp for admin review."
+            message = "BeBoss no longer asks for a transaction reference. Submit payer details, payment date/time and an optional note in the subscription proof form. An administrator verifies settlement with the provider."
         )
     }
-
     /**
      * Sends a request to an optional configured backend and polls its reported status.
      * A submitted SMS reference is only format-checked here; it is not verified with the operator.
@@ -225,22 +162,14 @@ object MoMoPaymentGateway {
             )
         }
 
-        // If the user provided a Telco SMS transaction ID, verify it algorithmically & anti-replay
-        if (!userEnteredReference.isNullOrBlank()) {
-            return@withContext verifyTelcoTransactionReference(
-                rawReference = userEnteredReference,
-                provider = provider,
-                amount = amount,
-                alreadyUsedRefs = alreadyUsedRefs
-            ).copy(payerPhone = normalizedPhone)
-        }
+        // Subscription proof is submitted with payer details and payment time; no SMS TxID is collected.
 
         val backendUrl = shopProfile.backendServerUrl?.trim()
         val hasBackend = !backendUrl.isNullOrBlank() && (backendUrl.startsWith("https://") || backendUrl.startsWith("http://"))
 
         if (!hasBackend) {
             // No automated cloud gateway configured on this shop profile.
-            // Prompt the merchant to dial USSD or provide SMS reference.
+            // Prompt the merchant to dial USSD and submit payer/payment-time details.
             return@withContext GatewayTransactionResult(
                 isSuccess = false,
                 isPending = true,
@@ -250,7 +179,7 @@ object MoMoPaymentGateway {
                 amount = amount,
                 provider = provider,
                 payerPhone = normalizedPhone,
-                message = "Payment is not confirmed. Complete the operator's USSD flow, then send the transaction reference and payer details for admin review."
+                message = "Payment is not confirmed by the dialer. Complete the USSD flow, then submit payer details and payment date/time for administrator verification."
             )
         }
 
@@ -264,7 +193,7 @@ object MoMoPaymentGateway {
                 amount = amount,
                 provider = provider,
                 payerPhone = normalizedPhone,
-                message = "No active internet connection. Connect to WiFi/Data or use USSD offline reference confirmation."
+                message = "No active internet connection. Complete the USSD flow and save the payment proof; BeBoss will sync it when internet returns."
             )
         }
 

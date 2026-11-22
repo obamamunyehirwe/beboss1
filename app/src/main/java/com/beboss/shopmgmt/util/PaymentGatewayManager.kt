@@ -173,7 +173,7 @@ object PaymentGatewayManager {
             payerPhone = effectivePhone,
             timestamp = now,
             isPending = true,
-            message = "Payment initiated via $provider. Ref: $txRef. Submit the transaction reference for admin verification; BeBoss does not confirm settlement from a USSD dialer."
+            message = "Payment initiated via $provider. Complete the operator USSD flow, then submit payer details and payment date/time in BeBoss for administrator verification. The dialer does not confirm settlement."
         )
     }
 }

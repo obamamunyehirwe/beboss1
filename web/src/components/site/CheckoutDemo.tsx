@@ -85,7 +85,7 @@ export function WebPosTerminal() {
   const [given, setGiven] = useState("10000");
   const [momoSplit, setMomoSplit] = useState("5000");
   const [selectedCustomer, setSelectedCustomer] = useState(CUSTOMERS[0].id);
-  const [momoRef, setMomoRef] = useState("");
+  const [momoNote, setMomoNote] = useState("");
   const [receiptWidth, setReceiptWidth] = useState<"58mm" | "80mm">("80mm");
   const [completedSale, setCompletedSale] = useState<CompletedSale | null>(null);
   const [salesHistory, setSalesHistory] = useState<CompletedSale[]>([]);
@@ -512,11 +512,11 @@ export function WebPosTerminal() {
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">Telco TxID / Ref:</span>
+                      <span className="text-muted-foreground">MoMo confirmation note (optional):</span>
                       <Input
-                        value={momoRef}
-                        onChange={(e) => setMomoRef(e.target.value)}
-                        placeholder="e.g. MP261120.1432.A1"
+                        value={momoNote}
+                        onChange={(e) => setMomoNote(e.target.value)}
+                        placeholder="e.g. payer confirmed on phone"
                         className="h-7 w-44 text-xs font-mono"
                       />
                     </div>

@@ -695,7 +695,7 @@ object Localization {
         "admin_tier_annual" to locEntry("Annual", "Umwaka", "Annuel", "Mwaka"),
         "admin_tier_trial" to locEntry("Trial", "Igerageza", "Essai", "Jaribio"),
         "admin_default_reject_reason" to locEntry(
-            "MoMo transaction reference could not be confirmed",
+            "Payment details could not be verified with the mobile-money provider",
             "Reference y'ihererekanya rya MoMo ntiyashoboye kwemezwa",
             "La référence de transaction MoMo n’a pas pu être confirmée",
             "Kumbukumbu ya muamala wa MoMo haikuweza kuthibitishwa"

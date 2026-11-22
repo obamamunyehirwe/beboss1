@@ -1426,7 +1426,7 @@
         bullets: [
           'Kode za MTN MoMo (*182#) na Airtel (*500#) zikurura numero nshya za Admin muri Supabase app_config.',
           'Iyo wohereza icyemezo cyo kwishyura, shyiramo @username y’iduka, Telefoni yanditse ku iduka, Telefoni yishyuye, Amazina yanditse kuri iyo telefoni yishyuye, umubare wa telefoni zikoreshwa, na Reference ya MoMo.',
-          'Uburyo bwa 1 (Kode ya BB2): Admin areba ubwishyu akagukorera kode ya BB3-... ifungura iduka ryawe gusa na offline.',
+          'Uburyo bwa 1 (Kode ya BB3): Admin areba ubwishyu akagukorera kode ya BB3-... ifungura iduka ryawe gusa na offline.',
           'Uburyo bwa 2 (Auto-Unlock): Admin akanda Direct Auto-Unlock, BeBoss igahita yifungura yonyine interineti igeze kuri telefoni.'
         ]
       },
@@ -1524,7 +1524,7 @@
         bullets: [
           'Les codes USSD MTN (*182#) et Airtel (*500#) récupèrent dynamiquement les coordonnées Admin depuis Supabase app_config.',
           'Lors de l’envoi de preuve : précisez @username, téléphone du magasin, téléphone payeur, Noms complets sur le numéro payeur, nombre d’appareils et référence MoMo.',
-          'Option 1 (Code BB2) : l’Admin émet un code BB3-... lié à votre compte, activable même 100% hors ligne.',
+          'Option 1 (Code BB3) : l’Admin émet un code BB3-... lié à votre compte, activable même 100% hors ligne.',
           'Option 2 (Déblocage Direct) : l’Admin clique Direct Auto-Unlock et votre boutique se débloque automatiquement à la synchronisation.'
         ]
       },
@@ -1621,8 +1621,8 @@
         summary: 'Namba mpya za Admin na njia mbili za haraka za kufungua leseni.',
         bullets: [
           'Namba za MTN MoMo (*182#) na Airtel (*500#) hupatikana moja kwa moja kutoka Supabase app_config.',
-          'Unapotuma uthibitisho, weka @username, namba iliyosajiliwa, namba iliyolipa, Majina Kamili yaliyosajiliwa kwenye namba iliyolipa, idadi ya vifaa na Reference.',
-          'Njia ya 1 (Kode ya BB2): Admin hutoa kode ya BB3-... inayofungua akaunti yako pekee hata bila mtandao.',
+          'Unapotuma uthibitisho, weka @username ya duka, namba iliyosajiliwa, jina na namba ya mlipaji, tarehe/saa ya malipo, mpango uliochagua na maelezo ya hiari. TxID haihitajiki.',
+          'Njia ya 1 (Kode ya BB3): Admin hutoa kode ya BB3-... inayofungua akaunti yako pekee hata bila mtandao.',
           'Njia ya 2 (Auto-Unlock): Admin anabofya Direct Auto-Unlock na app inajifungua yenyewe ikisawazisha mtandaoni.'
         ]
       },
@@ -1748,7 +1748,9 @@ create table if not exists public.payment_requests (
   branch_count integer not null default 1,
   worker_count integer not null default 1,
   device_count integer not null default 1,
-  telco_reference text not null default '',
+  fee_per_device_rwf integer not null default 0,
+  payment_time_ms bigint not null default 0,
+  payment_note text not null default '',
   status text not null default 'PENDING_VERIFICATION',
   approval_mode text not null default '',
   generated_unlock_code text not null default '',
@@ -2274,9 +2276,9 @@ create table if not exists public.payment_requests (
 
     const handleApproveWithCode = async (req) => {
       if (!['PENDING_VERIFICATION', 'REJECTED'].includes(String(req.status))) {
-        notify('Only a pending payment can receive a new unlock code.'); return;
+        notify('Only a pending or rejected payment claim can receive its unlock code.'); return;
       }
-      const feeRate = Number(req.fee_per_device_rwf) > 0 ? Number(req.fee_per_device_rwf) : Number(payConfig.per_device_fee_rwf) || 2000;
+      const feeRate = Number(payConfig.per_device_fee_rwf) || 2000;
       const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, feeRate);
       if (Number(req.amount_rwf) !== calc.total) {
         notify(`Payment amount mismatch: this submitted plan calculates to ${calc.total.toLocaleString()} FRw. Verify the provider statement and claim details first.`); return;
@@ -2422,7 +2424,7 @@ create table if not exists public.payment_requests (
           method: 'PATCH',
           body: JSON.stringify({
             status: 'REJECTED',
-            rejection_reason: rejectReason.trim() || 'MoMo transaction could not be confirmed',
+            rejection_reason: rejectReason.trim() || 'Payment details could not be verified with the mobile-money provider',
             verified_by_admin: `${session.fullName} (${session.email})`,
             updated_at: Date.now()
           })
@@ -2954,10 +2956,8 @@ create table if not exists public.payment_requests (
                       </button>
                     ))}
                   </div>
-                  {stats.pendingCount > 1 && (
-                    <button type="button" className="btn btn-green btn-sm" onClick={handleBatchApprove}>
-                      Batch Issue BB3 ({stats.pendingCount})
-                    </button>
+                  {stats.pendingCount > 0 && (
+                    <span style={{ color: 'var(--muted)', fontSize: 12 }}>Review and verify each payment individually with the mobile-money provider before approval.</span>
                   )}
                 </div>
 
@@ -2989,6 +2989,10 @@ create table if not exists public.payment_requests (
                             </div>
                             <div style={{ fontSize: 13, marginTop: 4 }}>
                               Sender MoMo Name: <strong style={{ color: '#fdba74' }}>{req.payer_full_name || 'Not entered'}</strong> • Sender Phone: <strong>{req.payer_phone}</strong>
+                            </div>
+                            <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
+                              Payment time: <strong>{formatTime(req.payment_time_ms || req.created_at)}</strong>
+                              {req.payment_note ? <> • Note: <strong>{req.payment_note}</strong></> : null}
                             </div>
                             <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
                               {req.provider} • <strong>{Number(req.amount_rwf || 0).toLocaleString()} FRw</strong> ({req.duration_months * 30}d • {req.branch_count} br / {req.worker_count} stf / {req.device_count || 1} dev) • USSD: <span className="mono">{req.ussd_code || 'Manual'}</span>
@@ -3181,19 +3185,6 @@ create table if not exists public.payment_requests (
                                 <button type="button" className="btn btn-green btn-sm" onClick={() => handleShopExtend(s, 30)}>+30d</button>
                                 <button type="button" className="btn btn-dark btn-sm" onClick={() => handleShopExtend(s, 90)}>+90d</button>
                                 <button type="button" className="btn btn-primary btn-sm" onClick={() => handleShopAutoUnlockNow(s)}>Auto-Unlock</button>
-                                <button type="button" className="btn btn-dark btn-sm" onClick={() => {
-                                  setGenForm({
-                                    shopName: s.shop_name,
-                                    username: s.owner_username,
-                                    phone: s.owner_phone,
-                                    branches: s.branch_count || 1,
-                                    workers: s.worker_count || 1,
-                                    devices: s.device_limit || 1,
-                                    months: 1,
-                                    amount: s.monthly_fee_rwf || 5000
-                                  });
-                                  setActiveView('codes');
-                                }}>Issue BB2</button>
                                 <button type="button" className="btn btn-dark btn-sm" onClick={() => handleSetShopStatus(s, isLocked ? 'ACTIVE' : 'SUSPENDED')}>
                                   {isLocked ? 'Unlock' : 'Lock'}
                                 </button>
