@@ -48,7 +48,6 @@ function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [resetBusy, setResetBusy] = useState(false);
-  const [bootstrapBusy, setBootstrapBusy] = useState(false);
 
   useEffect(() => {
     if (!liveConfigured) {
@@ -88,7 +87,7 @@ function AuthPage() {
         const invalidCredentials = error.code === "invalid_credentials" ||
           error.message.toLowerCase().includes("invalid login credentials");
         toast.error(invalidCredentials
-          ? "BeBoss could not find a matching confirmed account and password. For first-time master-admin setup, use the secure invitation button below first. If you already accepted the invitation, check the spelling of the approved email and use password recovery."
+          ? "No confirmed BeBoss account matches that email and password. Create the approved account directly in Supabase Authentication → Users, set its password, and enable email confirmation; no invitation email is required."
           : error.message);
         return;
       }
@@ -98,45 +97,6 @@ function AuthPage() {
       toast.error(error instanceof Error ? error.message : "Unable to sign in. Check your connection and try again.");
     } finally {
       setBusy(false);
-    }
-  };
-
-  const requestFirstAdminInvite = async () => {
-    if (!liveConfigured || bootstrapBusy) return;
-    setBootstrapBusy(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("bootstrap-first-admin", { body: {} });
-      if (error) {
-        const responseContext = (error as { context?: unknown }).context;
-        const responseBody = responseContext instanceof Response
-          ? await responseContext.clone().json().catch(() => null) as { message?: string } | null
-          : null;
-        throw new Error(responseBody?.message || error.message || "Could not contact the secure invitation service.");
-      }
-      const result = data as { status?: string; email?: string; message?: string; retryAfterSeconds?: number; resent?: boolean };
-      if (result.status === "sent") {
-        toast.success("Supabase accepted the secure invitation request for " + result.email + ". This does not confirm mailbox delivery; check Inbox and Spam/Junk.");
-      } else if (result.status === "email_rate_limited") {
-        toast.info(result.message || "The email provider rejected this request because its sending quota is exhausted. No new invitation was sent.");
-      } else if (result.status === "cooldown") {
-        const seconds = Math.max(1, Number(result.retryAfterSeconds) || 60);
-        const minutes = Math.ceil(seconds / 60);
-        toast.info(result.message || "An invitation request for this exact inbox was accepted recently; this click did not send another email. Wait about " + minutes + " minute(s) before trying again.");
-      } else if (result.status === "already_sent") {
-        toast.info(`The one-time invitation has already been issued to ${result.email}. Check that mailbox and its spam folder.`);
-      } else if (result.status === "account_exists") {
-        toast.info(result.message || `The approved account ${result.email} already exists. Complete its invitation or use password recovery before signing in.`);
-      } else if (result.status === "account_repaired") {
-        toast.success(`The confirmed administrator account ${result.email} was repaired. Sign in with its password.`);
-      } else if (result.status === "already_configured") {
-        toast.info("A master administrator is already configured. Sign in with the approved admin account.");
-      } else {
-        throw new Error(result.message || "Could not prepare the first-admin invitation.");
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not prepare the first-admin invitation.");
-    } finally {
-      setBootstrapBusy(false);
     }
   };
 
@@ -225,11 +185,15 @@ function AuthPage() {
               </Button>
             </form>
             <div className="admin-auth-bootstrap">
-              <p>First-time setup is invitation-only. The one-time setup link goes to the pre-approved administrator email; no shared or default password is created.</p>
-              <Button type="button" variant="secondary" className="admin-auth-bootstrap-button" onClick={requestFirstAdminInvite} disabled={!liveConfigured || bootstrapBusy}>
-                {bootstrapBusy ? <Loader2 className="animate-spin" /> : <KeyRound size={16} />}
-                {bootstrapBusy ? "Preparing secure invitation…" : "Send first-admin setup invitation"}
-              </Button>
+              <p>First-time setup does not require Gmail or an invitation email. A project owner must create the approved administrator directly in Supabase Authentication → Users, set a strong password, and enable email confirmation. BeBoss then assigns the Super Admin role automatically.</p>
+              <a
+                className="admin-auth-bootstrap-button"
+                href="https://supabase.com/dashboard/project/ahlpvlhmpfiyeoercxol/auth/users"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open Supabase user management
+              </a>
             </div>
             <div className="admin-auth-method-note">
               <LockKeyhole size={15} />
