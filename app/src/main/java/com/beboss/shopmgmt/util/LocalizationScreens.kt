@@ -1314,16 +1314,16 @@ internal object LocalizationScreens {
             "Arifa & Majaribio ya Vituo"
         ),
         "set_about_title" to locEntry(
-            "BeBoss Enterprise Offline POS",
-            "BeBoss POS Ikora Nta Interineti",
-            "BeBoss POS Entreprise Hors Ligne",
-            "BeBoss POS ya Biashara Bila Mtandao"
+            "About BeBoss",
+            "Ibyerekeye BeBoss",
+            "À propos de BeBoss",
+            "Kuhusu BeBoss"
         ),
         "set_about_desc" to locEntry(
-            "AES-256 Encrypted Local SQLite • Multi-Branch LAN & Cloud Sync • Version 2.1.0",
-            "SQLite Irinzwe na AES-256 • Guhuza Amashami & Cloud • Verisiyo 2.1.0",
-            "SQLite Chiffré AES-256 • Sync LAN & Cloud • Version 2.1.0",
-            "SQLite Iliyosimbwa AES-256 • Usawazishaji LAN & Wingu • Toleo 2.1.0"
+            "Offline-first retail management • Sales and inventory stay on this device • Cloud sync runs when connected",
+            "Imicungire y'iduka ikora na interineti cyangwa itayifite • Ibyagurishijwe n'ibicuruzwa bibikwa kuri telefoni • Guhuza na cloud bikorwa habonetse interineti",
+            "Gestion de commerce hors ligne d'abord • Ventes et stocks conservés sur cet appareil • Synchronisation cloud lorsque la connexion est disponible",
+            "Usimamizi wa duka unaofanya kazi bila intaneti • Mauzo na bidhaa hubaki kwenye kifaa • Usawazishaji wa wingu hufanyika mtandao unapopatikana"
         ),
         "set_replay_splash_btn" to locEntry("Replay Brand Intro", "Reba Ikirango cyo Gutangira", "Revoir l'Intro", "Rudia Utangulizi"),
         "set_tx_reset_done_toast" to locEntry(
