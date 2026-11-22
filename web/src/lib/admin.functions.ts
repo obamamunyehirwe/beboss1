@@ -49,11 +49,11 @@ async function assertBb3KeyMatchesAndroid(pem: string): Promise<void> {
   const derivedPublic = createPublicKey(privateKey)
     .export({ type: "spki", format: "pem" })
     .toString()
-    .replace(/\\s+/g, "");
+    .replace(/\s+/g, "");
   const androidPublic = createPublicKey(BB3_ANDROID_PUBLIC_KEY_PEM)
     .export({ type: "spki", format: "pem" })
     .toString()
-    .replace(/\\s+/g, "");
+    .replace(/\s+/g, "");
   if (derivedPublic !== androidPublic) {
     throw new Error("This private key does not match the public verification key in the current Android APK. Do not save or rotate it; use the original matching server private key.");
   }
@@ -579,7 +579,7 @@ export const deleteSnapshot = createServerFn({ method: "POST" })
 
 // ---------------- Config & secrets ----------------
 const paymentPhoneSchema = z.string().trim().max(20).refine(
-  (value) => !value || /^\\+?[0-9\\s()-]{9,20}$/.test(value),
+  (value) => !value || /^\+?[0-9\s()-]{9,20}$/.test(value),
   "Enter a valid mobile-money phone number (include country code when needed).",
 );
 
