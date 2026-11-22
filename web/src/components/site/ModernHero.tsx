@@ -45,6 +45,8 @@ export function ModernHero() {
   return (
     <>
       <section className="market-hero" aria-labelledby="market-title">
+        <img className="market-photo" src="/Friendly%20Modern%20Store%20Checkout.png" alt="" aria-hidden="true" decoding="async" />
+        <div className="market-shade" aria-hidden="true" />
         <div className="market-hero-grid" aria-hidden="true" />
         <div className="market-frame">
           <div className="market-copy">
