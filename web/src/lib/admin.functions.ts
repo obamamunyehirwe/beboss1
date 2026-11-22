@@ -611,6 +611,27 @@ export const saveAppConfig = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const getBb3SigningStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const ctx = context as unknown as Ctx;
+    await requireAdmin(ctx);
+    try {
+      await loadBb3PrivateKeyPem();
+      return {
+        configured: true,
+        message: "Ready: the server-only P-256 private key matches the public verification key pinned in the current Android app.",
+      };
+    } catch (error) {
+      return {
+        configured: false,
+        message: error instanceof Error
+          ? error.message
+          : "The BB3 signing key could not be validated. Check the server-only key in Supabase.",
+      };
+    }
+  });
+
 export const setSigningSecret = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { value: string }) => z.object({ value: z.string().trim().min(120, "Paste a complete PKCS#8 P-256 private key PEM").max(2000) }).parse(d))
