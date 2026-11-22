@@ -51,6 +51,7 @@ type HealthFilter = "ALL" | DeviceHealth;
 const tooltipStyle = { background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, color: "var(--foreground)", fontSize: 12 };
 
 function SyncMonitor() {
+  const a = useAdminText();
   const now = useNow(10_000);
   const events = useQuery(syncEventsQuery);
   const shops = useQuery(shopsQuery);
