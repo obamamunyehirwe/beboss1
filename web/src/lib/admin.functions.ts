@@ -329,7 +329,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
       });
       if (ins.error) {
         if (ins.error.code === "23505") {
-          const { data: winner } = await ctx.supabase.from("unlock_codes").select("id,unlock_code,plan_digest,status").eq("payment_request_id", req.id).maybeSingle();
+          const { data: winner } = await ctx.supabase.from("unlock_codes").select("id,unlock_code,plan_digest,status").eq("payment_request_id", req.id).in("status", ["ISSUED", "REDEEMED"]).maybeSingle();
           if (!winner || winner.status !== "ISSUED" || winner.plan_digest !== signed.planDigest || !winner.unlock_code) {
             throw new Error("A conflicting unlock-code record already exists for this payment. No duplicate was issued.");
           }
