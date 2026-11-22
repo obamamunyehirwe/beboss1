@@ -1076,10 +1076,10 @@ internal object LocalizationScreens {
             "Namba Iliyotuma Pesa *"
         ),
         "sub_telco_ref_label" to locEntry(
-            "MoMo / Airtel SMS Reference ID *",
-            "Kode y'Ubutumwa bwa MoMo / Airtel *",
-            "Référence SMS MoMo / Airtel *",
-            "Namba ya Muamala wa SMS *"
+            "Payment note (optional)",
+            "Icyitonderwa ku bwishyu (si ngombwa)",
+            "Note de paiement (facultative)",
+            "Dokezo la malipo (hiari)"
         ),
         "sub_submit_proof_btn" to locEntry(
             "Submit Proof & Notify WhatsApp",
@@ -1112,10 +1112,10 @@ internal object LocalizationScreens {
             "Huisha leseni kuendelea na mauzo, stoo na usawazishaji"
         ),
         "sub_unlock_waiting_hint" to locEntry(
-            "If you already paid, tap Sync Cloud Approvals or enter your BB2 code below.",
-            "Niba wishyuye, kanda Shakisha Kode kuri Cloud cyangwa winjize kode BB2 hasi.",
-            "Si vous avez déjà payé, touchez Synchroniser Cloud ou entrez le code BB2.",
-            "Kama umeshalipa, gusa Sawazisha Wingu au weka msimbo wa BB2 chini."
+            "If you already paid, sync cloud approvals or enter the BB3 code issued for your payment. Historical BB2 codes are verified online.",
+            "Niba wishyuye, shakisha ibyemejwe kuri Cloud cyangwa winjize kode ya BB3 yahawe ubwishyu bwawe. Kode za kera za BB2 zigenzurwa kuri internet.",
+            "Si vous avez déjà payé, synchronisez les validations cloud ou saisissez le code BB3 de votre paiement. Les anciens BB2 sont vérifiés en ligne.",
+            "Ikiwa tayari umelipa, sawazisha idhini za cloud au weka msimbo wa BB3 wa malipo yako. BB2 za zamani hukaguliwa mtandaoni."
         ),
         "sub_invoice_dialog_title" to locEntry(
             "Official Subscription Invoice",
@@ -1702,7 +1702,7 @@ internal object LocalizationScreens {
         "sub_created_username_label" to locEntry("Created Account Username *", "Username ya Konti *", "Nom d'utilisateur du compte *", "Jina la Akaunti (Username) *"),
         "sub_registered_phone_label" to locEntry("Registered Account Phone Number *", "Nimero ya Terefone Yanditseho *", "Téléphone enregistré du compte *", "Namba ya Simu Iliyosajiliwa *"),
         "sub_sender_phone_short_label" to locEntry("Sender MoMo Phone *", "Terefone Yohereje *", "Tél. Payeur *", "Simu Iliyotuma *"),
-        "sub_momo_ref_opt_label" to locEntry("MoMo SMS Ref (Optional)", "Kode ya SMS ya MoMo (Si ngombwa)", "Réf. SMS MoMo (Optionnel)", "Kumbukumbu ya SMS (Hiari)"),
+        "sub_momo_ref_opt_label" to locEntry("Payment note (optional)", "Icyitonderwa ku bwishyu (si ngombwa)", "Note de paiement (facultative)", "Dokezo la malipo (hiari)"),
         "sub_proof_err_required" to locEntry(
             "Please enter Username, Registered Phone, and Full Names on the sender phone.",
             "Injiza Username, Terefone yanditseho n'amazina yuzuye y'uwohereje.",
@@ -1710,7 +1710,7 @@ internal object LocalizationScreens {
             "Weka jina la mtumiaji, simu iliyosajiliwa na majina kamili ya mtumaji."
         ),
         "sub_submit_wa_proof_btn" to locEntry("Submit & Send Proof via WhatsApp", "Ohereza Gihamya kuri WhatsApp", "Soumettre & Envoyer via WhatsApp", "Tuma Uthibitisho kwa WhatsApp"),
-        "sub_submit_direct_ref_btn" to locEntry("Submit MoMo Reference for Verification", "Ohereza Kode ya MoMo Kugenjurwa", "Soumettre Référence MoMo", "Tuma Kumbukumbu ya MoMo"),
+        "sub_submit_direct_ref_btn" to locEntry("Submit payment proof", "Ohereza gihamya y'ubwishyu", "Envoyer la preuve de paiement", "Tuma uthibitisho wa malipo"),
         "sub_paste_bb2_hint_fmt" to locEntry(
             "Paste or type the BB2-... code bound to @%s (%s). Complete BB2 codes verify and auto-unlock instantly.",
             "Shyiramo kode ya BB2-... ihujwe na @%s (%s). Kode yuzuye ya BB2 ihita ifungura konti ako kanya.",
@@ -1733,13 +1733,13 @@ internal object LocalizationScreens {
         "sub_total_days_fmt" to locEntry("Total: %d FRw (%d Days)", "Yose: %d FRw (Iminsi %d)", "Total : %d FRw (%d Jours)", "Jumla: %d FRw (Siku %d)"),
         "sub_payer_phone_hint" to locEntry("Payer Phone Number (078... / 073...)", "Terefone Yishyura (078... / 073...)", "Numéro Payeur (078... / 073...)", "Namba ya Mlipaji (078... / 073...)"),
         "sub_dialer_status_fmt" to locEntry(
-            "Dialer opened for %s. Complete payment with the operator, then submit your SMS reference for admin review.",
-            "USSD ya %s yafungutse. Rangiza kwishyura, maze wohereze kode y'ubutumwa kuri Admin.",
-            "Composeur ouvert pour %s. Terminez le paiement puis soumettez votre référence SMS à l'admin.",
-            "Piga imefunguliwa kwa %s. Kamilisha malipo kisha tuma kumbukumbu ya SMS kwa Admin."
+            "Dialer opened for %s. Complete payment with the operator, then submit payer details, payment time and plan for admin review.",
+            "USSD ya %s yafungutse. Rangiza kwishyura, wohereze amazina na telefoni by'uwishyuye, igihe na gahunda kuri Admin.",
+            "Composeur ouvert pour %s. Terminez le paiement puis envoyez le payeur, l'heure et le forfait à l'admin.",
+            "Piga imefunguliwa kwa %s. Kamilisha malipo kisha tuma jina na simu ya mlipaji, muda na mpango kwa Admin."
         ),
         "sub_dial_ussd_fmt" to locEntry("Dial USSD (%s)", "Kanda USSD (%s)", "Composer USSD (%s)", "Piga USSD (%s)"),
-        "sub_tx_ref_label" to locEntry("Transaction reference (e.g. MP260903...)", "Kode y'ubutumwa (MP260903...)", "Référence transaction (ex. MP260903...)", "Kumbukumbu ya muamala (MP260903...)"),
+        "sub_tx_ref_label" to locEntry("Payment note (optional)", "Icyitonderwa ku bwishyu (si ngombwa)", "Note de paiement (facultative)", "Dokezo la malipo (hiari)"),
         "sub_ref_format_note" to locEntry(
             "A reference format check does not verify settlement. Submit payment proof by WhatsApp for admin review.",
             "Kugenzura imiterere ya kode ntibyemeza ubwishyu. Ohereza gihamya kuri WhatsApp ya Admin.",
