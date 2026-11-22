@@ -46,7 +46,7 @@ function ReleasesPage() {
   const [form, setForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "", make_current: true });
   const [stage, setStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
 
-  const downloadUrl = typeof window !== "undefined" ? `${window.location.origin}${DOWNLOAD_PATH}` : DOWNLOAD_PATH;
+  const downloadUrl = `https://beboss.rw${DOWNLOAD_PATH}`;
 
   // Start new releases above the highest version code already published.
   useEffect(() => {
