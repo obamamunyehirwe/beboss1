@@ -19,7 +19,7 @@ import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, Searc
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { useNow } from "@/hooks/use-now";
 import { deleteSnapshot } from "@/lib/admin.functions";
-import { devicesQuery, shopsQuery, snapshotsQuery, syncEventsQuery, usersQuery, type ShopAccount, type ShopUser, type SyncEvent } from "@/lib/admin-queries";
+import { branchesQuery, devicesQuery, shopsQuery, snapshotsQuery, stockTransfersQuery, syncEventsQuery, usersQuery, type ShopAccount, type ShopBranch, type ShopStockTransfer, type ShopUser, type SyncEvent } from "@/lib/admin-queries";
 import { formatDateTime, relativeTime } from "@/lib/format";
 import { DAY, HEALTH_LABEL, HOUR, deviceHealth, type DeviceHealth } from "@/lib/sync-health";
 import { cn } from "@/lib/utils";
@@ -59,16 +59,22 @@ function SyncMonitor() {
   const devices = useQuery(devicesQuery);
   const staff = useQuery(usersQuery);
   const snaps = useQuery(snapshotsQuery);
+  const branches = useQuery(branchesQuery);
+  const transfers = useQuery(stockTransfersQuery);
 
   const shopRows = useMemo<ShopSyncRow[]>(() => {
     const eventRows = events.data ?? [];
     const deviceRows = devices.data ?? [];
     const staffRows = staff.data ?? [];
     const snapshotRows = snaps.data ?? [];
+    const branchRows = branches.data ?? [];
+    const transferRows = transfers.data ?? [];
     return (shops.data ?? []).map((shop) => {
       const shopDevices = deviceRows.filter((d) => d.shop_sync_key === shop.id);
       const shopStaff = staffRows.filter((u) => u.shop_sync_key === shop.id);
       const shopSnapshots = snapshotRows.filter((s) => s.shop_sync_key === shop.id);
+      const shopBranches = branchRows.filter((branch) => branch.shop_sync_key === shop.id);
+      const shopTransfers = transferRows.filter((transfer) => transfer.shop_sync_key === shop.id);
       const shopEvents = eventRows.filter((e) => e.shop_sync_key === shop.id);
       const latestEvent = shopEvents.reduce<SyncEvent | null>((latest, current) => {
         if (!latest) return current;
@@ -96,15 +102,17 @@ function SyncMonitor() {
         staffTotal: shopStaff.length,
         activeStaff: shopStaff.filter((u) => u.is_active).length,
         snapshotsTotal: shopSnapshots.length,
+        branchesTotal: shopBranches.length,
+        transfersTotal: shopTransfers.length,
         lastSyncAt,
         health: deviceHealth(lastSyncAt, now),
         latestEvent,
       };
     }).sort((left, right) => right.lastSyncAt - left.lastSyncAt);
-  }, [events.data, shops.data, devices.data, staff.data, snaps.data, now]);
+  }, [events.data, shops.data, devices.data, staff.data, snaps.data, branches.data, transfers.data, now]);
 
   const retryAll = () => Promise.all([
-    events.refetch(), shops.refetch(), devices.refetch(), staff.refetch(), snaps.refetch(),
+    events.refetch(), shops.refetch(), devices.refetch(), staff.refetch(), snaps.refetch(), branches.refetch(), transfers.refetch(),
   ]);
 
   const stats = useMemo(() => {
@@ -137,6 +145,8 @@ function SyncMonitor() {
     // paired device row while its first snapshot is still being provisioned.
     const totalShops = (shops.data ?? []).length;
     const snapshots = (snaps.data ?? []).length;
+    const totalBranches = (branches.data ?? []).length;
+    const totalTransfers = (transfers.data ?? []).length;
     const activeStaff = (staff.data ?? []).filter((u) => u.is_active).length;
     const staleDevices = dv.filter((d) => d.is_active && deviceHealth(d.last_synced_at, now) === "STALE").length;
 
@@ -152,9 +162,11 @@ function SyncMonitor() {
       reportedFailures,
       snapshotUploads24h,
       snapshots,
+      totalBranches,
+      totalTransfers,
       staleDevices,
     };
-  }, [events.data, shops.data, devices.data, staff.data, snaps.data, now]);
+  }, [events.data, shops.data, devices.data, staff.data, snaps.data, branches.data, transfers.data, shopRows, now]);
 
   return (
     <div className="space-y-6">
@@ -168,13 +180,15 @@ function SyncMonitor() {
           </span>
         }
       />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-7">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <StatCard label="Total Shops" value={stats.totalShops} sub="registered businesses" icon={Store} tone="brand" />
         <StatCard label="Active Now" value={stats.activeShops} sub="sync signal in last 15 min" icon={Wifi} tone="success" />
         <StatCard label="Synced Staff" value={stats.activeStaff} sub={`${stats.totalStaff} staff accounts across shops`} icon={Users} tone="info" />
         <StatCard label="Snapshot Uploads (24h)" value={stats.snapshotUploads24h} sub="uploaded phone datasets" icon={Activity} tone="info" />
         <StatCard label="Reported Failures" value={stats.reportedFailures} sub="cloud-reported only; local retries stay on device" icon={AlertTriangle} tone={stats.reportedFailures > 0 ? "danger" : "info"} />
         <StatCard label="Branch Snapshots" value={stats.snapshots} sub="stored phone datasets" icon={Boxes} tone="brand" />
+        <StatCard label="Registered Branches" value={stats.totalBranches} sub="normalized cross-shop branch records" icon={Store} tone="info" />
+        <StatCard label="Stock Transfers" value={stats.totalTransfers} sub="cross-branch stock movements" icon={Boxes} tone="info" />
         <StatCard label="Stale Devices" value={stats.staleDevices} sub="active, no sync for 7+ days" icon={Clock} tone={stats.staleDevices > 0 ? "danger" : "success"} />
       </div>
 
@@ -184,6 +198,8 @@ function SyncMonitor() {
         { label: "Devices", query: devices },
         { label: "Staff", query: staff },
         { label: "Snapshots", query: snaps },
+        { label: "Branches", query: branches },
+        { label: "Stock transfers", query: transfers },
       ].some(({ query }) => query.isError) ? (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 bg-warning/10 p-4">
           <div className="min-w-0">
@@ -195,6 +211,8 @@ function SyncMonitor() {
                 ["Devices", devices.error],
                 ["Staff", staff.error],
                 ["Snapshots", snaps.error],
+                ["Branches", branches.error],
+                ["Stock transfers", transfers.error],
               ].filter(([, error]) => Boolean(error)).map(([label, error]) => `${label}: ${error instanceof Error ? error.message : "request failed"}`).join(" · ")}
             </p>
           </div>
@@ -224,12 +242,14 @@ function SyncMonitor() {
           <TabsTrigger value="users">{a("Synced users")} ({(staff.data ?? []).length})</TabsTrigger>
           <TabsTrigger value="devices">{a("Device health")} ({(devices.data ?? []).length})</TabsTrigger>
           <TabsTrigger value="snapshots">{a("Branch snapshots")} ({(snaps.data ?? []).length})</TabsTrigger>
+          <TabsTrigger value="branches">{a("All branches")} ({(branches.data ?? []).length})</TabsTrigger>
+          <TabsTrigger value="transfers">{a("Stock transfers")} ({(transfers.data ?? []).length})</TabsTrigger>
         </TabsList>
         <TabsContent value="live">
           <LiveActivity events={events.data ?? []} loading={events.isLoading} now={now} />
         </TabsContent>
         <TabsContent value="shops">
-          <ShopSyncTable rows={shopRows} loading={shops.isLoading || devices.isLoading || staff.isLoading || snaps.isLoading} />
+          <ShopSyncTable rows={shopRows} loading={shops.isLoading || devices.isLoading || staff.isLoading || snaps.isLoading || branches.isLoading || transfers.isLoading} />
         </TabsContent>
         <TabsContent value="users">
           <SyncedUsersTable rows={staff.data ?? []} loading={staff.isLoading} />
@@ -239,6 +259,12 @@ function SyncMonitor() {
         </TabsContent>
         <TabsContent value="snapshots">
           <Snapshots now={now} />
+        </TabsContent>
+        <TabsContent value="branches">
+          <BranchesTable rows={branches.data ?? []} loading={branches.isLoading} />
+        </TabsContent>
+        <TabsContent value="transfers">
+          <StockTransfersTable rows={transfers.data ?? []} loading={transfers.isLoading} />
         </TabsContent>
       </Tabs>
     </div>
@@ -251,6 +277,8 @@ type ShopSyncRow = ShopAccount & {
   staffTotal: number;
   activeStaff: number;
   snapshotsTotal: number;
+  branchesTotal: number;
+  transfersTotal: number;
   lastSyncAt: number;
   health: DeviceHealth;
   latestEvent: SyncEvent | null;
@@ -288,6 +316,7 @@ function ShopSyncTable({ rows, loading }: { rows: ShopSyncRow[]; loading: boolea
             lastSync: shop.lastSyncAt ? new Date(shop.lastSyncAt).toISOString() : "",
             devices: shop.devicesTotal, activeDevices: shop.activeDevices,
             users: shop.staffTotal, activeUsers: shop.activeStaff, snapshots: shop.snapshotsTotal,
+            branches: shop.branchesTotal, stockTransfers: shop.transfersTotal,
             latestEvent: shop.latestEvent?.action ?? "",
           })),
         )}>
@@ -307,6 +336,8 @@ function ShopSyncTable({ rows, loading }: { rows: ShopSyncRow[]; loading: boolea
                 <th className="px-4 py-3">{a("Devices")}</th>
                 <th className="px-4 py-3">{a("Users")}</th>
                 <th className="px-4 py-3">{a("Snapshots")}</th>
+                <th className="px-4 py-3">{a("Branches")}</th>
+                <th className="px-4 py-3">{a("Transfers")}</th>
                 <th className="px-4 py-3">{a("Last cloud sync")}</th>
                 <th className="px-4 py-3">{a("Latest event")}</th>
               </tr>
@@ -325,6 +356,8 @@ function ShopSyncTable({ rows, loading }: { rows: ShopSyncRow[]; loading: boolea
                   <td className="px-4 py-3 font-mono">{shop.activeDevices}/{shop.devicesTotal}</td>
                   <td className="px-4 py-3 font-mono">{shop.activeStaff}/{shop.staffTotal}</td>
                   <td className="px-4 py-3 font-mono">{shop.snapshotsTotal}</td>
+                  <td className="px-4 py-3 font-mono">{shop.branchesTotal}</td>
+                  <td className="px-4 py-3 font-mono">{shop.transfersTotal}</td>
                   <td className="px-4 py-3 text-xs text-muted-foreground" title={shop.lastSyncAt ? formatDateTime(shop.lastSyncAt) : a("No cloud sync recorded")}>
                     {shop.lastSyncAt ? relativeTime(shop.lastSyncAt) : a("Never")}
                   </td>
@@ -420,6 +453,196 @@ function SyncedUsersTable({ rows, loading }: { rows: ShopUser[]; loading: boolea
         </TableShell>
       )}
       <p className="text-xs text-muted-foreground">{a("Showing")} {filtered.length.toLocaleString()} {a("of")} {rows.length.toLocaleString()} {a("synced staff accounts")}.</p>
+    </div>
+  );
+}
+
+function BranchesTable({ rows, loading }: { rows: ShopBranch[]; loading: boolean }) {
+  const a = useAdminText();
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
+  const filtered = rows.filter((branch) =>
+    (status === "ALL" || (status === "ACTIVE" ? branch.is_active : !branch.is_active)) &&
+    matches(q, branch.shop_name, branch.shop_sync_key, branch.name, branch.code, branch.address, branch.phone, branch.manager_name, branch.operational_status),
+  );
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput value={q} onChange={setQ} placeholder={a("Search branch, shop, manager, code or address…")} />
+        <FilterChips
+          value={status}
+          onChange={setStatus}
+          options={[
+            { value: "ALL", label: a("All branches"), count: rows.length },
+            { value: "ACTIVE", label: a("Active"), count: rows.filter((branch) => branch.is_active).length },
+            { value: "INACTIVE", label: a("Inactive"), count: rows.filter((branch) => !branch.is_active).length },
+          ]}
+        />
+        <Button size="sm" variant="glass" className="ml-auto" onClick={() => downloadCsv(
+          `beboss-all-branches-${Date.now()}.csv`,
+          filtered.map((branch) => ({
+            shop: branch.shop_name, shopKey: branch.shop_sync_key, branch: branch.name, code: branch.code,
+            address: branch.address, phone: branch.phone, manager: branch.manager_name,
+            mainBranch: branch.is_main_branch, active: branch.is_active,
+            operationalStatus: branch.operational_status, products: branch.product_count,
+            stockValueRwf: branch.stock_value_rwf, dailyTargetRwf: branch.daily_sales_target_rwf,
+            monthlyTargetRwf: branch.monthly_target_rwf, updatedAt: new Date(branch.updated_at).toISOString(),
+            lastModifiedDevice: branch.last_modified_device_id, syncVersion: branch.sync_version,
+          })),
+        )}>
+          <Download /> {a("Export branches")}
+        </Button>
+      </div>
+      {loading ? <LoadingBlock /> : !filtered.length ? (
+        <EmptyState title={a("No synchronized branches found")} sub={a("Branch records appear here when a shop device or owner portal syncs branch data to Supabase.")} />
+      ) : (
+        <TableShell>
+          <table className="w-full min-w-[1150px] text-sm">
+            <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3">{a("Shop")}</th>
+                <th className="px-4 py-3">{a("Branch")}</th>
+                <th className="px-4 py-3">{a("Manager / contact")}</th>
+                <th className="px-4 py-3">{a("Operations")}</th>
+                <th className="px-4 py-3">{a("Products / stock")}</th>
+                <th className="px-4 py-3">{a("Targets")}</th>
+                <th className="px-4 py-3">{a("Last synced")}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((branch) => (
+                <tr key={branch.id} className="hover:bg-accent/40">
+                  <td className="px-4 py-3">
+                    <Link to="/admin/shops/$shopId" params={{ shopId: branch.shop_sync_key }} className="font-medium hover:text-primary">
+                      {branch.shop_name || branch.shop_sync_key}
+                    </Link>
+                    <p className="text-xs text-muted-foreground">{branch.shop_sync_key}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{branch.name} {branch.is_main_branch ? <span className="text-xs text-primary">· {a("Main")}</span> : null}</p>
+                    <p className="text-xs text-muted-foreground">{branch.code || "—"} · {branch.address || a("No address")}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p>{branch.manager_name || "—"}</p>
+                    <p className="text-xs text-muted-foreground">{branch.phone || branch.email || "—"}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={branch.is_active ? branch.operational_status || "ACTIVE" : "INACTIVE"} />
+                    <p className="mt-1 text-xs text-muted-foreground">{branch.is_active ? a("Active") : a("Inactive")}</p>
+                  </td>
+                  <td className="px-4 py-3 font-mono">
+                    <p>{branch.product_count.toLocaleString()} {a("products")}</p>
+                    <p className="text-xs text-muted-foreground">{Number(branch.stock_value_rwf || 0).toLocaleString()} FRw</p>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    <p>{Number(branch.daily_sales_target_rwf || 0).toLocaleString()} FRw / {a("day")}</p>
+                    <p>{Number(branch.monthly_target_rwf || 0).toLocaleString()} FRw / {a("month")}</p>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground" title={formatDateTime(branch.updated_at)}>
+                    {relativeTime(branch.updated_at)}
+                    <p className="font-mono text-[10px]">{branch.last_modified_device_id || "—"} · v{branch.sync_version}</p>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableShell>
+      )}
+      <p className="text-xs text-muted-foreground">{a("Showing")} {filtered.length.toLocaleString()} {a("of")} {rows.length.toLocaleString()} {a("branches across all shops")}.</p>
+    </div>
+  );
+}
+
+function StockTransfersTable({ rows, loading }: { rows: ShopStockTransfer[]; loading: boolean }) {
+  const a = useAdminText();
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState("ALL");
+  const statuses = Array.from(new Set(rows.map((transfer) => transfer.status).filter(Boolean))).sort();
+  const filtered = rows.filter((transfer) =>
+    (status === "ALL" || transfer.status === status) &&
+    matches(q, transfer.shop_name, transfer.shop_sync_key, transfer.transfer_number, transfer.product_name,
+      transfer.from_branch_name, transfer.to_branch_name, transfer.transferred_by, transfer.received_by, transfer.notes),
+  );
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput value={q} onChange={setQ} placeholder={a("Search shop, transfer, product, branch or staff…")} />
+        <FilterChips
+          value={status}
+          onChange={setStatus}
+          options={[
+            { value: "ALL", label: a("All statuses"), count: rows.length },
+            ...statuses.map((value) => ({ value, label: a(value.replaceAll("_", " ")), count: rows.filter((transfer) => transfer.status === value).length })),
+          ]}
+        />
+        <Button size="sm" variant="glass" className="ml-auto" onClick={() => downloadCsv(
+          `beboss-stock-transfers-${Date.now()}.csv`,
+          filtered.map((transfer) => ({
+            shop: transfer.shop_name, shopKey: transfer.shop_sync_key, transfer: transfer.transfer_number,
+            product: transfer.product_name, from: transfer.from_branch_name, to: transfer.to_branch_name,
+            quantity: transfer.quantity, unit: transfer.unit, costValueRwf: transfer.cost_value_rwf,
+            status: transfer.status, transferredBy: transfer.transferred_by, receivedBy: transfer.received_by,
+            transferDate: new Date(transfer.transfer_date).toISOString(), receivedAt: transfer.received_at,
+            notes: transfer.notes, synced: transfer.synced, updatedAt: new Date(transfer.updated_at).toISOString(),
+            lastModifiedDevice: transfer.last_modified_device_id,
+          })),
+        )}>
+          <Download /> {a("Export transfers")}
+        </Button>
+      </div>
+      {loading ? <LoadingBlock /> : !filtered.length ? (
+        <EmptyState title={a("No stock transfers found")} sub={a("Stock movements between branches are listed here after a shop syncs them to Supabase.")} />
+      ) : (
+        <TableShell>
+          <table className="w-full min-w-[1200px] text-sm">
+            <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3">{a("Shop / transfer")}</th>
+                <th className="px-4 py-3">{a("Product")}</th>
+                <th className="px-4 py-3">{a("Movement")}</th>
+                <th className="px-4 py-3">{a("Quantity / value")}</th>
+                <th className="px-4 py-3">{a("Status")}</th>
+                <th className="px-4 py-3">{a("Transferred / received by")}</th>
+                <th className="px-4 py-3">{a("Transfer date")}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((transfer) => (
+                <tr key={transfer.id} className="hover:bg-accent/40">
+                  <td className="px-4 py-3">
+                    <Link to="/admin/shops/$shopId" params={{ shopId: transfer.shop_sync_key }} className="font-medium hover:text-primary">
+                      {transfer.shop_name || transfer.shop_sync_key}
+                    </Link>
+                    <p className="font-mono text-xs text-muted-foreground">{transfer.transfer_number || transfer.id}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{transfer.product_name || transfer.product_id}</p>
+                    {transfer.notes ? <p className="max-w-[240px] truncate text-xs text-muted-foreground" title={transfer.notes}>{transfer.notes}</p> : null}
+                  </td>
+                  <td className="px-4 py-3">
+                    <p>{transfer.from_branch_name || "—"}</p>
+                    <p className="text-xs text-muted-foreground">→ {transfer.to_branch_name || "—"}</p>
+                  </td>
+                  <td className="px-4 py-3 font-mono">
+                    <p>{Number(transfer.quantity).toLocaleString()} {transfer.unit}</p>
+                    <p className="text-xs text-muted-foreground">{Number(transfer.cost_value_rwf || 0).toLocaleString()} FRw</p>
+                  </td>
+                  <td className="px-4 py-3"><StatusBadge status={transfer.status} /><p className="mt-1 text-xs text-muted-foreground">{transfer.synced ? a("Synced") : a("Pending sync")}</p></td>
+                  <td className="px-4 py-3 text-xs">
+                    <p>{transfer.transferred_by || "—"}</p>
+                    <p className="text-muted-foreground">{transfer.received_by || a("Awaiting receipt")}</p>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground" title={formatDateTime(transfer.transfer_date)}>
+                    {transfer.transfer_date ? formatDateTime(transfer.transfer_date) : "—"}
+                    <p>{transfer.received_at ? relativeTime(transfer.received_at) : ""}</p>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableShell>
+      )}
+      <p className="text-xs text-muted-foreground">{a("Showing")} {filtered.length.toLocaleString()} {a("of")} {rows.length.toLocaleString()} {a("stock transfers across all shops")}.</p>
     </div>
   );
 }
