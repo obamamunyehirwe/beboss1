@@ -116,29 +116,117 @@ Deno.serve(async (request: Request) => {
     const profiles = await profileResponse.json();
     if (!roles.length || !profiles.length) return json(403, { message: "This account does not have an active BeBoss administrator role." });
 
+    // The mobile admin client supplies only the request ID. All customer, payer,
+    // amount and plan values are read from Supabase so the device cannot alter them.
     const input = await request.json();
-    const username = String(input?.username ?? "").trim();
-    const phone = String(input?.phone ?? "").trim();
-    const tier = String(input?.tier ?? "SINGLE").trim().toUpperCase();
-    const days = Number(input?.days);
-    const requestId = String(input?.requestId ?? "").trim();
-    const planDigest = String(input?.planDigest ?? "").trim().toUpperCase();
-    if (!!requestId !== !!planDigest || (requestId && (requestId.length > 200 || !/^[0-9A-F]{64}$/.test(planDigest)))) {
-      return json(400, { message: "The payment request and its 64-character plan digest must be supplied together." });
-    }
-    if (!username || username.length > 80 || !normalizePhone(phone) || normalizePhone(phone).length !== 9) {
-      return json(400, { message: "A valid shop username and registered Rwanda phone are required." });
-    }
-    if (!["SINGLE", "DUAL", "MULTI", "ANNUAL", "TRIAL"].includes(tier) || !Number.isInteger(days) || days < 1 || days > 800) {
-      return json(400, { message: "The requested plan or subscription length is invalid." });
+    const paymentRequestId = String(input?.paymentRequestId ?? "").trim();
+    if (!paymentRequestId || paymentRequestId.length > 200) {
+      return json(400, { message: "A valid payment request ID is required." });
     }
 
-    // New payment approvals derive the BB3 nonce from the exact submitted payment and plan.
-    // Manual/admin codes without a payment request retain an independent random nonce.
-    const nonce = requestId && planDigest
-      ? planDigest.slice(0, 24)
-      : hex(crypto.getRandomValues(new Uint8Array(12)));
-    const accountHash = hex(await sha256(`${username.toLowerCase() }:${normalizePhone(phone)}`)).slice(0, 6);
+    const paymentColumns = [
+      "id", "shop_name", "owner_username", "owner_phone", "device_challenge",
+      "provider", "payer_phone", "payer_full_name", "amount_rwf", "duration_months",
+      "branch_count", "worker_count", "device_count", "fee_per_device_rwf",
+      "payment_time_ms", "payment_note", "status", "created_at",
+    ].join(",");
+    const paymentQuery = new URLSearchParams({
+      select: paymentColumns,
+      id: `eq.${paymentRequestId}`,
+      limit: "1",
+    });
+    const paymentResponse = await adminRest(`payment_requests?${paymentQuery.toString()}`);
+    if (!paymentResponse.ok) return json(503, { message: "Could not load the submitted payment from Supabase." });
+    const paymentRows = await paymentResponse.json();
+    const payment = paymentRows?.[0];
+    if (!payment) return json(404, { message: "The submitted payment request was not found." });
+    if (!["PENDING_VERIFICATION", "REJECTED"].includes(String(payment.status))) {
+      return json(409, { message: "Only a pending or rejected payment can receive a new unlock code." });
+    }
+
+    const username = String(payment.owner_username ?? "").trim();
+    const phone = String(payment.owner_phone ?? "").trim();
+    const provider = String(payment.provider ?? "").trim();
+    const payerPhone = String(payment.payer_phone || payment.owner_phone || "").trim();
+    const payerFullName = String(payment.payer_full_name ?? "").trim().normalize("NFKC");
+    const paymentNote = String(payment.payment_note ?? "").trim().normalize("NFKC");
+    const months = Number(payment.duration_months);
+    const branches = Number(payment.branch_count);
+    const workers = Number(payment.worker_count);
+    const devices = Number(payment.device_count);
+    const paymentTimeMs = Number(payment.payment_time_ms || payment.created_at || Date.now());
+
+    if (!username || username.length > 80 || normalizePhone(phone).length !== 9 ||
+        normalizePhone(payerPhone).length !== 9 || !provider) {
+      return json(400, { message: "The payment request is missing valid registered owner or payer details." });
+    }
+    if (![1, 3, 6, 12].includes(months) ||
+        !Number.isInteger(branches) || branches < 1 || branches > 100 ||
+        !Number.isInteger(workers) || workers < 1 || workers > 500 ||
+        !Number.isInteger(devices) || devices < 1 || devices > 100) {
+      return json(400, { message: "The plan details saved on this payment request are invalid." });
+    }
+
+    const shopId = `${username.toLowerCase()}_${normalizePhone(phone) || "000000000"}`;
+    const shopQuery = new URLSearchParams({
+      select: "id,owner_username,owner_phone,shop_name",
+      id: `eq.${shopId}`,
+      limit: "1",
+    });
+    const shopResponse = await adminRest(`shop_accounts?${shopQuery.toString()}`);
+    if (!shopResponse.ok) return json(503, { message: "Could not verify the registered BeBoss shop." });
+    const shops = await shopResponse.json();
+    const shop = shops?.[0];
+    if (!shop ||
+        String(shop.owner_username ?? "").trim().toLowerCase() !== username.toLowerCase() ||
+        normalizePhone(String(shop.owner_phone ?? "")) !== normalizePhone(phone)) {
+      return json(409, { message: "The submitted payment owner does not match a registered BeBoss shop. No code was issued." });
+    }
+
+    const configResponse = await adminRest("app_config?select=per_device_fee_rwf&id=eq.global&limit=1");
+    if (!configResponse.ok) return json(503, { message: "Could not load BeBoss subscription pricing." });
+    const configRows = await configResponse.json();
+    const liveDeviceRate = Number(configRows?.[0]?.per_device_fee_rwf) || 2000;
+    const feePerDevice = Number(payment.fee_per_device_rwf) > 0
+      ? Math.floor(Number(payment.fee_per_device_rwf))
+      : liveDeviceRate;
+
+    const branchFee = branches === 1 ? 5000 : branches === 2 ? 10000 : 20000;
+    const workerFee = workers <= 1 ? 0 : workers <= 3 ? 2000 : workers <= 5 ? 4000 : 4000 + (workers - 5) * 1000;
+    const deviceFee = Math.max(0, devices - 1) * feePerDevice;
+    const monthly = branchFee + workerFee + deviceFee;
+    const gross = monthly * months;
+    const discountPercent = months === 12 ? 20 : months === 3 ? 10 : 0;
+    const calculatedAmount = gross - Math.floor((gross * discountPercent) / 100);
+    const submittedAmount = Number(payment.amount_rwf);
+    if (!Number.isSafeInteger(submittedAmount) || submittedAmount < 1 || submittedAmount !== calculatedAmount) {
+      return json(409, {
+        message: `Payment amount mismatch. The submitted plan calculates to ${calculatedAmount} FRw, but the claim records ${submittedAmount || 0} FRw. Correct the claim or confirm the provider payment before approval.`,
+      });
+    }
+
+    const tier = months >= 12 ? "ANNUAL" : branches >= 3 ? "MULTI" : branches === 2 ? "DUAL" : "SINGLE";
+    const days = months * 30;
+    const canonicalPlan = [
+      "BEBOSS-PAYMENT-PLAN-V1",
+      String(payment.id).trim(),
+      username.toLowerCase(),
+      normalizePhone(phone),
+      provider.toUpperCase(),
+      normalizePhone(payerPhone),
+      payerFullName,
+      Math.floor(calculatedAmount),
+      Math.floor(months),
+      Math.floor(branches),
+      Math.floor(workers),
+      Math.floor(devices),
+      Math.floor(paymentTimeMs),
+      paymentNote,
+    ].join("\\n");
+    const planDigest = hex(await sha256(canonicalPlan));
+    if (!/^[0-9A-F]{64}$/.test(planDigest)) throw new Error("Could not create the payment plan digest.");
+    const nonce = planDigest.slice(0, 24);
+    const accountHash = hex(await sha256(`${username.toLowerCase()}:${normalizePhone(phone)}`)).slice(0, 6);
     const expiryHex = (Math.floor(Date.now() / 86_400_000) + 14).toString(16).toUpperCase();
     const payload = `BB3:${tier}:${days}:${expiryHex}:${accountHash}:${nonce}`;
     const key = await loadPrivateKey();
@@ -150,7 +238,11 @@ Deno.serve(async (request: Request) => {
     const derSignature = rawEcdsaToDer(rawSignature);
     const code = `BB3-${tier}-${days}-${expiryHex}-${accountHash}-${nonce}-${toBase64(derSignature)}`;
 
-    return json(200, { code, tier, days, requestId: requestId || undefined, planDigest: planDigest || undefined, expiresOnEpochDay: Number.parseInt(expiryHex, 16), algorithm: "ECDSA-P256-SHA256" });
+    return json(200, {
+      code, tier, days, requestId: String(payment.id), planDigest, shopId: String(shop.id),
+      amountRwf: calculatedAmount, paymentTimeMs,
+      expiresOnEpochDay: Number.parseInt(expiryHex, 16), algorithm: "ECDSA-P256-SHA256",
+    });
   } catch (error) {
     console.error("[issue-bb3-unlock]", error);
     return json(500, { message: error instanceof Error ? error.message : "Unable to create a signed BB3 code." });
