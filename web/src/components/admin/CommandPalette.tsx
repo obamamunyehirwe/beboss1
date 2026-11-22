@@ -73,9 +73,9 @@ export function CommandPalette({ nav }: { nav: readonly NavEntry[] }) {
           </CommandGroup>
           <CommandGroup heading="Payments">
             {(pays.data ?? []).slice(0, 200).map((p) => (
-              <CommandItem key={p.id} value={`payment ${p.shop_name} ${p.telco_reference} ${p.payer_phone} ${p.payer_full_name} ${p.owner_username} ${p.status}`} onSelect={() => toShop(computeShopKey(p.owner_username, p.owner_phone))}>
+              <CommandItem key={p.id} value={`payment ${p.shop_name} ${p.payer_phone} ${p.payer_full_name} ${p.owner_username} ${p.status} ${p.payment_note}`} onSelect={() => toShop(computeShopKey(p.owner_username, p.owner_phone))}>
                 <CreditCard className="size-4" />
-                <span className="truncate">{p.shop_name} · {p.telco_reference || "no ref"}</span>
+                <span className="truncate">{p.shop_name} · {p.provider} · {p.duration_months} mo</span>
                 <span className="ml-auto text-xs text-muted-foreground">{formatRwf(p.amount_rwf)} · {p.status.replaceAll("_", " ").toLowerCase()}</span>
               </CommandItem>
             ))}
