@@ -21,7 +21,7 @@ internal object LocalizationAdminOps {
         "adm_kpi_revenue" to locEntry("Verified Rev", "Ayemejwe", "Revenus", "Mapato"),
         "adm_kpi_codes" to locEntry("Live Codes", "Amakode", "Codes Actifs", "Misimbo Hai"),
         "adm_batch_approve_btn" to locEntry("Batch Approve All Pending", "Emeza Byose Bitegereje", "Tout Approuver", "Idhinisha Zote Zinazosubiri"),
-        "adm_approve_issue_btn" to locEntry("Approve & Issue BB2", "Emeza & Tanga BB2", "Approuver & Code BB2", "Idhinisha & Toa BB2"),
+        "adm_approve_issue_btn" to locEntry("Verify & Issue BB3", "Genzura & Tanga BB3", "Vérifier et émettre BB3", "Hakiki na Toa BB3"),
         "adm_direct_unlock_btn" to locEntry("Direct Auto-Unlock", "Fungura Ako Kanya", "Déblocage Direct", "Fungua Moja kwa Moja"),
         "adm_reject_btn" to locEntry("Reject", "Hakana", "Rejeter", "Kataa"),
         "adm_send_code_whatsapp" to locEntry("Send Code via WhatsApp", "Ohereza kuri WhatsApp", "Envoyer par WhatsApp", "Tuma kwa WhatsApp"),
@@ -40,7 +40,7 @@ internal object LocalizationAdminOps {
         "adm_no_shops" to locEntry("No shop accounts synced yet.", "Nta maduka aragera kuri cloud.", "Aucune boutique synchronisée.", "Hakuna maduka yaliyosawazishwa."),
         "adm_no_users" to locEntry("No shop users synced yet.", "Nta bakozi baragera kuri cloud.", "Aucun utilisateur synchronisé.", "Hakuna watumiaji waliosawazishwa."),
         "adm_no_devices" to locEntry("No paired shop devices found.", "Nta telefoni z'amaduka zibonetse.", "Aucun appareil boutique trouvé.", "Hakuna vifaa vya duka vilivyopatikana."),
-        "adm_no_codes" to locEntry("No unlock codes issued yet.", "Nta makode aratangwa.", "Aucun code BB2 émis.", "Hakuna misimbo iliyotolewa bado."),
+        "adm_no_codes" to locEntry("No unlock codes issued yet.", "Nta makode aratangwa.", "Aucun code de déblocage émis.", "Hakuna misimbo ya kufungua iliyotolewa bado."),
         "adm_no_branches" to locEntry("No cloud branch snapshots synced yet.", "Nta mashami aragera kuri cloud.", "Aucune agence synchronisée.", "Hakuna matawi yaliyosawazishwa."),
         "adm_no_audit" to locEntry("No audit entries recorded yet.", "Nta bugenzuzi burakorwa.", "Aucun journal d'audit disponible.", "Hakuna rekodi za ukaguzi bado."),
 
