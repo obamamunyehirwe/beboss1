@@ -11,7 +11,7 @@ export const Route = createFileRoute("/how-it-works")({
   head: () => ({
     meta: [
       { title: "How BeBoss works — offline POS, branch sync & secure unlock" },
-      { name: "description", content: "See how BeBoss sells with no internet, syncs branches over local Wi-Fi, backs up to the cloud and unlocks with account-bound BB2 codes paid by Mobile Money." },
+      { name: "description", content: "See how BeBoss sells with no internet, syncs branches over local Wi-Fi, backs up to the cloud and unlocks with payment-linked BB3 codes after manual Mobile Money verification." },
       { property: "og:title", content: "How BeBoss works — offline-first POS for African shops" },
       { property: "og:description", content: "Try the offline simulator and see how sales, branches, payments and unlock codes flow from the counter to the cloud." },
       { property: "og:type", content: "website" },
@@ -113,7 +113,7 @@ function HowItWorks() {
             ))}
           </ol>
           <div className="mt-10 flex flex-wrap items-center gap-3 rounded-3xl border border-border bg-card p-5">
-            <code className="rounded-xl bg-muted px-3 py-2 font-mono text-sm text-primary">BB2-SINGLE-30-5137-DB099F-027658B6</code>
+            <code className="rounded-xl bg-muted px-3 py-2 font-mono text-sm text-primary">BB3-SINGLE-30-…</code>
             <span className="text-sm text-muted-foreground">{p.how.codeLegend}</span>
             <Button asChild variant="soft" size="sm" className="ml-auto">
               <Link to="/my-shop">
