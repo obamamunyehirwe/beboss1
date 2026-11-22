@@ -1836,82 +1836,13 @@ object SupabaseAdminClient {
      * The app detects `auto_unlocked_at` / `DIRECT_AUTO_UNLOCK` on background or foreground sync
      * and activates all features automatically.
      */
+    @Deprecated("Payment claims must receive a unique signed BB3 code after manual verification.")
     suspend fun approvePaymentDirectAutoUnlock(
         request: SupabasePaymentRequestDto,
         adminName: String
     ): Boolean = withContext(Dispatchers.IO) {
-        val session = ensureValidAdminSession()
-        if (!isConfigured() || session == null) return@withContext false
-        if (request.status == "APPROVED") {
-            return@withContext request.approvalMode == "DIRECT_AUTO_UNLOCK"
-        }
-        if (request.status !in setOf("PENDING_VERIFICATION", "REJECTED")) return@withContext false
-
-        try {
-            val now = System.currentTimeMillis()
-            val days = request.durationMonths.coerceAtLeast(1) * 30
-            val operatorLabel = "${session.fullName} (${session.email})".ifBlank { adminName }
-            val savedFeeRate = request.feePerDeviceRwf.takeIf { it > 0 }
-                ?: OfflineSubscriptionManager.getCurrentPaymentConfig().perDeviceFeeRwf.coerceAtLeast(0)
-            val recomputedBreakdown = OfflineSubscriptionManager.calculateSubscriptionPrice(
-                branchCount = request.branchCount.coerceAtLeast(1),
-                workerCount = request.workerCount.coerceAtLeast(1),
-                durationMonths = request.durationMonths.coerceAtLeast(1),
-                deviceCount = request.deviceCount.coerceAtLeast(1),
-                perDeviceRateRwf = savedFeeRate
-            )
-            val verifiedAmountRwf = recomputedBreakdown.totalPayable
-            if (request.amountRwf != verifiedAmountRwf) {
-                Log.w(TAG, "Direct auto-unlock blocked: submitted amount does not match saved plan snapshot.")
-                return@withContext false
-            }
-
-            val prPatch = JSONObject().apply {
-                put("status", "APPROVED")
-                put("approval_mode", "DIRECT_AUTO_UNLOCK")
-                put("amount_rwf", verifiedAmountRwf)
-                put("generated_unlock_code", "")
-                put("verified_by_admin", operatorLabel)
-                put("rejection_reason", "")
-                put("updated_at", now)
-            }
-            val patchPrReq = buildRestRequest(
-                "payment_requests?id=eq.${URLEncoder.encode(request.id, "UTF-8")}&status=in.(PENDING_VERIFICATION,REJECTED)",
-                useAdminJwtIfAvailable = true
-            )
-                .addHeader("Prefer", "return=representation")
-                .patch(prPatch.toString().toRequestBody(jsonMediaType))
-                .build()
-            val claimWon = client.newCall(patchPrReq).execute().use { response ->
-                if (!response.isSuccessful) {
-                    Log.w(TAG, "Direct auto-unlock compare-and-set failed (HTTP ${response.code})")
-                    false
-                } else {
-                    JSONArray(response.body?.string().orEmpty().ifBlank { "[]" }).length() > 0
-                }
-            }
-            if (!claimWon) return@withContext false
-
-            val shopKey = computeShopSyncKey(request.ownerUsername, request.ownerPhone)
-            extendShopExpiryInternal(
-                shopId = shopKey,
-                addDays = days,
-                branchCount = request.branchCount,
-                workerCount = request.workerCount,
-                deviceLimit = request.deviceCount,
-                monthlyFeeRwf = recomputedBreakdown.monthlySubtotal,
-                markAutoUnlock = true
-            )
-            logAdminAudit(
-                action = "DIRECT_AUTO_UNLOCK",
-                targetId = request.ownerUsername,
-                details = "Direct auto-unlocked ${request.shopName} (+${days}d, ${verifiedAmountRwf} FRw, ${request.deviceCount} devices); no code required."
-            )
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "approvePaymentDirectAutoUnlock error: ${e.message}")
-            false
-        }
+        Log.w(TAG, "Direct unlock is disabled for payment claims; issue the payment-linked BB3 code instead.")
+        false
     }
 
     suspend fun rejectPaymentRequest(
