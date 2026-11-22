@@ -1328,7 +1328,7 @@
         bullets: [
           'MTN MoMo (*182#) and Airtel Money (*500#) codes automatically pull the live Admin merchant code, phone numbers, and WhatsApp receiver from Supabase app_config.',
           'When submitting payment proof, include your Shop @username, registered phone, sender MoMo phone and full sender name, selected plan, payment time and optional payment note. The administrator verifies payment with the provider.',
-          'Option 1 (BB2 Unlock Code): Admin verifies your proof and generates a signed BB2-... code bound strictly to your username + phone. Paste it in BeBoss to unlock even 100% offline.',
+          'Option 1 (BB3 Unlock Code): Admin verifies your proof and generates a signed BB3-... code bound strictly to your username + phone. Paste it in BeBoss to unlock even 100% offline.',
           'Option 2 (Admin Direct Auto-Unlock): Admin clicks Direct Auto-Unlock in the portal; BeBoss unlocks automatically on the next foreground or background sync and sends a notification.'
         ]
       },
@@ -1426,7 +1426,7 @@
         bullets: [
           'Kode za MTN MoMo (*182#) na Airtel (*500#) zikurura numero nshya za Admin muri Supabase app_config.',
           'Iyo wohereza icyemezo cyo kwishyura, shyiramo @username y’iduka, Telefoni yanditse ku iduka, Telefoni yishyuye, Amazina yanditse kuri iyo telefoni yishyuye, umubare wa telefoni zikoreshwa, na Reference ya MoMo.',
-          'Uburyo bwa 1 (Kode ya BB2): Admin areba ubwishyu akagukorera kode ya BB2-... ifungura iduka ryawe gusa na offline.',
+          'Uburyo bwa 1 (Kode ya BB2): Admin areba ubwishyu akagukorera kode ya BB3-... ifungura iduka ryawe gusa na offline.',
           'Uburyo bwa 2 (Auto-Unlock): Admin akanda Direct Auto-Unlock, BeBoss igahita yifungura yonyine interineti igeze kuri telefoni.'
         ]
       },
@@ -1524,7 +1524,7 @@
         bullets: [
           'Les codes USSD MTN (*182#) et Airtel (*500#) récupèrent dynamiquement les coordonnées Admin depuis Supabase app_config.',
           'Lors de l’envoi de preuve : précisez @username, téléphone du magasin, téléphone payeur, Noms complets sur le numéro payeur, nombre d’appareils et référence MoMo.',
-          'Option 1 (Code BB2) : l’Admin émet un code BB2-... lié à votre compte, activable même 100% hors ligne.',
+          'Option 1 (Code BB2) : l’Admin émet un code BB3-... lié à votre compte, activable même 100% hors ligne.',
           'Option 2 (Déblocage Direct) : l’Admin clique Direct Auto-Unlock et votre boutique se débloque automatiquement à la synchronisation.'
         ]
       },
@@ -1622,7 +1622,7 @@
         bullets: [
           'Namba za MTN MoMo (*182#) na Airtel (*500#) hupatikana moja kwa moja kutoka Supabase app_config.',
           'Unapotuma uthibitisho, weka @username, namba iliyosajiliwa, namba iliyolipa, Majina Kamili yaliyosajiliwa kwenye namba iliyolipa, idadi ya vifaa na Reference.',
-          'Njia ya 1 (Kode ya BB2): Admin hutoa kode ya BB2-... inayofungua akaunti yako pekee hata bila mtandao.',
+          'Njia ya 1 (Kode ya BB2): Admin hutoa kode ya BB3-... inayofungua akaunti yako pekee hata bila mtandao.',
           'Njia ya 2 (Auto-Unlock): Admin anabofya Direct Auto-Unlock na app inajifungua yenyewe ikisawazisha mtandaoni.'
         ]
       },
@@ -2697,7 +2697,7 @@ create table if not exists public.payment_requests (
       { id: 'shops', label: 'Shops & Quotas', pill: shops.length },
       { id: 'devices', label: 'Shop Devices (+2k)', pill: devices.length },
       { id: 'users', label: 'Users Directory', pill: users.length },
-      { id: 'codes', label: 'BB2 Codes & Engine', pill: codes.length },
+      { id: 'codes', label: 'BB3 Codes & Ledger', pill: codes.length },
       { id: 'snapshots', label: 'Branch Sync', pill: snapshots.length },
       { id: 'config', label: 'Payment, WA & APK', pill: null },
       { id: 'audit', label: 'Audit Logs', pill: audits.length }
@@ -2833,7 +2833,7 @@ create table if not exists public.payment_requests (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#34d399', textTransform: 'uppercase' }}>
-                      {latestGenerated.mode === 'DIRECT' ? 'Direct Auto-Unlock Completed' : `Latest Issued BB2 Unlock Code (@${latestGenerated.username})`}
+                      {latestGenerated.mode === 'DIRECT' ? 'Direct Auto-Unlock Completed' : `Latest Issued BB3 Unlock Code (@${latestGenerated.username})`}
                     </div>
                     <div className="mono" style={{ fontSize: 16, fontWeight: 900, marginTop: 4 }}>{latestGenerated.code}</div>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
@@ -2843,7 +2843,7 @@ create table if not exists public.payment_requests (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {latestGenerated.mode === 'CODE' && (
                       <button className="btn btn-dark btn-sm" onClick={() => copyAndNotify(latestGenerated.code, 'Unlock code copied!')}>
-                        Copy BB2 Code
+                        Copy BB3 Code
                       </button>
                     )}
                     <a
@@ -2905,7 +2905,7 @@ create table if not exists public.payment_requests (
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn btn-green btn-sm" onClick={() => handleApproveWithCode(r)}>BB2 Code</button>
+                          <button className="btn btn-green btn-sm" onClick={() => handleApproveWithCode(r)}>BB3 Code</button>
                           <button className="btn btn-primary btn-sm" onClick={() => handleDirectAutoUnlock(r)}>Auto-Unlock</button>
                         </div>
                       </div>
@@ -3031,9 +3031,9 @@ create table if not exists public.payment_requests (
                         )}
 
                         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {req.status !== 'REJECTED' && (
+                          {(req.status === 'PENDING_VERIFICATION' || req.status === 'REJECTED') && (
                             <button type="button" className="btn btn-green btn-sm" onClick={() => handleApproveWithCode(req)}>
-                              {hasCode ? 'Existing Payment-linked BB3 Code' : 'Verify & Issue BB3 Code'}
+                              Verify & Issue BB3 Code
                             </button>
                           )}
                           {hasCode && (
@@ -3049,7 +3049,7 @@ create table if not exists public.payment_requests (
                               Send Code via WhatsApp
                             </a>
                           )}
-                          {!isDirect && req.status !== 'REJECTED' && (
+                          {req.status === 'PENDING_VERIFICATION' && !isDirect && (
                             <button type="button" className="btn btn-primary btn-sm" onClick={() => handleDirectAutoUnlock(req)}>
                               Option 2: Auto-Unlock Directly (No Code)
                             </button>
@@ -3369,7 +3369,8 @@ create table if not exists public.payment_requests (
                   <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Payment-linked BB3 Unlock Codes</h3>
                   <p style={{ margin: 0, color: 'var(--muted)' }}>A code can only be issued from its own submitted payment claim after verifying the payment with the mobile-money provider. Open the Payments queue to review the plan and issue its unique BB3 code. Standalone code generation is disabled.</p>
                 </div>
-                <div className="card" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>earch} onChange={e => setCodeSearch(e.target.value)} />
+                <div className="card" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input className="input" style={{ flex: '1 1 240px' }} placeholder="Search BB3 code, @username, phone or tier..." value={codeSearch} onChange={e => setCodeSearch(e.target.value)} />
                   <div style={{ display: 'flex', gap: 6 }}>
                     {['ALL', 'ISSUED', 'REDEEMED', 'REVOKED'].map(st => (
                       <button key={st} type="button" className={`btn btn-sm ${codeStatusFilter === st ? 'btn-primary' : 'btn-dark'}`} onClick={() => setCodeStatusFilter(st)}>{st}</button>
@@ -4220,7 +4221,7 @@ create table if not exists public.payment_requests (
                   <span className="badge b-green">STEP 3 • DUAL ADMIN UNLOCK</span>
                   <h3 style={{ margin: '10px 0 6px', fontSize: 16 }}>Unlock Code OR Direct Auto-Unlock</h3>
                   <p style={{ color: 'var(--muted)', fontSize: 13 }}>
-                    Admin verifies your MoMo receipt and chooses <strong>Option 1</strong> (issue offline cryptographic <span className="mono">BB2-...</span> code) OR <strong>Option 2</strong> (Direct Auto-Unlock so your phone unlocks automatically when internet syncs — zero code typing needed).
+                    Admin verifies your MoMo receipt and chooses <strong>Option 1</strong> (issue offline cryptographic <span className="mono">BB3-...</span> code) OR <strong>Option 2</strong> (Direct Auto-Unlock so your phone unlocks automatically when internet syncs — zero code typing needed).
                   </p>
                 </div>
               </div>
