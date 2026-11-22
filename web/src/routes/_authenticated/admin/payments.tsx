@@ -307,9 +307,7 @@ function PaymentsPage() {
                         <Button size="sm" variant="success" disabled={busy} onClick={() => doApprove(r)}>
                           {busy ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Verify & issue BB3 code")}
                         </Button>
-                        <Button size="sm" variant="soft" disabled={busy} onClick={() => doDirect(r)}>
-                          <Zap /> {a("Direct auto-unlock")}
-                        </Button>
+
                         {r.status === "PENDING_VERIFICATION" ? (
                           <Button size="sm" variant="ghost" onClick={() => { setRejecting(r); setReason(""); }}>
                             <X /> {a("Reject")}
@@ -397,25 +395,19 @@ function ResultDialog({ result, onClose }: { result: Result | null; onClose: () 
             {result.shopName} (@{result.username}) • +{result.days} days • {formatRwf(result.total)}
           </DialogDescription>
         </DialogHeader>
-        {result.code ? (
-          <div className="rounded-2xl border border-success/30 bg-success/10 p-4 text-center">
-            <p className="break-all font-mono text-lg font-semibold text-success">{result.code}</p>
-          </div>
-        ) : (
-          <p className="rounded-2xl border border-success/30 bg-success/10 p-4 text-sm text-success">{a("The app unlocks automatically on its next sync — no code needed.")}</p>
-        )}
+        <div className="rounded-2xl border border-success/30 bg-success/10 p-4 text-center">
+          <p className="break-all font-mono text-lg font-semibold text-success">{result.code}</p>
+        </div>
         <DialogFooter className="gap-2 sm:gap-2">
-          {result.code ? (
-            <Button
-              variant="glass"
-              onClick={async () => {
-                await navigator.clipboard.writeText(result.code!);
-                setCopied(true);
-              }}
-            >
-              {copied ? <Check className="text-success" /> : <Copy />} {a("Copy code")}
-            </Button>
-          ) : null}
+          <Button
+            variant="glass"
+            onClick={async () => {
+              await navigator.clipboard.writeText(result.code);
+              setCopied(true);
+            }}
+          >
+            {copied ? <Check className="text-success" /> : <Copy />} {a("Copy code")}
+          </Button>
           <Button variant="success" asChild>
             <a href={buildWhatsAppUrl(result.phone, msg)} target="_blank" rel="noreferrer">
               <MessageCircle /> {a("Send on WhatsApp")}
