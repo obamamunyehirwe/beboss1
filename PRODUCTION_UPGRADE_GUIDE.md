@@ -176,7 +176,7 @@ init {
 
 ```typescript
 // Supabase GoTrue Email/Password JWT
-// Only master admin email allowed: reponsekdz@gmail.com
+// Only master admin email allowed: obamamunyehirwe@gmail.com
 // Session tokens auto-refresh with 60-second buffer
 // Constant-time HMAC verification for all operations
 ```
@@ -290,7 +290,7 @@ Payload: BB3:TIER:DAYS:EXPIRY_HEX:ACCT_HASH6:NONCE
   ```
 
 - [ ] **Master Admin Account Created**
-  - Email: `reponsekdz@gmail.com`
+  - Email: `obamamunyehirwe@gmail.com`
   - Password: Strong (20+ chars, mixed case, numbers, symbols)
   - Stored securely in password manager
 
@@ -361,7 +361,7 @@ Payload: BB3:TIER:DAYS:EXPIRY_HEX:ACCT_HASH6:NONCE
 ### 7.4 Master Admin (Payment Verification)
 
 1. **Open Admin Console**: Settings → License & Unlock → Admin Console
-2. **Sign In**: Email: `reponsekdz@gmail.com`, password
+2. **Sign In**: Email: `obamamunyehirwe@gmail.com`, password
 3. **Verify Payment**:
    - Payments Queue → Find pending request
    - Confirm payer phone + telco reference match
