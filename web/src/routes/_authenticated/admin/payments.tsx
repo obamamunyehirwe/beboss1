@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Check, Copy, Download, KeyRound, Loader2, MessageCircle, Plus, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -30,7 +30,6 @@ function PaymentsPage() {
   const { data: cfg } = useQuery(configQuery);
   const { data: shops } = useQuery(shopsQuery);
   const ctx = useAdminCtx();
-  const qc = useQueryClient();
   const isAdmin = !!ctx.data?.isAdmin;
   const a = useAdminText();
   const [status, setStatus] = useState<Status>("PENDING_VERIFICATION");
