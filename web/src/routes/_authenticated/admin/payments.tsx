@@ -10,9 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, SearchInput, StatusBadge, downloadCsv, matches, useAdminAction } from "@/components/admin/ui";
-import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, directAutoUnlock, rejectPayment } from "@/lib/admin.functions";
+import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, rejectPayment } from "@/lib/admin.functions";
 import { configQuery, paymentsQuery, shopsQuery, type PaymentRequest } from "@/lib/admin-queries";
-import { buildDirectUnlockReplyText, buildUnlockReplyText, buildWhatsAppUrl, calculateSubscriptionFee } from "@/lib/pricing";
+import { buildUnlockReplyText, buildWhatsAppUrl, calculateSubscriptionFee } from "@/lib/pricing";
 import { formatDateTime, formatRwf, relativeTime } from "@/lib/format";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { useAdminText } from "@/lib/admin-copy";
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_authenticated/admin/payments")({
   component: PaymentsPage,
 });
 
-type Result = { mode: "CODE" | "DIRECT"; code?: string; days: number; tier: string; total: number; shopName: string; username: string; phone: string };
+type Result = { code: string; days: number; tier: string; total: number; shopName: string; username: string; phone: string };
 type Status = "PENDING_VERIFICATION" | "APPROVED" | "REJECTED" | "REDEEMED" | "ALL";
 type ClaimSource = "ALL" | "APP" | "WEB" | "WHATSAPP";
 
@@ -45,9 +45,7 @@ function PaymentsPage() {
   const [batching, setBatching] = useState(false);
 
   const approveFn = useServerFn(approvePaymentWithCode);
-  const directFn = useServerFn(directAutoUnlock);
   const approve = useAdminAction(approveFn, { invalidate: [["admin"]] });
-  const direct = useAdminAction(directFn, { invalidate: [["admin"]] });
   const reject = useAdminAction(useServerFn(rejectPayment), { success: "Payment claim rejected", invalidate: [["admin", "payments"]] });
   const remove = useAdminAction(useServerFn(deletePaymentRequest), { success: "Claim removed", invalidate: [["admin", "payments"]] });
   const createManual = useAdminAction(useServerFn(createWhatsAppPaymentClaim), { success: "WhatsApp payment proof added to the review queue", invalidate: [["admin", "payments"], ["admin", "shops"]] });
@@ -66,8 +64,6 @@ function PaymentsPage() {
     approve.mutate({ requestId: r.id }, {
       onSuccess: (res) => setResult({ mode: "CODE", code: res.code, days: res.days, tier: res.tier, total: res.total, shopName: res.shopName, username: res.username, phone: res.phone }),
     });
-  const doDirect = (r: PaymentRequest) =>
-    direct.mutate({ requestId: r.id }, { onSuccess: (res) => setResult({ mode: "DIRECT", days: res.days, tier: res.tier, total: res.total, shopName: res.shopName, username: res.username, phone: res.phone }) });
 
   const batch = async () => {
     setBatching(true);
@@ -265,7 +261,7 @@ function PaymentsPage() {
         <div className="grid gap-3">
           {filtered.map((r) => {
             const calc = calculateSubscriptionFee(r.branch_count, r.worker_count, r.duration_months, r.device_count, Number(r.fee_per_device_rwf) > 0 ? r.fee_per_device_rwf : rate);
-            const busy = (approve.isPending && approve.variables?.requestId === r.id) || (direct.isPending && direct.variables?.requestId === r.id);
+            const busy = (approve.isPending && approve.variables?.requestId === r.id);
             return (
               <div key={r.id} className="rounded-2xl border border-border bg-card p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -391,12 +387,12 @@ function ResultDialog({ result, onClose }: { result: Result | null; onClose: () 
   const [copied, setCopied] = useState(false);
   const a = useAdminText();
   if (!result) return null;
-  const msg = result.mode === "CODE" && result.code ? buildUnlockReplyText(result.shopName, result.username, result.code, result.days, result.tier) : buildDirectUnlockReplyText(result.shopName, result.username, result.days, result.tier);
+  const msg = buildUnlockReplyText(result.shopName, result.username, result.code, result.days, result.tier);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{a(result.mode === "CODE" ? "Unlock code issued" : "Shop auto-unlocked")}</DialogTitle>
+          <DialogTitle>{a("Unlock code issued")}</DialogTitle>
           <DialogDescription>
             {result.shopName} (@{result.username}) • +{result.days} days • {formatRwf(result.total)}
           </DialogDescription>
