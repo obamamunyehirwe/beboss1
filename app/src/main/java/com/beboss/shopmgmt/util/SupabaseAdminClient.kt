@@ -1662,9 +1662,12 @@ object SupabaseAdminClient {
         }
     }
 
-    suspend fun approvePaymentAndIssueCode(request: SupabasePaymentRequestDto, adminName: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+    suspend fun approvePaymentAndIssueCode(request: SupabasePaymentRequestDto, adminName: String, verificationNote: String = ""): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val session = ensureValidAdminSession()
         if (!isConfigured() || session == null) return@withContext Pair(false, "Admin authentication expired or unavailable.")
+        if (request.status != "APPROVED" && verificationNote.trim().length < 5) {
+            return@withContext Pair(false, "Record the result of checking the official MTN MoMo / Airtel Money merchant transaction before issuing BB3.")
+        }
         if (request.status == "APPROVED") {
             if (request.generatedUnlockCode.isBlank() || request.approvalMode != "UNLOCK_CODE") {
                 return@withContext Pair(false, "This payment has already been approved using direct auto-unlock.")
@@ -1771,6 +1774,7 @@ object SupabaseAdminClient {
                 put("amount_rwf", verifiedAmountRwf)
                 put("generated_unlock_code", codeToUse)
                 put("verified_by_admin", operatorLabel)
+                put("admin_verification_note", verificationNote.trim())
                 put("rejection_reason", "")
                 put("updated_at", now)
             }
@@ -1815,7 +1819,7 @@ object SupabaseAdminClient {
             logAdminAudit(
                 action = "APPROVE_PAYMENT",
                 targetId = request.ownerUsername,
-                details = "Verified ${request.provider} payment ${verifiedAmountRwf} FRw for ${request.durationMonths} months, ${request.branchCount} branches, ${request.workerCount} staff, ${request.deviceCount} devices; unique BB3 code linked to ${request.id}."
+                details = "Manually confirmed in provider records: ${verificationNote.trim()}. Customer SMS: ${request.paymentNote.ifBlank { "not supplied" }}. Verified ${request.provider} payment ${verifiedAmountRwf} FRw for ${request.durationMonths} months, ${request.branchCount} branches, ${request.workerCount} staff, ${request.deviceCount} devices; unique BB3 code linked to ${request.id}."
             )
             Pair(true, codeToUse)
         } catch (e: Exception) {

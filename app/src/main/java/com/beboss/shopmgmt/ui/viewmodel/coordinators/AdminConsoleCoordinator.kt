@@ -322,19 +322,20 @@ class AdminConsoleCoordinator(
 
     fun adminApproveAndGenerateCode(
         request: SupabasePaymentRequestDto,
+        verificationNote: String,
         onGenerated: (Boolean, String) -> Unit
     ) {
         scope.launch {
             _isAdminLoading.value = true
             val adminName = _adminSession.value?.fullName ?: currentUser.value?.name ?: "BeBoss Master Admin"
-            val (ok, code) = SupabaseAdminClient.approvePaymentAndIssueCode(request, adminName)
+            val (ok, code) = SupabaseAdminClient.approvePaymentAndIssueCode(request, adminName, verificationNote)
             if (ok) {
                 repository.recordLocalAudit(
                     actorName = adminName,
                     actorRole = "MASTER_ADMIN",
                     action = "ADMIN_APPROVE_PAYMENT",
                     targetId = request.ownerUsername,
-                    details = "Approved ${request.amountRwf} FRw (${request.durationMonths * 30}d) -> ${code.take(18)}..."
+                    details = "Provider payment manually verified: ${verificationNote.take(300)}. Approved ${request.amountRwf} FRw (${request.durationMonths * 30}d) -> ${code.take(18)}..."
                 )
                 refreshAdminDashboardData()
                 emitSnackbar("Approved & generated unlock code: $code")

@@ -100,7 +100,7 @@ const proofSchema = z.object({
   payerPhone: z.string().trim().min(9).max(30),
   payerName: z.string().trim().min(2).max(120),
   paymentTimeMs: z.number().int().positive().optional(),
-  paymentNote: z.string().trim().max(1000).default(""),
+  paymentNote: z.string().trim().min(8, "Paste the successful MTN MoMo or Airtel Money confirmation SMS.").max(1000),
   months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]),
   branches: z.number().int().min(1).max(100),
   workers: z.number().int().min(1).max(500),

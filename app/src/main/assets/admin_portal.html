@@ -1748,6 +1748,7 @@ create table if not exists public.payment_requests (
   fee_per_device_rwf integer not null default 0,
   payment_time_ms bigint not null default 0,
   payment_note text not null default '',
+  admin_verification_note text not null default '',
   status text not null default 'PENDING_VERIFICATION',
   approval_mode text not null default '',
   generated_unlock_code text not null default '',
@@ -2103,6 +2104,9 @@ create table if not exists public.payment_requests (
     const [lastSyncedAt, setLastSyncedAt] = useState(0);
     const [rejectTarget, setRejectTarget] = useState(null);
     const [rejectReason, setRejectReason] = useState('Payment could not be confirmed with the mobile-money provider');
+    const [verifyTarget, setVerifyTarget] = useState(null);
+    const [providerVerified, setProviderVerified] = useState(false);
+    const [providerVerificationNote, setProviderVerificationNote] = useState('');
 
     const [requests, setRequests] = useState([]);
     const [shops, setShops] = useState([]);
@@ -2211,7 +2215,7 @@ create table if not exists public.payment_requests (
       setLoading(true);
       try {
         const [reqs, shps, devs, usrs, cds, snaps, auds, cfgRows] = await Promise.all([
-          sbFetch('payment_requests?select=id,shop_name,owner_username,owner_phone,device_challenge,provider,ussd_code,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at&order=created_at.desc&limit=200').catch(() => []),
+          sbFetch('payment_requests?select=id,shop_name,owner_username,owner_phone,device_challenge,provider,ussd_code,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,admin_verification_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at&order=created_at.desc&limit=200').catch(() => []),
           sbFetch('shop_accounts?order=updated_at.desc&limit=200').catch(() => []),
           sbFetch('shop_devices?order=updated_at.desc&limit=300').catch(() => []),
           sbFetch('shop_users?order=updated_at.desc&limit=400').catch(() => []),
@@ -2271,7 +2275,9 @@ create table if not exists public.payment_requests (
       });
     };
 
-    const handleApproveWithCode = async (req) => {
+    const handleApproveWithCode = async (req, verificationNote) => {
+      const verifiedNote = String(verificationNote || '').trim();
+      if (verifiedNote.length < 5) { notify('Record the provider transaction check before issuing BB3.'); return; }
       if (!['PENDING_VERIFICATION', 'REJECTED'].includes(String(req.status))) {
         notify('Only a pending or rejected payment claim can receive its unlock code.'); return;
       }
@@ -2324,7 +2330,7 @@ create table if not exists public.payment_requests (
             method: 'PATCH', headers: { Prefer: 'return=representation' },
             body: JSON.stringify({
               status: 'APPROVED', approval_mode: 'UNLOCK_CODE', amount_rwf: calc.total,
-              generated_unlock_code: code, verified_by_admin: adminLabel, rejection_reason: '', updated_at: now
+              generated_unlock_code: code, verified_by_admin: adminLabel, admin_verification_note: verifiedNote, rejection_reason: '', updated_at: now
             })
           }
         );
@@ -2345,7 +2351,7 @@ create table if not exists public.payment_requests (
           deviceLimit: req.device_count || 1, monthlyFee: calc.monthly, markAutoUnlock: false
         });
         await logAudit('APPROVE_PAYMENT', req.owner_username,
-          `Provider-verified ${req.provider} payment ${calc.total} FRw; ${req.duration_months} months; BB3 code linked to payment ${req.id}.`);
+          `Manually confirmed in provider records: ${verifiedNote}. Customer SMS: ${req.payment_note || 'not supplied'}. ${req.provider} payment ${calc.total} FRw; ${req.duration_months} months; BB3 code linked to payment ${req.id}.`);
         setLatestGenerated({ mode: 'CODE', code, shopName: req.shop_name, username: req.owner_username,
           phone: req.payer_phone || req.owner_phone, days: calc.days, tier: `${calc.tier} (${calc.total.toLocaleString()} FRw)` });
         await refreshAll(false);
@@ -2927,7 +2933,7 @@ create table if not exists public.payment_requests (
                             </div>
                             <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
                               Payment time: <strong>{formatTime(req.payment_time_ms || req.created_at)}</strong>
-                              {req.payment_note ? <> • Note: <strong>{req.payment_note}</strong></> : null}
+                              {req.payment_note ? <> • Customer SMS: <strong>{req.payment_note}</strong></> : <> • <strong>No customer SMS supplied</strong></>}
                             </div>
                             <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
                               {req.provider} • <strong>{Number(req.amount_rwf || 0).toLocaleString()} FRw</strong> ({req.duration_months * 30}d • {req.branch_count} br / {req.worker_count} stf / {req.device_count || 1} dev) • USSD: <span className="mono">{req.ussd_code || 'Manual'}</span>
@@ -2971,7 +2977,7 @@ create table if not exists public.payment_requests (
 
                         <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           {(req.status === 'PENDING_VERIFICATION' || req.status === 'REJECTED') && (
-                            <button type="button" className="btn btn-green btn-sm" onClick={() => handleApproveWithCode(req)}>
+                            <button type="button" className="btn btn-green btn-sm" onClick={() => { setVerifyTarget(req); setProviderVerified(false); setProviderVerificationNote(''); }}>
                               Verify & Issue BB3 Code
                             </button>
                           )}
@@ -3501,6 +3507,29 @@ create table if not exists public.payment_requests (
             )}
           </main>
         </div>
+
+        {verifyTarget && (
+          <div className="modal-backdrop" onClick={() => setVerifyTarget(null)}>
+            <div className="modal-card" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+              <h3 style={{ margin: '0 0 6px' }}>Verify {verifyTarget.provider} payment</h3>
+              <div style={{ fontSize: 12.5, marginBottom: 10, color: 'var(--muted)' }}>Independently confirm the funds in the official MTN MoMo / Airtel Money merchant transaction history.</div>
+              <div style={{ padding: 10, borderRadius: 10, border: '1px solid var(--border)', background: 'rgba(15,23,42,0.35)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: 12 }}>
+                <strong style={{ display: 'block', marginBottom: 5 }}>CUSTOMER-SUBMITTED SMS</strong>
+                {verifyTarget.payment_note || 'No SMS submitted. Do not approve until the provider transaction is checked directly.'}
+              </div>
+              <label className="field-label">What did you confirm in the provider account?</label>
+              <textarea className="input" rows="3" maxLength="500" value={providerVerificationNote} onChange={e => setProviderVerificationNote(e.target.value)} placeholder="Received amount, payer and transaction time..." />
+              <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', marginTop: 12, fontSize: 12.5 }}>
+                <input type="checkbox" checked={providerVerified} onChange={e => setProviderVerified(e.target.checked)} />
+                I independently confirmed the exact amount was received in the official provider account. The SMS alone is not proof of settlement.
+              </label>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+                <button type="button" className="btn btn-dark" onClick={() => setVerifyTarget(null)}>Cancel</button>
+                <button type="button" className="btn btn-green" disabled={!providerVerified || providerVerificationNote.trim().length < 5} onClick={() => { const target = verifyTarget; const note = providerVerificationNote.trim(); setVerifyTarget(null); handleApproveWithCode(target, note); }}>Confirm payment & issue BB3</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {rejectTarget && (
           <div className="modal-backdrop" onClick={() => setRejectTarget(null)}>

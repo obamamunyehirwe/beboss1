@@ -734,8 +734,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun syncAdminDataToSupabase(silent: Boolean = false) = adminCoordinator.syncAdminDataToSupabase(silent)
     fun checkCloudUnlockApprovals() = adminCoordinator.checkCloudUnlockApprovals()
     fun refreshAdminDashboardData() = adminCoordinator.refreshAdminDashboardData()
-    fun adminApproveAndGenerateCode(request: SupabasePaymentRequestDto, onGenerated: (Boolean, String) -> Unit) =
-        adminCoordinator.adminApproveAndGenerateCode(request, onGenerated)
+    fun adminApproveAndGenerateCode(request: SupabasePaymentRequestDto, verificationNote: String, onGenerated: (Boolean, String) -> Unit) =
+        adminCoordinator.adminApproveAndGenerateCode(request, verificationNote, onGenerated)
     fun adminDirectAutoUnlockPayment(request: SupabasePaymentRequestDto, onDone: (Boolean) -> Unit = {}) =
         adminCoordinator.adminDirectAutoUnlockPayment(request, onDone)
     fun adminApproveBatchPendingPayments(onDone: (Int, Int) -> Unit = { _, _ -> }) =

@@ -408,6 +408,7 @@ export type Database = {
       }
       payment_requests: {
         Row: {
+          admin_verification_note: string
           amount_rwf: number
           approval_mode: string
           branch_count: number
@@ -435,6 +436,7 @@ export type Database = {
           worker_count: number
         }
         Insert: {
+          admin_verification_note?: string
           amount_rwf?: number
           approval_mode?: string
           branch_count?: number
@@ -462,6 +464,7 @@ export type Database = {
           worker_count?: number
         }
         Update: {
+          admin_verification_note?: string
           amount_rwf?: number
           approval_mode?: string
           branch_count?: number
