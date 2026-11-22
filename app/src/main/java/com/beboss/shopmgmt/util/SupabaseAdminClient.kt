@@ -9,6 +9,7 @@ import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.data.model.StockTransfer
 import com.beboss.shopmgmt.data.model.Branch
 import com.beboss.shopmgmt.data.model.User
+import com.beboss.shopmgmt.data.model.UserRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.CertificatePinner
@@ -934,13 +935,27 @@ object SupabaseAdminClient {
         ownerUser: User?,
         branchCount: Int,
         workerCount: Int,
-        deviceCount: Int = 1
+        deviceCount: Int = 1,
+        shopSyncKeyOverride: String? = null,
+        shopOwnerUsernameOverride: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext false
         try {
-            val username = ownerUser?.username?.trim()?.lowercase(Locale.ROOT).orEmpty().ifBlank { "owner" }
-            val rawPhone = ownerUser?.phone?.ifBlank { shopProfile.phone } ?: shopProfile.phone
-            val accountId = computeShopSyncKey(username, rawPhone)
+            val registeredOwner = ownerUser?.takeIf { it.role == UserRole.OWNER }
+            val username = registeredOwner?.username?.trim()?.lowercase(Locale.ROOT)
+                ?: shopOwnerUsernameOverride?.trim()?.lowercase(Locale.ROOT)
+                ?: shopProfile.email.substringBefore("@").trim().lowercase(Locale.ROOT)
+            val rawPhone = registeredOwner?.phone?.ifBlank { shopProfile.phone } ?: shopProfile.phone
+            val phoneDigits = rawPhone.filter { it.isDigit() }.takeLast(9)
+            if (username.length < 2 || !username.matches(Regex("[a-z0-9._-]{2,80}")) ||
+                phoneDigits.length != 9 || shopProfile.shopName.isBlank()) {
+                Log.w(TAG, "upsertShopAccount skipped: a verified owner username, phone and shop name are required.")
+                return@withContext false
+            }
+            // Paired devices pass the server-issued tenant key so the current cashier/manager
+            // can never derive a different account ID from their own login identity.
+            val accountId = shopSyncKeyOverride?.takeIf { it.isNotBlank() }
+                ?: computeShopSyncKey(username, rawPhone)
             val deviceCode = SubscriptionSecurityManager.computeDeviceChallenge(shopProfile)
             val safeDevices = deviceCount.coerceAtLeast(1)
             val pricing = OfflineSubscriptionManager.calculateSubscriptionPrice(branchCount, workerCount, 1, safeDevices)
@@ -969,7 +984,7 @@ object SupabaseAdminClient {
             val payload = JSONObject().apply {
                 put("id", accountId)
                 put("shop_name", shopProfile.shopName)
-                put("owner_name", ownerUser?.name?.ifBlank { shopProfile.name } ?: shopProfile.name)
+                put("owner_name", registeredOwner?.name?.ifBlank { shopProfile.name } ?: shopProfile.name)
                 put("owner_username", username)
                 put("owner_phone", rawPhone)
                 put("device_challenge", deviceCode)

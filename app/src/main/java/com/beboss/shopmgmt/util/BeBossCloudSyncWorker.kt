@@ -38,7 +38,9 @@ class BeBossCloudSyncWorker(
             }
 
             val users = db.userDao().getAllUsersDirect()
-            val ownerUser = users.firstOrNull { it.role == UserRole.OWNER } ?: users.firstOrNull()
+            // A paired cashier/manager is not the shop owner. The canonical owner
+            // username comes from the primary-device row when this device is joined.
+            val ownerUser = users.firstOrNull { it.role == UserRole.OWNER }
             val branches = db.branchDao().getAllActiveBranchesList()
             val deviceId = SupabaseAdminClient.getOrCreateDeviceId(appCtx)
 

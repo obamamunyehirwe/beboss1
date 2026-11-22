@@ -435,10 +435,12 @@ class CloudSyncManager(private val database: AppDatabase) {
 
                 val accountUploaded = SupabaseAdminClient.upsertShopAccount(
                     shopProfile = profile,
-                    ownerUser = ownerUser,
+                    ownerUser = registeredOwner,
                     branchCount = branches.size,
                     workerCount = latestUsers.count { it.isActive }.coerceAtLeast(1),
-                    deviceCount = activeDeviceCount
+                    deviceCount = activeDeviceCount,
+                    shopSyncKeyOverride = shopSyncKey,
+                    shopOwnerUsernameOverride = ownerUsername
                 )
                 val usersUploaded = latestUsers.isNotEmpty() &&
                     SupabaseAdminClient.upsertShopUsers(
