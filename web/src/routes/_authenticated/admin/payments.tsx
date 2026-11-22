@@ -1,18 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, Copy, Download, KeyRound, Loader2, MessageCircle, Trash2, X, Zap } from "lucide-react";
+import { Check, Copy, Download, KeyRound, Loader2, MessageCircle, Plus, Trash2, X, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, SearchInput, StatusBadge, downloadCsv, matches, useAdminAction } from "@/components/admin/ui";
-import { approvePaymentWithCode, deletePaymentRequest, directAutoUnlock, rejectPayment } from "@/lib/admin.functions";
+import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, directAutoUnlock, rejectPayment } from "@/lib/admin.functions";
 import { configQuery, paymentsQuery, type PaymentRequest } from "@/lib/admin-queries";
 import { buildDirectUnlockReplyText, buildUnlockReplyText, buildWhatsAppUrl, calculateSubscriptionFee } from "@/lib/pricing";
 import { formatDateTime, formatRwf, relativeTime } from "@/lib/format";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/payments")({
   component: PaymentsPage,
@@ -20,6 +23,7 @@ export const Route = createFileRoute("/_authenticated/admin/payments")({
 
 type Result = { mode: "CODE" | "DIRECT"; code?: string; days: number; tier: string; total: number; shopName: string; username: string; phone: string };
 type Status = "PENDING_VERIFICATION" | "APPROVED" | "REJECTED" | "REDEEMED" | "ALL";
+type ClaimSource = "ALL" | "APP" | "WEB" | "WHATSAPP";
 
 function PaymentsPage() {
   const { data, isLoading } = useQuery(paymentsQuery);
@@ -27,7 +31,11 @@ function PaymentsPage() {
   const ctx = useAdminCtx();
   const qc = useQueryClient();
   const isAdmin = !!ctx.data?.isAdmin;
+  const a = useAdminText();
   const [status, setStatus] = useState<Status>("PENDING_VERIFICATION");
+  const [source, setSource] = useState<ClaimSource>("ALL");
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manual, setManual] = useState({ shopName: "", username: "", ownerPhone: "", provider: "MTN MoMo" as "MTN MoMo" | "Airtel Money", payerPhone: "", payerName: "", telcoReference: "", months: 1, branches: 1, workers: 1, devices: 1 });
   const [q, setQ] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const [rejecting, setRejecting] = useState<PaymentRequest | null>(null);
@@ -40,6 +48,7 @@ function PaymentsPage() {
   const direct = useAdminAction(directFn, { invalidate: [["admin"]] });
   const reject = useAdminAction(useServerFn(rejectPayment), { success: "Payment claim rejected", invalidate: [["admin", "payments"]] });
   const remove = useAdminAction(useServerFn(deletePaymentRequest), { success: "Claim removed", invalidate: [["admin", "payments"]] });
+  const createManual = useAdminAction(useServerFn(createWhatsAppPaymentClaim), { success: "WhatsApp payment proof added to the review queue", invalidate: [["admin", "payments"], ["admin", "shops"]] });
 
   const rows = data ?? [];
   const counts = useMemo(() => {
@@ -47,7 +56,7 @@ function PaymentsPage() {
     rows.forEach((r) => (c[r.status] = (c[r.status] ?? 0) + 1));
     return c;
   }, [rows]);
-  const filtered = rows.filter((r) => (status === "ALL" || r.status === status) && matches(q, r.shop_name, r.owner_username, r.owner_phone, r.payer_phone, r.payer_full_name, r.telco_reference, r.generated_unlock_code));
+  const filtered = rows.filter((r) => (status === "ALL" || r.status === status) && (source === "ALL" || (r.source || "APP") === source) && matches(q, r.shop_name, r.owner_username, r.owner_phone, r.payer_phone, r.payer_full_name, r.telco_reference, r.generated_unlock_code));
   const pending = rows.filter((r) => r.status === "PENDING_VERIFICATION");
   const rate = Number(cfg?.per_device_fee_rwf) || 2000;
 
@@ -100,6 +109,95 @@ function PaymentsPage() {
           </>
         }
       />
+      {isAdmin ? (
+        <section className="mb-5 overflow-hidden rounded-2xl border border-border bg-card">
+          <button
+            type="button"
+            className="flex w-full flex-wrap items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-accent/40"
+            aria-expanded={manualOpen}
+            onClick={() => setManualOpen((open) => !open)}
+          >
+            <span className="flex items-center gap-2 font-semibold">
+              <Plus className="size-4 text-primary" />
+              {a("Add WhatsApp payment proof manually")}
+            </span>
+            <span className="text-xs text-muted-foreground">{a("For proofs received directly from a customer on WhatsApp")}</span>
+          </button>
+          {manualOpen ? (
+            <form
+              className="grid gap-4 border-t border-border p-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                createManual.mutate(manual, {
+                  onSuccess: () => {
+                    setManual({ shopName: "", username: "", ownerPhone: "", provider: "MTN MoMo", payerPhone: "", payerName: "", telcoReference: "", months: 1, branches: 1, workers: 1, devices: 1 });
+                    setManualOpen(false);
+                  },
+                });
+              }}
+            >
+              <p className="text-sm text-muted-foreground">{a("Enter the customer's registered BeBoss shop details and the transaction information shown in the WhatsApp proof. The claim will enter the same queue as Android and website submissions; payment still needs to be verified against the provider statement.")}</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <ManualField label="Shop name" value={manual.shopName} onChange={(shopName) => setManual({ ...manual, shopName })} required />
+                <ManualField label="Registered owner username" value={manual.username} onChange={(username) => setManual({ ...manual, username })} required />
+                <ManualField label="Registered owner phone" value={manual.ownerPhone} onChange={(ownerPhone) => setManual({ ...manual, ownerPhone })} required />
+                <div className="space-y-1.5">
+                  <Label>{a("Payment provider")}</Label>
+                  <select
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={manual.provider}
+                    onChange={(event) => setManual({ ...manual, provider: event.target.value as "MTN MoMo" | "Airtel Money" })}
+                  >
+                    <option value="MTN MoMo">MTN MoMo</option>
+                    <option value="Airtel Money">Airtel Money</option>
+                  </select>
+                </div>
+                <ManualField label="Payer full name" value={manual.payerName} onChange={(payerName) => setManual({ ...manual, payerName })} required />
+                <ManualField label="Payer phone" value={manual.payerPhone} onChange={(payerPhone) => setManual({ ...manual, payerPhone })} required />
+                <ManualField label="Mobile-money transaction reference" value={manual.telcoReference} onChange={(telcoReference) => setManual({ ...manual, telcoReference: telcoReference.toUpperCase() })} required />
+                <div className="space-y-1.5">
+                  <Label>{a("Duration")}</Label>
+                  <select
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={manual.months}
+                    onChange={(event) => setManual({ ...manual, months: Number(event.target.value) })}
+                  >
+                    <option value={1}>1 month</option>
+                    <option value={3}>3 months</option>
+                    <option value={6}>6 months</option>
+                    <option value={12}>12 months</option>
+                  </select>
+                </div>
+                {(["branches", "workers", "devices"] as const).map((field) => (
+                  <div key={field} className="space-y-1.5">
+                    <Label>{a(field === "workers" ? "Staff count" : field === "devices" ? "Device count" : "Branch count")}</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={field === "workers" ? 500 : 100}
+                      value={manual[field]}
+                      onChange={(event) => setManual({ ...manual, [field]: Math.max(1, Math.min(field === "workers" ? 500 : 100, Number(event.target.value) || 1)) })}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 p-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">{a("Amount to verify against the provider statement")}</p>
+                  <p className="font-display text-2xl font-bold">{formatRwf(calculateSubscriptionFee(manual.branches, manual.workers, manual.months, manual.devices, Number(cfg?.per_device_fee_rwf) || 2000).total)}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="ghost" onClick={() => setManualOpen(false)}>{a("Cancel")}</Button>
+                  <Button type="submit" variant="hero" disabled={createManual.isPending}>
+                    {createManual.isPending ? <Loader2 className="animate-spin" /> : <Plus />} {a("Add to payment review queue")}
+                  </Button>
+                </div>
+              </div>
+            </form>
+          ) : null}
+        </section>
+      ) : null}
+
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <SearchInput value={q} onChange={setQ} placeholder="Search shop, @username, phone, payer, reference…" />
         <FilterChips<Status>
@@ -111,6 +209,16 @@ function PaymentsPage() {
             { value: "REDEEMED", label: "Redeemed", count: counts["REDEEMED"] ?? 0 },
             { value: "REJECTED", label: "Rejected", count: counts["REJECTED"] ?? 0 },
             { value: "ALL", label: "All", count: counts["ALL"] ?? 0 },
+          ]}
+        />
+        <FilterChips<ClaimSource>
+          value={source}
+          onChange={setSource}
+          options={[
+            { value: "ALL", label: "All sources" },
+            { value: "APP", label: "Android app", count: rows.filter((r) => !r.source || r.source === "APP").length },
+            { value: "WEB", label: "Website", count: rows.filter((r) => r.source === "WEB").length },
+            { value: "WHATSAPP", label: "WhatsApp", count: rows.filter((r) => r.source === "WHATSAPP").length },
           ]}
         />
       </div>
@@ -132,7 +240,7 @@ function PaymentsPage() {
                       <h3 className="font-semibold">{r.shop_name}</h3>
                       <span className="text-sm text-muted-foreground">@{r.owner_username}</span>
                       <StatusBadge status={r.status} />
-                      {r.source === "WEB" ? <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">via website</span> : null}
+                      {r.source === "WHATSAPP" ? <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary">{a("WhatsApp / manual")}</span> : r.source === "WEB" ? <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">{a("Website")}</span> : <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">{a("Android app")}</span>}
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       Submitted {relativeTime(r.created_at)} • {formatDateTime(r.created_at)}
@@ -231,6 +339,16 @@ function PaymentsPage() {
       </Dialog>
 
       <ResultDialog result={result} onClose={() => setResult(null)} />
+    </div>
+  );
+}
+
+function ManualField({ label, value, onChange, required = false }: { label: string; value: string; onChange: (value: string) => void; required?: boolean }) {
+  const a = useAdminText();
+  return (
+    <div className="space-y-1.5">
+      <Label>{a(label)}</Label>
+      <Input value={value} onChange={(event) => onChange(event.target.value)} required={required} maxLength={label.includes("reference") ? 60 : 120} />
     </div>
   );
 }
