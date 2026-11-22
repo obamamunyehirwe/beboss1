@@ -16,6 +16,7 @@ import { inboxQuery, type ContactMessage } from "@/lib/admin-queries";
 import { buildWhatsAppUrl } from "@/lib/pricing";
 import { formatDateTime, relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/inbox")({
   component: InboxPage,
@@ -24,6 +25,7 @@ export const Route = createFileRoute("/_authenticated/admin/inbox")({
 type F = "OPEN" | "NEW" | "IN_PROGRESS" | "RESOLVED" | "SPAM" | "ALL";
 
 function InboxPage() {
+  const a = useAdminText();
   const { data, isLoading } = useQuery(inboxQuery);
   const [f, setF] = useState<F>("OPEN");
   const [q, setQ] = useState("");
@@ -85,6 +87,7 @@ function InboxPage() {
 }
 
 function MessageDetail({ m }: { m: ContactMessage }) {
+  const a = useAdminText();
   const isAdmin = !!useAdminCtx().data?.isAdmin;
   const [status, setStatus] = useState(m.status);
   const [note, setNote] = useState(m.admin_reply_note);
@@ -100,7 +103,7 @@ function MessageDetail({ m }: { m: ContactMessage }) {
         <div>
           <h2 className="text-xl font-bold">{m.full_name}</h2>
           <p className="text-sm text-muted-foreground">
-            {m.shop_name || "No shop given"} • {formatDateTime(m.created_at)}
+            {m.shop_name || a("No shop given")} • {formatDateTime(m.created_at)}
           </p>
         </div>
         <StatusBadge status={m.status} />
@@ -110,7 +113,7 @@ function MessageDetail({ m }: { m: ContactMessage }) {
           <>
             <Button size="sm" variant="success" asChild>
               <a href={buildWhatsAppUrl(m.phone, `Hello ${m.full_name}, this is the BeBoss team replying to your message.`)} target="_blank" rel="noreferrer">
-                <MessageCircle /> WhatsApp
+                <MessageCircle /> {a("WhatsApp")}
               </a>
             </Button>
             <Button size="sm" variant="glass" asChild>
@@ -143,18 +146,18 @@ function MessageDetail({ m }: { m: ContactMessage }) {
             ))}
           </SelectContent>
         </Select>
-        <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Internal note — what was done for this person" />
+        <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder={a("Internal note — what was done for this person")} />
       </div>
       <div className="mt-3 flex justify-between">
         {isAdmin ? (
           <ConfirmAction
             trigger={
               <Button size="sm" variant="ghost" className="text-muted-foreground">
-                <Trash2 /> Delete
+                <Trash2 /> {a("Delete")}
               </Button>
             }
-            title="Delete this message?"
-            description="It is removed permanently."
+            title={a("Delete this message?")}
+            description={a("It is removed permanently.")}
             destructive
             confirmLabel="Delete"
             onConfirm={() => del.mutate({ id: m.id })}
@@ -163,7 +166,7 @@ function MessageDetail({ m }: { m: ContactMessage }) {
           <span />
         )}
         <Button size="sm" variant="hero" disabled={save.isPending} onClick={() => save.mutate({ id: m.id, status, note })}>
-          <Save /> Save
+          <Save /> {a("Save")}
         </Button>
       </div>
     </div>
