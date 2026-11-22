@@ -150,13 +150,10 @@ fun AdminVerificationConsoleDialog(
     onSignOutAdmin: () -> Unit,
     onRefresh: () -> Unit,
     onApprovePayment: (SupabasePaymentRequestDto, (Boolean, String) -> Unit) -> Unit,
-    onDirectAutoUnlock: (SupabasePaymentRequestDto, (Boolean) -> Unit) -> Unit = { _, _ -> },
     onSavePaymentConfig: (AdminPaymentConfig, (Boolean) -> Unit) -> Unit = { _, _ -> },
     onToggleShopDeviceActive: (SupabaseShopDeviceDto, Boolean) -> Unit = { _, _ -> },
     onDeleteShopDevice: (SupabaseShopDeviceDto) -> Unit = {},
-    onBatchApprovePending: ((Int, Int) -> Unit) -> Unit = { _ -> },
     onRejectPayment: (SupabasePaymentRequestDto, String) -> Unit,
-    onIssueManualCode: (username: String, registeredPhone: String, tierCode: String, days: Int, amountRwf: Int, onDone: (Boolean, String) -> Unit) -> Unit,
     onRevokeCode: (SupabaseUnlockCodeDto) -> Unit,
     onExtendShopSubscription: (SupabaseShopAccountDto, Int) -> Unit = { _, _ -> },
     onResetShopTrial: (SupabaseShopAccountDto) -> Unit = {},
@@ -696,27 +693,6 @@ fun AdminVerificationConsoleDialog(
                                     }
                                 }
 
-                                if (pendingCount > 1) {
-                                    Button(
-                                        onClick = {
-                                            onBatchApprovePending { _, _ -> }
-                                        },
-                                        enabled = !isLoading,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(min = 48.dp)
-                                            .testTag("admin_batch_approve_btn"),
-                                        colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen)
-                                    ) {
-                                        Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = Localization.format("admin_batch_approve_fmt", language, pendingCount),
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
                             }
 
                             Spacer(modifier = Modifier.height(6.dp))
