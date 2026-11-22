@@ -741,6 +741,7 @@ class BeBossRepository(private val database: AppDatabase) {
                 id = 1L,
                 shopName = remoteShop.shopName,
                 name = remoteShop.ownerName.ifBlank { existingProfile.name },
+                email = "${remoteShop.ownerUsername.ifBlank { cleanUser }}@beboss.rw",
                 phone = remoteShop.ownerPhone.ifBlank { cleanPhone },
                 subscriptionStatus = remoteShop.subscriptionStatus,
                 subscriptionExpiresAt = remoteShop.subscriptionExpiresAt,
@@ -1088,10 +1089,12 @@ class BeBossRepository(private val database: AppDatabase) {
             // A returned false is a failed cloud write, not a successful sync.
             val accountUploaded = SupabaseAdminClient.upsertShopAccount(
                 shopProfile = effectiveProfile,
-                ownerUser = ownerUser,
+                ownerUser = registeredOwner,
                 branchCount = branchCount,
                 workerCount = workerCount,
-                deviceCount = effectiveDeviceCount
+                deviceCount = effectiveDeviceCount,
+                shopSyncKeyOverride = shopSyncKey,
+                shopOwnerUsernameOverride = username
             )
             val localUsers = userDao.getAllUsersDirect()
             val usersUploaded = localUsers.isNotEmpty() &&
