@@ -272,7 +272,7 @@ function ShopDetail() {
               </Button>
             }
             title={`${a("Delete shop")} ${shop.shop_name}?`}
-            description="This cannot be undone. If the app syncs again, the shop will re-register as a new trial."
+            description={a("This cannot be undone. If the app syncs again, the shop will re-register as a new trial.")}
             destructive
             confirmLabel={a("Delete permanently")}
             onConfirm={() => del.mutate({ shopId, cascade: true }, { onSuccess: () => navigate({ to: "/admin/shops" }) })}
