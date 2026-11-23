@@ -550,8 +550,10 @@ fun PurchasesLedgerView(
                 onClearPrefillReorder()
             },
             language = language,
-            initialProduct = prefillReorderSuggestion?.product,
-            initialQuantity = prefillReorderSuggestion?.recommendedOrderQty,
+            initialProduct = prefillReorderSuggestion?.let { suggestion ->
+                products.firstOrNull { it.id == suggestion.productId }
+            },
+            initialQuantity = prefillReorderSuggestion?.suggestedOrderQty,
             recentSuppliers = recentSuppliers
         )
     }
