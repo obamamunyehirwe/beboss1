@@ -106,6 +106,7 @@ function deduplicateStaff(rows: Row[]): Row[] {
     const username = str(row["username"]).trim().toLowerCase();
     const name = str(row["name"]).trim().toLowerCase();
     return !(
+      username.startsWith("legacy-demo-") ||
       (username === "owner" && name === "store owner") ||
       (username === "manager" && name === "store manager") ||
       (username === "cashier" && name === "store cashier")
