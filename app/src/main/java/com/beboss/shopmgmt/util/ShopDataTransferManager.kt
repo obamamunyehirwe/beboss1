@@ -432,6 +432,9 @@ object ShopDataTransferManager {
                 put("receivedAt", tr.receivedAt)
                 put("synced", tr.synced)
                 put("createdAt", tr.createdAt)
+                put("updatedAt", tr.updatedAt)
+                put("hlcTimestamp", tr.hlcTimestamp)
+                put("lastModifiedDeviceId", tr.lastModifiedDeviceId)
             })
         }
         root.put("stockTransfers", transfersArr)
@@ -993,7 +996,10 @@ object ShopDataTransferManager {
                         receivedBy = tr.optCleanString("receivedBy", ""),
                         receivedAt = tr.optLong("receivedAt", 0L),
                         synced = tr.optBoolean("synced", false),
-                        createdAt = tr.optLong("createdAt", System.currentTimeMillis())
+                        createdAt = tr.optLong("createdAt", System.currentTimeMillis()),
+                        updatedAt = tr.optLong("updatedAt", tr.optLong("createdAt", System.currentTimeMillis())),
+                        hlcTimestamp = tr.optLong("hlcTimestamp", 0L),
+                        lastModifiedDeviceId = tr.optCleanString("lastModifiedDeviceId", "")
                     )
                 )
             }
