@@ -4,6 +4,16 @@ import { PAGES, type PageCopy } from "./i18n-pages";
 
 const STORAGE = "beboss.lang";
 
+function readSavedLanguage(): Lang {
+  if (typeof window === "undefined") return "en";
+  try {
+    const saved = window.localStorage.getItem(STORAGE);
+    return saved && Object.prototype.hasOwnProperty.call(DICTS, saved) ? (saved as Lang) : "en";
+  } catch {
+    return "en";
+  }
+}
+
 interface I18nValue {
   lang: Lang;
   setLang: (l: Lang) => void;
@@ -15,11 +25,17 @@ interface I18nValue {
 const I18nContext = createContext<I18nValue | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>("en");
+  const [lang, setLangState] = useState<Lang>(readSavedLanguage);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE) as Lang | null;
-    if (saved && saved in DICTS) setLangState(saved);
+    const syncLanguage = (event: StorageEvent) => {
+      if (event.key !== STORAGE || !event.newValue) return;
+      if (Object.prototype.hasOwnProperty.call(DICTS, event.newValue)) {
+        setLangState(event.newValue as Lang);
+      }
+    };
+    window.addEventListener("storage", syncLanguage);
+    return () => window.removeEventListener("storage", syncLanguage);
   }, []);
 
   useEffect(() => {
@@ -30,8 +46,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     () => ({
       lang,
       setLang: (l) => {
+        if (!Object.prototype.hasOwnProperty.call(DICTS, l)) return;
         setLangState(l);
-        window.localStorage.setItem(STORAGE, l);
+        try {
+          window.localStorage.setItem(STORAGE, l);
+        } catch {
+          // Keep the current selection for this session when storage is unavailable.
+        }
       },
       t: (k) => DICTS[lang][k] ?? DICTS.en[k],
       p: PAGES[lang],
