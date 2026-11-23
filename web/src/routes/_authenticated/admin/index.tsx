@@ -9,6 +9,7 @@ import { auditQuery, codesQuery, devicesQuery, downloadsQuery, paymentsQuery, sh
 import { FLAG_LABEL, deviceHealth, licenseFlags } from "@/lib/sync-health";
 import { effectiveShopStatus } from "@/lib/pricing";
 import { daysLeft, formatRwf, relativeTime } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   component: Overview,
@@ -25,6 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
 const tooltipStyle = { background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, color: "var(--foreground)", fontSize: 12 };
 
 function Overview() {
+  const a = useAdminText();
   const shops = useQuery(shopsQuery);
   const pays = useQuery(paymentsQuery);
   const devices = useQuery(devicesQuery);
@@ -117,7 +119,7 @@ function Overview() {
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-2xl border border-border bg-card p-5">
           <h2 className="flex items-center gap-2 font-semibold">
-            <ShieldAlert className="size-4 text-warning" /> Needs attention
+            <ShieldAlert className="size-4 text-warning" /> {a("Needs attention")}
           </h2>
           <div className="mt-3 space-y-2">
             {attention.slowPayments.length ? (
@@ -146,7 +148,7 @@ function Overview() {
             ))}
             {!attention.slowPayments.length && !attention.staleDevices.length && !attention.flagged.length ? (
               <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-                <CheckCircle2 className="size-4 text-success" /> All clear — no license, payment or sync issues.
+                <CheckCircle2 className="size-4 text-success" /> {a("All clear — no license, payment or sync issues.")}
               </p>
             ) : null}
           </div>
@@ -154,10 +156,10 @@ function Overview() {
         <div className="rounded-2xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 font-semibold">
-              <Activity className="size-4 text-success" /> Live sync feed
+              <Activity className="size-4 text-success" /> {a("Live sync feed")}
             </h2>
             <Link to="/admin/sync" className="text-xs text-primary hover:underline">
-              Sync monitor
+              {a("Sync monitor")}
             </Link>
           </div>
           <div className="mt-3 space-y-1.5">
@@ -174,14 +176,14 @@ function Overview() {
                 <span className="shrink-0 text-muted-foreground">{relativeTime(e.created_at)}</span>
               </div>
             ))}
-            {!events.data?.length ? <p className="py-6 text-center text-sm text-muted-foreground">Waiting for the first phone to sync.</p> : null}
+            {!events.data?.length ? <p className="py-6 text-center text-sm text-muted-foreground">{a("Waiting for the first phone to sync.")}</p> : null}
           </div>
         </div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
         <div className="rounded-2xl border border-border bg-card p-5">
-          <h2 className="font-semibold">Verified revenue — last 12 months</h2>
+          <h2 className="font-semibold">{a("Verified revenue — last 12 months")}</h2>
           <div className="mt-4 h-64">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={m.months}>
@@ -201,7 +203,7 @@ function Overview() {
           </div>
         </div>
         <div className="rounded-2xl border border-border bg-card p-5">
-          <h2 className="font-semibold">Shop status</h2>
+          <h2 className="font-semibold">{a("Shop status")}</h2>
           <div className="mt-2 h-52">
             {pie.length ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -215,7 +217,7 @@ function Overview() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <p className="grid h-full place-items-center text-sm text-muted-foreground">No shops synced yet</p>
+              <p className="grid h-full place-items-center text-sm text-muted-foreground">{a("No shops synced yet")}</p>
             )}
           </div>
           <div className="flex flex-wrap justify-center gap-2">
@@ -231,7 +233,7 @@ function Overview() {
 
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="rounded-2xl border border-border bg-card p-5">
-          <h2 className="font-semibold">New shops per week</h2>
+          <h2 className="font-semibold">{a("New shops per week")}</h2>
           <div className="mt-4 h-48">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={m.weeks}>
@@ -245,9 +247,9 @@ function Overview() {
         </div>
         <div className="rounded-2xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Expiring within 7 days</h2>
+            <h2 className="font-semibold">{a("Expiring within 7 days")}</h2>
             <Link to="/admin/shops" className="text-xs text-primary hover:underline">
-              All shops
+              {a("All shops")}
             </Link>
           </div>
           <div className="mt-3 space-y-2">
@@ -262,15 +264,15 @@ function Overview() {
                 </Link>
               ))
             ) : (
-              <p className="py-6 text-center text-sm text-muted-foreground">Nothing expiring this week.</p>
+              <p className="py-6 text-center text-sm text-muted-foreground">{a("Nothing expiring this week.")}</p>
             )}
           </div>
         </div>
         <div className="rounded-2xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Recent admin activity</h2>
+            <h2 className="font-semibold">{a("Recent admin activity")}</h2>
             <Link to="/admin/audit" className="text-xs text-primary hover:underline">
-              Audit log
+              {a("Audit log")}
             </Link>
           </div>
           <div className="mt-3 space-y-2">
@@ -285,7 +287,7 @@ function Overview() {
                 </p>
               </div>
             ))}
-            {!audit.data?.length ? <p className="py-6 text-center text-sm text-muted-foreground">No activity yet.</p> : null}
+            {!audit.data?.length ? <p className="py-6 text-center text-sm text-muted-foreground">{a("No activity yet.")}</p> : null}
           </div>
         </div>
       </div>
