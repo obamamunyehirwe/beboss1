@@ -470,8 +470,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CustomerAgingSummary())
 
     val reorderSuggestions: StateFlow<List<ReorderSuggestion>> =
-        combine(scopedProducts, scopedSales) { prods, sales ->
-            AnalyticsEngine.computeReorderSuggestions(prods, sales)
+        combine(scopedProducts, repository.allSaleItems, selectedBranchId) { prods, saleItems, branchId ->
+            AnalyticsEngine.computeReorderSuggestions(prods, saleItems, branchId)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private lateinit var adminCoordinator: AdminConsoleCoordinator
