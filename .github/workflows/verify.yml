@@ -49,6 +49,7 @@ jobs:
         run: |
           deno check --no-lock supabase/functions/create-payment-checkout/index.ts
           deno check --no-lock supabase/functions/payment-gateway-webhook/index.ts
+          deno check --no-lock supabase/functions/redeem-shop-device-invite/index.ts
 
       - name: Test payment gateway primitives
         run: deno test --allow-env supabase/functions/_shared/payment-gateway.test.ts
@@ -77,8 +78,11 @@ jobs:
           supabase/functions/issue-bb3-unlock/index.ts
           supabase/functions/verify-legacy-bb2/index.ts
           supabase/functions/submit-public-contact/index.ts
+          supabase/functions/redeem-shop-device-invite/index.ts
+          src/integrations/supabase/types.ts
           src/lib/security-concurrency.integration.test.ts
           src/routes/contact.tsx
+          src/lib/security-concurrency.integration.test.ts
 
       - name: Run unit tests
         run: npm run test
