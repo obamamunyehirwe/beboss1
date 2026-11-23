@@ -285,6 +285,41 @@ class AuthSessionCoordinator(
         }
     }
 
+    /**
+     * Securely provisions this already installed terminal using an owner-issued
+     * single-use invitation. Local Room data and operator credentials are retained.
+     */
+    fun secureCurrentDevice(joinCode: String) {
+        scope.launch {
+            try {
+                val cleanCode = joinCode.trim().uppercase(Locale.ROOT)
+                if (!cleanCode.matches(Regex("BB-[A-F0-9]{32}"))) {
+                    _authError.value = "Enter a valid one-time secure device code."
+                    return@launch
+                }
+                val enrolled = SupabaseAdminClient.enrollCurrentDevice(application, cleanCode)
+                if (!enrolled) {
+                    _authError.value = "Secure enrollment failed. Verify that this code was issued for this exact terminal and has not expired or been used."
+                    return@launch
+                }
+
+                _authError.value = null
+                emitSnackbar("Secure cloud access restored for this terminal. Local business data was preserved.")
+                com.beboss.shopmgmt.util.CloudSyncScheduler.enqueueImmediateSync(application)
+                try {
+                    onRegistrationCloudSync()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _authError.value = "Secure cloud enrollment failed: ${e.safeMessage("Try again after generating a fresh code.")}"
+            }
+        }
+    }
+
     fun loginWithPin(pin: String): Boolean {
         val rateKey = _currentUser.value?.id?.let { "pin:$it" } ?: "pin:global"
         val check = AuthRateLimiter.checkAllowed(rateKey, application)
