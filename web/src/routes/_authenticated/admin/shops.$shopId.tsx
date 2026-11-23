@@ -18,12 +18,17 @@ import { buildWhatsAppUrl, calculateSubscriptionFee, computeShopKey, effectiveSh
 import { daysLeft, formatDateTime, formatRwf, relativeTime } from "@/lib/format";
 import { RetailInsights } from "@/components/admin/RetailInsights";
 import { ShopRecords } from "@/components/admin/ShopRecords";
+import { useAdminText } from "@/lib/admin-copy";
+import { useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/admin/shops/$shopId")({
   component: ShopDetail,
 });
 
 function ShopDetail() {
+  const a = useAdminText();
+  const { lang } = useI18n();
+  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const { shopId } = Route.useParams();
   const navigate = useNavigate();
   const ctx = useAdminCtx();
@@ -73,7 +78,7 @@ function ShopDetail() {
   return (
     <div className="space-y-6">
       <Link to="/admin/shops" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> All shops
+        <ArrowLeft className="size-4" /> {a("All shops")}
       </Link>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -87,7 +92,7 @@ function ShopDetail() {
         </div>
         <Button variant="glass" size="sm" asChild>
           <a href={buildWhatsAppUrl(shop.owner_phone, `Hello ${shop.owner_name || "@" + shop.owner_username}, this is the BeBoss team about ${shop.shop_name}.`)} target="_blank" rel="noreferrer">
-            <MessageCircle /> WhatsApp owner
+            <MessageCircle /> {a("WhatsApp owner")}
           </a>
         </Button>
       </div>
@@ -97,7 +102,7 @@ function ShopDetail() {
           <ShieldOff className="size-4 text-destructive" />
           <span className="font-medium text-destructive">{flags.map((f) => FLAG_LABEL[f]).join(" · ")}</span>
           <span className="text-muted-foreground">
-            {flags.includes("UNVERIFIED_PAID") ? "No approved payment, issued code or direct unlock is on record for this owner. Verify before trusting this license." : ""}
+            {flags.includes("UNVERIFIED_PAID") ? a("No approved payment, issued code or direct unlock is on record for this owner. Verify before trusting this license.") : ""}
           </span>
         </div>
       ) : null}
@@ -106,14 +111,14 @@ function ShopDetail() {
         <StatCard label="Expires" value={formatDateTime(shop.subscription_expires_at)} sub={dl < 0 ? `${-dl} days ago` : `${dl} days left`} tone={dl < 0 ? "danger" : dl <= 7 ? "warning" : "success"} />
         <StatCard label="Monthly fee" value={formatRwf(shop.monthly_fee_rwf)} sub={`${shop.branch_count} branches • ${shop.worker_count} staff`} />
         <StatCard label="Devices" value={`${shopDevices.length} / ${shop.device_limit}`} sub={`${shopDevices.filter((d) => d.is_active).length} active`} />
-        <StatCard label="Lifetime paid" value={formatRwf(paid)} sub={`Last sync ${relativeTime(shop.updated_at)}`} tone="brand" />
+        <StatCard label="Lifetime paid" value={formatRwf(paid)} sub={`Last sync ${relativeTime(shop.updated_at, Date.now(), locale)}`} tone="brand" />
       </div>
 
       {isAdmin ? (
         <div className="grid gap-4 xl:grid-cols-3">
           <section className="rounded-2xl border border-border bg-card p-5">
             <h2 className="flex items-center gap-2 font-semibold">
-              <CalendarPlus className="size-4 text-primary" /> License
+              <CalendarPlus className="size-4 text-primary" /> {a("License")}
             </h2>
             <div className="mt-4 grid grid-cols-4 gap-2">
               {[4, 30, 90, 365].map((d) => (
@@ -125,51 +130,51 @@ function ShopDetail() {
             <div className="mt-3 flex gap-2">
               <Input type="number" min={1} max={1000} value={custom} onChange={(e) => setCustom(Math.max(1, Number(e.target.value) || 1))} />
               <Button size="sm" variant="soft" onClick={() => extend.mutate({ shopId, days: custom, autoUnlock: false })}>
-                Extend
+                {a("Extend")}
               </Button>
             </div>
             <Button className="mt-3 w-full" size="sm" variant="success" onClick={() => extend.mutate({ shopId, days: 30, autoUnlock: true })}>
-              <Zap /> Direct auto-unlock +30d
+              <Zap /> {a("Direct auto-unlock +30d")}
             </Button>
             <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border pt-4">
               <Button size="sm" variant="ghost" onClick={() => trial.mutate({ shopId })}>
-                <RotateCcw /> Reset trial
+                <RotateCcw /> {a("Reset trial")}
               </Button>
               {shop.subscription_status === "SUSPENDED" ? (
                 <Button size="sm" variant="ghost" onClick={() => status.mutate({ shopId, status: "ACTIVE" })}>
-                  <Power /> Reactivate
+                  <Power /> {a("Reactivate")}
                 </Button>
               ) : (
                 <ConfirmAction
                   trigger={
                     <Button size="sm" variant="ghost" className="text-destructive">
-                      <Ban /> Suspend
+                      <Ban /> {a("Suspend")}
                     </Button>
                   }
-                  title={`Suspend ${shop.shop_name}?`}
-                  description="The app locks on its next sync until you reactivate the shop. Local data stays safe on the device."
-                  confirmLabel="Suspend"
+                  title={`${a("Suspend")} ${shop.shop_name}?`}
+                  description={a("The app locks on its next sync until you reactivate the shop. Local data stays safe on the device.")}
+                  confirmLabel={a("Suspend")}
                   destructive
                   onConfirm={() => status.mutate({ shopId, status: "SUSPENDED" })}
                 />
               )}
               <Button size="sm" variant="ghost" onClick={() => status.mutate({ shopId, status: "EXPIRED" })}>
-                Mark expired
+                {a("Mark expired")}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => status.mutate({ shopId, status: "ACTIVE" })}>
-                Mark active
+                {a("Mark active")}
               </Button>
             </div>
           </section>
 
           <section className="rounded-2xl border border-border bg-card p-5">
             <h2 className="flex items-center gap-2 font-semibold">
-              <KeyRound className="size-4 text-primary" /> Quotas & pricing
+              <KeyRound className="size-4 text-primary" /> {a("Quotas & pricing")}
             </h2>
             <div className="mt-4 grid grid-cols-3 gap-3">
               {(["branches", "workers", "devices"] as const).map((k) => (
                 <div key={k} className="space-y-1.5">
-                  <Label className="capitalize">{k === "workers" ? "Staff" : k}</Label>
+                  <Label className="capitalize">{a(k === "workers" ? "Shop staff" : k)}</Label>
                   <Input type="number" min={1} max={k === "workers" ? 500 : 100} value={q[k]} onChange={(e) => setQ({ ...q, [k]: Math.max(1, Number(e.target.value) || 1) })} />
                 </div>
               ))}
@@ -181,37 +186,37 @@ function ShopDetail() {
               <Line l="New monthly fee" v={formatRwf(calc.monthly)} strong />
             </div>
             <Button className="mt-3 w-full" size="sm" variant="hero" disabled={limits.isPending} onClick={() => limits.mutate({ shopId, ...q })}>
-              <Save /> Save quotas
+              <Save /> {a("Save quotas")}
             </Button>
           </section>
 
           <section className="rounded-2xl border border-border bg-card p-5">
             <h2 className="flex items-center gap-2 font-semibold">
-              <ShieldOff className="size-4 text-primary" /> Remote controls
+              <ShieldOff className="size-4 text-primary" /> {a("Remote controls")}
             </h2>
             <div className="mt-4 flex items-center justify-between rounded-xl border border-destructive/30 bg-destructive/5 p-3">
               <div>
-                <p className="text-sm font-medium">Kill switch</p>
-                <p className="text-xs text-muted-foreground">Locks every device of this shop on next sync</p>
+                <p className="text-sm font-medium">{a("Kill switch")}</p>
+                <p className="text-xs text-muted-foreground">{a("Locks every device of this shop on next sync")}</p>
               </div>
               <Switch checked={c.killSwitch} onCheckedChange={(v) => setC({ ...c, killSwitch: v })} />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Min app version</Label>
+                <Label>{a("Min app version")}</Label>
                 <Input value={c.minAppVersion} onChange={(e) => setC({ ...c, minAppVersion: e.target.value })} />
               </div>
               <div className="space-y-1.5">
-                <Label>Support WhatsApp</Label>
+                <Label>{a("Support WhatsApp")}</Label>
                 <Input value={c.adminWhatsapp} onChange={(e) => setC({ ...c, adminWhatsapp: e.target.value })} placeholder="2507…" />
               </div>
             </div>
             <div className="mt-3 space-y-1.5">
-              <Label>Private admin notes</Label>
+              <Label>{a("Private admin notes")}</Label>
               <Textarea rows={3} value={c.notes} onChange={(e) => setC({ ...c, notes: e.target.value })} maxLength={2000} />
             </div>
             <Button className="mt-3 w-full" size="sm" variant="soft" disabled={controls.isPending} onClick={() => controls.mutate({ shopId, ...c })}>
-              <Save /> Save controls
+              <Save /> {a("Save controls")}
             </Button>
           </section>
         </div>
@@ -219,14 +224,14 @@ function ShopDetail() {
 
       <Tabs defaultValue="insights">
         <TabsList className="flex-wrap">
-          <TabsTrigger value="insights">Retail insights</TabsTrigger>
-          <TabsTrigger value="records">Shop records</TabsTrigger>
-          <TabsTrigger value="devices">Devices ({shopDevices.length})</TabsTrigger>
-          <TabsTrigger value="users">Staff ({shopUsers.length})</TabsTrigger>
-          <TabsTrigger value="payments">Payments ({shopPays.length})</TabsTrigger>
-          <TabsTrigger value="codes">Codes ({shopCodes.length})</TabsTrigger>
-          <TabsTrigger value="sync">Branch sync ({shopSnaps.length})</TabsTrigger>
-          <TabsTrigger value="activity">Sync activity ({shopEvents.length})</TabsTrigger>
+          <TabsTrigger value="insights">{a("Retail insights")}</TabsTrigger>
+          <TabsTrigger value="records">{a("Shop records")}</TabsTrigger>
+          <TabsTrigger value="devices">{a("Devices")} ({shopDevices.length})</TabsTrigger>
+          <TabsTrigger value="users">{a("Shop staff")} ({shopUsers.length})</TabsTrigger>
+          <TabsTrigger value="payments">{a("Payments")} ({shopPays.length})</TabsTrigger>
+          <TabsTrigger value="codes">{a("Unlock codes")} ({shopCodes.length})</TabsTrigger>
+          <TabsTrigger value="sync">{a("Branch sync")} ({shopSnaps.length})</TabsTrigger>
+          <TabsTrigger value="activity">{a("Sync activity")} ({shopEvents.length})</TabsTrigger>
         </TabsList>
         <TabsContent value="insights">
           <RetailInsights shopId={shopId} />
@@ -235,10 +240,10 @@ function ShopDetail() {
           <ShopRecords shopId={shopId} shopName={shop.shop_name} />
         </TabsContent>
         <TabsContent value="devices">
-          <MiniList empty="No paired devices" rows={shopDevices.map((d) => ({ k: d.id, a: `${d.device_name || d.device_id}${d.is_owner_primary ? " • owner" : ""}${d.is_active ? "" : " • deactivated"}`, b: `${d.assigned_user_name || d.assigned_username} • ${d.role} • ${d.branch_name}`, c: deviceHealth(d.last_synced_at), d: `synced ${relativeTime(d.last_synced_at)}` }))} />
+          <MiniList empty="No paired devices" rows={shopDevices.map((d) => ({ k: d.id, a: `${d.device_name || d.device_id}${d.is_owner_primary ? " • owner" : ""}${d.is_active ? "" : " • deactivated"}`, b: `${d.assigned_user_name || d.assigned_username} • ${d.role} • ${d.branch_name}`, c: deviceHealth(d.last_synced_at), d: `synced ${relativeTime(d.last_synced_at, Date.now(), locale)}` }))} />
         </TabsContent>
         <TabsContent value="users">
-          <MiniList empty="No staff synced" rows={shopUsers.map((u) => ({ k: u.id, a: `${u.full_name} (@${u.username})`, b: `${u.role} • ${u.assigned_branch_name} • ${u.phone}`, c: u.is_active ? "ACTIVE" : "SUSPENDED", d: relativeTime(u.updated_at) }))} />
+          <MiniList empty="No staff synced" rows={shopUsers.map((u) => ({ k: u.id, a: `${u.full_name} (@${u.username})`, b: `${u.role} • ${u.assigned_branch_name} • ${u.phone}`, c: u.is_active ? "ACTIVE" : "SUSPENDED", d: relativeTime(u.updated_at, Date.now(), locale) }))} />
         </TabsContent>
         <TabsContent value="payments">
           <MiniList empty="No payments" rows={shopPays.map((p) => ({ k: p.id, a: `${formatRwf(p.amount_rwf)} • ${p.provider}`, b: `${p.duration_months} mo • ${p.branch_count} branches • ${p.device_count} devices`, c: p.status, d: formatDateTime(p.created_at) }))} />
@@ -247,29 +252,29 @@ function ShopDetail() {
           <MiniList empty="No codes" rows={shopCodes.map((x) => ({ k: x.id, a: x.unlock_code, b: `${x.tier_code} • +${x.plan_days}d • ${formatRwf(x.amount_rwf)}`, c: x.status, d: formatDateTime(x.issued_at), mono: true }))} />
         </TabsContent>
         <TabsContent value="activity">
-          <MiniList empty="No sync activity recorded yet" rows={shopEvents.map((e) => ({ k: String(e.id), a: `${e.entity.replace("_", " ").toLowerCase()} · ${e.action.replaceAll("_", " ").toLowerCase()}`, b: [e.device_id, e.detail].filter(Boolean).join(" · ") || "—", c: e.actor, d: relativeTime(e.created_at) }))} />
+          <MiniList empty="No sync activity recorded yet" rows={shopEvents.map((e) => ({ k: String(e.id), a: `${e.entity.replace("_", " ").toLowerCase()} · ${e.action.replaceAll("_", " ").toLowerCase()}`, b: [e.device_id, e.detail].filter(Boolean).join(" · ") || "—", c: e.actor, d: relativeTime(e.created_at, Date.now(), locale) }))} />
         </TabsContent>
         <TabsContent value="sync">
-          <MiniList empty="No branch snapshots" rows={shopSnaps.map((s) => ({ k: s.id, a: s.branch_name, b: s.records_summary || s.device_id, c: "ACTIVE", d: relativeTime(s.updated_at) }))} />
+          <MiniList empty="No branch snapshots" rows={shopSnaps.map((s) => ({ k: s.id, a: s.branch_name, b: s.records_summary || s.device_id, c: "ACTIVE", d: relativeTime(s.updated_at, Date.now(), locale) }))} />
         </TabsContent>
       </Tabs>
 
       {isAdmin ? (
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
           <div>
-            <h2 className="font-semibold text-destructive">Delete shop</h2>
-            <p className="text-sm text-muted-foreground">Removes the cloud record with its devices, staff directory and snapshots. Data on the phones is not erased.</p>
+            <h2 className="font-semibold text-destructive">{a("Delete shop")}</h2>
+            <p className="text-sm text-muted-foreground">{a("Removes the cloud record with its devices, staff directory and snapshots. Data on the phones is not erased.")}</p>
           </div>
           <ConfirmAction
             trigger={
               <Button variant="destructive" size="sm">
-                <Trash2 /> Delete shop
+                <Trash2 /> {a("Delete shop")}
               </Button>
             }
-            title={`Delete ${shop.shop_name}?`}
-            description="This cannot be undone. If the app syncs again, the shop will re-register as a new trial."
+            title={`${a("Delete shop")} ${shop.shop_name}?`}
+            description={a("This cannot be undone. If the app syncs again, the shop will re-register as a new trial.")}
             destructive
-            confirmLabel="Delete permanently"
+            confirmLabel={a("Delete permanently")}
             onConfirm={() => del.mutate({ shopId, cascade: true }, { onSuccess: () => navigate({ to: "/admin/shops" }) })}
           />
         </section>
@@ -279,16 +284,18 @@ function ShopDetail() {
 }
 
 function Line({ l, v, strong }: { l: string; v: string; strong?: boolean }) {
+  const a = useAdminText();
   return (
     <div className="flex justify-between">
-      <span className="text-muted-foreground">{l}</span>
+      <span className="text-muted-foreground">{a(l)}</span>
       <span className={strong ? "font-mono font-semibold text-primary" : "font-mono"}>{v}</span>
     </div>
   );
 }
 
 function MiniList({ rows, empty }: { rows: { k: string; a: string; b: string; c: string; d: string; mono?: boolean }[]; empty: string }) {
-  if (!rows.length) return <EmptyState title={empty} />;
+  const a = useAdminText();
+  if (!rows.length) return <EmptyState title={a(empty)} />;
   return (
     <div className="divide-y divide-border rounded-2xl border border-border bg-card">
       {rows.map((r) => (

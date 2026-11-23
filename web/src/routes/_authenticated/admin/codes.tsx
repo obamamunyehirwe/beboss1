@@ -62,15 +62,15 @@ function CodesPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Unlock codes" sub="New BB3 codes use ECDSA P-256 and verify offline with the Android-pinned public key. Legacy BB2 codes are verified online against their original server-issued record." />
+      <PageHeader title={a("Unlock codes")} sub="New BB3 codes use ECDSA P-256 and verify offline with the Android-pinned public key. Legacy BB2 codes are verified online against their original server-issued record." />
       {isAdmin ? (
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4">
           <div>
-            <p className="font-semibold">Unlock codes are payment-linked</p>
-            <p className="mt-1 text-sm text-muted-foreground">New BB3 codes are created only after a submitted payment is manually verified in the Payments queue. Each code is bound to that payment request, shop owner and exact plan.</p>
+            <p className="font-semibold">{a("Unlock codes are payment-linked")}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{a("New BB3 codes are created only after a submitted payment is manually verified in the Payments queue. Each code is bound to that payment request, shop owner and exact plan.")}</p>
           </div>
           <Button asChild size="sm" variant="hero">
-            <Link to="/admin/payments">Review payment proofs</Link>
+            <Link to="/admin/payments">{a("Review payment proofs")}</Link>
           </Button>
         </section>
       ) : null}
@@ -78,23 +78,23 @@ function CodesPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2 font-semibold">
-              <KeyRound className="size-4 text-primary" /> BB3 / BB2 code verification
+              <KeyRound className="size-4 text-primary" /> {a("BB3 / BB2 code verification")}
             </h2>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
               Look up the original Supabase issue record. BB3 codes are checked with the Android-pinned ECDSA P-256 public key; legacy BB2 codes are checked against their original issued record. Lookup never redeems a code.
             </p>
           </div>
-          <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">Admin-only · Read-only</span>
+          <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{a("Admin-only · Read-only")}</span>
         </div>
         <form onSubmit={submitLookup} className="mt-4 flex flex-col gap-2 sm:flex-row">
           <Input
             value={lookupValue}
             onChange={(event) => setLookupValue(event.target.value)}
-            placeholder="Paste the complete BB3 or BB2 unlock code"
+            placeholder={a("Paste the complete BB3 or BB2 unlock code")}
             className="min-w-0 flex-1 font-mono text-xs sm:text-sm"
             autoComplete="off"
             spellCheck={false}
-            aria-label="Unlock code to verify"
+            aria-label={a("Unlock code to verify")}
           />
           <Button type="submit" disabled={lookupPending || !lookupValue.trim()}>
             {lookupPending ? "Checking…" : "Verify code"}
@@ -108,23 +108,23 @@ function CodesPage() {
                 <p className="font-semibold">{lookupResult.valid ? "Verified · ready for one-time redemption" : lookupResult.found ? "Issued record found · not redeemable" : "No matching issue record"}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{lookupResult.message}</p>
               </div>
-              {lookupResult.found ? <StatusBadge status={lookupResult.status} /> : <span className="rounded-full border border-border px-3 py-1 text-xs">NOT FOUND</span>}
+              {lookupResult.found ? <StatusBadge status={lookupResult.status} /> : <span className="rounded-full border border-border px-3 py-1 text-xs">{a("NOT FOUND")}</span>}
             </div>
             {lookupResult.found ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Shop account</p><p className="mt-1 text-sm font-medium">@{lookupResult.shopUsername}</p><p className="text-xs text-muted-foreground">{lookupResult.shopPhone}</p></div>
-                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Plan</p><p className="mt-1 text-sm font-medium">{lookupResult.tier} · {lookupResult.days} days</p><p className="text-xs text-muted-foreground">{formatRwf(lookupResult.amountRwf ?? 0)}</p></div>
-                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Code verification</p><p className="mt-1 text-sm font-medium">{lookupResult.format === "BB3" ? (lookupResult.signatureValid ? "ECDSA signature valid" : "ECDSA signature invalid") : "Legacy registry match"}</p><p className="text-xs text-muted-foreground">{lookupResult.accountBindingValid ? "Account and plan match" : "Account or plan mismatch"}</p></div>
-                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Issue details</p><p className="mt-1 text-sm">{lookupResult.issuedAt ? formatDateTime(lookupResult.issuedAt) : "Issue date unavailable"}</p><p className="text-xs text-muted-foreground">{lookupResult.issuedBy || "Issuer unavailable"}</p></div>
-                {lookupResult.redeemedAt ? <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Redeemed</p><p className="mt-1 text-sm">{formatDateTime(lookupResult.redeemedAt)}</p></div> : null}
-                {lookupResult.expired ? <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">Expiry</p><p className="mt-1 text-sm text-destructive">Expired</p></div> : null}
+                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">{a("Shop account")}</p><p className="mt-1 text-sm font-medium">@{lookupResult.shopUsername}</p><p className="text-xs text-muted-foreground">{lookupResult.shopPhone}</p></div>
+                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">{a("Plan")}</p><p className="mt-1 text-sm font-medium">{lookupResult.tier} · {lookupResult.days} days</p><p className="text-xs text-muted-foreground">{formatRwf(lookupResult.amountRwf ?? 0)}</p></div>
+                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">{a("Code verification")}</p><p className="mt-1 text-sm font-medium">{lookupResult.format === "BB3" ? (lookupResult.signatureValid ? "ECDSA signature valid" : "ECDSA signature invalid") : "Legacy registry match"}</p><p className="text-xs text-muted-foreground">{lookupResult.accountBindingValid ? "Account and plan match" : "Account or plan mismatch"}</p></div>
+                <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">{a("Issue details")}</p><p className="mt-1 text-sm">{lookupResult.issuedAt ? formatDateTime(lookupResult.issuedAt) : "Issue date unavailable"}</p><p className="text-xs text-muted-foreground">{lookupResult.issuedBy || "Issuer unavailable"}</p></div>
+                {lookupResult.redeemedAt ? <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">{a("Redeemed")}</p><p className="mt-1 text-sm">{formatDateTime(lookupResult.redeemedAt)}</p></div> : null}
+                {lookupResult.expired ? <div><p className="text-[11px] uppercase tracking-wide text-muted-foreground">{a("Expiry")}</p><p className="mt-1 text-sm text-destructive">{a("Expired")}</p></div> : null}
               </div>
             ) : null}
           </div>
         ) : null}
       </section>
       <div className="flex flex-wrap items-center gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder="Search code, @username, phone, tier…" />
+        <SearchInput value={q} onChange={setQ} placeholder={a("Search code, @username, phone, tier…")} />
         <FilterChips<F>
           value={f}
           onChange={setF}
@@ -142,7 +142,7 @@ function CodesPage() {
       {codes.isLoading ? (
         <LoadingBlock />
       ) : !rows.length ? (
-        <EmptyState title="No codes yet" />
+        <EmptyState title={a("No codes yet")} />
       ) : (
         <TableShell>
           <table className="w-full text-sm">
@@ -194,9 +194,9 @@ function CodesPage() {
                             </Button>
                           }
                           title={a("Revoke this code?")}
-                          description="The code is marked revoked in the registry. Codes already pasted into an offline phone can't be pulled back, so also suspend the shop if needed."
+                          description={a("The code is marked revoked in the registry. Codes already pasted into an offline phone can't be pulled back, so also suspend the shop if needed.")}
                           destructive
-                          confirmLabel="Revoke"
+                          confirmLabel={a("Revoke")}
                           onConfirm={() => revoke.mutate({ id: c.id })}
                         />
                       ) : null}

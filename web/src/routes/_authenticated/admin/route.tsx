@@ -27,22 +27,23 @@ export const Route = createFileRoute("/_authenticated/admin")({
 });
 
 function AdminRouteError({ error, reset }: { error: Error; reset: () => void }) {
+  const a = useAdminText();
   return (
     <div role="alert" className="grid min-h-[70vh] place-items-center bg-background px-4 py-10">
       <div className="w-full max-w-xl rounded-3xl border border-warning/40 bg-card p-8 shadow-xl">
         <div className="flex items-center gap-3 text-warning">
           <ShieldAlert className="size-7" />
-          <h1 className="text-xl font-bold">Admin page could not load</h1>
+          <h1 className="text-xl font-bold">{a("Admin page could not load")}</h1>
         </div>
         <p className="mt-3 text-sm text-muted-foreground">
-          The admin page encountered an error. Your Supabase records and shop data have not been reset.
+          {a("The admin page encountered an error. Your Supabase records and shop data have not been reset.")}
         </p>
         <pre className="mt-4 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
-          {error.message || "Unexpected admin page error"}
+          {error.message || a("Unexpected admin page error")}
         </pre>
         <div className="mt-5 flex flex-wrap gap-2">
-          <Button onClick={reset}><RefreshCw /> Retry page</Button>
-          <Button variant="outline" asChild><Link to="/admin">Admin overview</Link></Button>
+          <Button onClick={reset}><RefreshCw /> {a("Retry page")}</Button>
+          <Button variant="outline" asChild><Link to="/admin">{a("Admin overview")}</Link></Button>
         </div>
       </div>
     </div>
@@ -68,6 +69,7 @@ const NAV = [
 ] as const;
 
 function AdminQueryStatusBanner() {
+  const a = useAdminText();
   const queryClient = useQueryClient();
   const [failures, setFailures] = useState<Array<{ key: string; label: string; message: string }>>([]);
   const [retrying, setRetrying] = useState(false);
@@ -111,12 +113,12 @@ function AdminQueryStatusBanner() {
     <section role="alert" className="mx-auto mt-4 w-full max-w-[1400px] rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 sm:px-6" aria-live="polite">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="font-semibold text-destructive">Some Admin data could not be loaded</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Failed reads are shown here instead of being presented as successful empty tables or sample figures.</p>
+          <h2 className="font-semibold text-destructive">{a("Some Admin data could not be loaded")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{a("Failed reads are shown here instead of being presented as successful empty tables or sample figures.")}</p>
         </div>
         <Button variant="outline" size="sm" disabled={retrying} onClick={() => void retryFailedReads()}>
           <RefreshCw className={retrying ? "animate-spin" : ""} />
-          {retrying ? "Checking…" : "Retry failed reads"}
+          {retrying ? a("Checking…") : a("Retry failed reads")}
         </Button>
       </div>
       <ul className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -131,6 +133,9 @@ function AdminQueryStatusBanner() {
   );
 }
 function AdminLayout() {
+  const a = useAdminText();
+  const { lang } = useI18n();
+  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const ctx = useAdminCtx();
   const router = useRouter();
   const signOut = async () => {
@@ -150,19 +155,19 @@ function AdminLayout() {
       <div className="grid min-h-screen place-items-center bg-ember px-4">
         <div className="max-w-md rounded-3xl border border-border bg-card p-8 text-center">
           <ShieldAlert className="mx-auto size-10 text-warning" />
-          <h1 className="mt-4 text-xl font-bold">Could not verify admin access</h1>
+          <h1 className="mt-4 text-xl font-bold">{a("Could not verify admin access")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            BeBoss could not complete the secure role check with Supabase. Your permissions have not been changed. Retry the connection, or sign out and sign in again.
+            {a("BeBoss could not complete the secure role check with Supabase. Your permissions have not been changed. Retry the connection, or sign out and sign in again.")}
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-2">
             <Button variant="hero" onClick={() => void ctx.refetch()}>
-              <RefreshCw /> Retry
+              <RefreshCw /> {a("Retry")}
             </Button>
             <Button variant="glass" asChild>
-              <Link to="/">Back to site</Link>
+              <Link to="/">{a("Back to site")}</Link>
             </Button>
             <Button variant="secondary" onClick={signOut}>
-              <LogOut /> Sign out
+              <LogOut /> {a("Sign out")}
             </Button>
           </div>
         </div>
@@ -175,9 +180,9 @@ function AdminLayout() {
       <div className="grid min-h-screen place-items-center bg-ember px-4">
         <div className="max-w-md rounded-3xl border border-border bg-card p-8 text-center">
           <ShieldAlert className="mx-auto size-10 text-warning" />
-          <h1 className="mt-4 text-xl font-bold">Waiting for admin access</h1>
+          <h1 className="mt-4 text-xl font-bold">{a("Waiting for admin access")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            You're signed in as <span className="text-foreground">{ctx.data?.email || "this account"}</span>, but it doesn't have admin rights yet. The master admin can grant access from Admin team.
+            {a("You're signed in as")} <span className="text-foreground">{ctx.data?.email || "this account"}</span>, {a("but it doesn't have admin rights yet. The master admin can grant access from Admin team.")}
           </p>
           <div className="mt-6 flex justify-center gap-2">
             <Button variant="glass" asChild>
@@ -235,7 +240,7 @@ function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string;
   return (
     <div className="flex h-full flex-col">
       <div className="admin-sidebar-brand px-5 py-5">
-        <Logo to="/admin" suffix="Admin" />
+        <Logo to="/admin" suffix={a("Admin")} />
       </div>
       <nav className="admin-side-nav flex-1 space-y-0.5 overflow-y-auto px-3">
         {NAV.map((n,i) => {
@@ -266,7 +271,7 @@ function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string;
             <p className="truncate text-sm">{email}</p>
             <p className="text-[11px] text-muted-foreground">{a(isAdmin ? "Master admin" : "Support (read-only)")}</p>
           </div>
-          <Button size="icon" variant="ghost" onClick={onSignOut} aria-label="Sign out">
+          <Button size="icon" variant="ghost" onClick={onSignOut} aria-label={a("Sign out")}>
             <LogOut />
           </Button>
         </div>
@@ -285,17 +290,17 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
       <div className="flex items-center gap-2">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
-            <Button size="icon" variant="ghost" className="lg:hidden" aria-label="Open admin menu">
+            <Button size="icon" variant="ghost" className="lg:hidden" aria-label={a("Open admin menu")}>
               <Menu />
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="admin-mobile-sheet w-64 bg-sidebar p-0">
-            <SheetTitle className="sr-only">Admin menu</SheetTitle>
+            <SheetTitle className="sr-only">{a("Admin menu")}</SheetTitle>
             <SidebarBody email={email} isAdmin={isAdmin} onSignOut={onSignOut} onNavigate={() => setOpen(false)} />
           </SheetContent>
         </Sheet>
         <div className="admin-topbar-mobile-brand lg:hidden">
-          <Logo to="/admin" suffix="Admin" />
+          <Logo to="/admin" suffix={a("Admin")} />
         </div>
         <div className="hidden sm:block">
           <LivePulse />
@@ -310,7 +315,7 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
           setSpinning(true);
           await qc.invalidateQueries({ queryKey: ["admin"] });
           setSpinning(false);
-          toast.success("Data refreshed");
+          toast.success(a("Data refreshed"));
         }}
       >
         <RefreshCw className={cn(spinning && "animate-spin")} /> <span className="hidden sm:inline">{a('Refresh')}</span>
@@ -321,12 +326,13 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
 }
 
 function LivePulse() {
+  const a = useAdminText();
   const { data, isLoading, isError } = useQuery(syncEventsQuery);
   const now = useNow(10_000);
   const last = data?.[0];
   const lastAt = last ? Date.parse(last.created_at) : Number.NaN;
   const isRecent = Number.isFinite(lastAt) && lastAt <= now && now - lastAt < 15 * 60_000;
-  const label = isLoading
+  const label = a(isLoading
     ? "Checking cloud activity"
     : isError
       ? "Cloud activity unavailable"
@@ -334,7 +340,7 @@ function LivePulse() {
         ? "Recent cloud activity"
         : last
           ? "No recent sync activity"
-          : "No sync activity recorded";
+          : "No sync activity recorded");
   const tone = isRecent ? "text-success" : isError ? "text-destructive" : "text-muted-foreground";
 
   return (
@@ -347,7 +353,7 @@ function LivePulse() {
       <span className={cn("size-2 rounded-full", isRecent ? "bg-success" : isError ? "bg-destructive" : "bg-muted-foreground/50")} />
       <Activity className={cn("size-3.5", tone)} />
       <span className="hidden sm:inline">{label}</span>
-      {last ? <span className="text-muted-foreground/80">· last {relativeTime(last.created_at, now)}</span> : null}
+      {last ? <span className="text-muted-foreground/80">· {a("last")} {relativeTime(last.created_at, now, locale)}</span> : null}
     </Link>
   );
 }
@@ -383,7 +389,7 @@ function LiveFeed() {
       .on("postgres_changes", { event: "*", schema: "public", table: "unlock_codes" }, () => qc.invalidateQueries({ queryKey: ["admin", "codes"] }))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "contact_messages" }, () => {
         qc.invalidateQueries({ queryKey: ["admin", "inbox"] });
-        toast.info("New message in the inbox");
+        toast.info(a("New message in the inbox"));
       })
       .subscribe();
     return () => {

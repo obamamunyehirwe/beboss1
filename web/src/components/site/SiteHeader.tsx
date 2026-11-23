@@ -287,7 +287,7 @@ export function SiteHeader() {
               <SheetContent side="right" className="site-mobile-sheet site-mobile-panel w-[min(92vw,430px)] p-0">
                 <SheetTitle className="sr-only">{p.common.menu}</SheetTitle>
                 <div className="site-mobile-panel-head">
-                  <div><Logo suffix="Menu" /><p>{c.headerMobileIntro}</p></div>
+                  <div><Logo suffix={p.common.menu} /><p>{c.headerMobileIntro}</p></div>
                 </div>
                 <div className="site-mobile-panel-body">
                   <Link to="/" onClick={() => setMobileOpen(false)} className="site-mobile-link site-mobile-home">

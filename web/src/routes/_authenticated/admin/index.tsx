@@ -9,6 +9,8 @@ import { auditQuery, codesQuery, devicesQuery, downloadsQuery, paymentsQuery, sh
 import { FLAG_LABEL, deviceHealth, licenseFlags } from "@/lib/sync-health";
 import { effectiveShopStatus } from "@/lib/pricing";
 import { daysLeft, formatRwf, relativeTime } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
+import { useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   component: Overview,
@@ -25,6 +27,9 @@ const STATUS_COLORS: Record<string, string> = {
 const tooltipStyle = { background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, color: "var(--foreground)", fontSize: 12 };
 
 function Overview() {
+  const a = useAdminText();
+  const { lang } = useI18n();
+  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const shops = useQuery(shopsQuery);
   const pays = useQuery(paymentsQuery);
   const devices = useQuery(devicesQuery);
@@ -96,7 +101,7 @@ function Overview() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Overview" sub="Live health of every BeBoss shop, payment and device." actions={
+      <PageHeader title={a("Overview")} sub={a("Live health of every BeBoss shop, payment and device.")} actions={
         <Button asChild variant="hero" size="sm">
           <Link to="/admin/payments">
             Review payments ({m.pending.length}) <ArrowRight />
@@ -104,20 +109,20 @@ function Overview() {
         </Button>
       } />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Monthly recurring revenue" value={formatRwf(m.mrr)} sub={`${m.statusCounts["ACTIVE"]} paying shops`} icon={Wallet} tone="brand" />
-        <StatCard label="Collected this month" value={formatRwf(m.revThis)} sub={growth == null ? `Last month ${formatRwf(m.revLast)}` : `${growth >= 0 ? "+" : ""}${growth}% vs last month`} icon={TrendingUp} tone="success" />
-        <StatCard label="Pending verification" value={m.pending.length} sub={formatRwf(m.pending.reduce((a, x) => a + x.amount_rwf, 0)) + " waiting"} icon={CreditCard} tone="warning" />
-        <StatCard label="Shops" value={m.totalShops} sub={`${m.statusCounts["TRIAL"]} on trial • ${m.statusCounts["EXPIRED"]} expired`} icon={Store} tone="info" />
-        <StatCard label="Paired devices" value={(devices.data ?? []).length} sub={`${activeDevices} active`} icon={Smartphone} />
-        <StatCard label="Shop staff accounts" value={(users.data ?? []).length} sub={`${(users.data ?? []).filter((u) => u.is_active).length} active`} icon={Users} />
-        <StatCard label="APK downloads (30 days)" value={m.dl30} sub="from website, QR and app" icon={Download} />
-        <StatCard label="Suspended / killed" value={m.statusCounts["SUSPENDED"]! + m.statusCounts["KILLED"]!} sub="remote controls applied" icon={AlertTriangle} tone="danger" />
+        <StatCard label={a("Monthly recurring revenue")} value={formatRwf(m.mrr)} sub={`${m.statusCounts["ACTIVE"]} ${a("paying shops")}`} icon={Wallet} tone="brand" />
+        <StatCard label={a("Collected this month")} value={formatRwf(m.revThis)} sub={growth == null ? `${a("Last month")} ${formatRwf(m.revLast)}` : `${growth >= 0 ? "+" : ""}${growth}% ${a("vs last month")}`} icon={TrendingUp} tone="success" />
+        <StatCard label={a("Pending verification")} value={m.pending.length} sub={formatRwf(m.pending.reduce((a, x) => a + x.amount_rwf, 0)) + " " + a("waiting")} icon={CreditCard} tone="warning" />
+        <StatCard label={a("Shops")} value={m.totalShops} sub={`${m.statusCounts["TRIAL"]} ${a("on trial")} • ${m.statusCounts["EXPIRED"]} ${a("expired")}`} icon={Store} tone="info" />
+        <StatCard label={a("Paired devices")} value={(devices.data ?? []).length} sub={`${activeDevices} ${a("active")}`} icon={Smartphone} />
+        <StatCard label={a("Shop staff accounts")} value={(users.data ?? []).length} sub={`${(users.data ?? []).filter((u) => u.is_active).length} ${a("active")}`} icon={Users} />
+        <StatCard label={a("APK downloads (30 days)")} value={m.dl30} sub={a("from website, QR and app")} icon={Download} />
+        <StatCard label={a("Suspended / killed")} value={m.statusCounts["SUSPENDED"]! + m.statusCounts["KILLED"]!} sub={a("remote controls applied")} icon={AlertTriangle} tone="danger" />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-2xl border border-border bg-card p-5">
           <h2 className="flex items-center gap-2 font-semibold">
-            <ShieldAlert className="size-4 text-warning" /> Needs attention
+            <ShieldAlert className="size-4 text-warning" /> {a("Needs attention")}
           </h2>
           <div className="mt-3 space-y-2">
             {attention.slowPayments.length ? (
@@ -146,7 +151,7 @@ function Overview() {
             ))}
             {!attention.slowPayments.length && !attention.staleDevices.length && !attention.flagged.length ? (
               <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-                <CheckCircle2 className="size-4 text-success" /> All clear — no license, payment or sync issues.
+                <CheckCircle2 className="size-4 text-success" /> {a("All clear — no license, payment or sync issues.")}
               </p>
             ) : null}
           </div>
@@ -154,10 +159,10 @@ function Overview() {
         <div className="rounded-2xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 font-semibold">
-              <Activity className="size-4 text-success" /> Live sync feed
+              <Activity className="size-4 text-success" /> {a("Live sync feed")}
             </h2>
             <Link to="/admin/sync" className="text-xs text-primary hover:underline">
-              Sync monitor
+              {a("Sync monitor")}
             </Link>
           </div>
           <div className="mt-3 space-y-1.5">
@@ -171,17 +176,17 @@ function Overview() {
                     {e.detail ? ` · ${e.detail}` : ""}
                   </span>
                 </span>
-                <span className="shrink-0 text-muted-foreground">{relativeTime(e.created_at)}</span>
+                <span className="shrink-0 text-muted-foreground">{relativeTime(e.created_at, Date.now(), locale)}</span>
               </div>
             ))}
-            {!events.data?.length ? <p className="py-6 text-center text-sm text-muted-foreground">Waiting for the first phone to sync.</p> : null}
+            {!events.data?.length ? <p className="py-6 text-center text-sm text-muted-foreground">{a("Waiting for the first phone to sync.")}</p> : null}
           </div>
         </div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
         <div className="rounded-2xl border border-border bg-card p-5">
-          <h2 className="font-semibold">Verified revenue — last 12 months</h2>
+          <h2 className="font-semibold">{a("Verified revenue — last 12 months")}</h2>
           <div className="mt-4 h-64">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={m.months}>
@@ -201,7 +206,7 @@ function Overview() {
           </div>
         </div>
         <div className="rounded-2xl border border-border bg-card p-5">
-          <h2 className="font-semibold">Shop status</h2>
+          <h2 className="font-semibold">{a("Shop status")}</h2>
           <div className="mt-2 h-52">
             {pie.length ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -215,7 +220,7 @@ function Overview() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <p className="grid h-full place-items-center text-sm text-muted-foreground">No shops synced yet</p>
+              <p className="grid h-full place-items-center text-sm text-muted-foreground">{a("No shops synced yet")}</p>
             )}
           </div>
           <div className="flex flex-wrap justify-center gap-2">
@@ -231,7 +236,7 @@ function Overview() {
 
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="rounded-2xl border border-border bg-card p-5">
-          <h2 className="font-semibold">New shops per week</h2>
+          <h2 className="font-semibold">{a("New shops per week")}</h2>
           <div className="mt-4 h-48">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={m.weeks}>
@@ -245,9 +250,9 @@ function Overview() {
         </div>
         <div className="rounded-2xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Expiring within 7 days</h2>
+            <h2 className="font-semibold">{a("Expiring within 7 days")}</h2>
             <Link to="/admin/shops" className="text-xs text-primary hover:underline">
-              All shops
+              {a("All shops")}
             </Link>
           </div>
           <div className="mt-3 space-y-2">
@@ -262,15 +267,15 @@ function Overview() {
                 </Link>
               ))
             ) : (
-              <p className="py-6 text-center text-sm text-muted-foreground">Nothing expiring this week.</p>
+              <p className="py-6 text-center text-sm text-muted-foreground">{a("Nothing expiring this week.")}</p>
             )}
           </div>
         </div>
         <div className="rounded-2xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Recent admin activity</h2>
+            <h2 className="font-semibold">{a("Recent admin activity")}</h2>
             <Link to="/admin/audit" className="text-xs text-primary hover:underline">
-              Audit log
+              {a("Audit log")}
             </Link>
           </div>
           <div className="mt-3 space-y-2">
@@ -278,14 +283,14 @@ function Overview() {
               <div key={a.id} className="rounded-xl border border-border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <StatusBadge status={a.action} />
-                  <span className="text-[11px] text-muted-foreground">{relativeTime(a.created_at)}</span>
+                  <span className="text-[11px] text-muted-foreground">{relativeTime(a.created_at, Date.now(), locale)}</span>
                 </div>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
                   {a.target_id} — {a.details}
                 </p>
               </div>
             ))}
-            {!audit.data?.length ? <p className="py-6 text-center text-sm text-muted-foreground">No activity yet.</p> : null}
+            {!audit.data?.length ? <p className="py-6 text-center text-sm text-muted-foreground">{a("No activity yet.")}</p> : null}
           </div>
         </div>
       </div>

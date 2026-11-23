@@ -10,6 +10,7 @@ import { churnRate30, cohorts, conversionRate, isPaid, lastMonths, lifetimeValue
 import { effectiveShopStatus } from "@/lib/pricing";
 import { deviceHealth, HEALTH_LABEL } from "@/lib/sync-health";
 import { formatRwf } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/analytics")({
   head: () => ({ meta: [{ title: "Analytics — BeBoss Admin" }, { name: "robots", content: "noindex" }] }),
@@ -21,6 +22,7 @@ const PALETTE = ["var(--primary)", "var(--info)", "var(--success)", "var(--warni
 const short = (v: number) => (v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1000 ? `${Math.round(v / 1000)}k` : String(Math.round(v)));
 
 function AnalyticsPage() {
+  const a = useAdminText();
   const shops = useQuery(shopsQuery);
   const pays = useQuery(paymentsQuery);
   const devices = useQuery(devicesQuery);
@@ -78,26 +80,26 @@ function AnalyticsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Business analytics"
-        sub="Subscription revenue, conversion, churn and fleet health — computed live from shop and payment data."
+        title={a("Business analytics")}
+        sub={a("Subscription revenue, conversion, churn and fleet health — computed live from shop and payment data.")}
         actions={
           <Button size="sm" variant="glass" onClick={() => downloadCsv("beboss-revenue-12m.csv", m.trend)}>
-            <Download /> Export revenue CSV
+            <Download /> {a("Export revenue CSV")}
           </Button>
         }
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard label="Monthly recurring revenue" value={formatRwf(m.mrr)} sub={`${m.active} active paying shops`} icon={Wallet} tone="brand" />
-        <StatCard label="Average revenue per shop" value={formatRwf(m.arpu)} sub="MRR ÷ active shops" icon={Users} tone="info" />
-        <StatCard label="Lifetime collected" value={formatRwf(m.lifetime)} sub="all verified payments" icon={TrendingUp} tone="success" />
-        <StatCard label="Trial → paid conversion" value={`${m.conversion.toFixed(1)}%`} sub="shops that paid at least once" icon={Percent} tone="success" />
-        <StatCard label="Churn (30 days)" value={`${m.churn.toFixed(1)}%`} sub="paying shops whose license lapsed" icon={TrendingDown} tone={m.churn > 10 ? "danger" : "warning"} />
-        <StatCard label="Median approval time" value={m.approvalH ? `${m.approvalH < 1 ? Math.round(m.approvalH * 60) + " min" : m.approvalH.toFixed(1) + " h"}` : "—"} sub="claim → approved, last 90 days" icon={Clock} />
+        <StatCard label={a("Monthly recurring revenue")} value={formatRwf(m.mrr)} sub={`${m.active} ${a("active paying shops")}`} icon={Wallet} tone="brand" />
+        <StatCard label={a("Average revenue per shop")} value={formatRwf(m.arpu)} sub={a("MRR ÷ active shops")} icon={Users} tone="info" />
+        <StatCard label={a("Lifetime collected")} value={formatRwf(m.lifetime)} sub={a("all verified payments")} icon={TrendingUp} tone="success" />
+        <StatCard label={a("Trial → paid conversion")} value={`${m.conversion.toFixed(1)}%`} sub={a("shops that paid at least once")} icon={Percent} tone="success" />
+        <StatCard label={a("Churn (30 days)")} value={`${m.churn.toFixed(1)}%`} sub={a("paying shops whose license lapsed")} icon={TrendingDown} tone={m.churn > 10 ? "danger" : "warning"} />
+        <StatCard label={a("Median approval time")} value={m.approvalH ? `${m.approvalH < 1 ? Math.round(m.approvalH * 60) + " min" : m.approvalH.toFixed(1) + " h"}` : "—"} sub={a("claim → approved, last 90 days")} icon={Clock} />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5">
-        <h2 className="font-semibold">Revenue — recognized vs collected (12 months)</h2>
-        <p className="text-xs text-muted-foreground">Recognized spreads multi-month plans over the months they cover; collected is cash on approval day.</p>
+        <h2 className="font-semibold">{a("Revenue — recognized vs collected (12 months)")}</h2>
+        <p className="text-xs text-muted-foreground">{a("Recognized spreads multi-month plans over the months they cover; collected is cash on approval day.")}</p>
         <div className="mt-4 h-72">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={m.trend}>
@@ -120,15 +122,15 @@ function AnalyticsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Donut title="Revenue by provider" data={m.byProvider} money />
-        <Donut title="Payment claims by source" data={m.bySource} />
-        <Donut title="APK downloads by channel (90d)" data={m.dlByChannel} />
-        <Donut title="Active device health" data={m.health} />
+        <Donut title={a("Revenue by provider")} data={m.byProvider} money />
+        <Donut title={a("Payment claims by source")} data={m.bySource} />
+        <Donut title={a("APK downloads by channel (90d)")} data={m.dlByChannel} />
+        <Donut title={a("Active device health")} data={m.health} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_1.4fr]">
         <div className="rounded-2xl border border-border bg-card p-5">
-          <h2 className="font-semibold">Revenue by plan length</h2>
+          <h2 className="font-semibold">{a("Revenue by plan length")}</h2>
           <div className="mt-4 h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={m.byPlan}>
@@ -141,15 +143,15 @@ function AnalyticsPage() {
           </div>
         </div>
         <div className="rounded-2xl border border-border bg-card p-5">
-          <h2 className="font-semibold">Signup cohorts (last 6 months)</h2>
+          <h2 className="font-semibold">{a("Signup cohorts (last 6 months)")}</h2>
           <TableShell>
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-muted-foreground">
                 <tr className="border-b border-border">
-                  <th className="px-4 py-2 font-medium">Month</th>
-                  <th className="px-4 py-2 font-medium">Signups</th>
-                  <th className="px-4 py-2 font-medium">Paid</th>
-                  <th className="px-4 py-2 font-medium">Active now</th>
+                  <th className="px-4 py-2 font-medium">{a("Month")}</th>
+                  <th className="px-4 py-2 font-medium">{a("Signups")}</th>
+                  <th className="px-4 py-2 font-medium">{a("Paid")}</th>
+                  <th className="px-4 py-2 font-medium">{a("Active now")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -173,7 +175,7 @@ function AnalyticsPage() {
 
       <div className="rounded-2xl border border-border bg-card p-5">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Top shops by lifetime value</h2>
+          <h2 className="font-semibold">{a("Top shops by lifetime value")}</h2>
           <Button size="sm" variant="ghost" onClick={() => downloadCsv("beboss-shop-ltv.csv", m.ltv.map((x) => ({ shop: x.name, username: x.user, status: x.status, total_rwf: x.total })))}>
             <Download /> CSV
           </Button>
@@ -189,7 +191,7 @@ function AnalyticsPage() {
               <span className="shrink-0 font-mono text-xs">{formatRwf(x.total)}</span>
             </Link>
           ))}
-          {!m.ltv.length ? <p className="py-6 text-sm text-muted-foreground">No verified payments yet.</p> : null}
+          {!m.ltv.length ? <p className="py-6 text-sm text-muted-foreground">{a("No verified payments yet.")}</p> : null}
         </div>
       </div>
     </div>
@@ -224,7 +226,7 @@ function Donut({ title, data, money }: { title: string; data: { name: string; va
             </PieChart>
           </ResponsiveContainer>
         ) : (
-          <p className="grid h-full place-items-center text-xs text-muted-foreground">No data yet</p>
+          <p className="grid h-full place-items-center text-xs text-muted-foreground">{a("No data yet")}</p>
         )}
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1">
