@@ -51,7 +51,15 @@ Enable payment and asynchronous success/failure events in the provider dashboard
 
 ## Owner portal security gate
 
-The existing My Shop lookup and owner mutations still need a staged owner OTP enrollment and authenticated owner/device session migration. Do not deploy this gateway branch as a complete enterprise release until the My Shop routes are protected by verified owner sessions, existing Android sync clients have an upgrade/migration path, and the old deterministic tenant secret can be retired without breaking synchronization.
+This branch now adds a phone-OTP enrollment path for the website owner portal:
+
+- The OTP is sent only to the phone already recorded on the matching shop account. Responses do not reveal whether a username/shop exists.
+- OTP requests are limited to three per shop per ten minutes.
+- A successful Supabase Auth SMS verification creates a server-side `shop_owner_memberships` row.
+- Every My Shop data lookup, device/branch/transfer mutation and hosted-checkout initiation requires a verified Supabase session plus an active owner membership.
+- Revoked memberships cannot be silently reactivated by signing in again; restoration requires an operator-reviewed process.
+
+The owner-membership migration must be applied in staging, and Supabase Phone Auth plus a production SMS provider must be configured and tested before enabling this path. This closes unauthenticated browser lookups, but it does **not** complete the Android tenant credential migration: Android still has legacy deterministic `X-Shop-Sync-Key` compatibility. Server-generated random tenant secrets, hashed storage, per-device/role sessions, Android Keystore refresh credentials, dual-stack rollout, revocation and retirement of the legacy key remain a separate release gate.
 
 ## Required acceptance before production
 
