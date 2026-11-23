@@ -3801,7 +3801,22 @@ a:hover .brand-mark {
   .site-nav-inner { min-height: 58px; }
   .site-brand-wrap { flex: 1 1 auto; min-width: 0; }
   .site-brand-wrap .brand-wordmark { max-width: 126px; }
-  .site-download-cta { display: none; }
+  .site-download-cta {
+    display: inline-flex;
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    padding-inline: 0;
+    justify-content: center;
+    gap: 0;
+    font-size: 0;
+  }
+  .site-download-cta svg {
+    display: block;
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
+  }
   .site-nav-actions { flex: 0 0 auto; }
   .site-search-trigger,
   .site-menu-trigger { min-width: 40px; width: 40px; height: 40px; }
