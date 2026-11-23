@@ -918,6 +918,7 @@ class BeBossRepository(private val database: AppDatabase) {
             val syncedProfile = existingProfile.copy(
                 id = 1L,
                 shopName = remoteShop.shopName,
+                businessType = com.beboss.shopmgmt.util.BusinessCatalog.normalize(remoteShop.businessType),
                 name = remoteShop.ownerName.ifBlank { existingProfile.name },
                 email = "${remoteShop.ownerUsername.ifBlank { cleanUser }}@beboss.rw",
                 phone = remoteShop.ownerPhone.ifBlank { cleanPhone },
