@@ -394,7 +394,7 @@ function PaymentsPage() {
                           setRefundReason("");
                         }}
                       >
-                        <Undo2 /> Request refund
+                        <Undo2 /> {a("Request refund")}
                       </Button>
                     ) : null}
                     {r.gateway_latest_refund_id && r.gateway_refund_status === "PENDING" ? (
@@ -405,7 +405,7 @@ function PaymentsPage() {
                         onClick={() => refreshRefund.mutate({ refundId: r.gateway_latest_refund_id! })}
                       >
                         {refreshRefund.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                        Refresh refund status
+                        {a("Refresh refund status")}
                       </Button>
                     ) : null}
                     <ConfirmAction
@@ -440,22 +440,22 @@ function PaymentsPage() {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Request provider refund</DialogTitle>
+            <DialogTitle>{a("Request provider refund")}</DialogTitle>
             <DialogDescription>
               {refundTarget?.shop_name} — original verified payment {formatRwf(refundTarget?.gateway_verified_amount_rwf ?? 0)}.
-              Refunds are asynchronous. A request being accepted does not mean the funds have reached the customer.
+              {a("Refunds are asynchronous. A request being accepted does not mean the funds have reached the customer.")}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 rounded-xl bg-muted/30 p-3 text-sm">
             <p>Provider: {refundTarget?.gateway_provider?.replaceAll("_", " ")}</p>
-            <p>Already refunded: {formatRwf(refundTarget?.gateway_refunded_amount_rwf ?? 0)}</p>
-            <p>Maximum remaining: {formatRwf(Math.max(
+            <p>{a("Already refunded:")} {formatRwf(refundTarget?.gateway_refunded_amount_rwf ?? 0)}</p>
+            <p>{a("Maximum remaining:")} {formatRwf(Math.max(
               0,
               Number(refundTarget?.gateway_verified_amount_rwf ?? 0) - Number(refundTarget?.gateway_refunded_amount_rwf ?? 0)
             ))}</p>
           </div>
           <div className="space-y-2">
-            <Label>Refund amount (RWF)</Label>
+            <Label>{a("Refund amount (RWF)")}</Label>
             <Input
               type="number"
               min={1}
@@ -467,11 +467,11 @@ function PaymentsPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label>Refund reason</Label>
+            <Label>{a("Refund reason")}</Label>
             <Textarea value={refundReason} onChange={(event) => setRefundReason(event.target.value)} minLength={5} maxLength={500} rows={3} required />
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setRefundTarget(null)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setRefundTarget(null)}>{a("Cancel")}</Button>
             <Button
               variant="destructive"
               disabled={
@@ -501,7 +501,7 @@ function PaymentsPage() {
               }}
             >
               {requestRefund.isPending ? <Loader2 className="animate-spin" /> : <Undo2 />}
-              Initiate refund
+              {a("Initiate refund")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -543,12 +543,12 @@ function PaymentsPage() {
           </DialogHeader>
           {verifyingPayment?.gateway_provider ? (
             <div className="rounded-xl border border-success/30 bg-success/5 p-3 text-sm">
-              <p className="font-semibold text-success">Server-verified provider settlement</p>
+              <p className="font-semibold text-success">{a("Server-verified provider settlement")}</p>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                <p>Provider: {verifyingPayment.gateway_provider.replaceAll("_", " ")}</p>
-                <p>Amount: {formatRwf(verifyingPayment.gateway_verified_amount_rwf)} {verifyingPayment.gateway_verified_currency}</p>
-                <p className="break-all">Transaction: {verifyingPayment.gateway_transaction_id}</p>
-                <p>Verified: {formatDateTime(verifyingPayment.gateway_verified_at)}</p>
+                <p>{a("Provider:")} {verifyingPayment.gateway_provider.replaceAll("_", " ")}</p>
+                <p>{a("Amount:")} {formatRwf(verifyingPayment.gateway_verified_amount_rwf)} {verifyingPayment.gateway_verified_currency}</p>
+                <p className="break-all">{a("Transaction:")} {verifyingPayment.gateway_transaction_id}</p>
+                <p>{a("Verified:")} {formatDateTime(verifyingPayment.gateway_verified_at)}</p>
               </div>
             </div>
           ) : (
@@ -582,7 +582,7 @@ function PaymentsPage() {
             </label>
           </div>
           {verifyingPayment?.gateway_provider ? (
-            <p className="text-xs text-success">Provider confirmation is server-verified. This action still requires an administrator to check that the payment belongs to the registered BeBoss shop.</p>
+            <p className="text-xs text-success">{a("Provider confirmation is server-verified. This action still requires an administrator to check that the payment belongs to the registered BeBoss shop.")}</p>
           ) : (
             <>
               <p className="text-xs text-muted-foreground">Both options require you to verify the exact payment in the official MTN MoMo / Airtel Money merchant history. A customer SMS or WhatsApp screenshot alone does not confirm settlement.</p>
