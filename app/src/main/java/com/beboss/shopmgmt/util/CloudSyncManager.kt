@@ -337,7 +337,8 @@ class CloudSyncManager(private val database: AppDatabase) {
                                 shopSyncKey = rd.shopSyncKey,
                                 deviceId = rd.deviceId,
                                 deviceName = rd.deviceName,
-                                joinCode = rd.joinCode,
+                                // Pending invitation text is local-only; Supabase stores only its hash.
+                                joinCode = if (rd.deviceId.isBlank()) localDev?.joinCode.orEmpty() else "",
                                 assignedUserId = rd.assignedUserId,
                                 assignedUsername = rd.assignedUsername,
                                 assignedUserName = rd.assignedUserName,
