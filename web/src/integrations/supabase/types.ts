@@ -499,6 +499,7 @@ export type Database = {
           admin_whatsapp: string
           auto_unlocked_at: number
           branch_count: number
+          business_type: string
           created_at: number
           device_challenge: string
           device_count: number
@@ -522,6 +523,7 @@ export type Database = {
           admin_whatsapp?: string
           auto_unlocked_at?: number
           branch_count?: number
+          business_type?: string
           created_at?: number
           device_challenge?: string
           device_count?: number
