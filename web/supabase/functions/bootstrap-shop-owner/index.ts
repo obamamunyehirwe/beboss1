@@ -145,14 +145,14 @@ Deno.serve(async (request) => {
     .from("user_roles")
     .select("role")
     .eq("user_id", user.id)
-    .eq("role", "admin")
+    .limit(1)
     .maybeSingle();
   if (roleLookupError || adminRole) {
     console.error("[bootstrap-shop-owner] Privileged Auth identity cannot be converted.");
     return json(403, { error: "This phone is already linked to a privileged BeBoss account. Use a separate owner phone." });
   }
   const accountType = String(user.app_metadata?.account_type ?? "");
-  if (accountType === "beboss_pos_device" || accountType === "beboss_admin") {
+  if (!["", "beboss_shop_owner_pending", "beboss_shop_owner"].includes(accountType)) {
     return json(403, { error: "This phone is already linked to a privileged BeBoss account. Use a separate owner phone." });
   }
 
