@@ -58,7 +58,8 @@ data class SupabaseShopAccountDto(
     val monthlyFeeRwf: Int,
     val subscriptionStatus: String,
     val subscriptionExpiresAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val businessType: String = "sector_retail"
 )
 
 data class SupabaseShopDeviceDto(
@@ -988,6 +989,7 @@ object SupabaseAdminClient {
             val payload = JSONObject().apply {
                 put("id", accountId)
                 put("shop_name", shopProfile.shopName)
+                put("business_type", BusinessCatalog.normalize(shopProfile.businessType))
                 put("owner_name", registeredOwner?.name?.ifBlank { shopProfile.name } ?: shopProfile.name)
                 put("owner_username", username)
                 put("owner_phone", rawPhone)
@@ -2449,7 +2451,8 @@ object SupabaseAdminClient {
             monthlyFeeRwf = o.optInt("monthly_fee_rwf", 5000),
             subscriptionStatus = o.optString("subscription_status", "ACTIVE"),
             subscriptionExpiresAt = o.optLong("subscription_expires_at", 0L),
-            updatedAt = o.optLong("updated_at", 0L)
+            updatedAt = o.optLong("updated_at", 0L),
+            businessType = BusinessCatalog.normalize(o.optString("business_type", "sector_retail"))
         )
     }
 
