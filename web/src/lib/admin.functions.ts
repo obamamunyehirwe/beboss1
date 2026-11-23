@@ -618,6 +618,74 @@ export const checkAppVersion = createServerFn({ method: "GET" })
     };
   });
 
+const gatewayRefundRequestSchema = z.object({
+  paymentRequestId: z.string().trim().min(1).max(200),
+  amountRwf: z.number().int().positive().max(1_000_000_000),
+  reason: z.string().trim().min(5).max(500),
+  idempotencyKey: z.string().uuid(),
+});
+
+export const requestGatewayRefund = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: z.infer<typeof gatewayRefundRequestSchema>) => gatewayRefundRequestSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    await requireAdmin(ctx);
+    const result = await invokeSupabaseEdgeFunction<{
+      ok?: boolean;
+      refundId?: string;
+      status?: string;
+      providerRefundId?: string;
+      gatewayRefundStatus?: string;
+      gatewayRefundedAmountRwf?: number;
+      message?: string;
+    }>(ctx, "manage-gateway-refund", {
+      action: "request",
+      paymentRequestId: data.paymentRequestId,
+      amountRwf: data.amountRwf,
+      reason: data.reason,
+      idempotencyKey: data.idempotencyKey,
+    });
+    if (!result.refundId) throw new Error(result.message || "The refund service did not return a refund record.");
+    await audit(
+      ctx,
+      String(ctx.claims?.email ?? "admin"),
+      "REQUEST_GATEWAY_REFUND",
+      data.paymentRequestId,
+      `Refund ${result.refundId}: RWF ${data.amountRwf}; provider state ${result.status || "REQUESTED"}; reason: ${data.reason}`,
+    );
+    return result;
+  });
+
+export const reconcileGatewayRefund = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { refundId: string }) => z.object({ refundId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    await requireAdmin(ctx);
+    const result = await invokeSupabaseEdgeFunction<{
+      ok?: boolean;
+      refundId?: string;
+      status?: string;
+      providerRefundId?: string;
+      gatewayRefundStatus?: string;
+      gatewayRefundedAmountRwf?: number;
+      message?: string;
+    }>(ctx, "manage-gateway-refund", {
+      action: "refresh",
+      refundId: data.refundId,
+    });
+    if (!result.refundId) throw new Error(result.message || "The refund reconciliation did not return a result.");
+    await audit(
+      ctx,
+      String(ctx.claims?.email ?? "admin"),
+      "RECONCILE_GATEWAY_REFUND",
+      result.refundId,
+      `Provider refund state refreshed: ${result.status || "UNKNOWN"}.`,
+    );
+    return result;
+  });
+
 // ---------------- Unlock codes ----------------
 const manualCodeSchema = z.object({
   username: z.string().trim().min(1).max(80),
