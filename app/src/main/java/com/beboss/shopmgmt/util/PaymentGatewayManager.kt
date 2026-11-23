@@ -48,7 +48,11 @@ object PaymentGatewayManager {
     /**
      * Dials MTN Mobile Money USSD with exact dynamic payment amount.
      */
-    fun dialMtnMoMo(context: Context, amount: Int, merchantCode: String = "054321", merchantPhone: String = "0788765432") {
+    fun dialMtnMoMo(context: Context, amount: Int, merchantCode: String = "", merchantPhone: String = "") {
+        if (merchantCode.isBlank() && merchantPhone.isBlank()) {
+            Toast.makeText(context, "MTN MoMo merchant details are not configured.", Toast.LENGTH_LONG).show()
+            return
+        }
         try {
             // USSD format for MTN Rwanda Merchant pay (*182*8*1*CODE*AMOUNT#) or Person transfer (*182*1*1*PHONE*AMOUNT#)
             val ussd = if (merchantCode.isNotBlank() && merchantCode != "0") {
@@ -69,7 +73,11 @@ object PaymentGatewayManager {
     /**
      * Dials Airtel Money USSD with exact dynamic payment amount.
      */
-    fun dialAirtelMoney(context: Context, amount: Int, airtelNumber: String = "0738765432") {
+    fun dialAirtelMoney(context: Context, amount: Int, airtelNumber: String = "") {
+        if (airtelNumber.isBlank()) {
+            Toast.makeText(context, "Airtel Money merchant details are not configured.", Toast.LENGTH_LONG).show()
+            return
+        }
         try {
             val ussd = "*500*1*1*$airtelNumber*$amount#"
             val intent = Intent(Intent.ACTION_DIAL).apply {
