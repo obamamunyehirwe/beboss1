@@ -202,7 +202,7 @@ export function WebPosTerminal() {
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-display text-base font-bold">BeBoss Enterprise Web POS Terminal</h3>
-              <Badge variant="success" className="text-[10px] uppercase">v2.0 Cloud Connected</Badge>
+              <Badge variant="info" className="text-[10px] uppercase">Interactive preview</Badge>
             </div>
             <p className="text-xs text-muted-foreground">Kigali Main Store • Counter Station #1 • Rwanda FRw</p>
           </div>
