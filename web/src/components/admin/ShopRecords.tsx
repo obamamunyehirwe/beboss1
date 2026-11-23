@@ -9,6 +9,7 @@ import { EmptyState, FilterChips, LoadingBlock, SearchInput, TableShell, downloa
 import { getShopRecords } from "@/lib/insights.functions";
 import { formatDateTime, relativeTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
+import { useI18n } from "@/lib/i18n";
 
 const n = (v: number) => Math.round(v).toLocaleString("en-US");
 const th = "px-3 py-2 text-left text-xs font-medium text-muted-foreground";
@@ -18,6 +19,8 @@ const PAGE_SIZE = 100;
 /** Browsable copy of all operational records from the shop's latest complete phone sync. */
 export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: string }) {
   const a = useAdminText();
+  const { lang } = useI18n();
+  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const fetchRecords = useServerFn(getShopRecords);
   const q = useQuery({
     queryKey: ["admin", "records", shopId],
@@ -70,7 +73,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">From the phone's latest sync · {relativeTime(q.data?.uploadedAt ?? 0)} · amounts in {cur}</p>
+        <p className="text-sm text-muted-foreground">From the phone's latest sync · {relativeTime(q.data?.uploadedAt ?? 0, Date.now(), locale)} · amounts in {cur}</p>
         <div className="w-full sm:w-72">
           <SearchInput value={search} onChange={updateSearch} placeholder="Search products, customers, receipts…" />
         </div>
