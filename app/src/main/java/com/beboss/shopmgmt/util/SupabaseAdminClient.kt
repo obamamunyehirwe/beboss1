@@ -1265,32 +1265,27 @@ object SupabaseAdminClient {
         shopSyncKey: String,
         deviceRecordId: String,
         joinCode: String,
-        createdByDeviceId: String,
-        createdByUserId: String,
-        branchId: String,
         expiresAt: Long
     ): Boolean = withContext(Dispatchers.IO) {
-        if (!isConfigured() || shopSyncKey.isBlank() || joinCode.isBlank()) return@withContext false
+        if (!isConfigured() || shopSyncKey.isBlank() || deviceRecordId.isBlank() || joinCode.isBlank()) {
+            return@withContext false
+        }
         try {
             val payload = JSONObject()
-                .put("p_shop_sync_key", shopSyncKey)
                 .put("p_device_record_id", deviceRecordId)
                 .put("p_code_hash", hashShopDeviceJoinCode(joinCode))
-                .put("p_created_by_device_id", createdByDeviceId)
-                .put("p_created_by_user_id", createdByUserId)
-                .put("p_branch_id", branchId)
                 .put("p_expires_at", expiresAt)
-            val req = buildRestRequest("rpc/issue_shop_device_invite", tenantSyncKey = shopSyncKey)
+            val req = buildRestRequest("rpc/issue_current_device_auth_invite", tenantSyncKey = shopSyncKey)
                 .post(payload.toString().toRequestBody(jsonMediaType))
                 .build()
             client.newCall(req).execute().use { response ->
                 if (!response.isSuccessful) {
-                    Log.w(TAG, "issueShopDeviceInvite HTTP ${response.code}: ${response.body?.string()}")
+                    Log.w(TAG, "Secure device invitation was rejected (HTTP ${response.code}).")
                 }
                 response.isSuccessful
             }
         } catch (e: Exception) {
-            Log.e(TAG, "issueShopDeviceInvite error: ${e.message}")
+            Log.e(TAG, "Secure device invitation failed: ${e.message}")
             false
         }
     }
