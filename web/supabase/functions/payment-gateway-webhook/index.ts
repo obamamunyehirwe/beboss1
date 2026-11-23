@@ -6,6 +6,7 @@ import {
   restPatch,
   restRequest,
   restRows,
+  verifyFlutterwaveWebhookSecretHash,
 } from "../_shared/payment-gateway.ts";
 
 type GatewayRow = {
@@ -75,7 +76,7 @@ async function verifyFlutterwave(rawBody: string, request: Request) {
   const signature = request.headers.get("verif-hash") ?? "";
   // Flutterwave's current webhook contract sends the configured secret hash
   // verbatim in the verif-hash header; it is not a body HMAC.
-  if (!secretHash || !signature || !constantTimeTextEqual(signature, secretHash)) {
+  if (!verifyFlutterwaveWebhookSecretHash(secretHash, signature)) {
     return jsonResponse(401, { message: "Invalid Flutterwave webhook signature." });
   }
 
