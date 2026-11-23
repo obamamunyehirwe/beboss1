@@ -2,6 +2,7 @@ package com.beboss.shopmgmt
 
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.util.SubscriptionSecurityManager
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
