@@ -849,10 +849,32 @@ fun AdminVerificationConsoleDialog(
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
 
-                                            Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
+                                            val hasVerifiedGateway = req.gatewayVerifiedAt > 0L &&
+                                                req.gatewayCurrency == "RWF" &&
+                                                req.gatewayAmountRwf == req.amountRwf &&
+                                                req.gatewayReference.isNotBlank() &&
+                                                req.gatewayTransactionId.isNotBlank() &&
+                                                req.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE")
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (hasVerifiedGateway) ProfitGreen.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                                                border = BorderStroke(1.dp, if (hasVerifiedGateway) ProfitGreen.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
                                                 Column(modifier = Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                                    Text("CUSTOMER MOBILE MONEY SMS", fontSize = 9.5.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                    Text(req.paymentNote.ifBlank { "No SMS text was submitted. Check the actual provider transaction history before approval." }, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface, lineHeight = 15.sp)
+                                                    Text(
+                                                        if (hasVerifiedGateway) "PROVIDER PAYMENT VERIFIED" else "LEGACY CUSTOMER PAYMENT NOTE",
+                                                        fontSize = 9.5.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        color = if (hasVerifiedGateway) ProfitGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    Text(
+                                                        if (hasVerifiedGateway) "${req.gatewayProvider} • ${req.gatewayReference} • ${req.gatewayTransactionId} • ${req.gatewayAmountRwf} ${req.gatewayCurrency} • ${SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(req.gatewayVerifiedAt))}"
+                                                        else req.paymentNote.ifBlank { "Legacy claim without an online provider webhook. Independently verify the payment in the official merchant account." },
+                                                        fontSize = 11.sp,
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        lineHeight = 15.sp
+                                                    )
                                                 }
                                             }
                                             // Matching System Account Inspector (Compare WhatsApp Proof vs Cloud Shop Account)
@@ -918,8 +940,16 @@ fun AdminVerificationConsoleDialog(
                                                 Button(
                                                     onClick = {
                                                     requestToVerify = req
-                                                    providerVerified = false
-                                                    providerVerificationNote = ""
+                                                    val onlineVerified = req.gatewayVerifiedAt > 0L &&
+                                                        req.gatewayCurrency == "RWF" &&
+                                                        req.gatewayAmountRwf == req.amountRwf &&
+                                                        req.gatewayReference.isNotBlank() &&
+                                                        req.gatewayTransactionId.isNotBlank() &&
+                                                        req.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE")
+                                                    providerVerified = onlineVerified
+                                                    providerVerificationNote = if (onlineVerified) {
+                                                        "Automated ${req.gatewayProvider} settlement ${req.gatewayReference}; transaction ${req.gatewayTransactionId}; amount ${req.gatewayAmountRwf} RWF; verified at ${req.gatewayVerifiedAt}."
+                                                    } else ""
                                                 },
                                                     modifier = Modifier
                                                         .weight(1.3f)
@@ -2264,20 +2294,39 @@ fun AdminVerificationConsoleDialog(
     }
 
     requestToVerify?.let { selectedPayment ->
+        val gatewayVerified = selectedPayment.gatewayVerifiedAt > 0L &&
+            selectedPayment.gatewayCurrency == "RWF" &&
+            selectedPayment.gatewayAmountRwf == selectedPayment.amountRwf &&
+            selectedPayment.gatewayReference.isNotBlank() &&
+            selectedPayment.gatewayTransactionId.isNotBlank() &&
+            selectedPayment.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE")
         AlertDialog(
             onDismissRequest = { requestToVerify = null },
-            title = { Text("Verify ${selectedPayment.provider} payment", fontWeight = FontWeight.Bold) },
+            title = { Text(if (gatewayVerified) "Provider-verified ${selectedPayment.provider} payment" else "Review legacy ${selectedPayment.provider} payment", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Text("Customer-submitted confirmation SMS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
-                        Text(selectedPayment.paymentNote.ifBlank { "No SMS provided. Confirm the incoming transaction directly in the official merchant account." }, modifier = Modifier.padding(9.dp), fontSize = 11.sp, lineHeight = 15.sp)
-                    }
-                    Text("Compare the payer, exact amount and payment time with the MTN MoMo / Airtel Money merchant transaction history. A customer SMS alone can be forged.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedTextField(value = providerVerificationNote, onValueChange = { providerVerificationNote = it }, label = { Text("What did you confirm in the provider account?") }, placeholder = { Text("Received amount, sender and transaction time...") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = providerVerified, onCheckedChange = { providerVerified = it })
-                        Text("I independently confirmed that the funds were received in the official merchant account.", fontSize = 11.sp)
+                    if (gatewayVerified) {
+                        Text("BeBoss has independently verified this transaction with the payment provider.", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ProfitGreen)
+                        Surface(shape = RoundedCornerShape(8.dp), color = ProfitGreen.copy(alpha = 0.08f), modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                "${selectedPayment.gatewayProvider} • ${selectedPayment.gatewayReference}\nTransaction: ${selectedPayment.gatewayTransactionId}\nAmount: ${selectedPayment.gatewayAmountRwf} ${selectedPayment.gatewayCurrency}\nVerified: ${SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(selectedPayment.gatewayVerifiedAt))}",
+                                modifier = Modifier.padding(9.dp),
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                        }
+                        Text("The provider callback signature and current provider transaction/session status, currency and exact amount were verified server-side.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Text("Legacy customer-submitted confirmation SMS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+                            Text(selectedPayment.paymentNote.ifBlank { "No SMS provided. Confirm the incoming transaction directly in the official merchant account." }, modifier = Modifier.padding(9.dp), fontSize = 11.sp, lineHeight = 15.sp)
+                        }
+                        Text("Compare the payer, exact amount and payment time with the provider merchant transaction history. A customer SMS alone can be forged.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedTextField(value = providerVerificationNote, onValueChange = { providerVerificationNote = it }, label = { Text("What did you confirm in the provider account?") }, placeholder = { Text("Received amount, sender and transaction time...") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = providerVerified, onCheckedChange = { providerVerified = it })
+                            Text("I independently confirmed that the funds were received in the official merchant account.", fontSize = 11.sp)
+                        }
                     }
                 }
             },
@@ -2291,7 +2340,7 @@ fun AdminVerificationConsoleDialog(
                         lastTargetDays = selectedPayment.durationMonths * 30
                     }
                     requestToVerify = null
-                }, enabled = providerVerified && providerVerificationNote.trim().length >= 5, colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen)) {
+                }, enabled = gatewayVerified || (providerVerified && providerVerificationNote.trim().length >= 5), colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen)) {
                     Text("Confirm payment & issue BB3", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
