@@ -31,6 +31,7 @@ object CryptoKeyManager {
     private const val DB_MASTER_KEY_ALIAS = "BeBoss_SQLCipher_Master_AES256"
     private const val BIOMETRIC_KEY_ALIAS = "BeBoss_Biometric_Strong_AES256"
     private const val LAN_SHARED_SECRET_KEY_ALIAS = "BeBoss_LAN_Shop_Secret_AES256"
+    private const val DEVICE_AUTH_KEY_ALIAS = "BeBoss_Device_Auth_Credential_AES256"
     private const val CRYPTO_PREFS = "beboss_hardware_crypto_prefs"
     private const val PREF_WRAPPED_DB_KEY = "wrapped_db_passphrase_v1"
 
@@ -229,6 +230,30 @@ object CryptoKeyManager {
             requireUserAuth = false
         )
         return wrapWithKeyStoreKey(key, clean.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    /**
+     * Encrypts an individual terminal's Supabase refresh token with an
+     * installation-specific Android Keystore key. The raw token is never saved
+     * in ordinary SharedPreferences or exposed in BuildConfig.
+     */
+    fun wrapDeviceAuthCredential(refreshToken: String): String {
+        require(refreshToken.length in 20..4096) { "The device refresh token is invalid." }
+        val key = getOrCreateAndroidKeyStoreAesKey(
+            alias = DEVICE_AUTH_KEY_ALIAS,
+            requireUserAuth = false
+        )
+        return wrapWithKeyStoreKey(key, refreshToken.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    /** Decrypts a refresh token only on the Android Keystore installation that enrolled it. */
+    fun unwrapDeviceAuthCredential(envelope: String): String {
+        val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val key = ks.getKey(DEVICE_AUTH_KEY_ALIAS, null) as? SecretKey
+            ?: throw SecurityException("This terminal has no provisioned device authentication key.")
+        val clear = String(unwrapWithKeyStoreKey(key, envelope), StandardCharsets.UTF_8)
+        require(clear.length in 20..4096) { "The stored device authentication token is invalid." }
+        return clear
     }
 
     /** Unwrap the shop secret only on the same terminal/Android Keystore installation. */
