@@ -566,8 +566,8 @@ class BeBossRepository(private val database: AppDatabase) {
     ): ShopDevice = withContext(Dispatchers.IO) {
         val allUsers = userDao.getAllUsersDirect()
         val ownerUser = allUsers.firstOrNull { it.role == UserRole.OWNER && it.isActive }
-            ?: throw IllegalStateException("An active shop owner account is required before adding devices.")
-        val principal = actor ?: ownerUser
+        val principal = actor ?: ownerUser ?: allUsers.firstOrNull { it.isActive }
+            ?: throw SecurityException("An active shop user is required before adding devices.")
         val targetBranch = branch
             ?: branchDao.getBranchById(assignedUser.assignedBranchId)
             ?: branchDao.getMainBranch()
@@ -603,8 +603,9 @@ class BeBossRepository(private val database: AppDatabase) {
 
         val profile = getShopProfileDirect()
         val primaryDevice = shopDeviceDao.getAllDevicesList().firstOrNull { it.isOwnerPrimary }
-        val ownerUsername = ownerUser.username.trim().lowercase(Locale.ROOT)
-        val ownerPhone = ownerUser.phone.ifBlank { profile.phone }.trim()
+        val ownerUsername = ownerUser?.username?.trim()?.lowercase(Locale.ROOT)
+            ?: primaryDevice?.assignedUsername?.trim()?.lowercase(Locale.ROOT).orEmpty()
+        val ownerPhone = ownerUser?.phone?.ifBlank { profile.phone } ?: profile.phone
         require(ownerUsername.length >= 2 && ownerUsername.matches(Regex("[a-z0-9._-]{2,80}")) &&
             ownerPhone.filter { it.isDigit() }.takeLast(9).length == 9 && profile.shopName.isNotBlank()) {
             "Complete the registered shop owner's username, phone and shop name before adding another device."
