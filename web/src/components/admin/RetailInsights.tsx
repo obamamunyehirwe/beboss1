@@ -61,16 +61,16 @@ export function RetailInsights({ shopId }: { shopId: string }) {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Sales today" value={money(i.today.revenue, cur, locale)} sub={`${i.today.orders} ${a("receipts")} · ${a("profit")} ${money(i.today.profit, cur, locale)}`} icon={Receipt} tone="brand" />
-        <StatCard label="Last 30 days" value={money(i.last30.revenue, cur, locale)} sub={`${i.last30.orders} ${a("receipts")} · ${a("avg")} ${money(i.last30.avgOrder, cur, locale)}`} icon={TrendingUp} tone="success" />
-        <StatCard label="Profit (30 days)" value={money(i.last30.profit, cur, locale)} sub={`${i.last30.marginPct.toFixed(1)}% ${a("margin")} · ${i.itemsSold30.toLocaleString(locale)} ${a("items sold")}`} icon={Wallet} tone="info" />
-        <StatCard label="Customer debts" value={money(i.debts.total, cur, locale)} sub={`${i.debts.debtors} ${a("debtors")} · ${a("collected")} ${money(i.debts.collected30, cur, locale)} (30d)`} icon={HandCoins} tone="warning" />
-        <StatCard label="Stock value (cost)" value={money(i.inventory.costValue, cur, locale)} sub={`${a("Retail")} ${money(i.inventory.retailValue, cur, locale)}`} icon={Boxes} />
-        <StatCard label="Purchases (30 days)" value={money(i.activity.purchaseValue30, cur, locale)} sub={`${i.activity.purchaseOrders30} ${a("purchase orders")} · ${i.activity.purchaseUnits30.toLocaleString(locale)} ${a("units")} ${a("from")} ${i.activity.supplierCount30} ${a("suppliers")}`} icon={Truck} tone="info" />
-        <StatCard label="Stock transfers (30 days)" value={i.activity.stockTransfers30.toLocaleString(locale)} sub={`${i.activity.stockTransferUnits30.toLocaleString(locale)} ${a("units moved between branches")}`} icon={ArrowLeftRight} />
-        <StatCard label="Products" value={i.counts.products} sub={`${i.inventory.outOfStock} ${a("out of stock")} · ${i.lowStock.length} ${a("low")}`} icon={PackageX} tone={i.lowStock.length ? "danger" : "default"} />
-        <StatCard label="All-time revenue" value={money(i.allTime.revenue, cur, locale)} sub={`${i.counts.sales.toLocaleString(locale)} ${a("receipts recorded")}`} icon={Receipt} />
-        <StatCard label="Data snapshot" value={formatDateTime(i.exportedAt)} sub={`${i.counts.branches} ${a("branches")} · ${i.counts.staff} ${a("staff")} · ${i.counts.customers} ${a("customers")}`} />
+        <StatCard label={a("Sales today")} value={money(i.today.revenue, cur, locale)} sub={`${i.today.orders} ${a("receipts")} · ${a("profit")} ${money(i.today.profit, cur, locale)}`} icon={Receipt} tone="brand" />
+        <StatCard label={a("Last 30 days")} value={money(i.last30.revenue, cur, locale)} sub={`${i.last30.orders} ${a("receipts")} · ${a("avg")} ${money(i.last30.avgOrder, cur, locale)}`} icon={TrendingUp} tone="success" />
+        <StatCard label={a("Profit (30 days)")} value={money(i.last30.profit, cur, locale)} sub={`${i.last30.marginPct.toFixed(1)}% ${a("margin")} · ${i.itemsSold30.toLocaleString(locale)} ${a("items sold")}`} icon={Wallet} tone="info" />
+        <StatCard label={a("Customer debts")} value={money(i.debts.total, cur, locale)} sub={`${i.debts.debtors} ${a("debtors")} · ${a("collected")} ${money(i.debts.collected30, cur, locale)} (30d)`} icon={HandCoins} tone="warning" />
+        <StatCard label={a("Stock value (cost)")} value={money(i.inventory.costValue, cur, locale)} sub={`${a("Retail")} ${money(i.inventory.retailValue, cur, locale)}`} icon={Boxes} />
+        <StatCard label={a("Purchases (30 days)")} value={money(i.activity.purchaseValue30, cur, locale)} sub={`${i.activity.purchaseOrders30} ${a("purchase orders")} · ${i.activity.purchaseUnits30.toLocaleString(locale)} ${a("units")} ${a("from")} ${i.activity.supplierCount30} ${a("suppliers")}`} icon={Truck} tone="info" />
+        <StatCard label={a("Stock transfers (30 days)")} value={i.activity.stockTransfers30.toLocaleString(locale)} sub={`${i.activity.stockTransferUnits30.toLocaleString(locale)} ${a("units moved between branches")}`} icon={ArrowLeftRight} />
+        <StatCard label={a("Products")} value={i.counts.products} sub={`${i.inventory.outOfStock} ${a("out of stock")} · ${i.lowStock.length} ${a("low")}`} icon={PackageX} tone={i.lowStock.length ? "danger" : "default"} />
+        <StatCard label={a("All-time revenue")} value={money(i.allTime.revenue, cur, locale)} sub={`${i.counts.sales.toLocaleString(locale)} ${a("receipts recorded")}`} icon={Receipt} />
+        <StatCard label={a("Data snapshot")} value={formatDateTime(i.exportedAt)} sub={`${i.counts.branches} ${a("branches")} · ${i.counts.staff} ${a("staff")} · ${i.counts.customers} ${a("customers")}`} />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5">
