@@ -203,7 +203,7 @@ function PaymentsPage() {
                 </div>
                 <ManualField label={a("Payer full name")} value={manual.payerName} onChange={(payerName) => setManual({ ...manual, payerName })} required />
                 <ManualField label={a("Payer phone")} value={manual.payerPhone} onChange={(payerPhone) => setManual({ ...manual, payerPhone })} required />
-                <div className="space-y-1.5"><Label>{a("Payment date and time")}</Label><Input type="datetime-local" value={new Date(manual.paymentTimeMs - new Date(manual.paymentTimeMs).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setManual({ ...manual, paymentTimeMs: event.target.value ? new Date(event.target.value).getTime() : Date.now() })} required /></div><ManualField label={a("Payment note (optional")} value={manual.paymentNote} onChange={(paymentNote) => setManual({ ...manual, paymentNote })} />
+                <div className="space-y-1.5"><Label>{a("Payment date and time")}</Label><Input type="datetime-local" value={new Date(manual.paymentTimeMs - new Date(manual.paymentTimeMs).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setManual({ ...manual, paymentTimeMs: event.target.value ? new Date(event.target.value).getTime() : Date.now() })} required /></div><ManualField label={a("Payment note (optional)")} value={manual.paymentNote} onChange={(paymentNote) => setManual({ ...manual, paymentNote })} />
                 <div className="space-y-1.5">
                   <Label>{a("Duration")}</Label>
                   <select
