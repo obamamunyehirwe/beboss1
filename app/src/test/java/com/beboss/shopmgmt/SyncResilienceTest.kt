@@ -253,4 +253,117 @@ class SyncResilienceTest {
             db.close()
         }
     }
+
+    @Test
+    fun `stock transfer HLC metadata survives backup export and restore`() {
+        val now = System.currentTimeMillis()
+        val original = com.beboss.shopmgmt.data.model.StockTransfer(
+            id = "transfer-hlc-roundtrip",
+            transferNumber = "TRF-HLC-ROUNDTRIP",
+            productId = "product-1",
+            productName = "Rice",
+            fromBranchId = "branch-a",
+            fromBranchName = "Branch A",
+            toBranchId = "branch-b",
+            toBranchName = "Branch B",
+            quantity = 4.0,
+            status = "IN_TRANSIT",
+            createdAt = now - 5_000L,
+            updatedAt = now,
+            hlcTimestamp = com.beboss.shopmgmt.util.HlcClock.pack(now, 7),
+            lastModifiedDeviceId = "ANDROID-DEVICE-A"
+        )
+        val profile = ShopProfile(id = 1L, name = "Owner", shopName = "Transfer HLC Test", phone = "+250788111222")
+        val json = ShopDataTransferManager.createExportJson(
+            profile = profile,
+            users = emptyList(),
+            products = emptyList(),
+            customers = emptyList(),
+            sales = emptyList(),
+            saleItems = emptyList(),
+            payments = emptyList(),
+            exportedByUser = null,
+            stockTransfers = listOf(original)
+        )
+        val token = ShopDataTransferManager.createCompressedSyncToken(json)
+        val restored = ShopDataTransferManager.parseShopPackageString(token).stockTransfers.single()
+
+        assertEquals(original.id, restored.id)
+        assertEquals(original.status, restored.status)
+        assertEquals(original.updatedAt, restored.updatedAt)
+        assertEquals(original.hlcTimestamp, restored.hlcTimestamp)
+        assertEquals(original.lastModifiedDeviceId, restored.lastModifiedDeviceId)
+    }
+
+    @Test
+    fun `newer cloud transfer lifecycle wins and stale peer transfer cannot revert it`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val now = System.currentTimeMillis()
+            val local = com.beboss.shopmgmt.data.model.StockTransfer(
+                id = "transfer-hlc-merge",
+                transferNumber = "TRF-HLC-MERGE",
+                productId = "product-1",
+                productName = "Rice",
+                fromBranchId = "branch-a",
+                fromBranchName = "Branch A",
+                toBranchId = "branch-b",
+                toBranchName = "Branch B",
+                quantity = 3.0,
+                status = "IN_TRANSIT",
+                createdAt = now - 10_000L,
+                updatedAt = now - 2_000L,
+                hlcTimestamp = com.beboss.shopmgmt.util.HlcClock.pack(now - 2_000L, 3),
+                lastModifiedDeviceId = "DEVICE-A"
+            )
+            db.stockTransferDao().insertTransfer(local)
+
+            fun packageWith(transfer: com.beboss.shopmgmt.data.model.StockTransfer) = ShopImportSummary(
+                shopName = "Transfer HLC Test",
+                exportedAt = now,
+                exportedBy = "Peer Device",
+                userCount = 0,
+                productCount = 0,
+                customerCount = 0,
+                saleCount = 0,
+                paymentCount = 0,
+                users = emptyList(),
+                products = emptyList(),
+                customers = emptyList(),
+                sales = emptyList(),
+                saleItems = emptyList(),
+                payments = emptyList(),
+                shopProfile = null,
+                stockTransfers = listOf(transfer)
+            )
+
+            val completed = local.copy(
+                status = "COMPLETED",
+                receivedBy = "Branch B Manager",
+                receivedAt = now + 500L,
+                updatedAt = now + 500L,
+                hlcTimestamp = com.beboss.shopmgmt.util.HlcClock.pack(now + 500L, 0),
+                lastModifiedDeviceId = "DEVICE-B"
+            )
+            val firstMerge = ConflictResolutionEngine.mergePackage(db, packageWith(completed), "CLOUD-DEVICE-B")
+            assertEquals(1, firstMerge.mergedTransfers)
+            assertEquals("COMPLETED", db.stockTransferDao().getTransferById(local.id)?.status)
+
+            val stale = local.copy(
+                status = "IN_TRANSIT",
+                updatedAt = now - 1_000L,
+                hlcTimestamp = com.beboss.shopmgmt.util.HlcClock.pack(now - 1_000L, 0),
+                lastModifiedDeviceId = "DEVICE-C"
+            )
+            val secondMerge = ConflictResolutionEngine.mergePackage(db, packageWith(stale), "STALE-DEVICE-C")
+            assertEquals(0, secondMerge.mergedTransfers)
+            assertEquals("COMPLETED", db.stockTransferDao().getTransferById(local.id)?.status)
+        } finally {
+            db.close()
+        }
+    }
+
 }
