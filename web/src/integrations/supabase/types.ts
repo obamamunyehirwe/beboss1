@@ -678,6 +678,111 @@ export type Database = {
         }
         Relationships: []
       }
+      payment_gateway_transactions: {
+        Row: {
+          id: string
+          payment_request_id: string
+          provider: string
+          provider_reference: string
+          provider_checkout_id: string | null
+          provider_transaction_id: string | null
+          amount_rwf: number
+          currency: string
+          status: string
+          checkout_url: string | null
+          failure_reason: string
+          provider_event_id: string
+          verified_at: number
+          created_at: number
+          updated_at: number
+        }
+        Insert: {
+          id?: string
+          payment_request_id: string
+          provider: string
+          provider_reference: string
+          provider_checkout_id?: string | null
+          provider_transaction_id?: string | null
+          amount_rwf: number
+          currency: string
+          status: string
+          checkout_url?: string | null
+          failure_reason?: string
+          provider_event_id?: string
+          verified_at?: number
+          created_at?: number
+          updated_at?: number
+        }
+        Update: {
+          id?: string
+          payment_request_id?: string
+          provider?: string
+          provider_reference?: string
+          provider_checkout_id?: string | null
+          provider_transaction_id?: string | null
+          amount_rwf?: number
+          currency?: string
+          status?: string
+          checkout_url?: string | null
+          failure_reason?: string
+          provider_event_id?: string
+          verified_at?: number
+          created_at?: number
+          updated_at?: number
+        }
+        Relationships: []
+      }
+      payment_gateway_events: {
+        Row: {
+          id: string
+          provider: string
+          event_id: string
+          payment_request_id: string
+          event_type: string
+          payload_sha256: string
+          received_at: number
+        }
+        Insert: {
+          id?: string
+          provider: string
+          event_id: string
+          payment_request_id: string
+          event_type: string
+          payload_sha256: string
+          received_at?: number
+        }
+        Update: {
+          id?: string
+          provider?: string
+          event_id?: string
+          payment_request_id?: string
+          event_type?: string
+          payload_sha256?: string
+          received_at?: number
+        }
+        Relationships: []
+      }
+      payment_gateway_checkout_attempts: {
+        Row: {
+          id: string
+          shop_id: string
+          provider: string
+          attempted_at: number
+        }
+        Insert: {
+          id?: string
+          shop_id: string
+          provider: string
+          attempted_at: number
+        }
+        Update: {
+          id?: string
+          shop_id?: string
+          provider?: string
+          attempted_at?: number
+        }
+        Relationships: []
+      }
       shop_owner_memberships: {
         Row: {
           id: string
@@ -1180,6 +1285,16 @@ export type Database = {
           p_actor_user_id: string
           p_device_record_id: string
           p_shop_sync_key: string
+        }
+        Returns: boolean
+      }
+      take_payment_gateway_checkout_slot: {
+        Args: {
+          p_shop_id: string
+          p_provider: string
+          p_now_ms: number
+          p_window_ms?: number
+          p_max_attempts?: number
         }
         Returns: boolean
       }
