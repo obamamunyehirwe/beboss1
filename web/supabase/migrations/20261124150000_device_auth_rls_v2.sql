@@ -476,8 +476,8 @@ revoke all on table public.shop_accounts from public, anon;
 grant select, insert, update, delete on table public.shop_accounts to authenticated, service_role;
 
 -- Legacy device invitation RPCs are no longer public bootstrap paths.
-revoke all on function public.issue_shop_device_invite(text,text,text,text,text,text,bigint) from public, anon;
-revoke all on function public.redeem_shop_device_invite(text,text,text,text) from public, anon;
+revoke all on function public.issue_shop_device_invite(text,text,text,text,text,text,bigint) from public, anon, authenticated;
+revoke all on function public.redeem_shop_device_invite(text,text,text,text) from public, anon, authenticated;
 revoke all on function public.revoke_shop_device_invites(text,text,text,text) from public, anon;
 revoke all on function public.set_shop_device_active(text,text,text,text,boolean) from public, anon;
 revoke all on function public.delete_shop_device(text,text,text,text) from public, anon;
