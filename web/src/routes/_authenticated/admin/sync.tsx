@@ -212,16 +212,16 @@ function SyncMonitor() {
         }
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-        <StatCard label="Total Shops" value={stats.totalShops} sub="registered businesses" icon={Store} tone="brand" />
-        <StatCard label="Active Now" value={stats.activeShops} sub="sync signal in last 15 min" icon={Wifi} tone="success" />
-        <StatCard label="Synced Staff" value={stats.activeStaff} sub={`${stats.totalStaff} staff accounts across shops`} icon={Users} tone="info" />
-        <StatCard label="Snapshot Uploads (24h)" value={stats.snapshotUploads24h} sub="uploaded phone datasets" icon={Activity} tone="info" />
-        <StatCard label="Reported Failures" value={stats.reportedFailures} sub="cloud-reported only; local retries stay on device" icon={AlertTriangle} tone={stats.reportedFailures > 0 ? "danger" : "info"} />
+        <StatCard label={a("Total Shops")} value={stats.totalShops} sub={a("registered businesses")} icon={Store} tone="brand" />
+        <StatCard label={a("Active Now")} value={stats.activeShops} sub={a("sync signal in last 15 min")} icon={Wifi} tone="success" />
+        <StatCard label={a("Synced Staff")} value={stats.activeStaff} sub={`${stats.totalStaff} ${a("staff accounts across shops")}`} icon={Users} tone="info" />
+        <StatCard label={a("Snapshot Uploads (24h)")} value={stats.snapshotUploads24h} sub={a("uploaded phone datasets")} icon={Activity} tone="info" />
+        <StatCard label={a("Reported Failures")} value={stats.reportedFailures} sub={a("cloud-reported only; local retries stay on device")} icon={AlertTriangle} tone={stats.reportedFailures > 0 ? "danger" : "info"} />
         <StatCard label="Branch Snapshots" value={stats.snapshots} sub="stored phone datasets" icon={Boxes} tone="brand" />
         <StatCard label="Registered Branches" value={stats.totalBranches} sub="normalized cross-shop branch records" icon={Store} tone="info" />
-        <StatCard label="Stock Transfers" value={stats.totalTransfers} sub="cross-branch stock movements" icon={Boxes} tone="info" />
-        <StatCard label="Stale Devices" value={stats.staleDevices} sub="active, no sync for 7+ days" icon={Clock} tone={stats.staleDevices > 0 ? "danger" : "success"} />
-        <StatCard label="Security Alerts" value={stats.securityAlerts} sub="rollback, root, hooking, emulator or high risk" icon={AlertTriangle} tone={stats.securityAlerts > 0 ? "danger" : "success"} />
+        <StatCard label={a("Stock Transfers")} value={stats.totalTransfers} sub={a("cross-branch stock movements")} icon={Boxes} tone="info" />
+        <StatCard label={a("Stale Devices")} value={stats.staleDevices} sub={a("active, no sync for 7+ days")} icon={Clock} tone={stats.staleDevices > 0 ? "danger" : "success"} />
+        <StatCard label={a("Security Alerts")} value={stats.securityAlerts} sub={a("rollback, root, hooking, emulator or high risk")} icon={AlertTriangle} tone={stats.securityAlerts > 0 ? "danger" : "success"} />
       </div>
 
       {[
@@ -1106,7 +1106,7 @@ function Snapshots({ now }: { now: number }) {
                           </Button>
                         }
                         title={a("Delete this snapshot?")}
-                        description="The branch device re-uploads it on its next sync."
+                        description={a("The branch device re-uploads it on its next sync.")}
                         destructive
                         confirmLabel={a("Delete")}
                         onConfirm={() => del.mutate({ id: s.id })}
