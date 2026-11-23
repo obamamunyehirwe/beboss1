@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@/lib/use-server-fn";
-import { Check, Copy, Download, KeyRound, Loader2, MessageCircle, Plus, Trash2, X } from "lucide-react";
+import { Check, Copy, Download, KeyRound, Loader2, MessageCircle, Plus, RefreshCw, Undo2, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, SearchInput, StatusBadge, downloadCsv, matches, useAdminAction } from "@/components/admin/ui";
-import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, directAutoUnlock, rejectPayment } from "@/lib/admin.functions";
+import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, directAutoUnlock, reconcileGatewayRefund, rejectPayment, requestGatewayRefund } from "@/lib/admin.functions";
 import { configQuery, paymentsQuery, shopsQuery, type PaymentRequest } from "@/lib/admin-queries";
 import { buildUnlockReplyText, buildWhatsAppUrl, calculateSubscriptionFee } from "@/lib/pricing";
 import { formatDateTime, formatRwf, relativeTime } from "@/lib/format";
@@ -42,6 +42,9 @@ function PaymentsPage() {
   const [rejecting, setRejecting] = useState<PaymentRequest | null>(null);
   const [reason, setReason] = useState("");
   const [verifyingPayment, setVerifyingPayment] = useState<PaymentRequest | null>(null);
+  const [refundTarget, setRefundTarget] = useState<PaymentRequest | null>(null);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
   const [providerVerified, setProviderVerified] = useState(false);
   const [verificationNote, setVerificationNote] = useState("");
   const [approvalMode, setApprovalMode] = useState<"CODE" | "DIRECT">("CODE");
@@ -52,6 +55,8 @@ function PaymentsPage() {
   const reject = useAdminAction(useServerFn(rejectPayment), { success: "Payment claim rejected", invalidate: [["admin", "payments"]] });
   const remove = useAdminAction(useServerFn(deletePaymentRequest), { success: "Claim removed", invalidate: [["admin", "payments"]] });
   const createManual = useAdminAction(useServerFn(createWhatsAppPaymentClaim), { success: "WhatsApp payment proof added to the review queue", invalidate: [["admin", "payments"], ["admin", "shops"]] });
+  const requestRefund = useAdminAction(useServerFn(requestGatewayRefund), { success: "Refund request sent to the payment provider", invalidate: [["admin", "payments"]] });
+  const refreshRefund = useAdminAction(useServerFn(reconcileGatewayRefund), { success: "Provider refund status refreshed", invalidate: [["admin", "payments"]] });
 
   const rows = data ?? [];
   const counts = useMemo(() => {
@@ -319,6 +324,8 @@ function PaymentsPage() {
                       <Info label="Provider transaction" value={r.gateway_transaction_id || "—"} mono />
                       <Info label="Provider reference" value={r.gateway_reference || "—"} mono />
                       <Info label="Verified at" value={r.gateway_verified_at > 0 ? formatDateTime(r.gateway_verified_at) : "—"} />
+                      <Info label="Refunded to date" value={formatRwf(r.gateway_refunded_amount_rwf || 0)} />
+                      <Info label="Refund state" value={(r.gateway_refund_status || "NONE").replaceAll("_", " ")} />
                     </div>
                   </div>
                 ) : (
@@ -372,6 +379,35 @@ function PaymentsPage() {
                         </a>
                       </Button>
                     ) : null}
+                    {r.gateway_provider && r.gateway_status === "VERIFIED" &&
+                      Number(r.gateway_verified_amount_rwf) > Number(r.gateway_refunded_amount_rwf || 0) &&
+                      r.gateway_refund_status !== "PENDING" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={requestRefund.isPending || refreshRefund.isPending}
+                        onClick={() => {
+                          setRefundTarget(r);
+                          setRefundAmount(String(
+                            Number(r.gateway_verified_amount_rwf) - Number(r.gateway_refunded_amount_rwf || 0)
+                          ));
+                          setRefundReason("");
+                        }}
+                      >
+                        <Undo2 /> Request refund
+                      </Button>
+                    ) : null}
+                    {r.gateway_latest_refund_id && r.gateway_refund_status === "PENDING" ? (
+                      <Button
+                        size="sm"
+                        variant="glass"
+                        disabled={refreshRefund.isPending}
+                        onClick={() => refreshRefund.mutate({ refundId: r.gateway_latest_refund_id! })}
+                      >
+                        {refreshRefund.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                        Refresh refund status
+                      </Button>
+                    ) : null}
                     <ConfirmAction
                       trigger={
                         <Button size="sm" variant="ghost" className="ml-auto text-muted-foreground">
@@ -391,6 +427,85 @@ function PaymentsPage() {
           })}
         </div>
       )}
+
+      <Dialog
+        open={!!refundTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRefundTarget(null);
+            setRefundAmount("");
+            setRefundReason("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Request provider refund</DialogTitle>
+            <DialogDescription>
+              {refundTarget?.shop_name} — original verified payment {formatRwf(refundTarget?.gateway_verified_amount_rwf ?? 0)}.
+              Refunds are asynchronous. A request being accepted does not mean the funds have reached the customer.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 rounded-xl bg-muted/30 p-3 text-sm">
+            <p>Provider: {refundTarget?.gateway_provider?.replaceAll("_", " ")}</p>
+            <p>Already refunded: {formatRwf(refundTarget?.gateway_refunded_amount_rwf ?? 0)}</p>
+            <p>Maximum remaining: {formatRwf(Math.max(
+              0,
+              Number(refundTarget?.gateway_verified_amount_rwf ?? 0) - Number(refundTarget?.gateway_refunded_amount_rwf ?? 0)
+            ))}</p>
+          </div>
+          <div className="space-y-2">
+            <Label>Refund amount (RWF)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={Math.max(0, Number(refundTarget?.gateway_verified_amount_rwf ?? 0) - Number(refundTarget?.gateway_refunded_amount_rwf ?? 0))}
+              step={1}
+              value={refundAmount}
+              onChange={(event) => setRefundAmount(event.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Refund reason</Label>
+            <Textarea value={refundReason} onChange={(event) => setRefundReason(event.target.value)} minLength={5} maxLength={500} rows={3} required />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRefundTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={
+                requestRefund.isPending ||
+                !Number.isSafeInteger(Number(refundAmount)) ||
+                Number(refundAmount) <= 0 ||
+                Number(refundAmount) > Math.max(0, Number(refundTarget?.gateway_verified_amount_rwf ?? 0) - Number(refundTarget?.gateway_refunded_amount_rwf ?? 0)) ||
+                refundReason.trim().length < 5
+              }
+              onClick={() => {
+                if (!refundTarget) return;
+                requestRefund.mutate(
+                  {
+                    paymentRequestId: refundTarget.id,
+                    amountRwf: Number(refundAmount),
+                    reason: refundReason.trim(),
+                    idempotencyKey: crypto.randomUUID(),
+                  },
+                  {
+                    onSuccess: () => {
+                      setRefundTarget(null);
+                      setRefundAmount("");
+                      setRefundReason("");
+                    },
+                  },
+                );
+              }}
+            >
+              {requestRefund.isPending ? <Loader2 className="animate-spin" /> : <Undo2 />}
+              Initiate refund
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!rejecting} onOpenChange={(o) => !o && setRejecting(null)}>
         <DialogContent>
