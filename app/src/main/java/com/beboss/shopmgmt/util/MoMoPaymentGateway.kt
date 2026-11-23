@@ -123,14 +123,14 @@ object MoMoPaymentGateway {
     ): GatewayTransactionResult {
         return GatewayTransactionResult(
             isSuccess = false,
-            isPending = true,
-            status = "PENDING_VERIFICATION",
+            isPending = false,
+            status = "HOSTED_CHECKOUT_REQUIRED",
             transactionReference = "",
             financialId = null,
             amount = amount,
             provider = provider,
             payerPhone = "",
-            message = "BeBoss no longer asks for a transaction reference. Submit payer details, payment date/time and an optional note in the subscription proof form. An administrator verifies settlement with the provider."
+            message = "This reference has not been verified with the payment provider. Open BeBoss secure hosted checkout; an SMS reference or USSD prompt cannot confirm settlement."
         )
     }
     /**
