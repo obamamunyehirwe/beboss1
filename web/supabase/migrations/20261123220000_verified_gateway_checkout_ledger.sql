@@ -12,7 +12,8 @@ alter table public.payment_requests
   add column if not exists gateway_verified_amount_rwf integer not null default 0,
   add column if not exists gateway_verified_currency text not null default '',
   add column if not exists gateway_refunded_amount_rwf integer not null default 0,
-  add column if not exists gateway_refund_status text not null default 'NONE';
+  add column if not exists gateway_refund_status text not null default 'NONE',
+  add column if not exists gateway_latest_refund_id uuid;
 
 alter table public.payment_requests
   add constraint payment_requests_gateway_provider_check
@@ -119,7 +120,8 @@ begin
        or new.gateway_verified_amount_rwf <> 0
        or new.gateway_verified_currency <> ''
        or new.gateway_refunded_amount_rwf <> 0
-       or new.gateway_refund_status <> 'NONE' then
+       or new.gateway_refund_status <> 'NONE'
+       or new.gateway_latest_refund_id is not null then
       raise exception using errcode = '42501', message = 'Gateway verification fields are server-managed.';
     end if;
     return new;
@@ -136,7 +138,8 @@ begin
      or new.gateway_verified_amount_rwf is distinct from old.gateway_verified_amount_rwf
      or new.gateway_verified_currency is distinct from old.gateway_verified_currency
      or new.gateway_refunded_amount_rwf is distinct from old.gateway_refunded_amount_rwf
-     or new.gateway_refund_status is distinct from old.gateway_refund_status then
+     or new.gateway_refund_status is distinct from old.gateway_refund_status
+     or new.gateway_latest_refund_id is distinct from old.gateway_latest_refund_id then
     raise exception using errcode = '42501', message = 'Gateway verification fields are server-managed.';
   end if;
 
