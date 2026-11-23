@@ -61,6 +61,10 @@ This branch now adds a phone-OTP enrollment path for the website owner portal:
 
 The owner-membership migration must be applied in staging, and Supabase Phone Auth plus a production SMS provider must be configured and tested before enabling this path. This closes unauthenticated browser lookups, but it does **not** complete the Android tenant credential migration: Android still has legacy deterministic `X-Shop-Sync-Key` compatibility. Server-generated random tenant secrets, hashed storage, per-device/role sessions, Android Keystore refresh credentials, dual-stack rollout, revocation and retirement of the legacy key remain a separate release gate.
 
+## Android payment-path limitation
+
+This PR changes the website subscription checkout and its server-side payment evidence only. The Android app's existing `PaymentGatewayManager`, `MoMoPaymentGateway` and `OfflineSubscriptionManager` code still supports its older operator-USSD/manual-review path when no provider backend is configured. That path is **not** a provider-verified online checkout and must not be presented as one. Mobile Flutterwave/Stripe checkout, authenticated owner/device tokens, server-side payment status polling and entitlement activation from the same gateway ledger remain unimplemented. Do not claim the native Android checkout has reached online-payment production readiness from this PR.
+
 ## Required acceptance before production
 
 - Create a separate Supabase staging project and apply all migrations there.
