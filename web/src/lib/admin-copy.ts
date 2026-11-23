@@ -686,6 +686,18 @@ const words: Record<string, readonly [string, string, string]> = {
   "Payments": ["Ubwishyu", "Paiements", "Malipo"],
   "Branch sync": ["Guhuza amakuru y'amashami", "Synchronisation des agences", "Usawazishaji wa matawi"],
   "Sync activity": ["Ibikorwa byo guhuza amakuru", "Activité de synchronisation", "Shughuli za usawazishaji"],
+  "Workspace": ["Aho ukorera", "Espace de travail", "Nafasi ya kazi"],
+  "Operations": ["Imikorere", "Opérations", "Shughuli"],
+  "Administration": ["Ubuyobozi", "Administration", "Usimamizi"],
+  "Open admin menu": ["Fungura menu y'ubuyobozi", "Ouvrir le menu admin", "Fungua menyu ya usimamizi"],
+  "Data refreshed": ["Amakuru yongeye kuvugururwa", "Données actualisées", "Data imesasishwa"],
+  "Checking cloud activity": ["Irimo kugenzura ibikorwa bya cloud", "Vérification de l’activité cloud", "Inakagua shughuli za cloud"],
+  "Cloud activity unavailable": ["Ibikorwa bya cloud ntibiboneka", "Activité cloud indisponible", "Shughuli za cloud hazipatikani"],
+  "Recent cloud activity": ["Ibikorwa bya cloud biheruka", "Activité cloud récente", "Shughuli za hivi karibuni za cloud"],
+  "No recent sync activity": ["Nta gikorwa cyo guhuza giheruka", "Aucune synchronisation récente", "Hakuna usawazishaji wa hivi karibuni"],
+  "No sync activity recorded": ["Nta gikorwa cyo guhuza amakuru cyanditswe", "Aucune activité de synchronisation enregistrée", "Hakuna shughuli za usawazishaji zilizorekodiwa"],
+  "last": ["giheruka", "dernier", "mwisho"],
+  "CSV": ["CSV", "CSV", "CSV"],
 };
 export function useAdminText() {
   try {
