@@ -312,13 +312,30 @@ object SupabaseAdminClient {
         }
     }
 
-    fun getSupabaseAnonKey(): String {
+    /**
+     * Returns the project's public Data API key. Prefer the modern publishable key so
+     * an expired/rotated legacy anon JWT in a developer .env file cannot poison every
+     * cloud request. A publishable key belongs in the client; service-role/secret keys
+     * must never be packaged in an Android APK.
+     */
+    fun getSupabaseApiKey(): String {
         return try {
-            BuildConfig.SUPABASE_ANON_KEY.trim()
+            val publishable = BuildConfig.SUPABASE_PUBLISHABLE_KEY.trim()
+            if (publishable.startsWith("sb_publishable_")) {
+                publishable
+            } else {
+                BuildConfig.SUPABASE_ANON_KEY.trim()
+            }
         } catch (_: Throwable) {
             ""
         }
     }
+
+    /** Backwards-compatible accessor used by existing auth and REST call sites. */
+    fun getSupabaseAnonKey(): String = getSupabaseApiKey()
+
+    private fun isLegacyJwtApiKey(key: String): Boolean =
+        key.startsWith("eyJ") && key.count { it == '.' } == 2
 
     fun getDefaultAdminEmail(): String = MASTER_ADMIN_EMAIL
 
@@ -334,10 +351,11 @@ object SupabaseAdminClient {
     fun isConfigured(): Boolean {
         val url = getSupabaseUrl()
         val key = getSupabaseAnonKey()
+        val isSupportedPublicKey =
+            key.startsWith("sb_publishable_") || isLegacyJwtApiKey(key)
         return url.startsWith("https://") &&
             !url.contains("your-project-id") &&
-            key.isNotBlank() &&
-            !key.contains("your_supabase_anon_key")
+            isSupportedPublicKey
     }
 
     /**
@@ -433,12 +451,19 @@ object SupabaseAdminClient {
         val url = "${getSupabaseUrl()}/rest/v1/$path"
         val key = getSupabaseAnonKey()
         val adminToken = if (useAdminJwtIfAvailable) ensureValidAdminSession()?.accessToken else null
-        val bearer = adminToken ?: key
         val builder = Request.Builder()
             .url(url)
             .addHeader("apikey", key)
-            .addHeader("Authorization", "Bearer $bearer")
             .addHeader("Content-Type", "application/json")
+
+        // A modern sb_publishable_* key is an API gateway key, not a JWT. Sending
+        // it as Authorization: Bearer causes PostgREST/Auth to reject it as an
+        // invalid token. Use the admin user's JWT for protected reads; otherwise
+        // only add a Bearer token for the legacy anon JWT format.
+        when {
+            !adminToken.isNullOrBlank() -> builder.addHeader("Authorization", "Bearer $adminToken")
+            isLegacyJwtApiKey(key) -> builder.addHeader("Authorization", "Bearer $key")
+        }
         if (!tenantSyncKey.isNullOrBlank()) {
             builder.addHeader("X-Shop-Sync-Key", tenantSyncKey.trim())
         }
