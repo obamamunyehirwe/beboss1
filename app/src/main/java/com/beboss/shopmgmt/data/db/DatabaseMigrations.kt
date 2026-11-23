@@ -429,20 +429,28 @@ object DatabaseMigrations {
                        OR (username = 'cashier' AND email = 'cashier@beboss.rw' AND phone = '+250 789 111 222')
                 """.trimIndent())
 
-                // Older releases allowed duplicate usernames with distinct row IDs. Keep the
-                // most recently edited row active, preserve the other rows for references,
-                // and then enforce uniqueness at the database boundary.
+                // Older releases allowed duplicate usernames with distinct row IDs.
+                // Preserve the newest account and re-key older duplicate rows to a
+                // deterministic legacy username before adding the unique index.
                 db.execSQL("""
-                    UPDATE users
-                    SET isActive = 0
-                    WHERE id <> (
+                    CREATE TEMP TABLE beboss_duplicate_user_ids AS
+                    SELECT duplicate.id
+                    FROM users AS duplicate
+                    WHERE duplicate.id <> (
                         SELECT winner.id
                         FROM users AS winner
-                        WHERE winner.username = users.username
+                        WHERE winner.username = duplicate.username
                         ORDER BY winner.updatedAt DESC, winner.createdAt ASC, winner.id ASC
                         LIMIT 1
                     )
                 """.trimIndent())
+                db.execSQL("""
+                    UPDATE users
+                    SET isActive = 0,
+                        username = 'legacy-duplicate-' || lower(replace(id, '-', ''))
+                    WHERE id IN (SELECT id FROM beboss_duplicate_user_ids)
+                """.trimIndent())
+                db.execSQL("DROP TABLE beboss_duplicate_user_ids")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_users_username ON users(username)")
             }
         }
