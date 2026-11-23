@@ -16,3 +16,15 @@ verify_jwt = false
 
 [functions.submit-public-contact]
 verify_jwt = false
+ 
+[functions.create-subscription-checkout]
+verify_jwt = false
+
+[functions.flutterwave-payment-webhook]
+verify_jwt = false
+
+[functions.stripe-payment-webhook]
+verify_jwt = false
+
+[functions.manage-gateway-refund]
+verify_jwt = true
