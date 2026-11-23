@@ -508,6 +508,18 @@ export type Database = {
           duration_months: number
           fee_per_device_rwf: number
           generated_unlock_code: string
+          gateway_checkout_url: string
+          gateway_payment_intent_id: string
+          gateway_provider: string
+          gateway_refund_status: string
+          gateway_refunded_amount_rwf: number
+          gateway_reference: string
+          gateway_session_id: string
+          gateway_status: string
+          gateway_transaction_id: string
+          gateway_verified_amount_rwf: number
+          gateway_verified_at: number
+          gateway_verified_currency: string
           id: string
           owner_phone: string
           owner_username: string
@@ -536,6 +548,18 @@ export type Database = {
           duration_months?: number
           fee_per_device_rwf?: number
           generated_unlock_code?: string
+          gateway_checkout_url?: string
+          gateway_payment_intent_id?: string
+          gateway_provider?: string
+          gateway_refund_status?: string
+          gateway_refunded_amount_rwf?: number
+          gateway_reference?: string
+          gateway_session_id?: string
+          gateway_status?: string
+          gateway_transaction_id?: string
+          gateway_verified_amount_rwf?: number
+          gateway_verified_at?: number
+          gateway_verified_currency?: string
           id: string
           owner_phone: string
           owner_username: string
@@ -564,6 +588,18 @@ export type Database = {
           duration_months?: number
           fee_per_device_rwf?: number
           generated_unlock_code?: string
+          gateway_checkout_url?: string
+          gateway_payment_intent_id?: string
+          gateway_provider?: string
+          gateway_refund_status?: string
+          gateway_refunded_amount_rwf?: number
+          gateway_reference?: string
+          gateway_session_id?: string
+          gateway_status?: string
+          gateway_transaction_id?: string
+          gateway_verified_amount_rwf?: number
+          gateway_verified_at?: number
+          gateway_verified_currency?: string
           id?: string
           owner_phone?: string
           owner_username?: string
