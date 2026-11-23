@@ -81,7 +81,7 @@ UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
  */
 async function perDeviceRate(context: Ctx): Promise<number> {
   const { data } = await context.supabase.from("app_config").select("per_device_fee_rwf").eq("id", "global").maybeSingle();
-  return Number(data?.per_device_fee_rwf) || 2000;
+  return 2000;
 }
 
 async function getShop(context: Ctx, shopId: string) {
@@ -177,7 +177,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     if (verificationNote.length < 5) throw new Error("Record what you confirmed in the MTN MoMo or Airtel Money merchant transaction history.");
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
-    const trustedFeeRate = Number(req.fee_per_device_rwf) > 0 ? Math.floor(Number(req.fee_per_device_rwf)) : await perDeviceRate(ctx);
+    const trustedFeeRate = 2000;
     const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, trustedFeeRate);
     if (Number(req.amount_rwf) !== calc.total) {
       throw new Error(`Payment amount mismatch. Submitted ${Number(req.amount_rwf || 0)} FRw; this plan calculates to ${calc.total} FRw. Refresh and verify the payment details before issuing a code.`);
@@ -323,9 +323,7 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
     }
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
-    const feePerDeviceRwf = Number(req.fee_per_device_rwf) >= 2_000
-      ? Math.floor(Number(req.fee_per_device_rwf))
-      : 2_000;
+    const feePerDeviceRwf = 2_000;
     const calc = calculateSubscriptionFee(
       req.branch_count,
       req.worker_count,
@@ -506,10 +504,10 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
 
     const { data: config } = await ctx.supabase
       .from("app_config")
-      .select("per_device_fee_rwf")
+      .select("id")
       .eq("id", "global")
       .maybeSingle();
-    const feePerDeviceRwf = Math.max(0, Number(config?.per_device_fee_rwf) || 2000);
+    const feePerDeviceRwf = 2_000;
     const calc = calculateSubscriptionFee(
       data.branches,
       data.workers,
@@ -535,7 +533,7 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
         branch_count: data.branches,
         worker_count: data.workers,
         device_count: data.devices,
-        fee_per_device_rwf: feePerDeviceRwf,
+        fee_per_device_rwf: 2_000,
         payment_time_ms: Number(data.paymentTimeMs || now),
         payment_note: data.paymentNote.trim(),
         status: "PENDING_VERIFICATION",
@@ -590,8 +588,8 @@ export const checkAppVersion = createServerFn({ method: "GET" })
       .maybeSingle();
     
     return {
-      currentVersion: config?.apk_version || "2.1.0",
-      minimumVersion: config?.min_app_version || "2.1.0",
+      currentVersion: config?.apk_version || "2.3.0",
+      minimumVersion: config?.min_app_version || "2.3.0",
       downloadUrl: config?.apk_download_url || ""
     };
   });
