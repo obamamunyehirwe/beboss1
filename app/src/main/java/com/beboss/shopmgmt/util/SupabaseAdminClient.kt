@@ -518,6 +518,159 @@ object SupabaseAdminClient {
         return created
     }
 
+    private fun normalizePhoneE164(value: String): String {
+        val raw = value.trim()
+        val digits = raw.filter { it.isDigit() }
+        val normalized = when {
+            raw.startsWith("+") -> "+$digits"
+            digits.startsWith("00") -> "+${digits.drop(2)}"
+            digits.length == 9 -> "+250$digits"
+            else -> "+$digits"
+        }
+        return normalized.takeIf { it.matches(Regex("^\\+[1-9][0-9]{7,14}$")) }.orEmpty()
+    }
+
+    suspend fun requestNewShopOwnerOtp(phone: String, username: String): Pair<Boolean, String> =
+        withContext(Dispatchers.IO) {
+            if (!isConfigured()) return@withContext false to "BeBoss Cloud is not configured."
+            val cleanPhone = normalizePhoneE164(phone)
+            val cleanUsername = username.trim().lowercase(Locale.ROOT)
+            if (cleanPhone.isBlank() || !cleanUsername.matches(Regex("[a-z0-9._-]{2,80}"))) {
+                return@withContext false to "Enter a valid international owner phone number and shop username."
+            }
+            try {
+                val payload = JSONObject()
+                    .put("action", "start")
+                    .put("phone", cleanPhone)
+                    .put("username", cleanUsername)
+                val request = Request.Builder()
+                    .url("${getSupabaseUrl()}/functions/v1/bootstrap-shop-owner")
+                    .addHeader("apikey", getSupabaseAnonKey())
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody(jsonMediaType))
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    val raw = response.body?.string().orEmpty()
+                    val body = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
+                    if (!response.isSuccessful || body.optBoolean("ok") != true) {
+                        false to body.optCleanString("error").ifBlank { "SMS verification could not be started. Try again." }
+                    } else {
+                        true to body.optCleanString("message").ifBlank { "A verification code was sent to the owner phone." }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "New shop owner OTP request failed: ${e.message}")
+                false to "Could not contact BeBoss phone verification. Check your internet and retry."
+            }
+        }
+
+    /**
+     * Confirms the owner's SMS OTP, atomically bootstraps the cloud tenant and
+     * owner membership, then saves the rotating refresh token encrypted by
+     * Android Keystore so first sync can use an authenticated owner JWT.
+     */
+    suspend fun completeNewShopOwnerRegistration(
+        context: Context,
+        phone: String,
+        otpCode: String,
+        shopName: String,
+        ownerName: String,
+        username: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        applicationContext = context.applicationContext
+        if (!isConfigured()) return@withContext false
+        val cleanPhone = normalizePhoneE164(phone)
+        val cleanOtp = otpCode.filter { it.isDigit() }
+        val cleanUsername = username.trim().lowercase(Locale.ROOT)
+        if (cleanPhone.isBlank() || cleanOtp.length !in 4..8 ||
+            !cleanUsername.matches(Regex("[a-z0-9._-]{2,80}"))) {
+            return@withContext false
+        }
+
+        try {
+            val verifyPayload = JSONObject()
+                .put("phone", cleanPhone)
+                .put("token", cleanOtp)
+                .put("type", "sms")
+            val verifyRequest = Request.Builder()
+                .url("${getSupabaseUrl()}/auth/v1/verify")
+                .addHeader("apikey", getSupabaseAnonKey())
+                .addHeader("Content-Type", "application/json")
+                .post(verifyPayload.toString().toRequestBody(jsonMediaType))
+                .build()
+
+            val verifyJson = client.newCall(verifyRequest).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Owner phone OTP verification rejected (HTTP ${response.code}).")
+                    return@withContext false
+                }
+                JSONObject(raw)
+            }
+
+            val user = verifyJson.optJSONObject("user") ?: JSONObject()
+            val confirmedAt = user.optCleanString("phone_confirmed_at")
+            val verifiedPhone = normalizePhoneE164(user.optCleanString("phone"))
+            val session = parseAuthSession(verifyJson, "", "BeBoss Shop Owner")
+                ?: return@withContext false
+            if (confirmedAt.isBlank() || verifiedPhone != cleanPhone ||
+                session.userId.isBlank() || session.refreshToken.isBlank()) {
+                Log.w(TAG, "Owner phone verification did not return a confirmed matching identity.")
+                return@withContext false
+            }
+
+            val finishPayload = JSONObject()
+                .put("action", "finish")
+                .put("phone", cleanPhone)
+                .put("username", cleanUsername)
+                .put("shopName", shopName.trim())
+                .put("ownerName", ownerName.trim())
+            val finishRequest = Request.Builder()
+                .url("${getSupabaseUrl()}/functions/v1/bootstrap-shop-owner")
+                .addHeader("apikey", getSupabaseAnonKey())
+                .addHeader("Authorization", "Bearer ${session.accessToken}")
+                .addHeader("Content-Type", "application/json")
+                .post(finishPayload.toString().toRequestBody(jsonMediaType))
+                .build()
+
+            val finishJson = client.newCall(finishRequest).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                val body = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
+                if (!response.isSuccessful || body.optBoolean("ok") != true) {
+                    Log.w(TAG, "Secure first-shop bootstrap rejected (HTTP ${response.code}).")
+                    return@withContext false
+                }
+                body
+            }
+
+            if (finishJson.optCleanString("shopId").isBlank() ||
+                finishJson.optCleanString("authUserId") != session.userId) {
+                Log.w(TAG, "Secure first-shop bootstrap response did not match the verified owner.")
+                return@withContext false
+            }
+
+            val prefs = context.getSharedPreferences(DEVICE_AUTH_PREFS, Context.MODE_PRIVATE)
+            val encryptedRefreshToken = CryptoKeyManager.wrapDeviceAuthCredential(session.refreshToken)
+            val stored = prefs.edit()
+                .putString(DEVICE_REFRESH_TOKEN, encryptedRefreshToken)
+                .putString(DEVICE_AUTH_USER_ID, session.userId)
+                .commit()
+            if (!stored) {
+                activeDeviceSession = null
+                Log.w(TAG, "Could not persist the encrypted owner refresh token.")
+                return@withContext false
+            }
+
+            activeDeviceSession = session
+            true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Secure first-shop registration failed: ${e.message}")
+            false
+        }
+    }
+
     private fun buildRestRequest(
         path: String,
         useAdminJwtIfAvailable: Boolean = false,
@@ -1445,7 +1598,7 @@ object SupabaseAdminClient {
                 val accountType = user.optJSONObject("app_metadata")?.optCleanString("account_type").orEmpty()
                 val refreshed = parseAuthSession(json, user.optCleanString("email"), "BeBoss POS Device")
                 if (refreshed == null || refreshed.userId != expectedUserId ||
-                    accountType != "beboss_pos_device" || refreshed.accessToken.isBlank()) {
+                    !setOf("beboss_pos_device", "beboss_shop_owner").contains(accountType) || refreshed.accessToken.isBlank()) {
                     activeDeviceSession = null
                     return null
                 }
