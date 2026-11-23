@@ -19,6 +19,7 @@ import { daysLeft, formatDateTime, formatRwf, relativeTime } from "@/lib/format"
 import { RetailInsights } from "@/components/admin/RetailInsights";
 import { ShopRecords } from "@/components/admin/ShopRecords";
 import { useAdminText } from "@/lib/admin-copy";
+import { useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/admin/shops/$shopId")({
   component: ShopDetail,
@@ -26,6 +27,8 @@ export const Route = createFileRoute("/_authenticated/admin/shops/$shopId")({
 
 function ShopDetail() {
   const a = useAdminText();
+  const { lang } = useI18n();
+  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const { shopId } = Route.useParams();
   const navigate = useNavigate();
   const ctx = useAdminCtx();
@@ -108,7 +111,7 @@ function ShopDetail() {
         <StatCard label="Expires" value={formatDateTime(shop.subscription_expires_at)} sub={dl < 0 ? `${-dl} days ago` : `${dl} days left`} tone={dl < 0 ? "danger" : dl <= 7 ? "warning" : "success"} />
         <StatCard label="Monthly fee" value={formatRwf(shop.monthly_fee_rwf)} sub={`${shop.branch_count} branches • ${shop.worker_count} staff`} />
         <StatCard label="Devices" value={`${shopDevices.length} / ${shop.device_limit}`} sub={`${shopDevices.filter((d) => d.is_active).length} active`} />
-        <StatCard label="Lifetime paid" value={formatRwf(paid)} sub={`Last sync ${relativeTime(shop.updated_at)}`} tone="brand" />
+        <StatCard label="Lifetime paid" value={formatRwf(paid)} sub={`Last sync ${relativeTime(shop.updated_at, Date.now(), locale)}`} tone="brand" />
       </div>
 
       {isAdmin ? (
@@ -237,10 +240,10 @@ function ShopDetail() {
           <ShopRecords shopId={shopId} shopName={shop.shop_name} />
         </TabsContent>
         <TabsContent value="devices">
-          <MiniList empty="No paired devices" rows={shopDevices.map((d) => ({ k: d.id, a: `${d.device_name || d.device_id}${d.is_owner_primary ? " • owner" : ""}${d.is_active ? "" : " • deactivated"}`, b: `${d.assigned_user_name || d.assigned_username} • ${d.role} • ${d.branch_name}`, c: deviceHealth(d.last_synced_at), d: `synced ${relativeTime(d.last_synced_at)}` }))} />
+          <MiniList empty="No paired devices" rows={shopDevices.map((d) => ({ k: d.id, a: `${d.device_name || d.device_id}${d.is_owner_primary ? " • owner" : ""}${d.is_active ? "" : " • deactivated"}`, b: `${d.assigned_user_name || d.assigned_username} • ${d.role} • ${d.branch_name}`, c: deviceHealth(d.last_synced_at), d: `synced ${relativeTime(d.last_synced_at, Date.now(), locale)}` }))} />
         </TabsContent>
         <TabsContent value="users">
-          <MiniList empty="No staff synced" rows={shopUsers.map((u) => ({ k: u.id, a: `${u.full_name} (@${u.username})`, b: `${u.role} • ${u.assigned_branch_name} • ${u.phone}`, c: u.is_active ? "ACTIVE" : "SUSPENDED", d: relativeTime(u.updated_at) }))} />
+          <MiniList empty="No staff synced" rows={shopUsers.map((u) => ({ k: u.id, a: `${u.full_name} (@${u.username})`, b: `${u.role} • ${u.assigned_branch_name} • ${u.phone}`, c: u.is_active ? "ACTIVE" : "SUSPENDED", d: relativeTime(u.updated_at, Date.now(), locale) }))} />
         </TabsContent>
         <TabsContent value="payments">
           <MiniList empty="No payments" rows={shopPays.map((p) => ({ k: p.id, a: `${formatRwf(p.amount_rwf)} • ${p.provider}`, b: `${p.duration_months} mo • ${p.branch_count} branches • ${p.device_count} devices`, c: p.status, d: formatDateTime(p.created_at) }))} />
@@ -249,10 +252,10 @@ function ShopDetail() {
           <MiniList empty="No codes" rows={shopCodes.map((x) => ({ k: x.id, a: x.unlock_code, b: `${x.tier_code} • +${x.plan_days}d • ${formatRwf(x.amount_rwf)}`, c: x.status, d: formatDateTime(x.issued_at), mono: true }))} />
         </TabsContent>
         <TabsContent value="activity">
-          <MiniList empty="No sync activity recorded yet" rows={shopEvents.map((e) => ({ k: String(e.id), a: `${e.entity.replace("_", " ").toLowerCase()} · ${e.action.replaceAll("_", " ").toLowerCase()}`, b: [e.device_id, e.detail].filter(Boolean).join(" · ") || "—", c: e.actor, d: relativeTime(e.created_at) }))} />
+          <MiniList empty="No sync activity recorded yet" rows={shopEvents.map((e) => ({ k: String(e.id), a: `${e.entity.replace("_", " ").toLowerCase()} · ${e.action.replaceAll("_", " ").toLowerCase()}`, b: [e.device_id, e.detail].filter(Boolean).join(" · ") || "—", c: e.actor, d: relativeTime(e.created_at, Date.now(), locale) }))} />
         </TabsContent>
         <TabsContent value="sync">
-          <MiniList empty="No branch snapshots" rows={shopSnaps.map((s) => ({ k: s.id, a: s.branch_name, b: s.records_summary || s.device_id, c: "ACTIVE", d: relativeTime(s.updated_at) }))} />
+          <MiniList empty="No branch snapshots" rows={shopSnaps.map((s) => ({ k: s.id, a: s.branch_name, b: s.records_summary || s.device_id, c: "ACTIVE", d: relativeTime(s.updated_at, Date.now(), locale) }))} />
         </TabsContent>
       </Tabs>
 
