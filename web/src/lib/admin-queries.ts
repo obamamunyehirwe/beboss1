@@ -6,6 +6,7 @@ export type Tables = Database["public"]["Tables"];
 export type ShopAccount = Tables["shop_accounts"]["Row"];
 export type PaymentRequest = Tables["payment_requests"]["Row"];
 export type ShopDevice = Tables["shop_devices"]["Row"];
+export type DeviceSecurityTelemetry = Tables["device_security_telemetry"]["Row"];
 export type ShopUser = Tables["shop_users"]["Row"];
 export type ShopBranch = Tables["shop_branches"]["Row"];
 export type ShopStockTransfer = Tables["shop_stock_transfers"]["Row"];
@@ -36,6 +37,7 @@ export const adminKeys = {
   shops: ["admin", "shops"] as const,
   payments: ["admin", "payments"] as const,
   devices: ["admin", "devices"] as const,
+  securityTelemetry: ["admin", "device-security-telemetry"] as const,
   branches: ["admin", "branches"] as const,
   transfers: ["admin", "stock-transfers"] as const,
   users: ["admin", "users"] as const,
@@ -63,6 +65,14 @@ export const paymentsQuery = queryOptions({
 export const devicesQuery = queryOptions({
   queryKey: adminKeys.devices,
   queryFn: () => all<ShopDevice>((a, b) => supabase.from("shop_devices").select("*").order("updated_at", { ascending: false }).range(a, b)),
+  staleTime: 5_000,
+  refetchInterval: 15_000,
+});
+export const deviceSecurityTelemetryQuery = queryOptions({
+  queryKey: adminKeys.securityTelemetry,
+  queryFn: () => all<DeviceSecurityTelemetry>((a, b) =>
+    supabase.from("device_security_telemetry").select("*").order("updated_at", { ascending: false }).range(a, b),
+  5000),
   staleTime: 5_000,
   refetchInterval: 15_000,
 });

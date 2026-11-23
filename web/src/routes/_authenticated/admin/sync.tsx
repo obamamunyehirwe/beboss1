@@ -19,7 +19,7 @@ import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, Searc
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { useNow } from "@/hooks/use-now";
 import { deleteSnapshot } from "@/lib/admin.functions";
-import { branchesQuery, devicesQuery, shopsQuery, snapshotsQuery, stockTransfersQuery, syncEventsQuery, usersQuery, type ShopAccount, type ShopBranch, type ShopStockTransfer, type ShopUser, type SyncEvent } from "@/lib/admin-queries";
+import { branchesQuery, deviceSecurityTelemetryQuery, devicesQuery, shopsQuery, snapshotsQuery, stockTransfersQuery, syncEventsQuery, usersQuery, type DeviceSecurityTelemetry, type ShopAccount, type ShopBranch, type ShopStockTransfer, type ShopUser, type SyncEvent } from "@/lib/admin-queries";
 import { formatDateTime, relativeTime } from "@/lib/format";
 import { DAY, HEALTH_LABEL, HOUR, deviceHealth, type DeviceHealth } from "@/lib/sync-health";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,7 @@ function SyncMonitor() {
   const events = useQuery(syncEventsQuery);
   const shops = useQuery(shopsQuery);
   const devices = useQuery(devicesQuery);
+  const securityTelemetry = useQuery(deviceSecurityTelemetryQuery);
   const staff = useQuery(usersQuery);
   const snaps = useQuery(snapshotsQuery);
   const branches = useQuery(branchesQuery);
@@ -112,7 +113,7 @@ function SyncMonitor() {
   }, [events.data, shops.data, devices.data, staff.data, snaps.data, branches.data, transfers.data, now]);
 
   const retryAll = () => Promise.all([
-    events.refetch(), shops.refetch(), devices.refetch(), staff.refetch(), snaps.refetch(), branches.refetch(), transfers.refetch(),
+    events.refetch(), shops.refetch(), devices.refetch(), securityTelemetry.refetch(), staff.refetch(), snaps.refetch(), branches.refetch(), transfers.refetch(),
   ]);
 
   const stats = useMemo(() => {
@@ -175,6 +176,9 @@ function SyncMonitor() {
     const totalTransfers = (transfers.data ?? []).length;
     const activeStaff = (staff.data ?? []).filter((u) => u.is_active).length;
     const staleDevices = dv.filter((d) => d.is_active && deviceHealth(d.last_synced_at, now) === "STALE").length;
+    const securityAlerts = (securityTelemetry.data ?? []).filter((d) =>
+      d.clock_rollback_detected || d.is_rooted || d.has_hooking || d.is_emulator || d.risk_score >= 40
+    ).length;
 
     return {
       health,
@@ -191,8 +195,9 @@ function SyncMonitor() {
       totalBranches,
       totalTransfers,
       staleDevices,
+      securityAlerts,
     };
-  }, [events.data, shops.data, devices.data, staff.data, snaps.data, branches.data, transfers.data, now]);
+  }, [events.data, shops.data, devices.data, securityTelemetry.data, staff.data, snaps.data, branches.data, transfers.data, now]);
 
   return (
     <div className="space-y-6">
@@ -216,12 +221,14 @@ function SyncMonitor() {
         <StatCard label="Registered Branches" value={stats.totalBranches} sub="normalized cross-shop branch records" icon={Store} tone="info" />
         <StatCard label="Stock Transfers" value={stats.totalTransfers} sub="cross-branch stock movements" icon={Boxes} tone="info" />
         <StatCard label="Stale Devices" value={stats.staleDevices} sub="active, no sync for 7+ days" icon={Clock} tone={stats.staleDevices > 0 ? "danger" : "success"} />
+        <StatCard label="Security Alerts" value={stats.securityAlerts} sub="rollback, root, hooking, emulator or high risk" icon={AlertTriangle} tone={stats.securityAlerts > 0 ? "danger" : "success"} />
       </div>
 
       {[
         { label: "Cloud events", query: events },
         { label: "Shops", query: shops },
         { label: "Devices", query: devices },
+        { label: "Security telemetry", query: securityTelemetry },
         { label: "Staff", query: staff },
         { label: "Snapshots", query: snaps },
         { label: "Branches", query: branches },
@@ -235,6 +242,7 @@ function SyncMonitor() {
                 ["Cloud events", events.error],
                 ["Shops", shops.error],
                 ["Devices", devices.error],
+                ["Security telemetry", securityTelemetry.error],
                 ["Staff", staff.error],
                 ["Snapshots", snaps.error],
                 ["Branches", branches.error],
@@ -267,6 +275,7 @@ function SyncMonitor() {
           <TabsTrigger value="shops">{a("Shops")} ({(shops.data ?? []).length})</TabsTrigger>
           <TabsTrigger value="users">{a("Synced users")} ({(staff.data ?? []).length})</TabsTrigger>
           <TabsTrigger value="devices">{a("Device health")} ({(devices.data ?? []).length})</TabsTrigger>
+          <TabsTrigger value="security">Security &amp; GPS ({(securityTelemetry.data ?? []).length})</TabsTrigger>
           <TabsTrigger value="snapshots">{a("Branch snapshots")} ({(snaps.data ?? []).length})</TabsTrigger>
           <TabsTrigger value="branches">{a("All branches")} ({(branches.data ?? []).length})</TabsTrigger>
           <TabsTrigger value="transfers">{a("Stock transfers")} ({(transfers.data ?? []).length})</TabsTrigger>
@@ -282,6 +291,9 @@ function SyncMonitor() {
         </TabsContent>
         <TabsContent value="devices">
           <DeviceHealthTable now={now} />
+        </TabsContent>
+        <TabsContent value="security">
+          <SecurityTelemetryTable rows={securityTelemetry.data ?? []} loading={securityTelemetry.isLoading} now={now} />
         </TabsContent>
         <TabsContent value="snapshots">
           <Snapshots now={now} />
@@ -821,6 +833,206 @@ function DeviceHealthTable({ now }: { now: number }) {
           </table>
         </TableShell>
       )}
+    </div>
+  );
+}
+
+
+function SecurityTelemetryTable({
+  rows,
+  loading,
+  now,
+}: {
+  rows: DeviceSecurityTelemetry[];
+  loading: boolean;
+  now: number;
+}) {
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<"ALL" | "ALERTS" | "ROLLBACK" | "CLEAR">("ALL");
+  const filtered = rows.filter((row) => {
+    const alert = row.clock_rollback_detected || row.is_rooted || row.has_hooking || row.is_emulator || row.risk_score >= 40;
+    const matchesFilter =
+      filter === "ALL" ||
+      (filter === "ALERTS" && alert) ||
+      (filter === "ROLLBACK" && row.clock_rollback_detected) ||
+      (filter === "CLEAR" && !alert);
+    return matchesFilter && matches(
+      q,
+      row.shop_name,
+      row.shop_sync_key,
+      row.device_id,
+      row.device_name,
+      row.posture_label,
+      row.tamper_reason,
+      row.location_label,
+      row.permissions_summary,
+    );
+  });
+
+  const getSummary = (value: DeviceSecurityTelemetry["message_summary_json"]) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput value={q} onChange={setQ} placeholder="Search shop, device, security signal, GPS label…" />
+        <FilterChips
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: "ALL", label: "All devices", count: rows.length },
+            { value: "ALERTS", label: "Security alerts", count: rows.filter((r) => r.clock_rollback_detected || r.is_rooted || r.has_hooking || r.is_emulator || r.risk_score >= 40).length },
+            { value: "ROLLBACK", label: "Clock rollback", count: rows.filter((r) => r.clock_rollback_detected).length },
+            { value: "CLEAR", label: "No flagged signals", count: rows.filter((r) => !r.clock_rollback_detected && !r.is_rooted && !r.has_hooking && !r.is_emulator && r.risk_score < 40).length },
+          ]}
+        />
+        <Button
+          size="sm"
+          variant="glass"
+          className="ml-auto"
+          onClick={() => downloadCsv(
+            "beboss-device-security-telemetry-" + Date.now() + ".csv",
+            filtered.map((r) => ({
+              shop: r.shop_name,
+              shopSyncKey: r.shop_sync_key,
+              device: r.device_name,
+              deviceId: r.device_id,
+              riskScore: r.risk_score,
+              posture: r.posture_label,
+              rooted: r.is_rooted,
+              hooking: r.has_hooking,
+              emulator: r.is_emulator,
+              clockRollback: r.clock_rollback_detected,
+              tamperIncidents: r.tamper_incident_count,
+              clockSkewMs: r.clock_skew_ms,
+              tamperReason: r.tamper_reason,
+              location: r.location_label,
+              latitude: r.latitude,
+              longitude: r.longitude,
+              gpsAccuracyMeters: r.accuracy_meters,
+              gpsCapturedAt: r.location_captured_at ? new Date(r.location_captured_at).toISOString() : "",
+              outboundPending: r.unsynced_messages_count,
+              messageSummary: JSON.stringify(r.message_summary_json),
+              permissions: r.permissions_summary,
+              inspectedAt: r.inspected_at ? new Date(r.inspected_at).toISOString() : "",
+              updatedAt: new Date(r.updated_at).toISOString(),
+            })),
+          )}
+        >
+          <Download /> Export security data
+        </Button>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        GPS is optional and is uploaded only while location permission is granted, using a recent foreground fix. Message data is aggregate-only: phone numbers and message previews stay on the device. “Sent” records mean the app initiated a dispatch, not confirmed delivery.
+      </p>
+
+      {loading ? <LoadingBlock /> : !filtered.length ? (
+        <EmptyState
+          title="No device security telemetry"
+          sub="Paired terminals appear here after a successful online security sync. Missing data is not treated as a clean device."
+        />
+      ) : (
+        <TableShell>
+          <table className="w-full min-w-[1440px] text-sm">
+            <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3">Device / shop</th>
+                <th className="px-4 py-3">Risk posture</th>
+                <th className="px-4 py-3">Tamper detection</th>
+                <th className="px-4 py-3">GPS / location</th>
+                <th className="px-4 py-3">Outbound activity</th>
+                <th className="px-4 py-3">Permissions</th>
+                <th className="px-4 py-3">Last inspected</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((row) => {
+                const alert = row.clock_rollback_detected || row.is_rooted || row.has_hooking || row.is_emulator || row.risk_score >= 40;
+                const status = row.clock_rollback_detected
+                  ? "CLOCK ROLLBACK"
+                  : row.risk_score >= 70
+                    ? "CRITICAL RISK"
+                    : row.risk_score >= 40 || row.is_rooted || row.has_hooking
+                      ? "HIGH RISK"
+                      : alert
+                        ? "REVIEW"
+                        : row.risk_score > 0
+                          ? "ELEVATED"
+                          : "NO FLAGGED SIGNAL";
+                const summary = getSummary(row.message_summary_json);
+                const channels = getSummary(summary.channels as DeviceSecurityTelemetry["message_summary_json"]);
+                const statuses = getSummary(summary.statuses as DeviceSecurityTelemetry["message_summary_json"]);
+                const recorded = Number(summary.record_count ?? 0);
+                const hasGps = row.location_captured_at > 0 &&
+                  Number.isFinite(row.latitude) && Number.isFinite(row.longitude);
+                const mapUrl = hasGps
+                  ? "https://www.google.com/maps?q=" + row.latitude + "," + row.longitude
+                  : null;
+
+                return (
+                  <tr key={row.id} className="align-top hover:bg-accent/40">
+                    <td className="px-4 py-3">
+                      <p className="font-medium">{row.device_name || row.device_id}</p>
+                      <p className="font-mono text-[11px] text-muted-foreground">{row.device_id}</p>
+                      <Link to="/admin/shops/$shopId" params={{ shopId: row.shop_sync_key }} className="text-xs text-primary hover:underline">
+                        {row.shop_name || row.shop_sync_key}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={status} />
+                      <p className="mt-1 font-mono text-xs">Risk {row.risk_score}/100</p>
+                      <p className="text-[11px] text-muted-foreground">{row.posture_label}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Root {row.is_rooted ? "yes" : "no"} · Hook {row.has_hooking ? "yes" : "no"} · Emulator {row.is_emulator ? "yes" : "no"}
+                      </p>
+                    </td>
+                    <td className="max-w-[260px] px-4 py-3 text-xs">
+                      <p>{row.clock_rollback_detected ? "Clock rollback detected" : "No rollback reported"}</p>
+                      <p className="mt-1 text-muted-foreground">{row.tamper_reason || "No additional tamper reason"}</p>
+                      <p className="mt-1 text-muted-foreground">
+                        Incidents: {row.tamper_incident_count} · Skew: {row.clock_skew_ms.toLocaleString()} ms
+                      </p>
+                      <p className="text-muted-foreground">Keystore: {row.keystore_backing || "Unknown"}</p>
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      <p>{row.location_label || "GPS unavailable"}</p>
+                      {mapUrl ? (
+                        <a href={mapUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-primary hover:underline">
+                          Open map · ±{Math.round(row.accuracy_meters)} m
+                        </a>
+                      ) : <p className="mt-1 text-muted-foreground">No recent permitted GPS fix</p>}
+                      <p className="mt-1 text-muted-foreground">
+                        {row.location_captured_at ? relativeTime(row.location_captured_at, now) : "Not captured"}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      <p>{recorded} recent dispatch records</p>
+                      <p className="mt-1 text-muted-foreground">
+                        {Object.entries(channels).map(([name, count]) => name + ": " + String(count)).join(" · ") || "No channel activity"}
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        {Object.entries(statuses).map(([name, count]) => name + ": " + String(count)).join(" · ") || "No status summary"}
+                      </p>
+                      <p className="mt-1 text-muted-foreground">Pending upload: {row.unsynced_messages_count}</p>
+                    </td>
+                    <td className="max-w-[230px] px-4 py-3 text-xs text-muted-foreground">{row.permissions_summary || "Not reported"}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground" title={formatDateTime(row.inspected_at)}>
+                      {row.inspected_at ? relativeTime(row.inspected_at, now) : "Not inspected"}
+                      <p className="mt-1">Cloud update: {relativeTime(row.updated_at, now)}</p>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </TableShell>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Showing {filtered.length.toLocaleString()} of {rows.length.toLocaleString()} device records. No telemetry row means “not reported”, not “verified”.
+      </p>
     </div>
   );
 }
