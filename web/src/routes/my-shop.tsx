@@ -593,7 +593,6 @@ function LookupPanel() {
 }
 
 function BranchManager({
-  const a = useAdminText();
   username,
   phone,
   result,
@@ -604,6 +603,7 @@ function BranchManager({
   result: Lookup;
   onRefresh: () => void;
 }) {
+  const a = useAdminText();
   const upsertBranch = useServerFn(upsertMyShopBranch);
   const deleteBranch = useServerFn(deleteMyShopBranch);
   const upsertTransfer = useServerFn(upsertMyShopStockTransfer);
