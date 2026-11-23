@@ -1211,3 +1211,33 @@ export const revokeTeamRole = createServerFn({ method: "POST" })
     await audit(ctx, admin.email, "REVOKE_ROLE", data.userId, data.role);
     return { ok: true };
   });
+
+
+/**
+ * Immediately revokes a shop owner's authenticated website membership.
+ * Existing access tokens stop authorizing My Shop server functions because
+ * every request rechecks the active membership row.
+ */
+export const revokeShopOwnerMembership = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { userId: string; shopId: string }) =>
+    z.object({ userId: z.string().uuid(), shopId: z.string().trim().min(3).max(160) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requireAdmin(ctx);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const now = Date.now();
+    const { data: membership, error: membershipError } = await supabaseAdmin
+      .from("shop_owner_memberships")
+      .update({ status: "REVOKED", revoked_at: now })
+      .eq("user_id", data.userId)
+      .eq("shop_id", data.shopId)
+      .eq("status", "ACTIVE")
+      .eq("revoked_at", 0)
+      .select("id")
+      .maybeSingle();
+    if (membershipError) throw new Error("Could not revoke the owner session.");
+    if (!membership) throw new Error("No active owner membership was found for this user and shop.");
+    await audit(ctx, admin.email, "REVOKE_SHOP_OWNER", data.shopId, `Revoked owner user ${data.userId}; membership ${membership.id}.`);
+    return { ok: true, revokedAt: now };
+  });
