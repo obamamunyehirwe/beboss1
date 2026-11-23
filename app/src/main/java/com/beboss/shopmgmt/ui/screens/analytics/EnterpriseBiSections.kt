@@ -411,7 +411,7 @@ fun SmartReorderSection(
                                     if (s.hasDemandHistory) {
                                         val cover = "${s.stockCoverDays.toInt()}d cover"
                                         val confidence = s.forecastConfidence.lowercase().replaceFirstChar { it.uppercase() }
-                                        "Forecast: ${String.format(Locale.getDefault(), "%.2f", s.forecastDailyDemand)} ${s.unit}/day • $cover • $confidence confidence"
+                                        "Forecast: ${String.format(Locale.getDefault(), "%.2f", s.forecastDailyDemand)} ${s.unit}/day • $cover • $confidence (${s.forecastSalesDays}/56 selling days)"
                                     } else {
                                         "Forecast: insufficient recent sales history • low confidence"
                                     },
