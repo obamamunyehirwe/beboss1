@@ -967,13 +967,19 @@ object SupabaseAdminClient {
 
             // Check existing cloud shop account so offline client never overwrites a newer Admin Direct Auto-Unlock or status
             val existingRemote = fetchShopAccountById(accountId)
+            // Only preserve remote entitlement state when that remote account was
+            // updated at or after this device's validated shop baseline. This prevents
+            // an old account keyed by the same owner username/phone from extending a
+            // newly registered four-day trial.
+            val preserveRemoteLicense = existingRemote != null &&
+                existingRemote.updatedAt >= shopProfile.trialStartedAt
             val effectiveStatus = when {
-                existingRemote != null && existingRemote.autoUnlockedAt > shopProfile.lastAppliedCloudUnlockAt ->
+                preserveRemoteLicense && existingRemote!!.autoUnlockedAt > shopProfile.lastAppliedCloudUnlockAt ->
                     existingRemote.subscriptionStatus
-                existingRemote != null && existingRemote.subscriptionStatus == ShopProfile.STATUS_ACTIVE &&
+                preserveRemoteLicense && existingRemote!!.subscriptionStatus == ShopProfile.STATUS_ACTIVE &&
                     existingRemote.subscriptionExpiresAt > shopProfile.subscriptionExpiresAt ->
                     existingRemote.subscriptionStatus
-                existingRemote != null && existingRemote.subscriptionStatus == ShopProfile.STATUS_SUSPENDED &&
+                preserveRemoteLicense && existingRemote!!.subscriptionStatus == ShopProfile.STATUS_SUSPENDED &&
                     existingRemote.updatedAt >= shopProfile.updatedAt ->
                     existingRemote.subscriptionStatus
                 shopProfile.isPaidActive -> ShopProfile.STATUS_ACTIVE
@@ -983,7 +989,7 @@ object SupabaseAdminClient {
             }
             val effectiveExpiry = maxOf(
                 shopProfile.subscriptionExpiresAt,
-                existingRemote?.subscriptionExpiresAt ?: 0L
+                if (preserveRemoteLicense) existingRemote!!.subscriptionExpiresAt else 0L
             )
 
             val payload = JSONObject().apply {
