@@ -74,7 +74,7 @@ function AuthPage() {
       active = false;
       data.subscription.unsubscribe();
     };
-  }, [router, target]);
+  }, [router, target, a]);
 
   const signIn = async (event: React.FormEvent) => {
     event.preventDefault();
