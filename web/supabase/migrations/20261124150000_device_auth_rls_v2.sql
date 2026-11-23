@@ -2537,3 +2537,219 @@ comment on table beboss_private.shop_device_auth_invites is
   'Short-lived, one-time, hashed device enrollment and re-enrollment codes issued only after owner OTP authentication.';
 comment on function public.current_shop_sync_key() is
   'Resolves tenant context only from an authenticated active owner membership or device-auth session. The legacy X-Shop-Sync-Key header is only a selector, never an authenticator.';
+
+
+-- Close legacy SECURITY DEFINER RPC paths. Tenant context is always derived
+-- from auth.uid(); caller-supplied shop/user/device strings are only compared
+-- against that trusted context and never establish identity.
+
+create or replace function beboss_private.claim_shop_stock_transfer(
+  p_transfer_id text,
+  p_device_id text,
+  p_lease_ms bigint default 180000
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_now_ms bigint := floor(extract(epoch from clock_timestamp()) * 1000)::bigint;
+  v_lease_ms bigint := greatest(30000, least(coalesce(p_lease_ms, 180000), 600000));
+  v_tenant_key text := public.current_shop_sync_key();
+  v_device_id text := public.current_shop_device_id();
+  v_rows integer;
+begin
+  if coalesce(v_tenant_key, '') = ''
+     or coalesce(v_device_id, '') = ''
+     or p_device_id is distinct from v_device_id
+     or p_transfer_id is null or btrim(p_transfer_id) = '' then
+    return false;
+  end if;
+
+  update public.shop_stock_transfers
+  set claimed_by_device_id = v_device_id,
+      processing_lease_until = v_now_ms + v_lease_ms
+  where id = p_transfer_id
+    and shop_sync_key = v_tenant_key
+    and (
+      status in ('REQUESTED', 'RECEIPT_REQUESTED', 'CANCEL_REQUESTED')
+      or (last_modified_device_id = 'WEB' and status in ('IN_TRANSIT', 'COMPLETED', 'CANCELLED'))
+    )
+    and (processing_lease_until <= v_now_ms or claimed_by_device_id = v_device_id);
+
+  get diagnostics v_rows = row_count;
+  return v_rows = 1;
+end;
+$function$;
+
+create or replace function beboss_private.release_shop_stock_transfer_claim(
+  p_transfer_id text,
+  p_device_id text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_tenant_key text := public.current_shop_sync_key();
+  v_device_id text := public.current_shop_device_id();
+  v_rows integer;
+begin
+  if coalesce(v_tenant_key, '') = ''
+     or coalesce(v_device_id, '') = ''
+     or p_device_id is distinct from v_device_id
+     or p_transfer_id is null or btrim(p_transfer_id) = '' then
+    return false;
+  end if;
+
+  update public.shop_stock_transfers
+  set claimed_by_device_id = '',
+      processing_lease_until = 0
+  where id = p_transfer_id
+    and shop_sync_key = v_tenant_key
+    and claimed_by_device_id = v_device_id
+    and (
+      status in ('REQUESTED', 'RECEIPT_REQUESTED', 'CANCEL_REQUESTED')
+      or (last_modified_device_id = 'WEB' and status in ('IN_TRANSIT', 'COMPLETED', 'CANCELLED'))
+    );
+
+  get diagnostics v_rows = row_count;
+  return v_rows = 1;
+end;
+$function$;
+
+create or replace function public.claim_shop_stock_transfer(
+  p_transfer_id text,
+  p_device_id text,
+  p_lease_ms bigint default 180000
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+begin
+  if coalesce(public.current_shop_sync_key(), '') = ''
+     or public.current_shop_device_id() is distinct from p_device_id then
+    return false;
+  end if;
+  return beboss_private.claim_shop_stock_transfer(p_transfer_id, p_device_id, p_lease_ms);
+end;
+$function$;
+
+create or replace function public.release_shop_stock_transfer_claim(
+  p_transfer_id text,
+  p_device_id text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+begin
+  if coalesce(public.current_shop_sync_key(), '') = ''
+     or public.current_shop_device_id() is distinct from p_device_id then
+    return false;
+  end if;
+  return beboss_private.release_shop_stock_transfer_claim(p_transfer_id, p_device_id);
+end;
+$function$;
+
+create or replace function public.revoke_shop_device_invites(
+  p_shop_sync_key text,
+  p_device_record_id text,
+  p_actor_device_id text,
+  p_actor_user_id text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+begin
+  if coalesce(public.current_shop_sync_key(), '') is distinct from p_shop_sync_key
+     or public.current_shop_user_id() is distinct from p_actor_user_id
+     or public.current_shop_device_id() is distinct from p_actor_device_id then
+    raise exception using errcode = '42501', message = 'The authenticated terminal does not match the requested actor.';
+  end if;
+  return beboss_private.revoke_shop_device_invites(
+    p_shop_sync_key, p_device_record_id, p_actor_device_id, p_actor_user_id
+  );
+end;
+$function$;
+
+create or replace function public.set_shop_device_active(
+  p_shop_sync_key text,
+  p_device_record_id text,
+  p_actor_device_id text,
+  p_actor_user_id text,
+  p_is_active boolean
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+begin
+  if coalesce(public.current_shop_sync_key(), '') is distinct from p_shop_sync_key
+     or public.current_shop_user_id() is distinct from p_actor_user_id
+     or public.current_shop_device_id() is distinct from p_actor_device_id then
+    raise exception using errcode = '42501', message = 'The authenticated terminal does not match the requested actor.';
+  end if;
+  return beboss_private.set_shop_device_active(
+    p_shop_sync_key, p_device_record_id, p_actor_device_id, p_actor_user_id, p_is_active
+  );
+end;
+$function$;
+
+create or replace function public.delete_shop_device(
+  p_shop_sync_key text,
+  p_device_record_id text,
+  p_actor_device_id text,
+  p_actor_user_id text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+begin
+  if coalesce(public.current_shop_sync_key(), '') is distinct from p_shop_sync_key
+     or public.current_shop_user_id() is distinct from p_actor_user_id
+     or public.current_shop_device_id() is distinct from p_actor_device_id then
+    raise exception using errcode = '42501', message = 'The authenticated terminal does not match the requested actor.';
+  end if;
+  return beboss_private.delete_shop_device(
+    p_shop_sync_key, p_device_record_id, p_actor_device_id, p_actor_user_id
+  );
+end;
+$function$;
+
+-- No client role may call the private SECURITY DEFINER implementation directly.
+revoke all on schema beboss_private from public, anon, authenticated;
+grant usage on schema beboss_private to service_role;
+revoke all on function beboss_private.issue_shop_device_invite(text,text,text,text,text,text,bigint) from public, anon, authenticated;
+revoke all on function beboss_private.redeem_shop_device_invite(text,text,text,text) from public, anon, authenticated;
+revoke all on function beboss_private.revoke_shop_device_invites(text,text,text,text) from public, anon, authenticated;
+revoke all on function beboss_private.set_shop_device_active(text,text,text,text,boolean) from public, anon, authenticated;
+revoke all on function beboss_private.delete_shop_device(text,text,text,text) from public, anon, authenticated;
+revoke all on function beboss_private.claim_shop_stock_transfer(text,text,bigint) from public, anon, authenticated;
+revoke all on function beboss_private.release_shop_stock_transfer_claim(text,text) from public, anon, authenticated;
+
+revoke all on function public.claim_shop_stock_transfer(text,text,bigint) from public, anon;
+revoke all on function public.release_shop_stock_transfer_claim(text,text) from public, anon;
+revoke all on function public.revoke_shop_device_invites(text,text,text,text) from public, anon;
+revoke all on function public.set_shop_device_active(text,text,text,text,boolean) from public, anon;
+revoke all on function public.delete_shop_device(text,text,text,text) from public, anon;
+grant execute on function public.claim_shop_stock_transfer(text,text,bigint) to authenticated, service_role;
+grant execute on function public.release_shop_stock_transfer_claim(text,text) to authenticated, service_role;
+grant execute on function public.revoke_shop_device_invites(text,text,text,text) to authenticated, service_role;
+grant execute on function public.set_shop_device_active(text,text,text,text,boolean) to authenticated, service_role;
+grant execute on function public.delete_shop_device(text,text,text,text) to authenticated, service_role;
+
+comment on function public.claim_shop_stock_transfer(text,text,bigint) is
+  'Claims one transfer lease only for the authenticated device id in its current tenant.';
+comment on function public.set_shop_device_active(text,text,text,text,boolean) is
+  'Owner/manager device status mutation bound to auth.uid(), actual device id, tenant and branch.';
