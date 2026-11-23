@@ -75,21 +75,15 @@ export const requestMyShopOwnerOtp = createServerFn({ method: "POST" })
     }
 
     const now = Date.now();
-    const windowStart = now - 10 * 60 * 1000;
-    const { count, error: countError } = await supabaseAdmin
-      .from("shop_owner_otp_attempts")
-      .select("id", { count: "exact", head: true })
-      .eq("shop_id", shop.id)
-      .gte("created_at", windowStart);
-    if (countError) throw new Error("Owner verification is temporarily unavailable.");
-    if ((count ?? 0) >= 3) return accepted;
-
-    const { data: attempt, error: attemptError } = await supabaseAdmin
-      .from("shop_owner_otp_attempts")
-      .insert({ shop_id: shop.id, created_at: now, status: "REQUESTED" })
-      .select("id")
-      .single();
-    if (attemptError || !attempt) throw new Error("Owner verification is temporarily unavailable.");
+    const { data: attemptId, error: attemptError } = await supabaseAdmin.rpc("take_shop_owner_otp_slot", {
+      p_shop_id: shop.id,
+      p_now_ms: now,
+      p_window_ms: 10 * 60 * 1000,
+      p_max_attempts: 3,
+    });
+    if (attemptError) throw new Error("Owner verification is temporarily unavailable.");
+    if (!attemptId) return accepted;
+    const attempt = { id: String(attemptId) };
 
     try {
       let authUser: { id: string } | null = null;
