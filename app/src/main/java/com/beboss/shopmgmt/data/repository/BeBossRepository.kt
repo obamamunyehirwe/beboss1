@@ -561,39 +561,101 @@ class BeBossRepository(private val database: AppDatabase) {
         deviceName: String,
         assignedUser: User,
         branch: Branch?,
+        creatorDeviceId: String,
         actor: User? = null
     ): ShopDevice = withContext(Dispatchers.IO) {
-        requirePermission(actor, "ADD_SHOP_DEVICE", deviceName) {
-            it.role == UserRole.OWNER || it.role == UserRole.MANAGER || it.canManageShopSettings
-        }
-        val profile = getShopProfileDirect()
         val allUsers = userDao.getAllUsersDirect()
-        val ownerUser = allUsers.firstOrNull { it.role == UserRole.OWNER }
+        val ownerUser = allUsers.firstOrNull { it.role == UserRole.OWNER && it.isActive }
+            ?: throw IllegalStateException("An active shop owner account is required before adding devices.")
+        val principal = actor ?: ownerUser
+        val targetBranch = branch
+            ?: branchDao.getBranchById(assignedUser.assignedBranchId)
+            ?: branchDao.getMainBranch()
+            ?: branchDao.getAllActiveBranchesList().firstOrNull()
+            ?: throw IllegalStateException("Create an active branch before registering a device.")
+        val staff = allUsers.firstOrNull { it.id == assignedUser.id }
+            ?: throw SecurityException("The selected staff member does not belong to this shop.")
+        require(staff.isActive && staff.role != UserRole.OWNER) {
+            "Select an active Manager or Cashier account for this terminal."
+        }
+        require(targetBranch.isActive) { "The selected branch is inactive." }
+        require(staff.assignedBranchId.isBlank() || staff.assignedBranchId == targetBranch.id) {
+            "The selected staff account is assigned to a different branch."
+        }
+
+        requirePermission(actor, "ADD_SHOP_DEVICE", deviceName) {
+            it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+        }
+        if (principal.role != UserRole.OWNER) {
+            require(
+                principal.role == UserRole.MANAGER &&
+                    (principal.assignedBranchId == targetBranch.id || targetBranch.managerUserId == principal.id)
+            ) { "A branch manager can only register terminals for the branch they manage." }
+            require(staff.assignedBranchId.isBlank() || staff.assignedBranchId == targetBranch.id) {
+                "A branch manager cannot assign staff from another branch."
+            }
+        }
+
+        require(SupabaseAdminClient.isConfigured()) {
+            "Connect to the internet before registering a terminal. No device or join code was created."
+        }
+        require(creatorDeviceId.isNotBlank()) { "This terminal has no registered device identity. Sign in again." }
+
+        val profile = getShopProfileDirect()
         val primaryDevice = shopDeviceDao.getAllDevicesList().firstOrNull { it.isOwnerPrimary }
-        val ownerUsername = ownerUser?.username?.trim()?.lowercase(Locale.ROOT)
-            ?: primaryDevice?.assignedUsername?.trim()?.lowercase(Locale.ROOT).orEmpty()
-        val ownerPhone = ownerUser?.phone?.ifBlank { profile.phone } ?: profile.phone
+        val ownerUsername = ownerUser.username.trim().lowercase(Locale.ROOT)
+        val ownerPhone = ownerUser.phone.ifBlank { profile.phone }.trim()
         require(ownerUsername.length >= 2 && ownerUsername.matches(Regex("[a-z0-9._-]{2,80}")) &&
             ownerPhone.filter { it.isDigit() }.takeLast(9).length == 9 && profile.shopName.isNotBlank()) {
-            "Complete the registered shop owner's username and phone before adding another device."
+            "Complete the registered shop owner's username, phone and shop name before adding another device."
         }
         val shopSyncKey = primaryDevice?.shopSyncKey?.takeIf { it.isNotBlank() }
             ?: SupabaseAdminClient.computeShopSyncKey(ownerUsername, ownerPhone)
-        val codeSuffix = UUID.randomUUID().toString().replace("-", "").take(6).uppercase(Locale.ROOT)
-        val joinCode = "BB-$codeSuffix"
+        val issuerDevice = shopDeviceDao.getByDeviceId(creatorDeviceId)
+            ?: throw SecurityException("This terminal is not registered to the signed-in shop account.")
+        require(issuerDevice.isActive && issuerDevice.assignedUserId == principal.id) {
+            "The current terminal is not assigned to the signed-in shop user."
+        }
+        require(issuerDevice.shopSyncKey == shopSyncKey) {
+            "The current terminal is registered to a different shop."
+        }
+
+        // Publish authoritative actor, staff and branch metadata before asking the
+        // database to authorize the invitation. All cloud writes must succeed.
+        require(SupabaseAdminClient.upsertShopAccount(
+            shopProfile = profile,
+            ownerUser = ownerUser,
+            branchCount = branchDao.getBranchCount().coerceAtLeast(1),
+            workerCount = allUsers.count { it.isActive }.coerceAtLeast(1),
+            deviceCount = shopDeviceDao.getActiveDevicesCount().coerceAtLeast(1),
+            shopSyncKeyOverride = shopSyncKey,
+            shopOwnerUsernameOverride = ownerUsername
+        )) { "The shop account could not be verified in BeBoss Cloud. Check your connection and sync again." }
+        require(SupabaseAdminClient.upsertShopUsers(shopSyncKey, profile.shopName, allUsers)) {
+            "Staff permissions could not be synchronized to the cloud. No device was registered."
+        }
+        val activeBranches = branchDao.getAllActiveBranchesList()
+        require(SupabaseAdminClient.upsertShopBranches(shopSyncKey, profile.shopName, activeBranches)) {
+            "Branch assignments could not be synchronized to the cloud. No device was registered."
+        }
+        require(SupabaseAdminClient.upsertShopDevice(shopSyncKey, profile.shopName, issuerDevice)) {
+            "The issuing terminal could not be verified in the cloud. No device was registered."
+        }
+
         val now = System.currentTimeMillis()
+        val joinCode = SupabaseAdminClient.generateShopDeviceJoinCode()
         val newDev = ShopDevice(
             id = UUID.randomUUID().toString(),
             shopSyncKey = shopSyncKey,
             deviceId = "",
-            deviceName = deviceName.trim().ifBlank { "${assignedUser.name}'s Terminal" },
+            deviceName = deviceName.trim().ifBlank { "${staff.name}'s Terminal" },
             joinCode = joinCode,
-            assignedUserId = assignedUser.id,
-            assignedUsername = assignedUser.username.trim().lowercase(Locale.ROOT),
-            assignedUserName = assignedUser.name,
-            role = assignedUser.role.name,
-            branchId = branch?.id ?: assignedUser.assignedBranchId.ifBlank { "main_branch" },
-            branchName = branch?.name ?: assignedUser.assignedBranchName.ifBlank { "Main Store" },
+            assignedUserId = staff.id,
+            assignedUsername = staff.username.trim().lowercase(Locale.ROOT),
+            assignedUserName = staff.name,
+            role = staff.role.name,
+            branchId = targetBranch.id,
+            branchName = targetBranch.name,
             isOwnerPrimary = false,
             isActive = true,
             monthlyFeeAddonRwf = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF,
@@ -601,11 +663,31 @@ class BeBossRepository(private val database: AppDatabase) {
             createdAt = now,
             updatedAt = now
         )
-        shopDeviceDao.insertOrUpdate(newDev)
 
-        val branchesCount = branchDao.getBranchCount().coerceAtLeast(1)
+        // Register the empty device slot first (the cloud column never receives the
+        // plaintext invite), then atomically issue its SHA-256-only invitation.
+        require(SupabaseAdminClient.upsertShopDevice(shopSyncKey, profile.shopName, newDev)) {
+            "The device slot could not be saved in Supabase. No local device was created."
+        }
+        val inviteIssued = SupabaseAdminClient.issueShopDeviceInvite(
+            shopSyncKey = shopSyncKey,
+            deviceRecordId = newDev.id,
+            joinCode = joinCode,
+            createdByDeviceId = creatorDeviceId,
+            createdByUserId = principal.id,
+            branchId = targetBranch.id,
+            expiresAt = now + 60L * 60L * 1000L
+        )
+        if (!inviteIssued) {
+            SupabaseAdminClient.deleteShopDeviceInCloud(shopSyncKey, newDev.id)
+            throw IllegalStateException(
+                "Supabase rejected the device invitation. Verify your branch manager assignment, staff role and cloud sync, then retry."
+            )
+        }
+
+        val branchesCount = activeBranches.size.coerceAtLeast(1)
         val workersCount = allUsers.count { it.isActive }.coerceAtLeast(1)
-        val devicesCount = shopDeviceDao.getActiveDevicesCount().coerceAtLeast(1)
+        val devicesCount = (shopDeviceDao.getActiveDevicesCount() + 1).coerceAtLeast(1)
         val newPricing = OfflineSubscriptionManager.calculateSubscriptionPrice(
             branchCount = branchesCount,
             workerCount = workersCount,
@@ -617,99 +699,154 @@ class BeBossRepository(private val database: AppDatabase) {
             deviceCountLimit = maxOf(profile.deviceCountLimit, devicesCount),
             updatedAt = now
         )
-        shopProfileDao.insertOrUpdateProfile(updatedProf)
-
-        if (SupabaseAdminClient.isConfigured()) {
-            val pushed = SupabaseAdminClient.upsertShopDevice(shopSyncKey, updatedProf.shopName, newDev)
-            if (pushed) {
-                shopDeviceDao.insertOrUpdate(newDev.copy(syncedToSupabase = true))
-            }
-            SupabaseAdminClient.upsertShopAccount(
-                shopProfile = updatedProf,
-                ownerUser = ownerUser,
-                branchCount = branchesCount,
-                workerCount = workersCount,
-                deviceCount = devicesCount,
-                shopSyncKeyOverride = shopSyncKey,
-                shopOwnerUsernameOverride = ownerUsername
-            )
+        if (!SupabaseAdminClient.upsertShopAccount(
+            shopProfile = updatedProf,
+            ownerUser = ownerUser,
+            branchCount = branchesCount,
+            workerCount = workersCount,
+            deviceCount = devicesCount,
+            shopSyncKeyOverride = shopSyncKey,
+            shopOwnerUsernameOverride = ownerUsername
+        )) {
+            SupabaseAdminClient.revokeShopDeviceInvites(shopSyncKey, newDev.id, creatorDeviceId, principal.id)
+            SupabaseAdminClient.deleteShopDeviceInCloud(shopSyncKey, newDev.id)
+            throw IllegalStateException("The shop device count could not be updated in Supabase. The invitation was cancelled.")
         }
+
+        // Only now expose the device as registered in Room/UI.
+        val registered = newDev.copy(syncedToSupabase = true)
+        shopDeviceDao.insertOrUpdate(registered)
+        shopProfileDao.insertOrUpdateProfile(updatedProf)
         recordLocalAudit(
-            actorName = actor?.name ?: "Owner",
-            actorRole = actor?.role?.name ?: "OWNER",
+            actorName = principal.name,
+            actorRole = principal.role.name,
             action = "ADD_SHOP_DEVICE",
-            targetId = newDev.deviceName,
-            details = "Added paired device for @${newDev.assignedUsername} (Join Code: $joinCode, +2,000 FRw/mo)"
+            targetId = registered.deviceName,
+            details = "Registered cloud device for @${registered.assignedUsername} on branch ${targetBranch.code}."
         )
-        newDev
+        registered
     }
 
-    suspend fun toggleShopDeviceActive(deviceId: String, isActive: Boolean, actor: User? = null) =
-        withContext(Dispatchers.IO) {
-            requirePermission(actor, "TOGGLE_SHOP_DEVICE", deviceId) {
-                it.role == UserRole.OWNER || it.canManageShopSettings
-            }
-            val existing = shopDeviceDao.getDeviceById(deviceId) ?: return@withContext
-            if (existing.isOwnerPrimary) return@withContext
-            val now = System.currentTimeMillis()
-            val updated = existing.copy(isActive = isActive, syncedToSupabase = false, updatedAt = now)
-            shopDeviceDao.insertOrUpdate(updated)
-
-            val profile = getShopProfileDirect()
-            val users = userDao.getAllUsersDirect()
-            val ownerUser = users.firstOrNull { it.role == UserRole.OWNER }
-            val primaryDevice = shopDeviceDao.getAllDevicesList().firstOrNull { it.isOwnerPrimary }
-            val devicesCount = shopDeviceDao.getActiveDevicesCount().coerceAtLeast(1)
-            val branchesCount = branchDao.getBranchCount().coerceAtLeast(1)
-            val workersCount = users.count { it.isActive }.coerceAtLeast(1)
-            val newPricing = OfflineSubscriptionManager.calculateSubscriptionPrice(branchesCount, workersCount, 1, devicesCount)
-            val updatedProf = profile.copy(monthlyFeeRwf = newPricing.monthlySubtotal, updatedAt = now)
-            shopProfileDao.insertOrUpdateProfile(updatedProf)
-
-            if (SupabaseAdminClient.isConfigured()) {
-                val ok = SupabaseAdminClient.upsertShopDevice(existing.shopSyncKey, profile.shopName, updated)
-                if (ok) shopDeviceDao.insertOrUpdate(updated.copy(syncedToSupabase = true))
-                SupabaseAdminClient.upsertShopAccount(
-                    shopProfile = updatedProf,
-                    ownerUser = ownerUser,
-                    branchCount = branchesCount,
-                    workerCount = workersCount,
-                    deviceCount = devicesCount,
-                    shopSyncKeyOverride = existing.shopSyncKey,
-                    shopOwnerUsernameOverride = primaryDevice?.assignedUsername
-                )
+    suspend fun toggleShopDeviceActive(
+        deviceId: String,
+        isActive: Boolean,
+        actor: User? = null,
+        actorDeviceId: String = ""
+    ) = withContext(Dispatchers.IO) {
+        requirePermission(actor, "TOGGLE_SHOP_DEVICE", deviceId) {
+            it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+        }
+        val existing = shopDeviceDao.getDeviceById(deviceId) ?: return@withContext
+        if (existing.isOwnerPrimary) return@withContext
+        val principal = actor ?: userDao.getAllUsersDirect().firstOrNull { it.role == UserRole.OWNER }
+            ?: throw SecurityException("A signed-in shop user is required.")
+        val branch = branchDao.getBranchById(existing.branchId)
+            ?: throw IllegalStateException("The device's assigned branch no longer exists.")
+        if (principal.role != UserRole.OWNER) {
+            require(principal.role == UserRole.MANAGER &&
+                (principal.assignedBranchId == branch.id || branch.managerUserId == principal.id)) {
+                "A branch manager can only manage terminals in the branch they manage."
             }
         }
+        require(SupabaseAdminClient.isConfigured()) {
+            "Connect to the internet before changing a cloud device's status."
+        }
+        val profile = getShopProfileDirect()
+        val users = userDao.getAllUsersDirect()
+        val ownerUser = users.firstOrNull { it.role == UserRole.OWNER }
+        val now = System.currentTimeMillis()
+        val updated = existing.copy(isActive = isActive, syncedToSupabase = false, updatedAt = now)
+        require(SupabaseAdminClient.upsertShopDevice(existing.shopSyncKey, profile.shopName, updated)) {
+            "Supabase did not confirm the device status change. The local device was not changed."
+        }
+        val devicesCount = (shopDeviceDao.getActiveDevicesCount() +
+            if (existing.isActive != isActive) if (isActive) 1 else -1 else 0).coerceAtLeast(1)
+        val branchesCount = branchDao.getBranchCount().coerceAtLeast(1)
+        val workersCount = users.count { it.isActive }.coerceAtLeast(1)
+        val newPricing = OfflineSubscriptionManager.calculateSubscriptionPrice(
+            branchesCount, workersCount, 1, devicesCount
+        )
+        val updatedProf = profile.copy(monthlyFeeRwf = newPricing.monthlySubtotal, updatedAt = now)
+        require(SupabaseAdminClient.upsertShopAccount(
+            shopProfile = updatedProf,
+            ownerUser = ownerUser,
+            branchCount = branchesCount,
+            workerCount = workersCount,
+            deviceCount = devicesCount,
+            shopSyncKeyOverride = existing.shopSyncKey,
+            shopOwnerUsernameOverride = ownerUser?.username
+        )) { "The device status changed, but the subscription summary could not be synchronized." }
+        shopDeviceDao.insertOrUpdate(updated.copy(syncedToSupabase = true))
+        shopProfileDao.insertOrUpdateProfile(updatedProf)
+        recordLocalAudit(
+            actorName = principal.name,
+            actorRole = principal.role.name,
+            action = if (isActive) "ENABLE_SHOP_DEVICE" else "PAUSE_SHOP_DEVICE",
+            targetId = existing.deviceName,
+            details = "Device status set to ${if (isActive) "ACTIVE" else "PAUSED"} in branch ${branch.name}."
+        )
+    }
 
-    suspend fun deleteShopDevice(deviceRecordId: String, actor: User? = null) = withContext(Dispatchers.IO) {
+    suspend fun deleteShopDevice(
+        deviceRecordId: String,
+        actor: User? = null,
+        actorDeviceId: String = ""
+    ) = withContext(Dispatchers.IO) {
         requirePermission(actor, "DELETE_SHOP_DEVICE", deviceRecordId) {
-            it.role == UserRole.OWNER || it.canManageShopSettings
+            it.role == UserRole.OWNER || it.role == UserRole.MANAGER
         }
         val existing = shopDeviceDao.getDeviceById(deviceRecordId) ?: return@withContext
         if (existing.isOwnerPrimary) return@withContext
-        shopDeviceDao.deleteById(deviceRecordId)
+        val principal = actor ?: userDao.getAllUsersDirect().firstOrNull { it.role == UserRole.OWNER }
+            ?: throw SecurityException("A signed-in shop user is required.")
+        val branch = branchDao.getBranchById(existing.branchId)
+            ?: throw IllegalStateException("The device's assigned branch no longer exists.")
+        if (principal.role != UserRole.OWNER) {
+            require(principal.role == UserRole.MANAGER &&
+                (principal.assignedBranchId == branch.id || branch.managerUserId == principal.id)) {
+                "A branch manager can only remove terminals in the branch they manage."
+            }
+        }
+        require(SupabaseAdminClient.isConfigured()) {
+            "Connect to the internet before removing a registered cloud device."
+        }
+        require(actorDeviceId.isNotBlank()) { "This terminal has no registered device identity." }
+        require(SupabaseAdminClient.revokeShopDeviceInvites(
+            existing.shopSyncKey, deviceRecordId, actorDeviceId, principal.id
+        )) { "Supabase could not revoke the device invitation. The device was not removed." }
+        require(SupabaseAdminClient.deleteShopDeviceInCloud(existing.shopSyncKey, deviceRecordId)) {
+            "Supabase did not confirm device removal. The local device was not removed."
+        }
+
         val profile = getShopProfileDirect()
         val users = userDao.getAllUsersDirect()
         val ownerUser = users.firstOrNull { it.role == UserRole.OWNER }
         val primaryDevice = shopDeviceDao.getAllDevicesList().firstOrNull { it.isOwnerPrimary }
-        val devicesCount = shopDeviceDao.getActiveDevicesCount().coerceAtLeast(1)
+        val devicesCount = (shopDeviceDao.getActiveDevicesCount() - if (existing.isActive) 1 else 0).coerceAtLeast(1)
         val branchesCount = branchDao.getBranchCount().coerceAtLeast(1)
         val workersCount = users.count { it.isActive }.coerceAtLeast(1)
-        val newPricing = OfflineSubscriptionManager.calculateSubscriptionPrice(branchesCount, workersCount, 1, devicesCount)
+        val newPricing = OfflineSubscriptionManager.calculateSubscriptionPrice(
+            branchesCount, workersCount, 1, devicesCount
+        )
         val updatedProf = profile.copy(monthlyFeeRwf = newPricing.monthlySubtotal, updatedAt = System.currentTimeMillis())
+        shopDeviceDao.deleteById(deviceRecordId)
         shopProfileDao.insertOrUpdateProfile(updatedProf)
-        if (SupabaseAdminClient.isConfigured()) {
-            SupabaseAdminClient.deleteShopDeviceInCloud(existing.shopSyncKey, deviceRecordId)
-            SupabaseAdminClient.upsertShopAccount(
-                shopProfile = updatedProf,
-                ownerUser = ownerUser,
-                branchCount = branchesCount,
-                workerCount = workersCount,
-                deviceCount = devicesCount,
-                shopSyncKeyOverride = existing.shopSyncKey,
-                shopOwnerUsernameOverride = primaryDevice?.assignedUsername
-            )
-        }
+        require(SupabaseAdminClient.upsertShopAccount(
+            shopProfile = updatedProf,
+            ownerUser = ownerUser,
+            branchCount = branchesCount,
+            workerCount = workersCount,
+            deviceCount = devicesCount,
+            shopSyncKeyOverride = existing.shopSyncKey,
+            shopOwnerUsernameOverride = primaryDevice?.assignedUsername
+        )) { "The device was removed, but the shop device count could not be synchronized." }
+        recordLocalAudit(
+            actorName = principal.name,
+            actorRole = principal.role.name,
+            action = "DELETE_SHOP_DEVICE",
+            targetId = existing.deviceName,
+            details = "Removed terminal from branch ${branch.name}."
+        )
     }
 
     /**
