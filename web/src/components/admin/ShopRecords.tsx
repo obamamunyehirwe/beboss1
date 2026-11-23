@@ -190,7 +190,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
 
         <TabsContent value="purchases" className="space-y-3">
           <Toolbar onExport={() => downloadCsv(`${slug}-purchases.csv`, purchases.map(({ id: _id, date, ...p }) => ({ date: new Date(date).toISOString(), ...p })))}>
-            <p className="text-xs text-muted-foreground">Supplier deliveries recorded on the phone</p>
+            <p className="text-xs text-muted-foreground">{a("Supplier deliveries recorded on the phone")}</p>
           </Toolbar>
           <TableShell>
             <table className="w-full min-w-[600px]">
