@@ -59,7 +59,6 @@ function statusVariant(s: string) {
 }
 
 function MyShopPage() {
-  const a = useAdminText();
   const { t } = useI18n();
   const search = Route.useSearch();
   const [tab, setTab] = useState(search.pay ? "pay" : "check");
