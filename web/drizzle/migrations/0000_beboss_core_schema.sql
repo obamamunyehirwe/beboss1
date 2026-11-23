@@ -104,6 +104,7 @@ create table public.app_config (
   per_device_fee_rwf integer not null default 2000,
   apk_download_url text not null default '',
   apk_version text not null default '2.3.0',
+  min_app_version text not null default '2.3.0',
   support_email text not null default '',
   updated_at bigint not null default (extract(epoch from now()) * 1000)::bigint
 );
