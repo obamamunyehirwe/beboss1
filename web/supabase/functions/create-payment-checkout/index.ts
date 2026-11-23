@@ -85,6 +85,20 @@ Deno.serve(async (request: Request) => {
       return jsonResponse(409, { message: "The submitted shop name does not match the registered BeBoss shop." });
     }
 
+    const throttleResponse = await restRequest("rpc/take_payment_gateway_checkout_slot", {
+      method: "POST",
+      body: JSON.stringify({
+        p_shop_id: shop.id,
+        p_provider: gateway.toUpperCase(),
+        p_now_ms: Date.now(),
+        p_window_ms: 600_000,
+        p_max_attempts: 5,
+      }),
+    });
+    if (!throttleResponse.ok) throw new Error("Checkout request throttling is unavailable. Try again later.");
+    const checkoutSlot = await throttleResponse.json();
+    if (checkoutSlot !== true) return jsonResponse(429, { message: "Too many checkout attempts for this shop. Wait ten minutes before trying again." });
+
     const amountRwf = expectedSubscriptionAmount(branches, workers, months, devices);
     if (!Number.isSafeInteger(amountRwf) || amountRwf < 1) throw new Error("The calculated subscription price is invalid.");
 
