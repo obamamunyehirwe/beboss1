@@ -1279,6 +1279,20 @@ export type Database = {
         }
         Returns: Json
       }
+      issue_shop_device_auth_invite: {
+        Args: {
+          p_code_hash: string
+          p_device_record_id: string
+          p_expected_device_id: string
+          p_expires_at: number
+          p_owner_auth_user_id: string
+          p_shop_id: string
+        }
+        Returns: Json
+      }
+      current_shop_device_id: { Args: never; Returns: string }
+      current_shop_user_id: { Args: never; Returns: string }
+      current_shop_role: { Args: never; Returns: string }
       revoke_shop_device_invites: {
         Args: {
           p_actor_device_id: string
