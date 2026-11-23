@@ -1,7 +1,5 @@
 import java.util.Properties
 
-import java.util.Properties
-
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -12,14 +10,14 @@ plugins {
 
 android {
   namespace = "com.beboss.shopmgmt"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+  compileSdk = 36
 
   defaultConfig {
     applicationId = "com.beboss.shopmgmt"
     minSdk = 24
     targetSdk = 36
-    versionCode = 4
-    versionName = "2.2.0"
+    versionCode = 5
+    versionName = "2.3.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -42,19 +40,24 @@ android {
     }
   }
 
-  val envProps = Properties().apply {
+  val defaultEnvProps = Properties().apply {
     val exampleFile = rootProject.file(".env.example")
     if (exampleFile.exists()) {
       exampleFile.inputStream().use { load(it) }
     }
+  }
+  val envProps = Properties().apply {
+    putAll(defaultEnvProps)
     val envFile = rootProject.file(".env")
     if (envFile.exists()) {
       envFile.inputStream().use { load(it) }
     }
   }
   fun envConfigString(key: String): String {
+    // Empty local .env entries must not erase safe project defaults in .env.example.
     val raw = (
       envProps.getProperty(key)?.takeIf { it.isNotBlank() }
+        ?: defaultEnvProps.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: (project.findProperty(key) as? String)?.takeIf { it.isNotBlank() }
         ?: System.getenv(key)?.takeIf { it.isNotBlank() }
         ?: ""
