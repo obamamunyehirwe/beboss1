@@ -1233,7 +1233,7 @@ class BeBossRepository(private val database: AppDatabase) {
                 // The cloud account must have changed at or after this local shop's
                 // trial baseline. A newly registered shop reusing an old owner key must
                 // not inherit an older shop's subscription expiry or admin-unlock marker.
-                val cloudUpdateBelongsToThisShop = remoteShop.updatedAt >= effectiveProfile.trialStartedAt
+                val cloudUpdateBelongsToThisShop = remoteShop.updatedAt > effectiveProfile.trialStartedAt
                 val isDirectUnlockUpdate = cloudUpdateBelongsToThisShop &&
                     remoteShop.autoUnlockedAt > effectiveProfile.lastAppliedCloudUnlockAt &&
                     remoteShop.autoUnlockedAt >= effectiveProfile.trialStartedAt &&
