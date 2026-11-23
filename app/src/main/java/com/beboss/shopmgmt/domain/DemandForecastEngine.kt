@@ -116,9 +116,9 @@ object DemandForecastEngine {
         val forecastDaily = (weightedDailyAverage * 0.70 + recent14 * 0.30) * trendFactor
 
         val dailyMean = totalUnits / HISTORY_DAYS
-        val variance = dailyDemand.sumOf { quantity ->
+        val variance = dailyDemand.fold(0.0) { accumulated, quantity ->
             val delta = quantity - dailyMean
-            delta * delta
+            accumulated + (delta * delta)
         } / HISTORY_DAYS
         val dailyStdDev = sqrt(variance)
 
