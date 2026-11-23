@@ -1,5 +1,5 @@
-export function formatRwf(n: number | null | undefined): string {
-  return `${Math.round(Number(n) || 0).toLocaleString("en-US")} FRw`;
+export function formatRwf(n: number | null | undefined, locale = "en-GB"): string {
+  return `${Math.round(Number(n) || 0).toLocaleString(locale)} FRw`;
 }
 
 export function formatDateTime(ms: number | string | null | undefined): string {
