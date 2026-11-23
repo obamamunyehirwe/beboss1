@@ -96,7 +96,16 @@ export const requestMyShopOwnerOtp = createServerFn({ method: "POST" })
           phone_confirm: false,
           user_metadata: { account_type: "shop_owner" },
         });
-        if (error || !created.user) throw error ?? new Error("Could not initialize owner authentication.");
+        if (error || !created.user) {
+          // Concurrent OTP requests may race to create the same phone account.
+          // Re-read by exact phone and continue only when the winner now exists.
+          const { data: concurrentUserId, error: retryLookupError } = await supabaseAdmin.rpc("find_auth_user_by_phone", {
+            p_phone: phone,
+          });
+          if (retryLookupError || !concurrentUserId) {
+            throw error ?? new Error("Could not initialize owner authentication.");
+          }
+        }
       }
 
       const { error: otpError } = await createPublicClient().auth.signInWithOtp({
