@@ -454,7 +454,8 @@ private fun BeBossMainContent(
             onToggleLanguage = { viewModel.toggleLanguage() },
             onSelectLanguage = { lang -> viewModel.setLanguage(lang) },
             onToggleTheme = { viewModel.toggleDarkMode() },
-            onOpenRegister = { viewModel.showRegistrationScreen() }
+            onOpenRegister = { viewModel.showRegistrationScreen() },
+            onSecureCloudAccess = { code -> viewModel.secureCurrentDevice(code) }
         )
     } else {
         Scaffold(
