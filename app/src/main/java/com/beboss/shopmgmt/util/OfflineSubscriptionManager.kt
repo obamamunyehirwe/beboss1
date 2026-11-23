@@ -12,11 +12,11 @@ import java.io.File
 
 data class AdminPaymentConfig(
     val adminWhatsAppNumber: String = "",
-    val mtnMoMoCode: String = "054321",
-    val mtnMoMoPhone: String = "0788765432",
-    val mtnRecipientName: String = "BeBoss Pay",
-    val airtelMoneyPhone: String = "0738765432",
-    val airtelRecipientName: String = "BeBoss Pay",
+    val mtnMoMoCode: String = "",
+    val mtnMoMoPhone: String = "",
+    val mtnRecipientName: String = "",
+    val airtelMoneyPhone: String = "",
+    val airtelRecipientName: String = "",
     val perDeviceFeeRwf: Int = 2000,
     val apkDownloadUrl: String = "",
     val apkVersion: String = "2.1.0",
@@ -96,11 +96,11 @@ object OfflineSubscriptionManager {
         val envWa = normalizeBuildWhatsApp()
         cachedConfig = AdminPaymentConfig(
             adminWhatsAppNumber = prefs.getString(KEY_WHATSAPP, null)?.ifBlank { envWa } ?: envWa,
-            mtnMoMoCode = prefs.getString(KEY_MTN_CODE, "054321").orEmpty().ifBlank { "054321" },
-            mtnMoMoPhone = prefs.getString(KEY_MTN_PHONE, "0788765432").orEmpty().ifBlank { "0788765432" },
-            mtnRecipientName = prefs.getString(KEY_MTN_NAME, "BeBoss Pay").orEmpty().ifBlank { "BeBoss Pay" },
-            airtelMoneyPhone = prefs.getString(KEY_AIRTEL_PHONE, "0738765432").orEmpty().ifBlank { "0738765432" },
-            airtelRecipientName = prefs.getString(KEY_AIRTEL_NAME, "BeBoss Pay").orEmpty().ifBlank { "BeBoss Pay" },
+            mtnMoMoCode = prefs.getString(KEY_MTN_CODE, "").orEmpty(),
+            mtnMoMoPhone = prefs.getString(KEY_MTN_PHONE, "").orEmpty(),
+            mtnRecipientName = prefs.getString(KEY_MTN_NAME, "").orEmpty(),
+            airtelMoneyPhone = prefs.getString(KEY_AIRTEL_PHONE, "").orEmpty(),
+            airtelRecipientName = prefs.getString(KEY_AIRTEL_NAME, "").orEmpty(),
             perDeviceFeeRwf = PER_EXTRA_DEVICE_FEE_RWF,
             apkDownloadUrl = prefs.getString(KEY_APK_URL, "").orEmpty(),
             apkVersion = prefs.getString(KEY_APK_VERSION, "2.1.0").orEmpty().ifBlank { "2.1.0" },
@@ -113,10 +113,10 @@ object OfflineSubscriptionManager {
         val effective = config.copy(
             adminWhatsAppNumber = config.adminWhatsAppNumber.trim().ifBlank { envWa },
             mtnMoMoCode = config.mtnMoMoCode.trim(),
-            mtnMoMoPhone = config.mtnMoMoPhone.trim().ifBlank { "0788765432" },
-            mtnRecipientName = config.mtnRecipientName.trim().ifBlank { "BeBoss Pay" },
-            airtelMoneyPhone = config.airtelMoneyPhone.trim().ifBlank { "0738765432" },
-            airtelRecipientName = config.airtelRecipientName.trim().ifBlank { "BeBoss Pay" },
+            mtnMoMoPhone = config.mtnMoMoPhone.trim(),
+            mtnRecipientName = config.mtnRecipientName.trim(),
+            airtelMoneyPhone = config.airtelMoneyPhone.trim(),
+            airtelRecipientName = config.airtelRecipientName.trim(),
             perDeviceFeeRwf = PER_EXTRA_DEVICE_FEE_RWF,
             apkDownloadUrl = config.apkDownloadUrl.trim(),
             apkVersion = config.apkVersion.trim().ifBlank { "2.1.0" }
@@ -172,17 +172,17 @@ object OfflineSubscriptionManager {
 
     fun buildMtnUssdCode(amount: Int, config: AdminPaymentConfig = getCurrentPaymentConfig()): String {
         val code = config.mtnMoMoCode.trim()
-        val phone = config.mtnMoMoPhone.trim().ifBlank { "0788765432" }
-        return if (code.isNotBlank() && code != "0") {
-            "*182*8*1*$code*$amount#"
-        } else {
-            "*182*1*1*$phone*$amount#"
+        val phone = config.mtnMoMoPhone.trim()
+        return when {
+            code.isNotBlank() && code != "0" -> "*182*8*1*$code*$amount#"
+            phone.isNotBlank() -> "*182*1*1*$phone*$amount#"
+            else -> ""
         }
     }
 
     fun buildAirtelUssdCode(amount: Int, config: AdminPaymentConfig = getCurrentPaymentConfig()): String {
-        val phone = config.airtelMoneyPhone.trim().ifBlank { "0738765432" }
-        return "*500*1*1*$phone*$amount#"
+        val phone = config.airtelMoneyPhone.trim()
+        return if (phone.isNotBlank()) "*500*1*1*$phone*$amount#" else ""
     }
 
     /**
