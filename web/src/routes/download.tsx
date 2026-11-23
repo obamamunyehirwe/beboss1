@@ -142,7 +142,7 @@ function DownloadPage() {
                 <Meta label={t("version")} value={`v${release.version_name}`} />
                 <Meta label={t("size")} value={formatBytes(Number(release.size_bytes))} />
                 <Meta label={t("released")} value={formatDate(release.published_at, locale)} />
-                <Meta label=a("Minimum Android") value={release.min_android} />
+                <Meta label={a("Minimum Android")} value={release.min_android} />
               </dl>
 
               <div className="mt-6 rounded-2xl border border-border bg-background/70 p-4 sm:p-5">
