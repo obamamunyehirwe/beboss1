@@ -108,7 +108,21 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      // Robolectric downloads large Android framework jars at test runtime.
+      // Maven Central may rate-limit parallel CI downloads; use Google's
+      // mirror of Maven Central to avoid flaky HTTP 429 failures.
+      all {
+        it.systemProperty(
+          "robolectric.dependency.repo.url",
+          "https://maven-central.storage-download.googleapis.com/maven2/"
+        )
+        it.systemProperty("robolectric.dependency.repo.id", "google-maven-central")
+      }
+    }
+  }
   sourceSets {
     getByName("test").assets.directories.add("$projectDir/schemas")
   }
