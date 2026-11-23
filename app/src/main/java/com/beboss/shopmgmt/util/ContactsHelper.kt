@@ -14,6 +14,12 @@ data class PickedContactInfo(
     val address: String = ""
 )
 
+private data class ContactPhoneRow(
+    val contactId: String,
+    val name: String,
+    val phone: String
+)
+
 object ContactsHelper {
 
     fun hasContactsPermission(context: Context): Boolean {
@@ -23,110 +29,194 @@ object ContactsHelper {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
+    /** Digits-only comparison key; the displayed phone number is never rewritten. */
+    fun normalizePhoneNumber(phone: String): String = phone.filter { it.isDigit() }
+
     /**
-     * Reads all contacts stored in the phone address book to allow bulk customer import.
+     * Reads contact data for the user's review only. This function never selects contacts
+     * or writes customer records; importing still requires an explicit user selection.
      */
     fun fetchAllPhoneContacts(context: Context): List<PickedContactInfo> {
-        val contactsList = mutableListOf<PickedContactInfo>()
-        if (!hasContactsPermission(context)) return contactsList
+        if (!hasContactsPermission(context)) return emptyList()
 
-        val contentResolver = context.contentResolver
-        val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        val rows = mutableListOf<ContactPhoneRow>()
+        val seenPhones = mutableSetOf<String>()
+        val resolver = context.contentResolver
         val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
             ContactsContract.CommonDataKinds.Phone.NUMBER
         )
 
         try {
-            contentResolver.query(uri, projection, null, null, "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC")?.use { cursor ->
+            resolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection,
+                null,
+                null,
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
+            )?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
                 val nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-
-                val seenPhones = mutableSetOf<String>()
+                val phoneIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
 
                 while (cursor.moveToNext()) {
-                    val name = if (nameIndex != -1) cursor.getString(nameIndex) ?: "" else ""
-                    val number = if (numberIndex != -1) cursor.getString(numberIndex) ?: "" else ""
-                    val cleanPhone = number.replace(" ", "").replace("-", "")
-
-                    if (name.isNotBlank() && cleanPhone.isNotBlank() && !seenPhones.contains(cleanPhone)) {
-                        seenPhones.add(cleanPhone)
-                        contactsList.add(PickedContactInfo(name = name.trim(), phone = number.trim()))
+                    if (idIndex < 0 || nameIndex < 0 || phoneIndex < 0) continue
+                    val id = cursor.getString(idIndex).orEmpty()
+                    val name = cursor.getString(nameIndex).orEmpty().trim()
+                    val phone = cursor.getString(phoneIndex).orEmpty().trim()
+                    val normalized = normalizePhoneNumber(phone)
+                    if (id.isNotBlank() && name.isNotBlank() && normalized.isNotBlank() &&
+                        seenPhones.add(normalized)
+                    ) {
+                        rows.add(ContactPhoneRow(id, name, phone))
                     }
                 }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (_: SecurityException) {
+            return emptyList()
+        } catch (_: Exception) {
+            return emptyList()
         }
-        return contactsList
+
+        val emails = valuesByContactId(
+            context,
+            ContactsContract.CommonDataKinds.Email.CONTENT_URI,
+            ContactsContract.CommonDataKinds.Email.CONTACT_ID,
+            ContactsContract.CommonDataKinds.Email.ADDRESS
+        )
+        val addresses = valuesByContactId(
+            context,
+            ContactsContract.CommonDataKinds.StructuredPostal.CONTENT_URI,
+            ContactsContract.CommonDataKinds.StructuredPostal.CONTACT_ID,
+            ContactsContract.CommonDataKinds.StructuredPostal.FORMATTED_ADDRESS
+        )
+
+        return rows.map { row ->
+            PickedContactInfo(
+                name = row.name,
+                phone = row.phone,
+                email = emails[row.contactId].orEmpty(),
+                address = addresses[row.contactId].orEmpty()
+            )
+        }
     }
 
-    /**
-     * Extracts details from single picked contact URI.
-     */
+    private fun valuesByContactId(
+        context: Context,
+        uri: Uri,
+        idColumn: String,
+        valueColumn: String
+    ): Map<String, String> {
+        val values = linkedMapOf<String, String>()
+        try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(idColumn, valueColumn),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(idColumn)
+                val valueIndex = cursor.getColumnIndex(valueColumn)
+                if (idIndex < 0 || valueIndex < 0) return values
+                while (cursor.moveToNext()) {
+                    val id = cursor.getString(idIndex).orEmpty()
+                    val value = cursor.getString(valueIndex).orEmpty().trim()
+                    if (id.isNotBlank() && value.isNotBlank() && !values.containsKey(id)) {
+                        values[id] = value
+                    }
+                }
+            }
+        } catch (_: SecurityException) {
+            return emptyMap()
+        } catch (_: Exception) {
+            return emptyMap()
+        }
+        return values
+    }
+
+    private fun firstValueForContact(
+        context: Context,
+        uri: Uri,
+        idColumn: String,
+        valueColumn: String,
+        contactId: String
+    ): String {
+        return try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(valueColumn),
+                idColumn + " = ?",
+                arrayOf(contactId),
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0).orEmpty().trim() else ""
+            }.orEmpty()
+        } catch (_: SecurityException) {
+            ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    /** Extracts the selected contact's name, phone, email and postal address. */
     fun extractContactDetails(context: Context, contactUri: Uri): PickedContactInfo? {
         var name = ""
         var phone = ""
-        var email = ""
-
-        val contentResolver = context.contentResolver
+        var contactId = ""
+        val resolver = context.contentResolver
 
         try {
-            contentResolver.query(contactUri, null, null, null, null)?.use { cursor ->
+            resolver.query(contactUri, null, null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val nameIndex = cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)
-                    if (nameIndex != -1) {
-                        name = cursor.getString(nameIndex) ?: ""
-                    }
+                    if (nameIndex >= 0) name = cursor.getString(nameIndex).orEmpty()
                     val idIndex = cursor.getColumnIndex(ContactsContract.Contacts._ID)
-                    val contactId = if (idIndex != -1) cursor.getString(idIndex) else null
-
+                    if (idIndex >= 0) contactId = cursor.getString(idIndex).orEmpty()
                     val hasPhoneIndex = cursor.getColumnIndex(ContactsContract.Contacts.HAS_PHONE_NUMBER)
-                    val hasPhone = if (hasPhoneIndex != -1) cursor.getInt(hasPhoneIndex) else 0
+                    val hasPhone = if (hasPhoneIndex >= 0) cursor.getInt(hasPhoneIndex) else 0
 
-                    if (contactId != null && hasPhone > 0) {
-                        contentResolver.query(
+                    if (contactId.isNotBlank() && hasPhone > 0) {
+                        resolver.query(
                             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                            null,
-                            "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
+                            arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                            ContactsContract.CommonDataKinds.Phone.CONTACT_ID + " = ?",
                             arrayOf(contactId),
-                            null
+                            ContactsContract.CommonDataKinds.Phone.IS_PRIMARY + " DESC"
                         )?.use { phoneCursor ->
-                            if (phoneCursor.moveToFirst()) {
-                                val numIdx = phoneCursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                                if (numIdx != -1) {
-                                    phone = phoneCursor.getString(numIdx) ?: ""
-                                }
-                            }
-                        }
-                    }
-
-                    if (contactId != null) {
-                        contentResolver.query(
-                            ContactsContract.CommonDataKinds.Email.CONTENT_URI,
-                            null,
-                            "${ContactsContract.CommonDataKinds.Email.CONTACT_ID} = ?",
-                            arrayOf(contactId),
-                            null
-                        )?.use { emailCursor ->
-                            if (emailCursor.moveToFirst()) {
-                                val emailIdx = emailCursor.getColumnIndex(ContactsContract.CommonDataKinds.Email.ADDRESS)
-                                if (emailIdx != -1) {
-                                    email = emailCursor.getString(emailIdx) ?: ""
-                                }
-                            }
+                            if (phoneCursor.moveToFirst()) phone = phoneCursor.getString(0).orEmpty()
                         }
                     }
                 }
             }
-        } catch (e: Exception) {
-            name = contactUri.lastPathSegment ?: ""
+        } catch (_: SecurityException) {
+            return null
+        } catch (_: Exception) {
+            return null
         }
 
-        return if (name.isNotBlank() || phone.isNotBlank()) {
-            PickedContactInfo(name = name.ifBlank { "Contact" }, phone = phone, email = email)
-        } else {
-            null
-        }
+        if (name.isBlank()) name = contactUri.lastPathSegment.orEmpty()
+        if (name.isBlank() && phone.isBlank()) return null
+        val email = if (contactId.isBlank()) "" else firstValueForContact(
+            context,
+            ContactsContract.CommonDataKinds.Email.CONTENT_URI,
+            ContactsContract.CommonDataKinds.Email.CONTACT_ID,
+            ContactsContract.CommonDataKinds.Email.ADDRESS,
+            contactId
+        )
+        val address = if (contactId.isBlank()) "" else firstValueForContact(
+            context,
+            ContactsContract.CommonDataKinds.StructuredPostal.CONTENT_URI,
+            ContactsContract.CommonDataKinds.StructuredPostal.CONTACT_ID,
+            ContactsContract.CommonDataKinds.StructuredPostal.FORMATTED_ADDRESS,
+            contactId
+        )
+        return PickedContactInfo(
+            name = name.ifBlank { "Contact" },
+            phone = phone.trim(),
+            email = email,
+            address = address
+        )
     }
 }

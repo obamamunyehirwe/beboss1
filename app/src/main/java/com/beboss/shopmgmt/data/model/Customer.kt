@@ -25,7 +25,7 @@ data class Customer(
     val phone: String = "",
     val email: String = "",
     val address: String = "",
-    val city: String = "Kigali",
+    val city: String = "",
     val taxIdOrNin: String = "", // National ID or Tax TIN
     val category: String = CustomerCategory.REGULAR.displayName,
     val creditLimit: Double = 500000.0,
