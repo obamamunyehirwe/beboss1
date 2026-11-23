@@ -236,10 +236,10 @@ describe.skipIf(!enabled)("Supabase security concurrency integration", () => {
         expect(rows).toHaveLength(32);
         expect(rows.filter((row) => row.allowed)).toHaveLength(7);
         expect(rows.filter((row) => !row.allowed)).toHaveLength(25);
-        expect(Math.max(...rows.map((row) => Number(row.request_count)))).toBe(32);
+        expect(Math.max(...rows.map((row) => Number(row.request_count)))).toBe(7);
       } finally {
         await database.unsafe(
-          "delete from beboss_private.rate_limit_buckets where scope = $1 and key_hash = $2",
+          "delete from beboss_private.rate_limit_events where scope = $1 and key_hash = $2",
           [scope, keyHash],
         );
       }
