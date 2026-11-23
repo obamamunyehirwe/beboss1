@@ -14,13 +14,14 @@ import { liveConfigured } from '@/lib/live-config';
 import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
-import { addMyShopDevice, confirmMyShopStockTransfer, createGatewayCheckout, deleteMyShopBranch, lookupMyShop, requestMyShopStockTransferCancellation, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
+import { addMyShopDevice, claimMyShopOwner, confirmMyShopStockTransfer, createGatewayCheckout, deleteMyShopBranch, lookupMyShop, requestMyShopOwnerOtp, requestMyShopStockTransferCancellation, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
 import { AnnouncementCard } from "@/components/site/AnnouncementBanner";
 import { calculateSubscriptionFee, effectiveShopStatus } from "@/lib/pricing";
 import { daysLeft, formatDateTime, formatRwf, relativeTime } from "@/lib/format";
 import { deviceHealth } from "@/lib/sync-health";
 import { ReceiptVerifier } from "@/components/site/ReceiptVerifier";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 
 const searchSchema = z.object({
   pay: z.coerce.number().optional(),
@@ -46,6 +47,13 @@ export const Route = createFileRoute("/my-shop")({
 });
 
 type Lookup = Awaited<ReturnType<typeof lookupMyShop>>;
+
+function ownerPhoneE164(value: string): string {
+  const digits = value.replace(/\\D/g, "");
+  const local = digits.length === 9 ? digits : digits.startsWith("250") && digits.length === 12 ? digits.slice(3) : digits.startsWith("0") && digits.length === 10 ? digits.slice(1) : "";
+  if (!/^7\\d{8}$/.test(local)) throw new Error("Enter the registered Rwanda mobile number.");
+  return `+250${local}`;
+}
 
 function statusVariant(s: string) {
   if (s === "ACTIVE" || s === "APPROVED" || s === "ISSUED") return "success" as const;
@@ -88,8 +96,12 @@ function LookupPanel() {
   const st = (s: string) => p.myShop.status[s] ?? s.replaceAll("_", " ");
   const lookup = useServerFn(lookupMyShop);
   const registerDevice = useServerFn(addMyShopDevice);
+  const sendOwnerOtp = useServerFn(requestMyShopOwnerOtp);
+  const enrollOwner = useServerFn(claimMyShopOwner);
   const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Lookup | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -103,10 +115,37 @@ function LookupPanel() {
     e.preventDefault();
     setLoading(true);
     try {
-      setResult(await lookup({ data: { username, phone } }));
+      if (otpSent) {
+        const normalizedPhone = ownerPhoneE164(phone);
+        const { error } = await supabase.auth.verifyOtp({
+          phone: normalizedPhone,
+          token: otp.trim(),
+          type: "sms",
+        });
+        if (error) throw new Error("The one-time code is invalid or expired. Request a new code and try again.");
+        await enrollOwner({ data: { username, phone } });
+        setResult(await lookup({ data: { username, phone } }));
+        toast.success("Owner phone verified. My Shop is now securely authenticated.");
+      } else {
+        const { data: current } = await supabase.auth.getSession();
+        const authenticatedUser = current.session?.user;
+        if (
+          authenticatedUser?.phone_confirmed_at &&
+          authenticatedUser.phone &&
+          authenticatedUser.phone.replace(/\\D/g, "").slice(-9) === phone.replace(/\\D/g, "").slice(-9)
+        ) {
+          await enrollOwner({ data: { username, phone } });
+          setResult(await lookup({ data: { username, phone } }));
+          toast.success("Owner session verified.");
+        } else {
+          await sendOwnerOtp({ data: { username, phone } });
+          setOtpSent(true);
+          toast.info("If the details match a registered shop, an SMS verification code has been sent to its owner phone.");
+        }
+      }
     } catch (err) {
       console.error(err);
-      toast.error(p.myShop.lookupFailed);
+      toast.error(err instanceof Error ? err.message : p.myShop.lookupFailed);
     } finally {
       setLoading(false);
     }
@@ -120,15 +159,21 @@ function LookupPanel() {
       <form onSubmit={submit} className="grid gap-4 rounded-3xl border border-border bg-card p-6 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <div className="space-y-2">
           <Label htmlFor="u">{t("username")}</Label>
-          <Input id="u" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="mama_shop" required minLength={2} maxLength={80} autoComplete="username" />
+          <Input id="u" value={username} onChange={(e) => { setUsername(e.target.value); setOtpSent(false); setOtp(""); }} placeholder="mama_shop" required minLength={2} maxLength={80} autoComplete="username" />
         </div>
         <div className="space-y-2">
           <Label htmlFor="p">{t("phone")}</Label>
-          <Input id="p" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0788 123 456" required inputMode="tel" maxLength={30} />
+          <Input id="p" value={phone} onChange={(e) => { setPhone(e.target.value); setOtpSent(false); setOtp(""); }} placeholder="0788 123 456" required inputMode="tel" maxLength={30} />
         </div>
+        {otpSent ? (
+          <div className="space-y-2">
+            <Label htmlFor="owner-otp">SMS verification code</Label>
+            <Input id="owner-otp" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\\D/g, "").slice(0, 8))} required minLength={4} maxLength={8} inputMode="numeric" autoComplete="one-time-code" placeholder="Enter code" />
+          </div>
+        ) : null}
         <Button type="submit" variant="hero" disabled={loading}>
-          {loading ? <Loader2 className="animate-spin" /> : <Search />}
-          {t("lookup")}
+          {loading ? <Loader2 className="animate-spin" /> : otpSent ? <KeyRound /> : <Search />}
+          {otpSent ? "Verify & open My Shop" : "Send owner verification code"}
         </Button>
       </form>
 
