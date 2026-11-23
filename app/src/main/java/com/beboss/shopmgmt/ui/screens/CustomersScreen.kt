@@ -521,32 +521,70 @@ fun CustomersScreen(
         BulkContactsImportDialog(
             language = language,
             onImport = { selectedContacts ->
+                val knownPhones = customers
+                    .map { ContactsHelper.normalizePhoneNumber(it.phone) }
+                    .filter { it.isNotBlank() }
+                    .toMutableSet()
+                var importedCount = 0
+                var skippedCount = 0
+
                 selectedContacts.forEach { contact ->
-                    val newCustomer = Customer(
+                    val normalizedPhone = ContactsHelper.normalizePhoneNumber(contact.phone)
+                    if (contact.name.isBlank() || normalizedPhone.isBlank() ||
+                        !knownPhones.add(normalizedPhone)
+                    ) {
+                        skippedCount++
+                    } else {
+                        onSaveCustomer(
+                            Customer(
+                                id = UUID.randomUUID().toString(),
+                                name = contact.name.trim(),
+                                phone = contact.phone.trim(),
+                                email = contact.email.trim(),
+                                address = contact.address.trim(),
+                                category = CustomerCategory.REGULAR.displayName,
+                                creditLimit = 500000.0,
+                                city = ""
+                            )
+                        )
+                        importedCount++
+                    }
+                }
+                showBulkContactsDialog = false
+                val message = if (skippedCount > 0) {
+                    "Added " + importedCount + " customer(s). Skipped " + skippedCount +
+                        " duplicate or incomplete contact(s)."
+                } else {
+                    Localization.format("cust_imported_toast_fmt", language, importedCount)
+                }
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            },
+            onPickAndEdit = { contact ->
+                showBulkContactsDialog = false
+                val normalizedPhone = ContactsHelper.normalizePhoneNumber(contact.phone)
+                val existingCustomer = customers.firstOrNull {
+                    normalizedPhone.isNotBlank() &&
+                        ContactsHelper.normalizePhoneNumber(it.phone) == normalizedPhone
+                }
+                if (existingCustomer != null) {
+                    customerToEdit = existingCustomer
+                    Toast.makeText(
+                        context,
+                        "This phone number is already saved. Opened the existing customer.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    customerToEdit = Customer(
                         id = UUID.randomUUID().toString(),
                         name = contact.name,
                         phone = contact.phone,
                         email = contact.email,
+                        address = contact.address,
                         category = CustomerCategory.REGULAR.displayName,
                         creditLimit = 500000.0,
-                        city = "Kigali"
+                        city = ""
                     )
-                    onSaveCustomer(newCustomer)
                 }
-                showBulkContactsDialog = false
-                Toast.makeText(context, Localization.format("cust_imported_toast_fmt", language, selectedContacts.size), Toast.LENGTH_LONG).show()
-            },
-            onPickAndEdit = { contact ->
-                showBulkContactsDialog = false
-                customerToEdit = Customer(
-                    id = UUID.randomUUID().toString(),
-                    name = contact.name,
-                    phone = contact.phone,
-                    email = contact.email,
-                    category = CustomerCategory.REGULAR.displayName,
-                    creditLimit = 500000.0,
-                    city = "Kigali"
-                )
             },
             onDismiss = { showBulkContactsDialog = false }
         )
@@ -945,7 +983,7 @@ fun CustomerFormDialog(
     var phone by remember { mutableStateOf(initialCustomer?.phone ?: "") }
     var email by remember { mutableStateOf(initialCustomer?.email ?: "") }
     var address by remember { mutableStateOf(initialCustomer?.address ?: "") }
-    var city by remember { mutableStateOf(initialCustomer?.city ?: "Kigali") }
+    var city by remember { mutableStateOf(initialCustomer?.city ?: "") }
     var category by remember { mutableStateOf(initialCustomer?.category ?: CustomerCategory.REGULAR.displayName) }
     var creditLimitStr by remember { mutableStateOf(initialCustomer?.creditLimit?.toInt()?.toString() ?: "500000") }
     var notes by remember { mutableStateOf(initialCustomer?.notes ?: "") }
@@ -963,6 +1001,7 @@ fun CustomerFormDialog(
                 name = contact.name
                 if (contact.phone.isNotBlank()) phone = contact.phone
                 if (contact.email.isNotBlank()) email = contact.email
+                if (contact.address.isNotBlank()) address = contact.address
                 Toast.makeText(context, Localization.format("cust_imported_one_toast_fmt", language, contact.name), Toast.LENGTH_SHORT).show()
             }
         }
@@ -1128,7 +1167,7 @@ fun CustomerFormDialog(
                                 phone = phone.trim(),
                                 email = email.trim(),
                                 address = address.trim(),
-                                city = city.trim().ifBlank { "Kigali" },
+                                city = city.trim(),
                                 category = category,
                                 creditLimit = creditLimitStr.toDoubleOrNull() ?: 500000.0,
                                 notes = notes.trim(),

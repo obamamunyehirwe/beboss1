@@ -3,6 +3,8 @@ package com.beboss.shopmgmt.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.Manifest
+import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -54,7 +56,10 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -94,6 +99,7 @@ import com.beboss.shopmgmt.util.DiscoveredBranchHub
 import com.beboss.shopmgmt.util.EndpointPingResult
 import com.beboss.shopmgmt.util.LocalServerStatus
 import com.beboss.shopmgmt.util.PdfReportGenerator
+import com.beboss.shopmgmt.util.PermissionManager
 import com.beboss.shopmgmt.util.ShopDataTransferManager
 import com.beboss.shopmgmt.util.ShopImportSummary
 import com.beboss.shopmgmt.util.SyncAuditLog
@@ -152,8 +158,31 @@ fun ShopOwnerSyncHubDialog(
     var targetMasterHubIp by remember { mutableStateOf("192.168.43.1") }
     val dateFormat = remember { SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()) }
 
+    val nearbyWifiPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            onStartLanDiscovery()
+        } else {
+            Toast.makeText(
+                context,
+                "Nearby Wi-Fi permission is required to discover BeBoss terminals on this network. You can still sync through the cloud.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !PermissionManager.hasNearbyWifiPermission(context)
+        ) {
+            nearbyWifiPermissionLauncher.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+        } else {
+            onStartLanDiscovery()
+        }
+    }
+
     DisposableEffect(Unit) {
-        onStartLanDiscovery()
         onDispose {
             onStopLanDiscovery()
         }
@@ -202,7 +231,7 @@ fun ShopOwnerSyncHubDialog(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "LAN Mesh Auto-Discovery • Signed Tokens • Full Branch Sync",
+                                text = "Same Wi-Fi / hotspot • Admin-paired terminals • Signed & encrypted sync",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

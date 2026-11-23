@@ -14,8 +14,10 @@ describe("BeBoss subscription pricing", () => {
     expect(calculateSubscriptionFee(1, 5, 1).workerFee).toBe(4000);
     expect(calculateSubscriptionFee(1, 7, 1).workerFee).toBe(6000);
   });
-  it("each extra device adds 2,000 FRw, first device included", () => {
+  it("each extra device adds exactly 2,000 FRw even when a stale client rate is supplied", () => {
     expect(calculateSubscriptionFee(1, 1, 1, 3).deviceFee).toBe(4000);
+    expect(calculateSubscriptionFee(1, 1, 1, 2, 500).deviceFee).toBe(2000);
+    expect(calculateSubscriptionFee(1, 1, 1, 2, 9000).deviceFee).toBe(2000);
   });
   it("3 months gets 10% off and 12 months 20% off", () => {
     // matches the server-side trigger result verified against the database (43,200)

@@ -1,7 +1,5 @@
 import java.util.Properties
 
-import java.util.Properties
-
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -12,14 +10,14 @@ plugins {
 
 android {
   namespace = "com.beboss.shopmgmt"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+  compileSdk = 36
 
   defaultConfig {
     applicationId = "com.beboss.shopmgmt"
     minSdk = 24
     targetSdk = 36
-    versionCode = 4
-    versionName = "2.2.0"
+    versionCode = 15
+    versionName = "2.3.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -42,21 +40,27 @@ android {
     }
   }
 
-  val envProps = Properties().apply {
+  val defaultEnvProps = Properties().apply {
     val exampleFile = rootProject.file(".env.example")
     if (exampleFile.exists()) {
       exampleFile.inputStream().use { load(it) }
     }
+  }
+  val envProps = Properties().apply {
+    putAll(defaultEnvProps)
     val envFile = rootProject.file(".env")
     if (envFile.exists()) {
       envFile.inputStream().use { load(it) }
     }
   }
   fun envConfigString(key: String): String {
+    // Explicit developer/CI overrides win; .env.example is only the final fallback.
+    // This prevents a stale example key from masking a rotated project key in CI.
     val raw = (
       envProps.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: (project.findProperty(key) as? String)?.takeIf { it.isNotBlank() }
         ?: System.getenv(key)?.takeIf { it.isNotBlank() }
+        ?: defaultEnvProps.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: ""
       ).trim()
     val unquoted = raw.removeSurrounding("\"")

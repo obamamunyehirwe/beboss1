@@ -500,8 +500,12 @@ fun ReceiptDialog(
                                 attachmentFile = cardFile,
                                 mimeType = "image/png"
                             )
-                        } catch (_: Exception) {
-                            PdfReportGenerator.sendWhatsAppDirect(context, customerPhone, textReceipt)
+                        } catch (error: Exception) {
+                            Toast.makeText(
+                                context,
+                                "Unable to create the branded receipt. Please retry. " + error.message.orEmpty(),
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     },
                     modifier = Modifier
@@ -538,8 +542,12 @@ fun ReceiptDialog(
                                     title = Localization.format("rec_print_job_fmt", language, sale.receiptNumber),
                                     textMessage = "🧾 Official PDF Receipt #${sale.receiptNumber} from ${shopProfile.shopName}"
                                 )
-                            } catch (_: Exception) {
-                                ReceiptGenerator.shareReceipt(context, textReceipt)
+                            } catch (error: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "Unable to create the branded PDF receipt. Please retry. " + error.message.orEmpty(),
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
                         },
                         modifier = Modifier
@@ -555,7 +563,7 @@ fun ReceiptDialog(
 
                     OutlinedButton(
                         onClick = {
-                            printHtmlReceipt(context, ReceiptGenerator.generateHtmlReceipt(sale, items, shopProfile), sale.receiptNumber, language)
+                            printHtmlReceipt(context, ReceiptGenerator.generateHtmlReceipt(context, sale, items, shopProfile), sale.receiptNumber, language)
                         },
                         modifier = Modifier
                             .weight(1f)

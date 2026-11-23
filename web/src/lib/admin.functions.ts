@@ -79,9 +79,8 @@ UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
  * Ensure admin session is valid and refresh if near expiry.
  * Returns true if session is valid, false if expired and could not be refreshed.
  */
-async function perDeviceRate(context: Ctx): Promise<number> {
-  const { data } = await context.supabase.from("app_config").select("per_device_fee_rwf").eq("id", "global").maybeSingle();
-  return Number(data?.per_device_fee_rwf) || 2000;
+async function perDeviceRate(_context: Ctx): Promise<number> {
+  return 2_000;
 }
 
 async function getShop(context: Ctx, shopId: string) {
@@ -177,7 +176,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     if (verificationNote.length < 5) throw new Error("Record what you confirmed in the MTN MoMo or Airtel Money merchant transaction history.");
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
-    const trustedFeeRate = Number(req.fee_per_device_rwf) > 0 ? Math.floor(Number(req.fee_per_device_rwf)) : await perDeviceRate(ctx);
+    const trustedFeeRate = 2000;
     const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, trustedFeeRate);
     if (Number(req.amount_rwf) !== calc.total) {
       throw new Error(`Payment amount mismatch. Submitted ${Number(req.amount_rwf || 0)} FRw; this plan calculates to ${calc.total} FRw. Refresh and verify the payment details before issuing a code.`);
@@ -299,11 +298,155 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
 
 export const directAutoUnlock = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { requestId: string }) => z.object({ requestId: z.string().min(1).max(200) }).parse(d))
-  .handler(async ({ context }) => {
+  .inputValidator((d: { requestId: string; providerVerified: true; verificationNote: string }) =>
+    z.object({
+      requestId: z.string().min(1).max(200),
+      providerVerified: z.literal(true),
+      verificationNote: z.string().trim().min(5).max(500),
+    }).parse(d))
+  .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    await requireAdmin(ctx);
-    throw new Error("Payment claims must be approved with a unique BB3 unlock code. Direct auto-unlock is disabled for payment verification.");
+    const admin = await requireAdmin(ctx);
+    const { data: req, error } = await ctx.supabase
+      .from("payment_requests")
+      .select("id,shop_name,owner_username,owner_phone,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at")
+      .eq("id", data.requestId)
+      .maybeSingle();
+    if (error || !req) throw new Error("Payment request not found.");
+    if (data.providerVerified !== true) {
+      throw new Error("A manual provider-payment verification is required before a shop can be activated.");
+    }
+    const verificationNote = data.verificationNote.trim();
+    if (verificationNote.length < 5) {
+      throw new Error("Record what you confirmed in the MTN MoMo or Airtel Money merchant transaction history.");
+    }
+
+    const { shopId } = await requireRegisteredPaymentShop(ctx, req);
+    const feePerDeviceRwf = 2_000;
+    const calc = calculateSubscriptionFee(
+      req.branch_count,
+      req.worker_count,
+      req.duration_months,
+      req.device_count || 1,
+      feePerDeviceRwf,
+    );
+    if (Number(req.amount_rwf) !== calc.total) {
+      throw new Error(`Payment amount mismatch. Submitted ${Number(req.amount_rwf || 0)} FRw; this plan calculates to ${calc.total} FRw. Refresh and verify the payment details before activating the shop.`);
+    }
+
+    if (req.status === "APPROVED") {
+      if (req.approval_mode !== "DIRECT_AUTO_UNLOCK" || req.generated_unlock_code) {
+        throw new Error("This payment has already been approved with a BB3 code or another approval method.");
+      }
+      const existingShop = await getShop(ctx, shopId);
+      if (!existingShop || String(existingShop.subscription_status) !== "ACTIVE") {
+        throw new Error("The payment is marked as directly approved, but the shop is not active. Refresh the shop record and contact the master administrator.");
+      }
+      return {
+        direct: true,
+        alreadyApproved: true,
+        days: calc.days,
+        tier: calc.tier,
+        total: calc.total,
+        expiresAt: Number(existingShop.subscription_expires_at ?? 0),
+        shopName: req.shop_name,
+        username: req.owner_username,
+        phone: String(req.payer_phone || req.owner_phone),
+      };
+    }
+    if (![ "PENDING_VERIFICATION", "REJECTED" ].includes(String(req.status))) {
+      throw new Error(`This payment claim is ${String(req.status).toLowerCase().replaceAll("_", " ")} and cannot be directly approved.`);
+    }
+
+    const now = Date.now();
+    const claim = await ctx.supabase
+      .from("payment_requests")
+      .update({
+        status: "APPROVED",
+        approval_mode: "DIRECT_AUTO_UNLOCK",
+        generated_unlock_code: "",
+        verified_by_admin: admin.label,
+        admin_verification_note: verificationNote,
+        rejection_reason: "",
+        updated_at: now,
+      })
+      .eq("id", req.id)
+      .eq("status", req.status)
+      .select("id")
+      .maybeSingle();
+
+    if (claim.error || !claim.data) {
+      const { data: latest } = await ctx.supabase
+        .from("payment_requests")
+        .select("status,approval_mode,generated_unlock_code")
+        .eq("id", req.id)
+        .maybeSingle();
+      if (latest?.status === "APPROVED" &&
+          latest.approval_mode === "DIRECT_AUTO_UNLOCK" &&
+          !latest.generated_unlock_code) {
+        const currentShop = await getShop(ctx, shopId);
+        if (currentShop?.subscription_status === "ACTIVE") {
+          return {
+            direct: true,
+            alreadyApproved: true,
+            days: calc.days,
+            tier: calc.tier,
+            total: calc.total,
+            expiresAt: Number(currentShop.subscription_expires_at ?? 0),
+            shopName: req.shop_name,
+            username: req.owner_username,
+            phone: String(req.payer_phone || req.owner_phone),
+          };
+        }
+      }
+      throw new Error("Another administrator changed this payment first. Refresh the queue before trying again.");
+    }
+
+    let expiresAt: number;
+    try {
+      expiresAt = await activateShop(ctx, shopId, {
+        addDays: calc.days,
+        branches: req.branch_count,
+        workers: req.worker_count,
+        devices: req.device_count || 1,
+        monthly: calc.monthly,
+        autoUnlock: true,
+      });
+    } catch (activationError) {
+      await ctx.supabase
+        .from("payment_requests")
+        .update({
+          status: req.status,
+          approval_mode: req.approval_mode || "",
+          generated_unlock_code: req.generated_unlock_code || "",
+          verified_by_admin: req.verified_by_admin || "",
+          rejection_reason: req.rejection_reason || "",
+          updated_at: Date.now(),
+        })
+        .eq("id", req.id)
+        .eq("status", "APPROVED")
+        .eq("approval_mode", "DIRECT_AUTO_UNLOCK");
+      throw new Error(`Payment was verified, but direct shop activation did not complete. The claim was returned for retry: ${activationError instanceof Error ? activationError.message : "activation failed"}`);
+    }
+
+    await audit(
+      ctx,
+      admin.email,
+      "DIRECT_AUTO_UNLOCK_PAYMENT",
+      `@${req.owner_username}`,
+      `Direct cloud activation after manual provider verification: ${verificationNote}. ${req.payer_full_name || req.payer_phone || req.owner_phone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. No unlock code issued.`,
+    );
+    return {
+      direct: true,
+      alreadyApproved: false,
+      days: calc.days,
+      tier: calc.tier,
+      total: calc.total,
+      expiresAt,
+      shopName: req.shop_name,
+      username: req.owner_username,
+      phone: String(req.payer_phone || req.owner_phone),
+    };
   });
 
 export const rejectPayment = createServerFn({ method: "POST" })
@@ -358,12 +501,7 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
     const admin = await requireAdmin(ctx);
     const provider = data.provider;
 
-    const { data: config } = await ctx.supabase
-      .from("app_config")
-      .select("per_device_fee_rwf")
-      .eq("id", "global")
-      .maybeSingle();
-    const feePerDeviceRwf = Math.max(0, Number(config?.per_device_fee_rwf) || 2000);
+    const feePerDeviceRwf = 2_000;
     const calc = calculateSubscriptionFee(
       data.branches,
       data.workers,
@@ -389,7 +527,7 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
         branch_count: data.branches,
         worker_count: data.workers,
         device_count: data.devices,
-        fee_per_device_rwf: feePerDeviceRwf,
+        fee_per_device_rwf: 2_000,
         payment_time_ms: Number(data.paymentTimeMs || now),
         payment_note: data.paymentNote.trim(),
         status: "PENDING_VERIFICATION",
@@ -444,8 +582,8 @@ export const checkAppVersion = createServerFn({ method: "GET" })
       .maybeSingle();
     
     return {
-      currentVersion: config?.apk_version || "2.1.0",
-      minimumVersion: config?.min_app_version || "2.1.0",
+      currentVersion: config?.apk_version || "2.3.0",
+      minimumVersion: config?.min_app_version || "2.3.0",
       downloadUrl: config?.apk_download_url || ""
     };
   });
@@ -814,6 +952,7 @@ const configSchema = z.object({
   per_device_fee_rwf: z.number().int().min(0).max(1_000_000),
   apk_download_url: z.string().trim().max(500),
   apk_version: z.string().trim().max(20),
+  min_app_version: z.string().trim().max(20),
   support_email: z.string().trim().max(200),
 });
 
@@ -823,9 +962,9 @@ export const saveAppConfig = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
-    const { error } = await ctx.supabase.from("app_config").upsert({ id: "global", ...data, updated_at: Date.now() });
+    const { error } = await ctx.supabase.from("app_config").upsert({ id: "global", ...data, per_device_fee_rwf: 2_000, min_app_version: data.min_app_version || "2.3.0", updated_at: Date.now() });
     if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, "SAVE_APP_CONFIG", "global", `MTN ${data.mtn_momo_code || data.mtn_momo_phone} • Airtel ${data.airtel_money_phone} • device ${data.per_device_fee_rwf} • APK ${data.apk_version}`);
+    await audit(ctx, admin.email, "SAVE_APP_CONFIG", "global", `MTN ${data.mtn_momo_code || data.mtn_momo_phone} • Airtel ${data.airtel_money_phone} • device 2000 FRw/month • APK ${data.apk_version}`);
     return { ok: true };
   });
 

@@ -2,7 +2,10 @@ package com.beboss.shopmgmt.util
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.util.Base64
 import android.util.LruCache
+import java.io.ByteArrayOutputStream
 import com.beboss.shopmgmt.data.model.Sale
 import com.beboss.shopmgmt.data.model.SaleItem
 import com.beboss.shopmgmt.data.model.ShopProfile
@@ -127,101 +130,195 @@ object ReceiptGenerator {
         return result
     }
 
+    private fun escapeHtml(value: String): String = value
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&#39;")
+
+    private fun encodePngDataUri(bitmap: Bitmap): String {
+        val output = ByteArrayOutputStream()
+        check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+            "Unable to encode receipt image"
+        }
+        return "data:image/png;base64," +
+            Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+    }
+
+    /**
+     * Builds a self-contained printable receipt. The BeBoss logo and ZXing-generated
+     * verification QR are embedded as data URIs, so the print view works offline.
+     * All user/shop/product text is escaped before it enters the HTML document.
+     */
     fun generateHtmlReceipt(
+        context: Context,
         sale: Sale,
         items: List<SaleItem>,
         profile: ShopProfile
     ): String {
-        val rows = StringBuilder()
-        for (item in items) {
-            val qtyStr = if (item.quantitySold % 1.0 == 0.0) "${item.quantitySold.toInt()}" else "${item.quantitySold}"
-            rows.append("""
-                <tr>
-                    <td style="padding: 6px 0; border-bottom: 1px dashed #ddd;">${item.productName}</td>
-                    <td style="padding: 6px 0; border-bottom: 1px dashed #ddd; text-align: center;">$qtyStr ${item.unit}</td>
-                    <td style="padding: 6px 0; border-bottom: 1px dashed #ddd; text-align: right;">${formatMoney(item.subtotal, profile)}</td>
-                </tr>
-            """.trimIndent())
-        }
-        val vatAmount = if (profile.showTaxOnReceipt && profile.taxRate > 0.0) {
-            computeTaxIncludedAmount(sale.totalAmount, profile.taxRate)
-        } else 0.0
         val seal = computeOfflineReceiptSeal(sale, profile)
+        val logoData = BrandedShareCardGenerator.loadBrandLogoBitmap(context, 144)
+            ?.let { encodePngDataUri(it) }
+        val logoMarkup = if (!logoData.isNullOrBlank()) {
+            "<img class=\"brand-logo\" src=\"" + logoData + "\" alt=\"BeBoss logo\">"
+        } else {
+            "<div class=\"brand-logo-fallback\" role=\"img\" aria-label=\"BeBoss logo\">BB</div>"
+        }
 
-        return """
+        val qrPayload = QrCodeGenerator.buildReceiptQrPayload(sale, profile, seal)
+        val qrData = encodePngDataUri(QrCodeGenerator.generateQrBitmap(qrPayload, 320))
+        val rows = StringBuilder()
+        items.forEach { item ->
+            val quantity = if (item.quantitySold % 1.0 == 0.0) {
+                item.quantitySold.toInt().toString()
+            } else {
+                item.quantitySold.toString()
+            }
+            rows.append("<tr><td>")
+                .append(escapeHtml(item.productName))
+                .append("</td><td class=\"center\">")
+                .append(escapeHtml(quantity + " " + item.unit))
+                .append("</td><td class=\"amount\">")
+                .append(escapeHtml(formatMoney(item.subtotal, profile)))
+                .append("</td></tr>")
+        }
+
+        val taxMarkup = if (profile.showTaxOnReceipt && profile.taxRate > 0.0) {
+            val tax = computeTaxIncludedAmount(sale.totalAmount, profile.taxRate)
+            "<div class=\"total-row\"><span>Incl. Tax (" +
+                escapeHtml(profile.taxRate.toString()) + "%)</span><strong>" +
+                escapeHtml(formatMoney(tax, profile)) + "</strong></div>"
+        } else ""
+        val discountMarkup = if (sale.discountAmount > 0.0) {
+            "<div class=\"total-row\"><span>Discount</span><strong>-" +
+                escapeHtml(formatMoney(sale.discountAmount, profile)) + "</strong></div>"
+        } else ""
+        val balance = (sale.totalAmount - sale.amountPaid).coerceAtLeast(0.0)
+        val balanceMarkup = if (balance > 0.0) {
+            "<div class=\"total-row balance\"><span>Balance Due</span><strong>" +
+                escapeHtml(formatMoney(balance, profile)) + "</strong></div>"
+        } else {
+            "<div class=\"total-row paid\"><span>Status</span><strong>PAID IN FULL</strong></div>"
+        }
+
+        val shopName = escapeHtml(profile.shopName.ifBlank { "BEBOSS STORE" })
+        val address = escapeHtml(profile.address)
+        val phone = escapeHtml(profile.phone)
+        val email = escapeHtml(profile.email)
+        val tin = escapeHtml(profile.tinNumber)
+        val receiptNumber = escapeHtml(sale.receiptNumber)
+        val customerName = escapeHtml(sale.customerName)
+        val cashierName = escapeHtml(sale.cashierName.ifBlank { "Operator" })
+        val paymentMethod = escapeHtml(sale.paymentMethod)
+        val paymentStatus = escapeHtml(sale.paymentStatus)
+        val date = escapeHtml(formatDate(sale.saleDate))
+        val total = escapeHtml(formatMoney(sale.totalAmount, profile))
+        val paid = escapeHtml(formatMoney(sale.amountPaid, profile))
+        val footer = escapeHtml(profile.receiptFooter)
+
+        val html = StringBuilder()
+        html.append(
+            """
             <!DOCTYPE html>
-            <html>
+            <html lang="en">
             <head>
                 <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>BeBoss Official Receipt</title>
                 <style>
-                    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 0; padding: 20px; color: #111; font-size: 13px; }
-                    .header { text-align: center; margin-bottom: 16px; }
-                    .shop-title { font-size: 20px; font-weight: bold; color: #FF6B1A; margin-bottom: 4px; }
-                    .meta-table { width: 100%; margin-bottom: 12px; font-size: 12px; }
-                    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-                    .totals { margin-top: 12px; border-top: 2px solid #111; padding-top: 8px; }
-                    .total-row { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 4px; }
-                    .grand-total { font-size: 18px; font-weight: bold; color: #FF6B1A; }
-                    .footer { text-align: center; margin-top: 24px; font-size: 11px; color: #666; border-top: 1px dashed #ccc; padding-top: 12px; }
+                    @page { size: A4; margin: 12mm; }
+                    * { box-sizing: border-box; }
+                    body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 18px; color: #0f172a; background: #fff; font-size: 13px; }
+                    .receipt { max-width: 760px; margin: 0 auto; }
+                    .brand-header { display: flex; align-items: center; gap: 16px; padding: 20px; color: #fff; background: #0f172a; border-bottom: 6px solid #f97316; border-radius: 14px 14px 0 0; }
+                    .brand-logo, .brand-logo-fallback { width: 72px; height: 72px; flex: 0 0 72px; object-fit: contain; padding: 5px; background: #fff; border-radius: 13px; }
+                    .brand-logo-fallback { display: flex; align-items: center; justify-content: center; color: #f97316; font-size: 26px; font-weight: 900; }
+                    .brand-copy h1 { margin: 0 0 5px; color: #fff; font-size: 21px; letter-spacing: .3px; }
+                    .brand-copy p { margin: 3px 0; color: #cbd5e1; font-size: 11px; }
+                    .receipt-title { margin: 18px 0 8px; color: #f97316; font-size: 12px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; }
+                    .meta { width: 100%; margin: 0 0 18px; border-collapse: collapse; }
+                    .meta td { width: 50%; padding: 7px 9px; background: #f8fafc; border: 1px solid #e2e8f0; }
+                    table.items { width: 100%; border-collapse: collapse; margin: 12px 0 16px; }
+                    .items th { padding: 10px 8px; color: #fff; background: #1e293b; text-align: left; }
+                    .items td { padding: 9px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+                    .items .center { text-align: center; white-space: nowrap; }
+                    .items .amount { text-align: right; white-space: nowrap; font-weight: 700; }
+                    .totals { margin-left: auto; width: min(100%, 390px); padding: 13px 15px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 12px; }
+                    .total-row { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; }
+                    .total-row.grand { margin-top: 7px; padding-top: 11px; border-top: 2px solid #f97316; color: #c2410c; font-size: 18px; font-weight: 900; }
+                    .total-row.balance { color: #dc2626; }
+                    .total-row.paid { color: #15803d; }
+                    .verification { display: flex; align-items: center; gap: 16px; margin-top: 20px; padding: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; page-break-inside: avoid; }
+                    .verification img { width: 116px; height: 116px; image-rendering: pixelated; }
+                    .verification strong { display: block; margin-bottom: 5px; color: #0f172a; }
+                    .seal { color: #f97316; font-family: monospace; font-size: 13px; font-weight: 800; }
+                    .footer { margin-top: 20px; padding-top: 13px; border-top: 1px dashed #cbd5e1; color: #64748b; text-align: center; font-size: 11px; }
+                    @media print { body { padding: 0; } .receipt { max-width: none; } .brand-header, .items th, .totals, .verification { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
                 </style>
             </head>
             <body>
-                <div class="header">
-                    <div class="shop-title">${profile.shopName}</div>
-                    <div>${profile.address}</div>
-                    <div>Tel: ${profile.phone} | ${profile.email}</div>
-                    ${if (profile.tinNumber.isNotBlank()) "<div><strong>TIN:</strong> ${profile.tinNumber}</div>" else ""}
-                </div>
-
-                <table class="meta-table">
-                    <tr><td><strong>Receipt #:</strong> ${sale.receiptNumber}</td><td style="text-align:right;"><strong>Date:</strong> ${formatDate(sale.saleDate)}</td></tr>
-                    <tr><td><strong>Customer:</strong> ${sale.customerName}</td><td style="text-align:right;"><strong>Payment:</strong> ${sale.paymentMethod}</td></tr>
-                </table>
-
-                <table class="items-table">
-                    <thead>
-                        <tr style="border-bottom: 2px solid #111; text-align: left;">
-                            <th style="padding-bottom: 6px;">Item</th>
-                            <th style="padding-bottom: 6px; text-align: center;">Qty</th>
-                            <th style="padding-bottom: 6px; text-align: right;">Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        $rows
-                    </tbody>
-                </table>
-
-                <div class="totals">
-                    <div class="total-row grand-total">
-                        <span>TOTAL:</span>
-                        <span>${formatMoney(sale.totalAmount, profile)}</span>
-                    </div>
-                    ${if (vatAmount > 0.0) """
-                    <div class="total-row" style="font-size: 12px; color: #4B5563;">
-                        <span>Incl. Tax (${profile.taxRate}%):</span>
-                        <span>${formatMoney(vatAmount, profile)}</span>
-                    </div>
-                    """ else ""}
-                    <div class="total-row">
-                        <span>Paid (${sale.paymentMethod}):</span>
-                        <span>${formatMoney(sale.amountPaid, profile)}</span>
-                    </div>
-                    ${if (sale.totalAmount > sale.amountPaid) """
-                    <div class="total-row" style="color: #DC2626; font-weight: bold;">
-                        <span>Balance Due:</span>
-                        <span>${formatMoney(sale.totalAmount - sale.amountPaid, profile)}</span>
-                    </div>
-                    """ else ""}
-                </div>
-
-                <div class="footer">
-                    <div>${profile.receiptFooter}</div>
-                    <div style="margin-top: 4px; font-family: monospace;">Seal: $seal</div>
-                    <div style="margin-top: 4px;">Created with BeBoss — Offline Business Manager</div>
-                </div>
-            </body>
-            </html>
-        """.trimIndent()
+                <main class="receipt">
+                    <header class="brand-header">
+            """.trimIndent()
+        )
+        html.append(logoMarkup)
+        html.append("<div class=\"brand-copy\"><h1>").append(shopName).append("</h1>")
+        if (address.isNotBlank()) html.append("<p>").append(address).append("</p>")
+        val contactLine = listOf(phone, email).filter { it.isNotBlank() }.joinToString(" • ")
+        if (contactLine.isNotBlank()) html.append("<p>").append(contactLine).append("</p>")
+        if (tin.isNotBlank()) html.append("<p><strong>TIN:</strong> ").append(tin).append("</p>")
+        html.append("</div></header>")
+        html.append(
+            """
+                    <div class="receipt-title">Official sales receipt</div>
+                    <table class="meta">
+                        <tr><td><strong>Receipt #:</strong> 
+            """.trimIndent()
+        )
+        html.append(receiptNumber).append("</td><td><strong>Date:</strong> ").append(date)
+        html.append("</td></tr><tr><td><strong>Customer:</strong> ").append(customerName)
+        html.append("</td><td><strong>Cashier:</strong> ").append(cashierName)
+        html.append("</td></tr><tr><td><strong>Payment:</strong> ").append(paymentMethod)
+        html.append("</td><td><strong>Status:</strong> ").append(paymentStatus)
+        html.append(
+            """
+                        </td></tr>
+                    </table>
+                    <table class="items">
+                        <thead><tr><th>Item</th><th class="center">Qty</th><th class="amount">Amount</th></tr></thead>
+                        <tbody>
+            """.trimIndent()
+        )
+        html.append(rows)
+        html.append(
+            """
+                        </tbody>
+                    </table>
+                    <section class="totals">
+                        <div class="total-row grand"><span>TOTAL</span><strong>
+            """.trimIndent()
+        )
+        html.append(total).append("</strong></div>")
+        html.append(taxMarkup).append(discountMarkup)
+        html.append("<div class=\"total-row\"><span>Paid (").append(paymentMethod)
+            .append(")</span><strong>").append(paid).append("</strong></div>")
+        html.append(balanceMarkup)
+        html.append(
+            """
+                    </section>
+                    <section class="verification">
+                        <img src="
+            """.trimIndent()
+        )
+        html.append(qrData).append("\" alt=\"Receipt verification QR\">")
+        html.append("<div><strong>Scan to verify this BeBoss receipt</strong><div class=\"seal\">")
+            .append(escapeHtml(seal))
+            .append("</div><p>Keep this receipt and its verification seal for your records.</p></div></section>")
+        html.append("<footer class=\"footer\"><p>").append(footer)
+            .append("</p><p>Created with BeBoss POS • Offline receipt verification enabled</p></footer>")
+        html.append("</main></body></html>")
+        return html.toString()
     }
 
     fun generateSubscriptionInvoice(

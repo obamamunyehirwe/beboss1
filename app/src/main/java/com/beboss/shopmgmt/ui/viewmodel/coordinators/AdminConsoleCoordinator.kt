@@ -210,7 +210,7 @@ class AdminConsoleCoordinator(
             val profile = shopProfile.value
             val owner = resolveOwnerUser()
             val safeDevices = deviceCount.coerceAtLeast(1)
-            val feePerDeviceRwf = OfflineSubscriptionManager.getCurrentPaymentConfig().perDeviceFeeRwf.coerceAtLeast(0)
+            val feePerDeviceRwf = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF
             val paymentTimeMs = System.currentTimeMillis()
             val breakdown = OfflineSubscriptionManager.calculateSubscriptionPrice(
                 branchCount = branchCount,

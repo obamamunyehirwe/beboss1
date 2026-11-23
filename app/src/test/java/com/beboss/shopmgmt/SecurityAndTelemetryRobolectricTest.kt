@@ -31,6 +31,13 @@ class SecurityAndTelemetryRobolectricTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        // Reset the singleton's in-memory StateFlow as well as SharedPreferences between
+        // Robolectric tests; the object survives individual test application lifecycles.
+        context.getSharedPreferences("beboss_message_audit", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+        MessageAuditManager.load(context)
         ClockGuard.init(context)
         ClockGuard.clearRollbackAfterTrustedSync(context, System.currentTimeMillis())
     }
@@ -116,4 +123,37 @@ class SecurityAndTelemetryRobolectricTest {
         assertFalse(cached.isAvailable)
         assertEquals("Location not captured", cached.compactLabel())
     }
+
+    @Test
+    fun `cloud message summary excludes recipients and previews and acknowledges only uploaded ids`() {
+        val first = MessageAuditManager.recordDispatch(
+            context = context,
+            channel = "WHATSAPP",
+            recipient = "+250788111222",
+            messageType = "RECEIPT",
+            preview = "Private receipt for Alice"
+        )
+        val second = MessageAuditManager.recordDispatch(
+            context = context,
+            channel = "SMS",
+            recipient = "+250788333444",
+            messageType = "DEBT_REMINDER",
+            preview = "Private debt reminder"
+        )
+
+        val summary = MessageAuditManager.buildCloudSummaryJson(context)
+        assertTrue(summary.contains("WHATSAPP"))
+        assertTrue(summary.contains("SMS"))
+        assertTrue(summary.contains("RECEIPT"))
+        assertTrue(summary.contains("DEBT_REMINDER"))
+        assertFalse(summary.contains("+250788111222"))
+        assertFalse(summary.contains("+250788333444"))
+        assertFalse(summary.contains("Private receipt"))
+
+        MessageAuditManager.markSynced(context, setOf(first.id))
+        val pending = MessageAuditManager.getUnsyncedRecords(context)
+        assertEquals(1, pending.size)
+        assertEquals(second.id, pending.single().id)
+    }
+
 }

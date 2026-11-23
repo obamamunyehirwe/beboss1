@@ -117,7 +117,7 @@ class BeBossNavigationUiTest {
         }
 
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Incl. Tax (18.0%):", substring = false)
+        composeTestRule.onNodeWithText("🏛️ Incl. Tax (18.0%):", substring = false)
             .performScrollTo()
             .assertIsDisplayed()
         composeTestRule.onNodeWithText("Offline Verification Seal: $expectedSeal", substring = false)

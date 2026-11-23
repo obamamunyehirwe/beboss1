@@ -31,6 +31,19 @@ Independent retailers, pharmacies, hardware depots, wholesalers, and service bus
 
 BeBoss addresses these directly with an **always-available Android terminal** that completes sales locally in milliseconds, synchronizes over local Wi-Fi/hotspot or cloud when online, and ships with a **4-language offline interface** (`English`, `Ikinyarwanda`, `Français`, `Kiswahili`).
 
+### Next Android Build — 2.3.1 (versionCode 15; signed release pending)
+
+
+The currently published, signed APK endpoint remains on **2.3.0 (versionCode 14)** until the 2.3.1 release is built with the production upload keystore and uploaded through Admin → App Releases. CI builds a debug APK for installation/testing; a debug-signed APK cannot replace an already installed production-signed app.
+
+- **Supabase cloud sync:** Android uses the project's public `SUPABASE_PUBLISHABLE_KEY` as the `apikey` header and sends a Bearer token only when a real signed-in admin JWT exists. Legacy anon JWT configuration remains supported. A service-role/secret key is never shipped in the APK.
+- **LAN terminal discovery:** opted-in nearby-Wi-Fi access enables discovery of BeBoss terminals on the same Wi-Fi or hotspot. The shop first completes one online cloud sync to provision its random per-shop LAN key; each device then stores that key encrypted by Android Keystore for later offline hotspot sync. Pairing and admin-approved device membership are required before encrypted branch transfer. This is not Bluetooth discovery of arbitrary phones.
+- **Startup recovery:** encrypted Room/SQLCipher startup failures show a recoverable error and retry action rather than silently continuing into a blank screen. Existing shop data is not reset by this recovery UI.
+- **License controls:** administrators can choose a signed BB3 code or direct cloud activation after manually verifying the payment in the official MTN MoMo/Airtel Money merchant account. Screenshots or customer SMS alone do not prove settlement.
+- **Multi-device price:** the primary owner terminal is included; each additional active paired terminal is fixed at **2,000 FRw per month**, consistently computed by Android, web, Edge Function and Supabase database pricing logic.
+- **Admin security:** the web Admin Sync monitor displays clock-integrity and device posture signals, permission state, optional recent foreground GPS, and privacy-safe outbound message aggregates. It does not expose recipients or message content.
+
+
 ### Target Commercial Verticals
 BeBoss adapts during its 3-step onboarding flow for 8 retail & service verticals:
 - **Mini-Supermarkets & General Retail** — CameraX barcode lookup, Hold/Resume queues, 58mm/80mm thermal receipts.
@@ -72,7 +85,7 @@ Pricing logic is synchronized **1:1** across Android (`OfflineSubscriptionManage
 ┌──────────────────────────────────────────────────────────────────────┐
 │                     ANDROID POS TERMINALS (/app)                     │
 │  Jetpack Compose M3  ·  ViewModel + 5 Domain/UI Coordinators         │
-│  Room v14 (17 tables) + SQLCipher AES-256 + Android Keystore         │
+│  Room v16 (17 tables) + SQLCipher AES-256 + Android Keystore         │
 │  Offline Outbox + HLC Clocks + Tombstones + Dead-Letter Queue        │
 │                                                                      │
 │    ├── Local LAN P2P Sync (LocalNetworkSyncServer / BBSHARE1)        │
@@ -101,7 +114,7 @@ Pricing logic is synchronized **1:1** across Android (`OfflineSubscriptionManage
 ### Tech Stack
 - **Language & SDK**: Kotlin `2.2.10`, Android Gradle Plugin `9.1.1`, `compileSdk 36`, `targetSdk 36`, `minSdk 24`
 - **UI**: Jetpack Compose BOM (`Material 3`), `WindowSizeClass` adaptive support, custom `@font/outfit`, `@font/plus_jakarta_sans`, `@font/syne`
-- **Local Database**: **Room `2.7.0`** (Schema Version **14**, 17 entities) + **SQLCipher Android `4.20.0`** encrypted at rest
+- **Local Database**: **Room `2.7.0`** (Schema Version **16**, 17 entities) + **SQLCipher Android `4.20.0`** encrypted at rest
 - **Networking & Serialization**: **OkHttp `4.10.0`**, **Retrofit `2.12.0`**, **Moshi `1.15.2`** (KSP codegen)
 - **Background & Hardware**: **WorkManager `2.10.0`**, **CameraX `1.5.0`**, **AndroidX Biometric**
 
@@ -125,7 +138,7 @@ The app follows **MVVM with Domain Managers and UI State Coordinators**:
    - **Hybrid Logical Clocks (`HlcClock`)** + `ConflictResolutionEngine` for deterministic Last-Write-Wins (LWW) conflict resolution across multi-device edits.
    - **Soft-Delete Tombstones (`SyncTombstone`)** propagate deletions accurately across terminals without ghost resurrection.
    - **Durable Outbox + Dead-Letter Queue (`SyncQueueDao`, `DeadLetterDao`)**: Failed mutations retry with exponential backoff; permanently failing payloads quarantine cleanly into `dead_letter_queue` instead of blocking the outbox.
-   - **LAN P2P & Cloud Sync (`LocalNetworkSyncServer`, `SupabaseAdminClient`, `BeBossCloudSyncWorker`)**: Sync either over local Wi-Fi/hotspot or via chunked Supabase snapshots.
+   - **LAN P2P & Cloud Sync (`LocalNetworkSyncServer`, `SupabaseAdminClient`, `BeBossCloudSyncWorker`)**: Sync either over local Wi-Fi/hotspot or via chunked Supabase snapshots. Each shop receives a random 256-bit LAN pairing key from Supabase; each paired terminal wraps it with its own Android Keystore before HMAC-authenticated discovery and AES-GCM peer sync. Android 13+ asks for Nearby Wi-Fi access before discovery. This is BeBoss-terminal discovery over the same Wi-Fi/hotspot, not Bluetooth scanning of arbitrary nearby phones.
 4. **Diagnostics & Maintenance (`DiagnosticsDialog` & `DatabaseMigrations`)**:
    - 3-tab diagnostics console inspecting security posture, Room/SQLCipher `PRAGMA integrity_check`, WAL checkpoints, pending/dead-letter queue counts, and unified local + cloud audit trails.
    - Full non-destructive Room migration chain (`MIGRATION_1_2` through `MIGRATION_13_14`) with idempotent table/column/index guards.
@@ -157,7 +170,7 @@ The app follows **MVVM with Domain Managers and UI State Coordinators**:
 
 | Layer | Implementation |
 | :--- | :--- |
-| **Database Encryption** | Room v14 + **SQLCipher AES-256**; passphrase protected via **Android Keystore** (`CryptoKeyManager`) |
+| **Database Encryption** | Room v16 + **SQLCipher AES-256**; passphrase protected via **Android Keystore** (`CryptoKeyManager`) |
 | **Credential Storage & Auth** | PBKDF2-HMAC-SHA256 salted PIN/password hashing, persistent brute-force exponential lockout (`AuthRateLimiter`), hardware `BiometricPrompt` |
 | **Unlock-Code Signing** | ECDSA P-256 / SHA-256. The private key stays in server-only Supabase `app_secrets`; Android contains only the matching public verification key |
 | **Offline Verification** | New `BB3` codes are verified offline by Android using the pinned public key and account binding; no shared signing secret is shipped to devices |
@@ -188,10 +201,10 @@ The signed payload is `BB3:TIER:DAYS:EXPIRY_HEX:ACCT_HASH6:NONCE`.
 .
 ├── .env.example                 # Required build-time secret keys (no real secrets committed)
 ├── app/                         # Native Android POS application (Kotlin + Compose M3)
-│   ├── schemas/                 # Exported Room JSON schemas (versions 12, 13, 14)
+│   ├── schemas/                 # Exported Room JSON schemas (versions 12–16)
 │   └── src/
 │       ├── main/java/com/beboss/shopmgmt/
-│       │   ├── data/            # Room DAOs, 17 entities, AppDatabase v14, DatabaseMigrations, Repository
+│       │   ├── data/            # Room DAOs, 17 entities, AppDatabase v16, DatabaseMigrations, Repository
 │       │   ├── domain/          # Business logic (Sales, Inventory, Debt, Transfers, Analytics, Auth, License)
 │       │   ├── ui/              # Compose screens, dialogs, components, M3 theme, ViewModel + coordinators
 │       │   └── util/            # SQLCipher/Keystore, HLC sync, LAN server, BB2 security, PDF/CSV, Localization
@@ -211,11 +224,12 @@ The signed payload is `BB3:TIER:DAYS:EXPIRY_HEX:ACCT_HASH6:NONCE`.
 ## 8. Configuration, Build & Verification
 
 ### 1. Environment Variables (`.env` / AI Studio Secrets)
-Copy `.env.example` or configure these variables in your environment / Secrets panel (never commit real secrets or use `local.properties`):
+Copy `.env.example` or configure these variables in your environment / Secrets panel (never commit secrets or use `local.properties`). Set `SUPABASE_URL` to the linked project URL and `SUPABASE_PUBLISHABLE_KEY` to its public `sb_publishable_…` key. A legacy `SUPABASE_ANON_KEY` JWT is accepted as a fallback. Never place `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` in Android, `BuildConfig`, or the APK.
 
 ```properties
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_URL=https://ahlpvlhmpfiyeoercxol.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_project_public_key
+# Optional legacy fallback only: SUPABASE_ANON_KEY=your_legacy_anon_jwt
 # BB3 private signing key is stored in Supabase app_secrets; never put it in Android or VITE_ variables.
 BEBOSS_SECURITY_PEPPER=your_security_pepper
 BEBOSS_LAN_SYNC_SECRET=your_lan_sync_secret

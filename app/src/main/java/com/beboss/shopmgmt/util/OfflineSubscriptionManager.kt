@@ -101,7 +101,7 @@ object OfflineSubscriptionManager {
             mtnRecipientName = prefs.getString(KEY_MTN_NAME, "BeBoss Pay").orEmpty().ifBlank { "BeBoss Pay" },
             airtelMoneyPhone = prefs.getString(KEY_AIRTEL_PHONE, "0738765432").orEmpty().ifBlank { "0738765432" },
             airtelRecipientName = prefs.getString(KEY_AIRTEL_NAME, "BeBoss Pay").orEmpty().ifBlank { "BeBoss Pay" },
-            perDeviceFeeRwf = prefs.getInt(KEY_PER_DEVICE_FEE, PER_EXTRA_DEVICE_FEE_RWF).coerceAtLeast(0),
+            perDeviceFeeRwf = PER_EXTRA_DEVICE_FEE_RWF,
             apkDownloadUrl = prefs.getString(KEY_APK_URL, "").orEmpty(),
             apkVersion = prefs.getString(KEY_APK_VERSION, "2.1.0").orEmpty().ifBlank { "2.1.0" },
             updatedAt = prefs.getLong(KEY_UPDATED_AT, 0L)
@@ -117,7 +117,7 @@ object OfflineSubscriptionManager {
             mtnRecipientName = config.mtnRecipientName.trim().ifBlank { "BeBoss Pay" },
             airtelMoneyPhone = config.airtelMoneyPhone.trim().ifBlank { "0738765432" },
             airtelRecipientName = config.airtelRecipientName.trim().ifBlank { "BeBoss Pay" },
-            perDeviceFeeRwf = config.perDeviceFeeRwf.coerceAtLeast(0),
+            perDeviceFeeRwf = PER_EXTRA_DEVICE_FEE_RWF,
             apkDownloadUrl = config.apkDownloadUrl.trim(),
             apkVersion = config.apkVersion.trim().ifBlank { "2.1.0" }
         )
@@ -129,7 +129,7 @@ object OfflineSubscriptionManager {
             putString(KEY_MTN_NAME, effective.mtnRecipientName)
             putString(KEY_AIRTEL_PHONE, effective.airtelMoneyPhone)
             putString(KEY_AIRTEL_NAME, effective.airtelRecipientName)
-            putInt(KEY_PER_DEVICE_FEE, effective.perDeviceFeeRwf)
+            putInt(KEY_PER_DEVICE_FEE, PER_EXTRA_DEVICE_FEE_RWF)
             putString(KEY_APK_URL, effective.apkDownloadUrl)
             putString(KEY_APK_VERSION, effective.apkVersion)
             putLong(KEY_UPDATED_AT, effective.updatedAt)
@@ -210,7 +210,7 @@ object OfflineSubscriptionManager {
         val effectiveWorkers = workerCount.coerceAtLeast(1)
         val effectiveDevices = deviceCount.coerceAtLeast(1)
         val extraDevices = (effectiveDevices - 1).coerceAtLeast(0)
-        val perDeviceRate = (perDeviceRateRwf ?: cachedConfig.perDeviceFeeRwf).takeIf { it > 0 } ?: PER_EXTRA_DEVICE_FEE_RWF
+        val perDeviceRate = PER_EXTRA_DEVICE_FEE_RWF
 
         // 1. Branch Base Tier
         val (branchBasePrice, branchTierName) = when {

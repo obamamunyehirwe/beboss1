@@ -1,6 +1,7 @@
 package com.beboss.shopmgmt.util
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import com.beboss.shopmgmt.BuildConfig
 import com.beboss.shopmgmt.data.model.PaymentVerificationRequest
@@ -312,11 +313,44 @@ object SupabaseAdminClient {
         }
     }
 
-    fun getSupabaseAnonKey(): String {
+    /**
+     * Returns the project's public Data API key. Prefer the modern publishable key so
+     * an expired/rotated legacy anon JWT in a developer .env file cannot poison every
+     * cloud request. A publishable key belongs in the client; service-role/secret keys
+     * must never be packaged in an Android APK.
+     */
+    fun getSupabaseApiKey(): String {
         return try {
-            BuildConfig.SUPABASE_ANON_KEY.trim()
+            val publishable = BuildConfig.SUPABASE_PUBLISHABLE_KEY.trim()
+            if (publishable.startsWith("sb_publishable_")) {
+                publishable
+            } else {
+                BuildConfig.SUPABASE_ANON_KEY.trim()
+            }
         } catch (_: Throwable) {
             ""
+        }
+    }
+
+    /** Backwards-compatible accessor used by existing auth and REST call sites. */
+    fun getSupabaseAnonKey(): String = getSupabaseApiKey()
+
+    /**
+     * Legacy Supabase anon JWTs may be used as public client keys, but service_role
+     * JWTs must never be accepted as Android configuration. Decode the JWT role
+     * instead of treating any three-segment token as an anon key.
+     */
+    private fun isLegacyJwtApiKey(key: String): Boolean {
+        if (!key.startsWith("eyJ") || key.count { it == '.' } != 2) return false
+        return try {
+            val payload = key.split('.')[1]
+            val decoded = Base64.decode(
+                payload,
+                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+            )
+            JSONObject(String(decoded, Charsets.UTF_8)).optString("role") == "anon"
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -334,10 +368,11 @@ object SupabaseAdminClient {
     fun isConfigured(): Boolean {
         val url = getSupabaseUrl()
         val key = getSupabaseAnonKey()
+        val isSupportedPublicKey =
+            key.startsWith("sb_publishable_") || isLegacyJwtApiKey(key)
         return url.startsWith("https://") &&
             !url.contains("your-project-id") &&
-            key.isNotBlank() &&
-            !key.contains("your_supabase_anon_key")
+            isSupportedPublicKey
     }
 
     /**
@@ -433,12 +468,19 @@ object SupabaseAdminClient {
         val url = "${getSupabaseUrl()}/rest/v1/$path"
         val key = getSupabaseAnonKey()
         val adminToken = if (useAdminJwtIfAvailable) ensureValidAdminSession()?.accessToken else null
-        val bearer = adminToken ?: key
         val builder = Request.Builder()
             .url(url)
             .addHeader("apikey", key)
-            .addHeader("Authorization", "Bearer $bearer")
             .addHeader("Content-Type", "application/json")
+
+        // A modern sb_publishable_* key is an API gateway key, not a JWT. Sending
+        // it as Authorization: Bearer causes PostgREST/Auth to reject it as an
+        // invalid token. Use the admin user's JWT for protected reads; otherwise
+        // only add a Bearer token for the legacy anon JWT format.
+        when {
+            !adminToken.isNullOrBlank() -> builder.addHeader("Authorization", "Bearer $adminToken")
+            isLegacyJwtApiKey(key) -> builder.addHeader("Authorization", "Bearer $key")
+        }
         if (!tenantSyncKey.isNullOrBlank()) {
             builder.addHeader("X-Shop-Sync-Key", tenantSyncKey.trim())
         }
@@ -518,7 +560,7 @@ object SupabaseAdminClient {
             return@withContext Result.failure(IllegalStateException("Enter your administrator password."))
         }
         if (!isConfigured()) {
-            return@withContext Result.failure(IllegalStateException("Configure SUPABASE_URL and SUPABASE_ANON_KEY in app secrets."))
+            return@withContext Result.failure(IllegalStateException("Configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or the legacy SUPABASE_ANON_KEY) in app secrets."))
         }
         try {
             val payload = JSONObject().apply {
@@ -889,9 +931,9 @@ object SupabaseAdminClient {
                     mtnRecipientName = o.optString("mtn_recipient_name", "BeBoss Pay"),
                     airtelMoneyPhone = o.optString("airtel_money_phone", "0738765432"),
                     airtelRecipientName = o.optString("airtel_recipient_name", "BeBoss Pay"),
-                    perDeviceFeeRwf = o.optInt("per_device_fee_rwf", 2000),
+                    perDeviceFeeRwf = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF,
                     apkDownloadUrl = o.optString("apk_download_url", ""),
-                    apkVersion = o.optString("apk_version", "2.1.0").ifBlank { "2.1.0" },
+                    apkVersion = o.optString("apk_version", "2.3.0").ifBlank { "2.3.0" },
                     updatedAt = o.optLong("updated_at", 0L)
                 )
             }
@@ -913,9 +955,9 @@ object SupabaseAdminClient {
                 put("mtn_recipient_name", config.mtnRecipientName.trim())
                 put("airtel_money_phone", config.airtelMoneyPhone.trim())
                 put("airtel_recipient_name", config.airtelRecipientName.trim())
-                put("per_device_fee_rwf", config.perDeviceFeeRwf.coerceAtLeast(0))
+                put("per_device_fee_rwf", OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF)
                 put("apk_download_url", config.apkDownloadUrl.trim())
-                put("apk_version", config.apkVersion.trim().ifBlank { "2.1.0" })
+                put("apk_version", config.apkVersion.trim().ifBlank { "2.3.0" })
                 put("updated_at", now)
             }
             val req = buildRestRequest("app_config?on_conflict=id", useAdminJwtIfAvailable = true)
@@ -1037,6 +1079,34 @@ object SupabaseAdminClient {
         }
     }
 
+    /**
+     * Read the random 256-bit LAN pairing key belonging to the current shop.
+     * RLS scopes the row using X-Shop-Sync-Key; only the matching shop record is selected.
+     */
+    suspend fun fetchShopLanSyncSecret(shopSyncKey: String): String? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank()) return@withContext null
+        try {
+            val enc = URLEncoder.encode(shopSyncKey.trim(), "UTF-8")
+            val req = buildRestRequest(
+                "shop_accounts?select=lan_sync_secret&id=eq.$enc&limit=1",
+                tenantSyncKey = shopSyncKey
+            ).get().build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    Log.w(TAG, "fetchShopLanSyncSecret HTTP ${resp.code}: ${resp.body?.string()}")
+                    return@withContext null
+                }
+                val arr = JSONArray(resp.body?.string().orEmpty().ifBlank { "[]" })
+                val secret = arr.optJSONObject(0)?.optString("lan_sync_secret").orEmpty()
+                    .trim().lowercase(Locale.ROOT)
+                secret.takeIf { it.matches(Regex("[a-f0-9]{64}")) }
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "fetchShopLanSyncSecret failed: ${error.message}")
+            null
+        }
+    }
+
     suspend fun fetchShopAccountById(accountId: String): SupabaseShopAccountDto? = withContext(Dispatchers.IO) {
         if (!isConfigured() || accountId.isBlank()) return@withContext null
         try {
@@ -1079,7 +1149,7 @@ object SupabaseAdminClient {
                 put("branch_name", device.branchName)
                 put("is_owner_primary", device.isOwnerPrimary)
                 put("is_active", device.isActive)
-                put("monthly_fee_addon_rwf", if (device.isOwnerPrimary) 0 else device.monthlyFeeAddonRwf)
+                put("monthly_fee_addon_rwf", if (device.isOwnerPrimary) 0 else OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF)
                 put("last_synced_at", device.lastSyncedAt)
                 put("created_at", device.createdAt)
                 put("updated_at", device.updatedAt)
@@ -1372,7 +1442,8 @@ object SupabaseAdminClient {
         clockTamper: ClockTamperStatus,
         location: CapturedLocation?,
         unsyncedMessagesCount: Int,
-        permissionsSummary: String
+        permissionsSummary: String,
+        messageSummaryJson: String
     ): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || shopSyncKey.isBlank() || deviceId.isBlank()) return@withContext false
         val now = ClockGuard.effectiveNowMs()
@@ -1398,8 +1469,11 @@ object SupabaseAdminClient {
                 put("signals_json", JSONArray(integrity.signals).toString())
                 put("latitude", location?.latitude ?: 0.0)
                 put("longitude", location?.longitude ?: 0.0)
+                put("accuracy_meters", location?.accuracyMeters ?: 0f)
+                put("location_captured_at", location?.capturedAtMs ?: 0L)
                 put("location_label", location?.compactLabel() ?: "Unavailable")
                 put("unsynced_messages_count", unsyncedMessagesCount)
+                put("message_summary_json", JSONObject(messageSummaryJson))
                 put("permissions_summary", permissionsSummary)
                 put("inspected_at", integrity.inspectedAtMs)
                 put("updated_at", now)
@@ -1444,7 +1518,10 @@ object SupabaseAdminClient {
             )
         }
 
-        telemetryOk || heartbeatOk
+        if (!heartbeatOk && telemetryOk) {
+            Log.w(TAG, "Security telemetry saved, but the separate shop-device heartbeat update failed for $deviceId")
+        }
+        telemetryOk
     }
 
     // -------------------------------------------------------------------------
@@ -1684,7 +1761,7 @@ object SupabaseAdminClient {
                 put("branch_count", request.branchCount)
                 put("worker_count", request.workerCount)
                 put("device_count", request.deviceCount.coerceAtLeast(1))
-                put("fee_per_device_rwf", request.feePerDeviceRwf.coerceAtLeast(0))
+                put("fee_per_device_rwf", OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF)
                 put("payment_time_ms", request.paymentTimeMs.takeIf { it > 0L } ?: request.createdAt.takeIf { it > 0L } ?: now)
                 put("payment_note", request.paymentNote.trim())
                 put("status", "PENDING_VERIFICATION")
@@ -1974,8 +2051,7 @@ object SupabaseAdminClient {
         }
 
         val paymentTimeMs = request.paymentTimeMs.takeIf { it > 0L } ?: request.createdAt.takeIf { it > 0L } ?: signed.paymentTimeMs
-        val savedFeeRate = request.feePerDeviceRwf.takeIf { it > 0 }
-            ?: OfflineSubscriptionManager.getCurrentPaymentConfig().perDeviceFeeRwf.coerceAtLeast(0)
+        val savedFeeRate = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF
         val recomputedBreakdown = OfflineSubscriptionManager.calculateSubscriptionPrice(
             branchCount = request.branchCount.coerceAtLeast(1),
             workerCount = request.workerCount.coerceAtLeast(1),
@@ -2573,7 +2649,7 @@ object SupabaseAdminClient {
             branchCount = o.optInt("branch_count", 1),
             workerCount = o.optInt("worker_count", 1),
             deviceCount = o.optInt("device_count", 1).coerceAtLeast(1),
-            feePerDeviceRwf = o.optInt("fee_per_device_rwf", 2000).coerceAtLeast(0),
+            feePerDeviceRwf = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF,
             status = o.optString("status", "PENDING_VERIFICATION"),
             approvalMode = o.optString("approval_mode"),
             generatedUnlockCode = o.optString("generated_unlock_code"),

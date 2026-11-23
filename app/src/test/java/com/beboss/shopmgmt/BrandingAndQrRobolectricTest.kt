@@ -8,6 +8,7 @@ import com.beboss.shopmgmt.data.model.Sale
 import com.beboss.shopmgmt.data.model.SaleItem
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.util.BrandedShareCardGenerator
+import com.beboss.shopmgmt.util.ContactsHelper
 import com.beboss.shopmgmt.util.QrCodeGenerator
 import com.beboss.shopmgmt.util.ReceiptGenerator
 import org.junit.Assert.assertEquals
@@ -141,4 +142,36 @@ class BrandingAndQrRobolectricTest {
         )
         assertTrue(branchPng.exists() && branchPng.length() > 1024L)
     }
+
+    @Test
+    fun `printable receipt embeds logo and QR and escapes untrusted fields`() {
+        val unsafeProfile = profile.copy(shopName = "<script>alert(1)</script>")
+        val unsafeSale = sale.copy(customerName = "<img src=x onerror=alert(1)>")
+        val unsafeItems = items.mapIndexed { index, item ->
+            if (index == 0) item.copy(productName = "<script>bad()</script>") else item
+        }
+
+        val html = ReceiptGenerator.generateHtmlReceipt(
+            context = context,
+            sale = unsafeSale,
+            items = unsafeItems,
+            profile = unsafeProfile
+        )
+
+        assertTrue(html.contains("data:image/png;base64,"))
+        assertTrue(html.contains("alt=\"BeBoss logo\""))
+        assertTrue(html.contains("alt=\"Receipt verification QR\""))
+        assertTrue(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"))
+        assertTrue(html.contains("&lt;img src=x onerror=alert(1)&gt;"))
+        assertFalse(html.contains("<script>alert(1)</script>"))
+        assertFalse(html.contains("<script>bad()</script>"))
+        assertFalse(html.contains("<img src=x onerror=alert(1)>"))
+    }
+
+    @Test
+    fun `contact phone normalization prevents duplicate imports without changing display value`() {
+        assertEquals("250788123456", ContactsHelper.normalizePhoneNumber(" +250 (788) 123-456 "))
+        assertEquals("", ContactsHelper.normalizePhoneNumber("   "))
+    }
+
 }

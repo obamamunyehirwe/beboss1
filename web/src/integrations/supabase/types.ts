@@ -174,6 +174,7 @@ export type Database = {
           mtn_momo_code: string
           mtn_momo_phone: string
           mtn_recipient_name: string
+          min_app_version: string
           per_device_fee_rwf: number
           support_email: string
           updated_at: number
@@ -188,6 +189,7 @@ export type Database = {
           mtn_momo_code?: string
           mtn_momo_phone?: string
           mtn_recipient_name?: string
+          min_app_version?: string
           per_device_fee_rwf?: number
           support_email?: string
           updated_at?: number
@@ -202,6 +204,7 @@ export type Database = {
           mtn_momo_code?: string
           mtn_momo_phone?: string
           mtn_recipient_name?: string
+          min_app_version?: string
           per_device_fee_rwf?: number
           support_email?: string
           updated_at?: number
@@ -364,6 +367,93 @@ export type Database = {
         }
         Relationships: []
       }
+      device_security_telemetry: {
+        Row: {
+          accuracy_meters: number
+          clock_rollback_detected: boolean
+          clock_skew_ms: number
+          device_id: string
+          device_name: string
+          has_hooking: boolean
+          id: string
+          inspected_at: number
+          is_emulator: boolean
+          is_rooted: boolean
+          keystore_backing: string
+          latitude: number
+          location_captured_at: number
+          location_label: string
+          longitude: number
+          message_summary_json: Json
+          permissions_summary: string
+          posture_label: string
+          risk_score: number
+          shop_name: string
+          shop_sync_key: string
+          signals_json: string
+          tamper_incident_count: number
+          tamper_reason: string
+          unsynced_messages_count: number
+          updated_at: number
+        }
+        Insert: {
+          accuracy_meters?: number
+          clock_rollback_detected?: boolean
+          clock_skew_ms?: number
+          device_id: string
+          device_name?: string
+          has_hooking?: boolean
+          id: string
+          inspected_at?: number
+          is_emulator?: boolean
+          is_rooted?: boolean
+          keystore_backing?: string
+          latitude?: number
+          location_captured_at?: number
+          location_label?: string
+          longitude?: number
+          message_summary_json?: Json
+          permissions_summary?: string
+          posture_label?: string
+          risk_score?: number
+          shop_name?: string
+          shop_sync_key: string
+          signals_json?: string
+          tamper_incident_count?: number
+          tamper_reason?: string
+          unsynced_messages_count?: number
+          updated_at?: number
+        }
+        Update: {
+          accuracy_meters?: number
+          clock_rollback_detected?: boolean
+          clock_skew_ms?: number
+          device_id?: string
+          device_name?: string
+          has_hooking?: boolean
+          id?: string
+          inspected_at?: number
+          is_emulator?: boolean
+          is_rooted?: boolean
+          keystore_backing?: string
+          latitude?: number
+          location_captured_at?: number
+          location_label?: string
+          longitude?: number
+          message_summary_json?: Json
+          permissions_summary?: string
+          posture_label?: string
+          risk_score?: number
+          shop_name?: string
+          shop_sync_key?: string
+          signals_json?: string
+          tamper_incident_count?: number
+          tamper_reason?: string
+          unsynced_messages_count?: number
+          updated_at?: number
+        }
+        Relationships: []
+      }
       contact_messages: {
         Row: {
           admin_reply_note: string
@@ -506,6 +596,7 @@ export type Database = {
           device_limit: number
           id: string
           min_app_version: string
+          lan_sync_secret: string
           monthly_fee_rwf: number
           owner_name: string
           owner_phone: string
@@ -529,6 +620,7 @@ export type Database = {
           device_count?: number
           device_limit?: number
           id: string
+          lan_sync_secret?: string
           min_app_version?: string
           monthly_fee_rwf?: number
           owner_name?: string
@@ -552,6 +644,7 @@ export type Database = {
           device_count?: number
           device_limit?: number
           id?: string
+          lan_sync_secret?: string
           min_app_version?: string
           monthly_fee_rwf?: number
           owner_name?: string

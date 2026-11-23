@@ -36,6 +36,7 @@ import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Collections
 import java.util.Date
@@ -85,7 +86,7 @@ data class LocalSyncClientResult(
  * Authenticated & AES-256-GCM encrypted LAN P2P Branch Hub Server + Client.
  *
  * Security invariants:
- * - Zero hardcoded fallback keys; derives HMAC & AES-GCM keys via HKDF from BuildConfig.BEBOSS_LAN_SYNC_SECRET.
+ * - Per-shop 256-bit pairing keys are provisioned from Supabase and wrapped by Android Keystore; optional legacy build key is a fallback.
  * - UDP discovery beacons are HMAC-signed and timestamped (<=30s clock window) + validated against peer IP.
  * - All /api/sync/push & /api/sync/pull bodies are AES-256-GCM encrypted and authenticated with
  *   mandatory X-BeBoss-Signature, X-BeBoss-Timestamp (<=5 min), and X-BeBoss-Nonce anti-replay protection.
@@ -100,16 +101,85 @@ class LocalNetworkSyncServer(
     private val discoveryUdpPort = 8990
     private val nsdServiceType = "_beboss._tcp."
 
+    @Volatile
+    private var activeShopLanSecretKey: String? = null
+
+    @Volatile
+    private var activeShopLanSecretBytes: ByteArray? = null
+
+    private fun sharedLanSecretPreferenceKey(shopSyncKey: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(shopSyncKey.trim().lowercase(Locale.ROOT).toByteArray(StandardCharsets.UTF_8))
+        val suffix = digest.joinToString("") { byte -> "%02x".format(byte) }
+        return "wrapped_shop_lan_secret_$suffix"
+    }
+
+    /**
+     * Selects a previously downloaded shop key for offline LAN operation.
+     * The encrypted value can only be opened on the Android Keystore installation that saved it.
+     */
+    @Synchronized
+    fun useCachedShopSharedSecret(shopSyncKey: String): Boolean {
+        val key = shopSyncKey.trim().lowercase(Locale.ROOT)
+        if (key.isBlank()) return false
+        if (activeShopLanSecretKey == key && activeShopLanSecretBytes != null) return true
+        // Clear any other shop's in-memory key before trying the requested shop. Never
+        // allow a shop switch to keep using the previous account's LAN credentials.
+        activeShopLanSecretKey = key
+        activeShopLanSecretBytes = null
+        return try {
+            val envelope = context.applicationContext
+                .getSharedPreferences("beboss_lan_security", Context.MODE_PRIVATE)
+                .getString(sharedLanSecretPreferenceKey(key), null)
+                ?: return false
+            val secret = CryptoKeyManager.unwrapLanSharedSecret(envelope)
+            activeShopLanSecretKey = key
+            activeShopLanSecretBytes = secret.toByteArray(StandardCharsets.UTF_8)
+            true
+        } catch (error: Exception) {
+            Log.w(TAG, "Cached shop LAN key unavailable on this terminal: ${error.message}")
+            activeShopLanSecretKey = key
+            activeShopLanSecretBytes = null
+            false
+        }
+    }
+
+    /** Stores a cloud-issued 256-bit shop key encrypted by the terminal's Android Keystore. */
+    @Synchronized
+    fun configureShopSharedSecret(shopSyncKey: String, secret: String): Boolean {
+        val key = shopSyncKey.trim().lowercase(Locale.ROOT)
+        val cleanSecret = secret.trim().lowercase(Locale.ROOT)
+        if (key.isBlank() || !cleanSecret.matches(Regex("[a-f0-9]{64}"))) return false
+        return try {
+            val envelope = CryptoKeyManager.wrapLanSharedSecret(cleanSecret)
+            val saved = context.applicationContext
+                .getSharedPreferences("beboss_lan_security", Context.MODE_PRIVATE)
+                .edit()
+                .putString(sharedLanSecretPreferenceKey(key), envelope)
+                .commit()
+            if (!saved) return false
+            activeShopLanSecretKey = key
+            activeShopLanSecretBytes = cleanSecret.toByteArray(StandardCharsets.UTF_8)
+            true
+        } catch (error: Exception) {
+            Log.e(TAG, "Could not secure the cloud shop LAN key", error)
+            false
+        }
+    }
+
     private fun getMasterLanSecretBytes(): ByteArray {
-        val secret = try {
+        activeShopLanSecretBytes?.let { return it.copyOf() }
+        // Backwards compatibility for deployments that intentionally provision a shared
+        // LAN secret at build time. A device-unique SQLCipher key is never a valid peer key.
+        val legacySharedSecret = try {
             BuildConfig.BEBOSS_LAN_SYNC_SECRET.trim()
         } catch (_: Throwable) {
             ""
         }
-        if (secret.isNotEmpty() && secret != "DEFAULT_LAN_SECRET_PLACEHOLDER") {
-            return secret.toByteArray(StandardCharsets.UTF_8)
+        if (legacySharedSecret.isNotEmpty() && legacySharedSecret != "DEFAULT_LAN_SECRET_PLACEHOLDER") {
+            return legacySharedSecret.toByteArray(StandardCharsets.UTF_8)
         }
-        return CryptoKeyManager.getOrCreateDatabasePassphrase(context)
+        throw SecurityException("This shop's encrypted LAN pairing key is not synced yet. Connect to cloud once while signed in as the shop owner.")
     }
 
     private fun getLanHmacKey(): ByteArray =

@@ -205,13 +205,9 @@ Deno.serve(async (request: Request) => {
       return json(409, { message: "The submitted payment owner does not match a registered BeBoss shop. No code was issued." });
     }
 
-    const configResponse = await adminRest("app_config?select=per_device_fee_rwf&id=eq.global&limit=1");
-    if (!configResponse.ok) return json(503, { message: "Could not load BeBoss subscription pricing." });
-    const configRows = await configResponse.json();
-    const liveDeviceRate = Number(configRows?.[0]?.per_device_fee_rwf) || 2000;
-    const feePerDevice = Number(payment.fee_per_device_rwf) > 0
-      ? Math.floor(Number(payment.fee_per_device_rwf))
-      : liveDeviceRate;
+    // License pricing fixes every added POS terminal at 2,000 FRw/month.
+    // Ignore stale client-submitted or legacy app_config overrides.
+    const feePerDevice = 2_000;
 
     const branchFee = branches === 1 ? 5000 : branches === 2 ? 10000 : 20000;
     const workerFee = workers <= 1 ? 0 : workers <= 3 ? 2000 : workers <= 5 ? 4000 : 4000 + (workers - 5) * 1000;

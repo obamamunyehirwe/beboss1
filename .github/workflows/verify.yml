@@ -16,7 +16,7 @@ concurrency:
 jobs:
   web:
     name: Web lint, tests and production build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: web
@@ -46,6 +46,8 @@ jobs:
           --rule 'prettier/prettier: off'
           --rule '@typescript-eslint/no-explicit-any: off'
           src/lib/admin.functions.ts
+          src/lib/pricing.ts
+          src/routes/_authenticated/admin/payments.tsx
           src/lib/bb2.ts
           src/lib/bb2.test.ts
           src/lib/public.functions.ts
@@ -76,7 +78,7 @@ jobs:
 
   android:
     name: Android JVM unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -90,7 +92,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools platforms;android-36.1 build-tools;36.0.0'
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - name: Create CI debug keystore
         shell: bash
@@ -114,3 +116,14 @@ jobs:
 
       - name: Run Android unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
+
+      - name: Build installable Android debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Publish Android debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeBoss-Android-2.3.1-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

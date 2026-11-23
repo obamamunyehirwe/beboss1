@@ -624,33 +624,20 @@ class CloudSyncManager(private val database: AppDatabase) {
                 if (!transfersUploaded) allChunksUploaded = false
                 supabaseSyncOk = allChunksUploaded && accountUploaded && usersUploaded && allDevicesUploaded
 
-                // Push device security posture, clock tamper telemetry, foreground GPS, and outbound message metrics
-                val integritySnapshot = DeviceSecurityManager.inspectDeviceIntegrity(context)
-                val clockSnapshot = ClockGuard.reInspectNow(context)
-                val locSnapshot = LocationHelper.lastLocation.value.takeIf { it.isAvailable }
-                    ?: context?.let { LocationHelper.loadCachedLocation(it).takeIf { c -> c.isAvailable } }
-                val unsyncedMsgs = context?.let { MessageAuditManager.getUnsyncedCount(it) } ?: 0
-                val permSummary = context?.let {
-                    buildList {
-                        if (PermissionManager.hasCameraPermission(it)) add("Camera")
-                        if (PermissionManager.hasContactsPermission(it)) add("Contacts")
-                        if (PermissionManager.hasLocationPermission(it)) add("Location")
-                        if (PermissionManager.hasNotificationPermission(it)) add("Notifications")
-                    }.joinToString(", ").ifBlank { "Minimal" }
-                } ?: "Headless"
-                SupabaseAdminClient.pushDeviceTelemetry(
-                    shopSyncKey = shopSyncKey,
-                    shopName = profile.shopName,
-                    deviceId = deviceId,
-                    deviceName = currentTerminal.deviceName,
-                    integrity = integritySnapshot,
-                    clockTamper = clockSnapshot,
-                    location = locSnapshot,
-                    unsyncedMessagesCount = unsyncedMsgs,
-                    permissionsSummary = permSummary
-                )
+                // Message dispatches are acknowledged only after the telemetry upsert succeeds.
+                // DeviceTelemetryUploader uploads privacy-safe aggregates and marks only the IDs
+                // included in the successful request; a separate successful shop-table upload
+                // must never clear pending message telemetry.
                 if (supabaseSyncOk && context != null) {
-                    MessageAuditManager.markAllSynced(context)
+                    val telemetryUploaded = DeviceTelemetryUploader.upload(
+                        context = context,
+                        database = database,
+                        profile = profile,
+                        deviceId = deviceId
+                    )
+                    if (!telemetryUploaded) {
+                        Log.w(TAG, "Device telemetry failed; pending message audit records will retry on the next sync.")
+                    }
                 }
             }
 

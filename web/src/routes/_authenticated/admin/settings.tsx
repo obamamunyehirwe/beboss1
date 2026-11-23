@@ -31,6 +31,7 @@ type Cfg = {
   per_device_fee_rwf: number;
   apk_download_url: string;
   apk_version: string;
+  min_app_version: string;
   support_email: string;
 };
 
@@ -83,8 +84,11 @@ function SettingsPage() {
             <F label="Airtel Money receiving phone" v={cfg.airtel_money_phone} on={(v) => set("airtel_money_phone", v)} inputMode="tel" hint="Used in *500*1*1*PHONE*AMOUNT#." />
             <F label="Airtel recipient name" v={cfg.airtel_recipient_name} on={(v) => set("airtel_recipient_name", v)} />
             <div className="space-y-1.5">
-              <Label>Extra device fee (FRw / month)</Label>
-              <Input type="number" min={0} value={cfg.per_device_fee_rwf} onChange={(e) => set("per_device_fee_rwf", Math.max(0, Number(e.target.value) || 0))} />
+              <Label>Extra POS terminal fee (FRw / month)</Label>
+              <div className="flex h-10 items-center rounded-md border border-input bg-muted px-3 text-sm font-semibold">
+                2,000 FRw per additional paired device
+              </div>
+              <p className="text-xs text-muted-foreground">The primary owner terminal is included. Every additional active POS device is billed at a fixed 2,000 FRw each month.</p>
             </div>
             <F label="Admin WhatsApp (with country code)" v={cfg.admin_whatsapp_number} on={(v) => set("admin_whatsapp_number", v)} inputMode="tel" hint="e.g. 250788123456" />
             <F label="Support email" v={cfg.support_email} on={(v) => set("support_email", v)} inputMode="email" />
@@ -96,6 +100,7 @@ function SettingsPage() {
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
             <F label="Latest app version" v={cfg.apk_version} on={(v) => set("apk_version", v)} />
+            <F label="Minimum required version" v={cfg.min_app_version} on={(v) => set("min_app_version", v)} hint="Older app versions can be blocked from cloud access when a critical update is required." />
             <F label="APK download link" v={cfg.apk_download_url} on={(v) => set("apk_download_url", v)} hint="Set automatically when you publish a release" />
           </div>
           <div className="rounded-2xl border border-border bg-muted/40 p-4">
