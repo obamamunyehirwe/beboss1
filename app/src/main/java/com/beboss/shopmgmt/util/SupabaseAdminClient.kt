@@ -914,9 +914,9 @@ object SupabaseAdminClient {
                     mtnRecipientName = o.optString("mtn_recipient_name", "BeBoss Pay"),
                     airtelMoneyPhone = o.optString("airtel_money_phone", "0738765432"),
                     airtelRecipientName = o.optString("airtel_recipient_name", "BeBoss Pay"),
-                    perDeviceFeeRwf = o.optInt("per_device_fee_rwf", 2000),
+                    perDeviceFeeRwf = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF,
                     apkDownloadUrl = o.optString("apk_download_url", ""),
-                    apkVersion = o.optString("apk_version", "2.1.0").ifBlank { "2.1.0" },
+                    apkVersion = o.optString("apk_version", "2.3.0").ifBlank { "2.3.0" },
                     updatedAt = o.optLong("updated_at", 0L)
                 )
             }
@@ -938,9 +938,9 @@ object SupabaseAdminClient {
                 put("mtn_recipient_name", config.mtnRecipientName.trim())
                 put("airtel_money_phone", config.airtelMoneyPhone.trim())
                 put("airtel_recipient_name", config.airtelRecipientName.trim())
-                put("per_device_fee_rwf", config.perDeviceFeeRwf.coerceAtLeast(0))
+                put("per_device_fee_rwf", OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF)
                 put("apk_download_url", config.apkDownloadUrl.trim())
-                put("apk_version", config.apkVersion.trim().ifBlank { "2.1.0" })
+                put("apk_version", config.apkVersion.trim().ifBlank { "2.3.0" })
                 put("updated_at", now)
             }
             val req = buildRestRequest("app_config?on_conflict=id", useAdminJwtIfAvailable = true)
@@ -1716,7 +1716,7 @@ object SupabaseAdminClient {
                 put("branch_count", request.branchCount)
                 put("worker_count", request.workerCount)
                 put("device_count", request.deviceCount.coerceAtLeast(1))
-                put("fee_per_device_rwf", request.feePerDeviceRwf.coerceAtLeast(0))
+                put("fee_per_device_rwf", OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF)
                 put("payment_time_ms", request.paymentTimeMs.takeIf { it > 0L } ?: request.createdAt.takeIf { it > 0L } ?: now)
                 put("payment_note", request.paymentNote.trim())
                 put("status", "PENDING_VERIFICATION")
@@ -2006,8 +2006,7 @@ object SupabaseAdminClient {
         }
 
         val paymentTimeMs = request.paymentTimeMs.takeIf { it > 0L } ?: request.createdAt.takeIf { it > 0L } ?: signed.paymentTimeMs
-        val savedFeeRate = request.feePerDeviceRwf.takeIf { it > 0 }
-            ?: OfflineSubscriptionManager.getCurrentPaymentConfig().perDeviceFeeRwf.coerceAtLeast(0)
+        val savedFeeRate = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF
         val recomputedBreakdown = OfflineSubscriptionManager.calculateSubscriptionPrice(
             branchCount = request.branchCount.coerceAtLeast(1),
             workerCount = request.workerCount.coerceAtLeast(1),
@@ -2605,7 +2604,7 @@ object SupabaseAdminClient {
             branchCount = o.optInt("branch_count", 1),
             workerCount = o.optInt("worker_count", 1),
             deviceCount = o.optInt("device_count", 1).coerceAtLeast(1),
-            feePerDeviceRwf = o.optInt("fee_per_device_rwf", 2000).coerceAtLeast(0),
+            feePerDeviceRwf = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF,
             status = o.optString("status", "PENDING_VERIFICATION"),
             approvalMode = o.optString("approval_mode"),
             generatedUnlockCode = o.optString("generated_unlock_code"),
