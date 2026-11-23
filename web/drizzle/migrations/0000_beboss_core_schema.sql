@@ -176,6 +176,7 @@ create table public.shop_accounts (
   owner_username text not null,
   owner_phone text not null,
   device_challenge text not null default '',
+  lan_sync_secret text not null default (replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '')),
   branch_count integer not null default 1,
   worker_count integer not null default 1,
   device_count integer not null default 1,
