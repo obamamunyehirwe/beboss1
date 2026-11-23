@@ -591,8 +591,8 @@ class BeBossRepository(private val database: AppDatabase) {
                 principal.role == UserRole.MANAGER &&
                     (principal.assignedBranchId == targetBranch.id || targetBranch.managerUserId == principal.id)
             ) { "A branch manager can only register terminals for the branch they manage." }
-            require(staff.assignedBranchId.isBlank() || staff.assignedBranchId == targetBranch.id) {
-                "A branch manager cannot assign staff from another branch."
+            require(staff.assignedBranchId == targetBranch.id) {
+                "A branch manager may assign only staff explicitly assigned to their branch."
             }
         }
 
@@ -757,8 +757,14 @@ class BeBossRepository(private val database: AppDatabase) {
         val ownerUser = users.firstOrNull { it.role == UserRole.OWNER }
         val now = System.currentTimeMillis()
         val updated = existing.copy(isActive = isActive, syncedToSupabase = false, updatedAt = now)
-        require(SupabaseAdminClient.upsertShopDevice(existing.shopSyncKey, profile.shopName, updated)) {
-            "Supabase did not confirm the device status change. The local device was not changed."
+        require(SupabaseAdminClient.setShopDeviceActive(
+            shopSyncKey = existing.shopSyncKey,
+            deviceRecordId = existing.id,
+            actorDeviceId = actorDeviceId,
+            actorUserId = principal.id,
+            isActive = isActive
+        )) {
+            "Supabase rejected this device status change. Check your branch assignment and cloud connection."
         }
         val devicesCount = (shopDeviceDao.getActiveDevicesCount() +
             if (existing.isActive != isActive) if (isActive) 1 else -1 else 0).coerceAtLeast(1)
@@ -812,11 +818,13 @@ class BeBossRepository(private val database: AppDatabase) {
             "Connect to the internet before removing a registered cloud device."
         }
         require(actorDeviceId.isNotBlank()) { "This terminal has no registered device identity." }
-        require(SupabaseAdminClient.revokeShopDeviceInvites(
-            existing.shopSyncKey, deviceRecordId, actorDeviceId, principal.id
-        )) { "Supabase could not revoke the device invitation. The device was not removed." }
-        require(SupabaseAdminClient.deleteShopDeviceInCloud(existing.shopSyncKey, deviceRecordId)) {
-            "Supabase did not confirm device removal. The local device was not removed."
+        require(SupabaseAdminClient.deleteShopDeviceAuthorized(
+            shopSyncKey = existing.shopSyncKey,
+            deviceRecordId = deviceRecordId,
+            actorDeviceId = actorDeviceId,
+            actorUserId = principal.id
+        )) {
+            "Supabase rejected device removal. Check that you manage this branch and that the cloud is reachable."
         }
 
         val profile = getShopProfileDirect()
