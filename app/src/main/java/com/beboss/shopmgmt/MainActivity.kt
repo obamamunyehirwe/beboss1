@@ -391,7 +391,7 @@ private fun BeBossMainContent(
             language = currentLanguage,
             isDarkTheme = isDarkTheme,
             authError = authError,
-            onRegister = { shopName, businessType, currencyCode, currencySymbol, address, phone, ownerName, username, pin, password ->
+            onRegister = { shopName, businessType, currencyCode, currencySymbol, address, phone, ownerName, username, pin, password, ownerOtpCode ->
                 viewModel.registerNewShopAndOwner(
                     shopName = shopName,
                     businessType = businessType,
@@ -402,8 +402,12 @@ private fun BeBossMainContent(
                     ownerFullName = ownerName,
                     username = username,
                     pin = pin,
-                    password = password
+                    password = password,
+                    ownerOtpCode = ownerOtpCode
                 )
+            },
+            onRequestOwnerOtp = { phone, username, callback ->
+                viewModel.requestNewShopOwnerOtp(phone, username, callback)
             },
             onJoinExistingShop = { ownerUsername, ownerPhone, deviceJoinCode, thisDeviceName, pin, password ->
                 viewModel.joinExistingShopFromCloud(
