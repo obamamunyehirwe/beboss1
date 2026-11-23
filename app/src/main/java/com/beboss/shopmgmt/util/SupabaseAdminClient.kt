@@ -307,6 +307,16 @@ object SupabaseAdminClient {
     @Volatile
     private var activeAdminSession: SupabaseAdminSession? = null
 
+    @Volatile
+    private var activeDeviceSession: SupabaseAdminSession? = null
+
+    @Volatile
+    private var applicationContext: Context? = null
+
+    private const val DEVICE_AUTH_PREFS = "beboss_device_auth"
+    private const val DEVICE_REFRESH_TOKEN = "encrypted_refresh_token"
+    private const val DEVICE_AUTH_USER_ID = "auth_user_id"
+
     private val modernTlsSpec = ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
         .tlsVersions(TlsVersion.TLS_1_3, TlsVersion.TLS_1_2)
         .build()
@@ -498,6 +508,7 @@ object SupabaseAdminClient {
     }
 
     fun getOrCreateDeviceId(context: Context): String {
+        applicationContext = context.applicationContext
         val prefs = context.getSharedPreferences("beboss_sync_prefs", Context.MODE_PRIVATE)
         val existing = prefs.getString("device_sync_id", null)
         if (!existing.isNullOrBlank()) return existing
@@ -514,18 +525,22 @@ object SupabaseAdminClient {
         val url = "${getSupabaseUrl()}/rest/v1/$path"
         val key = getSupabaseAnonKey()
         val adminToken = if (useAdminJwtIfAvailable) ensureValidAdminSession()?.accessToken else null
+        val deviceToken = if (!tenantSyncKey.isNullOrBlank() && adminToken.isNullOrBlank()) {
+            ensureValidDeviceSession()?.accessToken
+        } else null
         val builder = Request.Builder()
             .url(url)
             .addHeader("apikey", key)
             .addHeader("Content-Type", "application/json")
 
-        // A modern sb_publishable_* key is an API gateway key, not a JWT. Sending
-        // it as Authorization: Bearer causes PostgREST/Auth to reject it as an
-        // invalid token. Use the admin user's JWT for protected reads; otherwise
-        // only add a Bearer token for the legacy anon JWT format.
+        // Tenant keys identify the requested shop only. RLS requires a valid owner
+        // or enrolled-device Supabase JWT; an anonymous JWT is never a fallback
+        // for a tenant-scoped request.
         when {
             !adminToken.isNullOrBlank() -> builder.addHeader("Authorization", "Bearer $adminToken")
-            isLegacyJwtApiKey(key) -> builder.addHeader("Authorization", "Bearer $key")
+            !deviceToken.isNullOrBlank() -> builder.addHeader("Authorization", "Bearer $deviceToken")
+            tenantSyncKey.isNullOrBlank() && isLegacyJwtApiKey(key) ->
+                builder.addHeader("Authorization", "Bearer $key")
         }
         if (!tenantSyncKey.isNullOrBlank()) {
             builder.addHeader("X-Shop-Sync-Key", tenantSyncKey.trim())
@@ -1284,36 +1299,182 @@ object SupabaseAdminClient {
      * Atomically claims a one-time cloud invite for this physical installation.
      * The database binds the slot to the stable hardware ID and rejects reuse elsewhere.
      */
+    /**
+     * Redeems a one-time owner-issued invite through the trusted Edge Function.
+     * The function creates a dedicated Auth identity for this terminal, atomically
+     * binds it to the approved shop/device/staff tuple, then returns one-time
+     * credentials. The refresh token is encrypted with Android Keystore at rest.
+     */
     suspend fun redeemShopDeviceInvite(
+        context: Context,
         shopSyncKey: String,
         joinCode: String,
         hardwareDeviceId: String,
         deviceName: String
     ): SupabaseShopDeviceDto? = withContext(Dispatchers.IO) {
-        if (!isConfigured() || shopSyncKey.isBlank() || joinCode.isBlank() || hardwareDeviceId.isBlank()) {
+        applicationContext = context.applicationContext
+        if (!isConfigured() || joinCode.isBlank() || hardwareDeviceId.isBlank()) {
             return@withContext null
         }
         try {
             val payload = JSONObject()
-                .put("p_shop_sync_key", shopSyncKey)
-                .put("p_code_hash", hashShopDeviceJoinCode(joinCode))
-                .put("p_device_id", hardwareDeviceId)
-                .put("p_device_name", deviceName.trim().take(120))
-            val req = buildRestRequest("rpc/redeem_shop_device_invite", tenantSyncKey = shopSyncKey)
+                .put("joinCode", joinCode.trim().uppercase(Locale.ROOT))
+                .put("deviceId", hardwareDeviceId.trim())
+                .put("deviceName", deviceName.trim().take(120))
+            val enrollRequest = Request.Builder()
+                .url("${getSupabaseUrl()}/functions/v1/redeem-shop-device-invite")
+                .addHeader("apikey", getSupabaseAnonKey())
+                .addHeader("Content-Type", "application/json")
                 .post(payload.toString().toRequestBody(jsonMediaType))
                 .build()
-            client.newCall(req).execute().use { response ->
+
+            val enrollmentJson = client.newCall(enrollRequest).execute().use { response ->
                 val raw = response.body?.string().orEmpty()
+                val body = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
                 if (!response.isSuccessful) {
-                    Log.w(TAG, "redeemShopDeviceInvite HTTP ${response.code}: $raw")
+                    Log.w(TAG, "Secure device enrollment rejected (HTTP ${response.code}).")
                     return@withContext null
                 }
-                parseShopDeviceDto(JSONObject(raw))
+                body
             }
+
+            val credentials = enrollmentJson.optJSONObject("credentials") ?: return@withContext null
+            val email = credentials.optCleanString("email")
+            val password = credentials.optCleanString("password")
+            val expectedUserId = enrollmentJson.optCleanString("authUserId")
+            if (email.isBlank() || password.length < 32 || expectedUserId.isBlank()) {
+                Log.w(TAG, "Secure enrollment response did not include complete one-time credentials.")
+                return@withContext null
+            }
+
+            val authPayload = JSONObject().put("email", email).put("password", password)
+            val tokenRequest = Request.Builder()
+                .url("${getSupabaseUrl()}/auth/v1/token?grant_type=password")
+                .addHeader("apikey", getSupabaseAnonKey())
+                .addHeader("Content-Type", "application/json")
+                .post(authPayload.toString().toRequestBody(jsonMediaType))
+                .build()
+
+            val authJson = client.newCall(tokenRequest).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Terminal Auth token exchange failed (HTTP ${response.code}).")
+                    return@withContext null
+                }
+                JSONObject(raw)
+            }
+            val authUser = authJson.optJSONObject("user") ?: JSONObject()
+            val accountType = authUser.optJSONObject("app_metadata")?.optCleanString("account_type").orEmpty()
+            val session = parseAuthSession(authJson, email, "BeBoss POS Device")
+                ?: return@withContext null
+            if (session.userId != expectedUserId || accountType != "beboss_pos_device" ||
+                session.refreshToken.isBlank() || session.accessToken.isBlank()) {
+                Log.w(TAG, "Terminal Auth identity did not match the enrolled device identity.")
+                return@withContext null
+            }
+
+            val prefs = context.getSharedPreferences(DEVICE_AUTH_PREFS, Context.MODE_PRIVATE)
+            val encryptedRefreshToken = CryptoKeyManager.wrapDeviceAuthCredential(session.refreshToken)
+            val saved = prefs.edit()
+                .putString(DEVICE_REFRESH_TOKEN, encryptedRefreshToken)
+                .putString(DEVICE_AUTH_USER_ID, session.userId)
+                .commit()
+            if (!saved) {
+                activeDeviceSession = null
+                Log.w(TAG, "Could not persist the encrypted device refresh token.")
+                return@withContext null
+            }
+
+            activeDeviceSession = session
+            val deviceJson = enrollmentJson.optJSONObject("device") ?: return@withContext null
+            val parsed = parseShopDeviceDto(deviceJson)
+            if (parsed.deviceId != hardwareDeviceId || parsed.shopSyncKey.isBlank() ||
+                (shopSyncKey.isNotBlank() && parsed.shopSyncKey != shopSyncKey)) {
+                clearDeviceAuthSession(context)
+                Log.w(TAG, "Enrolled device metadata did not match the requested shop or hardware ID.")
+                return@withContext null
+            }
+            parsed
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "redeemShopDeviceInvite error: ${e.message}")
+            Log.w(TAG, "Secure device enrollment failed: ${e.message}")
             null
         }
+    }
+
+    /** Re-enroll this already paired installation without deleting local Room data. */
+    suspend fun enrollCurrentDevice(context: Context, joinCode: String): Boolean = withContext(Dispatchers.IO) {
+        val hardwareId = getOrCreateDeviceId(context)
+        redeemShopDeviceInvite(
+            context = context,
+            shopSyncKey = "",
+            joinCode = joinCode,
+            hardwareDeviceId = hardwareId,
+            deviceName = android.os.Build.MODEL?.ifBlank { "BeBoss POS Terminal" } ?: "BeBoss POS Terminal"
+        ) != null
+    }
+
+    private fun ensureValidDeviceSession(): SupabaseAdminSession? {
+        val cached = activeDeviceSession
+        if (cached != null && cached.accessToken.isNotBlank() &&
+            cached.expiresAt > System.currentTimeMillis() + 60_000L) {
+            return cached
+        }
+
+        val context = applicationContext ?: return null
+        return try {
+            val prefs = context.getSharedPreferences(DEVICE_AUTH_PREFS, Context.MODE_PRIVATE)
+            val envelope = prefs.getString(DEVICE_REFRESH_TOKEN, null).orEmpty()
+            val expectedUserId = prefs.getString(DEVICE_AUTH_USER_ID, null).orEmpty()
+            if (envelope.isBlank() || expectedUserId.isBlank()) return null
+
+            val refreshToken = CryptoKeyManager.unwrapDeviceAuthCredential(envelope)
+            val payload = JSONObject().put("refresh_token", refreshToken)
+            val request = Request.Builder()
+                .url("${getSupabaseUrl()}/auth/v1/token?grant_type=refresh_token")
+                .addHeader("apikey", getSupabaseAnonKey())
+                .addHeader("Content-Type", "application/json")
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Terminal Auth refresh rejected (HTTP ${response.code}); secure re-enrollment is required if revoked.")
+                    return null
+                }
+                val json = JSONObject(raw)
+                val user = json.optJSONObject("user") ?: JSONObject()
+                val accountType = user.optJSONObject("app_metadata")?.optCleanString("account_type").orEmpty()
+                val refreshed = parseAuthSession(json, user.optCleanString("email"), "BeBoss POS Device")
+                if (refreshed == null || refreshed.userId != expectedUserId ||
+                    accountType != "beboss_pos_device" || refreshed.accessToken.isBlank()) {
+                    activeDeviceSession = null
+                    return null
+                }
+                val newRefreshToken = refreshed.refreshToken.ifBlank { refreshToken }
+                val stored = prefs.edit()
+                    .putString(DEVICE_REFRESH_TOKEN, CryptoKeyManager.wrapDeviceAuthCredential(newRefreshToken))
+                    .commit()
+                if (!stored) return null
+                val sessionWithRefresh = refreshed.copy(refreshToken = newRefreshToken)
+                activeDeviceSession = sessionWithRefresh
+                sessionWithRefresh
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not restore secure device session: ${e.message}")
+            null
+        }
+    }
+
+    fun clearDeviceAuthSession(context: Context) {
+        activeDeviceSession = null
+        context.getSharedPreferences(DEVICE_AUTH_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .remove(DEVICE_REFRESH_TOKEN)
+            .remove(DEVICE_AUTH_USER_ID)
+            .commit()
     }
 
     suspend fun revokeShopDeviceInvites(
