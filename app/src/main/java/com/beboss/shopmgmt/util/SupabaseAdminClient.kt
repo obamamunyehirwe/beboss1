@@ -972,7 +972,7 @@ object SupabaseAdminClient {
             // an old account keyed by the same owner username/phone from extending a
             // newly registered four-day trial.
             val trustedRemoteLicense = existingRemote?.takeIf {
-                it.updatedAt >= shopProfile.trialStartedAt
+                it.updatedAt > shopProfile.trialStartedAt
             }
             val effectiveStatus = when {
                 trustedRemoteLicense != null &&
