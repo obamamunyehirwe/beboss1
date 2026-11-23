@@ -617,9 +617,15 @@ function LookupPanel() {
                     {pay.provider} • {formatRwf(pay.amount_rwf)} • {pay.duration_months} {t("calcMonths")}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {formatDateTime(pay.payment_time_ms || pay.created_at)}{pay.payment_note ? ` • ${pay.payment_note}` : ""}
-                    {pay.rejection_reason ? ` • ${pay.rejection_reason}` : ""}
+                    {formatDateTime(pay.payment_time_ms || pay.created_at)}{pay.rejection_reason ? ` • ${pay.rejection_reason}` : ""}
                   </p>
+                  {Number(pay.gateway_verified_at) > 0 ? (
+                    <p className="mt-1 text-xs font-medium text-success">
+                      Provider verified: {pay.gateway_provider} • {pay.gateway_reference} • {pay.gateway_transaction_id} • {formatRwf(pay.gateway_amount_rwf)} {pay.gateway_currency}
+                    </p>
+                  ) : pay.payment_note ? (
+                    <p className="mt-1 text-xs text-muted-foreground">Legacy payment note submitted for manual review</p>
+                  ) : null}
                 </div>
                 <Badge variant={statusVariant(pay.status)}>{st(pay.status)}</Badge>
               </div>
