@@ -18,12 +18,14 @@ import { buildWhatsAppUrl, calculateSubscriptionFee, computeShopKey, effectiveSh
 import { daysLeft, formatDateTime, formatRwf, relativeTime } from "@/lib/format";
 import { RetailInsights } from "@/components/admin/RetailInsights";
 import { ShopRecords } from "@/components/admin/ShopRecords";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/shops/$shopId")({
   component: ShopDetail,
 });
 
 function ShopDetail() {
+  const a = useAdminText();
   const { shopId } = Route.useParams();
   const navigate = useNavigate();
   const ctx = useAdminCtx();
@@ -73,7 +75,7 @@ function ShopDetail() {
   return (
     <div className="space-y-6">
       <Link to="/admin/shops" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> All shops
+        <ArrowLeft className="size-4" /> {a("All shops")}
       </Link>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -87,7 +89,7 @@ function ShopDetail() {
         </div>
         <Button variant="glass" size="sm" asChild>
           <a href={buildWhatsAppUrl(shop.owner_phone, `Hello ${shop.owner_name || "@" + shop.owner_username}, this is the BeBoss team about ${shop.shop_name}.`)} target="_blank" rel="noreferrer">
-            <MessageCircle /> WhatsApp owner
+            <MessageCircle /> {a("WhatsApp owner")}
           </a>
         </Button>
       </div>
@@ -97,7 +99,7 @@ function ShopDetail() {
           <ShieldOff className="size-4 text-destructive" />
           <span className="font-medium text-destructive">{flags.map((f) => FLAG_LABEL[f]).join(" · ")}</span>
           <span className="text-muted-foreground">
-            {flags.includes("UNVERIFIED_PAID") ? "No approved payment, issued code or direct unlock is on record for this owner. Verify before trusting this license." : ""}
+            {flags.includes("UNVERIFIED_PAID") ? a("No approved payment, issued code or direct unlock is on record for this owner. Verify before trusting this license.") : ""}
           </span>
         </div>
       ) : null}
@@ -129,26 +131,26 @@ function ShopDetail() {
               </Button>
             </div>
             <Button className="mt-3 w-full" size="sm" variant="success" onClick={() => extend.mutate({ shopId, days: 30, autoUnlock: true })}>
-              <Zap /> Direct auto-unlock +30d
+              <Zap /> {a("Direct auto-unlock +30d")}
             </Button>
             <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border pt-4">
               <Button size="sm" variant="ghost" onClick={() => trial.mutate({ shopId })}>
-                <RotateCcw /> Reset trial
+                <RotateCcw /> {a("Reset trial")}
               </Button>
               {shop.subscription_status === "SUSPENDED" ? (
                 <Button size="sm" variant="ghost" onClick={() => status.mutate({ shopId, status: "ACTIVE" })}>
-                  <Power /> Reactivate
+                  <Power /> {a("Reactivate")}
                 </Button>
               ) : (
                 <ConfirmAction
                   trigger={
                     <Button size="sm" variant="ghost" className="text-destructive">
-                      <Ban /> Suspend
+                      <Ban /> {a("Suspend")}
                     </Button>
                   }
-                  title={`Suspend ${shop.shop_name}?`}
+                  title={`${a("Suspend")} ${shop.shop_name}?`}
                   description="The app locks on its next sync until you reactivate the shop. Local data stays safe on the device."
-                  confirmLabel="Suspend"
+                  confirmLabel={a("Suspend")}
                   destructive
                   onConfirm={() => status.mutate({ shopId, status: "SUSPENDED" })}
                 />
@@ -164,7 +166,7 @@ function ShopDetail() {
 
           <section className="rounded-2xl border border-border bg-card p-5">
             <h2 className="flex items-center gap-2 font-semibold">
-              <KeyRound className="size-4 text-primary" /> Quotas & pricing
+              <KeyRound className="size-4 text-primary" /> {a("Quotas & pricing")}
             </h2>
             <div className="mt-4 grid grid-cols-3 gap-3">
               {(["branches", "workers", "devices"] as const).map((k) => (
@@ -187,27 +189,27 @@ function ShopDetail() {
 
           <section className="rounded-2xl border border-border bg-card p-5">
             <h2 className="flex items-center gap-2 font-semibold">
-              <ShieldOff className="size-4 text-primary" /> Remote controls
+              <ShieldOff className="size-4 text-primary" /> {a("Remote controls")}
             </h2>
             <div className="mt-4 flex items-center justify-between rounded-xl border border-destructive/30 bg-destructive/5 p-3">
               <div>
-                <p className="text-sm font-medium">Kill switch</p>
-                <p className="text-xs text-muted-foreground">Locks every device of this shop on next sync</p>
+                <p className="text-sm font-medium">{a("Kill switch")}</p>
+                <p className="text-xs text-muted-foreground">{a("Locks every device of this shop on next sync")}</p>
               </div>
               <Switch checked={c.killSwitch} onCheckedChange={(v) => setC({ ...c, killSwitch: v })} />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Min app version</Label>
+                <Label>{a("Min app version")}</Label>
                 <Input value={c.minAppVersion} onChange={(e) => setC({ ...c, minAppVersion: e.target.value })} />
               </div>
               <div className="space-y-1.5">
-                <Label>Support WhatsApp</Label>
+                <Label>{a("Support WhatsApp")}</Label>
                 <Input value={c.adminWhatsapp} onChange={(e) => setC({ ...c, adminWhatsapp: e.target.value })} placeholder="2507…" />
               </div>
             </div>
             <div className="mt-3 space-y-1.5">
-              <Label>Private admin notes</Label>
+              <Label>{a("Private admin notes")}</Label>
               <Textarea rows={3} value={c.notes} onChange={(e) => setC({ ...c, notes: e.target.value })} maxLength={2000} />
             </div>
             <Button className="mt-3 w-full" size="sm" variant="soft" disabled={controls.isPending} onClick={() => controls.mutate({ shopId, ...c })}>
@@ -219,8 +221,8 @@ function ShopDetail() {
 
       <Tabs defaultValue="insights">
         <TabsList className="flex-wrap">
-          <TabsTrigger value="insights">Retail insights</TabsTrigger>
-          <TabsTrigger value="records">Shop records</TabsTrigger>
+          <TabsTrigger value="insights">{a("Retail insights")}</TabsTrigger>
+          <TabsTrigger value="records">{a("Shop records")}</TabsTrigger>
           <TabsTrigger value="devices">Devices ({shopDevices.length})</TabsTrigger>
           <TabsTrigger value="users">Staff ({shopUsers.length})</TabsTrigger>
           <TabsTrigger value="payments">Payments ({shopPays.length})</TabsTrigger>
@@ -257,8 +259,8 @@ function ShopDetail() {
       {isAdmin ? (
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
           <div>
-            <h2 className="font-semibold text-destructive">Delete shop</h2>
-            <p className="text-sm text-muted-foreground">Removes the cloud record with its devices, staff directory and snapshots. Data on the phones is not erased.</p>
+            <h2 className="font-semibold text-destructive">{a("Delete shop")}</h2>
+            <p className="text-sm text-muted-foreground">{a("Removes the cloud record with its devices, staff directory and snapshots. Data on the phones is not erased.")}</p>
           </div>
           <ConfirmAction
             trigger={
@@ -266,10 +268,10 @@ function ShopDetail() {
                 <Trash2 /> Delete shop
               </Button>
             }
-            title={`Delete ${shop.shop_name}?`}
+            title={`${a("Delete shop")} ${shop.shop_name}?`}
             description="This cannot be undone. If the app syncs again, the shop will re-register as a new trial."
             destructive
-            confirmLabel="Delete permanently"
+            confirmLabel={a("Delete permanently")}
             onConfirm={() => del.mutate({ shopId, cascade: true }, { onSuccess: () => navigate({ to: "/admin/shops" }) })}
           />
         </section>
