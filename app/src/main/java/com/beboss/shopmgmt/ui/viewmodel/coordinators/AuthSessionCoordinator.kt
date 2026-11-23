@@ -80,6 +80,17 @@ class AuthSessionCoordinator(
         }
     }
 
+    fun requestNewShopOwnerOtp(
+        phone: String,
+        username: String,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        scope.launch {
+            val result = SupabaseAdminClient.requestNewShopOwnerOtp(phone, username)
+            onResult(result.first, result.second)
+        }
+    }
+
     fun registerNewShopAndOwner(
         shopName: String,
         businessType: String,
@@ -90,7 +101,8 @@ class AuthSessionCoordinator(
         ownerFullName: String,
         username: String,
         pin: String,
-        password: String
+        password: String,
+        ownerOtpCode: String
     ) {
         scope.launch {
             try {
@@ -107,6 +119,19 @@ class AuthSessionCoordinator(
                 if (cleanShopName.isBlank() || cleanOwnerName.isBlank() || cleanUsername.length < 2 ||
                     !cleanUsername.matches(Regex("[a-z0-9._-]{2,80}")) || phoneDigits.length != 9) {
                     _authError.value = "Enter a shop name, owner name, a valid username, and the registered 9-digit Rwandan phone number."
+                    return@launch
+                }
+
+                val ownerOtpVerified = SupabaseAdminClient.completeNewShopOwnerRegistration(
+                    context = application,
+                    phone = cleanPhone,
+                    otpCode = ownerOtpCode,
+                    shopName = cleanShopName,
+                    ownerName = cleanOwnerName,
+                    username = cleanUsername
+                )
+                if (!ownerOtpVerified) {
+                    _authError.value = "Owner SMS verification or secure shop setup failed. Check the code, internet and SMS provider, then request a new code."
                     return@launch
                 }
 
