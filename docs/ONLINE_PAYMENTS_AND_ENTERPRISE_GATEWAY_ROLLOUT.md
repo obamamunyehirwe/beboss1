@@ -18,7 +18,7 @@ This change adds a server-side hosted-checkout path for Flutterwave and Stripe, 
 
 - Checkout is created server-side in RWF using a live Stripe account.
 - Before checkout, the function checks the connected Stripe account's country, account details and `charges_enabled` flag. A test key, unverified account or account that cannot accept charges is rejected.
-- The webhook verifies the timestamped Stripe signature against the exact raw body, retrieves the Checkout Session from Stripe and checks paid status, payment request ID, generated gateway reference, currency and exact amount.
+- The webhook verifies the timestamped Stripe HMAC signature against the exact raw body, retrieves the Checkout Session from Stripe and checks paid status, payment request ID, generated gateway reference, currency and exact amount.
 - Stripe availability depends on the legal merchant entity. A Rwanda-only legal entity must not be represented as Stripe eligible. Use only a Stripe account legitimately registered in a supported jurisdiction and approved for the merchant.
 
 ## Required Edge Function secrets
