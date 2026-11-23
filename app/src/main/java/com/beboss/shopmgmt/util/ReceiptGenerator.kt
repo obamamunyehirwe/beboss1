@@ -130,7 +130,7 @@ object ReceiptGenerator {
         return result
     }
 
-private fun escapeHtml(value: String): String = value
+    private fun escapeHtml(value: String): String = value
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
@@ -321,7 +321,7 @@ private fun escapeHtml(value: String): String = value
         return html.toString()
     }
 
-        fun generateSubscriptionInvoice(
+    fun generateSubscriptionInvoice(
         profile: ShopProfile,
         breakdown: SubscriptionPriceBreakdown,
         txRef: String,
