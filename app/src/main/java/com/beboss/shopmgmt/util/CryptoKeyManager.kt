@@ -30,6 +30,7 @@ object CryptoKeyManager {
     private const val ANDROID_KEYSTORE = "AndroidKeyStore"
     private const val DB_MASTER_KEY_ALIAS = "BeBoss_SQLCipher_Master_AES256"
     private const val BIOMETRIC_KEY_ALIAS = "BeBoss_Biometric_Strong_AES256"
+    private const val LAN_SHARED_SECRET_KEY_ALIAS = "BeBoss_LAN_Shop_Secret_AES256"
     private const val CRYPTO_PREFS = "beboss_hardware_crypto_prefs"
     private const val PREF_WRAPPED_DB_KEY = "wrapped_db_passphrase_v1"
 
@@ -211,6 +212,35 @@ object CryptoKeyManager {
         val cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, iv))
         return cipher.doFinal(ciphertext)
+    }
+
+    /**
+     * Wrap a per-shop LAN authentication secret with this terminal's Android Keystore key.
+     * The cloud secret can therefore be shared across a shop's paired phones without
+     * storing the raw value in SharedPreferences or inside the APK.
+     */
+    fun wrapLanSharedSecret(secret: String): String {
+        val clean = secret.trim().lowercase()
+        require(clean.matches(Regex("[a-f0-9]{64}"))) {
+            "Shop LAN secret must be a 256-bit hexadecimal key."
+        }
+        val key = getOrCreateAndroidKeyStoreAesKey(
+            alias = LAN_SHARED_SECRET_KEY_ALIAS,
+            requireUserAuth = false
+        )
+        return wrapWithKeyStoreKey(key, clean.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    /** Unwrap the shop secret only on the same terminal/Android Keystore installation. */
+    fun unwrapLanSharedSecret(envelope: String): String {
+        val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val key = ks.getKey(LAN_SHARED_SECRET_KEY_ALIAS, null) as? SecretKey
+            ?: throw SecurityException("This terminal has not provisioned its LAN secret key.")
+        val clear = String(unwrapWithKeyStoreKey(key, envelope), StandardCharsets.UTF_8)
+        require(clear.matches(Regex("[a-f0-9]{64}"))) {
+            "The stored shop LAN secret is invalid."
+        }
+        return clear
     }
 
     /**
