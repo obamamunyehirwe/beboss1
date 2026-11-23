@@ -1113,6 +1113,11 @@ function BranchManager({
 function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
   const { t } = useI18n();
   const startCheckout = useServerFn(createGatewayCheckout);
+  const sendOwnerOtp = useServerFn(requestMyShopOwnerOtp);
+  const enrollOwner = useServerFn(claimMyShopOwner);
+  const [otpSent, setOtpSent] = useState(false);
+  const [ownerVerified, setOwnerVerified] = useState(false);
+  const [ownerOtp, setOwnerOtp] = useState("");
   const [f, setF] = useState({
     shopName: "",
     username: "",
@@ -1134,10 +1139,35 @@ function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
     e.preventDefault();
     setSending(true);
     try {
-      const { data: authState } = await supabase.auth.getSession();
-      if (!authState.session?.user.phone_confirmed_at) {
-        throw new Error("First open the Check My Shop tab and verify the registered owner phone by SMS.");
+      if (!ownerVerified) {
+        const { data: authState } = await supabase.auth.getSession();
+        const sessionPhone = authState.session?.user.phone ?? "";
+        const matchesSession = Boolean(
+          authState.session?.user.phone_confirmed_at &&
+          sessionPhone.replace(/\\D/g, "").slice(-9) === f.phone.replace(/\\D/g, "").slice(-9)
+        );
+
+        if (matchesSession) {
+          await enrollOwner({ data: { username: f.username, phone: f.phone } });
+          setOwnerVerified(true);
+        } else if (!otpSent) {
+          await sendOwnerOtp({ data: { username: f.username, phone: f.phone } });
+          setOtpSent(true);
+          toast.info("An SMS verification code has been requested for the registered shop owner phone.");
+          setSending(false);
+          return;
+        } else {
+          const { error } = await supabase.auth.verifyOtp({
+            phone: ownerPhoneE164(f.phone),
+            token: ownerOtp.trim(),
+            type: "sms",
+          });
+          if (error) throw new Error("The one-time code is invalid or expired. Request a new code and try again.");
+          await enrollOwner({ data: { username: f.username, phone: f.phone } });
+          setOwnerVerified(true);
+        }
       }
+
       const checkout = await startCheckout({ data: f });
       window.location.assign(checkout.checkoutUrl);
     } catch (err) {
@@ -1151,8 +1181,21 @@ function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
     <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
       <div className="grid gap-4 rounded-3xl border border-border bg-card p-6 sm:grid-cols-2">
         <Field label={t("shopName")} value={f.shopName} onChange={(v) => set("shopName", v)} min={2} max={120} />
-        <Field label={t("username")} value={f.username} onChange={(v) => set("username", v)} min={2} max={80} />
-        <Field label={t("phone")} value={f.phone} onChange={(v) => set("phone", v)} min={9} max={30} tel />
+        <Field label={t("username")} value={f.username} onChange={(v) => { set("username", v); setOtpSent(false); setOwnerVerified(false); setOwnerOtp(""); }} min={2} max={80} />
+        <Field label={t("phone")} value={f.phone} onChange={(v) => { set("phone", v); setOtpSent(false); setOwnerVerified(false); setOwnerOtp(""); }} min={9} max={30} tel />
+        <div className="space-y-2 sm:col-span-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="checkout-owner-otp">Registered owner SMS verification</Label>
+            {ownerVerified ? <span className="text-xs font-semibold text-success">Owner verified</span> : null}
+          </div>
+          {otpSent && !ownerVerified ? (
+            <Input id="checkout-owner-otp" value={ownerOtp} onChange={(e) => setOwnerOtp(e.target.value.replace(/\\D/g, "").slice(0, 8))} required minLength={4} maxLength={8} inputMode="numeric" autoComplete="one-time-code" placeholder="Enter the SMS code" />
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {ownerVerified ? "This checkout is linked to the verified shop owner session." : "BeBoss sends a one-time code only to the phone already registered to this shop. Verify ownership before payment."}
+            </p>
+          )}
+        </div>
         <div className="space-y-2">
           <Label>Payment gateway</Label>
           <Select value={f.gateway} onValueChange={(v) => set("gateway", v as typeof f.gateway)}>
@@ -1200,7 +1243,7 @@ function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
         </div>
         <Button type="submit" variant="hero" size="lg" className="mt-auto" disabled={sending}>
           {sending ? <Loader2 className="animate-spin" /> : <Send />}
-          Continue to secure payment
+          {ownerVerified ? "Continue to secure payment" : otpSent ? "Verify owner & continue" : "Verify owner and pay"}
         </Button>
       </div>
     </form>
