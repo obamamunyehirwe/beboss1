@@ -54,19 +54,19 @@ export const shopsQuery = queryOptions({
   queryKey: adminKeys.shops,
   queryFn: () => all<ShopAccount>((a, b) => supabase.from("shop_accounts").select("*").order("updated_at", { ascending: false }).range(a, b)),
   staleTime: 5_000,
-  refetchInterval: 15_000,
+  refetchInterval: (query) => query.state.status === "error" ? false : 15_000,
 });
 export const paymentsQuery = queryOptions({
   queryKey: adminKeys.payments,
   queryFn: () => all<PaymentRequest>((a, b) => supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,ussd_code,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,admin_verification_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at").order("created_at", { ascending: false }).range(a, b)),
   staleTime: 5_000,
-  refetchInterval: 10_000,
+  refetchInterval: (query) => query.state.status === "error" ? false : 10_000,
 });
 export const devicesQuery = queryOptions({
   queryKey: adminKeys.devices,
   queryFn: () => all<ShopDevice>((a, b) => supabase.from("shop_devices").select("*").order("updated_at", { ascending: false }).range(a, b)),
   staleTime: 5_000,
-  refetchInterval: 15_000,
+  refetchInterval: (query) => query.state.status === "error" ? false : 15_000,
 });
 export const deviceSecurityTelemetryQuery = queryOptions({
   queryKey: adminKeys.securityTelemetry,
@@ -74,31 +74,31 @@ export const deviceSecurityTelemetryQuery = queryOptions({
     supabase.from("device_security_telemetry").select("*").order("updated_at", { ascending: false }).range(a, b),
   5000),
   staleTime: 5_000,
-  refetchInterval: 15_000,
+  refetchInterval: (query) => query.state.status === "error" ? false : 15_000,
 });
 export const branchesQuery = queryOptions({
   queryKey: adminKeys.branches,
   queryFn: () => all<ShopBranch>((a, b) => supabase.from("shop_branches").select("*").order("updated_at", { ascending: false }).range(a, b)),
   staleTime: 5_000,
-  refetchInterval: 15_000,
+  refetchInterval: (query) => query.state.status === "error" ? false : 15_000,
 });
 export const stockTransfersQuery = queryOptions({
   queryKey: adminKeys.transfers,
   queryFn: () => all<ShopStockTransfer>((a, b) => supabase.from("shop_stock_transfers").select("*").order("updated_at", { ascending: false }).range(a, b)),
   staleTime: 5_000,
-  refetchInterval: 15_000,
+  refetchInterval: (query) => query.state.status === "error" ? false : 15_000,
 });
 export const usersQuery = queryOptions({
   queryKey: adminKeys.users,
   queryFn: () => all<ShopUser>((a, b) => supabase.from("shop_users").select("*").order("updated_at", { ascending: false }).range(a, b)),
   staleTime: 5_000,
-  refetchInterval: 15_000,
+  refetchInterval: (query) => query.state.status === "error" ? false : 15_000,
 });
 export const codesQuery = queryOptions({
   queryKey: adminKeys.codes,
   queryFn: () => all<UnlockCode>((a, b) => supabase.from("unlock_codes").select("*").order("issued_at", { ascending: false }).range(a, b)),
   staleTime: 5_000,
-  refetchInterval: 15_000,
+  refetchInterval: (query) => query.state.status === "error" ? false : 15_000,
 });
 export const snapshotsQuery = queryOptions({
   queryKey: adminKeys.snapshots,
@@ -106,7 +106,7 @@ export const snapshotsQuery = queryOptions({
     supabase.from("branch_sync_snapshots").select("id, shop_sync_key, device_id, branch_id, branch_name, shop_name, owner_username, records_summary, sync_generation, chunk_index, chunk_count, updated_at").order("updated_at", { ascending: false }).range(a, b) as never,
   ),
   staleTime: 5_000,
-  refetchInterval: 10_000,
+  refetchInterval: (query) => query.state.status === "error" ? false : 10_000,
 });
 export const auditQuery = queryOptions({
   queryKey: adminKeys.audit,
@@ -156,6 +156,6 @@ export const syncEventsQuery = queryOptions({
   },
   staleTime: 5_000,
   // Realtime is the fast path; polling keeps the admin monitor current after a socket reconnect.
-  refetchInterval: 15_000,
+  refetchInterval: (query) => query.state.status === "error" ? false : 15_000,
   refetchIntervalInBackground: false,
 });

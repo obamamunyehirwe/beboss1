@@ -67,6 +67,69 @@ const NAV = [
   { to: "/admin/settings", label: "Settings", icon: Settings },
 ] as const;
 
+function AdminQueryStatusBanner() {
+  const queryClient = useQueryClient();
+  const [failures, setFailures] = useState<Array<{ key: string; label: string; message: string }>>([]);
+  const [retrying, setRetrying] = useState(false);
+
+  useEffect(() => {
+    const refreshFailures = () => {
+      const current = queryClient.getQueryCache().getAll()
+        .filter((query) => query.queryKey[0] === "admin" && query.state.status === "error" && query.state.fetchStatus === "idle")
+        .map((query) => {
+          const label = query.queryKey.map(String).slice(1).join(" / ") || "admin data";
+          const error = query.state.error;
+          const raw = error instanceof Error ? error.message : String(error ?? "Unknown read error");
+          const message = raw
+            .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+            .replace(/sb_(?:secret|publishable)_[A-Za-z0-9_-]+/gi, "[redacted key]")
+            .slice(0, 500);
+          return { key: JSON.stringify(query.queryKey), label, message };
+        });
+      setFailures(current);
+    };
+
+    refreshFailures();
+    return queryClient.getQueryCache().subscribe(refreshFailures);
+  }, [queryClient]);
+
+  if (failures.length === 0) return null;
+
+  const retryFailedReads = async () => {
+    setRetrying(true);
+    try {
+      await queryClient.refetchQueries({
+        type: "active",
+        predicate: (query) => query.queryKey[0] === "admin" && query.state.status === "error",
+      });
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  return (
+    <section role="alert" className="mx-auto mt-4 w-full max-w-[1400px] rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 sm:px-6" aria-live="polite">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-semibold text-destructive">Some Admin data could not be loaded</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Failed reads are shown here instead of being presented as successful empty tables or sample figures.</p>
+        </div>
+        <Button variant="outline" size="sm" disabled={retrying} onClick={() => void retryFailedReads()}>
+          <RefreshCw className={retrying ? "animate-spin" : ""} />
+          {retrying ? "Checking…" : "Retry failed reads"}
+        </Button>
+      </div>
+      <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+        {failures.map((failure) => (
+          <li key={failure.key} className="min-w-0 rounded-xl border border-border bg-card/80 p-3">
+            <p className="text-sm font-semibold">{failure.label}</p>
+            <p className="mt-1 break-words text-xs text-muted-foreground">{failure.message}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 function AdminLayout() {
   const ctx = useAdminCtx();
   const router = useRouter();
@@ -137,6 +200,7 @@ function AdminLayout() {
       <div className="admin-main-column flex min-w-0 flex-1 flex-col">
         <TopBar email={ctx.data.email} isAdmin={ctx.data.isAdmin} onSignOut={signOut} />
         <LiveFeed />
+        <AdminQueryStatusBanner />
         <main className="admin-main-content mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
           {!ctx.data.signingKeyConfigured && ctx.data.isAdmin ? (
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
