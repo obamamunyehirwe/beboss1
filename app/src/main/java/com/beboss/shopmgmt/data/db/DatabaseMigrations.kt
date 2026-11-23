@@ -423,7 +423,10 @@ object DatabaseMigrations {
                 // Deactivate only the known first-run demonstration identities. Keep their
                 // rows for audit/history compatibility; never expose them as shop workers.
                 db.execSQL("""
-                    UPDATE users SET isActive = 0, updatedAt = MAX(updatedAt, ${System.currentTimeMillis()})
+                    UPDATE users
+                    SET isActive = 0,
+                        username = 'legacy-demo-' || lower(replace(id, '-', '')),
+                        updatedAt = MAX(updatedAt, ${System.currentTimeMillis()})
                     WHERE (username = 'owner' AND email = 'owner@beboss.rw' AND phone = '+250 788 123 456')
                        OR (username = 'manager' AND email = 'manager@beboss.rw' AND phone = '+250 788 654 321')
                        OR (username = 'cashier' AND email = 'cashier@beboss.rw' AND phone = '+250 789 111 222')
