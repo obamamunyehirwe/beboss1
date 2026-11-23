@@ -978,11 +978,11 @@ object SupabaseAdminClient {
                 val o = arr.getJSONObject(0)
                 AdminPaymentConfig(
                     adminWhatsAppNumber = o.optCleanString("admin_whatsapp_number"),
-                    mtnMoMoCode = o.optCleanString("mtn_momo_code", "054321"),
-                    mtnMoMoPhone = o.optCleanString("mtn_momo_phone", "0788765432"),
-                    mtnRecipientName = o.optCleanString("mtn_recipient_name", "BeBoss Pay"),
-                    airtelMoneyPhone = o.optCleanString("airtel_money_phone", "0738765432"),
-                    airtelRecipientName = o.optCleanString("airtel_recipient_name", "BeBoss Pay"),
+                    mtnMoMoCode = o.optCleanString("mtn_momo_code", ""),
+                    mtnMoMoPhone = o.optCleanString("mtn_momo_phone", ""),
+                    mtnRecipientName = o.optCleanString("mtn_recipient_name", ""),
+                    airtelMoneyPhone = o.optCleanString("airtel_money_phone", ""),
+                    airtelRecipientName = o.optCleanString("airtel_recipient_name", ""),
                     perDeviceFeeRwf = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF,
                     apkDownloadUrl = o.optCleanString("apk_download_url", ""),
                     apkVersion = o.optCleanString("apk_version", "2.3.0").ifBlank { "2.3.0" },
