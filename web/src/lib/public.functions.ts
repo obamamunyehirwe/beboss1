@@ -691,7 +691,7 @@ export const createGatewayCheckout = createServerFn({ method: "POST" })
       throw new Error("The BeBoss online payment service is not configured.");
     }
 
-    const response = await fetch(`${supabaseUrl.replace(/\\/+$/, "")}/functions/v1/create-payment-checkout`, {
+    const response = await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/create-payment-checkout`, {
       method: "POST",
       headers: {
         apikey: publishableKey,
