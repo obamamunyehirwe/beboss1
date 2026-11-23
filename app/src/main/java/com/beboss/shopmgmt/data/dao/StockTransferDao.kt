@@ -52,17 +52,44 @@ interface StockTransferDao {
 
     @Query("""
         UPDATE stock_transfers
-        SET status = :status, receivedBy = :receivedBy, receivedAt = :receivedAt
+        SET status = :status,
+            receivedBy = :receivedBy,
+            receivedAt = :receivedAt,
+            updatedAt = :updatedAt,
+            hlcTimestamp = :hlcTimestamp,
+            lastModifiedDeviceId = :lastModifiedDeviceId
         WHERE id = :id AND status IN ('IN_TRANSIT', 'PENDING')
     """)
-    suspend fun confirmReceived(id: String, receivedBy: String, receivedAt: Long, status: String = "COMPLETED"): Int
+    suspend fun confirmReceived(
+        id: String,
+        receivedBy: String,
+        receivedAt: Long,
+        updatedAt: Long,
+        hlcTimestamp: Long,
+        lastModifiedDeviceId: String,
+        status: String = "COMPLETED"
+    ): Int
 
     @Query("""
         UPDATE stock_transfers
-        SET status = 'CANCELLED', receivedBy = :actorName, receivedAt = :receivedAt, notes = :notes
+        SET status = 'CANCELLED',
+            receivedBy = :actorName,
+            receivedAt = :receivedAt,
+            notes = :notes,
+            updatedAt = :updatedAt,
+            hlcTimestamp = :hlcTimestamp,
+            lastModifiedDeviceId = :lastModifiedDeviceId
         WHERE id = :id AND status IN ('IN_TRANSIT', 'PENDING')
     """)
-    suspend fun cancelPendingTransfer(id: String, actorName: String, receivedAt: Long, notes: String): Int
+    suspend fun cancelPendingTransfer(
+        id: String,
+        actorName: String,
+        receivedAt: Long,
+        notes: String,
+        updatedAt: Long,
+        hlcTimestamp: Long,
+        lastModifiedDeviceId: String
+    ): Int
 
     @Query("DELETE FROM stock_transfers WHERE id = :id")
     suspend fun deleteTransfer(id: String)
