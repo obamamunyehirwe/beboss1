@@ -150,75 +150,86 @@ class BranchTransferManager(
         notes: String,
         transferredBy: String = "Store Manager"
     ): StockTransfer = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val product = productDao.getProductById(productId)
-            ?: throw IllegalArgumentException("Product not found: $productId")
+        val now = ClockGuard.effectiveNowMs()
         if (fromBranchId == toBranchId) {
             throw IllegalArgumentException("Source and destination branches must be different")
         }
-        if (product.branchId.isNotBlank() && product.branchId != fromBranchId) {
-            throw IllegalArgumentException("This product does not belong to the source branch")
+        if (!quantity.isFinite() || quantity <= 0.0) {
+            throw IllegalArgumentException("Transfer quantity must be a finite number greater than zero")
         }
-        if (quantity <= 0.0) {
-            throw IllegalArgumentException("Transfer quantity must be greater than zero")
-        }
-        val safeQty = quantity.coerceAtLeast(0.001)
-        if (product.quantityInStock < safeQty) {
-            throw IllegalArgumentException("Insufficient stock. Available: ${product.quantityInStock}, requested: $safeQty")
+        val safeQty = quantity
+        val transferNumber = "TRF-" +
+            SimpleDateFormat("yyMMdd-HHmmss", Locale.getDefault()).format(Date(now)) +
+            "-" + UUID.randomUUID().toString().take(4).uppercase(Locale.ROOT)
+
+        lateinit var transfer: StockTransfer
+        var newSourceQty = 0.0
+        var productName = ""
+        var productUnit = ""
+
+        // Read the source product only after entering the serialized transaction.
+        // Two concurrent transfers can no longer both validate and deduct the same stock.
+        val createTransfer: suspend () -> Unit = {
+            val product = productDao.getProductById(productId)
+                ?: throw IllegalArgumentException("Product not found: $productId")
+            if (product.isDeleted) {
+                throw IllegalArgumentException("Deleted products cannot be transferred")
+            }
+            if (product.branchId.isNotBlank() && product.branchId != fromBranchId) {
+                throw IllegalArgumentException("This product does not belong to the source branch")
+            }
+            if (product.quantityInStock < safeQty) {
+                throw IllegalArgumentException(
+                    "Insufficient stock. Available: ${product.quantityInStock}, requested: $safeQty"
+                )
+            }
+
+            val costValue = (product.costPrice * safeQty).toLong().coerceAtLeast(0L)
+            transfer = StockTransfer(
+                id = UUID.randomUUID().toString(),
+                transferNumber = transferNumber,
+                productId = productId,
+                productName = product.name,
+                fromBranchId = fromBranchId,
+                fromBranchName = fromBranchName,
+                toBranchId = toBranchId,
+                toBranchName = toBranchName,
+                quantity = safeQty,
+                unit = product.unit,
+                costValueRwf = costValue,
+                transferDate = now,
+                status = "IN_TRANSIT",
+                notes = notes.trim(),
+                transferredBy = transferredBy,
+                createdAt = now
+            )
+
+            newSourceQty = product.quantityInStock - safeQty
+            productDao.insertProduct(
+                product.copy(
+                    quantityInStock = newSourceQty,
+                    updatedAt = now,
+                    hlcTimestamp = HlcClock.tick(now)
+                )
+            )
+            stockTransferDao.insertTransfer(transfer)
+            productName = product.name
+            productUnit = product.unit
         }
 
-        val costValue = (product.costPrice * safeQty).toLong().coerceAtLeast(0L)
-        val transferNumber = "TRF-" + SimpleDateFormat("yyMMdd-HHmmss", Locale.getDefault()).format(Date(now))
-
-        val transfer = StockTransfer(
-            id = UUID.randomUUID().toString(),
-            transferNumber = transferNumber,
-            productId = productId,
-            productName = product.name,
-            fromBranchId = fromBranchId,
-            fromBranchName = fromBranchName,
-            toBranchId = toBranchId,
-            toBranchName = toBranchName,
-            quantity = safeQty,
-            unit = product.unit,
-            costValueRwf = costValue,
-            transferDate = now,
-            status = "IN_TRANSIT",
-            notes = notes.trim(),
-            transferredBy = transferredBy,
-            createdAt = now
-        )
-
-        // Atomic: deduct from source, insert transfer record, refresh branch snapshots
         if (database != null) {
             DbWriteMutex.withLock {
-                database.withTransaction {
-                    // Deduct stock from source product
-                    val currentStock = product.quantityInStock
-                    val newStock = (currentStock - safeQty).coerceAtLeast(0.0)
-                    productDao.insertProduct(
-                        product.copy(
-                            quantityInStock = newStock,
-                            updatedAt = now,
-                            hlcTimestamp = HlcClock.tick(now)
-                        )
-                    )
-                    // Insert transfer record
-                    stockTransferDao.insertTransfer(transfer)
-                }
+                database.withTransaction { createTransfer() }
             }
         } else {
-            // Fallback without full DB reference (degrade gracefully)
-            val newStock = (product.quantityInStock - safeQty).coerceAtLeast(0.0)
-            productDao.insertProduct(product.copy(quantityInStock = newStock, updatedAt = now))
-            stockTransferDao.insertTransfer(transfer)
+            // The application repository supplies a database; this fallback remains
+            // serialized for isolated manager instances used by integrations/tests.
+            DbWriteMutex.withLock { createTransfer() }
         }
 
-        // Refresh per-branch stock snapshots asynchronously (best-effort)
         refreshBranchStockSnapshot(fromBranchId)
         refreshBranchStockSnapshot(toBranchId)
 
-        // Enqueue for cloud sync
         syncQueueDao.enqueue(
             SyncQueueItem(
                 tableName = "stock_transfers",
@@ -227,10 +238,12 @@ class BranchTransferManager(
                 payloadJson = buildTransferPayload(transfer)
             )
         )
-        // Also enqueue the product stock update (source)
-        enqueueProductStockSync(productId, (product.quantityInStock - safeQty).coerceAtLeast(0.0), now)
+        enqueueProductStockSync(productId, newSourceQty, now)
 
-        BeBossLogger.i(TAG, "Transfer $transferNumber: ${safeQty.toInt()} ${product.unit} of '${product.name}' from $fromBranchName -> $toBranchName (${costValue} FRw)")
+        BeBossLogger.i(
+            TAG,
+            "Transfer $transferNumber: ${safeQty.toInt()} $productUnit of '$productName' from $fromBranchName -> $toBranchName (${transfer.costValueRwf} FRw)"
+        )
         transfer
     }
 
@@ -242,71 +255,105 @@ class BranchTransferManager(
         transferId: String,
         receivedBy: String
     ): StockTransfer = withContext(Dispatchers.IO) {
-        val transfer = stockTransferDao.getTransferById(transferId)
+        stockTransferDao.getTransferById(transferId)
             ?: throw IllegalArgumentException("Transfer not found: $transferId")
 
-        if (transfer.status == "COMPLETED") return@withContext transfer
-        if (transfer.status == "CANCELLED") {
-            throw IllegalStateException("Cancelled transfers cannot be confirmed as received.")
-        }
-
         val now = ClockGuard.effectiveNowMs()
-        val product = productDao.getProductById(transfer.productId)
+        var completedTransfer: StockTransfer? = null
+        var newlyCompleted = false
         var creditedDestinationProductId: String? = null
-        var creditedDestinationQty: Double = 0.0
+        var creditedDestinationQty = 0.0
 
-        val creditDestination: suspend () -> Unit = {
-            if (product != null) {
-                val byBarcode = if (product.barcode.isNotBlank()) {
-                    productDao.getProductByBarcodeAndBranch(product.barcode, transfer.toBranchId)
-                } else null
-                val destination = byBarcode ?: productDao.getAllProductsList().firstOrNull { candidate ->
-                    !candidate.isDeleted &&
-                        (candidate.branchId == transfer.toBranchId ||
-                            (transfer.toBranchId == "main_branch" && candidate.branchId.isBlank())) &&
-                        candidate.name.trim().equals(product.name.trim(), ignoreCase = true)
-                }
-                if (destination != null) {
-                    val newQty = destination.quantityInStock + transfer.quantity
-                    productDao.insertProduct(
-                        destination.copy(
-                            quantityInStock = newQty,
-                            updatedAt = now,
-                            hlcTimestamp = HlcClock.tick(now)
-                        )
+        val completeTransfer: suspend () -> Unit = {
+            val current = stockTransferDao.getTransferById(transferId)
+                ?: throw IllegalArgumentException("Transfer not found: $transferId")
+            when (current.status) {
+                "COMPLETED" -> completedTransfer = current
+                "CANCELLED" -> throw IllegalStateException("Cancelled transfers cannot be confirmed as received.")
+                else -> {
+                    // Conditional status transition is the idempotency boundary. The
+                    // transition and inventory credit commit or roll back together.
+                    val claimed = stockTransferDao.confirmReceived(
+                        transferId, receivedBy, now, "COMPLETED"
                     )
-                    creditedDestinationProductId = destination.id
-                    creditedDestinationQty = newQty
-                } else {
-                    val newId = UUID.randomUUID().toString()
-                    productDao.insertProduct(
-                        product.copy(
-                            id = newId,
-                            quantityInStock = transfer.quantity,
-                            branchId = transfer.toBranchId,
-                            createdAt = now,
-                            updatedAt = now,
-                            hlcTimestamp = HlcClock.tick(now)
+                    if (claimed != 1) {
+                        val latest = stockTransferDao.getTransferById(transferId)
+                            ?: throw IllegalArgumentException("Transfer not found: $transferId")
+                        if (latest.status == "COMPLETED") {
+                            completedTransfer = latest
+                        } else if (latest.status == "CANCELLED") {
+                            throw IllegalStateException("Cancelled transfers cannot be confirmed as received.")
+                        } else {
+                            throw IllegalStateException("This transfer has already changed. Refresh and try again.")
+                        }
+                    } else {
+                        val sourceProduct = productDao.getProductById(current.productId)
+                            ?: throw IllegalStateException("The source product is missing. Restore it before receiving this transfer.")
+                        if (sourceProduct.isDeleted) {
+                            throw IllegalStateException("The source product is deleted. Restore it before receiving this transfer.")
+                        }
+
+                        val byBarcode = if (sourceProduct.barcode.isNotBlank()) {
+                            productDao.getProductByBarcodeAndBranch(sourceProduct.barcode, current.toBranchId)
+                        } else null
+                        val destination = byBarcode ?: productDao.getAllProductsList().firstOrNull { candidate ->
+                            !candidate.isDeleted &&
+                                (candidate.branchId == current.toBranchId ||
+                                    (current.toBranchId == "main_branch" && candidate.branchId.isBlank())) &&
+                                candidate.name.trim().equals(sourceProduct.name.trim(), ignoreCase = true)
+                        }
+
+                        if (destination != null) {
+                            val newQty = destination.quantityInStock + current.quantity
+                            productDao.insertProduct(
+                                destination.copy(
+                                    quantityInStock = newQty,
+                                    updatedAt = now,
+                                    hlcTimestamp = HlcClock.tick(now)
+                                )
+                            )
+                            creditedDestinationProductId = destination.id
+                            creditedDestinationQty = newQty
+                        } else {
+                            val newId = UUID.randomUUID().toString()
+                            productDao.insertProduct(
+                                sourceProduct.copy(
+                                    id = newId,
+                                    quantityInStock = current.quantity,
+                                    branchId = current.toBranchId,
+                                    createdAt = now,
+                                    updatedAt = now,
+                                    hlcTimestamp = HlcClock.tick(now)
+                                )
+                            )
+                            creditedDestinationProductId = newId
+                            creditedDestinationQty = current.quantity
+                        }
+                        completedTransfer = current.copy(
+                            status = "COMPLETED",
+                            receivedBy = receivedBy,
+                            receivedAt = now
                         )
-                    )
-                    creditedDestinationProductId = newId
-                    creditedDestinationQty = transfer.quantity
+                        newlyCompleted = true
+                    }
                 }
             }
-            stockTransferDao.confirmReceived(transferId, receivedBy, now, "COMPLETED")
         }
 
         if (database != null) {
             DbWriteMutex.withLock {
-                database.withTransaction { creditDestination() }
+                database.withTransaction { completeTransfer() }
             }
         } else {
-            creditDestination()
+            DbWriteMutex.withLock { completeTransfer() }
         }
 
-        refreshBranchStockSnapshot(transfer.toBranchId)
+        val updated = completedTransfer
+            ?: stockTransferDao.getTransferById(transferId)
+            ?: throw IllegalStateException("Completed transfer could not be reloaded")
+        if (!newlyCompleted) return@withContext updated
 
-        val updated = transfer.copy(status = "COMPLETED", receivedBy = receivedBy, receivedAt = now)
+        refreshBranchStockSnapshot(updated.toBranchId)
         syncQueueDao.enqueue(
             SyncQueueItem(
                 tableName = "stock_transfers",
@@ -315,7 +362,6 @@ class BranchTransferManager(
                 payloadJson = buildTransferPayload(updated)
             )
         )
-        // Enqueue the destination-branch product stock update so the receiving branch uploads when online.
         creditedDestinationProductId?.let { pid ->
             enqueueProductStockSync(pid, creditedDestinationQty, now)
         }
@@ -331,44 +377,78 @@ class BranchTransferManager(
         actorName: String,
         reason: String = "Returned to source branch"
     ): StockTransfer = withContext(Dispatchers.IO) {
-        val transfer = stockTransferDao.getTransferById(transferId)
+        stockTransferDao.getTransferById(transferId)
             ?: throw IllegalArgumentException("Transfer not found: $transferId")
 
-        if (transfer.status == "CANCELLED") return@withContext transfer
-        if (transfer.status == "COMPLETED") {
-            throw IllegalStateException("Completed transfers cannot be cancelled. Issue a return transfer instead.")
-        }
-
         val now = ClockGuard.effectiveNowMs()
-        val cleanReason = reason.trim().ifBlank { "Returned to source branch" }
-        val updatedNotes = if (transfer.notes.isBlank()) {
-            "[CANCELLED: $cleanReason]"
-        } else {
-            "${transfer.notes} | [CANCELLED: $cleanReason]"
-        }
-        val updated = transfer.copy(
-            status = "CANCELLED",
-            receivedBy = actorName.ifBlank { "Manager" },
-            receivedAt = now,
-            notes = updatedNotes
-        )
+        var cancelledTransfer: StockTransfer? = null
+        var newlyCancelled = false
 
-        val restoreSource: suspend () -> Unit = {
-            productDao.incrementStock(transfer.productId, transfer.quantity, now)
-            stockTransferDao.updateTransfer(updated)
+        val cancelTransfer: suspend () -> Unit = {
+            val current = stockTransferDao.getTransferById(transferId)
+                ?: throw IllegalArgumentException("Transfer not found: $transferId")
+            when (current.status) {
+                "CANCELLED" -> cancelledTransfer = current
+                "COMPLETED" -> throw IllegalStateException(
+                    "Completed transfers cannot be cancelled. Issue a return transfer instead."
+                )
+                else -> {
+                    val restoredProduct = productDao.getProductById(current.productId)
+                        ?: throw IllegalStateException("The source product is missing. Restore it before cancelling this transfer.")
+                    val cleanReason = reason.trim().ifBlank { "Returned to source branch" }
+                    val updatedNotes = if (current.notes.isBlank()) {
+                        "[CANCELLED: $cleanReason]"
+                    } else {
+                        "${current.notes} | [CANCELLED: $cleanReason]"
+                    }
+                    val actor = actorName.trim().ifBlank { "Manager" }
+                    val claimed = stockTransferDao.cancelPendingTransfer(
+                        id = transferId,
+                        actorName = actor,
+                        receivedAt = now,
+                        notes = updatedNotes
+                    )
+                    if (claimed != 1) {
+                        val latest = stockTransferDao.getTransferById(transferId)
+                            ?: throw IllegalArgumentException("Transfer not found: $transferId")
+                        if (latest.status == "CANCELLED") {
+                            cancelledTransfer = latest
+                        } else if (latest.status == "COMPLETED") {
+                            throw IllegalStateException(
+                                "Completed transfers cannot be cancelled. Issue a return transfer instead."
+                            )
+                        } else {
+                            throw IllegalStateException("This transfer has already changed. Refresh and try again.")
+                        }
+                    } else {
+                        productDao.incrementStock(current.productId, current.quantity, now)
+                        cancelledTransfer = current.copy(
+                            status = "CANCELLED",
+                            receivedBy = actor,
+                            receivedAt = now,
+                            notes = updatedNotes
+                        )
+                        newlyCancelled = true
+                    }
+                }
+            }
         }
 
         if (database != null) {
             DbWriteMutex.withLock {
-                database.withTransaction { restoreSource() }
+                database.withTransaction { cancelTransfer() }
             }
         } else {
-            restoreSource()
+            DbWriteMutex.withLock { cancelTransfer() }
         }
 
-        refreshBranchStockSnapshot(transfer.fromBranchId)
+        val updated = cancelledTransfer
+            ?: stockTransferDao.getTransferById(transferId)
+            ?: throw IllegalStateException("Cancelled transfer could not be reloaded")
+        if (!newlyCancelled) return@withContext updated
 
-        val restoredProduct = productDao.getProductById(transfer.productId)
+        refreshBranchStockSnapshot(updated.fromBranchId)
+        val restoredProduct = productDao.getProductById(updated.productId)
         syncQueueDao.enqueue(
             SyncQueueItem(
                 tableName = "stock_transfers",

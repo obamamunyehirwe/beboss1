@@ -50,8 +50,19 @@ interface StockTransferDao {
     @Update
     suspend fun updateTransfer(transfer: StockTransfer)
 
-    @Query("UPDATE stock_transfers SET status = :status, receivedBy = :receivedBy, receivedAt = :receivedAt WHERE id = :id")
-    suspend fun confirmReceived(id: String, receivedBy: String, receivedAt: Long, status: String = "COMPLETED")
+    @Query("""
+        UPDATE stock_transfers
+        SET status = :status, receivedBy = :receivedBy, receivedAt = :receivedAt
+        WHERE id = :id AND status IN ('IN_TRANSIT', 'PENDING')
+    """)
+    suspend fun confirmReceived(id: String, receivedBy: String, receivedAt: Long, status: String = "COMPLETED"): Int
+
+    @Query("""
+        UPDATE stock_transfers
+        SET status = 'CANCELLED', receivedBy = :actorName, receivedAt = :receivedAt, notes = :notes
+        WHERE id = :id AND status IN ('IN_TRANSIT', 'PENDING')
+    """)
+    suspend fun cancelPendingTransfer(id: String, actorName: String, receivedAt: Long, notes: String): Int
 
     @Query("DELETE FROM stock_transfers WHERE id = :id")
     suspend fun deleteTransfer(id: String)
