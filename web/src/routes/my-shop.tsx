@@ -410,7 +410,7 @@ function LookupPanel() {
                       {d.assigned_user_name} · {d.branch_name} · {d.device_id ? (d.last_synced_at ? relativeTime(d.last_synced_at) : "Waiting for first sync") : "Waiting for pairing"}
                     </p>
                   </div>
-                  <Badge variant={!d.is_active ? "danger" : d.device_id ? h === "ONLINE" ? "success" : h === "TODAY" ? "info" : "warning" : "secondary"}>
+                  <Badge variant={!d.is_active ? "danger" : d.device_id ? h === "ONLINE" ? "success" : h === "TODAY" ? "info" : "warning" : "muted"}>
                     {!d.is_active ? t("deviceOff") : d.device_id ? h === "ONLINE" ? t("deviceOnline") : h === "TODAY" ? t("deviceToday") : t("deviceIdle") : "Awaiting pairing"}
                   </Badge>
                 </div>
@@ -476,10 +476,10 @@ function LookupPanel() {
                 </div>
                 <div className="space-y-2">
                   <Label>Assigned branch</Label>
-                  <Select value={assignedBranchId || ""} onValueChange={setAssignedBranchId}>
+                  <Select value={assignedBranchId || result.staff.find((u) => u.user_id === (assignedUserId || result.staff.find((x) => x.is_active && x.role !== "OWNER")?.user_id))?.assigned_branch_id || ""} onValueChange={setAssignedBranchId}>
                     <SelectTrigger><SelectValue placeholder="Choose assigned branch" /></SelectTrigger>
                     <SelectContent>
-                      {result.branches.filter((b) => b.is_active && b.id === (result.staff.find((u) => u.user_id === (assignedUserId || result.staff.find((x) => x.is_active && x.role !== "OWNER")?.user_id)?.assigned_branch_id)).map((b) => (
+                      {result.branches.filter((b) => b.is_active && b.id === result.staff.find((u) => u.user_id === (assignedUserId || result.staff.find((x) => x.is_active && x.role !== "OWNER")?.user_id))?.assigned_branch_id).map((b) => (
                         <SelectItem key={b.id} value={b.id}>{b.name} · {b.code}</SelectItem>
                       ))}
                     </SelectContent>
