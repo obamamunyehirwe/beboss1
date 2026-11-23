@@ -796,11 +796,18 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         ownerFullName: String,
         username: String,
         pin: String,
-        password: String
+        password: String,
+        ownerOtpCode: String
     ) = authCoordinator.registerNewShopAndOwner(
         shopName, businessType, currencyCode, currencySymbol, address, phone,
-        ownerFullName, username, pin, password
+        ownerFullName, username, pin, password, ownerOtpCode
     )
+
+    fun requestNewShopOwnerOtp(
+        phone: String,
+        username: String,
+        onResult: (Boolean, String) -> Unit
+    ) = authCoordinator.requestNewShopOwnerOtp(phone, username, onResult)
 
     fun joinExistingShopFromCloud(
         ownerUsername: String,
