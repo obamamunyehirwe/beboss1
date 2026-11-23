@@ -487,9 +487,6 @@ const words: Record<string, readonly [string, string, string]> = {
   "Provider refund status refreshed": ["Imiterere yo gusubiza amafaranga yavuguruwe", "L’état du remboursement a été actualisé", "Hali ya marejesho imesasishwa"],
 };
 
-
-};
-
 export const ADMIN_COPY_KEYS: readonly string[] = Object.freeze(Object.keys(words));
 
 export function useAdminText() {
