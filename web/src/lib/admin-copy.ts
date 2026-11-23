@@ -533,6 +533,23 @@ const words: Record<string, readonly [string, string, string]> = {
   "No purchases recorded.": ["Nta byo kugura byanditswe.", "Aucun achat enregistré.", "Hakuna manunuzi yaliyorekodiwa."],
   "No sale items recorded.": ["Nta bicuruzwa bigize igurisha byanditswe.", "Aucun article vendu enregistré.", "Hakuna bidhaa za mauzo zilizorekodiwa."],
   "No customer payments recorded.": ["Nta bwishyu bw'abakiriya bwanditswe.", "Aucun paiement client enregistré.", "Hakuna malipo ya wateja yaliyorekodiwa."],
+  "payment claim(s) waiting over 24 h": ["ubusabe bw'ubwishyu bumaze amasaha arenga 24 butegereje", "demande(s) de paiement en attente depuis plus de 24 h", "dai/dai za malipo zinazosubiri zaidi ya saa 24"],
+  "active device(s) haven't synced for 7+ days": ["ibikoresho bikora bitarahuzwa mu minsi 7 cyangwa irenga", "appareil(s) actif(s) sans synchronisation depuis 7 jours ou plus", "kifaa/vifaa vinavyotumika havijasawazishwa kwa siku 7 au zaidi"],
+  "branches": ["amashami", "agences", "matawi"],
+  "staff": ["abakozi", "personnel", "wafanyakazi"],
+  "New unlock codes require the matching BB3 ECDSA P-256 private key. Add or verify it in Settings. Legacy BB2 codes are validated online against their original issued record; they do not use a shared signing key.": ["Kode nshya zo gufungura zikeneye urufunguzo rw'ibanga rwa BB3 ECDSA P-256 ruhuye n'urufunguzo rusange. Rushyireho cyangwa urugenzure muri Settings. Kode za BB2 zishaje zigenzurwa kuri internet hakoreshejwe inyandiko yazo ya mbere; ntizikoresha urufunguzo rusangiwe.", "Les nouveaux codes de déverrouillage nécessitent la clé privée BB3 ECDSA P-256 correspondante. Ajoutez-la ou vérifiez-la dans Paramètres. Les anciens codes BB2 sont validés en ligne à partir de leur enregistrement d’origine et n’utilisent pas de clé de signature partagée.", "Misimbo mipya ya kufungua inahitaji ufunguo binafsi unaolingana wa BB3 ECDSA P-256. Uweke au uthibitishe kwenye Mipangilio. Misimbo ya zamani ya BB2 huthibitishwa mtandaoni dhidi ya rekodi yake ya awali; haitumii ufunguo wa pamoja."],
+  "Add signing key": ["Ongeraho urufunguzo rwo gusinya", "Ajouter la clé de signature", "Ongeza ufunguo wa kusaini"],
+  "device": ["igikoresho", "appareil", "kifaa"],
+  "chunk(s)": ["ibice", "bloc(s)", "vipande"],
+  "uploaded": ["byoherejwe", "téléversé", "imepakiwa"],
+  "Multi-branch shops upload snapshots automatically when online.": ["Amaduka afite amashami menshi yoherereza amakuru muri cloud mu buryo bwikora iyo afashe interneti.", "Les boutiques multi-agences téléversent automatiquement leurs instantanés lorsqu’elles sont en ligne.", "Maduka yenye matawi mengi hupakia picha za data kiotomatiki yanapokuwa mtandaoni."],
+  "No recent permitted GPS fix": ["Nta gipimo cya GPS giheruka cyemewe", "Aucune position GPS récente autorisée", "Hakuna kipimo cha GPS kilichoruhusiwa hivi karibuni"],
+  "Snapshot could not be read": ["Ntibyashobotse gusoma ifoto y'amakuru", "Impossible de lire l’instantané", "Picha ya data haikuweza kusomwa"],
+  "Unknown format": ["Imiterere itazwi", "Format inconnu", "Muundo usiojulikana"],
+  "Branches": ["Amashami", "Agences", "Matawi"],
+  "Devices": ["Ibikoresho", "Appareils", "Vifaa"],
+  "No customers recorded.": ["Nta bakiriya banditswe.", "Aucun client enregistré.", "Hakuna wateja waliorekodiwa."],
+  "Delete permanently": ["Siba burundu", "Supprimer définitivement", "Futa kabisa"],
 };
 export function useAdminText() {
   try {
