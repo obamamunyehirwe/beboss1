@@ -115,7 +115,7 @@ function ShopDetail() {
         <div className="grid gap-4 xl:grid-cols-3">
           <section className="rounded-2xl border border-border bg-card p-5">
             <h2 className="flex items-center gap-2 font-semibold">
-              <CalendarPlus className="size-4 text-primary" /> License
+              <CalendarPlus className="size-4 text-primary" /> {a("License")}
             </h2>
             <div className="mt-4 grid grid-cols-4 gap-2">
               {[4, 30, 90, 365].map((d) => (
@@ -183,7 +183,7 @@ function ShopDetail() {
               <Line l="New monthly fee" v={formatRwf(calc.monthly)} strong />
             </div>
             <Button className="mt-3 w-full" size="sm" variant="hero" disabled={limits.isPending} onClick={() => limits.mutate({ shopId, ...q })}>
-              <Save /> Save quotas
+              <Save /> {a("Save quotas")}
             </Button>
           </section>
 
@@ -213,7 +213,7 @@ function ShopDetail() {
               <Textarea rows={3} value={c.notes} onChange={(e) => setC({ ...c, notes: e.target.value })} maxLength={2000} />
             </div>
             <Button className="mt-3 w-full" size="sm" variant="soft" disabled={controls.isPending} onClick={() => controls.mutate({ shopId, ...c })}>
-              <Save /> Save controls
+              <Save /> {a("Save controls")}
             </Button>
           </section>
         </div>
@@ -223,12 +223,12 @@ function ShopDetail() {
         <TabsList className="flex-wrap">
           <TabsTrigger value="insights">{a("Retail insights")}</TabsTrigger>
           <TabsTrigger value="records">{a("Shop records")}</TabsTrigger>
-          <TabsTrigger value="devices">Devices ({shopDevices.length})</TabsTrigger>
-          <TabsTrigger value="users">Staff ({shopUsers.length})</TabsTrigger>
-          <TabsTrigger value="payments">Payments ({shopPays.length})</TabsTrigger>
-          <TabsTrigger value="codes">Codes ({shopCodes.length})</TabsTrigger>
-          <TabsTrigger value="sync">Branch sync ({shopSnaps.length})</TabsTrigger>
-          <TabsTrigger value="activity">Sync activity ({shopEvents.length})</TabsTrigger>
+          <TabsTrigger value="devices">{a("Devices")} ({shopDevices.length})</TabsTrigger>
+          <TabsTrigger value="users">{a("Shop staff")} ({shopUsers.length})</TabsTrigger>
+          <TabsTrigger value="payments">{a("Payments")} ({shopPays.length})</TabsTrigger>
+          <TabsTrigger value="codes">{a("Unlock codes")} ({shopCodes.length})</TabsTrigger>
+          <TabsTrigger value="sync">{a("Branch sync")} ({shopSnaps.length})</TabsTrigger>
+          <TabsTrigger value="activity">{a("Sync activity")} ({shopEvents.length})</TabsTrigger>
         </TabsList>
         <TabsContent value="insights">
           <RetailInsights shopId={shopId} />
@@ -265,7 +265,7 @@ function ShopDetail() {
           <ConfirmAction
             trigger={
               <Button variant="destructive" size="sm">
-                <Trash2 /> Delete shop
+                <Trash2 /> {a("Delete shop")}
               </Button>
             }
             title={`${a("Delete shop")} ${shop.shop_name}?`}
@@ -281,16 +281,18 @@ function ShopDetail() {
 }
 
 function Line({ l, v, strong }: { l: string; v: string; strong?: boolean }) {
+  const a = useAdminText();
   return (
     <div className="flex justify-between">
-      <span className="text-muted-foreground">{l}</span>
+      <span className="text-muted-foreground">{a(l)}</span>
       <span className={strong ? "font-mono font-semibold text-primary" : "font-mono"}>{v}</span>
     </div>
   );
 }
 
 function MiniList({ rows, empty }: { rows: { k: string; a: string; b: string; c: string; d: string; mono?: boolean }[]; empty: string }) {
-  if (!rows.length) return <EmptyState title={empty} />;
+  const a = useAdminText();
+  if (!rows.length) return <EmptyState title={a(empty)} />;
   return (
     <div className="divide-y divide-border rounded-2xl border border-border bg-card">
       {rows.map((r) => (
