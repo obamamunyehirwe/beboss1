@@ -16,7 +16,7 @@ import { liveConfigured } from '@/lib/live-config';
 import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
-import { confirmMyShopStockTransfer, deleteMyShopBranch, lookupMyShop, submitPaymentProof, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
+import { addMyShopDevice, confirmMyShopStockTransfer, deleteMyShopBranch, lookupMyShop, submitPaymentProof, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
 import { publicSiteQuery } from "@/lib/queries";
 import { AnnouncementCard } from "@/components/site/AnnouncementBanner";
 import { buildAirtelUssd, buildMtnUssd, calculateSubscriptionFee, effectiveShopStatus } from "@/lib/pricing";
@@ -90,11 +90,17 @@ function LookupPanel() {
   const { t, p } = useI18n();
   const st = (s: string) => p.myShop.status[s] ?? s.replaceAll("_", " ");
   const lookup = useServerFn(lookupMyShop);
+  const registerDevice = useServerFn(addMyShopDevice);
   const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Lookup | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [deviceName, setDeviceName] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState("");
+  const [assignedBranchId, setAssignedBranchId] = useState("");
+  const [deviceBusy, setDeviceBusy] = useState(false);
+  const [issuedInvite, setIssuedInvite] = useState<{ id: string; joinCode: string; expiresAt: number } | null>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -382,11 +388,14 @@ function LookupPanel() {
         </div>
       )}
 
-      {result && result.devices.length ? (
+      {result && shop ? (
         <div className="rounded-3xl border border-border bg-card p-6">
           <h3 className="flex items-center gap-2 font-semibold">
             <Smartphone className="size-4 text-primary" /> {t("myDevices")}
           </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Device slots, staff roles and branch assignments are shared with the Android app through the same shop cloud account.
+          </p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {result.devices.map((d) => {
               const h = deviceHealth(d.last_synced_at);
@@ -394,19 +403,126 @@ function LookupPanel() {
                 <div key={d.id} className="flex items-center justify-between gap-3 rounded-2xl border border-border px-4 py-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">
-                      {d.device_name || d.device_id}
+                      {d.device_name || d.device_id || "Unpaired device slot"}
                       {d.is_owner_primary ? <span className="text-xs text-muted-foreground"> · {t("ownerPhone")}</span> : null}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {d.assigned_user_name} · {d.branch_name} · {d.last_synced_at ? relativeTime(d.last_synced_at) : "—"}
+                      {d.assigned_user_name} · {d.branch_name} · {d.device_id ? (d.last_synced_at ? relativeTime(d.last_synced_at) : "Waiting for first sync") : "Waiting for pairing"}
                     </p>
                   </div>
-                  <Badge variant={!d.is_active ? "danger" : h === "ONLINE" ? "success" : h === "TODAY" ? "info" : "warning"}>
-                    {!d.is_active ? t("deviceOff") : h === "ONLINE" ? t("deviceOnline") : h === "TODAY" ? t("deviceToday") : t("deviceIdle")}
+                  <Badge variant={!d.is_active ? "danger" : d.device_id ? h === "ONLINE" ? "success" : h === "TODAY" ? "info" : "warning" : "secondary"}>
+                    {!d.is_active ? t("deviceOff") : d.device_id ? h === "ONLINE" ? t("deviceOnline") : h === "TODAY" ? t("deviceToday") : t("deviceIdle") : "Awaiting pairing"}
                   </Badge>
                 </div>
               );
             })}
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-border bg-surface-2 p-4">
+            <div className="flex items-center gap-2">
+              <Plus className="size-4 text-primary" />
+              <h4 className="font-semibold">Register an additional POS device</h4>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The owner terminal must already be registered and synced. Choose an active staff account and the branch assigned to that staff member. A single-use join code expires after 60 minutes.
+            </p>
+            {result.devices.some((d) => d.is_owner_primary && d.is_active && d.device_id) ? (
+              <form
+                className="mt-4 grid gap-3 md:grid-cols-2"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const staff = result.staff.filter((u) => u.is_active && u.role !== "OWNER");
+                  const branches = result.branches.filter((b) => b.is_active);
+                  const userId = assignedUserId || staff[0]?.user_id || "";
+                  const assigned = staff.find((u) => u.user_id === userId);
+                  const branchId = assignedBranchId || assigned?.assigned_branch_id || "";
+                  if (!userId || !branchId || !deviceName.trim()) {
+                    toast.error("Select an active staff account, its assigned branch and a device name.");
+                    return;
+                  }
+                  setDeviceBusy(true);
+                  setIssuedInvite(null);
+                  try {
+                    const created = await registerDevice({
+                      data: { username, phone, deviceName, assignedUserId: userId, branchId },
+                    });
+                    setIssuedInvite(created);
+                    toast.success("Device slot registered in BeBoss Cloud.");
+                    setResult(await lookup({ data: { username, phone } }));
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Could not register the POS device.");
+                  } finally {
+                    setDeviceBusy(false);
+                  }
+                }}
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="device-name">Device name</Label>
+                  <Input id="device-name" value={deviceName} onChange={(e) => setDeviceName(e.target.value)} placeholder="e.g. Nyabugogo Counter 2" required maxLength={120} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Assigned staff account</Label>
+                  <Select value={assignedUserId || result.staff.find((u) => u.is_active && u.role !== "OWNER")?.user_id || ""} onValueChange={(value) => {
+                    setAssignedUserId(value);
+                    setAssignedBranchId(result.staff.find((u) => u.user_id === value)?.assigned_branch_id || "");
+                  }}>
+                    <SelectTrigger><SelectValue placeholder="Choose active staff" /></SelectTrigger>
+                    <SelectContent>
+                      {result.staff.filter((u) => u.is_active && u.role !== "OWNER").map((u) => (
+                        <SelectItem key={u.user_id} value={u.user_id}>{u.full_name} · @{u.username} · {u.role}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Assigned branch</Label>
+                  <Select value={assignedBranchId || ""} onValueChange={setAssignedBranchId}>
+                    <SelectTrigger><SelectValue placeholder="Choose assigned branch" /></SelectTrigger>
+                    <SelectContent>
+                      {result.branches.filter((b) => b.is_active && b.id === (result.staff.find((u) => u.user_id === (assignedUserId || result.staff.find((x) => x.is_active && x.role !== "OWNER")?.user_id)?.assigned_branch_id)).map((b) => (
+                        <SelectItem key={b.id} value={b.id}>{b.name} · {b.code}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <Button type="submit" variant="hero" disabled={deviceBusy || result.staff.filter((u) => u.is_active && u.role !== "OWNER").length === 0 || result.branches.filter((b) => b.is_active).length === 0}>
+                    {deviceBusy ? <Loader2 className="animate-spin" /> : <Plus />}
+                    Register device & create join code
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <p className="mt-3 rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning-foreground">
+                Open the BeBoss Android app on the registered owner terminal, sign in as the owner, and sync once before registering additional devices here.
+              </p>
+            )}
+            {issuedInvite ? (
+              <div className="mt-4 rounded-xl border border-primary/30 bg-background p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">Single-use Android join code</p>
+                  <Badge variant="warning">Expires {formatDateTime(issuedInvite.expiresAt)}</Badge>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <code className="rounded-lg border border-border bg-surface px-3 py-2 font-mono text-lg font-bold tracking-wider">{issuedInvite.joinCode}</code>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(issuedInvite.joinCode);
+                      setCopied(issuedInvite.id);
+                      toast.success("Join code copied. It will not be shown again after this page is refreshed.");
+                    }}
+                  >
+                    {copied === issuedInvite.id ? <Check /> : <Copy />} Copy code
+                  </Button>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  On Android, choose “Join existing shop”, enter the shop owner’s username and phone, paste this code, then create the staff PIN and password for the assigned account.
+                </p>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
