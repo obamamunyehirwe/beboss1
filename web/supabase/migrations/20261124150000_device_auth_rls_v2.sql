@@ -301,6 +301,17 @@ begin
     raise exception using errcode = '22023', message = 'The expected terminal identity no longer matches this device slot.';
   end if;
 
+  if not exists (
+    select 1 from public.shop_users u
+    where u.shop_sync_key = p_shop_id
+      and u.user_id = v_device.assigned_user_id
+      and u.is_active = true
+      and u.role = v_device.role
+      and u.assigned_branch_id = v_device.branch_id
+  ) then
+    raise exception using errcode = '42501', message = 'The assigned shop staff account is inactive or no longer matches this device.';
+  end if;
+
   if not v_has_owner_membership and v_actor_role = 'MANAGER'
      and v_actor_branch_id <> v_device.branch_id then
     raise exception using errcode = '42501', message = 'A branch manager may only issue a device code for their assigned branch.';
@@ -387,6 +398,17 @@ begin
      or (v_device.device_id <> '' and v_device.device_id <> p_device_id)
      or (v_device.device_id <> '' and v_invite.expected_device_id = '') then
     raise exception using errcode = '42501', message = 'The assigned device slot is no longer eligible for pairing.';
+  end if;
+
+  if not exists (
+    select 1 from public.shop_users u
+    where u.shop_sync_key = v_invite.shop_sync_key
+      and u.user_id = v_device.assigned_user_id
+      and u.is_active = true
+      and u.role = v_device.role
+      and u.assigned_branch_id = v_device.branch_id
+  ) then
+    raise exception using errcode = '42501', message = 'The assigned shop staff account is inactive or no longer matches this device.';
   end if;
 
   if exists (
