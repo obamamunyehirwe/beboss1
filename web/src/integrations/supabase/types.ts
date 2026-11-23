@@ -678,6 +678,63 @@ export type Database = {
         }
         Relationships: []
       }
+      shop_owner_memberships: {
+        Row: {
+          id: string
+          user_id: string
+          shop_id: string
+          owner_username: string
+          owner_phone: string
+          status: string
+          created_at: number
+          last_verified_at: number
+          revoked_at: number
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          shop_id: string
+          owner_username: string
+          owner_phone: string
+          status?: string
+          created_at?: number
+          last_verified_at?: number
+          revoked_at?: number
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          shop_id?: string
+          owner_username?: string
+          owner_phone?: string
+          status?: string
+          created_at?: number
+          last_verified_at?: number
+          revoked_at?: number
+        }
+        Relationships: []
+      }
+      shop_owner_otp_attempts: {
+        Row: {
+          id: string
+          shop_id: string
+          created_at: number
+          status: string
+        }
+        Insert: {
+          id?: string
+          shop_id: string
+          created_at?: number
+          status?: string
+        }
+        Update: {
+          id?: string
+          shop_id?: string
+          created_at?: number
+          status?: string
+        }
+        Relationships: []
+      }
       shop_branches: {
         Row: {
           address: string
