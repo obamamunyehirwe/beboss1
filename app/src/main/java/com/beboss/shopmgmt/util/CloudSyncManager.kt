@@ -329,7 +329,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                     // Ignore stale cloud license state from an older shop that happened
                     // to reuse the same owner identity. Joined devices set their baseline
                     // from the validated shop account during pairing.
-                    val cloudUpdateBelongsToThisShop = remoteShop.updatedAt >= profile.trialStartedAt
+                    val cloudUpdateBelongsToThisShop = remoteShop.updatedAt > profile.trialStartedAt
                     val isDirectUnlockUpdate = cloudUpdateBelongsToThisShop &&
                         remoteShop.autoUnlockedAt > profile.lastAppliedCloudUnlockAt &&
                         remoteShop.autoUnlockedAt >= profile.trialStartedAt &&
