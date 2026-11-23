@@ -1203,6 +1203,72 @@ object SupabaseAdminClient {
         }
     }
 
+    suspend fun setShopDeviceActive(
+        shopSyncKey: String,
+        deviceRecordId: String,
+        actorDeviceId: String,
+        actorUserId: String,
+        isActive: Boolean
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank() || deviceRecordId.isBlank() ||
+            actorDeviceId.isBlank() || actorUserId.isBlank()
+        ) return@withContext false
+        try {
+            val payload = JSONObject()
+                .put("p_shop_sync_key", shopSyncKey)
+                .put("p_device_record_id", deviceRecordId)
+                .put("p_actor_device_id", actorDeviceId)
+                .put("p_actor_user_id", actorUserId)
+                .put("p_is_active", isActive)
+            val req = buildRestRequest("rpc/set_shop_device_active", tenantSyncKey = shopSyncKey)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(req).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "setShopDeviceActive HTTP ${response.code}: $raw")
+                    return@withContext false
+                }
+                raw.trim().equals("true", ignoreCase = true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "setShopDeviceActive error: ${e.message}")
+            false
+        }
+    }
+
+    suspend fun deleteShopDeviceAuthorized(
+        shopSyncKey: String,
+        deviceRecordId: String,
+        actorDeviceId: String,
+        actorUserId: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank() || deviceRecordId.isBlank() ||
+            actorDeviceId.isBlank() || actorUserId.isBlank()
+        ) return@withContext false
+        try {
+            val payload = JSONObject()
+                .put("p_shop_sync_key", shopSyncKey)
+                .put("p_device_record_id", deviceRecordId)
+                .put("p_actor_device_id", actorDeviceId)
+                .put("p_actor_user_id", actorUserId)
+            val req = buildRestRequest("rpc/delete_shop_device", tenantSyncKey = shopSyncKey)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(req).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "deleteShopDeviceAuthorized HTTP ${response.code}: $raw")
+                    return@withContext false
+                }
+                raw.trim().equals("true", ignoreCase = true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "deleteShopDeviceAuthorized error: ${e.message}")
+            false
+        }
+    }
+
     suspend fun fetchShopDevicesForShop(shopSyncKey: String): List<SupabaseShopDeviceDto> = withContext(Dispatchers.IO) {
         if (!isConfigured() || shopSyncKey.isBlank()) return@withContext emptyList()
         try {
