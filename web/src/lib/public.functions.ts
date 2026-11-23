@@ -208,10 +208,11 @@ const lookupSchema = z.object({
 });
 
 export const lookupMyShop = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof lookupSchema>) => lookupSchema.parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     if (normalizePhoneLast9(data.phone).length < 9) throw new Error("Enter the full phone number registered in the app.");
-    const key = computeShopKey(data.username, data.phone);
     const sb = createPublicClient(key);
     const [shop, pays, codes, devices, news, snaps, branchRows, transferRows, staffRows] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, owner_name, owner_username, business_type, branch_count, worker_count, device_count, device_limit, monthly_fee_rwf, subscription_status, subscription_expires_at, remote_kill_switch, updated_at").eq("id", key).maybeSingle(),
@@ -242,7 +243,6 @@ export const lookupMyShop = createServerFn({ method: "POST" })
     }
 
     return {
-      shopKey: key,
       shop: shop.data ?? null,
       payments: pays.data ?? [],
       codes: codes.data ?? [],
@@ -286,9 +286,10 @@ const addShopDeviceSchema = z.object({
 });
 
 export const addMyShopDevice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof addShopDeviceSchema>) => addShopDeviceSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     const sb = createPublicClient(key);
     const [shopResult, ownerResult, primaryResult, userResult, branchResult, devicesResult, usersResult, branchesResult, configResult] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, device_count, device_limit, branch_count, worker_count, remote_kill_switch").eq("id", key).maybeSingle(),
@@ -486,9 +487,10 @@ const branchSchema = z.object({
 });
 
 export const upsertMyShopBranch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof branchSchema>) => branchSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     const sb = createPublicClient(key);
     const now = Date.now();
     const { error } = await sb.from("shop_branches").upsert(
@@ -531,9 +533,10 @@ const branchIdSchema = z.object({
 });
 
 export const deleteMyShopBranch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof branchIdSchema>) => branchIdSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     const sb = createPublicClient(key);
     const now = Date.now();
     // RLS allows tenant update but not delete; soft-delete via is_active=false + fresh HLC.
@@ -565,10 +568,11 @@ const transferSchema = z.object({
 });
 
 export const upsertMyShopStockTransfer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof transferSchema>) => transferSchema.parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     if (data.fromBranchId === data.toBranchId) throw new Error("Source and destination branches must differ.");
-    const key = computeShopKey(data.username, data.phone);
     const sb = createPublicClient(key);
     const { data: existing, error: readError } = await sb
       .from("shop_stock_transfers")
@@ -627,9 +631,10 @@ const confirmTransferSchema = z.object({
 });
 
 export const confirmMyShopStockTransfer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof confirmTransferSchema>) => confirmTransferSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     const sb = createPublicClient(key);
     const now = Date.now();
     const { data: updated, error } = await sb
@@ -672,9 +677,10 @@ const cancelTransferSchema = z.object({
 });
 
 export const requestMyShopStockTransferCancellation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof cancelTransferSchema>) => cancelTransferSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     const sb = createPublicClient(key);
     const now = Date.now();
     const { data: updated, error } = await sb
@@ -726,8 +732,10 @@ const gatewayCheckoutSchema = z.object({
 });
 
 export const createGatewayCheckout = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof gatewayCheckoutSchema>) => gatewayCheckoutSchema.parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     const supabaseUrl = process.env["SUPABASE_URL"] || import.meta.env["VITE_SUPABASE_URL"];
     const publishableKey = process.env["SUPABASE_PUBLISHABLE_KEY"] || import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"];
     if (!supabaseUrl || !publishableKey) {
