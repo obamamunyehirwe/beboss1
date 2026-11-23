@@ -267,6 +267,34 @@ class CloudSyncManager(private val database: AppDatabase) {
 
             // 1. Primary Cross-Branch Internet Sync via Supabase
             if (SupabaseAdminClient.isConfigured()) {
+                val currentTerminal = database.shopDeviceDao().getByDeviceId(deviceId)
+                val currentTerminalUser = currentTerminal?.let { userDao.getUserById(it.assignedUserId) }
+                if (currentTerminal == null ||
+                    !currentTerminal.isActive ||
+                    currentTerminal.shopSyncKey.isBlank() ||
+                    currentTerminalUser == null ||
+                    !currentTerminalUser.isActive ||
+                    currentTerminalUser.role.name != currentTerminal.role
+                ) {
+                    val message = "Cloud sync paused: this installation is not paired to an active shop user. Local records are preserved."
+                    addAuditLog(
+                        type = "BRANCH_AUTO_SYNC",
+                        status = "FAILED",
+                        summary = message,
+                        latencyMs = System.currentTimeMillis() - startTime
+                    )
+                    return@withContext CloudSyncReport(
+                        state = CloudSyncState.ERROR,
+                        lastSyncTimestamp = profile.lastSyncedAt,
+                        message = message,
+                        branchesCount = branches.size,
+                        productsCount = products.size,
+                        salesCount = sales.size,
+                        debtsCount = customers.count { it.debtBalance > 0 },
+                        latencyMs = System.currentTimeMillis() - startTime
+                    )
+                }
+
                 // Check if migration 0004 (chunk columns) has been applied
                 val migrationApplied = SupabaseAdminClient.checkSnapshotMigrationApplied()
                 if (!migrationApplied) {
