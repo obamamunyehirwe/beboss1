@@ -55,6 +55,28 @@ Deno.serve(async (request) => {
   // The invitation is a 128-bit random bearer token, stored only as SHA-256.
   // The code itself is never logged or persisted in a database column.
   const codeHash = await sha256Hex(code);
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const clientIp = request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-real-ip") ??
+    forwarded ??
+    "";
+  // Edge infrastructure supplies a client IP; when it is unavailable, scope
+  // the fallback bucket to this code so we never rate-limit every shop globally.
+  const rateBucketHash = await sha256Hex(clientIp ? `ip:${clientIp}` : `invite:${codeHash}`);
+  const { data: rateAllowed, error: rateError } = await admin.rpc("take_shop_device_enrollment_attempt", {
+    p_bucket_hash: rateBucketHash,
+    p_now_ms: Date.now(),
+    p_window_ms: 10 * 60 * 1000,
+    p_max_attempts: 10,
+  });
+  if (rateError) {
+    console.error("[redeem-shop-device-invite] Enrollment rate limiter is unavailable.");
+    return json(503, { error: "Secure device enrollment is temporarily unavailable." });
+  }
+  if (rateAllowed !== true) {
+    return json(429, { error: "Too many device enrollment attempts. Wait a few minutes and try again." });
+  }
+
   const credentialEmail = `device-${crypto.randomUUID()}@devices.beboss.rw`;
   const credentialPassword = randomToken(48);
 
@@ -84,6 +106,17 @@ Deno.serve(async (request) => {
     const { error: deleteError } = await admin.auth.admin.deleteUser(created.user.id);
     if (deleteError) console.error("[redeem-shop-device-invite] Failed to clean up rejected Auth identity.");
     return json(403, { error: "This device code is invalid, expired, revoked, already used, or not assigned to this terminal." });
+  }
+
+  // A re-enrollment supersedes the previous auth identity for this device.
+  // The DB session has already been revoked atomically; remove the old GoTrue user
+  // as cleanup so disabled credentials do not accumulate in Auth.
+  const replacedAuthUserId = String(enrollment.replaced_auth_user_id ?? "");
+  if (replacedAuthUserId && replacedAuthUserId !== created.user.id) {
+    const { error: oldUserDeleteError } = await admin.auth.admin.deleteUser(replacedAuthUserId);
+    if (oldUserDeleteError) {
+      console.error("[redeem-shop-device-invite] Previous device identity cleanup failed after revocation.");
+    }
   }
 
   // Credentials are returned once, only after the atomic DB claim has succeeded.
