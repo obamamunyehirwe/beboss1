@@ -27,9 +27,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       // Continue with the default language when browser storage is unavailable.
     }
     const syncLanguage = (event: StorageEvent) => {
-      if (event.key !== STORAGE || !event.newValue) return;
-      if (Object.prototype.hasOwnProperty.call(DICTS, event.newValue)) {
+      if (event.key !== STORAGE) return;
+      if (event.newValue && Object.prototype.hasOwnProperty.call(DICTS, event.newValue)) {
         setLangState(event.newValue as Lang);
+      } else if (event.newValue === null) {
+        setLangState("en");
       }
     };
     window.addEventListener("storage", syncLanguage);
@@ -72,8 +74,24 @@ export function useStoredPageCopy(): PageCopy {
   const [lang, setLang] = useState<Lang>("en");
   useEffect(() => {
     if (ctx) return;
-    const saved = window.localStorage.getItem(STORAGE) as Lang | null;
-    if (saved && saved in PAGES) setLang(saved);
+    try {
+      const saved = window.localStorage.getItem(STORAGE);
+      if (saved && Object.prototype.hasOwnProperty.call(PAGES, saved)) {
+        setLang(saved as Lang);
+      }
+    } catch {
+      setLang("en");
+    }
+    const syncLanguage = (event: StorageEvent) => {
+      if (event.key !== STORAGE) return;
+      if (event.newValue && Object.prototype.hasOwnProperty.call(PAGES, event.newValue)) {
+        setLang(event.newValue as Lang);
+      } else if (event.newValue === null) {
+        setLang("en");
+      }
+    };
+    window.addEventListener("storage", syncLanguage);
+    return () => window.removeEventListener("storage", syncLanguage);
   }, [ctx]);
   return ctx ? ctx.p : PAGES[lang];
 }
