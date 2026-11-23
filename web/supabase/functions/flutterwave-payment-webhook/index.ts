@@ -114,6 +114,73 @@ async function verifyFlutterwaveTransaction(transactionId: string) {
   return body.data;
 }
 
+
+async function loadRefund(refundId: string) {
+  const query = new URLSearchParams({
+    select: "id,payment_request_id,provider,provider_refund_id,amount_rwf,status",
+    id: `eq.${refundId}`,
+    provider: "eq.FLUTTERWAVE_RW_MOBILE_MONEY",
+    limit: "1",
+  });
+  const response = await adminRest(`payment_gateway_refunds?${query.toString()}`);
+  if (!response.ok) throw new Error("REFUND_LOOKUP_FAILED");
+  const rows = await response.json();
+  return rows?.[0] ?? null;
+}
+
+async function loadRefundByProviderId(providerRefundId: string) {
+  const query = new URLSearchParams({
+    select: "id,payment_request_id,provider,provider_refund_id,amount_rwf,status",
+    provider: "eq.FLUTTERWAVE_RW_MOBILE_MONEY",
+    provider_refund_id: `eq.${providerRefundId}`,
+    limit: "1",
+  });
+  const response = await adminRest(`payment_gateway_refunds?${query.toString()}`);
+  if (!response.ok) throw new Error("REFUND_LOOKUP_FAILED");
+  const rows = await response.json();
+  return rows?.[0] ?? null;
+}
+
+async function loadRefundPaymentRequest(requestId: string) {
+  const query = new URLSearchParams({
+    select: "id,gateway_transaction_id,gateway_provider",
+    id: `eq.${requestId}`,
+    gateway_provider: "eq.FLUTTERWAVE_RW_MOBILE_MONEY",
+    limit: "1",
+  });
+  const response = await adminRest(`payment_requests?${query.toString()}`);
+  if (!response.ok) throw new Error("PAYMENT_REQUEST_LOOKUP_FAILED");
+  const rows = await response.json();
+  return rows?.[0] ?? null;
+}
+
+async function saveRefundProviderResult(refundId: string, providerRefundId: string) {
+  const response = await adminRest(`payment_gateway_refunds?id=eq.${encodeURIComponent(refundId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      provider_refund_id: providerRefundId,
+      status: "PENDING",
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  if (!response.ok) throw new Error("REFUND_STATE_UPDATE_FAILED");
+}
+
+async function finalizeRefund(refundId: string, providerStatus: string, providerRefundId: string) {
+  const response = await adminRest("rpc/finalize_gateway_refund", {
+    method: "POST",
+    body: JSON.stringify({
+      p_refund_id: refundId,
+      p_provider_status: providerStatus,
+      p_provider_refund_id: providerRefundId,
+    }),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error("REFUND_FINALIZATION_FAILED");
+  return Array.isArray(result) ? result[0] : result;
+}
+
+
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return json(405, { message: "Method not allowed." });
   if (!supabaseUrl || !serviceRoleKey || !webhookSecret || !flutterwaveSecretKey) {
@@ -134,8 +201,53 @@ Deno.serve(async (request: Request) => {
 
     const payload = JSON.parse(rawBody);
     const eventType = String(payload?.type ?? payload?.event ?? "").trim();
-    const transactionId = String(payload?.data?.id ?? "").trim();
-    const reference = String(payload?.data?.tx_ref ?? "").trim();
+    const payloadHash = await sha256(rawBody);
+    const eventData = payload?.data ?? payload;
+
+    if (
+      eventType === "refund.completed" ||
+      eventType === "refund.updated" ||
+      eventData?.AmountRefunded !== undefined ||
+      eventData?.amount_refunded !== undefined
+    ) {
+      const providerRefundId = String(eventData?.id ?? "").trim();
+      const refundStatus = String(eventData?.status ?? "").trim().toLowerCase();
+      const amount = Number(eventData?.AmountRefunded ?? eventData?.amount_refunded ?? 0);
+      const transactionId = String(eventData?.TransactionId ?? eventData?.transaction_id ?? eventData?.tx_id ?? "").trim();
+      const comment = String(eventData?.comments ?? eventData?.comment ?? "");
+      const match = comment.match(/BeBoss refund ([0-9a-f-]{36})/i);
+      let refund = match?.[1] ? await loadRefund(match[1]) : null;
+      if (!refund && providerRefundId) refund = await loadRefundByProviderId(providerRefundId);
+      if (!refund || !providerRefundId || !transactionId || !Number.isSafeInteger(amount) || amount <= 0) {
+        return json(404, { message: "Matching BeBoss refund record not found." });
+      }
+
+      const paymentRequest = await loadRefundPaymentRequest(String(refund.payment_request_id));
+      if (!paymentRequest || String(paymentRequest.gateway_transaction_id) !== transactionId || Number(refund.amount_rwf) !== amount) {
+        return json(400, { message: "Flutterwave refund details do not match the BeBoss refund record." });
+      }
+
+      const refundEventId = "refund-" + providerRefundId + "-" + refundStatus;
+      const priorState = await recordEvent(
+        "FLUTTERWAVE_RW_MOBILE_MONEY",
+        refundEventId,
+        payloadHash,
+        String(refund.payment_request_id),
+      );
+      if (priorState === "VERIFIED") return json(200, { received: true, duplicate: true });
+
+      await saveRefundProviderResult(String(refund.id), providerRefundId);
+      const finalized = await finalizeRefund(String(refund.id), refundStatus, providerRefundId);
+      await updateEvent("FLUTTERWAVE_RW_MOBILE_MONEY", refundEventId, String(refund.payment_request_id), "VERIFIED");
+      return json(200, {
+        received: true,
+        refundProcessed: true,
+        refundStatus: String(finalized?.refund_status ?? "PENDING"),
+      });
+    }
+
+    const transactionId = String(eventData?.id ?? "").trim();
+    const reference = String(eventData?.tx_ref ?? "").trim();
     const eventId = String(payload?.id ?? transactionId).trim();
     if (!eventId || !transactionId || !reference || eventType !== "charge.completed") {
       return json(400, { message: "Invalid Flutterwave webhook payload." });
@@ -147,7 +259,6 @@ Deno.serve(async (request: Request) => {
       return json(404, { message: "Payment reference not found." });
     }
 
-    const payloadHash = await sha256(rawBody);
     const priorState = await recordEvent(
       "FLUTTERWAVE_RW_MOBILE_MONEY",
       eventId,
