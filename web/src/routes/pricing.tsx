@@ -41,7 +41,7 @@ function PricingPage() {
             <div key={tier.name} className={`rounded-3xl border p-7 ${i === 0 ? "border-primary/40 bg-surface-2 shadow-brand" : "border-border bg-card"}`}>
               <p className="text-sm text-muted-foreground">{tier.name}</p>
               <p className="mt-2 font-display text-4xl font-extrabold">
-                {formatRwf(tier.price)}
+                {formatRwf(tier.price, locale)}
                 <span className="text-base font-medium text-muted-foreground"> / {t("calcMonth")}</span>
               </p>
               <p className="mt-2 text-sm text-muted-foreground">{tier.note}</p>
