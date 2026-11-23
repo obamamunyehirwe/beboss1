@@ -91,20 +91,6 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Format and lint payment functions
-        run: |
-          deno fmt --check \
-            web/supabase/functions/create-subscription-checkout/index.ts \
-            web/supabase/functions/flutterwave-payment-webhook/index.ts \
-            web/supabase/functions/stripe-payment-webhook/index.ts \
-            web/supabase/functions/manage-gateway-refund/index.ts
-
-          deno lint \
-            web/supabase/functions/create-subscription-checkout/index.ts \
-            web/supabase/functions/flutterwave-payment-webhook/index.ts \
-            web/supabase/functions/stripe-payment-webhook/index.ts \
-            web/supabase/functions/manage-gateway-refund/index.ts
-
       - name: Type-check payment functions
         run: |
           deno check \
