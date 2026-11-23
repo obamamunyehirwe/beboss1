@@ -348,7 +348,7 @@ class SyncResilienceTest {
                 hlcTimestamp = com.beboss.shopmgmt.util.HlcClock.pack(now + 500L, 0),
                 lastModifiedDeviceId = "DEVICE-B"
             )
-            val firstMerge = ConflictResolutionEngine.mergePackage(db, packageWith(completed), "CLOUD-DEVICE-B")
+            val firstMerge = com.beboss.shopmgmt.util.ConflictResolutionEngine.mergePackage(db, packageWith(completed), "CLOUD-DEVICE-B")
             assertEquals(1, firstMerge.mergedTransfers)
             assertEquals("COMPLETED", db.stockTransferDao().getTransferById(local.id)?.status)
 
@@ -358,7 +358,7 @@ class SyncResilienceTest {
                 hlcTimestamp = com.beboss.shopmgmt.util.HlcClock.pack(now - 1_000L, 0),
                 lastModifiedDeviceId = "DEVICE-C"
             )
-            val secondMerge = ConflictResolutionEngine.mergePackage(db, packageWith(stale), "STALE-DEVICE-C")
+            val secondMerge = com.beboss.shopmgmt.util.ConflictResolutionEngine.mergePackage(db, packageWith(stale), "STALE-DEVICE-C")
             assertEquals(0, secondMerge.mergedTransfers)
             assertEquals("COMPLETED", db.stockTransferDao().getTransferById(local.id)?.status)
         } finally {
