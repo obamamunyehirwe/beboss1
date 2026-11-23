@@ -433,12 +433,12 @@ object DatabaseMigrations {
                 // most recently edited row active, preserve the other rows for references,
                 // and then enforce uniqueness at the database boundary.
                 db.execSQL("""
-                    UPDATE users AS u
+                    UPDATE users
                     SET isActive = 0
-                    WHERE u.id <> (
+                    WHERE id <> (
                         SELECT winner.id
                         FROM users AS winner
-                        WHERE winner.username = u.username
+                        WHERE winner.username = users.username
                         ORDER BY winner.updatedAt DESC, winner.createdAt ASC, winner.id ASC
                         LIMIT 1
                     )
