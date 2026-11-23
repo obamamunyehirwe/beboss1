@@ -622,7 +622,7 @@ fun ShopRegistrationScreen(
     language: AppLanguage,
     isDarkTheme: Boolean,
     authError: String? = null,
-    onRegister: (shopName: String, currencyCode: String, currencySymbol: String, address: String, phone: String, ownerName: String, username: String, pin: String, password: String) -> Unit,
+    onRegister: (shopName: String, businessType: String, currencyCode: String, currencySymbol: String, address: String, phone: String, ownerName: String, username: String, pin: String, password: String) -> Unit,
     onJoinExistingShop: (ownerUsername: String, ownerPhone: String, deviceJoinCode: String, thisDeviceName: String, pin: String, password: String) -> Unit = { _, _, _, _, _, _ -> },
     onClearError: () -> Unit = {},
     onCancel: () -> Unit,
@@ -1676,6 +1676,7 @@ fun ShopRegistrationScreen(
                                         errorMessage = null
                                         onRegister(
                                             shopName.trim(),
+                                            selectedCategory,
                                             currencyCode.trim(),
                                             currencySymbol.trim(),
                                             address.trim(),
