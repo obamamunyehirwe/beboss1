@@ -1,6 +1,7 @@
 package com.beboss.shopmgmt.data.model
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
