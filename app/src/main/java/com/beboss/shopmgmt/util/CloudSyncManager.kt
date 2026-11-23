@@ -554,7 +554,12 @@ class CloudSyncManager(private val database: AppDatabase) {
                 val remoteBranches = SupabaseAdminClient.fetchShopBranches(shopSyncKey)
                 val remoteTransfers = SupabaseAdminClient.fetchShopStockTransfers(shopSyncKey)
                 val transferCommandStatuses = setOf("REQUESTED", "RECEIPT_REQUESTED", "CANCEL_REQUESTED")
-                val commandTransfers = remoteTransfers.filter { it.status in transferCommandStatuses }
+                // Compatibility: the previously deployed portal wrote final-looking states
+                // directly. Treat those WEB-authored rows as commands, never as inventory facts.
+                val commandTransfers = remoteTransfers.filter {
+                    it.status in transferCommandStatuses ||
+                        (it.lastModifiedDeviceId == "WEB" && it.status in setOf("IN_TRANSIT", "COMPLETED", "CANCELLED"))
+                }
                 val transferManager = com.beboss.shopmgmt.domain.BranchTransferManager(
                     branchDao = branchDao,
                     stockTransferDao = stockTransferDao,
@@ -580,7 +585,13 @@ class CloudSyncManager(private val database: AppDatabase) {
                         )
                         if (!claimed) continue
                         HlcClock.observe(command.hlcTimestamp)
-                        when (command.status) {
+                        val commandAction = when {
+                            command.lastModifiedDeviceId == "WEB" && command.status == "IN_TRANSIT" -> "REQUESTED"
+                            command.lastModifiedDeviceId == "WEB" && command.status == "COMPLETED" -> "RECEIPT_REQUESTED"
+                            command.lastModifiedDeviceId == "WEB" && command.status == "CANCELLED" -> "CANCEL_REQUESTED"
+                            else -> command.status
+                        }
+                        when (commandAction) {
                             "REQUESTED" -> {
                                 val existing = stockTransferDao.getTransferById(command.id)
                                 if (existing == null) {
