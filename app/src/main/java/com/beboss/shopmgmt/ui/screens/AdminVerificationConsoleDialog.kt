@@ -2015,9 +2015,8 @@ fun AdminVerificationConsoleDialog(
                             var cfgMtnName by remember(paymentConfig) { mutableStateOf(paymentConfig.mtnRecipientName) }
                             var cfgAirtelPhone by remember(paymentConfig) { mutableStateOf(paymentConfig.airtelMoneyPhone) }
                             var cfgAirtelName by remember(paymentConfig) { mutableStateOf(paymentConfig.airtelRecipientName) }
-                            var cfgPerDeviceFee by remember(paymentConfig) { mutableStateOf(paymentConfig.perDeviceFeeRwf.toString()) }
-                            var cfgApkUrl by remember(paymentConfig) { mutableStateOf(paymentConfig.apkDownloadUrl) }
-                            var cfgApkVersion by remember(paymentConfig) { mutableStateOf(paymentConfig.apkVersion.ifBlank { "2.1.0" }) }
+                                                        var cfgApkUrl by remember(paymentConfig) { mutableStateOf(paymentConfig.apkDownloadUrl) }
+                            var cfgApkVersion by remember(paymentConfig) { mutableStateOf(paymentConfig.apkVersion.ifBlank { "2.3.0" }) }
                             var savingCfg by remember { mutableStateOf(false) }
 
                             val draftConfig = AdminPaymentConfig(
@@ -2027,9 +2026,9 @@ fun AdminVerificationConsoleDialog(
                                 mtnRecipientName = cfgMtnName.trim(),
                                 airtelMoneyPhone = cfgAirtelPhone.trim(),
                                 airtelRecipientName = cfgAirtelName.trim(),
-                                perDeviceFeeRwf = cfgPerDeviceFee.toIntOrNull() ?: 2000,
+                                perDeviceFeeRwf = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF,
                                 apkDownloadUrl = cfgApkUrl.trim(),
-                                apkVersion = cfgApkVersion.trim().ifBlank { "2.1.0" },
+                                apkVersion = cfgApkVersion.trim().ifBlank { "2.3.0" },
                                 updatedAt = System.currentTimeMillis()
                             )
 
@@ -2099,10 +2098,10 @@ fun AdminVerificationConsoleDialog(
                                         shape = RoundedCornerShape(12.dp)
                                     )
                                     OutlinedTextField(
-                                        value = cfgPerDeviceFee,
-                                        onValueChange = { cfgPerDeviceFee = it.filter { ch -> ch.isDigit() } },
-                                        label = { Text("Fee/Device (FRw)") },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        value = "2,000 FRw / month",
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        label = { Text("Fixed fee per extra POS device") },
                                         singleLine = true,
                                         modifier = Modifier.weight(0.9f),
                                         shape = RoundedCornerShape(12.dp)
@@ -2158,7 +2157,7 @@ fun AdminVerificationConsoleDialog(
                                             color = Color.White
                                         )
                                         Text(
-                                            text = "WhatsApp Target: ${draftConfig.adminWhatsAppNumber.ifBlank { "Not set" }} • +${draftConfig.perDeviceFeeRwf} FRw/extra device",
+                                            text = "WhatsApp Target: ${draftConfig.adminWhatsAppNumber.ifBlank { "Not set" }} • +2,000 FRw/extra device/month",
                                             fontSize = 10.5.sp,
                                             color = ProfitGreen
                                         )
