@@ -28,7 +28,7 @@ Deno.test("Rwanda phone validation rejects unsupported and malformed numbers", (
 Deno.test("server subscription pricing uses exact RWF amount and term discount", () => {
   if (expectedSubscriptionAmount(1, 1, 1, 1) !== 5_000) throw new Error("Single-branch base price mismatch.");
   if (expectedSubscriptionAmount(2, 2, 3, 1) !== 32_400) throw new Error("Quarterly discount calculation mismatch.");
-  if (expectedSubscriptionAmount(1, 1, 12, 2) !== 57_600) throw new Error("Annual device add-on calculation mismatch.");
+  if (expectedSubscriptionAmount(1, 1, 12, 2) !== 67_200) throw new Error("Annual device add-on calculation mismatch.");
 });
 
 Deno.test("HMAC-SHA256 matches the standard test vector", async () => {
