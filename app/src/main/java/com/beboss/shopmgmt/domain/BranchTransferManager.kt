@@ -45,7 +45,8 @@ class BranchTransferManager(
     private val shopProfileDao: ShopProfileDao,
     private val syncQueueDao: SyncQueueDao,
     private val syncTombstoneDao: SyncTombstoneDao? = null,
-    private val database: AppDatabase? = null
+    private val database: AppDatabase? = null,
+    private val nodeId: String = "ANDROID-${UUID.randomUUID()}"
 ) {
     private val TAG = "BranchTransferManager"
 
@@ -201,7 +202,10 @@ class BranchTransferManager(
                 status = "IN_TRANSIT",
                 notes = notes.trim(),
                 transferredBy = transferredBy,
-                createdAt = now
+                createdAt = now,
+                updatedAt = now,
+                hlcTimestamp = HlcClock.tick(now),
+                lastModifiedDeviceId = nodeId
             )
 
             newSourceQty = product.quantityInStock - safeQty
@@ -273,8 +277,15 @@ class BranchTransferManager(
                 else -> {
                     // Conditional status transition is the idempotency boundary. The
                     // transition and inventory credit commit or roll back together.
+                    val completionHlc = HlcClock.tick(now)
                     val claimed = stockTransferDao.confirmReceived(
-                        transferId, receivedBy, now, "COMPLETED"
+                        id = transferId,
+                        receivedBy = receivedBy,
+                        receivedAt = now,
+                        updatedAt = now,
+                        hlcTimestamp = completionHlc,
+                        lastModifiedDeviceId = nodeId,
+                        status = "COMPLETED"
                     )
                     if (claimed != 1) {
                         val latest = stockTransferDao.getTransferById(transferId)
@@ -332,7 +343,10 @@ class BranchTransferManager(
                         completedTransfer = current.copy(
                             status = "COMPLETED",
                             receivedBy = receivedBy,
-                            receivedAt = now
+                            receivedAt = now,
+                            updatedAt = now,
+                            hlcTimestamp = completionHlc,
+                            lastModifiedDeviceId = nodeId
                         )
                         newlyCompleted = true
                     }
@@ -402,11 +416,15 @@ class BranchTransferManager(
                         "${current.notes} | [CANCELLED: $cleanReason]"
                     }
                     val actor = actorName.trim().ifBlank { "Manager" }
+                    val cancellationHlc = HlcClock.tick(now)
                     val claimed = stockTransferDao.cancelPendingTransfer(
                         id = transferId,
                         actorName = actor,
                         receivedAt = now,
-                        notes = updatedNotes
+                        notes = updatedNotes,
+                        updatedAt = now,
+                        hlcTimestamp = cancellationHlc,
+                        lastModifiedDeviceId = nodeId
                     )
                     if (claimed != 1) {
                         val latest = stockTransferDao.getTransferById(transferId)
@@ -426,7 +444,10 @@ class BranchTransferManager(
                             status = "CANCELLED",
                             receivedBy = actor,
                             receivedAt = now,
-                            notes = updatedNotes
+                            notes = updatedNotes,
+                            updatedAt = now,
+                            hlcTimestamp = cancellationHlc,
+                            lastModifiedDeviceId = nodeId
                         )
                         newlyCancelled = true
                     }
@@ -583,6 +604,9 @@ class BranchTransferManager(
         put("receivedBy", t.receivedBy)
         put("receivedAt", t.receivedAt)
         put("transferDate", t.transferDate)
+        put("updatedAt", t.updatedAt)
+        put("hlcTimestamp", t.hlcTimestamp)
+        put("lastModifiedDeviceId", t.lastModifiedDeviceId)
         put("notes", t.notes)
     }.toString()
 }
