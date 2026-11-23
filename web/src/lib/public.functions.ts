@@ -226,7 +226,7 @@ export const lookupMyShop = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     if (normalizePhoneLast9(data.phone).length < 9) throw new Error("Enter the full phone number registered in the app.");
-    const sb = createPublicClient(key);
+    const sb = createPublicClient(key, (context as unknown as OwnerAuthContext).accessToken);
     const [shop, pays, codes, devices, news, snaps, branchRows, transferRows, staffRows] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, owner_name, owner_username, business_type, branch_count, worker_count, device_count, device_limit, monthly_fee_rwf, subscription_status, subscription_expires_at, remote_kill_switch, updated_at").eq("id", key).maybeSingle(),
       sb.from("payment_requests").select("id, provider, amount_rwf, duration_months, payment_time_ms, payment_note, status, approval_mode, generated_unlock_code, rejection_reason, created_at, updated_at, gateway_provider, gateway_reference, gateway_transaction_id, gateway_amount_rwf, gateway_currency, gateway_verified_at").order("created_at", { ascending: false }).limit(20),
@@ -303,7 +303,7 @@ export const addMyShopDevice = createServerFn({ method: "POST" })
   .inputValidator((d: z.infer<typeof addShopDeviceSchema>) => addShopDeviceSchema.parse(d))
   .handler(async ({ data, context }) => {
     const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
-    const sb = createPublicClient(key);
+    const sb = createPublicClient(key, (context as unknown as OwnerAuthContext).accessToken);
     const [shopResult, ownerResult, primaryResult, userResult, branchResult, devicesResult, usersResult, branchesResult, configResult] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, device_count, device_limit, branch_count, worker_count, remote_kill_switch").eq("id", key).maybeSingle(),
       sb.from("shop_users").select("user_id, username, full_name, role, is_active").eq("shop_sync_key", key).eq("role", "OWNER").eq("is_active", true).maybeSingle(),
@@ -335,11 +335,7 @@ export const addMyShopDevice = createServerFn({ method: "POST" })
 
     const deviceId = crypto.randomUUID();
     const now = Date.now();
-    const bytes = new Uint8Array(16);
-    crypto.getRandomValues(bytes);
-    const joinCode = "BB-" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(joinCode)));
-    const codeHash = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+    const { joinCode, codeHash } = await generateSecureDeviceInviteCode();
 
     const feePerDevice = Math.max(0, Number(configResult.data?.per_device_fee_rwf) || 2000);
     const { data: slot, error: slotError } = await sb.from("shop_devices").insert({
@@ -366,13 +362,14 @@ export const addMyShopDevice = createServerFn({ method: "POST" })
     if (slotError || !slot) throw new Error(slotError?.message || "Could not create the device slot in Supabase.");
 
     const expiresAt = now + 60 * 60 * 1000;
-    const { error: inviteError } = await sb.rpc("issue_shop_device_invite", {
-      p_shop_sync_key: key,
+    const ownerContext = context as unknown as OwnerAuthContext;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: inviteError } = await supabaseAdmin.rpc("issue_shop_device_auth_invite", {
+      p_shop_id: key,
       p_device_record_id: slot.id,
+      p_expected_device_id: "",
       p_code_hash: codeHash,
-      p_created_by_device_id: primary.device_id,
-      p_created_by_user_id: owner.user_id,
-      p_branch_id: branch.id,
+      p_owner_auth_user_id: ownerContext.userId,
       p_expires_at: expiresAt,
     });
 
@@ -412,6 +409,66 @@ export const addMyShopDevice = createServerFn({ method: "POST" })
     return { ok: true, id: slot.id, joinCode, expiresAt };
   });
 
+
+async function generateSecureDeviceInviteCode(): Promise<{ joinCode: string; codeHash: string }> {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const joinCode = "BB-" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(joinCode)));
+  const codeHash = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+  return { joinCode, codeHash };
+}
+
+/**
+ * Re-enroll an already paired terminal after the owner has proven control of
+ * the registered phone. The invitation is bound to that exact stored device ID.
+ * It cannot be redeemed by a different physical installation.
+ */
+const reissueDeviceAuthInviteSchema = z.object({
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+  deviceRecordId: z.string().trim().min(1).max(120),
+});
+
+export const issueMyShopDeviceAuthInvite = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: z.infer<typeof reissueDeviceAuthInviteSchema>) => reissueDeviceAuthInviteSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const ownerContext = context as unknown as OwnerAuthContext;
+    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
+    const sb = createPublicClient(key, ownerContext.accessToken);
+    const { data: device, error: deviceError } = await sb
+      .from("shop_devices")
+      .select("id,device_id,is_active")
+      .eq("id", data.deviceRecordId)
+      .eq("shop_sync_key", key)
+      .maybeSingle();
+
+    if (deviceError || !device || !device.is_active || !device.device_id) {
+      throw new Error("Only an active, already-paired terminal can be securely re-enrolled.");
+    }
+
+    const { joinCode, codeHash } = await generateSecureDeviceInviteCode();
+    const now = Date.now();
+    const expiresAt = now + 60 * 60 * 1000;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: inviteError } = await supabaseAdmin.rpc("issue_shop_device_auth_invite", {
+      p_shop_id: key,
+      p_device_record_id: device.id,
+      p_expected_device_id: device.device_id,
+      p_code_hash: codeHash,
+      p_owner_auth_user_id: ownerContext.userId,
+      p_expires_at: expiresAt,
+    });
+
+    if (inviteError) {
+      console.error("[My Shop device re-enrollment] Invitation issuance failed", inviteError);
+      throw new Error("Could not issue a secure device code. Confirm the device-auth migration is applied.");
+    }
+
+    return { ok: true, id: device.id, joinCode, expiresAt };
+  });
+
 // ---------------------------------------------------------------------------
 // Branch & stock-transfer management (owner portal, tenant-scoped via X-Shop-Sync-Key)
 // Writes set a fresh HLC timestamp so the phone's HLC merge adopts the web edit.
@@ -441,7 +498,7 @@ export const upsertMyShopBranch = createServerFn({ method: "POST" })
   .inputValidator((d: z.infer<typeof branchSchema>) => branchSchema.parse(d))
   .handler(async ({ data, context }) => {
     const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
-    const sb = createPublicClient(key);
+    const sb = createPublicClient(key, (context as unknown as OwnerAuthContext).accessToken);
     const now = Date.now();
     const { error } = await sb.from("shop_branches").upsert(
       {
@@ -487,7 +544,7 @@ export const deleteMyShopBranch = createServerFn({ method: "POST" })
   .inputValidator((d: z.infer<typeof branchIdSchema>) => branchIdSchema.parse(d))
   .handler(async ({ data, context }) => {
     const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
-    const sb = createPublicClient(key);
+    const sb = createPublicClient(key, (context as unknown as OwnerAuthContext).accessToken);
     const now = Date.now();
     // RLS allows tenant update but not delete; soft-delete via is_active=false + fresh HLC.
     const { error } = await sb
@@ -523,7 +580,7 @@ export const upsertMyShopStockTransfer = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     if (data.fromBranchId === data.toBranchId) throw new Error("Source and destination branches must differ.");
-    const sb = createPublicClient(key);
+    const sb = createPublicClient(key, (context as unknown as OwnerAuthContext).accessToken);
     const { data: existing, error: readError } = await sb
       .from("shop_stock_transfers")
       .select("id,status")
@@ -585,7 +642,7 @@ export const confirmMyShopStockTransfer = createServerFn({ method: "POST" })
   .inputValidator((d: z.infer<typeof confirmTransferSchema>) => confirmTransferSchema.parse(d))
   .handler(async ({ data, context }) => {
     const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
-    const sb = createPublicClient(key);
+    const sb = createPublicClient(key, (context as unknown as OwnerAuthContext).accessToken);
     const now = Date.now();
     const { data: updated, error } = await sb
       .from("shop_stock_transfers")
@@ -631,7 +688,7 @@ export const requestMyShopStockTransferCancellation = createServerFn({ method: "
   .inputValidator((d: z.infer<typeof cancelTransferSchema>) => cancelTransferSchema.parse(d))
   .handler(async ({ data, context }) => {
     const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
-    const sb = createPublicClient(key);
+    const sb = createPublicClient(key, (context as unknown as OwnerAuthContext).accessToken);
     const now = Date.now();
     const { data: updated, error } = await sb
       .from("shop_stock_transfers")
