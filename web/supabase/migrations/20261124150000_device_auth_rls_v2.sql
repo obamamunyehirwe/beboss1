@@ -1,0 +1,434 @@
+-- Device-bound Supabase Auth sessions. The tenant key is now a selector, never a credential.
+-- A device must present a valid Supabase Auth JWT whose auth.uid() maps to an active
+-- device session. Owners retain portal access through OTP-created memberships.
+
+create schema if not exists beboss_private;
+revoke all on schema beboss_private from public, anon, authenticated;
+
+create table if not exists public.shop_device_auth_sessions (
+  auth_user_id uuid primary key references auth.users(id) on delete cascade,
+  shop_sync_key text not null references public.shop_accounts(id) on delete cascade,
+  device_record_id text not null references public.shop_devices(id) on delete cascade,
+  device_id text not null,
+  assigned_user_id text not null,
+  role text not null,
+  branch_id text not null,
+  status text not null default 'ACTIVE' check (status in ('ACTIVE', 'REVOKED')),
+  issued_at bigint not null default public.now_ms(),
+  expires_at bigint not null,
+  last_seen_at bigint not null default public.now_ms(),
+  revoked_at bigint not null default 0
+);
+
+create unique index if not exists shop_device_auth_sessions_active_device_idx
+  on public.shop_device_auth_sessions(shop_sync_key, device_id)
+  where status = 'ACTIVE' and revoked_at = 0;
+create index if not exists shop_device_auth_sessions_user_status_idx
+  on public.shop_device_auth_sessions(auth_user_id, status, expires_at);
+create index if not exists shop_device_auth_sessions_shop_device_idx
+  on public.shop_device_auth_sessions(shop_sync_key, device_record_id, status);
+
+alter table public.shop_device_auth_sessions enable row level security;
+revoke all on public.shop_device_auth_sessions from public, anon, authenticated;
+grant all on public.shop_device_auth_sessions to service_role;
+
+create table if not exists beboss_private.shop_device_auth_invites (
+  id uuid primary key default gen_random_uuid(),
+  shop_sync_key text not null references public.shop_accounts(id) on delete cascade,
+  device_record_id text not null references public.shop_devices(id) on delete cascade,
+  expected_device_id text not null default '',
+  code_hash text not null unique,
+  issued_by_auth_user_id uuid not null references auth.users(id) on delete cascade,
+  created_at bigint not null default public.now_ms(),
+  expires_at bigint not null,
+  redeemed_at bigint,
+  redeemed_device_id text,
+  redeemed_auth_user_id uuid references auth.users(id) on delete set null,
+  revoked_at bigint
+);
+alter table beboss_private.shop_device_auth_invites enable row level security;
+revoke all on beboss_private.shop_device_auth_invites from public, anon, authenticated;
+grant all on beboss_private.shop_device_auth_invites to service_role;
+create index if not exists shop_device_auth_invites_pending_idx
+  on beboss_private.shop_device_auth_invites(shop_sync_key, device_record_id, expires_at desc)
+  where redeemed_at is null and revoked_at is null;
+
+-- Authenticated owner portal users and enrolled device accounts are the only
+-- identities allowed to select a tenant. X-Shop-Sync-Key is accepted only as
+-- a requested tenant selector after auth.uid() is proven to belong to it.
+create or replace function public.current_shop_sync_key()
+returns text
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $function$
+declare
+  v_user_id uuid := auth.uid();
+  v_requested_shop text;
+  v_shop_id text;
+begin
+  if v_user_id is null then
+    return '';
+  end if;
+
+  begin
+    v_requested_shop := nullif(
+      trim(coalesce(current_setting('request.headers', true)::jsonb ->> 'x-shop-sync-key', '')),
+      ''
+    );
+  exception when others then
+    v_requested_shop := null;
+  end;
+
+  select m.shop_id
+    into v_shop_id
+  from public.shop_owner_memberships m
+  where m.user_id = v_user_id
+    and m.status = 'ACTIVE'
+    and m.revoked_at = 0
+    and (v_requested_shop is null or m.shop_id = v_requested_shop)
+  order by m.created_at asc
+  limit 1;
+
+  if v_shop_id is not null then
+    return v_shop_id;
+  end if;
+
+  select s.shop_sync_key
+    into v_shop_id
+  from public.shop_device_auth_sessions s
+  join public.shop_devices d
+    on d.id = s.device_record_id
+   and d.shop_sync_key = s.shop_sync_key
+   and d.device_id = s.device_id
+   and d.assigned_user_id = s.assigned_user_id
+   and d.branch_id = s.branch_id
+   and d.role = s.role
+   and d.is_active = true
+  join public.shop_users u
+    on u.shop_sync_key = s.shop_sync_key
+   and u.user_id = s.assigned_user_id
+   and u.is_active = true
+   and u.role = s.role
+   and u.assigned_branch_id = s.branch_id
+  join public.shop_accounts a
+    on a.id = s.shop_sync_key
+   and a.remote_kill_switch = false
+  where s.auth_user_id = v_user_id
+    and s.status = 'ACTIVE'
+    and s.revoked_at = 0
+    and s.expires_at > public.now_ms()
+    and (v_requested_shop is null or s.shop_sync_key = v_requested_shop)
+  limit 1;
+
+  return coalesce(v_shop_id, '');
+end;
+$function$;
+
+create or replace function public.current_shop_device_id()
+returns text
+language sql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $function$
+  select coalesce((
+    select s.device_id
+    from public.shop_device_auth_sessions s
+    where s.auth_user_id = auth.uid()
+      and s.status = 'ACTIVE'
+      and s.revoked_at = 0
+      and s.expires_at > public.now_ms()
+      and s.shop_sync_key = public.current_shop_sync_key()
+    limit 1
+  ), '');
+$function$;
+
+create or replace function public.current_shop_user_id()
+returns text
+language sql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $function$
+  select coalesce((
+    select s.assigned_user_id
+    from public.shop_device_auth_sessions s
+    where s.auth_user_id = auth.uid()
+      and s.status = 'ACTIVE'
+      and s.revoked_at = 0
+      and s.expires_at > public.now_ms()
+      and s.shop_sync_key = public.current_shop_sync_key()
+    limit 1
+  ), '');
+$function$;
+
+create or replace function public.current_shop_role()
+returns text
+language sql
+stable
+security definer
+set search_path = pg_catalog, public, auth
+as $function$
+  select coalesce(
+    (select s.role
+     from public.shop_device_auth_sessions s
+     where s.auth_user_id = auth.uid()
+       and s.status = 'ACTIVE'
+       and s.revoked_at = 0
+       and s.expires_at > public.now_ms()
+       and s.shop_sync_key = public.current_shop_sync_key()
+     limit 1),
+    (select 'OWNER'
+     from public.shop_owner_memberships m
+     where m.user_id = auth.uid()
+       and m.status = 'ACTIVE'
+       and m.revoked_at = 0
+       and m.shop_id = public.current_shop_sync_key()
+     limit 1),
+    ''
+  );
+$function$;
+
+-- Owner-only invitation issuance. The owner portal has already proved the
+-- phone by OTP; only its Auth UUID may create or rotate a device invitation.
+create or replace function public.issue_shop_device_auth_invite(
+  p_shop_id text,
+  p_device_record_id text,
+  p_expected_device_id text,
+  p_code_hash text,
+  p_owner_auth_user_id uuid,
+  p_expires_at bigint
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_now bigint := public.now_ms();
+  v_device public.shop_devices%rowtype;
+  v_id uuid;
+begin
+  if p_code_hash !~ '^[0-9a-f]{64}$'
+     or length(coalesce(p_device_record_id, '')) = 0
+     or length(coalesce(p_shop_id, '')) = 0
+     or p_expires_at < v_now + 60000
+     or p_expires_at > v_now + 3600000 then
+    raise exception using errcode = '22023', message = 'Invalid device invitation details.';
+  end if;
+
+  if not exists (
+    select 1 from public.shop_owner_memberships m
+    where m.user_id = p_owner_auth_user_id
+      and m.shop_id = p_shop_id
+      and m.status = 'ACTIVE'
+      and m.revoked_at = 0
+  ) then
+    raise exception using errcode = '42501', message = 'Verified active shop-owner session required.';
+  end if;
+
+  select * into v_device
+  from public.shop_devices d
+  where d.id = p_device_record_id
+    and d.shop_sync_key = p_shop_id
+  for update;
+
+  if not found or not v_device.is_active or v_device.assigned_user_id = '' then
+    raise exception using errcode = '22023', message = 'The device slot is missing or inactive.';
+  end if;
+
+  if coalesce(v_device.device_id, '') <> coalesce(p_expected_device_id, '') then
+    raise exception using errcode = '22023', message = 'The expected terminal identity no longer matches this device slot.';
+  end if;
+
+  if exists (
+    select 1 from public.shop_accounts a
+    where a.id = p_shop_id and a.remote_kill_switch = true
+  ) then
+    raise exception using errcode = '42501', message = 'This shop is disabled.';
+  end if;
+
+  update beboss_private.shop_device_auth_invites
+  set revoked_at = v_now
+  where shop_sync_key = p_shop_id
+    and device_record_id = p_device_record_id
+    and redeemed_at is null
+    and revoked_at is null;
+
+  insert into beboss_private.shop_device_auth_invites(
+    shop_sync_key, device_record_id, expected_device_id, code_hash,
+    issued_by_auth_user_id, created_at, expires_at
+  ) values (
+    p_shop_id, p_device_record_id, coalesce(p_expected_device_id, ''),
+    p_code_hash, p_owner_auth_user_id, v_now, p_expires_at
+  ) returning id into v_id;
+
+  return jsonb_build_object('issued', true, 'invite_id', v_id, 'expires_at', p_expires_at);
+end;
+$function$;
+
+-- Called only by the signed server-side redemption Edge Function after it has
+-- provisioned a random Supabase Auth identity for this terminal.
+create or replace function public.redeem_shop_device_auth_invite(
+  p_code_hash text,
+  p_device_id text,
+  p_device_name text,
+  p_auth_user_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_now bigint := public.now_ms();
+  v_invite beboss_private.shop_device_auth_invites%rowtype;
+  v_device public.shop_devices%rowtype;
+  v_owner_shop_name text;
+  v_expiry bigint := v_now + 7776000000;
+begin
+  if p_code_hash !~ '^[0-9a-f]{64}$'
+     or length(coalesce(p_device_id, '')) < 8
+     or length(coalesce(p_device_name, '')) > 120
+     or p_auth_user_id is null
+     or not exists (select 1 from auth.users u where u.id = p_auth_user_id) then
+    raise exception using errcode = '22023', message = 'Invalid secure device enrollment.';
+  end if;
+
+  select * into v_invite
+  from beboss_private.shop_device_auth_invites i
+  where i.code_hash = p_code_hash
+    and i.redeemed_at is null
+    and i.revoked_at is null
+    and i.expires_at >= v_now
+  for update;
+
+  if not found then
+    raise exception using errcode = '42501', message = 'The device code is invalid, expired, revoked, or already used.';
+  end if;
+
+  if v_invite.expected_device_id <> '' and v_invite.expected_device_id <> p_device_id then
+    raise exception using errcode = '42501', message = 'This secure code was issued for another physical terminal.';
+  end if;
+
+  select * into v_device
+  from public.shop_devices d
+  where d.id = v_invite.device_record_id
+    and d.shop_sync_key = v_invite.shop_sync_key
+  for update;
+
+  if not found or not v_device.is_active
+     or v_device.assigned_user_id = ''
+     or (v_device.device_id <> '' and v_device.device_id <> p_device_id)
+     or (v_device.device_id <> '' and v_invite.expected_device_id = '') then
+    raise exception using errcode = '42501', message = 'The assigned device slot is no longer eligible for pairing.';
+  end if;
+
+  if exists (
+    select 1 from public.shop_accounts a
+    where a.id = v_invite.shop_sync_key and a.remote_kill_switch = true
+  ) then
+    raise exception using errcode = '42501', message = 'This shop is disabled.';
+  end if;
+
+  update beboss_private.shop_device_auth_invites
+  set redeemed_at = v_now,
+      redeemed_device_id = p_device_id,
+      redeemed_auth_user_id = p_auth_user_id
+  where id = v_invite.id;
+
+  update public.shop_devices
+  set device_id = p_device_id,
+      device_name = coalesce(nullif(trim(p_device_name), ''), device_name),
+      join_code = '',
+      last_synced_at = v_now,
+      updated_at = v_now
+  where id = v_device.id
+  returning * into v_device;
+
+  update public.shop_device_auth_sessions
+  set status = 'REVOKED', revoked_at = v_now
+  where shop_sync_key = v_invite.shop_sync_key
+    and device_record_id = v_device.id
+    and status = 'ACTIVE'
+    and revoked_at = 0;
+
+  insert into public.shop_device_auth_sessions(
+    auth_user_id, shop_sync_key, device_record_id, device_id,
+    assigned_user_id, role, branch_id, status, issued_at, expires_at, last_seen_at, revoked_at
+  ) values (
+    p_auth_user_id, v_invite.shop_sync_key, v_device.id, p_device_id,
+    v_device.assigned_user_id, v_device.role, v_device.branch_id,
+    'ACTIVE', v_now, v_expiry, v_now, 0
+  );
+
+  select a.shop_name into v_owner_shop_name
+  from public.shop_accounts a
+  where a.id = v_invite.shop_sync_key;
+
+  return jsonb_build_object(
+    'device', to_jsonb(v_device),
+    'shop_name', coalesce(v_owner_shop_name, ''),
+    'auth_user_id', p_auth_user_id,
+    'session_expires_at', v_expiry
+  );
+end;
+$function$;
+
+revoke all on function public.issue_shop_device_auth_invite(text,text,text,text,uuid,bigint) from public, anon, authenticated;
+grant execute on function public.issue_shop_device_auth_invite(text,text,text,text,uuid,bigint) to service_role;
+revoke all on function public.redeem_shop_device_auth_invite(text,text,text,uuid) from public, anon, authenticated;
+grant execute on function public.redeem_shop_device_auth_invite(text,text,text,uuid) to service_role;
+
+-- Make forged anonymous tenant headers useless across every table carrying the
+-- tenant key. Existing authenticated staff/admin access remains behind RLS.
+do $block$
+declare
+  v_row record;
+begin
+  for v_row in
+    select distinct c.relname
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    join information_schema.columns col
+      on col.table_schema = n.nspname
+     and col.table_name = c.relname
+     and col.column_name = 'shop_sync_key'
+    where n.nspname = 'public'
+      and c.relkind in ('r', 'p')
+  loop
+    execute format('alter table public.%I enable row level security', v_row.relname);
+    execute format('revoke all on table public.%I from public, anon', v_row.relname);
+    execute format('grant select, insert, update, delete on table public.%I to authenticated, service_role', v_row.relname);
+  end loop;
+end;
+$block$;
+
+alter table public.shop_accounts enable row level security;
+revoke all on table public.shop_accounts from public, anon;
+grant select, insert, update, delete on table public.shop_accounts to authenticated, service_role;
+
+-- Legacy device invitation RPCs are no longer public bootstrap paths.
+revoke all on function public.issue_shop_device_invite(text,text,text,text,text,text,bigint) from public, anon;
+revoke all on function public.redeem_shop_device_invite(text,text,text,text) from public, anon;
+revoke all on function public.revoke_shop_device_invites(text,text,text,text) from public, anon;
+revoke all on function public.set_shop_device_active(text,text,text,text,boolean) from public, anon;
+revoke all on function public.delete_shop_device(text,text,text,text) from public, anon;
+
+revoke all on function public.current_shop_sync_key() from public, anon;
+revoke all on function public.current_shop_device_id() from public, anon;
+revoke all on function public.current_shop_user_id() from public, anon;
+revoke all on function public.current_shop_role() from public, anon;
+grant execute on function public.current_shop_sync_key() to authenticated, service_role;
+grant execute on function public.current_shop_device_id() to authenticated, service_role;
+grant execute on function public.current_shop_user_id() to authenticated, service_role;
+grant execute on function public.current_shop_role() to authenticated, service_role;
+
+comment on table public.shop_device_auth_sessions is
+  'One active Supabase Auth identity per registered terminal. RLS resolves the tenant from auth.uid(), current device row and active assigned staff row; shop keys are not secrets.';
+comment on table beboss_private.shop_device_auth_invites is
+  'Short-lived, one-time, hashed device enrollment and re-enrollment codes issued only after owner OTP authentication.';
+comment on function public.current_shop_sync_key() is
+  'Resolves tenant context only from an authenticated active owner membership or device-auth session. The legacy X-Shop-Sync-Key header is only a selector, never an authenticator.';
