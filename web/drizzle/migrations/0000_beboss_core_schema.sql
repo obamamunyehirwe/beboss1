@@ -364,25 +364,22 @@ create index idx_payment_requests_created on public.payment_requests(created_at 
 
 create or replace function public.enforce_payment_request_server_fee()
 returns trigger language plpgsql security definer set search_path = public
-as $$
+as $
 begin
   new.branch_count := greatest(coalesce(new.branch_count, 1), 1);
   new.worker_count := greatest(coalesce(new.worker_count, 1), 1);
   new.device_count := greatest(coalesce(new.device_count, 1), 1);
   new.duration_months := greatest(coalesce(new.duration_months, 1), 1);
-  -- Always overwrite a client-provided rate with the trusted database config.
-  select coalesce(nullif(per_device_fee_rwf, 0), 2000)
-    into new.fee_per_device_rwf
-    from public.app_config where id = 'global';
-  new.fee_per_device_rwf := coalesce(nullif(new.fee_per_device_rwf, 0), 2000);
+  -- Every additional POS terminal is a fixed 2,000 FRw/month; never trust a client rate.
+  new.fee_per_device_rwf := 2000;
   new.payment_time_ms := coalesce(nullif(new.payment_time_ms, 0), nullif(new.created_at, 0), public.now_ms());
-  new.payment_note := coalesce(new.payment_note, '');
-  new.amount_rwf := public.compute_expected_subscription_fee_with_rate(
-    new.branch_count, new.worker_count, new.duration_months, new.device_count, new.fee_per_device_rwf
+  new.payment_note := left(coalesce(new.payment_note, ''), 1000);
+  new.amount_rwf := public.compute_expected_subscription_fee(
+    new.branch_count, new.worker_count, new.duration_months, new.device_count
   );
   return new;
 end;
-$$;
+$;
 create trigger trg_recompute_payment_request_fee before insert on public.payment_requests
   for each row execute function public.enforce_payment_request_server_fee();
 
