@@ -282,7 +282,7 @@ begin
       and s.expires_at > v_now
     limit 1;
 
-    if v_actor_role not in ('OWNER', 'MANAGER') then
+    if coalesce(v_actor_role, '') not in ('OWNER', 'MANAGER') then
       raise exception using errcode = '42501', message = 'A verified owner or branch-manager terminal session is required.';
     end if;
   end if;
