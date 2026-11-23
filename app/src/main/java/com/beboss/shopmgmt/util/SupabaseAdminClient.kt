@@ -1,6 +1,7 @@
 package com.beboss.shopmgmt.util
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import com.beboss.shopmgmt.BuildConfig
 import com.beboss.shopmgmt.data.model.PaymentVerificationRequest
@@ -334,8 +335,24 @@ object SupabaseAdminClient {
     /** Backwards-compatible accessor used by existing auth and REST call sites. */
     fun getSupabaseAnonKey(): String = getSupabaseApiKey()
 
-    private fun isLegacyJwtApiKey(key: String): Boolean =
-        key.startsWith("eyJ") && key.count { it == '.' } == 2
+    /**
+     * Legacy Supabase anon JWTs may be used as public client keys, but service_role
+     * JWTs must never be accepted as Android configuration. Decode the JWT role
+     * instead of treating any three-segment token as an anon key.
+     */
+    private fun isLegacyJwtApiKey(key: String): Boolean {
+        if (!key.startsWith("eyJ") || key.count { it == '.' } != 2) return false
+        return try {
+            val payload = key.split('.')[1]
+            val decoded = Base64.decode(
+                payload,
+                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+            )
+            JSONObject(String(decoded, Charsets.UTF_8)).optString("role") == "anon"
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     fun getDefaultAdminEmail(): String = MASTER_ADMIN_EMAIL
 
