@@ -139,6 +139,40 @@ class SyncResilienceTest {
     }
 
     @Test
+    fun `latest complete snapshot generation falls back when the newest upload is partial`() {
+        fun snapshot(device: String, generation: String, index: Int, count: Int, updatedAt: Long) =
+            SupabaseBranchSnapshotDto(
+                id = "$device-$generation-$index",
+                shopSyncKey = "shop_123456789",
+                deviceId = if (index == 0) device else "$device#c$index",
+                syncGeneration = generation,
+                chunkIndex = index,
+                chunkCount = count,
+                branchId = "main",
+                branchName = "Main",
+                shopName = "Test Shop",
+                ownerUsername = "owner",
+                payloadToken = "token",
+                recordsSummary = "$count chunk(s)",
+                updatedAt = updatedAt
+            )
+
+        val selected = SupabaseAdminClient.latestCompleteSnapshotChunks(
+            listOf(
+                snapshot("device-a", "previous-complete", 0, 2, 10),
+                snapshot("device-a", "previous-complete", 1, 2, 11),
+                snapshot("device-a", "newest-interrupted", 0, 2, 20)
+            )
+        )
+
+        assertEquals(
+            listOf("device-a", "device-a#c1"),
+            selected.map { it.deviceId }
+        )
+        assertTrue(selected.all { it.syncGeneration == "previous-complete" })
+    }
+
+    @Test
     fun `BeBossLogger scrubs secrets, PINs, passwords, and tokens from logs`() {
         val raw = "Auth failed for pin=4829 password='SuperSecret2026' apikey=sb_live_abc123 " +
             "Bearer eyJhbGciOi.test.sig token=BB2-ALPHA-9999 pbkdf2:120000:deadbeef:cafebabe BBSHARE1:ABCD:payload123"

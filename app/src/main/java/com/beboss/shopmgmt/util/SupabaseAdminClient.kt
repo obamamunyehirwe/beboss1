@@ -870,34 +870,44 @@ object SupabaseAdminClient {
             .toSortedMap()
             .values
             .flatMap { deviceSnapshots ->
-                val generations = deviceSnapshots.groupBy { it.syncGeneration }
-                val latestGeneration = generations.values.maxByOrNull { rows -> rows.maxOfOrNull { it.updatedAt } ?: 0L }
-                    .orEmpty()
-                if (latestGeneration.isEmpty()) return@flatMap emptyList()
+                val completeGeneration = deviceSnapshots
+                    .groupBy { it.syncGeneration }
+                    .values
+                    .sortedByDescending { rows -> rows.maxOfOrNull { it.updatedAt } ?: 0L }
+                    .firstNotNullOfOrNull { generationRows ->
+                        if (generationRows.isEmpty()) return@firstNotNullOfOrNull null
 
-                val generation = latestGeneration.first().syncGeneration
-                if (generation.isBlank()) {
-                    val expectedChunks = Regex("(\\d+) chunk\\(s\\)").find(latestGeneration.first().recordsSummary)
-                        ?.groupValues?.getOrNull(1)?.toIntOrNull()
-                        ?: latestGeneration.size
-                    val legacyChunks = latestGeneration.filter {
-                        (snapshotChunkIndex(it.deviceId) ?: it.chunkIndex) < expectedChunks
+                        val generation = generationRows.first().syncGeneration
+                        if (generation.isBlank()) {
+                            val expectedChunks = Regex("(\\d+) chunk\\(s\\)").find(generationRows.first().recordsSummary)
+                                ?.groupValues?.getOrNull(1)?.toIntOrNull()
+                                ?: generationRows.size
+                            val legacyChunks = generationRows.filter {
+                                (snapshotChunkIndex(it.deviceId) ?: it.chunkIndex) < expectedChunks
+                            }
+                            if (
+                                completeChunkIndexes(
+                                    legacyChunks.map { snapshotChunkIndex(it.deviceId) ?: it.chunkIndex },
+                                    expectedChunks
+                                )
+                            ) {
+                                legacyChunks.sortedBy { snapshotChunkIndex(it.deviceId) ?: it.chunkIndex }
+                            } else {
+                                null
+                            }
+                        } else {
+                            val expectedChunks = generationRows.maxOfOrNull { it.chunkCount } ?: 0
+                            if (
+                                generationRows.all { it.syncGeneration == generation && it.chunkCount == expectedChunks } &&
+                                completeChunkIndexes(generationRows.map { it.chunkIndex }, expectedChunks)
+                            ) {
+                                generationRows.sortedBy { it.chunkIndex }
+                            } else {
+                                null
+                            }
+                        }
                     }
-                    if (completeChunkIndexes(legacyChunks.map { snapshotChunkIndex(it.deviceId) ?: it.chunkIndex }, expectedChunks)) {
-                        legacyChunks.sortedBy { snapshotChunkIndex(it.deviceId) ?: it.chunkIndex }
-                    } else {
-                        emptyList()
-                    }
-                } else {
-                    val expectedChunks = latestGeneration.maxOfOrNull { it.chunkCount } ?: 0
-                    if (latestGeneration.all { it.syncGeneration == generation && it.chunkCount == expectedChunks } &&
-                        completeChunkIndexes(latestGeneration.map { it.chunkIndex }, expectedChunks)
-                    ) {
-                        latestGeneration.sortedBy { it.chunkIndex }
-                    } else {
-                        emptyList()
-                    }
-                }
+                completeGeneration.orEmpty()
             }
 
     private fun snapshotDeviceBase(deviceId: String): String =
