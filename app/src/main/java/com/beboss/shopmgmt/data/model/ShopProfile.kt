@@ -48,7 +48,9 @@ data class ShopProfile(
     val updatedAt: Long = System.currentTimeMillis(),
     val syncVersion: Long = 1L,
     val hlcTimestamp: Long = System.currentTimeMillis(),
-    val lastModifiedDeviceId: String = ""
+    val lastModifiedDeviceId: String = "",
+    /** Stable vertical key selected during shop registration; drives category and unit catalogs. */
+    val businessType: String = "sector_retail"
 ) {
     companion object {
         const val FREE_TRIAL_DAYS: Int = 4
