@@ -55,8 +55,8 @@ function PaymentsPage() {
   const reject = useAdminAction(useServerFn(rejectPayment), { success: "Payment claim rejected", invalidate: [["admin", "payments"]] });
   const remove = useAdminAction(useServerFn(deletePaymentRequest), { success: "Claim removed", invalidate: [["admin", "payments"]] });
   const createManual = useAdminAction(useServerFn(createWhatsAppPaymentClaim), { success: "WhatsApp payment proof added to the review queue", invalidate: [["admin", "payments"], ["admin", "shops"]] });
-  const requestRefund = useAdminAction(useServerFn(requestGatewayRefund), { success: "Refund request sent to the payment provider", invalidate: [["admin", "payments"]] });
-  const refreshRefund = useAdminAction(useServerFn(reconcileGatewayRefund), { success: "Provider refund status refreshed", invalidate: [["admin", "payments"]] });
+  const requestRefund = useAdminAction(useServerFn(requestGatewayRefund), { success: a("Refund request sent to the payment provider"), invalidate: [["admin", "payments"]] });
+  const refreshRefund = useAdminAction(useServerFn(reconcileGatewayRefund), { success: a("Provider refund status refreshed"), invalidate: [["admin", "payments"]] });
 
   const rows = data ?? [];
   const counts = useMemo(() => {
@@ -442,7 +442,7 @@ function PaymentsPage() {
           <DialogHeader>
             <DialogTitle>{a("Request provider refund")}</DialogTitle>
             <DialogDescription>
-              {refundTarget?.shop_name} — original verified payment {formatRwf(refundTarget?.gateway_verified_amount_rwf ?? 0)}.
+              {refundTarget?.shop_name} — {a("original verified payment")} {formatRwf(refundTarget?.gateway_verified_amount_rwf ?? 0)}.
               {a("Refunds are asynchronous. A request being accepted does not mean the funds have reached the customer.")}
             </DialogDescription>
           </DialogHeader>
