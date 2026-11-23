@@ -61,7 +61,7 @@ returns text
 language plpgsql
 stable
 security definer
-set search_path = pg_catalog, public, auth
+set search_path = pg_catalog
 as $function$
 declare
   v_user_id uuid := auth.uid();
@@ -131,18 +131,26 @@ returns text
 language sql
 stable
 security definer
-set search_path = pg_catalog, public, auth
+set search_path = pg_catalog
 as $function$
-  select coalesce((
-    select s.device_id
-    from public.shop_device_auth_sessions s
-    where s.auth_user_id = auth.uid()
-      and s.status = 'ACTIVE'
-      and s.revoked_at = 0
-      and s.expires_at > public.now_ms()
-      and s.shop_sync_key = public.current_shop_sync_key()
-    limit 1
-  ), '');
+  select coalesce(
+    (select s.device_id
+     from public.shop_device_auth_sessions s
+     where s.auth_user_id = auth.uid()
+       and s.status = 'ACTIVE'
+       and s.revoked_at = 0
+       and s.expires_at > public.now_ms()
+       and s.shop_sync_key = public.current_shop_sync_key()
+     limit 1),
+    (select d.device_id
+     from public.shop_devices d
+     where d.shop_sync_key = public.current_shop_sync_key()
+       and d.is_owner_primary = true
+       and d.is_active = true
+     order by d.updated_at desc
+     limit 1),
+    ''
+  );
 $function$;
 
 create or replace function public.current_shop_user_id()
@@ -150,18 +158,26 @@ returns text
 language sql
 stable
 security definer
-set search_path = pg_catalog, public, auth
+set search_path = pg_catalog
 as $function$
-  select coalesce((
-    select s.assigned_user_id
-    from public.shop_device_auth_sessions s
-    where s.auth_user_id = auth.uid()
-      and s.status = 'ACTIVE'
-      and s.revoked_at = 0
-      and s.expires_at > public.now_ms()
-      and s.shop_sync_key = public.current_shop_sync_key()
-    limit 1
-  ), '');
+  select coalesce(
+    (select s.assigned_user_id
+     from public.shop_device_auth_sessions s
+     where s.auth_user_id = auth.uid()
+       and s.status = 'ACTIVE'
+       and s.revoked_at = 0
+       and s.expires_at > public.now_ms()
+       and s.shop_sync_key = public.current_shop_sync_key()
+     limit 1),
+    (select u.user_id
+     from public.shop_users u
+     where u.shop_sync_key = public.current_shop_sync_key()
+       and u.role = 'OWNER'
+       and u.is_active = true
+     order by u.user_id
+     limit 1),
+    ''
+  );
 $function$;
 
 create or replace function public.current_shop_role()
@@ -169,7 +185,7 @@ returns text
 language sql
 stable
 security definer
-set search_path = pg_catalog, public, auth
+set search_path = pg_catalog
 as $function$
   select coalesce(
     (select s.role
@@ -210,6 +226,9 @@ declare
   v_now bigint := public.now_ms();
   v_device public.shop_devices%rowtype;
   v_id uuid;
+  v_actor_role text := '';
+  v_actor_branch_id text := '';
+  v_has_owner_membership boolean := false;
 begin
   if p_code_hash !~ '^[0-9a-f]{64}$'
      or length(coalesce(p_device_record_id, '')) = 0
@@ -219,14 +238,39 @@ begin
     raise exception using errcode = '22023', message = 'Invalid device invitation details.';
   end if;
 
-  if not exists (
+  select exists (
     select 1 from public.shop_owner_memberships m
     where m.user_id = p_owner_auth_user_id
       and m.shop_id = p_shop_id
       and m.status = 'ACTIVE'
       and m.revoked_at = 0
-  ) then
-    raise exception using errcode = '42501', message = 'Verified active shop-owner session required.';
+  ) into v_has_owner_membership;
+
+  if not v_has_owner_membership then
+    select s.role, s.branch_id
+      into v_actor_role, v_actor_branch_id
+    from public.shop_device_auth_sessions s
+    join public.shop_devices actor_device
+      on actor_device.id = s.device_record_id
+     and actor_device.shop_sync_key = s.shop_sync_key
+     and actor_device.device_id = s.device_id
+     and actor_device.is_active = true
+    join public.shop_users actor_user
+      on actor_user.shop_sync_key = s.shop_sync_key
+     and actor_user.user_id = s.assigned_user_id
+     and actor_user.is_active = true
+     and actor_user.role = s.role
+     and actor_user.assigned_branch_id = s.branch_id
+    where s.auth_user_id = p_owner_auth_user_id
+      and s.shop_sync_key = p_shop_id
+      and s.status = 'ACTIVE'
+      and s.revoked_at = 0
+      and s.expires_at > v_now
+    limit 1;
+
+    if v_actor_role not in ('OWNER', 'MANAGER') then
+      raise exception using errcode = '42501', message = 'A verified owner or branch-manager terminal session is required.';
+    end if;
   end if;
 
   select * into v_device
@@ -241,6 +285,11 @@ begin
 
   if coalesce(v_device.device_id, '') <> coalesce(p_expected_device_id, '') then
     raise exception using errcode = '22023', message = 'The expected terminal identity no longer matches this device slot.';
+  end if;
+
+  if not v_has_owner_membership and v_actor_role = 'MANAGER'
+     and v_actor_branch_id <> v_device.branch_id then
+    raise exception using errcode = '42501', message = 'A branch manager may only issue a device code for their assigned branch.';
   end if;
 
   if exists (
@@ -406,6 +455,10 @@ begin
 end;
 $block$;
 
+-- Authentication-session state is never directly queryable by an app client.
+revoke all on table public.shop_device_auth_sessions from public, anon, authenticated;
+grant all on table public.shop_device_auth_sessions to service_role;
+
 alter table public.shop_accounts enable row level security;
 revoke all on table public.shop_accounts from public, anon;
 grant select, insert, update, delete on table public.shop_accounts to authenticated, service_role;
@@ -416,6 +469,42 @@ revoke all on function public.redeem_shop_device_invite(text,text,text,text) fro
 revoke all on function public.revoke_shop_device_invites(text,text,text,text) from public, anon;
 revoke all on function public.set_shop_device_active(text,text,text,text,boolean) from public, anon;
 revoke all on function public.delete_shop_device(text,text,text,text) from public, anon;
+
+
+-- Native POS owner/manager terminal can issue a new-slot invitation without
+-- exposing service_role. The private implementation validates its JWT-bound
+-- device session, staff identity, role and branch scope.
+create or replace function public.issue_current_device_auth_invite(
+  p_device_record_id text,
+  p_code_hash text,
+  p_expires_at bigint
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_shop_id text := public.current_shop_sync_key();
+  v_auth_user_id uuid := auth.uid();
+begin
+  if v_auth_user_id is null or coalesce(v_shop_id, '') = '' then
+    raise exception using errcode = '42501', message = 'An authenticated shop terminal is required.';
+  end if;
+
+  return public.issue_shop_device_auth_invite(
+    v_shop_id,
+    p_device_record_id,
+    '',
+    p_code_hash,
+    v_auth_user_id,
+    p_expires_at
+  );
+end;
+$function$;
+
+revoke all on function public.issue_current_device_auth_invite(text,text,bigint) from public, anon;
+grant execute on function public.issue_current_device_auth_invite(text,text,bigint) to authenticated;
 
 revoke all on function public.current_shop_sync_key() from public, anon;
 revoke all on function public.current_shop_device_id() from public, anon;
