@@ -122,6 +122,17 @@ class AuthSessionCoordinator(
                     return@launch
                 }
 
+                val pinCheck = SecurityUtils.validatePinStrength(cleanPin)
+                if (!pinCheck.isValid) {
+                    _authError.value = pinCheck.message
+                    return@launch
+                }
+                val passCheck = SecurityUtils.validatePasswordStrength(cleanPassword)
+                if (!passCheck.isValid) {
+                    _authError.value = passCheck.message
+                    return@launch
+                }
+
                 val ownerOtpVerified = SupabaseAdminClient.completeNewShopOwnerRegistration(
                     context = application,
                     phone = cleanPhone,
@@ -132,17 +143,6 @@ class AuthSessionCoordinator(
                 )
                 if (!ownerOtpVerified) {
                     _authError.value = "Owner SMS verification or secure shop setup failed. Check the code, internet and SMS provider, then request a new code."
-                    return@launch
-                }
-
-                val pinCheck = SecurityUtils.validatePinStrength(cleanPin)
-                if (!pinCheck.isValid) {
-                    _authError.value = pinCheck.message
-                    return@launch
-                }
-                val passCheck = SecurityUtils.validatePasswordStrength(cleanPassword)
-                if (!passCheck.isValid) {
-                    _authError.value = passCheck.message
                     return@launch
                 }
 
