@@ -21,7 +21,7 @@ export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
       { title: "Admin sign in — BeBoss" },
-      { name: "description", content: "Password-only sign-in for approved BeBoss administrators and support staff." },
+      { name: "description", content: "Sign in to the protected BeBoss Admin workspace." },
       { property: "og:title", content: "BeBoss Admin sign-in" },
       { property: "og:description", content: "Restricted access for the approved BeBoss admin team." },
       { property: "og:type", content: "website" },
@@ -86,7 +86,7 @@ function AuthPage() {
         const invalidCredentials = error.code === "invalid_credentials" ||
           error.message.toLowerCase().includes("invalid login credentials");
         toast.error(invalidCredentials
-          ? "No confirmed BeBoss account matches that email and password. Create the approved account directly in Supabase Authentication → Users, set its password, and enable email confirmation; no invitation email is required."
+          ? "The email or password is incorrect. Check your credentials and try again."
           : error.message);
         return;
       }
@@ -129,9 +129,9 @@ function AuthPage() {
         <section className="admin-auth-form-wrap" aria-labelledby="admin-auth-form-title">
           <div className="auth-page-card admin-auth-form-card">
             <div className="admin-auth-form-icon"><LockKeyhole size={22} /></div>
-            <p className="admin-auth-form-kicker">BE BOSS · PASSWORD-ONLY ACCESS</p>
+            <p className="admin-auth-form-kicker">BE BOSS · ADMIN ACCESS</p>
             <h2 id="admin-auth-form-title">Sign in to BeBoss Admin</h2>
-            <p className="admin-auth-form-intro">Use the email and password for the BeBoss account invited or approved by a master administrator.</p>
+            <p className="admin-auth-form-intro">Enter your BeBoss administrator credentials to continue.</p>
             {!liveConfigured ? (
               <div role="status" className="admin-auth-config-warning">
                 <strong>Admin sign-in is not configured in this deployment.</strong>
@@ -159,25 +159,6 @@ function AuthPage() {
                 {checkingSession ? "Checking session…" : busy ? "Signing in…" : a("Sign in securely")}
               </Button>
             </form>
-            <div className="admin-auth-bootstrap">
-              <p>First-time setup does not require Gmail or an invitation email. A project owner must create the approved administrator directly in Supabase Authentication → Users, set a strong password, and enable email confirmation. BeBoss then assigns the Super Admin role automatically.</p>
-              <a
-                className="admin-auth-bootstrap-button"
-                href="https://supabase.com/dashboard/project/ahlpvlhmpfiyeoercxol/auth/users"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open Supabase user management
-              </a>
-            </div>
-            <div className="admin-auth-method-note">
-              <LockKeyhole size={15} />
-              <span>Password-only sign-in. No invitation, magic link, OTP, or password-reset email is used on this screen. A project owner resets passwords directly in Supabase.</span>
-            </div>
-            <div className="admin-auth-access-note">
-              <ShieldCheck size={16} />
-              <p>Supabase verifies the account's approved BeBoss role before admin data is shown. Master admin and approved support permissions remain separate.</p>
-            </div>
           </div>
         </section>
       </main>
