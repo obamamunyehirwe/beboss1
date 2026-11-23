@@ -204,6 +204,7 @@ export type Database = {
           mtn_momo_code?: string
           mtn_momo_phone?: string
           mtn_recipient_name?: string
+          min_app_version?: string
           per_device_fee_rwf?: number
           support_email?: string
           updated_at?: number
