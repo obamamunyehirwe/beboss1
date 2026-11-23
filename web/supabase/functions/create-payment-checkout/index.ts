@@ -33,6 +33,33 @@ function safeUrl(value: unknown, allowedHost: string): string {
   return url.toString();
 }
 
+async function verifyOwnerSession(request: Request, shopId: string, ownerPhone: string): Promise<boolean> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const authorization = request.headers.get("authorization") ?? "";
+  const apiKey = request.headers.get("apikey") ?? "";
+  if (!supabaseUrl || !authorization.startsWith("Bearer ") || !apiKey) return false;
+
+  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: { apikey: apiKey, Authorization: authorization },
+  });
+  if (!userResponse.ok) return false;
+  const user = await userResponse.json();
+  if (!user?.id || !user?.phone_confirmed_at || normalizePhone(user.phone) !== normalizePhone(ownerPhone)) {
+    return false;
+  }
+
+  const query = new URLSearchParams({
+    select: "shop_id",
+    user_id: `eq.${String(user.id)}`,
+    shop_id: `eq.${shopId}`,
+    status: "eq.ACTIVE",
+    revoked_at: "eq.0",
+    limit: "1",
+  });
+  const memberships = await restRows<{ shop_id: string }>(`shop_owner_memberships?${query.toString()}`);
+  return memberships.length === 1 && memberships[0].shop_id === shopId;
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return jsonResponse(405, { message: "Method not allowed." });
 
@@ -83,6 +110,9 @@ Deno.serve(async (request: Request) => {
     if (shop.remote_kill_switch) return jsonResponse(403, { message: "This shop cannot purchase a subscription while its service is suspended." });
     if (String(shop.shop_name).trim().toLowerCase() !== shopName.trim().toLowerCase()) {
       return jsonResponse(409, { message: "The submitted shop name does not match the registered BeBoss shop." });
+    }
+    if (!(await verifyOwnerSession(request, shop.id, shop.owner_phone))) {
+      return jsonResponse(403, { message: "A verified owner session for this shop is required before starting checkout." });
     }
 
     const throttleResponse = await restRequest("rpc/take_payment_gateway_checkout_slot", {
