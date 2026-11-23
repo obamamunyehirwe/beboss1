@@ -142,6 +142,46 @@ async function markGatewayStatus(requestId: string, status: "FAILED" | "EXPIRED"
   if (!response.ok) throw new Error("PAYMENT_STATUS_WRITE_FAILED");
 }
 
+
+
+async function loadRefund(refundId: string) {
+  const query = new URLSearchParams({
+    select: "id,payment_request_id,provider,provider_refund_id,amount_rwf,status",
+    id: "eq." + refundId,
+    provider: "eq.STRIPE_CHECKOUT",
+    limit: "1",
+  });
+  const response = await adminRest("payment_gateway_refunds?" + query.toString());
+  if (!response.ok) throw new Error("REFUND_LOOKUP_FAILED");
+  const rows = await response.json();
+  return rows?.[0] ?? null;
+}
+
+async function saveRefundProviderResult(refundId: string, providerRefundId: string) {
+  const response = await adminRest("payment_gateway_refunds?id=eq." + encodeURIComponent(refundId), {
+    method: "PATCH",
+    body: JSON.stringify({
+      provider_refund_id: providerRefundId,
+      status: "PENDING",
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  if (!response.ok) throw new Error("REFUND_STATE_UPDATE_FAILED");
+}
+
+async function finalizeRefund(refundId: string, providerStatus: string, providerRefundId: string) {
+  const response = await adminRest("rpc/finalize_gateway_refund", {
+    method: "POST",
+    body: JSON.stringify({
+      p_refund_id: refundId,
+      p_provider_status: providerStatus,
+      p_provider_refund_id: providerRefundId,
+    }),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error("REFUND_FINALIZATION_FAILED");
+  return Array.isArray(result) ? result[0] : result;
+}
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return json(405, { message: "Method not allowed." });
   if (!supabaseUrl || !serviceRoleKey || !stripeSecretKey || !webhookSecret) {
@@ -165,10 +205,51 @@ Deno.serve(async (request: Request) => {
     const payload = JSON.parse(rawBody);
     const eventId = String(payload?.id ?? "").trim();
     const eventType = String(payload?.type ?? "").trim();
-    const sessionFromEvent = payload?.data?.object;
-    const sessionId = String(sessionFromEvent?.id ?? "").trim();
-    const requestId = String(sessionFromEvent?.metadata?.payment_request_id ?? sessionFromEvent?.client_reference_id ?? "").trim();
-    if (!eventId || !sessionId || !requestId || sessionFromEvent?.object !== "checkout.session") {
+    const eventObject = payload?.data?.object;
+    const payloadHash = await sha256(rawBody);
+    if (!eventId || !eventType || !eventObject?.id) {
+      return json(400, { message: "Invalid Stripe webhook payload." });
+    }
+
+    if (eventType === "refund.updated" || eventType === "refund.failed" || eventType === "refund.created") {
+      const providerRefundId = String(eventObject.id);
+      const refundId = String(eventObject?.metadata?.beboss_refund_id ?? "");
+      if (!refundId || !/^[0-9a-f-]{36}$/i.test(refundId)) {
+        return json(400, { message: "Stripe refund metadata is missing." });
+      }
+      const refund = await loadRefund(refundId);
+      if (!refund) return json(404, { message: "BeBoss refund record not found." });
+      const paymentRequest = await loadPaymentRequest(String(refund.payment_request_id));
+      if (!paymentRequest) return json(404, { message: "Original payment record not found." });
+      const priorState = await recordEvent("STRIPE_CHECKOUT", eventId, payloadHash, String(refund.payment_request_id));
+      if (priorState === "VERIFIED") return json(200, { received: true, duplicate: true });
+
+      const amount = Number(eventObject.amount);
+      const currency = String(eventObject.currency ?? "").toUpperCase();
+      const paymentIntent = String(eventObject.payment_intent ?? "");
+      if (
+        amount !== Number(refund.amount_rwf) ||
+        currency !== "RWF" ||
+        paymentIntent !== String(paymentRequest.gateway_payment_intent_id)
+      ) {
+        await updateEvent("STRIPE_CHECKOUT", eventId, String(refund.payment_request_id), "IGNORED", "REFUND_DETAILS_MISMATCH");
+        return json(200, { received: true, verified: false });
+      }
+
+      await saveRefundProviderResult(refundId, providerRefundId);
+      const finalized = await finalizeRefund(refundId, String(eventObject.status ?? "pending"), providerRefundId);
+      await updateEvent("STRIPE_CHECKOUT", eventId, String(refund.payment_request_id), "VERIFIED");
+      return json(200, {
+        received: true,
+        refundProcessed: true,
+        refundStatus: String(finalized?.refund_status ?? "PENDING"),
+      });
+    }
+
+    const sessionFromEvent = eventObject;
+    const sessionId = String(sessionFromEvent.id ?? "").trim();
+    const requestId = String(sessionFromEvent.metadata?.payment_request_id ?? sessionFromEvent.client_reference_id ?? "").trim();
+    if (!sessionId || !requestId || sessionFromEvent.object !== "checkout.session") {
       return json(400, { message: "Invalid Stripe Checkout webhook payload." });
     }
 
@@ -178,7 +259,6 @@ Deno.serve(async (request: Request) => {
       return json(404, { message: "Payment request not found." });
     }
 
-    const payloadHash = await sha256(rawBody);
     const priorState = await recordEvent("STRIPE_CHECKOUT", eventId, payloadHash, requestId);
     if (priorState === "VERIFIED") return json(200, { received: true, duplicate: true });
     if (Number(paymentRequest.gateway_verified_at) > 0) {
