@@ -79,3 +79,22 @@ Native in-app Flutterwave/Stripe SDK or direct provider API checkout, native aut
 - Verify live merchant onboarding and settlement accounts before switching production keys.
 - Perform an independent penetration test and complete backup/restore and disaster-recovery drills.
 - Build and sign the Android APK/AAB using protected release credentials; record hashes and release evidence.
+
+
+## Unresolved P0: legacy tenant header still bypasses the OTP portal
+
+The owner OTP and membership checks in this PR protect the website's My Shop server functions. They do **not** replace the database tenant credential.
+
+The current database implementation in `web/drizzle/migrations/0000_beboss_core_schema.sql` still defines `public.current_shop_sync_key()` by reading `request.headers ->> 'x-shop-sync-key'` directly. Tenant RLS policies compare that header value with the stored `shop_sync_key`. The legacy key itself is still calculated as lowercase username plus the last nine digits of the phone number.
+
+Consequently, a caller who can derive that legacy value can still call Supabase PostgREST directly with the anon key and forged `X-Shop-Sync-Key` header, bypassing the new website OTP server-function middleware. This branch does not alter that helper, the legacy RLS comparison or anon tenant grants. Treat the direct database tenant-isolation issue as **OPEN / P0** and do not claim enterprise tenant isolation is fixed.
+
+The complete remediation needs a coordinated versioned migration:
+1. Verify shop ownership using an independently verified owner session, not the legacy key.
+2. Generate a cryptographically random 256-bit device credential server-side and persist only a cryptographic hash bound to the shop, device, role, issue time, expiry and revocation state.
+3. Exchange the device credential for short-lived scoped access, validate it inside the database/API authorization boundary and apply shop + role + device scope to every table and RPC.
+4. Provision/store the credential in Android Keystore; support rotation, revocation, device replacement and recovery.
+5. Ship a compatible Android upgrade and controlled dual-key period, monitor old-client adoption, then explicitly sunset the predictable `X-Shop-Sync-Key` path and remove public anon tenant authorization.
+6. Test direct PostgREST attempts with forged tenant headers, cross-shop IDs, revoked credentials and expired sessions in an isolated staging project before rollout.
+
+Do not simply change `current_shop_sync_key()` to reject the old header before supported Android clients have securely migrated; that would break existing shop synchronization without resolving enrollment and recovery safely.
