@@ -1149,7 +1149,7 @@ object SupabaseAdminClient {
                 put("branch_name", device.branchName)
                 put("is_owner_primary", device.isOwnerPrimary)
                 put("is_active", device.isActive)
-                put("monthly_fee_addon_rwf", if (device.isOwnerPrimary) 0 else device.monthlyFeeAddonRwf)
+                put("monthly_fee_addon_rwf", if (device.isOwnerPrimary) 0 else OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF)
                 put("last_synced_at", device.lastSyncedAt)
                 put("created_at", device.createdAt)
                 put("updated_at", device.updatedAt)
