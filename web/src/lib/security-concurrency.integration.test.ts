@@ -93,6 +93,53 @@ describe.skipIf(!enabled)("Supabase security concurrency integration", () => {
     });
   });
 
+  it("rejects a device-management action immediately after a shop actor is deactivated", async () => {
+    const tenant = shopFixture();
+    const actorUserId = "SEC-ACTOR-" + suffix();
+    const actorDeviceId = "SEC-ACTOR-DEVICE-" + suffix();
+    const targetDeviceId = "SEC-TARGET-DEVICE-" + suffix();
+    const actorUsername = "actor-" + suffix();
+
+    await database.begin(async (tx) => {
+      await tx.unsafe(
+        "insert into public.shop_accounts (id, shop_name, owner_name, owner_username, owner_phone) values ($1, 'Actor revocation fixture', 'Test Owner', $2, $3)",
+        [tenant.id, tenant.username, tenant.phone],
+      );
+      await tx.unsafe(
+        "insert into public.shop_users (id, shop_sync_key, shop_name, user_id, full_name, username, phone, role, assigned_branch_id, assigned_branch_name, is_active) values ($1, $2, 'Actor revocation fixture', $3, 'Inactive actor', $4, '', 'CASHIER', 'main_branch', 'Main Store', false)",
+        [actorUserId, tenant.id, actorUserId, actorUsername],
+      );
+      await tx.unsafe(
+        "insert into public.shop_devices (id, shop_sync_key, shop_name, device_id, device_name, assigned_user_id, assigned_username, assigned_user_name, role, branch_id, branch_name, is_owner_primary, is_active) values ($1, $2, 'Actor revocation fixture', $3, 'Actor terminal', $4, $5, 'Inactive actor', 'CASHIER', 'main_branch', 'Main Store', false, true), ($6, $2, 'Actor revocation fixture', '', 'Target terminal', $4, $5, 'Inactive actor', 'CASHIER', 'main_branch', 'Main Store', false, true)",
+        [actorDeviceId, tenant.id, actorDeviceId, actorUserId, actorUsername, targetDeviceId],
+      );
+    });
+
+    let rejection = "";
+    try {
+      await database.begin(async (tx) => {
+        await tx.unsafe("select set_config('request.headers', $1, true)", [
+          JSON.stringify({ "x-shop-sync-key": tenant.id }),
+        ]);
+        await tx.unsafe("set local role anon");
+        await tx.unsafe(
+          "select public.delete_shop_device($1, $2, $3, $4)",
+          [tenant.id, targetDeviceId, actorDeviceId, actorUserId],
+        );
+      });
+    } catch (error) {
+      rejection = error instanceof Error ? error.message : String(error);
+    } finally {
+      await database.begin(async (tx) => {
+        await tx.unsafe("delete from public.shop_devices where shop_sync_key = $1", [tenant.id]);
+        await tx.unsafe("delete from public.shop_users where shop_sync_key = $1", [tenant.id]);
+        await tx.unsafe("delete from public.shop_accounts where id = $1", [tenant.id]);
+      });
+    }
+
+    expect(rejection).toContain("The signed-in shop user is not active.");
+  });
+
   it("allows only one different device to redeem a single-use invite under concurrent requests", async () => {
     const tenant = shopFixture();
     const deviceRecordId = "SEC-DEVICE-" + suffix();
