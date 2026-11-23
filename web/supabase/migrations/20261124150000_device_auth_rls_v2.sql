@@ -432,6 +432,7 @@ declare
   v_invite beboss_private.shop_device_auth_invites%rowtype;
   v_device public.shop_devices%rowtype;
   v_owner_shop_name text;
+  v_replaced_auth_user_id uuid;
   v_expiry bigint := v_now + 7776000000;
 begin
   if p_code_hash !~ '^[0-9a-f]{64}$'
@@ -504,6 +505,15 @@ begin
   where id = v_device.id
   returning * into v_device;
 
+  select s.auth_user_id into v_replaced_auth_user_id
+  from public.shop_device_auth_sessions s
+  where s.shop_sync_key = v_invite.shop_sync_key
+    and s.device_record_id = v_device.id
+    and s.status = 'ACTIVE'
+    and s.revoked_at = 0
+  order by s.issued_at desc
+  limit 1;
+
   update public.shop_device_auth_sessions
   set status = 'REVOKED', revoked_at = v_now
   where shop_sync_key = v_invite.shop_sync_key
@@ -528,6 +538,7 @@ begin
     'device', to_jsonb(v_device),
     'shop_name', coalesce(v_owner_shop_name, ''),
     'auth_user_id', p_auth_user_id,
+    'replaced_auth_user_id', v_replaced_auth_user_id,
     'session_expires_at', v_expiry
   );
 end;
