@@ -307,6 +307,27 @@ class BranchTransferManager(
         }
     }
 
+    /** Advances an already-applied lifecycle state beyond a newly claimed cloud command. */
+    suspend fun publishTransferVersion(transferId: String): StockTransfer? = withContext(Dispatchers.IO) {
+        val current = stockTransferDao.getTransferById(transferId) ?: return@withContext null
+        val now = ClockGuard.effectiveNowMs()
+        val updated = current.copy(
+            updatedAt = now,
+            hlcTimestamp = HlcClock.tick(now),
+            lastModifiedDeviceId = nodeId
+        )
+        stockTransferDao.updateTransfer(updated)
+        syncQueueDao.enqueue(
+            SyncQueueItem(
+                tableName = "stock_transfers",
+                recordId = transferId,
+                operation = "UPDATE",
+                payloadJson = buildTransferPayload(updated)
+            )
+        )
+        updated
+    }
+
     /**
      * Confirms receipt of an IN_TRANSIT transfer at the destination branch.
      * Credits the destination branch's product stock atomically.
