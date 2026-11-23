@@ -160,18 +160,6 @@ fun SubscriptionScreen(
         )
     }
 
-    var selectedPaymentProvider by remember { mutableStateOf("MTN MoMo") }
-    var usernameProofInput by remember(ownerAccount?.username) { mutableStateOf(ownerAccount?.username ?: "") }
-    var registeredPhoneInput by remember(ownerAccount?.phone, shopProfile.phone) {
-        mutableStateOf(ownerAccount?.phone?.ifBlank { shopProfile.phone } ?: shopProfile.phone)
-    }
-    var payerPhoneInput by remember(shopProfile.phone) { mutableStateOf(shopProfile.phone) }
-    var payerFullNameInput by remember(ownerAccount?.name, shopProfile.name) {
-        mutableStateOf(ownerAccount?.name?.ifBlank { shopProfile.name } ?: shopProfile.name)
-    }
-    var paymentNoteInput by remember { mutableStateOf("") }
-    var proofError by remember { mutableStateOf<String?>(null) }
-
     var voucherInput by remember { mutableStateOf("") }
     var lastAutoTriggeredCode by remember { mutableStateOf("") }
     val isCompleteUnlockFormat = remember(voucherInput) {
