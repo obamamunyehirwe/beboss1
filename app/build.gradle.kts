@@ -54,12 +54,13 @@ android {
     }
   }
   fun envConfigString(key: String): String {
-    // Empty local .env entries must not erase safe project defaults in .env.example.
+    // Explicit developer/CI overrides win; .env.example is only the final fallback.
+    // This prevents a stale example key from masking a rotated project key in CI.
     val raw = (
       envProps.getProperty(key)?.takeIf { it.isNotBlank() }
-        ?: defaultEnvProps.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: (project.findProperty(key) as? String)?.takeIf { it.isNotBlank() }
         ?: System.getenv(key)?.takeIf { it.isNotBlank() }
+        ?: defaultEnvProps.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: ""
       ).trim()
     val unquoted = raw.removeSurrounding("\"")
