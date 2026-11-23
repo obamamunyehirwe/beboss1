@@ -18,7 +18,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.create-payment-checkout]
-verify_jwt = false
+verify_jwt = true
 
 [functions.payment-gateway-webhook]
 verify_jwt = false
