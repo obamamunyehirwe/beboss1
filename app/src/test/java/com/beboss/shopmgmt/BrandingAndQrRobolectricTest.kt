@@ -144,7 +144,7 @@ class BrandingAndQrRobolectricTest {
     }
 
     @Test
-    fun \`printable receipt embeds logo and QR and escapes untrusted fields\`() {
+    fun `printable receipt embeds logo and QR and escapes untrusted fields`() {
         val unsafeProfile = profile.copy(shopName = "<script>alert(1)</script>")
         val unsafeSale = sale.copy(customerName = "<img src=x onerror=alert(1)>")
         val unsafeItems = items.mapIndexed { index, item ->
@@ -169,7 +169,7 @@ class BrandingAndQrRobolectricTest {
     }
 
     @Test
-    fun \`contact phone normalization prevents duplicate imports without changing display value\`() {
+    fun `contact phone normalization prevents duplicate imports without changing display value`() {
         assertEquals("250788123456", ContactsHelper.normalizePhoneNumber(" +250 (788) 123-456 "))
         assertEquals("", ContactsHelper.normalizePhoneNumber("   "))
     }
