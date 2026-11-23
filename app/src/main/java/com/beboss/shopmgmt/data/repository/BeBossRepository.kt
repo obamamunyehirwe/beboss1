@@ -915,14 +915,41 @@ class BeBossRepository(private val database: AppDatabase) {
                 OfflineSubscriptionManager.saveDynamicPaymentConfig(context, appCfg)
             }
 
-            // Pull all existing branch snapshots for this shop and merge into local SQLite
-            val snapshots = SupabaseAdminClient.fetchShopBranchSnapshots(shopSyncKey)
-            for (snap in snapshots) {
-                try {
-                    val decoded = ShopDataTransferManager.parseShopPackageString(snap.payloadToken)
-                    mergeShopDataPackageLww(decoded)
-                } catch (_: Exception) {
+            // Recover only complete, newest snapshot generations from the registered devices.
+            // Merging arbitrary rows from an incomplete backup can silently omit branch records.
+            val receivedSnapshots = SupabaseAdminClient.fetchShopBranchSnapshots(shopSyncKey)
+            val snapshots = SupabaseAdminClient.latestCompleteSnapshotChunks(receivedSnapshots)
+            val sourceDeviceIds = receivedSnapshots
+                .map { it.deviceId.replace(Regex("#c\\d+$"), "") }
+                .filter { it.isNotBlank() }
+                .toSet()
+            val recoveredDeviceIds = snapshots
+                .map { it.deviceId.replace(Regex("#c\\d+$"), "") }
+                .filter { it.isNotBlank() }
+                .toSet()
+
+            if (snapshots.isEmpty() || recoveredDeviceIds != sourceDeviceIds) {
+                val incompleteCount = (sourceDeviceIds - recoveredDeviceIds).size
+                val reason = if (receivedSnapshots.isEmpty()) {
+                    "No cloud backup has been uploaded for this shop yet."
+                } else if (incompleteCount > 0) {
+                    "Cloud backups for $incompleteCount registered device(s) are incomplete or corrupt."
+                } else {
+                    "No complete cloud backup generation is available for this shop."
                 }
+                return@withContext JoinShopCloudResult(
+                    success = false,
+                    message = "$reason Keep the original device safe, connect it to the internet, run a full Sync, and then retry recovery. No local shop profile or business records were changed."
+                )
+            }
+
+            // Decode every selected chunk before merging any of them. A malformed final
+            // chunk must not leave a first-time installation with a knowingly partial restore.
+            val decodedSnapshots = snapshots.map { snap ->
+                ShopDataTransferManager.parseShopPackageString(snap.payloadToken)
+            }
+            decodedSnapshots.forEach { decoded ->
+                mergeShopDataPackageLww(decoded)
             }
 
             // Ensure ShopProfile exists and mirrors cloud subscription state
