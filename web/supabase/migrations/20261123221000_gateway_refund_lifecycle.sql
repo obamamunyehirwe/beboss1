@@ -99,6 +99,7 @@ begin
 
   update public.payment_requests
   set gateway_refund_status = 'PENDING',
+      gateway_latest_refund_id = v_id,
       updated_at = (extract(epoch from clock_timestamp()) * 1000)::bigint
   where id = p_payment_request_id;
 
