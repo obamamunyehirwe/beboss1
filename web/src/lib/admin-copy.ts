@@ -956,6 +956,7 @@ const words: Record<string, readonly [string, string, string]> = {
   "cross-branch stock movements": ["iyimurwa ry'ububiko hagati y'amashami", "mouvements de stock entre agences", "uhamisho wa bidhaa kati ya matawi"],
   "active, no sync for 7+ days": ["birakora ariko ntibihuza amakuru mu minsi 7 cyangwa irenga", "actifs, sans synchronisation depuis 7 jours ou plus", "hai, havijasawazishwa kwa siku 7 au zaidi"],
   "rollback, root, hooking, emulator or high risk": ["gusubiza inyuma isaha, root, hooking, emulator cyangwa ibyago byinshi", "retour arrière, root, hooking, émulateur ou risque élevé", "kurudisha nyuma, root, hooking, emulator au hatari kubwa"],
+
 };
 export function useAdminText() {
   try {
