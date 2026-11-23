@@ -303,16 +303,30 @@ function PaymentsPage() {
                   </div>
                 </div>
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
-                  <Info label="Provider" value={r.provider} />
+                  <Info label="Provider" value={r.provider} sub={r.gateway_provider ? r.gateway_provider.replaceAll("_", " ") : undefined} />
                   <Info label="Payer" value={r.payer_full_name || "—"} sub={r.payer_phone} />
                   <Info label="Payment time" value={formatDateTime(r.payment_time_ms || r.created_at)} />
                   <Info label="Registered owner phone" value={r.owner_phone} mono />
                   <Info label="Plan" value={`${r.duration_months} mo • ${r.branch_count} br • ${r.worker_count} staff • ${r.device_count} dev`} />
                 </dl>
-                <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
-                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer MTN MoMo / Airtel Money confirmation SMS</p>
-                  <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{r.payment_note?.trim() || "No confirmation SMS was supplied. Check the merchant transaction history directly before approving."}</pre>
-                </div>
+                {r.gateway_provider ? (
+                  <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Verified gateway settlement</p>
+                    <div className="grid gap-2 text-sm sm:grid-cols-2">
+                      <Info label="Provider state" value={r.gateway_status.replaceAll("_", " ")} />
+                      <Info label="Verified amount" value={r.gateway_verified_at > 0 ? formatRwf(r.gateway_verified_amount_rwf) : "Not verified"} />
+                      <Info label="Currency" value={r.gateway_verified_currency || "—"} />
+                      <Info label="Provider transaction" value={r.gateway_transaction_id || "—"} mono />
+                      <Info label="Provider reference" value={r.gateway_reference || "—"} mono />
+                      <Info label="Verified at" value={r.gateway_verified_at > 0 ? formatDateTime(r.gateway_verified_at) : "—"} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer MTN MoMo / Airtel Money confirmation SMS</p>
+                    <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{r.payment_note?.trim() || "No confirmation SMS was supplied. Check the merchant transaction history directly before approving."}</pre>
+                  </div>
+                )}
                 {r.admin_verification_note ? <p className="mt-2 text-xs text-muted-foreground">Admin verification: {r.admin_verification_note}</p> : null}
                 {r.amount_rwf !== calc.total ? (
                   <p className="mt-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
@@ -328,7 +342,19 @@ function PaymentsPage() {
                   <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
                     {r.status === "PENDING_VERIFICATION" || r.status === "REJECTED" ? (
                       <>
-                        <Button size="sm" variant="success" disabled={busy} onClick={() => { setVerifyingPayment(r); setProviderVerified(false); setVerificationNote(""); }}>
+                        <Button size="sm" variant="success" disabled={busy} onClick={() => {
+                            const verifiedGateway = Boolean(r.gateway_provider) &&
+                              r.gateway_status === "VERIFIED" &&
+                              Number(r.gateway_verified_at) > 0 &&
+                              Number(r.gateway_verified_amount_rwf) === Number(r.amount_rwf) &&
+                              String(r.gateway_verified_currency).toUpperCase() === "RWF" &&
+                              Boolean(r.gateway_transaction_id);
+                            setVerifyingPayment(r);
+                            setProviderVerified(verifiedGateway);
+                            setVerificationNote(verifiedGateway
+                              ? `Provider verified: ${r.gateway_provider} transaction ${r.gateway_transaction_id}`
+                              : "");
+                          }}>
                           {busy ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Review SMS & verify payment")}
                         </Button>
 
@@ -394,19 +420,42 @@ function PaymentsPage() {
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Verify {verifyingPayment?.provider} payment</DialogTitle>
-            <DialogDescription>Review the customer's SMS, then independently confirm the funds in the official provider merchant transaction history or balance before issuing a BB3 code.</DialogDescription>
+            <DialogDescription>
+              {verifyingPayment?.gateway_provider
+                ? "BeBoss verifies hosted gateway payments using the signed provider event and a separate provider API/session check. Review the verified amount and registered shop identity before activating the subscription."
+                : "Review the customer's SMS, then independently confirm the funds in the official provider merchant transaction history or balance before issuing a BB3 code."}
+            </DialogDescription>
           </DialogHeader>
-          <div className="max-h-56 overflow-auto rounded-xl border border-border bg-muted/30 p-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer-submitted confirmation SMS</p>
-            <pre className="whitespace-pre-wrap break-words font-sans text-sm">{verifyingPayment?.payment_note?.trim() || "No SMS was submitted. Do not approve from a claim alone; verify the incoming transaction directly in your merchant account."}</pre>
-          </div>
+          {verifyingPayment?.gateway_provider ? (
+            <div className="rounded-xl border border-success/30 bg-success/5 p-3 text-sm">
+              <p className="font-semibold text-success">Server-verified provider settlement</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <p>Provider: {verifyingPayment.gateway_provider.replaceAll("_", " ")}</p>
+                <p>Amount: {formatRwf(verifyingPayment.gateway_verified_amount_rwf)} {verifyingPayment.gateway_verified_currency}</p>
+                <p className="break-all">Transaction: {verifyingPayment.gateway_transaction_id}</p>
+                <p>Verified: {formatDateTime(verifyingPayment.gateway_verified_at)}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="max-h-56 overflow-auto rounded-xl border border-border bg-muted/30 p-3">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer-submitted confirmation SMS</p>
+              <pre className="whitespace-pre-wrap break-words font-sans text-sm">{verifyingPayment?.payment_note?.trim() || "No SMS was submitted. Do not approve from a claim alone; verify the incoming transaction directly in your merchant account."}</pre>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted/30 p-3 text-sm">
             <p><span className="text-muted-foreground">Shop:</span> {verifyingPayment?.shop_name}</p>
             <p><span className="text-muted-foreground">Amount:</span> {formatRwf(verifyingPayment?.amount_rwf ?? 0)}</p>
             <p><span className="text-muted-foreground">Payer:</span> {verifyingPayment?.payer_full_name || "—"}</p>
             <p><span className="text-muted-foreground">Phone:</span> {verifyingPayment?.payer_phone}</p>
           </div>
-          <Textarea value={verificationNote} onChange={(event) => setVerificationNote(event.target.value)} rows={3} maxLength={500} placeholder="Record what you confirmed in MTN MoMo / Airtel Money merchant history: amount received, sender and time." />
+          <Textarea
+            value={verificationNote}
+            onChange={(event) => setVerificationNote(event.target.value)}
+            rows={3}
+            maxLength={500}
+            disabled={Boolean(verifyingPayment?.gateway_provider)}
+            placeholder="Record what you confirmed in MTN MoMo / Airtel Money merchant history: amount received, sender and time."
+          />
           <div className="grid gap-2 rounded-xl border border-border p-3 sm:grid-cols-2">
             <label className="flex cursor-pointer items-start gap-3 rounded-lg p-2 text-sm hover:bg-muted/50">
               <input type="radio" name="approval-mode" className="mt-1 size-4 accent-current" checked={approvalMode === "CODE"} onChange={() => setApprovalMode("CODE")} />
@@ -417,14 +466,33 @@ function PaymentsPage() {
               <span><strong className="block">Unlock shop in cloud</strong><span className="text-xs text-muted-foreground">Activate this registered shop immediately after verification; no code is needed.</span></span>
             </label>
           </div>
-          <p className="text-xs text-muted-foreground">Both options require you to verify the exact payment in the official MTN MoMo / Airtel Money merchant history. A customer SMS or WhatsApp screenshot alone does not confirm settlement.</p>
-          <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed">
-            <input type="checkbox" className="mt-1 size-4 accent-current" checked={providerVerified} onChange={(event) => setProviderVerified(event.target.checked)} />
-            <span>I independently confirmed that the exact amount was received by BeBoss in the official provider account. The submitted SMS alone is not proof of settlement.</span>
-          </label>
+          {verifyingPayment?.gateway_provider ? (
+            <p className="text-xs text-success">Provider confirmation is server-verified. This action still requires an administrator to check that the payment belongs to the registered BeBoss shop.</p>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">Both options require you to verify the exact payment in the official MTN MoMo / Airtel Money merchant history. A customer SMS or WhatsApp screenshot alone does not confirm settlement.</p>
+              <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed">
+                <input type="checkbox" className="mt-1 size-4 accent-current" checked={providerVerified} onChange={(event) => setProviderVerified(event.target.checked)} />
+                <span>I independently confirmed that the exact amount was received by BeBoss in the official provider account. The submitted SMS alone is not proof of settlement.</span>
+              </label>
+            </>
+          )}
           <DialogFooter>
             <Button variant="ghost" onClick={() => setVerifyingPayment(null)}>Cancel</Button>
-            <Button variant="success" disabled={!providerVerified || verificationNote.trim().length < 5 || approve.isPending || directUnlock.isPending} onClick={() => verifyingPayment && doApprove(verifyingPayment, verificationNote.trim())}>
+            <Button
+              variant="success"
+              disabled={
+                (Boolean(verifyingPayment?.gateway_provider)
+                  ? !(verifyingPayment?.gateway_status === "VERIFIED" &&
+                      Number(verifyingPayment.gateway_verified_at) > 0 &&
+                      Number(verifyingPayment.gateway_verified_amount_rwf) === Number(verifyingPayment.amount_rwf) &&
+                      String(verifyingPayment.gateway_verified_currency).toUpperCase() === "RWF" &&
+                      Boolean(verifyingPayment.gateway_transaction_id))
+                  : !providerVerified || verificationNote.trim().length < 5) ||
+                approve.isPending || directUnlock.isPending
+              }
+              onClick={() => verifyingPayment && doApprove(verifyingPayment, verificationNote.trim())}
+            >
               {(approve.isPending || directUnlock.isPending) ? <Loader2 className="animate-spin" /> : <KeyRound />}
               {approvalMode === "DIRECT" ? "Verify payment & unlock shop" : "Confirm payment & issue BB3"}
             </Button>
