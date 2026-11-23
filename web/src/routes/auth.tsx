@@ -61,7 +61,7 @@ function AuthPage() {
         if (error) toast.error(error.message);
         else if (data.session) router.history.push(target);
       } catch (error) {
-        if (active) toast.error(error instanceof Error ? error.message : "Could not restore your BeBoss session.");
+        if (active) toast.error(error instanceof Error ? error.message : a("Could not restore your BeBoss session."));
       } finally {
         if (active) setCheckingSession(false);
       }
@@ -86,14 +86,14 @@ function AuthPage() {
         const invalidCredentials = error.code === "invalid_credentials" ||
           error.message.toLowerCase().includes("invalid login credentials");
         toast.error(invalidCredentials
-          ? "The email or password is incorrect. Check your credentials and try again."
+          ? a("The email or password is incorrect. Check your credentials and try again.")
           : error.message);
         return;
       }
-      toast.success("Credentials accepted. Verifying your BeBoss access…");
+      toast.success(a("Credentials accepted. Verifying your BeBoss access…"));
       router.history.push(target);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to sign in. Check your connection and try again.");
+      toast.error(error instanceof Error ? error.message : a("Unable to sign in. Check your connection and try again."));
     } finally {
       setBusy(false);
     }
@@ -108,34 +108,34 @@ function AuthPage() {
       </header>
       <main className="admin-auth-layout">
         <section className="admin-auth-story" aria-labelledby="admin-auth-story-title">
-          <div className="admin-auth-eyebrow"><span className="admin-auth-eyebrow-dot" /><ShieldCheck size={15} />RESTRICTED ADMIN WORKSPACE</div>
-          <h1 id="admin-auth-story-title">One secure command center. <em>Every shop in view.</em></h1>
-          <p className="admin-auth-story-copy">Review payment requests, monitor connected devices, manage releases and keep every BeBoss operation under control from one protected workspace.</p>
+          <div className="admin-auth-eyebrow"><span className="admin-auth-eyebrow-dot" /><ShieldCheck size={15} />{a("RESTRICTED ADMIN WORKSPACE")}</div>
+          <h1 id="admin-auth-story-title">{a("One secure command center.")} <em>{a("Every shop in view.")}</em></h1>
+          <p className="admin-auth-story-copy">{a("Review payment requests, monitor connected devices, manage releases and keep every BeBoss operation under control from one protected workspace.")}</p>
           <div className="admin-auth-visual">
             <img src="/Friendly%20Modern%20Store%20Checkout.png" alt="BeBoss retail point-of-sale checkout experience" loading="eager" decoding="async" width={1600} height={1100} />
             <div className="admin-auth-visual-shade" aria-hidden="true" />
             <div className="admin-auth-visual-brand">
               <img src="/beboss-app-icon.png" alt="" width={42} height={42} />
-              <span><strong>BeBoss POS</strong><small>BUSINESS · SALES · INVENTORY</small></span>
+              <span><strong>BeBoss POS</strong><small>{a("BUSINESS · SALES · INVENTORY")}</small></span>
             </div>
-            <div className="admin-auth-visual-stamp"><LockKeyhole size={15} />Role-verified access</div>
+            <div className="admin-auth-visual-stamp"><LockKeyhole size={15} />{a("Role-verified access")}</div>
           </div>
           <div className="admin-auth-proof">
-            <span><ShieldCheck size={15} /> Permission checked</span>
-            <span><KeyRound size={15} /> Password protected</span>
-            <span><LockKeyhole size={15} /> Secure admin session</span>
+            <span><ShieldCheck size={15} /> {a("Permission checked")}</span>
+            <span><KeyRound size={15} /> {a("Password protected")}</span>
+            <span><LockKeyhole size={15} /> {a("Secure admin session")}</span>
           </div>
         </section>
         <section className="admin-auth-form-wrap" aria-labelledby="admin-auth-form-title">
           <div className="auth-page-card admin-auth-form-card">
             <div className="admin-auth-form-icon"><LockKeyhole size={22} /></div>
-            <p className="admin-auth-form-kicker">BE BOSS · ADMIN ACCESS</p>
-            <h2 id="admin-auth-form-title">Sign in to BeBoss Admin</h2>
-            <p className="admin-auth-form-intro">Enter your BeBoss administrator credentials to continue.</p>
+            <p className="admin-auth-form-kicker">{a("BE BOSS · ADMIN ACCESS")}</p>
+            <h2 id="admin-auth-form-title">{a("Sign in to BeBoss Admin")}</h2>
+            <p className="admin-auth-form-intro">{a("Enter your BeBoss administrator credentials to continue.")}</p>
             {!liveConfigured ? (
               <div role="status" className="admin-auth-config-warning">
-                <strong>Admin sign-in is not configured in this deployment.</strong>
-                <span>Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in the web deployment. Keep SUPABASE_SERVICE_ROLE_KEY server-only.</span>
+                <strong>{a("Admin sign-in is not configured in this deployment.")}</strong>
+                <span>{a("Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in the web deployment. Keep SUPABASE_SERVICE_ROLE_KEY server-only.")}</span>
               </div>
             ) : null}
             <form onSubmit={signIn} className="admin-auth-form">
@@ -149,20 +149,20 @@ function AuthPage() {
                 </div>
                 <div className="admin-auth-password-wrap">
                   <Input id="admin-password" type={passwordVisible ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" disabled={!liveConfigured || busy || checkingSession} />
-                  <button className="admin-auth-password-toggle" type="button" onClick={() => setPasswordVisible((visible) => !visible)} aria-label={passwordVisible ? "Hide password" : "Show password"} aria-pressed={passwordVisible}>
+                  <button className="admin-auth-password-toggle" type="button" onClick={() => setPasswordVisible((visible) => !visible)} aria-label={passwordVisible ? a("Hide password") : a("Show password")} aria-pressed={passwordVisible}>
                     {passwordVisible ? <EyeOff size={17} /> : <Eye size={17} />}
                   </button>
                 </div>
               </div>
               <Button type="submit" variant="hero" className="admin-auth-submit" disabled={!liveConfigured || busy || checkingSession}>
                 {busy || checkingSession ? <Loader2 className="animate-spin" /> : <LockKeyhole size={17} />}
-                {checkingSession ? "Checking session…" : busy ? "Signing in…" : a("Sign in securely")}
+                {checkingSession ? a("Checking session…") : busy ? a("Signing in…") : a("Sign in securely")}
               </Button>
             </form>
           </div>
         </section>
       </main>
-      <footer className="admin-auth-footer"><span>© {new Date().getFullYear()} BeBoss POS</span><span>Authorized access only</span></footer>
+      <footer className="admin-auth-footer"><span>© {new Date().getFullYear()} BeBoss POS</span><span>{a("Authorized access only")}</span></footer>
     </div>
   );
 }
