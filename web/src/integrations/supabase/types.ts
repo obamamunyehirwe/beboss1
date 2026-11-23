@@ -1293,6 +1293,34 @@ export type Database = {
       current_shop_device_id: { Args: never; Returns: string }
       current_shop_user_id: { Args: never; Returns: string }
       current_shop_role: { Args: never; Returns: string }
+      bootstrap_shop_owner: {
+        Args: {
+          p_owner_auth_user_id: string
+          p_owner_name: string
+          p_owner_phone: string
+          p_owner_username: string
+          p_shop_id: string
+          p_shop_name: string
+        }
+        Returns: Json
+      }
+      issue_current_device_auth_invite: {
+        Args: {
+          p_code_hash: string
+          p_device_record_id: string
+          p_expires_at: number
+        }
+        Returns: Json
+      }
+      take_shop_device_enrollment_attempt: {
+        Args: {
+          p_bucket_hash: string
+          p_now_ms: number
+          p_window_ms?: number
+          p_max_attempts?: number
+        }
+        Returns: boolean
+      }
       revoke_shop_device_invites: {
         Args: {
           p_actor_device_id: string
