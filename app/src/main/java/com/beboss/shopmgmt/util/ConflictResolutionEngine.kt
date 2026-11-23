@@ -313,14 +313,40 @@ object ConflictResolutionEngine {
                     mergedPurchases = missingPurchases.size
                 }
 
-                val existingTransferIds = transferDao.getAllTransfersList().map { it.id }.toSet()
-                val missingTransfers = summary.stockTransfers.filterNot {
-                    existingTransferIds.contains(it.id) || tombstoneMap.containsKey(SyncTombstone.keyFor("stock_transfers", it.id))
+                // Transfer lifecycle is mutable: receipts and cancellations must
+                // reconcile by causal version instead of being ignored after first insert.
+                val existingTransfers = transferDao.getAllTransfersList().associateBy { it.id }
+                val transferWrites = mutableListOf<com.beboss.shopmgmt.data.model.StockTransfer>()
+                for (remoteTransfer in summary.stockTransfers) {
+                    HlcClock.observe(remoteTransfer.hlcTimestamp)
+                    if (isDeletedByTombstone(
+                            "stock_transfers",
+                            remoteTransfer.id,
+                            remoteTransfer.updatedAt,
+                            remoteTransfer.hlcTimestamp
+                        )
+                    ) continue
+                    val localTransfer = existingTransfers[remoteTransfer.id]
+                    if (localTransfer == null) {
+                        transferWrites.add(remoteTransfer)
+                        mergedTransfers++
+                    } else if (HlcClock.compareVersions(
+                            localHlc = localTransfer.hlcTimestamp,
+                            localVersion = 1L,
+                            localUpdatedAt = localTransfer.updatedAt,
+                            localDeviceId = localTransfer.lastModifiedDeviceId,
+                            remoteHlc = remoteTransfer.hlcTimestamp,
+                            remoteVersion = 1L,
+                            remoteUpdatedAt = remoteTransfer.updatedAt,
+                            remoteDeviceId = remoteTransfer.lastModifiedDeviceId
+                        ) > 0
+                    ) {
+                        transferWrites.add(remoteTransfer)
+                        mergedTransfers++
+                        conflicts++
+                    }
                 }
-                if (missingTransfers.isNotEmpty()) {
-                    transferDao.insertTransfers(missingTransfers)
-                    mergedTransfers = missingTransfers.size
-                }
+                if (transferWrites.isNotEmpty()) transferDao.insertTransfers(transferWrites)
 
                 val result = BranchMergeResult(
                     mergedBranches = mergedBranches,
