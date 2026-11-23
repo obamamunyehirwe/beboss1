@@ -79,9 +79,8 @@ UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
  * Ensure admin session is valid and refresh if near expiry.
  * Returns true if session is valid, false if expired and could not be refreshed.
  */
-async function perDeviceRate(context: Ctx): Promise<number> {
-  const { data } = await context.supabase.from("app_config").select("per_device_fee_rwf").eq("id", "global").maybeSingle();
-  return 2000;
+async function perDeviceRate(_context: Ctx): Promise<number> {
+  return 2_000;
 }
 
 async function getShop(context: Ctx, shopId: string) {
@@ -502,11 +501,6 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
     const admin = await requireAdmin(ctx);
     const provider = data.provider;
 
-    const { data: config } = await ctx.supabase
-      .from("app_config")
-      .select("id")
-      .eq("id", "global")
-      .maybeSingle();
     const feePerDeviceRwf = 2_000;
     const calc = calculateSubscriptionFee(
       data.branches,
