@@ -1192,6 +1192,10 @@ export type Database = {
         }
         Returns: string
       }
+      find_auth_user_by_phone: {
+        Args: { p_phone: string }
+        Returns: string
+      }
       public_platform_stats: { Args: never; Returns: Json }
       record_apk_download: {
         Args: { p_channel?: string; p_release_id: string }
