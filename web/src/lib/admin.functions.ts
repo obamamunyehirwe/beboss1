@@ -961,9 +961,9 @@ export const saveAppConfig = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
-    const { error } = await ctx.supabase.from("app_config").upsert({ id: "global", ...data, updated_at: Date.now() });
+    const { error } = await ctx.supabase.from("app_config").upsert({ id: "global", ...data, per_device_fee_rwf: 2_000, updated_at: Date.now() });
     if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, "SAVE_APP_CONFIG", "global", `MTN ${data.mtn_momo_code || data.mtn_momo_phone} • Airtel ${data.airtel_money_phone} • device ${data.per_device_fee_rwf} • APK ${data.apk_version}`);
+    await audit(ctx, admin.email, "SAVE_APP_CONFIG", "global", `MTN ${data.mtn_momo_code || data.mtn_momo_phone} • Airtel ${data.airtel_money_phone} • device 2000 FRw/month • APK ${data.apk_version}`);
     return { ok: true };
   });
 
