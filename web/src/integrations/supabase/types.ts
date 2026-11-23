@@ -512,6 +512,7 @@ export type Database = {
           gateway_payment_intent_id: string
           gateway_provider: string
           gateway_refund_status: string
+          gateway_latest_refund_id: string | null
           gateway_refunded_amount_rwf: number
           gateway_reference: string
           gateway_session_id: string
@@ -552,6 +553,7 @@ export type Database = {
           gateway_payment_intent_id?: string
           gateway_provider?: string
           gateway_refund_status?: string
+          gateway_latest_refund_id?: string | null
           gateway_refunded_amount_rwf?: number
           gateway_reference?: string
           gateway_session_id?: string
@@ -592,6 +594,7 @@ export type Database = {
           gateway_payment_intent_id?: string
           gateway_provider?: string
           gateway_refund_status?: string
+          gateway_latest_refund_id?: string | null
           gateway_refunded_amount_rwf?: number
           gateway_reference?: string
           gateway_session_id?: string
