@@ -56,7 +56,13 @@ export function normalizePhone(value: unknown): string {
 
 export function phoneE164(value: unknown): string {
   const digits = String(value ?? "").replace(/\D/g, "");
-  const local = digits.length === 9 ? digits : digits.startsWith("250") && digits.length === 12 ? digits.slice(3) : "";
+  const local = digits.length === 9
+    ? digits
+    : digits.length === 10 && digits.startsWith("0")
+      ? digits.slice(1)
+      : digits.startsWith("250") && digits.length === 12
+        ? digits.slice(3)
+        : "";
   if (!/^7\d{8}$/.test(local)) throw new Error("Enter a valid Rwanda mobile number.");
   return `+250${local}`;
 }
