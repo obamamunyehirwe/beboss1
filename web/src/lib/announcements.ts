@@ -8,6 +8,11 @@ export function isLive(a: Pick<Announcement, "is_active" | "starts_at" | "ends_a
   return a.is_active && new Date(a.starts_at).getTime() <= now && (!a.ends_at || new Date(a.ends_at).getTime() > now);
 }
 
+/** A retired legacy announcement that must never be re-published on the public site. */
+const SUPPRESSED_PUBLIC_ANNOUNCEMENT_IDS = new Set([
+  "22222222-3333-4444-5555-666666666666",
+]);
+
 /** Live, everyone-targeted announcements for the public website. */
 export const websiteAnnouncementsQuery = queryOptions({
   queryKey: ["announcements", "website"],
@@ -21,7 +26,7 @@ export const websiteAnnouncementsQuery = queryOptions({
       .order("starts_at", { ascending: false })
       .limit(5);
     if (error) throw new Error(error.message);
-    return (data ?? []).filter((a) => isLive(a));
+    return (data ?? []).filter((a) => !SUPPRESSED_PUBLIC_ANNOUNCEMENT_IDS.has(a.id) && isLive(a));
   },
   staleTime: 60_000,
 });

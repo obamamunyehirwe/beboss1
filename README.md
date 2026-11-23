@@ -4,6 +4,37 @@
 
 BeBoss (`com.beboss.shopmgmt`) is a full-stack retail operating system built for independent shops and multi-branch merchants operating in bandwidth-constrained environments across Rwanda and East Africa. It pairs an **offline-first encrypted Android POS terminal** (`/app`) with a **TanStack Start web marketing site, merchant self-service portal, and Master Admin command center** (`/web`) backed by **Supabase PostgreSQL**.
 
+
+## Investor overview — a retail operating platform built to grow
+
+BeBoss brings together an offline-first Android point of sale, inventory and customer-account workflows, branch-aware operations, and a central web administration platform. The product is designed to support the path from an owner-operated shop to multi-location retailers, pharmacies, wholesalers and service operators.
+
+### The product in one view
+
+| Layer | What is implemented |
+|---|---|
+| Store execution | Android checkout, barcode-assisted product lookup, split tenders, customer credit, receipts, purchases, stock adjustments and day-to-day reporting |
+| Continuity | Local encrypted business data, offline transaction capture, queued synchronization, and shop-scoped LAN/hotspot transfer after device pairing |
+| Multi-location operations | Branch and staff records, branch-aware permissions, device pairing, stock-transfer workflows and consolidated operating visibility |
+| Central management | Web-based shop, user, device, payment-claim, release, announcement, inbox, audit and operational-analytics screens |
+| Commercial controls | Subscription plans, device-linked licensing, admin-reviewed payment claims and payment-linked signed BB3 activation codes |
+
+### Why this can serve larger operators
+
+A multi-site deployment needs more than a checkout screen. BeBoss combines local execution at each counter with an administrative layer for branch structure, people, device registration, payment review and operational oversight. That architecture gives a growing operator a common workflow across locations while allowing individual Android terminals to continue recording sales when internet connectivity is interrupted.
+
+The product can be piloted vertically and expanded by location: validate a representative branch, import and reconcile the catalogue, assign named roles, test the exact phones and printers, verify offline and synchronization behaviour, and then repeat the accepted deployment pattern across more sites. This is a rollout model—not a claim that every enterprise integration or deployment scale has already been certified.
+
+### Commercial model and trust
+
+The published subscription model includes a primary owner terminal and a fixed **2,000 FRw per month for each additional active paired device**. Payment claims are reviewed against the official MTN MoMo or Airtel Money merchant record before an administrator approves activation. BeBoss does not claim automatic provider settlement verification unless a separately documented provider integration is delivered.
+
+Receipt checksums can detect changes to the receipt fields they cover; they are not a substitute for a digital signature or a guarantee of issuer identity. Security controls such as SQLCipher encryption, Android Keystore protection, role-based access and signed BB3 activation codes are described in the engineering sections below, with device- and configuration-dependent limits stated explicitly.
+
+### Enterprise expansion path
+
+The current architecture provides a base for larger deployments. Dedicated enterprise SSO, ERP/accounting connectors, formal contractual SLAs, independent security certifications, and multi-region disaster-recovery guarantees should be treated as separate delivery and validation work—not assumed from the existence of a multi-branch data model. Investor and customer pilots should measure reconciliation accuracy, checkout continuity, stock variance, staff accountability, device health and support cost against a recorded baseline.
+
 ---
 
 ## Table of Contents

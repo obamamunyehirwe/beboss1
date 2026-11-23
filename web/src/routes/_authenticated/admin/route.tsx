@@ -18,6 +18,7 @@ import { useAdminText } from '@/lib/admin-copy';
 import { ThemeToggle } from '@/components/site/ThemeToggle';
 import { LanguageSwitcher } from '@/components/site/LanguageSwitcher';
 import { CommandPalette } from "@/components/admin/CommandPalette";
+import "@/components/admin/admin-responsive.css";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "BeBoss Admin Center" }, { name: "robots", content: "noindex" }] }),
