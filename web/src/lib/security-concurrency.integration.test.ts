@@ -175,25 +175,27 @@ describe.skipIf(!enabled)("Supabase security concurrency integration", () => {
     }
   });
 
-  it("caps simultaneous rate-limit calls at the configured allowance", async () => {
-    const keyHash = createHash("sha256").update(randomUUID()).digest("hex");
-    try {
-      const outcomes = await Promise.all(
-        Array.from({ length: 32 }, () => database.unsafe(
-          "select allowed, request_count from public.consume_rate_limit('public_contact', $1, 7, 900)",
-          [keyHash],
-        )),
-      );
-      const rows = outcomes.flat();
-      expect(rows).toHaveLength(32);
-      expect(rows.filter((row) => row.allowed)).toHaveLength(7);
-      expect(rows.filter((row) => !row.allowed)).toHaveLength(25);
-      expect(Math.max(...rows.map((row) => Number(row.request_count)))).toBe(32);
-    } finally {
-      await database.unsafe(
-        "delete from beboss_private.rate_limit_buckets where scope = 'public_contact' and key_hash = $1",
-        [keyHash],
-      );
+  it("caps simultaneous BB2 and contact calls at their configured allowances", async () => {
+    for (const scope of ["legacy_bb2", "public_contact"] as const) {
+      const keyHash = createHash("sha256").update(randomUUID()).digest("hex");
+      try {
+        const outcomes = await Promise.all(
+          Array.from({ length: 32 }, () => database.unsafe(
+            "select allowed, request_count from public.consume_rate_limit('" + scope + "', $1, 7, 900)",
+            [keyHash],
+          )),
+        );
+        const rows = outcomes.flat();
+        expect(rows).toHaveLength(32);
+        expect(rows.filter((row) => row.allowed)).toHaveLength(7);
+        expect(rows.filter((row) => !row.allowed)).toHaveLength(25);
+        expect(Math.max(...rows.map((row) => Number(row.request_count)))).toBe(32);
+      } finally {
+        await database.unsafe(
+          "delete from beboss_private.rate_limit_buckets where scope = $1 and key_hash = $2",
+          [scope, keyHash],
+        );
+      }
     }
   });
 });
