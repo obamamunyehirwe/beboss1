@@ -4,6 +4,14 @@
 
 This change adds a server-side hosted-checkout path for Flutterwave and Stripe, a provider verification webhook, and a server-only payment-attempt ledger. It extends the existing `payment_requests` and BB3 unlock workflow. It does not change the production database or publish a production Android build.
 
+## Android subscription workflow
+
+The Android subscription screen now opens the authenticated BeBoss hosted checkout and carries the selected branch, staff, device and term quantities into the website checkout. The owner verifies the registered phone by SMS in the browser, then completes the provider-hosted payment page.
+
+The Android app does not embed provider secret keys or independently mark a transaction paid. Legacy direct-payment helpers that trusted arbitrary shop-configured HTTP JSON or a customer-supplied SMS reference now fail closed with `HOSTED_CHECKOUT_REQUIRED`; no local fake-success or fake-pending payment is created by these adapters. Admins can see server-verified provider references and issue the existing payment-linked BB3 code after backend ledger verification.
+
+This is a browser hand-off, not a native Flutterwave/Stripe Android SDK integration or a deep-link payment-status poller. The owner can return to My Shop to view the server-recorded payment status and then activate with the issued BB3 code. Assisted USSD helpers remain only for explicitly configured legacy merchant workflows and are not accepted as automatic settlement evidence.
+
 ## Provider behavior
 
 ### Flutterwave (RWF)
