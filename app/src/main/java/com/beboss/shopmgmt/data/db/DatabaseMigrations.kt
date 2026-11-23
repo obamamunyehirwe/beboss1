@@ -403,6 +403,51 @@ object DatabaseMigrations {
         }
     }
 
+    val MIGRATION_15_16 = object : Migration(15, 16) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            if (tableExists(db, "shop_profile")) {
+                val profileColumns = getExistingColumns(db, "shop_profile")
+                if (!profileColumns.contains("businessType")) {
+                    db.execSQL("ALTER TABLE shop_profile ADD COLUMN businessType TEXT NOT NULL DEFAULT 'sector_retail'")
+                }
+            }
+
+            if (tableExists(db, "users")) {
+                // Normalize usernames so case/whitespace cannot create visually duplicate workers.
+                db.execSQL("UPDATE users SET username = lower(trim(username))")
+                db.execSQL(
+                    "UPDATE users SET username = 'legacy-user-' || lower(substr(replace(id, '-', ''), 1, 12)) " +
+                        "WHERE username IS NULL OR trim(username) = ''"
+                )
+
+                // Deactivate only the known first-run demonstration identities. Keep their
+                // rows for audit/history compatibility; never expose them as shop workers.
+                db.execSQL("""
+                    UPDATE users SET isActive = 0, updatedAt = MAX(updatedAt, ${System.currentTimeMillis()})
+                    WHERE (username = 'owner' AND email = 'owner@beboss.rw' AND phone = '+250 788 123 456')
+                       OR (username = 'manager' AND email = 'manager@beboss.rw' AND phone = '+250 788 654 321')
+                       OR (username = 'cashier' AND email = 'cashier@beboss.rw' AND phone = '+250 789 111 222')
+                """.trimIndent())
+
+                // Older releases allowed duplicate usernames with distinct row IDs. Keep the
+                // most recently edited row active, preserve the other rows for references,
+                // and then enforce uniqueness at the database boundary.
+                db.execSQL("""
+                    UPDATE users AS u
+                    SET isActive = 0
+                    WHERE u.id <> (
+                        SELECT winner.id
+                        FROM users AS winner
+                        WHERE winner.username = u.username
+                        ORDER BY winner.updatedAt DESC, winner.createdAt ASC, winner.id ASC
+                        LIMIT 1
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_users_username ON users(username)")
+            }
+        }
+    }
+
     val ALL_MIGRATIONS = arrayOf(
         MIGRATION_1_2,
         MIGRATION_2_3,
@@ -417,6 +462,7 @@ object DatabaseMigrations {
         MIGRATION_11_12,
         MIGRATION_12_13,
         MIGRATION_13_14,
-        MIGRATION_14_15
+        MIGRATION_14_15,
+        MIGRATION_15_16
     )
 }
