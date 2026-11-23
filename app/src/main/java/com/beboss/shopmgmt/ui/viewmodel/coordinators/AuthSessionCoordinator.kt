@@ -52,15 +52,18 @@ class AuthSessionCoordinator(
                     null
                 }
 
-                val count = db.userDao().getUserCount()
-                if (count == 0) {
+                val activeUsers = db.userDao().getAllActiveUsersList()
+                if (activeUsers.isEmpty()) {
+                    // A legacy install may still contain deactivated demonstration or
+                    // retired staff rows. Registration depends on real active accounts,
+                    // not the raw historical row count.
                     _currentUser.value = null
                     _isRegistrationNeeded.value = true
                     _isLocked.value = true
                     return@launch
                 }
 
-                val preselected = savedUser ?: db.userDao().getAllActiveUsersList().firstOrNull()
+                val preselected = savedUser ?: activeUsers.firstOrNull()
                 _currentUser.value = preselected
                 _isRegistrationNeeded.value = false
                 // Always require explicit user authentication on cold launch
