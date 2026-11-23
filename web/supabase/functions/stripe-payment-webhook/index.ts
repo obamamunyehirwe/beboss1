@@ -108,7 +108,7 @@ async function updateEvent(provider: string, eventId: string, requestId: string 
 
 async function loadPaymentRequest(requestId: string) {
   const query = new URLSearchParams({
-    select: "id,amount_rwf,gateway_reference,gateway_provider,gateway_status,gateway_verified_at",
+    select: "id,amount_rwf,gateway_reference,gateway_provider,gateway_status,gateway_verified_at,gateway_payment_intent_id",
     id: `eq.${requestId}`,
     gateway_provider: "eq.STRIPE_CHECKOUT",
     limit: "1",
