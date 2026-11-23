@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, SearchInput, StatusBadge, downloadCsv, matches, useAdminAction } from "@/components/admin/ui";
-import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, rejectPayment } from "@/lib/admin.functions";
+import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, directAutoUnlock, rejectPayment } from "@/lib/admin.functions";
 import { configQuery, paymentsQuery, shopsQuery, type PaymentRequest } from "@/lib/admin-queries";
 import { buildUnlockReplyText, buildWhatsAppUrl, calculateSubscriptionFee } from "@/lib/pricing";
 import { formatDateTime, formatRwf, relativeTime } from "@/lib/format";
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_authenticated/admin/payments")({
   component: PaymentsPage,
 });
 
-type Result = { code: string; days: number; tier: string; total: number; shopName: string; username: string; phone: string };
+type Result = { mode: "CODE" | "DIRECT"; code?: string; days: number; tier: string; total: number; shopName: string; username: string; phone: string };
 type Status = "PENDING_VERIFICATION" | "APPROVED" | "REJECTED" | "REDEEMED" | "ALL";
 type ClaimSource = "ALL" | "APP" | "WEB" | "WHATSAPP";
 
@@ -44,8 +44,11 @@ function PaymentsPage() {
   const [verifyingPayment, setVerifyingPayment] = useState<PaymentRequest | null>(null);
   const [providerVerified, setProviderVerified] = useState(false);
   const [verificationNote, setVerificationNote] = useState("");
+  const [approvalMode, setApprovalMode] = useState<"CODE" | "DIRECT">("CODE");
   const approveFn = useServerFn(approvePaymentWithCode);
+  const directUnlockFn = useServerFn(directAutoUnlock);
   const approve = useAdminAction(approveFn, { invalidate: [["admin"]] });
+  const directUnlock = useAdminAction(directUnlockFn, { invalidate: [["admin"]] });
   const reject = useAdminAction(useServerFn(rejectPayment), { success: "Payment claim rejected", invalidate: [["admin", "payments"]] });
   const remove = useAdminAction(useServerFn(deletePaymentRequest), { success: "Claim removed", invalidate: [["admin", "payments"]] });
   const createManual = useAdminAction(useServerFn(createWhatsAppPaymentClaim), { success: "WhatsApp payment proof added to the review queue", invalidate: [["admin", "payments"], ["admin", "shops"]] });
@@ -60,15 +63,52 @@ function PaymentsPage() {
   const pending = rows.filter((r) => r.status === "PENDING_VERIFICATION");
   const rate = Number(cfg?.per_device_fee_rwf) || 2000;
 
-  const doApprove = (r: PaymentRequest, note: string) =>
-    approve.mutate({ requestId: r.id, providerVerified: true, verificationNote: note }, {
-      onSuccess: (res) => {
-        setVerifyingPayment(null);
-        setProviderVerified(false);
-        setVerificationNote("");
-        setResult({ mode: "CODE", code: res.code, days: res.days, tier: res.tier, total: res.total, shopName: res.shopName, username: res.username, phone: res.phone });
+  const doApprove = (r: PaymentRequest, note: string) => {
+    const onFinished = () => {
+      setVerifyingPayment(null);
+      setProviderVerified(false);
+      setVerificationNote("");
+      setApprovalMode("CODE");
+    };
+    if (approvalMode === "DIRECT") {
+      directUnlock.mutate(
+        { requestId: r.id, providerVerified: true, verificationNote: note },
+        {
+          onSuccess: (res) => {
+            onFinished();
+            setResult({
+              mode: "DIRECT",
+              days: res.days,
+              tier: res.tier,
+              total: res.total,
+              shopName: res.shopName,
+              username: res.username,
+              phone: res.phone,
+            });
+          },
+        },
+      );
+      return;
+    }
+    approve.mutate(
+      { requestId: r.id, providerVerified: true, verificationNote: note },
+      {
+        onSuccess: (res) => {
+          onFinished();
+          setResult({
+            mode: "CODE",
+            code: res.code,
+            days: res.days,
+            tier: res.tier,
+            total: res.total,
+            shopName: res.shopName,
+            username: res.username,
+            phone: res.phone,
+          });
+        },
       },
-    });
+    );
+  };
 
   return (
     <div>
@@ -367,14 +407,26 @@ function PaymentsPage() {
             <p><span className="text-muted-foreground">Phone:</span> {verifyingPayment?.payer_phone}</p>
           </div>
           <Textarea value={verificationNote} onChange={(event) => setVerificationNote(event.target.value)} rows={3} maxLength={500} placeholder="Record what you confirmed in MTN MoMo / Airtel Money merchant history: amount received, sender and time." />
+          <div className="grid gap-2 rounded-xl border border-border p-3 sm:grid-cols-2">
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg p-2 text-sm hover:bg-muted/50">
+              <input type="radio" name="approval-mode" className="mt-1 size-4 accent-current" checked={approvalMode === "CODE"} onChange={() => setApprovalMode("CODE")} />
+              <span><strong className="block">Issue signed BB3 code</strong><span className="text-xs text-muted-foreground">The owner enters a payment-linked code in the app.</span></span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg p-2 text-sm hover:bg-muted/50">
+              <input type="radio" name="approval-mode" className="mt-1 size-4 accent-current" checked={approvalMode === "DIRECT"} onChange={() => setApprovalMode("DIRECT")} />
+              <span><strong className="block">Unlock shop in cloud</strong><span className="text-xs text-muted-foreground">Activate this registered shop immediately after verification; no code is needed.</span></span>
+            </label>
+          </div>
+          <p className="text-xs text-muted-foreground">Both options require you to verify the exact payment in the official MTN MoMo / Airtel Money merchant history. A customer SMS or WhatsApp screenshot alone does not confirm settlement.</p>
           <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed">
             <input type="checkbox" className="mt-1 size-4 accent-current" checked={providerVerified} onChange={(event) => setProviderVerified(event.target.checked)} />
             <span>I independently confirmed that the exact amount was received by BeBoss in the official provider account. The submitted SMS alone is not proof of settlement.</span>
           </label>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setVerifyingPayment(null)}>Cancel</Button>
-            <Button variant="success" disabled={!providerVerified || verificationNote.trim().length < 5 || approve.isPending} onClick={() => verifyingPayment && doApprove(verifyingPayment, verificationNote.trim())}>
-              {approve.isPending ? <Loader2 className="animate-spin" /> : <KeyRound />} Confirm payment & issue BB3
+            <Button variant="success" disabled={!providerVerified || verificationNote.trim().length < 5 || approve.isPending || directUnlock.isPending} onClick={() => verifyingPayment && doApprove(verifyingPayment, verificationNote.trim())}>
+              {(approve.isPending || directUnlock.isPending) ? <Loader2 className="animate-spin" /> : <KeyRound />}
+              {approvalMode === "DIRECT" ? "Verify payment & unlock shop" : "Confirm payment & issue BB3"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -398,29 +450,40 @@ function ResultDialog({ result, onClose }: { result: Result | null; onClose: () 
   const [copied, setCopied] = useState(false);
   const a = useAdminText();
   if (!result) return null;
-  const msg = buildUnlockReplyText(result.shopName, result.username, result.code, result.days, result.tier);
+  const msg = result.mode === "CODE"
+    ? buildUnlockReplyText(result.shopName, result.username, result.code ?? "", result.days, result.tier)
+    : `✅ BeBoss shop activation confirmed. Shop: ${result.shopName} (@${result.username}). Your subscription is active in BeBoss Cloud for +${result.days} days. No unlock code is required. Open BeBoss while connected to the internet and tap Sync to receive the activation.`;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{a("Unlock code issued")}</DialogTitle>
+          <DialogTitle>{result.mode === "DIRECT" ? "Shop unlocked in cloud" : a("Unlock code issued")}</DialogTitle>
           <DialogDescription>
             {result.shopName} (@{result.username}) • +{result.days} days • {formatRwf(result.total)}
           </DialogDescription>
         </DialogHeader>
-        <div className="rounded-2xl border border-success/30 bg-success/10 p-4 text-center">
-          <p className="break-all font-mono text-lg font-semibold text-success">{result.code}</p>
-        </div>
+        {result.mode === "CODE" ? (
+          <div className="rounded-2xl border border-success/30 bg-success/10 p-4 text-center">
+            <p className="break-all font-mono text-lg font-semibold text-success">{result.code}</p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-success/30 bg-success/10 p-4 text-sm text-success">
+            <p className="font-semibold">Cloud license activated successfully.</p>
+            <p className="mt-1">The shop does not need an unlock code. The owner should connect the Android terminal to the internet and run Sync to receive the new subscription status.</p>
+          </div>
+        )}
         <DialogFooter className="gap-2 sm:gap-2">
-          <Button
-            variant="glass"
-            onClick={async () => {
-              await navigator.clipboard.writeText(result.code);
-              setCopied(true);
-            }}
-          >
-            {copied ? <Check className="text-success" /> : <Copy />} {a("Copy code")}
-          </Button>
+          {result.mode === "CODE" ? (
+            <Button
+              variant="glass"
+              onClick={async () => {
+                await navigator.clipboard.writeText(result.code ?? "");
+                setCopied(true);
+              }}
+            >
+              {copied ? <Check className="text-success" /> : <Copy />} {a("Copy code")}
+            </Button>
+          ) : null}
           <Button variant="success" asChild>
             <a href={buildWhatsAppUrl(result.phone, msg)} target="_blank" rel="noreferrer">
               <MessageCircle /> {a("Send on WhatsApp")}
