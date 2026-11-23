@@ -957,6 +957,8 @@ const words: Record<string, readonly [string, string, string]> = {
   "active, no sync for 7+ days": ["birakora ariko ntibihuza amakuru mu minsi 7 cyangwa irenga", "actifs, sans synchronisation depuis 7 jours ou plus", "hai, havijasawazishwa kwa siku 7 au zaidi"],
   "rollback, root, hooking, emulator or high risk": ["gusubiza inyuma isaha, root, hooking, emulator cyangwa ibyago byinshi", "retour arrière, root, hooking, émulateur ou risque élevé", "kurudisha nyuma, root, hooking, emulator au hatari kubwa"],
 
+  "Register device & create join code": ["Andikisha igikoresho kandi ukore kode yo kwinjira", "Enregistrer l’appareil et créer un code de connexion", "Sajili kifaa na utengeneze msimbo wa kujiunga"],
+  "Registering…": ["Irimo kwandikisha…", "Enregistrement…", "Inasajili…"],
 };
 export function useAdminText() {
   try {
