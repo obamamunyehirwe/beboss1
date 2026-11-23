@@ -314,6 +314,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                             },
                             deviceCountLimit = maxOf(profile.deviceCountLimit, remoteShop.deviceLimit),
                             adminWhatsAppNumber = remoteShop.adminWhatsApp.ifBlank { profile.adminWhatsAppNumber },
+                            businessType = com.beboss.shopmgmt.util.BusinessCatalog.normalize(remoteShop.businessType),
                             autoUnlockedAt = maxOf(profile.autoUnlockedAt, remoteShop.autoUnlockedAt),
                             lastAppliedCloudUnlockAt = if (isDirectUnlockUpdate) remoteShop.autoUnlockedAt else profile.lastAppliedCloudUnlockAt,
                             lastPaymentRef = if (isDirectUnlockUpdate) "ADMIN-DIRECT-UNLOCK" else profile.lastPaymentRef,
