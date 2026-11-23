@@ -406,6 +406,37 @@ class DatabaseMigrationTest {
         val db = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
         db.version = 9
         LegacyV9SqliteHelper(context, dbName).onCreate(db)
+
+        val insertUserSql = """
+            INSERT INTO users (
+                id, name, username, email, phone, pinHash, password, role,
+                assignedBranchId, assignedBranchName, profileColorHex, isActive,
+                canSellPOS, canApplyDiscounts, canManageInventory, canViewCostAndProfit,
+                canViewAnalytics, canManageCustomers, canCollectDebt, canDeleteRecords,
+                canExportReports, canManageCollaborators, canManageShopSettings,
+                canExportImportData, lastLoginAt, createdAt, updatedAt
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+        """.trimIndent()
+
+        fun insertStaff(id: String, name: String, username: String, email: String, phone: String, createdAt: Long, updatedAt: Long) {
+            db.execSQL(
+                insertUserSql,
+                arrayOf<Any?>(
+                    id, name, username, email, phone, "legacy-pin", "legacy-password", "CASHIER",
+                    "main_branch", "Kigali HQ", "#10B981", 1,
+                    1, 0, 0, 0, 0, 1, 0, 0,
+                    0, 0, 0, 0, 0L, createdAt, updatedAt
+                )
+            )
+        }
+
+        // Two accounts with the same username reproduce legacy duplicate workers.
+        insertStaff("u_duplicate_old", "Old Duplicate Cashier", "sharedcashier", "old@example.test", "+250700000001", 100L, 100L)
+        insertStaff("u_duplicate_new", "Current Cashier", "sharedcashier", "new@example.test", "+250700000002", 200L, 200L)
+        // The exact known first-run sample account must no longer appear as a real worker.
+        insertStaff("u_demo_cashier", "Store Cashier", "cashier", "cashier@beboss.rw", "+250 789 111 222", 50L, 50L)
         db.close()
 
         // Open with Room v10 + ALL_MIGRATIONS; RoomOpenHelper verifies every column and index
@@ -518,6 +549,37 @@ class DatabaseMigrationTest {
             val tombstones = roomDb.syncTombstoneDao().getAllTombstonesList()
             assertEquals(1, tombstones.size)
             assertEquals("p_v9_deleted", tombstones.first().recordId)
+
+            // v16 profile and staff migration checks: preserve the newest account,
+            // deactivate/re-key older duplicates and suppress the known demo seed.
+            assertEquals("sector_retail", profile?.businessType)
+            val uniqueUsernameIndex = mutableSetOf<String>()
+            sqliteDb.query("SELECT name FROM sqlite_master WHERE type = 'index'").use { cursor ->
+                while (cursor.moveToNext()) uniqueUsernameIndex.add(cursor.getString(0))
+            }
+            assertTrue("Missing unique staff username index", uniqueUsernameIndex.contains("index_users_username"))
+
+            sqliteDb.query(
+                "SELECT name FROM users WHERE username = 'sharedcashier' AND isActive = 1"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Current Cashier", cursor.getString(0))
+                assertEquals(false, cursor.moveToNext())
+            }
+            sqliteDb.query(
+                "SELECT username, isActive FROM users WHERE id = 'u_duplicate_old'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.getString(0).startsWith("legacy-duplicate-"))
+                assertEquals(0, cursor.getInt(1))
+            }
+            sqliteDb.query(
+                "SELECT username, isActive FROM users WHERE id = 'u_demo_cashier'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.getString(0).startsWith("legacy-demo-"))
+                assertEquals(0, cursor.getInt(1))
+            }
 
             // Verify new v12 shop_devices table and DAO are operational
             roomDb.shopDeviceDao().insertOrUpdate(

@@ -355,7 +355,7 @@ returns boolean
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_device public.shop_devices%rowtype;
   v_branch public.shop_branches%rowtype;
@@ -431,7 +431,7 @@ begin
 
   return true;
 end;
-$;
+$$;
 
 create or replace function beboss_private.delete_shop_device(
   p_shop_sync_key text,
@@ -443,7 +443,7 @@ returns boolean
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_device public.shop_devices%rowtype;
   v_branch public.shop_branches%rowtype;
@@ -507,7 +507,7 @@ begin
 
   return true;
 end;
-$;
+$$;
 
 -- Exposed RPC wrappers are invoker-rights only. The privileged implementation
 -- stays in an unexposed schema with a pinned empty search_path.
@@ -588,11 +588,11 @@ returns boolean
 language sql
 security invoker
 set search_path = ''
-as $
+as $$
   select beboss_private.set_shop_device_active(
     p_shop_sync_key, p_device_record_id, p_actor_device_id, p_actor_user_id, p_is_active
   );
-$;
+$$;
 
 create or replace function public.delete_shop_device(
   p_shop_sync_key text,
@@ -604,11 +604,11 @@ returns boolean
 language sql
 security invoker
 set search_path = ''
-as $
+as $$
   select beboss_private.delete_shop_device(
     p_shop_sync_key, p_device_record_id, p_actor_device_id, p_actor_user_id
   );
-$;
+$$;
 
 revoke all on function beboss_private.set_shop_device_active(text, text, text, text, boolean) from public;
 revoke all on function beboss_private.delete_shop_device(text, text, text, text) from public;

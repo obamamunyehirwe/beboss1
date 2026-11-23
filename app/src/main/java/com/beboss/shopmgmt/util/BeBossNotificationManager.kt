@@ -357,6 +357,9 @@ object BeBossNotificationManager {
     }
 
     fun sendDirectAutoUnlockNotification(context: Context, shopName: String, daysRemaining: Int) {
+        // A licensing notification is only valid after a real shop has been registered
+        // and the entitlement reconciler has verified a paid/admin-authorized period.
+        if (shopName.isBlank() || daysRemaining <= 0) return
         if (!PermissionManager.hasNotificationPermission(context)) return
 
         val notification = NotificationCompat.Builder(context, CHANNEL_TARGETS_ID)

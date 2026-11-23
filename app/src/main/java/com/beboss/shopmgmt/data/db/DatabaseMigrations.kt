@@ -423,26 +423,37 @@ object DatabaseMigrations {
                 // Deactivate only the known first-run demonstration identities. Keep their
                 // rows for audit/history compatibility; never expose them as shop workers.
                 db.execSQL("""
-                    UPDATE users SET isActive = 0, updatedAt = MAX(updatedAt, ${System.currentTimeMillis()})
+                    UPDATE users
+                    SET isActive = 0,
+                        username = 'legacy-demo-' || lower(replace(id, '-', '')),
+                        updatedAt = MAX(updatedAt, ${System.currentTimeMillis()})
                     WHERE (username = 'owner' AND email = 'owner@beboss.rw' AND phone = '+250 788 123 456')
                        OR (username = 'manager' AND email = 'manager@beboss.rw' AND phone = '+250 788 654 321')
                        OR (username = 'cashier' AND email = 'cashier@beboss.rw' AND phone = '+250 789 111 222')
                 """.trimIndent())
 
-                // Older releases allowed duplicate usernames with distinct row IDs. Keep the
-                // most recently edited row active, preserve the other rows for references,
-                // and then enforce uniqueness at the database boundary.
+                // Older releases allowed duplicate usernames with distinct row IDs.
+                // Preserve the newest account and re-key older duplicate rows to a
+                // deterministic legacy username before adding the unique index.
                 db.execSQL("""
-                    UPDATE users AS u
-                    SET isActive = 0
-                    WHERE u.id <> (
+                    CREATE TEMP TABLE beboss_duplicate_user_ids AS
+                    SELECT duplicate.id
+                    FROM users AS duplicate
+                    WHERE duplicate.id <> (
                         SELECT winner.id
                         FROM users AS winner
-                        WHERE winner.username = u.username
+                        WHERE winner.username = duplicate.username
                         ORDER BY winner.updatedAt DESC, winner.createdAt ASC, winner.id ASC
                         LIMIT 1
                     )
                 """.trimIndent())
+                db.execSQL("""
+                    UPDATE users
+                    SET isActive = 0,
+                        username = 'legacy-duplicate-' || lower(replace(id, '-', ''))
+                    WHERE id IN (SELECT id FROM beboss_duplicate_user_ids)
+                """.trimIndent())
+                db.execSQL("DROP TABLE beboss_duplicate_user_ids")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_users_username ON users(username)")
             }
         }

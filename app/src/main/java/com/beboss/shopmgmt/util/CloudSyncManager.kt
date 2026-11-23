@@ -326,15 +326,26 @@ class CloudSyncManager(private val database: AppDatabase) {
                 val remoteShop = SupabaseAdminClient.fetchShopAccountById(shopSyncKey)
                 if (remoteShop != null) {
                     ClockGuard.observeTrustedEpoch(remoteShop.updatedAt)
-                    val isDirectUnlockUpdate = remoteShop.autoUnlockedAt > profile.lastAppliedCloudUnlockAt
-                    val isRemoteExtension = remoteShop.subscriptionStatus == ShopProfile.STATUS_ACTIVE &&
+                    // Ignore stale cloud license state from an older shop that happened
+                    // to reuse the same owner identity. Joined devices set their baseline
+                    // from the validated shop account during pairing.
+                    val cloudUpdateBelongsToThisShop = remoteShop.updatedAt > profile.trialStartedAt
+                    val isDirectUnlockUpdate = cloudUpdateBelongsToThisShop &&
+                        remoteShop.autoUnlockedAt > profile.lastAppliedCloudUnlockAt &&
+                        remoteShop.autoUnlockedAt >= profile.trialStartedAt &&
+                        remoteShop.autoUnlockedAt <= ClockGuard.effectiveNowMs()
+                    val isRemoteExtension = cloudUpdateBelongsToThisShop &&
+                        remoteShop.subscriptionStatus == ShopProfile.STATUS_ACTIVE &&
                         remoteShop.subscriptionExpiresAt > profile.subscriptionExpiresAt + 60_000L
-                    val isRemoteLock = (remoteShop.subscriptionStatus == ShopProfile.STATUS_SUSPENDED ||
-                        remoteShop.subscriptionStatus == ShopProfile.STATUS_EXPIRED) &&
+                    val isRemoteLock = cloudUpdateBelongsToThisShop &&
+                        (remoteShop.subscriptionStatus == ShopProfile.STATUS_SUSPENDED ||
+                            remoteShop.subscriptionStatus == ShopProfile.STATUS_EXPIRED) &&
                         remoteShop.updatedAt > profile.updatedAt &&
                         remoteShop.autoUnlockedAt <= profile.lastAppliedCloudUnlockAt
 
-                    if (isDirectUnlockUpdate || isRemoteExtension || isRemoteLock || remoteShop.updatedAt > profile.updatedAt) {
+                    if (cloudUpdateBelongsToThisShop &&
+                        (isDirectUnlockUpdate || isRemoteExtension || isRemoteLock || remoteShop.updatedAt > profile.updatedAt)
+                    ) {
                         val updatedProf = profile.copy(
                             subscriptionStatus = if (isDirectUnlockUpdate || isRemoteExtension) ShopProfile.STATUS_ACTIVE else remoteShop.subscriptionStatus,
                             subscriptionExpiresAt = maxOf(profile.subscriptionExpiresAt, remoteShop.subscriptionExpiresAt).let {

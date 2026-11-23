@@ -67,6 +67,53 @@ const num = (v: unknown) => {
 const str = (v: unknown) => (v == null ? "" : String(v));
 const arr = (v: unknown): Row[] => (Array.isArray(v) ? (v.filter((x) => x && typeof x === "object") as Row[]) : []);
 
+function deduplicateStaff(rows: Row[]): Row[] {
+  const byId = new Map<string, Row>();
+  for (const row of rows) {
+    const id = str(row["id"] ?? row["userId"]).trim();
+    const key = id ? `id:${id}` : `username:${str(row["username"]).trim().toLowerCase()}`;
+    if (key === "username:") continue;
+    const previous = byId.get(key);
+    if (!previous) {
+      byId.set(key, row);
+      continue;
+    }
+    const previousUpdated = num(previous["updatedAt"]);
+    const currentUpdated = num(row["updatedAt"]);
+    const previousActive = previous["isActive"] !== false;
+    const currentActive = row["isActive"] !== false;
+    if ((currentActive && !previousActive) ||
+        (currentActive === previousActive && currentUpdated >= previousUpdated)) {
+      byId.set(key, row);
+    }
+  }
+
+  // Very old snapshots can contain different IDs for the same username.
+  // The Room migration now prevents new collisions; collapse historical ones here.
+  const byUsername = new Map<string, Row>();
+  for (const row of byId.values()) {
+    const username = str(row["username"]).trim().toLowerCase();
+    const key = username || `id:${str(row["id"])}`;
+    const previous = byUsername.get(key);
+    if (!previous || num(row["updatedAt"]) > num(previous["updatedAt"]) ||
+        (num(row["updatedAt"]) === num(previous["updatedAt"]) &&
+         row["isActive"] !== false && previous["isActive"] === false)) {
+      byUsername.set(key, row);
+    }
+  }
+
+  return [...byUsername.values()].filter((row) => {
+    const username = str(row["username"]).trim().toLowerCase();
+    const name = str(row["name"]).trim().toLowerCase();
+    return !(
+      username.startsWith("legacy-demo-") ||
+      (username === "owner" && name === "store owner") ||
+      (username === "manager" && name === "store manager") ||
+      (username === "cashier" && name === "store cashier")
+    );
+  });
+}
+
 /** Merges chunked exports into one dataset: newest row per id wins, tombstoned ids are dropped. */
 export function mergeShareJson(parts: Row[]): ShareDataset {
   const keys = ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users"] as const;
@@ -252,7 +299,7 @@ export function computeRetailInsights(ds: ShareDataset, now = Date.now()): Retai
     shopName: ds.shopName,
     currency: ds.currency,
     exportedAt: ds.exportedAt,
-    counts: { products: ds.products.length, customers: ds.customers.length, sales: sales.length, branches: ds.branches.length, staff: ds.users.length },
+    counts: { products: ds.products.length, customers: ds.customers.length, sales: sales.length, branches: ds.branches.length, staff: deduplicateStaff(ds.users).length },
     today: periodTotals(sales.filter((s) => num(s["saleDate"]) >= todayStart)),
     last30: periodTotals(recent),
     allTime: periodTotals(sales),
@@ -397,6 +444,7 @@ export interface ShopRecords {
 
 /** Flattens the complete merged phone snapshot into browsable admin tables. */
 export function extractShopRecords(ds: ShareDataset): ShopRecords {
+  const staffRows = deduplicateStaff(ds.users);
   const itemCount = new Map<string, number>();
   for (const it of ds.saleItems) {
     const sid = str(it["saleId"]);
@@ -518,7 +566,7 @@ export function extractShopRecords(ds: ShareDataset): ShopRecords {
         transferredBy: str(transfer["transferredBy"]),
         notes: str(transfer["notes"]),
       })),
-    staff: ds.users.map((u) => ({
+    staff: staffRows.map((u) => ({
       id: str(u["id"]),
       name: str(u["name"]),
       username: str(u["username"]),
