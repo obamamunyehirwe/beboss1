@@ -593,6 +593,7 @@ export type Database = {
           device_limit: number
           id: string
           min_app_version: string
+          lan_sync_secret: string
           monthly_fee_rwf: number
           owner_name: string
           owner_phone: string
@@ -616,6 +617,7 @@ export type Database = {
           device_count?: number
           device_limit?: number
           id: string
+          lan_sync_secret?: string
           min_app_version?: string
           monthly_fee_rwf?: number
           owner_name?: string
@@ -639,6 +641,7 @@ export type Database = {
           device_count?: number
           device_limit?: number
           id?: string
+          lan_sync_secret?: string
           min_app_version?: string
           monthly_fee_rwf?: number
           owner_name?: string
