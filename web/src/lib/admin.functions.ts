@@ -164,16 +164,25 @@ export const getAdminContext = createServerFn({ method: "POST" })
 // ---------------- Payments ----------------
 export const approvePaymentWithCode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { requestId: string; providerVerified: true; verificationNote: string }) =>
-    z.object({ requestId: z.string().min(1).max(200), providerVerified: z.literal(true), verificationNote: z.string().trim().min(5).max(500) }).parse(d))
+  .inputValidator((d: { requestId: string; providerVerified: true; verificationNote?: string }) =>
+    z.object({ requestId: z.string().min(1).max(200), providerVerified: z.literal(true), verificationNote: z.string().trim().max(500).default("") }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
-    const { data: req, error } = await ctx.supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,payment_time_ms,payment_note,admin_verification_note,fee_per_device_rwf,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,ussd_code").eq("id", data.requestId).maybeSingle();
+    const { data: req, error } = await ctx.supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,payment_time_ms,payment_note,admin_verification_note,fee_per_device_rwf,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,ussd_code,gateway_provider,gateway_reference,gateway_transaction_id,gateway_amount_rwf,gateway_currency,gateway_verified_at").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
-    if (data.providerVerified !== true) throw new Error("A manual provider-payment verification is required before issuing an unlock code.");
-    const verificationNote = data.verificationNote.trim();
-    if (verificationNote.length < 5) throw new Error("Record what you confirmed in the MTN MoMo or Airtel Money merchant transaction history.");
+    const gatewayVerified = Number(req.gateway_verified_at) > 0 &&
+      String(req.gateway_currency ?? "") === "RWF" &&
+      Number(req.gateway_amount_rwf) === Number(req.amount_rwf) &&
+      Boolean(String(req.gateway_reference ?? "").trim()) &&
+      Boolean(String(req.gateway_transaction_id ?? "").trim());
+    const manualVerificationNote = String(data.verificationNote ?? "").trim();
+    if (!gatewayVerified && (data.providerVerified !== true || manualVerificationNote.length < 5)) {
+      throw new Error("This payment has no verified gateway settlement. Record the provider transaction check before issuing an unlock code.");
+    }
+    const verificationNote = gatewayVerified
+      ? `Automated ${String(req.gateway_provider)} verification: reference ${String(req.gateway_reference)}; transaction ${String(req.gateway_transaction_id)}; amount ${Number(req.gateway_amount_rwf)} RWF; verified ${new Date(Number(req.gateway_verified_at)).toISOString()}.`
+      : manualVerificationNote;
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
     const trustedFeeRate = 2000;
@@ -292,34 +301,39 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     }
 
     const expiresAt = await activateShop(ctx, shopId, { addDays: calc.days, branches: req.branch_count, workers: req.worker_count, devices: req.device_count || 1, monthly: calc.monthly });
-    await audit(ctx, admin.email, "APPROVE_PAYMENT", `@${req.owner_username}`, `Manually confirmed in provider records: ${verificationNote}. Customer SMS: ${paymentNote || "not supplied"}. ${payerFullName || payerPhone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. Unique BB3 code issued for ${req.id}.`);
+    await audit(ctx, admin.email, "APPROVE_PAYMENT", `@${req.owner_username}`, `Provider verification evidence: ${verificationNote}. Customer SMS: ${paymentNote || "not supplied"}. ${payerFullName || payerPhone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. Unique BB3 code issued for ${req.id}.`);
     return { code: codeToUse, days: calc.days, tier: calc.tier, total: calc.total, expiresAt, shopName: req.shop_name, username: req.owner_username, phone: payerPhone, alreadyApproved: false };
   });
 
 export const directAutoUnlock = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { requestId: string; providerVerified: true; verificationNote: string }) =>
+  .inputValidator((d: { requestId: string; providerVerified: true; verificationNote?: string }) =>
     z.object({
       requestId: z.string().min(1).max(200),
       providerVerified: z.literal(true),
-      verificationNote: z.string().trim().min(5).max(500),
+      verificationNote: z.string().trim().max(500).default(""),
     }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
     const { data: req, error } = await ctx.supabase
       .from("payment_requests")
-      .select("id,shop_name,owner_username,owner_phone,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at")
+      .select("id,shop_name,owner_username,owner_phone,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,gateway_provider,gateway_reference,gateway_transaction_id,gateway_amount_rwf,gateway_currency,gateway_verified_at")
       .eq("id", data.requestId)
       .maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
-    if (data.providerVerified !== true) {
-      throw new Error("A manual provider-payment verification is required before a shop can be activated.");
+    const gatewayVerified = Number(req.gateway_verified_at) > 0 &&
+      String(req.gateway_currency ?? "") === "RWF" &&
+      Number(req.gateway_amount_rwf) === Number(req.amount_rwf) &&
+      Boolean(String(req.gateway_reference ?? "").trim()) &&
+      Boolean(String(req.gateway_transaction_id ?? "").trim());
+    const manualVerificationNote = String(data.verificationNote ?? "").trim();
+    if (!gatewayVerified && (data.providerVerified !== true || manualVerificationNote.length < 5)) {
+      throw new Error("This payment has no verified gateway settlement. Record the provider transaction check before activating the shop.");
     }
-    const verificationNote = data.verificationNote.trim();
-    if (verificationNote.length < 5) {
-      throw new Error("Record what you confirmed in the MTN MoMo or Airtel Money merchant transaction history.");
-    }
+    const verificationNote = gatewayVerified
+      ? `Automated ${String(req.gateway_provider)} verification: reference ${String(req.gateway_reference)}; transaction ${String(req.gateway_transaction_id)}; amount ${Number(req.gateway_amount_rwf)} RWF; verified ${new Date(Number(req.gateway_verified_at)).toISOString()}.`
+      : manualVerificationNote;
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
     const feePerDeviceRwf = 2_000;
@@ -434,7 +448,7 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
       admin.email,
       "DIRECT_AUTO_UNLOCK_PAYMENT",
       `@${req.owner_username}`,
-      `Direct cloud activation after manual provider verification: ${verificationNote}. ${req.payer_full_name || req.payer_phone || req.owner_phone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. No unlock code issued.`,
+      `Direct cloud activation after provider verification: ${verificationNote}. ${req.payer_full_name || req.payer_phone || req.owner_phone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. No unlock code issued.`,
     );
     return {
       direct: true,
@@ -1196,4 +1210,52 @@ export const revokeTeamRole = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     await audit(ctx, admin.email, "REVOKE_ROLE", data.userId, data.role);
     return { ok: true };
+  });
+
+
+/**
+ * Immediately revokes a shop owner's authenticated website membership.
+ * Existing access tokens stop authorizing My Shop server functions because
+ * every request rechecks the active membership row.
+ */
+export const revokeShopOwnerMembership = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { userId: string; shopId: string }) =>
+    z.object({ userId: z.string().uuid(), shopId: z.string().trim().min(3).max(160) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requireAdmin(ctx);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const now = Date.now();
+    const { data: membership, error: membershipError } = await supabaseAdmin
+      .from("shop_owner_memberships")
+      .update({ status: "REVOKED", revoked_at: now })
+      .eq("user_id", data.userId)
+      .eq("shop_id", data.shopId)
+      .eq("status", "ACTIVE")
+      .eq("revoked_at", 0)
+      .select("id")
+      .maybeSingle();
+    if (membershipError) throw new Error("Could not revoke the owner session.");
+    if (!membership) throw new Error("No active owner membership was found for this user and shop.");
+    await audit(ctx, admin.email, "REVOKE_SHOP_OWNER", data.shopId, `Revoked owner user ${data.userId}; membership ${membership.id}.`);
+    return { ok: true, revokedAt: now };
+  });
+
+
+export const listShopOwnerMemberships = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { shopId: string }) => z.object({ shopId: z.string().trim().min(3).max(160) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    await requireAdmin(ctx);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: memberships, error } = await supabaseAdmin
+      .from("shop_owner_memberships")
+      .select("id,user_id,owner_username,owner_phone,status,created_at,last_verified_at,revoked_at")
+      .eq("shop_id", data.shopId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw new Error("Could not load shop owner membership records.");
+    return memberships ?? [];
   });

@@ -40,6 +40,12 @@ describe("tenant key and USSD", () => {
     expect(buildMtnUssd(5000, { mtn_momo_code: "", mtn_momo_phone: "0788000000" })).toBe("*182*1*1*0788000000*5000#");
     expect(buildAirtelUssd(5000, { airtel_money_phone: "0738000000" })).toBe("*500*1*1*0738000000*5000#");
   });
+  it("does not fabricate payment instructions when merchant configuration is missing", () => {
+    expect(buildMtnUssd(5000, {})).toBe("");
+    expect(buildMtnUssd(5000, { mtn_momo_code: "", mtn_momo_phone: "" })).toBe("");
+    expect(buildAirtelUssd(5000, {})).toBe("");
+    expect(buildAirtelUssd(5000, { airtel_money_phone: "" })).toBe("");
+  });
 });
 
 describe("license lifecycle", () => {

@@ -1678,11 +1678,11 @@ create table if not exists public.admin_profiles (
 create table if not exists public.app_config (
   id text primary key default 'global',
   admin_whatsapp_number text not null default '',
-  mtn_momo_code text not null default '054321',
-  mtn_momo_phone text not null default '0788765432',
-  mtn_recipient_name text not null default 'BeBoss Pay',
-  airtel_money_phone text not null default '0738765432',
-  airtel_recipient_name text not null default 'BeBoss Pay',
+  mtn_momo_code text not null default '',
+  mtn_momo_phone text not null default '',
+  mtn_recipient_name text not null default '',
+  airtel_money_phone text not null default '',
+  airtel_recipient_name text not null default '',
   per_device_fee_rwf integer not null default 2000,
   apk_download_url text not null default '',
   apk_version text not null default '2.1.0',
@@ -1869,13 +1869,13 @@ create table if not exists public.payment_requests (
 
   function buildMtnUssd(amount, cfg) {
     const code = String(cfg?.mtn_momo_code || '').trim();
-    const phone = String(cfg?.mtn_momo_phone || '0788765432').trim();
-    return code && code !== '0' ? `*182*8*1*${code}*${amount}#` : `*182*1*1*${phone}*${amount}#`;
+    const phone = String(cfg?.mtn_momo_phone || '').trim();
+    return code && code !== '0' ? `*182*8*1*${code}*${amount}#` : phone ? `*182*1*1*${phone}*${amount}#` : '';
   }
 
   function buildAirtelUssd(amount, cfg) {
-    const phone = String(cfg?.airtel_money_phone || '0738765432').trim();
-    return `*500*1*1*${phone}*${amount}#`;
+    const phone = String(cfg?.airtel_money_phone || '').trim();
+    return phone ? `*500*1*1*${phone}*${amount}#` : '';
   }
 
   function loadInitialSession() {
@@ -2573,9 +2573,9 @@ create table if not exists public.payment_requests (
           admin_whatsapp_number: String(payConfig.admin_whatsapp_number || '').trim(),
           mtn_momo_code: String(payConfig.mtn_momo_code || '').trim(),
           mtn_momo_phone: String(payConfig.mtn_momo_phone || '').trim(),
-          mtn_recipient_name: String(payConfig.mtn_recipient_name || 'BeBoss Pay').trim(),
+          mtn_recipient_name: String(payConfig.mtn_recipient_name || '').trim(),
           airtel_money_phone: String(payConfig.airtel_money_phone || '').trim(),
-          airtel_recipient_name: String(payConfig.airtel_recipient_name || 'BeBoss Pay').trim(),
+          airtel_recipient_name: String(payConfig.airtel_recipient_name || '').trim(),
           per_device_fee_rwf: Math.max(0, Number(payConfig.per_device_fee_rwf) || 2000),
           apk_download_url: String(payConfig.apk_download_url || '').trim(),
           apk_version: String(payConfig.apk_version || '2.1.0').trim() || '2.1.0',
@@ -3686,7 +3686,7 @@ create table if not exists public.payment_requests (
     }, []);
 
     const waSupportUrl = useMemo(() => {
-      const waNum = payConfig.admin_whatsapp_number || '250788765432';
+      const waNum = payConfig.admin_whatsapp_number || '';
       return buildWhatsAppUrl(waNum, 'Hello BeBoss Admin, I would like assistance installing & activating BeBoss POS.');
     }, [payConfig.admin_whatsapp_number, buildWhatsAppUrl]);
 
@@ -4386,7 +4386,7 @@ create table if not exists public.payment_requests (
                   target="_blank"
                   rel="noopener noreferrer"
                   href={buildWhatsAppUrl(
-                    payConfig.admin_whatsapp_number || '250788765432',
+                    payConfig.admin_whatsapp_number || '',
                     `Hello BeBoss Admin! I am interested in BeBoss POS (${calcBranches} branches, ${calcWorkers} staff, ${calcDevices} paired devices, ${calcMonths} mo = ${calcResult.total.toLocaleString()} FRw).`
                   )}
                 >
@@ -4534,11 +4534,11 @@ create table if not exists public.payment_requests (
       const [payConfig, setPayConfig] = useState({
         id: 'global',
         admin_whatsapp_number: '',
-        mtn_momo_code: '054321',
-        mtn_momo_phone: '0788765432',
-        mtn_recipient_name: 'BeBoss Pay',
-        airtel_money_phone: '0738765432',
-        airtel_recipient_name: 'BeBoss Pay',
+        mtn_momo_code: '',
+        mtn_momo_phone: '',
+        mtn_recipient_name: '',
+        airtel_money_phone: '',
+        airtel_recipient_name: '',
         per_device_fee_rwf: 2000,
         apk_download_url: '',
         apk_version: '2.1.0'

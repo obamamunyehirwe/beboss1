@@ -123,20 +123,26 @@ object MoMoPaymentGateway {
     ): GatewayTransactionResult {
         return GatewayTransactionResult(
             isSuccess = false,
-            isPending = true,
-            status = "PENDING_VERIFICATION",
+            isPending = false,
+            status = "HOSTED_CHECKOUT_REQUIRED",
             transactionReference = "",
             financialId = null,
             amount = amount,
             provider = provider,
             payerPhone = "",
-            message = "BeBoss no longer asks for a transaction reference. Submit payer details, payment date/time and an optional note in the subscription proof form. An administrator verifies settlement with the provider."
+            message = "This reference has not been verified with the payment provider. Open BeBoss secure hosted checkout; an SMS reference or USSD prompt cannot confirm settlement."
         )
     }
     /**
-     * Sends a request to an optional configured backend and polls its reported status.
-     * A submitted SMS reference is only format-checked here; it is not verified with the operator.
+     * Legacy adapter retained for source compatibility only.
+     *
+     * A shop-configured backend URL is not a trusted payment provider. The app cannot
+     * independently verify MTN/Airtel settlement, so this method deliberately refuses
+     * to return SUCCESS based on arbitrary HTTP JSON or an unverified SMS reference.
+     * New subscription payments must use BeBoss hosted checkout and its signed provider
+     * webhook + server-side provider transaction verification.
      */
+    @Suppress("UNUSED_PARAMETER")
     suspend fun executePaymentRequest(
         context: Context,
         shopProfile: ShopProfile,
@@ -162,180 +168,16 @@ object MoMoPaymentGateway {
             )
         }
 
-        // Subscription proof is submitted with payer details and payment time; no SMS TxID is collected.
-
-        val backendUrl = shopProfile.backendServerUrl?.trim()
-        val hasBackend = !backendUrl.isNullOrBlank() && (backendUrl.startsWith("https://") || backendUrl.startsWith("http://"))
-
-        if (!hasBackend) {
-            // No automated cloud gateway configured on this shop profile.
-            // Prompt the merchant to dial USSD and submit payer/payment-time details.
-            return@withContext GatewayTransactionResult(
-                isSuccess = false,
-                isPending = true,
-                status = "PENDING_CONFIRMATION",
-                transactionReference = "REF-PENDING-" + UUID.randomUUID().toString().take(8).uppercase(Locale.ROOT),
-                financialId = null,
-                amount = amount,
-                provider = provider,
-                payerPhone = normalizedPhone,
-                message = "Payment is not confirmed by the dialer. Complete the USSD flow, then submit payer details and payment date/time for administrator verification."
-            )
-        }
-
-        if (!isOnline(context)) {
-            return@withContext GatewayTransactionResult(
-                isSuccess = false,
-                isPending = false,
-                status = "OFFLINE",
-                transactionReference = "",
-                financialId = null,
-                amount = amount,
-                provider = provider,
-                payerPhone = normalizedPhone,
-                message = "No active internet connection. Complete the USSD flow and save the payment proof; BeBoss will sync it when internet returns."
-            )
-        }
-
-        // Execute real HTTP API call to configured payment gateway endpoint
-        val referenceId = UUID.randomUUID().toString()
-        val safeBackendUrl = backendUrl.orEmpty().trim()
-        val requestUrl = if (safeBackendUrl.endsWith("/")) "${safeBackendUrl}api/momo/request-to-pay" else "$safeBackendUrl/api/momo/request-to-pay"
-
-        try {
-            val jsonBody = JSONObject().apply {
-                put("referenceId", referenceId)
-                put("shopId", shopProfile.id)
-                put("shopName", shopProfile.shopName)
-                put("payerPhone", normalizedPhone)
-                put("provider", provider)
-                put("amount", amount)
-                put("currency", "RWF")
-                put("description", description)
-                put("timestamp", System.currentTimeMillis())
-            }
-
-            val request = Request.Builder()
-                .url(requestUrl)
-                .addHeader("Content-Type", "application/json")
-                .addHeader("X-Shop-Device", SubscriptionSecurityManager.computeDeviceChallenge(shopProfile))
-                .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-
-            val response = httpClient.newCall(request).execute()
-            val responseBody = response.body?.string() ?: ""
-
-            if (!response.isSuccessful) {
-                return@withContext GatewayTransactionResult(
-                    isSuccess = false,
-                    isPending = false,
-                    status = "FAILED",
-                    transactionReference = referenceId,
-                    financialId = null,
-                    amount = amount,
-                    provider = provider,
-                    payerPhone = normalizedPhone,
-                    message = "Payment gateway error (${response.code}): ${response.message.ifBlank { "Request was rejected by gateway" }}"
-                )
-            }
-
-            val respJson = try { JSONObject(responseBody) } catch (_: Exception) { JSONObject() }
-            val status = respJson.optCleanString("status", "PENDING").uppercase(Locale.ROOT)
-            val financialId = respJson.optCleanString("financialTransactionId", "")
-
-            when (status) {
-                "SUCCESSFUL", "SUCCESS" -> {
-                    GatewayTransactionResult(
-                        isSuccess = true,
-                        isPending = false,
-                        status = "SUCCESSFUL",
-                        transactionReference = referenceId,
-                        financialId = financialId.ifBlank { referenceId },
-                        amount = amount,
-                        provider = provider,
-                        payerPhone = normalizedPhone,
-                        message = "MoMo payment of $amount FRw confirmed by gateway."
-                    )
-                }
-                "PENDING" -> {
-                    // Poll gateway up to 3 times with delay
-                    var pollStatus = "PENDING"
-                    var pollFinancialId = ""
-                    val statusUrl = if (safeBackendUrl.endsWith("/")) "${safeBackendUrl}api/momo/status/$referenceId" else "$safeBackendUrl/api/momo/status/$referenceId"
-
-                    for (attempt in 1..3) {
-                        delay(2500)
-                        try {
-                            val pollReq = Request.Builder().url(statusUrl).get().build()
-                            val pollResp = httpClient.newCall(pollReq).execute()
-                            if (pollResp.isSuccessful) {
-                                val pJson = JSONObject(pollResp.body?.string() ?: "{}")
-                                pollStatus = pJson.optCleanString("status", "PENDING").uppercase(Locale.ROOT)
-                                pollFinancialId = pJson.optCleanString("financialTransactionId", "")
-                                if (pollStatus == "SUCCESSFUL" || pollStatus == "SUCCESS") break
-                            }
-                        } catch (e: kotlinx.coroutines.CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Polling attempt $attempt failed: ${e.safeMessage("Poll error")}")
-                        }
-                    }
-
-                    if (pollStatus == "SUCCESSFUL" || pollStatus == "SUCCESS") {
-                        GatewayTransactionResult(
-                            isSuccess = true,
-                            isPending = false,
-                            status = "SUCCESSFUL",
-                            transactionReference = referenceId,
-                            financialId = pollFinancialId.ifBlank { referenceId },
-                            amount = amount,
-                            provider = provider,
-                            payerPhone = normalizedPhone,
-                            message = "Payment approved and verified successfully!"
-                        )
-                    } else {
-                        GatewayTransactionResult(
-                            isSuccess = false,
-                            isPending = true,
-                            status = "PENDING",
-                            transactionReference = referenceId,
-                            financialId = null,
-                            amount = amount,
-                            provider = provider,
-                            payerPhone = normalizedPhone,
-                            message = "Prompt was sent to $normalizedPhone. Please approve on your phone or input the confirmation SMS reference code."
-                        )
-                    }
-                }
-                else -> {
-                    GatewayTransactionResult(
-                        isSuccess = false,
-                        isPending = false,
-                        status = "FAILED",
-                        transactionReference = referenceId,
-                        financialId = null,
-                        amount = amount,
-                        provider = provider,
-                        payerPhone = normalizedPhone,
-                        message = "Payment $status: ${respJson.optCleanString("message", "User declined or insufficient balance.")}"
-                    )
-                }
-            }
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "Gateway communication exception", e)
-            GatewayTransactionResult(
-                isSuccess = false,
-                isPending = false,
-                status = "NETWORK_ERROR",
-                transactionReference = referenceId,
-                financialId = null,
-                amount = amount,
-                provider = provider,
-                payerPhone = normalizedPhone,
-                message = "Could not reach payment gateway: ${e.safeMessage("Connection timed out")}"
-            )
-        }
+        GatewayTransactionResult(
+            isSuccess = false,
+            isPending = false,
+            status = "HOSTED_CHECKOUT_REQUIRED",
+            transactionReference = "",
+            financialId = null,
+            amount = amount,
+            provider = provider,
+            payerPhone = normalizedPhone,
+            message = "Automated payment collection must be started through BeBoss secure hosted checkout. A shop-configured server, USSD dialer, SMS text or client response cannot confirm provider settlement."
+        )
     }
 }

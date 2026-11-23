@@ -2,6 +2,7 @@ package com.beboss.shopmgmt
 
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.util.SubscriptionSecurityManager
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -206,6 +207,8 @@ class SubscriptionSecurityTest {
             smsTransactionReference = "1829304756"
         )
         assertFalse(unverifiedOfflineMomo.isSuccess)
-        assertTrue(unverifiedOfflineMomo.isPending)
+        assertFalse(unverifiedOfflineMomo.isPending)
+        assertEquals("", unverifiedOfflineMomo.transactionRef)
+        assertTrue(unverifiedOfflineMomo.message.contains("hosted checkout", ignoreCase = true))
     }
 }
