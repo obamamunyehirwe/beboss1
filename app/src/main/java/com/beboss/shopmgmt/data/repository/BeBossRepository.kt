@@ -117,6 +117,7 @@ class BeBossRepository(private val database: AppDatabase) {
     val branchTransferManager = BranchTransferManager(branchDao, stockTransferDao, productDao, shopProfileDao, syncQueueDao, syncTombstoneDao, database)
     val subscriptionManager = SubscriptionManager(shopProfileDao, redeemedVoucherDao)
     val analyticsEngine = AnalyticsEngine(saleDao)
+    val allSaleItems: Flow<List<SaleItem>> = saleDao.getAllSaleItems()
     val cloudSyncManager = CloudSyncManager(database)
 
     // Sync Audit Logs & Pending Queue & Dead-Letter Queue & Local Audit Logs
