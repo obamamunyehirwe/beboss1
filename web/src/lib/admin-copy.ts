@@ -483,6 +483,12 @@ const words: Record<string, readonly [string, string, string]> = {
   "Initiate refund": ["Tangira gusubiza amafaranga", "Lancer le remboursement", "Anzisha marejesho"],
 };
 
+
+  "Refunds are asynchronous. A request being accepted does not mean the funds have reached the customer.": ["Gusubiza amafaranga bikorwa mu byiciro. Kwakira ubusabe ntibivuze ko umukiriya yamaze kubona amafaranga.", "Les remboursements sont asynchrones. L’acceptation d’une demande ne signifie pas que le client a déjà reçu les fonds.", "Marejesho huchukua muda. Ombi kukubaliwa hakumaanishi kuwa mteja tayari amepokea pesa."],
+  "original verified payment": ["ubwishyu bw’umwimerere bwemejwe", "paiement initial vérifié", "malipo ya awali yaliyothibitishwa"],
+  "Refund request sent to the payment provider": ["Ubusabe bwo gusubiza amafaranga bwoherejwe ku mutanga serivisi", "La demande de remboursement a été envoyée au prestataire", "Ombi la marejesho limetumwa kwa mtoa huduma"],
+  "Provider refund status refreshed": ["Imiterere yo gusubiza amafaranga yavuguruwe", "L’état du remboursement a été actualisé", "Hali ya marejesho imesasishwa"],
+
 };
 export function useAdminText() {
   try {
