@@ -399,69 +399,6 @@ export const addMyShopDevice = createServerFn({ method: "POST" })
     return { ok: true, id: slot.id, joinCode, expiresAt };
   });
 
-const proofSchema = z.object({
-  shopName: z.string().trim().min(2).max(120),
-  username: z.string().trim().min(2).max(80),
-  phone: z.string().trim().min(9).max(30),
-  provider: z.enum(["MTN MoMo", "Airtel Money"]),
-  payerPhone: z.string().trim().min(9).max(30),
-  payerName: z.string().trim().min(2).max(120),
-  paymentTimeMs: z.number().int().positive().optional(),
-  paymentNote: z.string().trim().min(8, "Paste the successful MTN MoMo or Airtel Money confirmation SMS.").max(1000),
-  months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]),
-  branches: z.number().int().min(1).max(100),
-  workers: z.number().int().min(1).max(500),
-  devices: z.number().int().min(1).max(100),
-  ussd: z.string().max(80),
-});
-
-export const submitPaymentProof = createServerFn({ method: "POST" })
-  .inputValidator((d: z.infer<typeof proofSchema>) => proofSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
-    const sb = createPublicClient(key);
-    const { data: config } = await sb
-      .from("app_config")
-      .select("per_device_fee_rwf")
-      .eq("id", "global")
-      .maybeSingle();
-    const feePerDeviceRwf = Math.max(0, Number(config?.per_device_fee_rwf) || 2000);
-    const amount = calculateSubscriptionFee(
-      data.branches,
-      data.workers,
-      data.months,
-      data.devices,
-      feePerDeviceRwf,
-    ).total;
-    const now = Date.now();
-    const { error } = await sb.from("payment_requests").insert({
-      id: `WEB-${crypto.randomUUID()}`,
-      shop_name: data.shopName,
-      owner_username: data.username.toLowerCase(),
-      owner_phone: data.phone,
-      provider: data.provider,
-      ussd_code: data.ussd,
-      payer_phone: data.payerPhone,
-      payer_full_name: data.payerName,
-      amount_rwf: amount,
-      duration_months: data.months,
-      branch_count: data.branches,
-      worker_count: data.workers,
-      device_count: data.devices,
-      fee_per_device_rwf: feePerDeviceRwf,
-      payment_time_ms: Number(data.paymentTimeMs || now),
-      payment_note: data.paymentNote.trim(),
-      status: "PENDING_VERIFICATION",
-      source: "WEB",
-      created_at: now,
-      updated_at: now,
-    });
-    if (error) {
-      throw new Error("Could not submit your payment proof. Please try again.");
-    }
-    return { ok: true, amount };
-  });
-
 // ---------------------------------------------------------------------------
 // Branch & stock-transfer management (owner portal, tenant-scoped via X-Shop-Sync-Key)
 // Writes set a fresh HLC timestamp so the phone's HLC merge adopts the web edit.
