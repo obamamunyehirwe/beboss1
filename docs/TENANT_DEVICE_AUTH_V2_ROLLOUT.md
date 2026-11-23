@@ -118,6 +118,22 @@ after the migration is applied. Old APK versions that do not support device
 Auth cannot continue cloud sync after this migration; upgrade and re-enrollment
 must therefore happen as a coordinated staging-tested rollout.
 
+## Device binding limitation to understand before production
+
+The current invitation is bound to the terminal's stable BeBoss installation ID and
+the one-time 128-bit invitation code. Android Keystore protects the refresh token
+at rest, but the current protocol does not yet perform Android hardware key
+attestation or a signed proof-of-possession challenge during re-enrollment. The
+installation ID is not a hardware serial number and must not be treated as
+unforgeable by itself. Keep invitation codes confidential and deliver them only
+through the intended owner-controlled pairing flow.
+
+For high-assurance device identity, a follow-on release should register an
+Android Keystore public key per device and require a signature over the invite
+hash and device ID on every enrollment or re-enrollment. Add server-side key
+rotation/recovery and hardware-backed attestation where the device supports it.
+Do not describe the present installation-ID binding as hardware attestation.
+
 ## Explicit deployment boundary
 
 This branch contains code and migrations only. It does not apply any SQL to the
