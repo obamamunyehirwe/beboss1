@@ -135,7 +135,7 @@ The app follows **MVVM with Domain Managers and UI State Coordinators**:
    - **Hybrid Logical Clocks (`HlcClock`)** + `ConflictResolutionEngine` for deterministic Last-Write-Wins (LWW) conflict resolution across multi-device edits.
    - **Soft-Delete Tombstones (`SyncTombstone`)** propagate deletions accurately across terminals without ghost resurrection.
    - **Durable Outbox + Dead-Letter Queue (`SyncQueueDao`, `DeadLetterDao`)**: Failed mutations retry with exponential backoff; permanently failing payloads quarantine cleanly into `dead_letter_queue` instead of blocking the outbox.
-   - **LAN P2P & Cloud Sync (`LocalNetworkSyncServer`, `SupabaseAdminClient`, `BeBossCloudSyncWorker`)**: Sync either over local Wi-Fi/hotspot or via chunked Supabase snapshots.
+   - **LAN P2P & Cloud Sync (`LocalNetworkSyncServer`, `SupabaseAdminClient`, `BeBossCloudSyncWorker`)**: Sync either over local Wi-Fi/hotspot or via chunked Supabase snapshots. Each shop receives a random 256-bit LAN pairing key from Supabase; each paired terminal wraps it with its own Android Keystore before HMAC-authenticated discovery and AES-GCM peer sync. Android 13+ asks for Nearby Wi-Fi access before discovery. This is BeBoss-terminal discovery over the same Wi-Fi/hotspot, not Bluetooth scanning of arbitrary nearby phones.
 4. **Diagnostics & Maintenance (`DiagnosticsDialog` & `DatabaseMigrations`)**:
    - 3-tab diagnostics console inspecting security posture, Room/SQLCipher `PRAGMA integrity_check`, WAL checkpoints, pending/dead-letter queue counts, and unified local + cloud audit trails.
    - Full non-destructive Room migration chain (`MIGRATION_1_2` through `MIGRATION_13_14`) with idempotent table/column/index guards.
