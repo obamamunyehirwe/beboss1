@@ -74,7 +74,7 @@ function PricingPage() {
           <div className="max-w-2xl mb-8">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               <CheckCircle2 className="size-3.5" />
-              {a("{a("Pilot measure")}ment guide")}
+              {a("Pilot measurement guide")}
             </span>
             <h2 className="mt-3 text-3xl font-bold sm:text-4xl">{a("Measure outcomes before claiming savings")}</h2>
             <p className="mt-2 text-sm text-muted-foreground">
