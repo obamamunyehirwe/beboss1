@@ -436,11 +436,12 @@ object SupabaseAdminClient {
      * Returns true if sync_generation, chunk_index, chunk_count columns exist.
      * Call this to verify migration 0004 has been applied.
      */
-    suspend fun checkSnapshotMigrationApplied(): Boolean = withContext(Dispatchers.IO) {
-        if (!isConfigured()) return@withContext false
+    suspend fun checkSnapshotMigrationApplied(shopSyncKey: String): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank()) return@withContext false
         try {
             val req = buildRestRequest(
-                "branch_sync_snapshots?select=sync_generation,chunk_index,chunk_count&limit=1"
+                "branch_sync_snapshots?select=sync_generation,chunk_index,chunk_count&shop_sync_key=eq.${URLEncoder.encode(shopSyncKey, "UTF-8")}&limit=1",
+                tenantSyncKey = shopSyncKey
             ).get().build()
             client.newCall(req).execute().use { resp ->
                 return@withContext resp.isSuccessful
