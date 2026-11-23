@@ -459,6 +459,32 @@ object DatabaseMigrations {
         }
     }
 
+    /**
+     * Adds causal metadata to stock transfers without replacing historical records.
+     * Existing updatedAt values are promoted to packed HLC values for safe comparison.
+     */
+    val MIGRATION_16_17 = object : Migration(16, 17) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            if (!tableExists(db, "stock_transfers")) return
+            val columns = getExistingColumns(db, "stock_transfers")
+            if (!columns.contains("updatedAt")) {
+                db.execSQL("ALTER TABLE stock_transfers ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+            }
+            if (!columns.contains("hlcTimestamp")) {
+                db.execSQL("ALTER TABLE stock_transfers ADD COLUMN hlcTimestamp INTEGER NOT NULL DEFAULT 0")
+            }
+            if (!columns.contains("lastModifiedDeviceId")) {
+                db.execSQL("ALTER TABLE stock_transfers ADD COLUMN lastModifiedDeviceId TEXT NOT NULL DEFAULT ''")
+            }
+            db.execSQL("UPDATE stock_transfers SET updatedAt = createdAt WHERE updatedAt = 0")
+            db.execSQL("""
+                UPDATE stock_transfers
+                SET hlcTimestamp = updatedAt << 16
+                WHERE hlcTimestamp = 0 AND updatedAt > 0
+            """.trimIndent())
+        }
+    }
+
     val ALL_MIGRATIONS = arrayOf(
         MIGRATION_1_2,
         MIGRATION_2_3,
@@ -474,6 +500,7 @@ object DatabaseMigrations {
         MIGRATION_12_13,
         MIGRATION_13_14,
         MIGRATION_14_15,
-        MIGRATION_15_16
+        MIGRATION_15_16,
+        MIGRATION_16_17
     )
 }

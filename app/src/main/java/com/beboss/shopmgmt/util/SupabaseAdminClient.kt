@@ -1853,9 +1853,9 @@ object SupabaseAdminClient {
                         put("received_at", t.receivedAt)
                         put("synced", t.synced)
                         put("created_at", t.createdAt)
-                        put("updated_at", System.currentTimeMillis())
-                        put("hlc_timestamp", HlcClock.tick(t.createdAt))
-                        put("last_modified_device_id", "")
+                        put("updated_at", t.updatedAt.coerceAtLeast(t.createdAt))
+                        put("hlc_timestamp", t.hlcTimestamp.takeIf { it > 0L } ?: HlcClock.tick(t.updatedAt.coerceAtLeast(t.createdAt)))
+                        put("last_modified_device_id", t.lastModifiedDeviceId.ifBlank { "ANDROID" })
                     })
                 }
                 val req = buildRestRequest("shop_stock_transfers?on_conflict=id", tenantSyncKey = shopSyncKey)
@@ -1890,6 +1890,68 @@ object SupabaseAdminClient {
         } catch (e: Exception) {
             Log.e(TAG, "fetchShopStockTransfers error: ${e.message}")
             emptyList()
+        }
+    }
+
+    /**
+     * Claims one remote transfer command for this paired device. The database RPC uses
+     * the tenant RLS header and a lease so two devices cannot apply the same command.
+     */
+    suspend fun claimShopStockTransfer(
+        shopSyncKey: String,
+        transferId: String,
+        deviceId: String,
+        leaseMs: Long = 180_000L
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank() || transferId.isBlank() || deviceId.isBlank()) {
+            return@withContext false
+        }
+        try {
+            val payload = JSONObject()
+                .put("p_transfer_id", transferId)
+                .put("p_device_id", deviceId)
+                .put("p_lease_ms", leaseMs.coerceIn(30_000L, 600_000L))
+            val request = buildRestRequest("rpc/claim_shop_stock_transfer", tenantSyncKey = shopSyncKey)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "claimShopStockTransfer HTTP ${response.code}")
+                    return@withContext false
+                }
+                response.body?.string()?.trim()?.equals("true", ignoreCase = true) == true
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "claimShopStockTransfer failed: ${e.safeMessage()}")
+            false
+        }
+    }
+
+    suspend fun releaseShopStockTransferClaim(
+        shopSyncKey: String,
+        transferId: String,
+        deviceId: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank() || transferId.isBlank() || deviceId.isBlank()) {
+            return@withContext false
+        }
+        try {
+            val payload = JSONObject()
+                .put("p_transfer_id", transferId)
+                .put("p_device_id", deviceId)
+            val request = buildRestRequest("rpc/release_shop_stock_transfer_claim", tenantSyncKey = shopSyncKey)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "releaseShopStockTransferClaim HTTP ${response.code}")
+                    return@withContext false
+                }
+                response.body?.string()?.trim()?.equals("true", ignoreCase = true) == true
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "releaseShopStockTransferClaim failed: ${e.safeMessage()}")
+            false
         }
     }
 

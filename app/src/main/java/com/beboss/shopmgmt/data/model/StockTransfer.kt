@@ -1,5 +1,6 @@
 package com.beboss.shopmgmt.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -37,5 +38,11 @@ data class StockTransfer(
     val receivedBy: String = "",
     val receivedAt: Long = 0L,
     val synced: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /** Last mutation time in epoch milliseconds; separate from the packed HLC. */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = createdAt,
+    /** Packed HLC: epoch milliseconds in upper bits and a logical counter in the lower 16 bits. */
+    @ColumnInfo(defaultValue = "0") val hlcTimestamp: Long = 0L,
+    /** Stable writer identity used for deterministic conflict resolution. */
+    @ColumnInfo(defaultValue = "''") val lastModifiedDeviceId: String = ""
 )
