@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, FilterChips, LoadingBlock, SearchInput, TableShell, downloadCsv, matches } from "@/components/admin/ui";
 import { getShopRecords } from "@/lib/insights.functions";
 import { formatDateTime, relativeTime } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
 
 const n = (v: number) => Math.round(v).toLocaleString("en-US");
 const th = "px-3 py-2 text-left text-xs font-medium text-muted-foreground";
@@ -16,6 +17,7 @@ const PAGE_SIZE = 100;
 
 /** Browsable copy of all operational records from the shop's latest complete phone sync. */
 export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: string }) {
+  const a = useAdminText();
   const fetchRecords = useServerFn(getShopRecords);
   const q = useQuery({
     queryKey: ["admin", "records", shopId],
@@ -61,7 +63,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
   const transfers = useMemo(() => (r?.stockTransfers ?? []).filter((t) => matches(search, t.number, t.product, t.fromBranch, t.toBranch, t.status)), [r, search]);
 
   if (q.isLoading) return <LoadingBlock />;
-  if (q.error) return <EmptyState title="Couldn't load shop records" sub={q.error instanceof Error ? q.error.message : "Try again"} />;
+  if (q.error) return <EmptyState title={a("Couldn't load shop records")} sub={q.error instanceof Error ? q.error.message : "Try again"} />;
   if (!r) return <EmptyState title={q.data?.error ? "Snapshot could not be read" : "No phone data synced yet"} sub={q.data?.error ?? "Records sync automatically when the shop's phone has internet access."} />;
   const cur = r.currency || "FRw";
 
@@ -103,7 +105,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
           </Toolbar>
           <TableShell>
             <table className="w-full min-w-[720px]">
-              <thead><tr className="border-b border-border"><th className={th}>Product</th><th className={th}>Category</th><th className={th}>Cost</th><th className={th}>Price</th><th className={th}>Margin</th><th className={th}>In stock</th></tr></thead>
+              <thead><tr className="border-b border-border"><th className={th}>{a("Product")}</th><th className={th}>{a("Category")}</th><th className={th}>{a("Cost")}</th><th className={th}>{a("Price")}</th><th className={th}>{a("Margin")}</th><th className={th}>{a("In stock")}</th></tr></thead>
               <tbody>
                 {pageItems("products", products).map((p) => (
                   <tr key={p.id} className="border-b border-border/60 last:border-0">
@@ -119,7 +121,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
                 ))}
               </tbody>
             </table>
-            {!products.length ? <p className="p-6 text-center text-sm text-muted-foreground">No products match.</p> : null}
+            {!products.length ? <p className="p-6 text-center text-sm text-muted-foreground">{a("No products match.")}</p> : null}
           </TableShell>
           {pager("products", products.length)}
         </TabsContent>
@@ -141,7 +143,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
           </Toolbar>
           <TableShell>
             <table className="w-full min-w-[640px]">
-              <thead><tr className="border-b border-border"><th className={th}>Customer</th><th className={th}>Phone</th><th className={th}>Type</th><th className={th}>Owes</th><th className={th}>Credit limit</th></tr></thead>
+              <thead><tr className="border-b border-border"><th className={th}>{a("Customer")}</th><th className={th}>{a("Phone")}</th><th className={th}>{a("Type")}</th><th className={th}>{a("Owes")}</th><th className={th}>{a("Credit limit")}</th></tr></thead>
               <tbody>
                 {pageItems("customers", customers).map((c) => (
                   <tr key={c.id} className="border-b border-border/60 last:border-0">
@@ -154,7 +156,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
                 ))}
               </tbody>
             </table>
-            {!customers.length ? <p className="p-6 text-center text-sm text-muted-foreground">No customers match.</p> : null}
+            {!customers.length ? <p className="p-6 text-center text-sm text-muted-foreground">{a("No customers match.")}</p> : null}
           </TableShell>
           {pager("customers", customers.length)}
         </TabsContent>
@@ -165,7 +167,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
           </Toolbar>
           <TableShell>
             <table className="w-full min-w-[820px]">
-              <thead><tr className="border-b border-border"><th className={th}>Receipt</th><th className={th}>When</th><th className={th}>Total</th><th className={th}>Profit</th><th className={th}>Paid by</th><th className={th}>Cashier</th><th className={th}>Branch</th><th className={th}>Items</th></tr></thead>
+              <thead><tr className="border-b border-border"><th className={th}>{a("Receipt")}</th><th className={th}>{a("When")}</th><th className={th}>{a("Total")}</th><th className={th}>{a("Profit")}</th><th className={th}>{a("Paid by")}</th><th className={th}>{a("Cashier")}</th><th className={th}>{a("Branch")}</th><th className={th}>{a("Items")}</th></tr></thead>
               <tbody>
                 {pageItems("sales", sales).map((s) => (
                   <tr key={s.id} className="border-b border-border/60 last:border-0">
@@ -181,7 +183,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
                 ))}
               </tbody>
             </table>
-            {!sales.length ? <p className="p-6 text-center text-sm text-muted-foreground">No sales match.</p> : null}
+            {!sales.length ? <p className="p-6 text-center text-sm text-muted-foreground">{a("No sales match.")}</p> : null}
           </TableShell>
           {pager("sales", sales.length)}
         </TabsContent>
@@ -192,7 +194,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
           </Toolbar>
           <TableShell>
             <table className="w-full min-w-[600px]">
-              <thead><tr className="border-b border-border"><th className={th}>When</th><th className={th}>Supplier</th><th className={th}>Product</th><th className={th}>Quantity</th><th className={th}>Cost</th></tr></thead>
+              <thead><tr className="border-b border-border"><th className={th}>{a("When")}</th><th className={th}>{a("Supplier")}</th><th className={th}>{a("Product")}</th><th className={th}>{a("Quantity")}</th><th className={th}>{a("Cost")}</th></tr></thead>
               <tbody>
                 {pageItems("purchases", purchases).map((p) => (
                   <tr key={p.id} className="border-b border-border/60 last:border-0">
@@ -205,7 +207,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
                 ))}
               </tbody>
             </table>
-            {!purchases.length ? <p className="p-6 text-center text-sm text-muted-foreground">No purchases recorded.</p> : null}
+            {!purchases.length ? <p className="p-6 text-center text-sm text-muted-foreground">{a("No purchases recorded.")}</p> : null}
           </TableShell>
           {pager("purchases", purchases.length)}
         </TabsContent>
@@ -213,7 +215,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
         <TabsContent value="staff" className="space-y-3">
           <TableShell>
             <table className="w-full min-w-[720px]">
-              <thead><tr className="border-b border-border"><th className={th}>Name</th><th className={th}>Username</th><th className={th}>Role</th><th className={th}>Branch</th><th className={th}>Permissions</th><th className={th}>Status</th></tr></thead>
+              <thead><tr className="border-b border-border"><th className={th}>{a("Name")}</th><th className={th}>{a("Username")}</th><th className={th}>{a("Role")}</th><th className={th}>{a("Branch")}</th><th className={th}>{a("Permissions")}</th><th className={th}>{a("Status")}</th></tr></thead>
               <tbody>
                 {pageItems("staff", staff).map((s) => (
                   <tr key={s.id} className="border-b border-border/60 last:border-0">
@@ -252,7 +254,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
           </Toolbar>
           <TableShell>
             <table className="w-full min-w-[820px]">
-              <thead><tr className="border-b border-border"><th className={th}>Receipt</th><th className={th}>Product</th><th className={th}>Category</th><th className={th}>Quantity</th><th className={th}>Unit price</th><th className={th}>Subtotal</th><th className={th}>Profit</th></tr></thead>
+              <thead><tr className="border-b border-border"><th className={th}>{a("Receipt")}</th><th className={th}>{a("Product")}</th><th className={th}>{a("Category")}</th><th className={th}>{a("Quantity")}</th><th className={th}>{a("Unit price")}</th><th className={th}>{a("Subtotal")}</th><th className={th}>{a("Profit")}</th></tr></thead>
               <tbody>
                 {pageItems("sale-items", saleItems).map((item) => (
                   <tr key={item.id} className="border-b border-border/60 last:border-0">
@@ -267,7 +269,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
                 ))}
               </tbody>
             </table>
-            {!saleItems.length ? <p className="p-6 text-center text-sm text-muted-foreground">No sale items recorded.</p> : null}
+            {!saleItems.length ? <p className="p-6 text-center text-sm text-muted-foreground">{a("No sale items recorded.")}</p> : null}
           </TableShell>
           {pager("sale-items", saleItems.length)}
         </TabsContent>
@@ -278,7 +280,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
           </Toolbar>
           <TableShell>
             <table className="w-full min-w-[820px]">
-              <thead><tr className="border-b border-border"><th className={th}>When</th><th className={th}>Customer</th><th className={th}>Amount</th><th className={th}>Previous debt</th><th className={th}>Remaining</th><th className={th}>Method</th><th className={th}>Recorded by</th></tr></thead>
+              <thead><tr className="border-b border-border"><th className={th}>{a("When")}</th><th className={th}>{a("Customer")}</th><th className={th}>{a("Amount")}</th><th className={th}>{a("Previous debt")}</th><th className={th}>{a("Remaining")}</th><th className={th}>{a("Method")}</th><th className={th}>{a("Recorded by")}</th></tr></thead>
               <tbody>
                 {pageItems("payments", payments).map((payment) => (
                   <tr key={payment.id} className="border-b border-border/60 last:border-0">
@@ -293,7 +295,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
                 ))}
               </tbody>
             </table>
-            {!payments.length ? <p className="p-6 text-center text-sm text-muted-foreground">No customer payments recorded.</p> : null}
+            {!payments.length ? <p className="p-6 text-center text-sm text-muted-foreground">{a("No customer payments recorded.")}</p> : null}
           </TableShell>
           {pager("payments", payments.length)}
         </TabsContent>
@@ -304,7 +306,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
           </Toolbar>
           <TableShell>
             <table className="w-full min-w-[680px]">
-              <thead><tr className="border-b border-border"><th className={th}>Branch</th><th className={th}>Code</th><th className={th}>Address</th><th className={th}>Phone</th><th className={th}>Manager</th><th className={th}>Status</th></tr></thead>
+              <thead><tr className="border-b border-border"><th className={th}>{a("Branch")}</th><th className={th}>{a("Code")}</th><th className={th}>{a("Address")}</th><th className={th}>{a("Phone")}</th><th className={th}>{a("Manager")}</th><th className={th}>{a("Status")}</th></tr></thead>
               <tbody>
                 {pageItems("branches", branches).map((branch) => (
                   <tr key={branch.id} className="border-b border-border/60 last:border-0">
@@ -318,7 +320,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
                 ))}
               </tbody>
             </table>
-            {!branches.length ? <p className="p-6 text-center text-sm text-muted-foreground">No branches recorded.</p> : null}
+            {!branches.length ? <p className="p-6 text-center text-sm text-muted-foreground">{a("No branches recorded.")}</p> : null}
           </TableShell>
           {pager("branches", branches.length)}
         </TabsContent>
@@ -329,7 +331,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
           </Toolbar>
           <TableShell>
             <table className="w-full min-w-[820px]">
-              <thead><tr className="border-b border-border"><th className={th}>Transfer</th><th className={th}>When</th><th className={th}>Product</th><th className={th}>From</th><th className={th}>To</th><th className={th}>Quantity</th><th className={th}>Status</th></tr></thead>
+              <thead><tr className="border-b border-border"><th className={th}>{a("Transfer")}</th><th className={th}>{a("When")}</th><th className={th}>{a("Product")}</th><th className={th}>{a("From")}</th><th className={th}>{a("To")}</th><th className={th}>{a("Quantity")}</th><th className={th}>{a("Status")}</th></tr></thead>
               <tbody>
                 {pageItems("transfers", transfers).map((transfer) => (
                   <tr key={transfer.id} className="border-b border-border/60 last:border-0">
@@ -344,7 +346,7 @@ export function ShopRecords({ shopId, shopName }: { shopId: string; shopName: st
                 ))}
               </tbody>
             </table>
-            {!transfers.length ? <p className="p-6 text-center text-sm text-muted-foreground">No stock transfers recorded.</p> : null}
+            {!transfers.length ? <p className="p-6 text-center text-sm text-muted-foreground">{a("No stock transfers recorded.")}</p> : null}
           </TableShell>
           {pager("transfers", transfers.length)}
         </TabsContent>
@@ -373,10 +375,10 @@ function Pager({ page, total, onChange }: { page: number; total: number; onChang
         Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total.toLocaleString()}
       </span>
       <Button size="sm" variant="outline" disabled={page === 0} onClick={() => onChange(page - 1)}>
-        Previous
+        {a("Previous")}
       </Button>
       <Button size="sm" variant="outline" disabled={page + 1 >= pageCount} onClick={() => onChange(page + 1)}>
-        Next
+        {a("Next")}
       </Button>
     </div>
   );
