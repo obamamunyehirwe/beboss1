@@ -19,8 +19,8 @@ import kotlinx.coroutines.withContext
  * 2. Durable Deletion Tombstones (`sync_tombstones`) prevent deleted records from resurrecting
  *    across offline/online multi-branch merges.
  * 3. Redacted/blank credentials from peer exports NEVER overwrite existing local PBKDF2 hashes.
- * 4. Immutable ledger events (SaleItem, CustomerPayment, PurchaseRecord, StockTransfer) act as a
- *    grow-only set CRDT — deduplicated by ID and never dropped or mutated.
+ * 4. SaleItem, CustomerPayment and PurchaseRecord are immutable ledger events; StockTransfer
+ *    has a versioned lifecycle and reconciles by HLC so receipt/cancellation state converges.
  * 5. Serialized via `DbWriteMutex` inside a single Room transaction so concurrent syncs/checkouts stay consistent.
  */
 object ConflictResolutionEngine {
