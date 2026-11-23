@@ -513,7 +513,7 @@ object SupabaseAdminClient {
         val prefs = context.getSharedPreferences("beboss_sync_prefs", Context.MODE_PRIVATE)
         val existing = prefs.getString("device_sync_id", null)
         if (!existing.isNullOrBlank()) return existing
-        val created = "DEV-${UUID.randomUUID().toString().take(8).uppercase(Locale.ROOT)}"
+        val created = "DEV-${UUID.randomUUID().toString().take(16).uppercase(Locale.ROOT)}"
         prefs.edit().putString("device_sync_id", created).apply()
         return created
     }
