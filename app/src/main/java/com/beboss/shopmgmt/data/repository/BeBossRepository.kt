@@ -881,15 +881,21 @@ class BeBossRepository(private val database: AppDatabase) {
                     message = "Shop account '@$cleanUser' ($cleanPhone) not found in BeBoss Cloud. Ask owner to create account & sync online first."
                 )
 
-            val remoteDevices = SupabaseAdminClient.fetchShopDevicesForShop(shopSyncKey)
-            val matchedDevice = remoteDevices.firstOrNull {
-                it.joinCode.equals(cleanJoin, ignoreCase = true) && it.isActive
-            } ?: return@withContext JoinShopCloudResult(
-                success = false,
-                message = "Invalid or inactive Join Code '$cleanJoin'. Ask the shop owner to add this device in Settings -> Shop Devices."
-            )
-
             val hardwareDeviceId = SupabaseAdminClient.getOrCreateDeviceId(context)
+            // The server hashes and atomically redeems the invitation. A code can only
+            // be claimed by one physical installation; a retry is allowed only by that
+            // same stable hardware ID.
+            val matchedDevice = SupabaseAdminClient.redeemShopDeviceInvite(
+                shopSyncKey = shopSyncKey,
+                joinCode = cleanJoin,
+                hardwareDeviceId = hardwareDeviceId,
+                deviceName = thisDeviceName
+            ) ?: return@withContext JoinShopCloudResult(
+                success = false,
+                message = "This Join Code is invalid, expired, already used on another device, or the assigned device/branch has been disabled."
+            )
+            val remoteDevices = SupabaseAdminClient.fetchShopDevicesForShop(shopSyncKey)
+                .filterNot { it.id == matchedDevice.id } + matchedDevice
             val appCfg = SupabaseAdminClient.fetchPublicAppConfig()
             if (appCfg != null) {
                 OfflineSubscriptionManager.saveDynamicPaymentConfig(context, appCfg)
@@ -934,7 +940,9 @@ class BeBossRepository(private val database: AppDatabase) {
                     shopSyncKey = rd.shopSyncKey,
                     deviceId = if (isMine) hardwareDeviceId else rd.deviceId,
                     deviceName = if (isMine) thisDeviceName.trim().ifBlank { rd.deviceName } else rd.deviceName,
-                    joinCode = rd.joinCode,
+                    // The plaintext invite exists only on the issuing terminal's local
+                    // Room row. It is never returned from Supabase or copied to a joined device.
+                    joinCode = if (isMine || rd.deviceId.isNotBlank()) "" else shopDeviceDao.getDeviceById(rd.id)?.joinCode.orEmpty(),
                     assignedUserId = rd.assignedUserId,
                     assignedUsername = rd.assignedUsername,
                     assignedUserName = rd.assignedUserName,
