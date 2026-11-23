@@ -79,7 +79,11 @@ data class ProfitLossSummary(
     val profitMarginPercent: Double,
     val isProfitable: Boolean,
     val periodLabel: String
-)
+) {
+    /** Backwards-compatible name used by the dashboard KPI card. */
+    val averageSaleValue: Double
+        get() = averageOrderValue
+}
 
 data class CategorySalesShare(
     val category: String,
@@ -122,17 +126,26 @@ data class CustomerAgingEntry(
     val creditUtilizationPercent: Double,
     val isOverLimit: Boolean,
     val oldestUnpaidDays: Int,
-    val agingBucket: String // "0-30d", "31-60d", "61-90d", "90+d"
-)
+    val agingBucket: String, // "0-30d", "31-60d", "61-90d", "90+d"
+    val category: String = ""
+) {
+    // UI/export aliases retained while all calculations use the canonical fields above.
+    val daysOld: Int
+        get() = oldestUnpaidDays
+    val overCreditLimit: Boolean
+        get() = isOverLimit
+    val bucketLabel: String
+        get() = agingBucket
+}
 
 data class CustomerAgingSummary(
-    val totalReceivable: Double,
-    val bucket0To30: Double,
-    val bucket31To60: Double,
-    val bucket61To90: Double,
-    val bucket90Plus: Double,
-    val overLimitCount: Int,
-    val entries: List<CustomerAgingEntry>
+    val totalReceivable: Double = 0.0,
+    val bucket0To30: Double = 0.0,
+    val bucket31To60: Double = 0.0,
+    val bucket61To90: Double = 0.0,
+    val bucket90Plus: Double = 0.0,
+    val overLimitCount: Int = 0,
+    val entries: List<CustomerAgingEntry> = emptyList()
 )
 
 data class ReorderSuggestion(
