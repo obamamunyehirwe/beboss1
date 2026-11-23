@@ -17,8 +17,6 @@ export function RetailInsights({ shopId }: { shopId: string }) {
   const a = useAdminText();
   const { lang } = useI18n();
   const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
-  const { lang } = useI18n();
-  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const fetchInsights = useServerFn(getShopInsights);
   const q = useQuery({
     queryKey: ["admin", "insights", shopId],
