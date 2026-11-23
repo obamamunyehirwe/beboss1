@@ -69,8 +69,8 @@ function ShopsPage() {
   return (
     <div>
       <PageHeader
-        title="Shops"
-        sub="Every registered BeBoss shop, its license, quotas and remote controls."
+        title={a("Shops")}
+        sub={a("Every registered BeBoss shop, its license, quotas and remote controls.")}
         actions={
           <Button size="sm" variant="glass" onClick={() => downloadCsv(`beboss-shops-${Date.now()}.csv`, rows.map(({ eff, dev, flags, ...r }) => ({ ...r, effective_status: eff, paired_devices: dev, review_flags: flags.join(" ") })))}>
             <Download /> Export
@@ -78,7 +78,7 @@ function ShopsPage() {
         }
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder="Search shop, owner, @username or phone…" />
+        <SearchInput value={q} onChange={setQ} placeholder={a("Search shop, owner, @username or phone…")} />
         <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
           <option value="updated">{a("Last synced")}</option>
           <option value="expiry">{a("Expiry soonest")}</option>
@@ -105,7 +105,7 @@ function ShopsPage() {
       {isLoading ? (
         <LoadingBlock />
       ) : !rows.length ? (
-        <EmptyState title="No shops match" sub="Shops appear here automatically when the BeBoss app syncs with internet." />
+        <EmptyState title={a("No shops match")} sub={a("Shops appear here automatically when the BeBoss app syncs with internet.")} />
       ) : (
         <TableShell>
           <table className="w-full min-w-[820px] text-sm">
