@@ -818,6 +818,9 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         password = password
     )
 
+    fun secureCurrentDevice(joinCode: String) =
+        authCoordinator.secureCurrentDevice(joinCode)
+
     fun addSecondaryShopDevice(
         deviceName: String,
         assignedUser: User,
