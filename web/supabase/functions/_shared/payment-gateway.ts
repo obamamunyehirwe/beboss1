@@ -111,3 +111,10 @@ export function constantTimeTextEqual(left: string, right: string): boolean {
   for (let i = 0; i < max; i++) diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
   return diff === 0;
 }
+
+export function verifyFlutterwaveWebhookSecretHash(expectedSecretHash: string, receivedHeader: string): boolean {
+  return expectedSecretHash.length > 0 &&
+    receivedHeader.length > 0 &&
+    constantTimeTextEqual(receivedHeader, expectedSecretHash);
+}
+
