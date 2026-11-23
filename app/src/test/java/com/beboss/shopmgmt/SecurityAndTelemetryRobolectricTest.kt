@@ -31,6 +31,13 @@ class SecurityAndTelemetryRobolectricTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        // Reset the singleton's in-memory StateFlow as well as SharedPreferences between
+        // Robolectric tests; the object survives individual test application lifecycles.
+        context.getSharedPreferences("beboss_message_audit", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+        MessageAuditManager.load(context)
         ClockGuard.init(context)
         ClockGuard.clearRollbackAfterTrustedSync(context, System.currentTimeMillis())
     }
