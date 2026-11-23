@@ -42,7 +42,7 @@ export function RetailInsights({ shopId }: { shopId: string }) {
             {a("From")} <span className="text-foreground">{r.branchName}</span> {a("· device")} <span className="font-mono text-xs">{r.deviceId}</span>
           </span>
           <span>
-            {r.chunks} {a("chunk(s)")} · {a("uploaded")} {relativeTime(r.uploadedAt)}
+            {r.chunks} {a("chunk(s)")} · {a("uploaded")} {relativeTime(r.uploadedAt, Date.now(), locale)}
           </span>
           {r.signature === "VERIFIED" ? (
             <span className="flex items-center gap-1 text-success"><BadgeCheck className="size-4" /> {a("Signature verified")}</span>
