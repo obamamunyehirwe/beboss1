@@ -26,6 +26,7 @@ import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.text.Normalizer
 import java.util.Locale
 import java.util.UUID
@@ -1052,7 +1053,7 @@ object SupabaseAdminClient {
                 put("shop_name", shopName)
                 put("device_id", device.deviceId)
                 put("device_name", device.deviceName)
-                put("join_code", device.joinCode.uppercase(Locale.ROOT))
+                put("join_code", "")
                 put("assigned_user_id", device.assignedUserId)
                 put("assigned_username", device.assignedUsername.trim().lowercase(Locale.ROOT))
                 put("assigned_user_name", device.assignedUserName)
@@ -1078,6 +1079,124 @@ object SupabaseAdminClient {
             }
         } catch (e: Exception) {
             Log.e(TAG, "upsertShopDevice error: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Creates a high-entropy, short-lived device invitation. The plaintext is returned
+     * to the issuing owner/branch manager only and is never uploaded to shop_devices.
+     */
+    fun generateShopDeviceJoinCode(): String {
+        val bytes = ByteArray(16)
+        SecureRandom().nextBytes(bytes)
+        val token = bytes.joinToString("") { byte -> "%02X".format(byte.toInt() and 0xff) }
+        return "BB-$token"
+    }
+
+    private fun hashShopDeviceJoinCode(joinCode: String): String {
+        val normalized = joinCode.trim().uppercase(Locale.ROOT)
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(normalized.toByteArray(StandardCharsets.UTF_8))
+        return digest.joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    }
+
+    suspend fun issueShopDeviceInvite(
+        shopSyncKey: String,
+        deviceRecordId: String,
+        joinCode: String,
+        createdByDeviceId: String,
+        createdByUserId: String,
+        branchId: String,
+        expiresAt: Long
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank() || joinCode.isBlank()) return@withContext false
+        try {
+            val payload = JSONObject()
+                .put("p_shop_sync_key", shopSyncKey)
+                .put("p_device_record_id", deviceRecordId)
+                .put("p_code_hash", hashShopDeviceJoinCode(joinCode))
+                .put("p_created_by_device_id", createdByDeviceId)
+                .put("p_created_by_user_id", createdByUserId)
+                .put("p_branch_id", branchId)
+                .put("p_expires_at", expiresAt)
+            val req = buildRestRequest("rpc/issue_shop_device_invite", tenantSyncKey = shopSyncKey)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(req).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "issueShopDeviceInvite HTTP ${response.code}: ${response.body?.string()}")
+                }
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "issueShopDeviceInvite error: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Atomically claims a one-time cloud invite for this physical installation.
+     * The database binds the slot to the stable hardware ID and rejects reuse elsewhere.
+     */
+    suspend fun redeemShopDeviceInvite(
+        shopSyncKey: String,
+        joinCode: String,
+        hardwareDeviceId: String,
+        deviceName: String
+    ): SupabaseShopDeviceDto? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank() || joinCode.isBlank() || hardwareDeviceId.isBlank()) {
+            return@withContext null
+        }
+        try {
+            val payload = JSONObject()
+                .put("p_shop_sync_key", shopSyncKey)
+                .put("p_code_hash", hashShopDeviceJoinCode(joinCode))
+                .put("p_device_id", hardwareDeviceId)
+                .put("p_device_name", deviceName.trim().take(120))
+            val req = buildRestRequest("rpc/redeem_shop_device_invite", tenantSyncKey = shopSyncKey)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(req).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "redeemShopDeviceInvite HTTP ${response.code}: $raw")
+                    return@withContext null
+                }
+                parseShopDeviceDto(JSONObject(raw))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "redeemShopDeviceInvite error: ${e.message}")
+            null
+        }
+    }
+
+    suspend fun revokeShopDeviceInvites(
+        shopSyncKey: String,
+        deviceRecordId: String,
+        actorDeviceId: String,
+        actorUserId: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank() || deviceRecordId.isBlank()) return@withContext false
+        try {
+            val payload = JSONObject()
+                .put("p_shop_sync_key", shopSyncKey)
+                .put("p_device_record_id", deviceRecordId)
+                .put("p_actor_device_id", actorDeviceId)
+                .put("p_actor_user_id", actorUserId)
+            val req = buildRestRequest("rpc/revoke_shop_device_invites", tenantSyncKey = shopSyncKey)
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(req).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "revokeShopDeviceInvites HTTP ${response.code}: $raw")
+                    return@withContext false
+                }
+                raw.trim().equals("true", ignoreCase = true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "revokeShopDeviceInvites error: ${e.message}")
             false
         }
     }
