@@ -11,7 +11,7 @@ enum class UserRole(val displayName: String, val badgeColor: String) {
     CASHIER("Cashier (POS Checkout)", "#10B981")
 }
 
-@Entity(tableName = "users")
+@Entity(tableName = "users", indices = [Index(value = ["username"], unique = true)])
 data class User(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val name: String,
