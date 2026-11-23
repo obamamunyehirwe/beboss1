@@ -48,6 +48,44 @@ function normalizePlanPhone(value: string): string {
   return String(value ?? "").replace(/\D/g, "").slice(-9);
 }
 
+function resolvePaymentVerification(
+  request: Record<string, unknown>,
+  providerVerified: boolean,
+  suppliedNote: string,
+): string {
+  const gatewayProvider = String(request.gateway_provider ?? "").trim();
+  const note = String(suppliedNote ?? "").trim();
+
+  if (gatewayProvider) {
+    if (!["FLUTTERWAVE_RW_MOBILE_MONEY", "STRIPE_CHECKOUT"].includes(gatewayProvider)) {
+      throw new Error("This payment uses an unsupported gateway. Do not activate it.");
+    }
+    const verifiedAt = Number(request.gateway_verified_at ?? 0);
+    const verifiedAmount = Number(request.gateway_verified_amount_rwf ?? 0);
+    const requestedAmount = Number(request.amount_rwf ?? 0);
+    const currency = String(request.gateway_verified_currency ?? "").toUpperCase();
+    const transactionId = String(request.gateway_transaction_id ?? "").trim();
+    if (
+      request.gateway_status !== "VERIFIED" ||
+      !Number.isSafeInteger(verifiedAt) ||
+      verifiedAt <= 0 ||
+      !Number.isSafeInteger(verifiedAmount) ||
+      verifiedAmount <= 0 ||
+      verifiedAmount !== requestedAmount ||
+      currency !== "RWF" ||
+      !transactionId
+    ) {
+      throw new Error("The gateway has not independently verified the exact RWF payment. Do not activate this shop.");
+    }
+    return `Server-verified ${gatewayProvider} transaction ${transactionId}; RWF ${verifiedAmount}; provider verification time ${new Date(verifiedAt).toISOString()}.`;
+  }
+
+  if (!providerVerified || note.length < 5) {
+    throw new Error("Manual provider-payment verification is required. Confirm the exact transaction in the MTN/Airtel merchant records and document it before activation.");
+  }
+  return note;
+}
+
 function paymentPlanCanonical(input: Bb3Input): string {
   return [
     "BEBOSS-PAYMENT-PLAN-V1",
@@ -169,11 +207,9 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
-    const { data: req, error } = await ctx.supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,payment_time_ms,payment_note,admin_verification_note,fee_per_device_rwf,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,ussd_code").eq("id", data.requestId).maybeSingle();
+    const { data: req, error } = await ctx.supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,payment_time_ms,payment_note,admin_verification_note,fee_per_device_rwf,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,ussd_code,gateway_provider,gateway_reference,gateway_status,gateway_verified_at,gateway_verified_amount_rwf,gateway_verified_currency,gateway_transaction_id").eq("id", data.requestId).maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
-    if (data.providerVerified !== true) throw new Error("A manual provider-payment verification is required before issuing an unlock code.");
-    const verificationNote = data.verificationNote.trim();
-    if (verificationNote.length < 5) throw new Error("Record what you confirmed in the MTN MoMo or Airtel Money merchant transaction history.");
+    const verificationNote = resolvePaymentVerification(req, data.providerVerified, data.verificationNote);
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
     const trustedFeeRate = 2000;
@@ -309,17 +345,11 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
     const admin = await requireAdmin(ctx);
     const { data: req, error } = await ctx.supabase
       .from("payment_requests")
-      .select("id,shop_name,owner_username,owner_phone,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at")
+      .select("id,shop_name,owner_username,owner_phone,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,gateway_provider,gateway_reference,gateway_status,gateway_verified_at,gateway_verified_amount_rwf,gateway_verified_currency,gateway_transaction_id")
       .eq("id", data.requestId)
       .maybeSingle();
     if (error || !req) throw new Error("Payment request not found.");
-    if (data.providerVerified !== true) {
-      throw new Error("A manual provider-payment verification is required before a shop can be activated.");
-    }
-    const verificationNote = data.verificationNote.trim();
-    if (verificationNote.length < 5) {
-      throw new Error("Record what you confirmed in the MTN MoMo or Airtel Money merchant transaction history.");
-    }
+    const verificationNote = resolvePaymentVerification(req, data.providerVerified, data.verificationNote);
 
     const { shopId } = await requireRegisteredPaymentShop(ctx, req);
     const feePerDeviceRwf = 2_000;
