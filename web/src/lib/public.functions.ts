@@ -86,22 +86,17 @@ export const requestMyShopOwnerOtp = createServerFn({ method: "POST" })
     const attempt = { id: String(attemptId) };
 
     try {
-      let authUser: { id: string } | null = null;
-      for (let page = 1; page <= 50 && !authUser; page++) {
-        const { data: users, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
-        if (error) throw error;
-        const found = users.users.find((candidate) => samePhone(String(candidate.phone ?? ""), phone));
-        if (found) authUser = { id: found.id };
-        if (users.users.length < 1000) break;
-      }
-      if (!authUser) {
+      const { data: existingUserId, error: lookupError } = await supabaseAdmin.rpc("find_auth_user_by_phone", {
+        p_phone: phone,
+      });
+      if (lookupError) throw new Error("Could not prepare secure owner authentication.");
+      if (!existingUserId) {
         const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
           phone,
           phone_confirm: false,
           user_metadata: { account_type: "shop_owner" },
         });
         if (error || !created.user) throw error ?? new Error("Could not initialize owner authentication.");
-        authUser = { id: created.user.id };
       }
 
       const { error: otpError } = await createPublicClient().auth.signInWithOtp({
