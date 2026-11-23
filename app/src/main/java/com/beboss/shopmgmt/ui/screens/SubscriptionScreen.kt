@@ -3,6 +3,8 @@ package com.beboss.shopmgmt.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import com.beboss.shopmgmt.util.normalizeUnlockCodeInput
 import androidx.compose.foundation.BorderStroke
@@ -636,6 +638,56 @@ fun SubscriptionScreen(
                         }
                     }
 
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Recommended: secure online payment",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Continue in the BeBoss secure checkout to pay with Flutterwave (Rwanda MTN MoMo, Airtel Money or card) or Stripe card checkout where your merchant account is eligible. The provider confirms payment directly; an SMS or browser redirect alone cannot activate a licence.",
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 16.sp
+                            )
+                            Button(
+                                onClick = {
+                                    val checkoutUri = Uri.parse("https://beboss.rw/my-shop").buildUpon()
+                                        .appendQueryParameter("pay", "1")
+                                        .appendQueryParameter("b", selectedBranchCount.toString())
+                                        .appendQueryParameter("w", selectedWorkerCount.toString())
+                                        .appendQueryParameter("d", selectedDeviceCount.toString())
+                                        .appendQueryParameter("m", selectedDurationMonths.toString())
+                                        .build()
+                                    try {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, checkoutUri))
+                                    } catch (_: Exception) {
+                                        Toast.makeText(context, "No browser is available to open secure checkout.", Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 50.dp)
+                                    .testTag("open_online_checkout_button"),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Payment, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Pay online with Flutterwave / Stripe", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                            }
+                        }
+                    }
+
                     Text(
                         text = Localization.format("sub_ussd_instructions_fmt", language, breakdown.totalPayable),
                         fontSize = 11.5.sp,
@@ -643,7 +695,7 @@ fun SubscriptionScreen(
                         lineHeight = 16.5.sp
                     )
 
-                    // Real USSD Dial Buttons
+                    // Assisted USSD dial options (these require separate manual provider reconciliation).
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
