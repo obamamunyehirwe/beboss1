@@ -86,7 +86,7 @@ data class LocalSyncClientResult(
  * Authenticated & AES-256-GCM encrypted LAN P2P Branch Hub Server + Client.
  *
  * Security invariants:
- * - Zero hardcoded fallback keys; derives HMAC & AES-GCM keys via HKDF from BuildConfig.BEBOSS_LAN_SYNC_SECRET.
+ * - Per-shop 256-bit pairing keys are provisioned from Supabase and wrapped by Android Keystore; optional legacy build key is a fallback.
  * - UDP discovery beacons are HMAC-signed and timestamped (<=30s clock window) + validated against peer IP.
  * - All /api/sync/push & /api/sync/pull bodies are AES-256-GCM encrypted and authenticated with
  *   mandatory X-BeBoss-Signature, X-BeBoss-Timestamp (<=5 min), and X-BeBoss-Nonce anti-replay protection.
@@ -123,6 +123,10 @@ class LocalNetworkSyncServer(
         val key = shopSyncKey.trim().lowercase(Locale.ROOT)
         if (key.isBlank()) return false
         if (activeShopLanSecretKey == key && activeShopLanSecretBytes != null) return true
+        // Clear any other shop's in-memory key before trying the requested shop. Never
+        // allow a shop switch to keep using the previous account's LAN credentials.
+        activeShopLanSecretKey = key
+        activeShopLanSecretBytes = null
         return try {
             val envelope = context.applicationContext
                 .getSharedPreferences("beboss_lan_security", Context.MODE_PRIVATE)
