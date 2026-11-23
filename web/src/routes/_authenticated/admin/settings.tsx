@@ -83,8 +83,11 @@ function SettingsPage() {
             <F label="Airtel Money receiving phone" v={cfg.airtel_money_phone} on={(v) => set("airtel_money_phone", v)} inputMode="tel" hint="Used in *500*1*1*PHONE*AMOUNT#." />
             <F label="Airtel recipient name" v={cfg.airtel_recipient_name} on={(v) => set("airtel_recipient_name", v)} />
             <div className="space-y-1.5">
-              <Label>Extra device fee (FRw / month)</Label>
-              <Input type="number" min={0} value={cfg.per_device_fee_rwf} onChange={(e) => set("per_device_fee_rwf", Math.max(0, Number(e.target.value) || 0))} />
+              <Label>Extra POS terminal fee (FRw / month)</Label>
+              <div className="flex h-10 items-center rounded-md border border-input bg-muted px-3 text-sm font-semibold">
+                2,000 FRw per additional paired device
+              </div>
+              <p className="text-xs text-muted-foreground">The primary owner terminal is included. Every additional active POS device is billed at a fixed 2,000 FRw each month.</p>
             </div>
             <F label="Admin WhatsApp (with country code)" v={cfg.admin_whatsapp_number} on={(v) => set("admin_whatsapp_number", v)} inputMode="tel" hint="e.g. 250788123456" />
             <F label="Support email" v={cfg.support_email} on={(v) => set("support_email", v)} inputMode="email" />
