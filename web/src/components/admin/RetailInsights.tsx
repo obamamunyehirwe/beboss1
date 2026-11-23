@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingBlock, StatCard, downloadCsv } from "@/components/admin/ui";
 import { getShopInsights } from "@/lib/insights.functions";
 import { formatDateTime, relativeTime } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
 
 const tooltipStyle = { background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, color: "var(--foreground)", fontSize: 12 };
 const money = (n: number, cur: string) => `${Math.round(n).toLocaleString("en-US")} ${cur}`;
 const short = (v: number) => (Math.abs(v) >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : String(v));
 
 export function RetailInsights({ shopId }: { shopId: string }) {
+  const a = useAdminText();
   const fetchInsights = useServerFn(getShopInsights);
   const q = useQuery({
     queryKey: ["admin", "insights", shopId],
@@ -24,7 +26,7 @@ export function RetailInsights({ shopId }: { shopId: string }) {
   if (q.isLoading) return <LoadingBlock />;
   if (q.error) return <EmptyState title="Couldn't load insights" sub={q.error instanceof Error ? q.error.message : "Try again"} />;
   const r = q.data;
-  if (!r || !r.chunks) return <EmptyState title="No branch data synced yet" sub="Insights appear after the shop's phone runs its first internet sync. Sales, stock and debts are read from the phone's signed snapshot." />;
+  if (!r || !r.chunks) return <EmptyState title={a("No branch data synced yet")} sub="Insights appear after the shop's phone runs its first internet sync. Sales, stock and debts are read from the phone's signed snapshot." />;
   if (r.error || !r.insights) return <EmptyState title="Snapshot could not be read" sub={r.error ?? "Unknown format"} />;
   const i = r.insights;
   const cur = i.currency || "FRw";
@@ -34,22 +36,22 @@ export function RetailInsights({ shopId }: { shopId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-sm">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
           <span>
-            From <span className="text-foreground">{r.branchName}</span> · device <span className="font-mono text-xs">{r.deviceId}</span>
+            {a("From")} <span className="text-foreground">{r.branchName}</span> · device <span className="font-mono text-xs">{r.deviceId}</span>
           </span>
           <span>
             {r.chunks} chunk(s) · uploaded {relativeTime(r.uploadedAt)}
           </span>
           {r.signature === "VERIFIED" ? (
-            <span className="flex items-center gap-1 text-success"><BadgeCheck className="size-4" /> Signature verified</span>
+            <span className="flex items-center gap-1 text-success"><BadgeCheck className="size-4" /> {a("Signature verified")}</span>
           ) : r.signature === "MISMATCH" ? (
-            <span className="flex items-center gap-1 text-destructive"><AlertTriangle className="size-4" /> Signature mismatch — data may be tampered</span>
+            <span className="flex items-center gap-1 text-destructive"><AlertTriangle className="size-4" /> {a("Signature mismatch — data may be tampered")}</span>
           ) : (
-            <span className="flex items-center gap-1"><ShieldQuestion className="size-4" /> Signature not checked (add the snapshot key in Settings)</span>
+            <span className="flex items-center gap-1"><ShieldQuestion className="size-4" /> {a("Signature not checked (add the snapshot key in Settings)")}</span>
           )}
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="glass" onClick={() => downloadCsv(`${i.shopName || shopId}-daily-sales.csv`, i.daily)}>Export daily CSV</Button>
-          <Button size="sm" variant="ghost" onClick={() => q.refetch()} aria-label="Reload insights">
+          <Button size="sm" variant="glass" onClick={() => downloadCsv(`${i.shopName || shopId}-daily-sales.csv`, i.daily)}>{a("Export daily CSV")}</Button>
+          <Button size="sm" variant="ghost" onClick={() => q.refetch()} aria-label={a("Reload insights")}>
             <RefreshCw className={q.isFetching ? "animate-spin" : undefined} />
           </Button>
         </div>
@@ -69,7 +71,7 @@ export function RetailInsights({ shopId }: { shopId: string }) {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5">
-        <h3 className="font-semibold">Revenue and profit — last 30 days</h3>
+        <h3 className="font-semibold">{a("Revenue and profit — last 30 days")}</h3>
         <div className="mt-4 h-60">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={i.daily}>
@@ -91,7 +93,7 @@ export function RetailInsights({ shopId }: { shopId: string }) {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Panel title="Top products by profit (30 days)">
+        <Panel title={a("Top products by profit (30 days)")}>
           {i.topProducts.length ? (
             <ul className="divide-y divide-border">
               {i.topProducts.map((p) => (
@@ -103,9 +105,9 @@ export function RetailInsights({ shopId }: { shopId: string }) {
                 </li>
               ))}
             </ul>
-          ) : <Muted>No sales in the last 30 days.</Muted>}
+          ) : <Muted>{a("No sales in the last 30 days.")}</Muted>}
         </Panel>
-        <Panel title="Low stock — reorder soon">
+        <Panel title={a("Low stock — reorder soon")}>
           {i.lowStock.length ? (
             <ul className="divide-y divide-border">
               {i.lowStock.map((p) => (
@@ -117,18 +119,18 @@ export function RetailInsights({ shopId }: { shopId: string }) {
                 </li>
               ))}
             </ul>
-          ) : <Muted>Every product is above its alert level.</Muted>}
+          ) : <Muted>{a("Every product is above its alert level.")}</Muted>}
         </Panel>
-        <Panel title="Payment methods (30 days)">
+        <Panel title={a("Payment methods (30 days)")}>
           <MiniBars rows={i.paymentMethods.map((m) => ({ name: m.method, value: m.revenue }))} cur={cur} />
         </Panel>
-        <Panel title="Sales by category (30 days)">
+        <Panel title={a("Sales by category (30 days)")}>
           <MiniBars rows={i.categories.map((c) => ({ name: `${c.name} · ${c.sharePct.toFixed(0)}%`, value: c.revenue }))} cur={cur} />
         </Panel>
-        <Panel title="Cashier leaderboard (30 days)">
+        <Panel title={a("Cashier leaderboard (30 days)")}>
           <MiniBars rows={i.cashiers.map((c) => ({ name: `${c.name} · ${c.orders}`, value: c.revenue }))} cur={cur} />
         </Panel>
-        <Panel title="Biggest customer debts">
+        <Panel title={a("Biggest customer debts")}>
           {i.debts.top.length ? (
             <ul className="divide-y divide-border">
               {i.debts.top.map((c) => (
@@ -138,7 +140,7 @@ export function RetailInsights({ shopId }: { shopId: string }) {
                 </li>
               ))}
             </ul>
-          ) : <Muted>No outstanding customer debts.</Muted>}
+          ) : <Muted>{a("No outstanding customer debts.")}</Muted>}
         </Panel>
       </div>
     </div>
@@ -159,7 +161,7 @@ function Muted({ children }: { children: React.ReactNode }) {
 }
 
 function MiniBars({ rows, cur }: { rows: { name: string; value: number }[]; cur: string }) {
-  if (!rows.length) return <Muted>No data for this period.</Muted>;
+  if (!rows.length) return <Muted>{a("No data for this period.")}</Muted>;
   return (
     <div style={{ height: Math.max(120, rows.length * 34) }}>
       <ResponsiveContainer width="100%" height="100%">
