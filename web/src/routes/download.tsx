@@ -156,7 +156,7 @@ function DownloadPage() {
                     {copiedHash ? "Copied" : t("copy")}
                   </Button>
                 </div>
-                <p className="mt-3 break-all rounded-xl bg-surface px-3 py-3 font-mono text-xs leading-6 text-foreground" aria-label=a("Official SHA-256 checksum")>
+                <p className="mt-3 break-all rounded-xl bg-surface px-3 py-3 font-mono text-xs leading-6 text-foreground" aria-label={a("Official SHA-256 checksum")}>
                   {release.sha256}
                 </p>
                 <div className="mt-4 border-t border-border pt-4">
