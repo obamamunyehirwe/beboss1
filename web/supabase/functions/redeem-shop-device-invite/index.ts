@@ -55,10 +55,10 @@ Deno.serve(async (request) => {
   // The invitation is a 128-bit random bearer token, stored only as SHA-256.
   // The code itself is never logged or persisted in a database column.
   const codeHash = await sha256Hex(code);
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  // Trust only edge-provided single-address headers. X-Forwarded-For may
+  // contain client-supplied hops and must not be the rate-limit identity.
   const clientIp = request.headers.get("cf-connecting-ip") ??
     request.headers.get("x-real-ip") ??
-    forwarded ??
     "";
   // Edge infrastructure supplies a client IP; when it is unavailable, scope
   // the fallback bucket to this code so we never rate-limit every shop globally.
