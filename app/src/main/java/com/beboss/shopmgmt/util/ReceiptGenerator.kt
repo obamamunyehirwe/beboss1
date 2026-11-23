@@ -18,12 +18,16 @@ object ReceiptGenerator {
 
     private val receiptCache = LruCache<String, String>(10)
 
-    fun formatMoney(amount: Double, profile: ShopProfile): String {
+    fun formatMoney(amount: Double, profile: ShopProfile): String =
+        formatMoney(amount, profile.currencySymbol)
+
+    /** Formats a monetary value when only the display currency symbol is available. */
+    fun formatMoney(amount: Double, currencySymbol: String): String {
         val formatter = NumberFormat.getNumberInstance(Locale.getDefault()).apply {
             maximumFractionDigits = if (amount % 1.0 == 0.0) 0 else 2
             minimumFractionDigits = 0
         }
-        return "${formatter.format(amount)} ${profile.currencySymbol}"
+        return "${formatter.format(amount)} $currencySymbol"
     }
 
     fun formatDate(timestamp: Long): String {
