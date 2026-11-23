@@ -762,9 +762,6 @@ class BeBossRepository(private val database: AppDatabase) {
             shopSyncKey = shopSyncKey,
             deviceRecordId = newDev.id,
             joinCode = joinCode,
-            createdByDeviceId = creatorDeviceId,
-            createdByUserId = principal.id,
-            branchId = targetBranch.id,
             expiresAt = now + 60L * 60L * 1000L
         )
         if (!inviteIssued) {
