@@ -79,6 +79,40 @@ jobs:
           test -d .vercel/output/functions
           test -d .vercel/output/static
 
+  payments-edge:
+    name: Payment Edge Function type checks
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Format and lint payment functions
+        run: |
+          deno fmt --check \
+            web/supabase/functions/create-subscription-checkout/index.ts \
+            web/supabase/functions/flutterwave-payment-webhook/index.ts \
+            web/supabase/functions/stripe-payment-webhook/index.ts \
+            web/supabase/functions/manage-gateway-refund/index.ts
+
+          deno lint \
+            web/supabase/functions/create-subscription-checkout/index.ts \
+            web/supabase/functions/flutterwave-payment-webhook/index.ts \
+            web/supabase/functions/stripe-payment-webhook/index.ts \
+            web/supabase/functions/manage-gateway-refund/index.ts
+
+      - name: Type-check payment functions
+        run: |
+          deno check \
+            web/supabase/functions/create-subscription-checkout/index.ts \
+            web/supabase/functions/flutterwave-payment-webhook/index.ts \
+            web/supabase/functions/stripe-payment-webhook/index.ts \
+            web/supabase/functions/manage-gateway-refund/index.ts
+
   android:
     name: Android JVM unit tests
     runs-on: ubuntu-24.04
