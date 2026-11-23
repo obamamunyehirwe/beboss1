@@ -16,6 +16,9 @@ type ShopRow = {
   owner_phone: string;
   device_challenge: string | null;
   remote_kill_switch: boolean;
+  branch_count: number;
+  worker_count: number;
+  device_count: number;
 };
 
 function requiredText(value: unknown, label: string, min: number, max: number): string {
@@ -96,7 +99,7 @@ Deno.serve(async (request: Request) => {
     if (!normalizePhone(ownerPhone)) throw new Error("Enter the full phone number registered to this shop.");
 
     const shopParams = new URLSearchParams({
-      select: "id,shop_name,owner_username,owner_phone,device_challenge,remote_kill_switch",
+      select: "id,shop_name,owner_username,owner_phone,device_challenge,remote_kill_switch,branch_count,worker_count,device_count",
       id: `eq.${usernameKey}`,
       limit: "1",
     });
@@ -110,6 +113,17 @@ Deno.serve(async (request: Request) => {
     if (shop.remote_kill_switch) return jsonResponse(403, { message: "This shop cannot purchase a subscription while its service is suspended." });
     if (String(shop.shop_name).trim().toLowerCase() !== shopName.trim().toLowerCase()) {
       return jsonResponse(409, { message: "The submitted shop name does not match the registered BeBoss shop." });
+    }
+    const minimumPlan = {
+      branches: Math.max(1, Number(shop.branch_count) || 1),
+      workers: Math.max(1, Number(shop.worker_count) || 1),
+      devices: Math.max(1, Number(shop.device_count) || 1),
+    };
+    if (branches < minimumPlan.branches || workers < minimumPlan.workers || devices < minimumPlan.devices) {
+      return jsonResponse(409, {
+        message: "The selected plan is below the shop's currently registered usage. Reduce the shop's active usage first, or select a plan that covers every active branch, staff member and device.",
+        minimumPlan,
+      });
     }
     if (!(await verifyOwnerSession(request, shop.id, shop.owner_phone))) {
       return jsonResponse(403, { message: "A verified owner session for this shop is required before starting checkout." });
