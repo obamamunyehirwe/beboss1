@@ -4,16 +4,6 @@ import { PAGES, type PageCopy } from "./i18n-pages";
 
 const STORAGE = "beboss.lang";
 
-function readSavedLanguage(): Lang {
-  if (typeof window === "undefined") return "en";
-  try {
-    const saved = window.localStorage.getItem(STORAGE);
-    return saved && Object.prototype.hasOwnProperty.call(DICTS, saved) ? (saved as Lang) : "en";
-  } catch {
-    return "en";
-  }
-}
-
 interface I18nValue {
   lang: Lang;
   setLang: (l: Lang) => void;
@@ -25,9 +15,17 @@ interface I18nValue {
 const I18nContext = createContext<I18nValue | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(readSavedLanguage);
+  const [lang, setLangState] = useState<Lang>("en");
 
   useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(STORAGE);
+      if (saved && Object.prototype.hasOwnProperty.call(DICTS, saved)) {
+        setLangState(saved as Lang);
+      }
+    } catch {
+      // Continue with the default language when browser storage is unavailable.
+    }
     const syncLanguage = (event: StorageEvent) => {
       if (event.key !== STORAGE || !event.newValue) return;
       if (Object.prototype.hasOwnProperty.call(DICTS, event.newValue)) {
