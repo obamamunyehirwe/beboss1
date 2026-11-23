@@ -114,13 +114,13 @@ export interface PayConfig {
 
 export function buildMtnUssd(amount: number, cfg: PayConfig): string {
   const code = String(cfg.mtn_momo_code ?? "").trim();
-  const phone = String(cfg.mtn_momo_phone ?? "").trim() || "0788765432";
-  return code && code !== "0" ? `*182*8*1*${code}*${amount}#` : `*182*1*1*${phone}*${amount}#`;
+  const phone = String(cfg.mtn_momo_phone ?? "").trim();
+  return code && code !== "0" ? `*182*8*1*${code}*${amount}#` : phone ? `*182*1*1*${phone}*${amount}#` : "";
 }
 
 export function buildAirtelUssd(amount: number, cfg: PayConfig): string {
-  const phone = String(cfg.airtel_money_phone ?? "").trim() || "0738765432";
-  return `*500*1*1*${phone}*${amount}#`;
+  const phone = String(cfg.airtel_money_phone ?? "").trim();
+  return phone ? `*500*1*1*${phone}*${amount}#` : "";
 }
 
 export function toWhatsAppNumber(phone: string): string {
