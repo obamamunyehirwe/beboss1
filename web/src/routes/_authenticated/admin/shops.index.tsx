@@ -17,6 +17,7 @@ type F = ShopLifecycle | "ALL" | "EXPIRING" | "FLAGGED";
 type SortKey = "updated" | "expiry" | "fee" | "name";
 
 function ShopsPage() {
+  const a = useAdminText();
   const { data, isLoading } = useQuery(shopsQuery);
   const { data: devices } = useQuery(devicesQuery);
   const { data: codes } = useQuery(codesQuery);
@@ -75,10 +76,10 @@ function ShopsPage() {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <SearchInput value={q} onChange={setQ} placeholder="Search shop, owner, @username or phone…" />
         <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
-          <option value="updated">Last synced</option>
-          <option value="expiry">Expiry soonest</option>
-          <option value="fee">Highest fee</option>
-          <option value="name">Name A–Z</option>
+          <option value="updated">{a("Last synced")}</option>
+          <option value="expiry">{a("Expiry soonest")}</option>
+          <option value="fee">{a("Highest fee")}</option>
+          <option value="name">{a("Name A–Z")}</option>
         </select>
       </div>
       <div className="mb-4">
@@ -106,12 +107,12 @@ function ShopsPage() {
           <table className="w-full min-w-[820px] text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">Shop</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Expires</th>
-                <th className="px-4 py-3">Plan</th>
-                <th className="px-4 py-3">Fee / mo</th>
-                <th className="px-4 py-3">Last sync</th>
+                <th className="px-4 py-3">{a("Shop")}</th>
+                <th className="px-4 py-3">{a("Status")}</th>
+                <th className="px-4 py-3">{a("Expires")}</th>
+                <th className="px-4 py-3">{a("Plan")}</th>
+                <th className="px-4 py-3">{a("Fee / mo")}</th>
+                <th className="px-4 py-3">{a("Last sync")}</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -146,7 +147,7 @@ function ShopsPage() {
                     <td className="px-4 py-3 font-mono">{formatRwf(s.monthly_fee_rwf)}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{relativeTime(s.updated_at, now)}</td>
                     <td className="px-4 py-3 text-right">
-                      <Link to="/admin/shops/$shopId" params={{ shopId: s.id }} className="inline-flex text-muted-foreground hover:text-foreground" aria-label={`Open ${s.shop_name}`}>
+                      <Link to="/admin/shops/$shopId" params={{ shopId: s.id }} className="inline-flex text-muted-foreground hover:text-foreground" aria-label={`${a("Open shop")} ${s.shop_name}`}>
                         <ChevronRight className="size-4" />
                       </Link>
                     </td>
