@@ -9,11 +9,11 @@ export function formatDateTime(ms: number | string | null | undefined): string {
   return d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-export function formatDate(ms: number | string | null | undefined): string {
+export function formatDate(ms: number | string | null | undefined, locale = "en-GB"): string {
   if (ms == null || ms === "" || Number(ms) === 0) return "—";
   const d = typeof ms === "string" && Number.isNaN(Number(ms)) ? new Date(ms) : new Date(Number(ms));
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return d.toLocaleDateString(locale, { day: "2-digit", month: "short", year: "numeric" });
 }
 
 export function relativeTime(ms: number | string | null | undefined, now = Date.now()): string {
