@@ -37,6 +37,7 @@ const tools = [
 ] as const;
 function Home() {
   const { t, lang } = useI18n();
+  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const c = retailCopy[lang];
   const { data } = useQuery({ ...platformStatsQuery, enabled: liveConfigured });
   return (
@@ -98,14 +99,14 @@ function Home() {
           {data?.ok && data.stats ? (
             <>
               <div className="live-platform-grid">
-                <article><span>{c.activeShops}</span><strong>{data.stats.shops_active.toLocaleString()}</strong><small>{c.activeShopsHelp}</small></article>
-                <article><span>{c.registeredShops}</span><strong>{data.stats.shops_total.toLocaleString()}</strong><small>{c.registeredShopsHelp}</small></article>
-                <article><span>{c.branchesConfigured}</span><strong>{data.stats.branches_total.toLocaleString()}</strong><small>{c.branchesConfiguredHelp}</small></article>
-                <article><span>{c.devicesSynced}</span><strong>{data.stats.devices_synced_24h.toLocaleString()}</strong><small>{c.devicesSyncedHelp}</small></article>
+                <article><span>{c.activeShops}</span><strong>{data.stats.shops_active.toLocaleString(locale)}</strong><small>{c.activeShopsHelp}</small></article>
+                <article><span>{c.registeredShops}</span><strong>{data.stats.shops_total.toLocaleString(locale)}</strong><small>{c.registeredShopsHelp}</small></article>
+                <article><span>{c.branchesConfigured}</span><strong>{data.stats.branches_total.toLocaleString(locale)}</strong><small>{c.branchesConfiguredHelp}</small></article>
+                <article><span>{c.devicesSynced}</span><strong>{data.stats.devices_synced_24h.toLocaleString(locale)}</strong><small>{c.devicesSyncedHelp}</small></article>
               </div>
               <div className="live-platform-foot">
                 <span><i /> {c.liveConnection}</span>
-                <span>{c.lastPlatformEvent}: {data.stats.last_sync_at ? new Date(data.stats.last_sync_at).toLocaleString() : c.noSyncEvents}</span>
+                <span>{c.lastPlatformEvent}: {data.stats.last_sync_at ? new Date(data.stats.last_sync_at).toLocaleString(locale) : c.noSyncEvents}</span>
                 <Link to="/status">{c.viewStatus} <ArrowUpRight size={15} /></Link>
               </div>
             </>
