@@ -62,7 +62,7 @@ function ContactPage() {
     }
     setSending(true);
     try {
-      const { error } = await supabase.from("contact_messages").insert(parsed.data);
+      const { error } = await supabase.functions.invoke("submit-public-contact", { body: parsed.data });
       if (error) {
         console.error("[BeBoss contact] Supabase insert failed", error);
         toast.error(p.contact.sendFailed);
