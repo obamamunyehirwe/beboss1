@@ -375,22 +375,17 @@ object OfflineSubscriptionManager {
             )
         }
 
-        val ussdCode = when {
-            provider.contains("AIRTEL", ignoreCase = true) -> pricing.ussdAirtelCode
-            else -> pricing.ussdMtnCode
-        }
-
         return PaymentProcessingResult(
             isSuccess = false,
-            isPending = true,
-            transactionRef = "PENDING-$provider-${timestamp.toString().takeLast(6)}",
+            isPending = false,
+            transactionRef = "",
             financialId = null,
             amountPaid = 0,
             planDays = 0,
             provider = provider,
             payerPhone = normalizedPhone,
             timestamp = timestamp,
-            message = "USSD Prompt ready for $provider. Dial $ussdCode on $normalizedPhone, then send your username, phone & MoMo registered name on WhatsApp for Admin unlock."
+            message = "A USSD prompt is not a verified payment. Open BeBoss secure hosted checkout to pay with an enabled provider and receive server-verified settlement."
         )
     }
 
