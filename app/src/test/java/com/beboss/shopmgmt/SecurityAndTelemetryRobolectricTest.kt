@@ -118,7 +118,7 @@ class SecurityAndTelemetryRobolectricTest {
     }
 
     @Test
-    fun \`cloud message summary excludes recipients and previews and acknowledges only uploaded ids\`() {
+    fun `cloud message summary excludes recipients and previews and acknowledges only uploaded ids`() {
         val first = MessageAuditManager.recordDispatch(
             context = context,
             channel = "WHATSAPP",
