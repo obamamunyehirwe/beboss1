@@ -355,7 +355,7 @@ returns boolean
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_device public.shop_devices%rowtype;
   v_branch public.shop_branches%rowtype;
@@ -443,7 +443,7 @@ returns boolean
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_device public.shop_devices%rowtype;
   v_branch public.shop_branches%rowtype;
@@ -588,7 +588,7 @@ returns boolean
 language sql
 security invoker
 set search_path = ''
-as $
+as $$
   select beboss_private.set_shop_device_active(
     p_shop_sync_key, p_device_record_id, p_actor_device_id, p_actor_user_id, p_is_active
   );
@@ -604,7 +604,7 @@ returns boolean
 language sql
 security invoker
 set search_path = ''
-as $
+as $$
   select beboss_private.delete_shop_device(
     p_shop_sync_key, p_device_record_id, p_actor_device_id, p_actor_user_id
   );
