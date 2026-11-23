@@ -217,8 +217,8 @@ function SyncMonitor() {
         <StatCard label={a("Synced Staff")} value={stats.activeStaff} sub={`${stats.totalStaff} ${a("staff accounts across shops")}`} icon={Users} tone="info" />
         <StatCard label={a("Snapshot Uploads (24h)")} value={stats.snapshotUploads24h} sub={a("uploaded phone datasets")} icon={Activity} tone="info" />
         <StatCard label={a("Reported Failures")} value={stats.reportedFailures} sub={a("cloud-reported only; local retries stay on device")} icon={AlertTriangle} tone={stats.reportedFailures > 0 ? "danger" : "info"} />
-        <StatCard label="Branch Snapshots" value={stats.snapshots} sub="stored phone datasets" icon={Boxes} tone="brand" />
-        <StatCard label="Registered Branches" value={stats.totalBranches} sub="normalized cross-shop branch records" icon={Store} tone="info" />
+        <StatCard label={a("Branch Snapshots")} value={stats.snapshots} sub={a("stored phone datasets")} icon={Boxes} tone="brand" />
+        <StatCard label={a("Registered Branches")} value={stats.totalBranches} sub={a("normalized cross-shop branch records")} icon={Store} tone="info" />
         <StatCard label={a("Stock Transfers")} value={stats.totalTransfers} sub={a("cross-branch stock movements")} icon={Boxes} tone="info" />
         <StatCard label={a("Stale Devices")} value={stats.staleDevices} sub={a("active, no sync for 7+ days")} icon={Clock} tone={stats.staleDevices > 0 ? "danger" : "success"} />
         <StatCard label={a("Security Alerts")} value={stats.securityAlerts} sub={a("rollback, root, hooking, emulator or high risk")} icon={AlertTriangle} tone={stats.securityAlerts > 0 ? "danger" : "success"} />
@@ -724,7 +724,7 @@ function LiveActivity({ events, loading, now }: { events: SyncEvent[]; loading: 
       {loading ? (
         <LoadingBlock />
       ) : !rows.length ? (
-        <EmptyState title={a("No sync activity yet")} sub="As soon as a phone with BeBoss goes online, its sync shows up here in real time." />
+        <EmptyState title={a("No sync activity yet")} sub={a("As soon as a phone with BeBoss goes online, its sync shows up here in real time.")} />
       ) : (
         <ol className="relative space-y-2 border-l border-border pl-5">
           {rows.slice(0, 250).map((e) => {
@@ -932,7 +932,7 @@ function SecurityTelemetryTable({
       {loading ? <LoadingBlock /> : !filtered.length ? (
         <EmptyState
           title={a("No device security telemetry")}
-          sub="Paired terminals appear here after a successful online security sync. Missing data is not treated as a clean device."
+          sub={a("Paired terminals appear here after a successful online security sync. Missing data is not treated as a clean device.")}
         />
       ) : (
         <TableShell>
