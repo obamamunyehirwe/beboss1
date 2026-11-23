@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfirmAction, EmptyState, LoadingBlock, StatCard, StatusBadge, useAdminAction } from "@/components/admin/ui";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
-import { deleteShop, extendShop, resetShopTrial, setShopStatus, updateShopControls, updateShopLimits } from "@/lib/admin.functions";
+import { deleteShop, extendShop, listShopOwnerMemberships, resetShopTrial, revokeShopOwnerMembership, setShopStatus, updateShopControls, updateShopLimits } from "@/lib/admin.functions";
 import { codesQuery, configQuery, devicesQuery, paymentsQuery, shopsQuery, snapshotsQuery, syncEventsQuery, usersQuery } from "@/lib/admin-queries";
 import { FLAG_LABEL, deviceHealth, licenseFlags } from "@/lib/sync-health";
 import { buildWhatsAppUrl, calculateSubscriptionFee, computeShopKey, effectiveShopStatus } from "@/lib/pricing";
@@ -45,6 +45,16 @@ function ShopDetail() {
   const limits = useAdminAction(useServerFn(updateShopLimits), { success: (r: { monthly: number }) => `Quotas saved — ${formatRwf(r.monthly)} / month`, invalidate: inv });
   const controls = useAdminAction(useServerFn(updateShopControls), { success: "Remote controls saved", invalidate: inv });
   const del = useAdminAction(useServerFn(deleteShop), { success: "Shop deleted", invalidate: [["admin"]] });
+  const ownerMembershipsFn = useServerFn(listShopOwnerMemberships);
+  const ownerMemberships = useQuery({
+    queryKey: ["admin", "shop-owner-memberships", shopId],
+    queryFn: () => ownerMembershipsFn({ data: { shopId } }),
+    enabled: isAdmin && Boolean(shopId),
+  });
+  const revokeOwner = useAdminAction(useServerFn(revokeShopOwnerMembership), {
+    success: "Owner portal access revoked",
+    invalidate: [["admin", "shop-owner-memberships", shopId], ["admin", "audit"]],
+  });
 
   const [q, setQ] = useState({ branches: 1, workers: 1, devices: 1 });
   const [c, setC] = useState({ killSwitch: false, minAppVersion: "2.1.0", notes: "", adminWhatsapp: "" });
@@ -215,6 +225,54 @@ function ShopDetail() {
             </Button>
           </section>
         </div>
+      ) : null}
+
+      {isAdmin ? (
+        <section className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold">Verified My Shop owner sessions</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Active memberships can access the website owner portal after SMS verification. Revoking a membership blocks the next owner-portal request.
+              </p>
+            </div>
+            <StatusBadge status={ownerMemberships.isLoading ? "LOADING" : ownerMemberships.isError ? "ERROR" : "CURRENT"} />
+          </div>
+          <div className="mt-4 space-y-2">
+            {ownerMemberships.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading owner sessions…</p>
+            ) : (ownerMemberships.data ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">No verified owner portal sessions have been enrolled for this shop.</p>
+            ) : (
+              ownerMemberships.data?.map((membership) => (
+                <div key={membership.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{membership.owner_username}</p>
+                    <p className="text-xs text-muted-foreground">
+                      User {membership.user_id.slice(0, 8)}… • phone ending {membership.owner_phone.replace(/\\D/g, "").slice(-4)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {membership.status === "ACTIVE" ? "Last verified" : "Revoked"}: {formatDateTime(membership.status === "ACTIVE" ? membership.last_verified_at : membership.revoked_at)}
+                    </p>
+                  </div>
+                  {membership.status === "ACTIVE" ? (
+                    <ConfirmAction
+                      trigger={<Button size="sm" variant="destructive" disabled={revokeOwner.isPending}><ShieldOff /> Revoke owner access</Button>}
+                      title={`Revoke access for @${membership.owner_username}?`}
+                      description="The owner will immediately lose access to My Shop. Existing Android sync credentials are not revoked by this action."
+                      confirmLabel="Revoke access"
+                      destructive
+                      onConfirm={() => revokeOwner.mutate({ shopId, userId: membership.user_id })}
+                    />
+                  ) : (
+                    <StatusBadge status="REVOKED" />
+                  )}
+                </div>
+              ))
+            )}
+            {ownerMemberships.isError ? <p className="text-sm text-destructive">Owner session records could not be loaded.</p> : null}
+          </div>
+        </section>
       ) : null}
 
       <Tabs defaultValue="insights">
