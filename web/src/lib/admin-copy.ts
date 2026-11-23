@@ -899,6 +899,19 @@ const words: Record<string, readonly [string, string, string]> = {
   "Validate Bluetooth SPP or USB OTG support against the exact printer model.": ["Genzura niba Bluetooth SPP cyangwa USB OTG bikorana n'ubwoko nyabwo bwa printer.", "Vérifiez la prise en charge Bluetooth SPP ou USB OTG avec le modèle exact d’imprimante.", "Thibitisha usaidizi wa Bluetooth SPP au USB OTG dhidi ya modeli halisi ya printa."],
   "Barcode capture": ["Gusoma barcode", "Lecture de codes-barres", "Usomaji wa msimbo pau"],
   "Camera permission and lighting affect the scanning experience.": ["Uburenganzira bwa camera n'urumuri bigira ingaruka ku gusoma barcode.", "Les autorisations de caméra et l’éclairage influencent la lecture.", "Ruhusa za kamera na mwangaza huathiri usomaji wa misimbo."],
+  "Open the secure invitation or password-reset link from your email to continue.": ["Fungura link y'ubutumire itekanye cyangwa yo guhindura ijambo ry'ibanga yoherejwe kuri imeyili kugira ngo ukomeze.", "Ouvrez le lien sécurisé d’invitation ou de réinitialisation reçu par e-mail pour continuer.", "Fungua kiungo salama cha mwaliko au kuweka upya nenosiri kilichotumwa kwa barua pepe ili kuendelea."],
+  "New password": ["Ijambo ry'ibanga rishya", "Nouveau mot de passe", "Nenosiri jipya"],
+  "Set your admin password": ["Shyiraho ijambo ry'ibanga ry'ubuyobozi", "Définir votre mot de passe admin", "Weka nenosiri lako la msimamizi"],
+  "Choose a new password": ["Hitamo ijambo ry'ibanga rishya", "Choisir un nouveau mot de passe", "Chagua nenosiri jipya"],
+  "Create a password for your invited BeBoss admin account.": ["Shyiraho ijambo ry'ibanga rya konti yawe y'ubuyobozi ya BeBoss watumiwemo.", "Créez un mot de passe pour votre compte administrateur BeBoss invité.", "Tengeneza nenosiri la akaunti yako ya msimamizi wa BeBoss uliyoalikwa."],
+  "Choose a new password for your BeBoss admin account.": ["Hitamo ijambo ry'ibanga rishya rya konti yawe y'ubuyobozi ya BeBoss.", "Choisissez un nouveau mot de passe pour votre compte administrateur BeBoss.", "Chagua nenosiri jipya la akaunti yako ya msimamizi wa BeBoss."],
+  "Set password and continue": ["Shyiraho ijambo ry'ibanga ukomeze", "Définir le mot de passe et continuer", "Weka nenosiri na uendelee"],
+  "Update password": ["Hindura ijambo ry'ibanga", "Mettre à jour le mot de passe", "Sasisha nenosiri"],
+  "Your admin password is set. Welcome to BeBoss.": ["Ijambo ry'ibanga ry'ubuyobozi ryashyizweho. Murakaza neza muri BeBoss.", "Votre mot de passe admin est défini. Bienvenue chez BeBoss.", "Nenosiri lako la msimamizi limewekwa. Karibu BeBoss."],
+  "Password updated.": ["Ijambo ry'ibanga ryahinduwe.", "Mot de passe mis à jour.", "Nenosiri limesasishwa."],
+  "Could not verify this password link.": ["Ntibyashobotse kugenzura iyi link y'ijambo ry'ibanga.", "Impossible de vérifier ce lien de mot de passe.", "Imeshindwa kuthibitisha kiungo hiki cha nenosiri."],
+  "Use at least 10 characters for your password.": ["Koresha nibura inyuguti 10 mu ijambo ry'ibanga.", "Utilisez au moins 10 caractères pour votre mot de passe.", "Tumia angalau herufi 10 kwenye nenosiri lako."],
+  "Could not update your password.": ["Ntibyashobotse guhindura ijambo ry'ibanga.", "Impossible de mettre à jour votre mot de passe.", "Imeshindwa kusasisha nenosiri lako."],
 };
 export function useAdminText() {
   try {
