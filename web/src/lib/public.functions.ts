@@ -225,7 +225,7 @@ export const lookupMyShop = createServerFn({ method: "POST" })
     const sb = createPublicClient(key);
     const [shop, pays, codes, devices, news, snaps, branchRows, transferRows, staffRows] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, owner_name, owner_username, business_type, branch_count, worker_count, device_count, device_limit, monthly_fee_rwf, subscription_status, subscription_expires_at, remote_kill_switch, updated_at").eq("id", key).maybeSingle(),
-      sb.from("payment_requests").select("id, provider, amount_rwf, duration_months, payment_time_ms, payment_note, status, approval_mode, generated_unlock_code, rejection_reason, created_at, updated_at").order("created_at", { ascending: false }).limit(20),
+      sb.from("payment_requests").select("id, provider, amount_rwf, duration_months, payment_time_ms, payment_note, status, approval_mode, generated_unlock_code, rejection_reason, created_at, updated_at, gateway_provider, gateway_reference, gateway_transaction_id, gateway_amount_rwf, gateway_currency, gateway_verified_at").order("created_at", { ascending: false }).limit(20),
       sb.from("unlock_codes").select("unlock_code, tier_code, plan_days, status, issued_at, redeemed_at").order("issued_at", { ascending: false }).limit(20),
       sb.from("shop_devices").select("id, device_name, device_id, role, branch_name, branch_id, is_active, is_owner_primary, assigned_user_id, assigned_user_name, last_synced_at").eq("shop_sync_key", key).order("last_synced_at", { ascending: false }).limit(50),
       sb.from("announcements").select("*").in("audience", ["ALL", "APP"]).order("starts_at", { ascending: false }).limit(5),
