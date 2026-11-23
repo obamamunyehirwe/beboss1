@@ -959,6 +959,13 @@ const words: Record<string, readonly [string, string, string]> = {
 
   "Register device & create join code": ["Andikisha igikoresho kandi ukore kode yo kwinjira", "Enregistrer l’appareil et créer un code de connexion", "Sajili kifaa na utengeneze msimbo wa kujiunga"],
   "Registering…": ["Irimo kwandikisha…", "Enregistrement…", "Inasajili…"],
+  "stored phone datasets": ["amakuru yo muri telefone yabitswe", "ensembles de données stockés du téléphone", "seti za data za simu zilizohifadhiwa"],
+  "normalized cross-shop branch records": ["inyandiko z'amashami zitunganyijwe z'amaduka yose", "enregistrements normalisés des agences de toutes les boutiques", "rekodi sanifu za matawi katika maduka yote"],
+  "As soon as a phone with BeBoss goes online, its sync shows up here in real time.": ["Telefone irimo BeBoss ikimara kubona interneti, ihuzwa ryayo rigaragara hano ako kanya.", "Dès qu’un téléphone équipé de BeBoss se connecte, sa synchronisation apparaît ici en temps réel.", "Mara tu simu yenye BeBoss inapounganishwa kwenye intaneti, usawazishaji wake huonekana hapa moja kwa moja."],
+  "Paired terminals appear here after a successful online security sync. Missing data is not treated as a clean device.": ["Ibikoresho byahujwe bigaragara hano nyuma yo guhuza amakuru y'umutekano kuri interneti. Kubura amakuru ntibivuze ko igikoresho kidafite ikibazo.", "Les terminaux associés apparaissent ici après une synchronisation de sécurité en ligne réussie. L’absence de données n’est pas considérée comme une preuve de bon état.", "Vituo vilivyounganishwa huonekana hapa baada ya usawazishaji salama wa mtandaoni kufanikiwa. Kukosekana kwa data hakumaanishi kuwa kifaa kiko salama."],
+  "Used in *182*8*1*CODE*AMOUNT#. Leave empty to use the fallback phone.": ["Ikoreshwa muri *182*8*1*CODE*AMOUNT#. Siga ubusa kugira ngo hakoreshwe telefone isanzwe.", "Utilisé dans *182*8*1*CODE*AMOUNT#. Laissez vide pour utiliser le téléphone de secours.", "Hutumika katika *182*8*1*CODE*AMOUNT#. Acha wazi ili kutumia simu mbadala."],
+  "Used in *182*1*1*PHONE*AMOUNT# only when the merchant code is empty.": ["Ikoreshwa muri *182*1*1*PHONE*AMOUNT# gusa iyo kode y'umucuruzi itashyizwemo.", "Utilisé dans *182*1*1*PHONE*AMOUNT# uniquement si le code marchand est vide.", "Hutumika katika *182*1*1*PHONE*AMOUNT# tu ikiwa msimbo wa mfanyabiashara haujawekwa."],
+  "Used in *500*1*1*PHONE*AMOUNT#.": ["Ikoreshwa muri *500*1*1*PHONE*AMOUNT#.", "Utilisé dans *500*1*1*PHONE*AMOUNT#.", "Hutumika katika *500*1*1*PHONE*AMOUNT#."],
 };
 export function useAdminText() {
   try {
