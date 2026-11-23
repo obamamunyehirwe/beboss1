@@ -75,6 +75,7 @@ class AuthSessionCoordinator(
 
     fun registerNewShopAndOwner(
         shopName: String,
+        businessType: String,
         currencyCode: String,
         currencySymbol: String,
         address: String,
@@ -121,6 +122,7 @@ class AuthSessionCoordinator(
                     phone = cleanPhone,
                     email = "${cleanUsername}@beboss.rw",
                     shopName = cleanShopName,
+                    businessType = com.beboss.shopmgmt.util.BusinessCatalog.normalize(businessType),
                     address = address.trim().ifBlank { "Kigali, Rwanda" },
                     currencyCode = currencyCode.trim(),
                     currencySymbol = currencySymbol.trim(),
