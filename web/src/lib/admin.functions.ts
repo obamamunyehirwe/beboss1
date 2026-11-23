@@ -299,11 +299,157 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
 
 export const directAutoUnlock = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { requestId: string }) => z.object({ requestId: z.string().min(1).max(200) }).parse(d))
-  .handler(async ({ context }) => {
+  .inputValidator((d: { requestId: string; providerVerified: true; verificationNote: string }) =>
+    z.object({
+      requestId: z.string().min(1).max(200),
+      providerVerified: z.literal(true),
+      verificationNote: z.string().trim().min(5).max(500),
+    }).parse(d))
+  .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    await requireAdmin(ctx);
-    throw new Error("Payment claims must be approved with a unique BB3 unlock code. Direct auto-unlock is disabled for payment verification.");
+    const admin = await requireAdmin(ctx);
+    const { data: req, error } = await ctx.supabase
+      .from("payment_requests")
+      .select("id,shop_name,owner_username,owner_phone,provider,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at")
+      .eq("id", data.requestId)
+      .maybeSingle();
+    if (error || !req) throw new Error("Payment request not found.");
+    if (data.providerVerified !== true) {
+      throw new Error("A manual provider-payment verification is required before a shop can be activated.");
+    }
+    const verificationNote = data.verificationNote.trim();
+    if (verificationNote.length < 5) {
+      throw new Error("Record what you confirmed in the MTN MoMo or Airtel Money merchant transaction history.");
+    }
+
+    const { shopId } = await requireRegisteredPaymentShop(ctx, req);
+    const feePerDeviceRwf = Number(req.fee_per_device_rwf) >= 2_000
+      ? Math.floor(Number(req.fee_per_device_rwf))
+      : 2_000;
+    const calc = calculateSubscriptionFee(
+      req.branch_count,
+      req.worker_count,
+      req.duration_months,
+      req.device_count || 1,
+      feePerDeviceRwf,
+    );
+    if (Number(req.amount_rwf) !== calc.total) {
+      throw new Error(`Payment amount mismatch. Submitted ${Number(req.amount_rwf || 0)} FRw; this plan calculates to ${calc.total} FRw. Refresh and verify the payment details before activating the shop.`);
+    }
+
+    if (req.status === "APPROVED") {
+      if (req.approval_mode !== "DIRECT_AUTO_UNLOCK" || req.generated_unlock_code) {
+        throw new Error("This payment has already been approved with a BB3 code or another approval method.");
+      }
+      const existingShop = await getShop(ctx, shopId);
+      if (!existingShop || String(existingShop.subscription_status) !== "ACTIVE") {
+        throw new Error("The payment is marked as directly approved, but the shop is not active. Refresh the shop record and contact the master administrator.");
+      }
+      return {
+        direct: true,
+        alreadyApproved: true,
+        days: calc.days,
+        tier: calc.tier,
+        total: calc.total,
+        expiresAt: Number(existingShop.subscription_expires_at ?? 0),
+        shopName: req.shop_name,
+        username: req.owner_username,
+        phone: String(req.payer_phone || req.owner_phone),
+      };
+    }
+    if (![ "PENDING_VERIFICATION", "REJECTED" ].includes(String(req.status))) {
+      throw new Error(`This payment claim is ${String(req.status).toLowerCase().replaceAll("_", " ")} and cannot be directly approved.`);
+    }
+
+    const now = Date.now();
+    const claim = await ctx.supabase
+      .from("payment_requests")
+      .update({
+        status: "APPROVED",
+        approval_mode: "DIRECT_AUTO_UNLOCK",
+        generated_unlock_code: "",
+        verified_by_admin: admin.label,
+        admin_verification_note: verificationNote,
+        rejection_reason: "",
+        updated_at: now,
+      })
+      .eq("id", req.id)
+      .eq("status", req.status)
+      .select("id")
+      .maybeSingle();
+
+    if (claim.error || !claim.data) {
+      const { data: latest } = await ctx.supabase
+        .from("payment_requests")
+        .select("status,approval_mode,generated_unlock_code")
+        .eq("id", req.id)
+        .maybeSingle();
+      if (latest?.status === "APPROVED" &&
+          latest.approval_mode === "DIRECT_AUTO_UNLOCK" &&
+          !latest.generated_unlock_code) {
+        const currentShop = await getShop(ctx, shopId);
+        if (currentShop?.subscription_status === "ACTIVE") {
+          return {
+            direct: true,
+            alreadyApproved: true,
+            days: calc.days,
+            tier: calc.tier,
+            total: calc.total,
+            expiresAt: Number(currentShop.subscription_expires_at ?? 0),
+            shopName: req.shop_name,
+            username: req.owner_username,
+            phone: String(req.payer_phone || req.owner_phone),
+          };
+        }
+      }
+      throw new Error("Another administrator changed this payment first. Refresh the queue before trying again.");
+    }
+
+    let expiresAt: number;
+    try {
+      expiresAt = await activateShop(ctx, shopId, {
+        addDays: calc.days,
+        branches: req.branch_count,
+        workers: req.worker_count,
+        devices: req.device_count || 1,
+        monthly: calc.monthly,
+        autoUnlock: true,
+      });
+    } catch (activationError) {
+      await ctx.supabase
+        .from("payment_requests")
+        .update({
+          status: req.status,
+          approval_mode: req.approval_mode || "",
+          generated_unlock_code: req.generated_unlock_code || "",
+          verified_by_admin: req.verified_by_admin || "",
+          rejection_reason: req.rejection_reason || "",
+          updated_at: Date.now(),
+        })
+        .eq("id", req.id)
+        .eq("status", "APPROVED")
+        .eq("approval_mode", "DIRECT_AUTO_UNLOCK");
+      throw new Error(`Payment was verified, but direct shop activation did not complete. The claim was returned for retry: ${activationError instanceof Error ? activationError.message : "activation failed"}`);
+    }
+
+    await audit(
+      ctx,
+      admin.email,
+      "DIRECT_AUTO_UNLOCK_PAYMENT",
+      `@${req.owner_username}`,
+      `Direct cloud activation after manual provider verification: ${verificationNote}. ${req.payer_full_name || req.payer_phone || req.owner_phone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. No unlock code issued.`,
+    );
+    return {
+      direct: true,
+      alreadyApproved: false,
+      days: calc.days,
+      tier: calc.tier,
+      total: calc.total,
+      expiresAt,
+      shopName: req.shop_name,
+      username: req.owner_username,
+      phone: String(req.payer_phone || req.owner_phone),
+    };
   });
 
 export const rejectPayment = createServerFn({ method: "POST" })
