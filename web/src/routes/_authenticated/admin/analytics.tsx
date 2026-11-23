@@ -81,7 +81,7 @@ function AnalyticsPage() {
     <div className="space-y-6">
       <PageHeader
         title={a("Business analytics")}
-        sub="Subscription revenue, conversion, churn and fleet health — computed live from shop and payment data."
+        sub={a("Subscription revenue, conversion, churn and fleet health — computed live from shop and payment data.")}
         actions={
           <Button size="sm" variant="glass" onClick={() => downloadCsv("beboss-revenue-12m.csv", m.trend)}>
             <Download /> {a("Export revenue CSV")}
@@ -89,12 +89,12 @@ function AnalyticsPage() {
         }
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard label="Monthly recurring revenue" value={formatRwf(m.mrr)} sub={`${m.active} active paying shops`} icon={Wallet} tone="brand" />
-        <StatCard label="Average revenue per shop" value={formatRwf(m.arpu)} sub="MRR ÷ active shops" icon={Users} tone="info" />
-        <StatCard label="Lifetime collected" value={formatRwf(m.lifetime)} sub="all verified payments" icon={TrendingUp} tone="success" />
-        <StatCard label="Trial → paid conversion" value={`${m.conversion.toFixed(1)}%`} sub="shops that paid at least once" icon={Percent} tone="success" />
-        <StatCard label="Churn (30 days)" value={`${m.churn.toFixed(1)}%`} sub="paying shops whose license lapsed" icon={TrendingDown} tone={m.churn > 10 ? "danger" : "warning"} />
-        <StatCard label="Median approval time" value={m.approvalH ? `${m.approvalH < 1 ? Math.round(m.approvalH * 60) + " min" : m.approvalH.toFixed(1) + " h"}` : "—"} sub="claim → approved, last 90 days" icon={Clock} />
+        <StatCard label={a("Monthly recurring revenue")} value={formatRwf(m.mrr)} sub={`${m.active} ${a("active paying shops")}`} icon={Wallet} tone="brand" />
+        <StatCard label={a("Average revenue per shop")} value={formatRwf(m.arpu)} sub={a("MRR ÷ active shops")} icon={Users} tone="info" />
+        <StatCard label={a("Lifetime collected")} value={formatRwf(m.lifetime)} sub={a("all verified payments")} icon={TrendingUp} tone="success" />
+        <StatCard label={a("Trial → paid conversion")} value={`${m.conversion.toFixed(1)}%`} sub={a("shops that paid at least once")} icon={Percent} tone="success" />
+        <StatCard label={a("Churn (30 days)")} value={`${m.churn.toFixed(1)}%`} sub={a("paying shops whose license lapsed")} icon={TrendingDown} tone={m.churn > 10 ? "danger" : "warning"} />
+        <StatCard label={a("Median approval time")} value={m.approvalH ? `${m.approvalH < 1 ? Math.round(m.approvalH * 60) + " min" : m.approvalH.toFixed(1) + " h"}` : "—"} sub={a("claim → approved, last 90 days")} icon={Clock} />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5">
