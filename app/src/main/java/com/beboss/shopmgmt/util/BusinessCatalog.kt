@@ -22,7 +22,32 @@ object BusinessCatalog {
     const val WHOLESALE = "sector_wholesale"
     const val SALON = "sector_salon"
 
-    private val commonUnits = listOf("pcs", "unit", "box", "pack", "carton", "dozen", "pair", "set")
+    // Broad retail, wholesale, construction, food-service, pharmacy and service units.
+    // Existing product units are appended as well, so migrations never hide legacy values.
+    private val commonUnits = listOf(
+        // Count and packaging
+        "pcs", "piece", "item", "unit", "set", "pair", "dozen", "gross",
+        "pack", "packet", "sachet", "box", "carton", "case", "crate", "tray",
+        "bag", "sack", "bale", "bundle", "roll", "ream", "sheet", "pallet",
+        "container", "drum", "barrel", "pail", "jar", "bottle", "can",
+        // Mass and dosage
+        "mcg", "mg", "g", "kg", "tonne", "lb", "oz", "IU",
+        // Liquid and capacity
+        "mL", "L", "kL", "gal", "fl oz",
+        // Length
+        "mm", "cm", "m", "km", "in", "ft", "yd",
+        // Area and volume
+        "cm²", "m²", "ft²", "cm³", "m³",
+        // Time and service delivery
+        "second", "minute", "hour", "day", "month",
+        "service", "session", "appointment", "portion", "serving",
+        // Food and hospitality
+        "plate", "cup", "glass",
+        // Construction and material measurement
+        "sheet", "board", "panel", "tile",
+        // Temperature reference for controlled goods
+        "°C"
+    )
 
     val verticals = listOf(
         BusinessVertical(
