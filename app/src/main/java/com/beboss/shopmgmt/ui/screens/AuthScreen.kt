@@ -690,7 +690,8 @@ fun ShopRegistrationScreen(
     language: AppLanguage,
     isDarkTheme: Boolean,
     authError: String? = null,
-    onRegister: (shopName: String, businessType: String, currencyCode: String, currencySymbol: String, address: String, phone: String, ownerName: String, username: String, pin: String, password: String) -> Unit,
+    onRegister: (shopName: String, businessType: String, currencyCode: String, currencySymbol: String, address: String, phone: String, ownerName: String, username: String, pin: String, password: String, ownerOtpCode: String) -> Unit,
+    onRequestOwnerOtp: (phone: String, username: String, onResult: (Boolean, String) -> Unit) -> Unit = { _, _, callback -> callback(false, "SMS verification is not available.") },
     onJoinExistingShop: (ownerUsername: String, ownerPhone: String, deviceJoinCode: String, thisDeviceName: String, pin: String, password: String) -> Unit = { _, _, _, _, _, _ -> },
     onClearError: () -> Unit = {},
     onCancel: () -> Unit,
@@ -712,6 +713,10 @@ fun ShopRegistrationScreen(
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var ownerOtpSent by remember { mutableStateOf(false) }
+    var ownerOtpCode by remember { mutableStateOf("") }
+    var ownerOtpBusy by remember { mutableStateOf(false) }
+    var ownerOtpMessage by remember { mutableStateOf("") }
 
     // Join Existing Shop (Add Device) state
     var joinOwnerUsername by remember { mutableStateOf("") }
@@ -1670,6 +1675,108 @@ fun ShopRegistrationScreen(
                         }
                     }
 
+                    if (step == 2 && registrationMode == 0) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = cardBg),
+                            border = BorderStroke(1.dp, cardBorder)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        "Verify owner phone for secure cloud access",
+                                        fontFamily = GopherFontFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = textPrimary
+                                    )
+                                }
+                                Text(
+                                    "BeBoss sends a one-time SMS code to the owner number. This creates the verified owner identity used to protect this shop's cloud data.",
+                                    fontFamily = GopherFontFamily,
+                                    fontSize = 11.sp,
+                                    color = textSecondary
+                                )
+                                if (!ownerOtpSent) {
+                                    Button(
+                                        onClick = {
+                                            if (phone.filter { it.isDigit() }.length < 9 || username.trim().length < 2) {
+                                                errorMessage = "Enter the owner phone and shop username before requesting verification."
+                                            } else {
+                                                ownerOtpBusy = true
+                                                ownerOtpMessage = ""
+                                                onRequestOwnerOtp(phone.trim(), username.trim()) { ok, message ->
+                                                    ownerOtpBusy = false
+                                                    ownerOtpMessage = message
+                                                    ownerOtpSent = ok
+                                                    ownerOtpCode = ""
+                                                    if (!ok) errorMessage = message else errorMessage = null
+                                                }
+                                            }
+                                        },
+                                        enabled = !ownerOtpBusy,
+                                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
+                                    ) {
+                                        Text(
+                                            if (ownerOtpBusy) "Sending SMS verification…" else "Send owner verification code",
+                                            fontFamily = GopherFontFamily,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                } else {
+                                    OutlinedTextField(
+                                        value = ownerOtpCode,
+                                        onValueChange = { ownerOtpCode = it.filter(Char::isDigit).take(8) },
+                                        label = { Text("SMS verification code", fontFamily = GopherFontFamily) },
+                                        placeholder = { Text("Enter the code sent to $phone") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth().testTag("new_shop_owner_otp_input"),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedContainerColor = fieldBg,
+                                            unfocusedContainerColor = fieldBg,
+                                            focusedTextColor = textPrimary,
+                                            unfocusedTextColor = textPrimary,
+                                            focusedBorderColor = OrangePrimary,
+                                            unfocusedBorderColor = cardBorder
+                                        )
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            ownerOtpMessage.ifBlank { "Enter the SMS code to create your secure shop account." },
+                                            modifier = Modifier.weight(1f),
+                                            fontFamily = GopherFontFamily,
+                                            fontSize = 10.5.sp,
+                                            color = textSecondary
+                                        )
+                                        OutlinedButton(
+                                            onClick = {
+                                                ownerOtpSent = false
+                                                ownerOtpCode = ""
+                                            },
+                                            enabled = !ownerOtpBusy
+                                        ) {
+                                            Text("Resend", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(4.dp))
 
                     // Wizard Navigation Buttons
@@ -1740,6 +1847,8 @@ fun ShopRegistrationScreen(
                                         errorMessage = Localization.get("reg_err_pin", language)
                                     } else if (password.length < 6) {
                                         errorMessage = Localization.get("reg_err_password", language)
+                                    } else if (!ownerOtpSent || ownerOtpCode.filter { it.isDigit() }.length !in 4..8) {
+                                        errorMessage = "Verify the owner phone with the SMS code before creating the shop."
                                     } else {
                                         errorMessage = null
                                         onRegister(
@@ -1752,7 +1861,8 @@ fun ShopRegistrationScreen(
                                             ownerName.trim(),
                                             username.trim().lowercase().replace(" ", ""),
                                             pin.trim(),
-                                            password.trim()
+                                            password.trim(),
+                                            ownerOtpCode.trim()
                                         )
                                     }
                                 },
