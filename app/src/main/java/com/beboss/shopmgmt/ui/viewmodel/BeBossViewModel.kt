@@ -615,7 +615,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun toggleShopDeviceActive(deviceId: String, isActive: Boolean) {
         viewModelScope.launch {
             try {
-                repository.toggleShopDeviceActive(deviceId, isActive, actor = currentUser.value)
+                repository.toggleShopDeviceActive(
+                    deviceId,
+                    isActive,
+                    actor = currentUser.value,
+                    actorDeviceId = this@BeBossViewModel.deviceId
+                )
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit(
                     if (isActive) "Shop device enabled (+2,000 FRw/mo when active)."
