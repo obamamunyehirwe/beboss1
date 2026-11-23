@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@/lib/use-server-fn";
-import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, Loader2, Plus, Search, Send, Smartphone, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -8,7 +7,6 @@ import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,10 +14,9 @@ import { liveConfigured } from '@/lib/live-config';
 import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
-import { addMyShopDevice, confirmMyShopStockTransfer, deleteMyShopBranch, lookupMyShop, requestMyShopStockTransferCancellation, submitPaymentProof, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
-import { publicSiteQuery } from "@/lib/queries";
+import { addMyShopDevice, confirmMyShopStockTransfer, createGatewayCheckout, deleteMyShopBranch, lookupMyShop, requestMyShopStockTransferCancellation, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
 import { AnnouncementCard } from "@/components/site/AnnouncementBanner";
-import { buildAirtelUssd, buildMtnUssd, calculateSubscriptionFee, effectiveShopStatus } from "@/lib/pricing";
+import { calculateSubscriptionFee, effectiveShopStatus } from "@/lib/pricing";
 import { daysLeft, formatDateTime, formatRwf, relativeTime } from "@/lib/format";
 import { deviceHealth } from "@/lib/sync-health";
 import { ReceiptVerifier } from "@/components/site/ReceiptVerifier";
@@ -78,7 +75,7 @@ function MyShopPage() {
             <LookupPanel />
           </TabsContent>
           <TabsContent value="pay">
-            <ProofPanel initial={search} onDone={() => setTab("check")} />
+            <ProofPanel initial={search} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1068,41 +1065,35 @@ function BranchManager({
   );
 }
 
-function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>; onDone: () => void }) {
-  const { t, p } = useI18n();
-  const submit = useServerFn(submitPaymentProof);
-  const { data: site } = useQuery(publicSiteQuery);
+function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
+  const { t } = useI18n();
+  const startCheckout = useServerFn(createGatewayCheckout);
   const [f, setF] = useState({
     shopName: "",
     username: "",
     phone: "",
-    provider: "MTN MoMo" as "MTN MoMo" | "Airtel Money",
+    gateway: "flutterwave" as "flutterwave" | "stripe",
     payerPhone: "",
     payerName: "",
-    paymentTimeMs: Date.now(),
-    paymentNote: "",
+    payerEmail: "",
     months: ([1, 3, 6, 12].includes(Number(initial.m)) ? Number(initial.m) : 1) as 1 | 3 | 6 | 12,
     branches: initial.b ?? 1,
     workers: initial.w ?? 1,
     devices: initial.d ?? 1,
   });
   const [sending, setSending] = useState(false);
-  const cfg = site?.config ?? {};
-  const calc = calculateSubscriptionFee(f.branches, f.workers, f.months, f.devices, Number(site?.config?.per_device_fee_rwf) || 2000);
-  const ussd = f.provider === "MTN MoMo" ? buildMtnUssd(calc.total, cfg) : buildAirtelUssd(calc.total, cfg);
+  const calc = calculateSubscriptionFee(f.branches, f.workers, f.months, f.devices, 2_000);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSending(true);
     try {
-      await submit({ data: { ...f, ussd, paymentTimeMs: f.paymentTimeMs, paymentNote: f.paymentNote } });
-      toast.success(p.myShop.proofSent);
-      onDone();
+      const checkout = await startCheckout({ data: f });
+      window.location.assign(checkout.checkoutUrl);
     } catch (err) {
       console.error(err);
-      toast.error(p.myShop.sendFailed);
-    } finally {
+      toast.error(err instanceof Error ? err.message : "The payment provider could not start checkout.");
       setSending(false);
     }
   };
@@ -1114,39 +1105,25 @@ function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>
         <Field label={t("username")} value={f.username} onChange={(v) => set("username", v)} min={2} max={80} />
         <Field label={t("phone")} value={f.phone} onChange={(v) => set("phone", v)} min={9} max={30} tel />
         <div className="space-y-2">
-          <Label>{t("payWith")}</Label>
-          <Select value={f.provider} onValueChange={(v) => set("provider", v as typeof f.provider)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
+          <Label>Payment gateway</Label>
+          <Select value={f.gateway} onValueChange={(v) => set("gateway", v as typeof f.gateway)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="MTN MoMo">MTN MoMo</SelectItem>
-              <SelectItem value="Airtel Money">Airtel Money</SelectItem>
+              <SelectItem value="flutterwave">Flutterwave — MTN MoMo, Airtel Money and card</SelectItem>
+              <SelectItem value="stripe">Stripe — bank cards (eligible merchant account required)</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        <Field label={p.myShop.payerName} value={f.payerName} onChange={(v) => set("payerName", v)} min={2} max={120} />
-        <Field label={p.myShop.payerPhone} value={f.payerPhone} onChange={(v) => set("payerPhone", v)} min={9} max={30} tel />
-        <div className="space-y-2">
-          <Label>Payment date and time</Label>
-          <Input
-            type="datetime-local"
-            value={new Date(f.paymentTimeMs - new Date(f.paymentTimeMs).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)}
-            onChange={(e) => set("paymentTimeMs", e.target.value ? new Date(e.target.value).getTime() : Date.now())}
-            required
-          />
-        </div>
+        <Field label="Payer full name" value={f.payerName} onChange={(v) => set("payerName", v)} min={2} max={120} />
+        <Field label="Payer phone" value={f.payerPhone} onChange={(v) => set("payerPhone", v)} min={9} max={30} tel />
         <div className="space-y-2 sm:col-span-2">
-          <Label>MTN MoMo / Airtel Money confirmation SMS</Label>
-          <p className="text-xs text-muted-foreground">After paying, copy the successful payment SMS from your phone's Messages app and paste its full text here. No screenshot is required. Never include your mobile money PIN.</p>
-          <Textarea value={f.paymentNote} onChange={(e) => set("paymentNote", e.target.value)} required minLength={8} maxLength={1000} rows={4} placeholder="Paste the full successful MTN MoMo or Airtel Money confirmation SMS..." />
+          <Label htmlFor="payer-email">Payer email</Label>
+          <Input id="payer-email" type="email" value={f.payerEmail} onChange={(e) => set("payerEmail", e.target.value)} required maxLength={254} autoComplete="email" />
         </div>
         <div className="space-y-2">
           <Label>{t("calcCycle")}</Label>
           <Select value={String(f.months)} onValueChange={(v) => set("months", Number(v) as typeof f.months)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               {[1, 3, 6, 12].map((m) => (
                 <SelectItem key={m} value={String(m)}>
@@ -1164,15 +1141,17 @@ function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>
         <p className="text-sm text-muted-foreground">{t("calcTotal")}</p>
         <p className="font-display text-4xl font-extrabold text-gradient-brand">{formatRwf(calc.total)}</p>
         <div className="rounded-2xl border border-border bg-background/60 p-4">
-          <p className="text-xs text-muted-foreground">{t("dialThis")}</p>
-          <a href={`tel:${encodeURIComponent(ussd)}`} className="font-mono text-lg font-semibold text-primary">
-            {ussd}
-          </a>
+          <p className="text-sm font-semibold">Secure hosted checkout</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            BeBoss creates your checkout securely on its server. The provider confirms settlement directly to BeBoss; a browser redirect or payment SMS is not treated as proof of payment.
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Flutterwave supports RWF card and Rwanda Mobile Money, subject to merchant payment-method activation. Stripe requires an active merchant account in a supported country.
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground">{p.myShop.amountNote}</p>
         <Button type="submit" variant="hero" size="lg" className="mt-auto" disabled={sending}>
           {sending ? <Loader2 className="animate-spin" /> : <Send />}
-          {t("submitProof")}
+          Continue to secure payment
         </Button>
       </div>
     </form>
