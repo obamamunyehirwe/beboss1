@@ -553,7 +553,111 @@ class CloudSyncManager(private val database: AppDatabase) {
                 // stale phone state instead of being clobbered by the phone's push.
                 val remoteBranches = SupabaseAdminClient.fetchShopBranches(shopSyncKey)
                 val remoteTransfers = SupabaseAdminClient.fetchShopStockTransfers(shopSyncKey)
-                if (remoteBranches.isNotEmpty() || remoteTransfers.isNotEmpty()) {
+                val transferCommandStatuses = setOf("REQUESTED", "RECEIPT_REQUESTED", "CANCEL_REQUESTED")
+                val commandTransfers = remoteTransfers.filter { it.status in transferCommandStatuses }
+                val transferManager = com.beboss.shopmgmt.domain.BranchTransferManager(
+                    branchDao = branchDao,
+                    stockTransferDao = stockTransferDao,
+                    productDao = productDao,
+                    shopProfileDao = shopProfileDao,
+                    syncQueueDao = syncQueueDao,
+                    syncTombstoneDao = database.syncTombstoneDao(),
+                    database = database,
+                    nodeId = deviceId
+                )
+
+                // Web operations are commands, never inventory facts. Claim each command
+                // under a short lease, then apply it through the same Room transaction
+                // used by an on-device transfer. Transfer IDs and conditional transitions
+                // keep repeated delivery idempotent.
+                for (command in commandTransfers) {
+                    var claimed = false
+                    try {
+                        claimed = SupabaseAdminClient.claimShopStockTransfer(
+                            shopSyncKey = shopSyncKey,
+                            transferId = command.id,
+                            deviceId = deviceId
+                        )
+                        if (!claimed) continue
+                        HlcClock.observe(command.hlcTimestamp)
+                        when (command.status) {
+                            "REQUESTED" -> {
+                                val existing = stockTransferDao.getTransferById(command.id)
+                                if (existing == null) {
+                                    transferManager.acceptRemoteTransferRequest(
+                                        com.beboss.shopmgmt.data.model.StockTransfer(
+                                            id = command.id,
+                                            transferNumber = command.transferNumber,
+                                            productId = command.productId,
+                                            productName = command.productName,
+                                            fromBranchId = command.fromBranchId,
+                                            fromBranchName = command.fromBranchName,
+                                            toBranchId = command.toBranchId,
+                                            toBranchName = command.toBranchName,
+                                            quantity = command.quantity,
+                                            unit = command.unit,
+                                            costValueRwf = command.costValueRwf,
+                                            transferDate = command.transferDate,
+                                            status = "REQUESTED",
+                                            notes = command.notes,
+                                            transferredBy = command.transferredBy,
+                                            receivedBy = command.receivedBy,
+                                            receivedAt = command.receivedAt,
+                                            synced = false,
+                                            createdAt = command.createdAt,
+                                            updatedAt = command.updatedAt,
+                                            hlcTimestamp = command.hlcTimestamp,
+                                            lastModifiedDeviceId = command.lastModifiedDeviceId
+                                        )
+                                    )
+                                } else {
+                                    transferManager.publishTransferVersion(command.id)
+                                }
+                            }
+                            "RECEIPT_REQUESTED" -> {
+                                val local = stockTransferDao.getTransferById(command.id)
+                                when (local?.status) {
+                                    "IN_TRANSIT", "PENDING" -> transferManager.confirmTransferReceived(
+                                        command.id,
+                                        command.receivedBy.ifBlank { "Web shop owner" }
+                                    )
+                                    null -> {
+                                        SupabaseAdminClient.releaseShopStockTransferClaim(shopSyncKey, command.id, deviceId)
+                                        claimed = false
+                                    }
+                                    else -> transferManager.publishTransferVersion(command.id)
+                                }
+                            }
+                            "CANCEL_REQUESTED" -> {
+                                val local = stockTransferDao.getTransferById(command.id)
+                                when (local?.status) {
+                                    "IN_TRANSIT", "PENDING" -> transferManager.rejectOrCancelTransfer(
+                                        command.id,
+                                        command.receivedBy.ifBlank { "Web shop owner" },
+                                        command.notes.ifBlank { "Cancellation requested from My Shop portal" }
+                                    )
+                                    null -> {
+                                        SupabaseAdminClient.releaseShopStockTransferClaim(shopSyncKey, command.id, deviceId)
+                                        claimed = false
+                                    }
+                                    else -> transferManager.publishTransferVersion(command.id)
+                                }
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Remote transfer command ${command.id} deferred: ${e.safeMessage("Apply failed")}")
+                        if (claimed) {
+                            SupabaseAdminClient.releaseShopStockTransferClaim(shopSyncKey, command.id, deviceId)
+                        }
+                    }
+                }
+
+                // Command rows are excluded from factual merge until a paired phone has
+                // applied the inventory effect and uploaded the resulting final state.
+                val factualRemoteTransfers = remoteTransfers.filterNot { it.status in transferCommandStatuses }
+                if (remoteBranches.isNotEmpty() || factualRemoteTransfers.isNotEmpty()) {
                     try {
                         val cloudBranches = remoteBranches.map { dto ->
                             com.beboss.shopmgmt.data.model.Branch(
@@ -582,7 +686,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                                 lastModifiedDeviceId = dto.lastModifiedDeviceId
                             )
                         }
-                        val cloudTransfers = remoteTransfers.map { dto ->
+                        val cloudTransfers = factualRemoteTransfers.map { dto ->
                             com.beboss.shopmgmt.data.model.StockTransfer(
                                 id = dto.id,
                                 transferNumber = dto.transferNumber,
