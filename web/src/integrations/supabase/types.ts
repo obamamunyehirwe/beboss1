@@ -499,6 +499,7 @@ export type Database = {
           admin_whatsapp: string
           auto_unlocked_at: number
           branch_count: number
+          business_type: string
           created_at: number
           device_challenge: string
           device_count: number
@@ -522,6 +523,7 @@ export type Database = {
           admin_whatsapp?: string
           auto_unlocked_at?: number
           branch_count?: number
+          business_type?: string
           created_at?: number
           device_challenge?: string
           device_count?: number
@@ -992,6 +994,27 @@ export type Database = {
       is_beboss_admin: { Args: never; Returns: boolean }
       is_beboss_staff: { Args: never; Returns: boolean }
       now_ms: { Args: never; Returns: number }
+      issue_shop_device_invite: {
+        Args: {
+          p_branch_id: string
+          p_code_hash: string
+          p_created_by_device_id: string
+          p_created_by_user_id: string
+          p_device_record_id: string
+          p_expires_at: number
+          p_shop_sync_key: string
+        }
+        Returns: Json
+      }
+      revoke_shop_device_invites: {
+        Args: {
+          p_actor_device_id: string
+          p_actor_user_id: string
+          p_device_record_id: string
+          p_shop_sync_key: string
+        }
+        Returns: boolean
+      }
       public_platform_stats: { Args: never; Returns: Json }
       record_apk_download: {
         Args: { p_channel?: string; p_release_id: string }

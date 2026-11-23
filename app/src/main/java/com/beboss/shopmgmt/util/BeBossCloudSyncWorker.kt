@@ -37,12 +37,20 @@ class BeBossCloudSyncWorker(
                 return@withContext Result.success()
             }
 
-            val users = db.userDao().getAllUsersDirect()
+            val users = db.userDao().getAllUsersDirect().filter { it.isActive }
             // A paired cashier/manager is not the shop owner. The canonical owner
             // username comes from the primary-device row when this device is joined.
             val ownerUser = users.firstOrNull { it.role == UserRole.OWNER }
             val branches = db.branchDao().getAllActiveBranchesList()
             val deviceId = SupabaseAdminClient.getOrCreateDeviceId(appCtx)
+
+            // A clean APK install with no registration or pairing must never derive
+            // a tenant identity from defaults and inherit someone else's old unlock.
+            val primaryDevice = db.shopDeviceDao().getAllDevicesList().firstOrNull { it.isOwnerPrimary }
+            if (primaryDevice == null || (db.shopDeviceDao().getByDeviceId(deviceId) == null && ownerUser == null)) {
+                Log.i(TAG, "Skipping cloud licensing: no registered owner terminal or paired device exists.")
+                return@withContext Result.success()
+            }
 
             repository.ensureOwnerPrimaryDevice(
                 deviceId = deviceId,
@@ -50,6 +58,18 @@ class BeBossCloudSyncWorker(
                 ownerUser = ownerUser,
                 mainBranch = branches.firstOrNull { it.isMainBranch } ?: branches.firstOrNull()
             )
+
+            val currentTerminal = db.shopDeviceDao().getByDeviceId(deviceId)
+            val assignedUser = currentTerminal?.let { db.userDao().getUserById(it.assignedUserId) }
+            if (currentTerminal == null || !currentTerminal.isActive ||
+                currentTerminal.shopSyncKey.isBlank() ||
+                assignedUser == null || !assignedUser.isActive ||
+                assignedUser.role.name != currentTerminal.role
+            ) {
+                Log.i(TAG, "Skipping cloud licensing: this hardware is not paired to an active shop user.")
+                return@withContext Result.success()
+            }
+
             val activeDevicesCount = repository.getActiveDevicesCount().coerceAtLeast(1)
 
             val adminResult = repository.syncPendingAdminDataWithSupabase(

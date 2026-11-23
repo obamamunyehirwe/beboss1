@@ -772,6 +772,7 @@ fun SettingsScreen(
         shopDevices = shopDevices,
         allUsers = allUsers,
         branches = branches,
+        currentUser = currentUser,
         language = language,
         onAddDevice = onAddShopDevice,
         onToggleActive = onToggleShopDeviceActive,

@@ -316,9 +316,10 @@ private fun BeBossMainContent(
             language = currentLanguage,
             isDarkTheme = isDarkTheme,
             authError = authError,
-            onRegister = { shopName, currencyCode, currencySymbol, address, phone, ownerName, username, pin, password ->
+            onRegister = { shopName, businessType, currencyCode, currencySymbol, address, phone, ownerName, username, pin, password ->
                 viewModel.registerNewShopAndOwner(
                     shopName = shopName,
+                    businessType = businessType,
                     currencyCode = currencyCode,
                     currencySymbol = currencySymbol,
                     address = address,
@@ -833,7 +834,7 @@ private fun BeBossMainContent(
     }
 
     // Active Subscription Hard-Lock Paywall (Non-dismissible after 4-day free trial or remote lock)
-    if (!shopProfile.isSubscriptionActive && !isLocked && !isRegistrationNeeded) {
+    if (shopProfile.shopName.isNotBlank() && !shopProfile.isSubscriptionActive && !isRegistrationNeeded) {
         com.beboss.shopmgmt.ui.screens.SubscriptionPaywallDialog(
             shopProfile = shopProfile,
             branches = branches,
@@ -869,7 +870,7 @@ private fun BeBossMainContent(
                 )
             },
             onCheckCloudApproval = { viewModel.checkCloudUnlockApprovals() },
-            onOpenAdminConsole = { showPaywallAdminConsole = true }
+            onOpenAdminConsole = null
         )
     }
 

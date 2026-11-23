@@ -93,6 +93,7 @@ fun ShopDevicesDialog(
     shopDevices: List<ShopDevice>,
     allUsers: List<User>,
     branches: List<Branch>,
+    currentUser: User? = null,
     language: AppLanguage = AppLanguage.ENGLISH,
     onAddDevice: (deviceName: String, assignedUser: User, branch: Branch?, onCreated: (ShopDevice) -> Unit) -> Unit,
     onToggleActive: (deviceId: String, isActive: Boolean) -> Unit,
@@ -103,18 +104,38 @@ fun ShopDevicesDialog(
     val numberFormat = remember { DecimalFormat("#,###") }
     val dateFormat = remember { SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()) }
 
+    val isShopOwner = currentUser == null || currentUser.role.name == "OWNER"
+    val managedBranchIds = remember(currentUser, branches) {
+        if (isShopOwner) branches.map { it.id }.toSet()
+        else branches.filter {
+            it.managerUserId == currentUser?.id || it.id == currentUser?.assignedBranchId
+        }.map { it.id }.toSet()
+    }
+    val availableBranches = remember(branches, managedBranchIds) {
+        branches.filter { it.isActive && it.id in managedBranchIds }
+    }
+    val availableUsers = remember(allUsers, availableBranches, isShopOwner) {
+        allUsers.filter { user ->
+            user.isActive &&
+                user.role.name != "OWNER" &&
+                (isShopOwner || availableBranches.any { it.id == user.assignedBranchId })
+        }
+    }
+    val visibleDevices = remember(shopDevices, managedBranchIds, isShopOwner) {
+        if (isShopOwner) shopDevices
+        else shopDevices.filter { it.branchId in managedBranchIds }
+    }
+
     var showAddForm by remember { mutableStateOf(false) }
     var newDeviceName by remember { mutableStateOf("") }
-    var selectedUser by remember(allUsers) {
-        mutableStateOf(allUsers.firstOrNull { !it.role.name.equals("OWNER", ignoreCase = true) } ?: allUsers.firstOrNull())
-    }
-    var selectedBranch by remember(branches) { mutableStateOf(branches.firstOrNull()) }
+    var selectedUser by remember(availableUsers) { mutableStateOf(availableUsers.firstOrNull()) }
+    var selectedBranch by remember(availableBranches) { mutableStateOf(availableBranches.firstOrNull()) }
     var userMenuExpanded by remember { mutableStateOf(false) }
     var branchMenuExpanded by remember { mutableStateOf(false) }
     var lastCreatedDevice by remember { mutableStateOf<ShopDevice?>(null) }
     var deviceToDelete by remember { mutableStateOf<ShopDevice?>(null) }
 
-    val activeCount = shopDevices.count { it.isActive }.coerceAtLeast(1)
+    val activeCount = visibleDevices.count { it.isActive }.coerceAtLeast(1)
     val extraDevices = (activeCount - 1).coerceAtLeast(0)
     val extraMonthlyCost = extraDevices * OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF
 
@@ -336,7 +357,7 @@ fun ShopDevicesDialog(
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Text(
-                                        text = "Register Secondary POS Terminal",
+                                        text = if (isShopOwner) "Register Secondary POS Terminal" else "Register Terminal for Your Branch",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -375,7 +396,7 @@ fun ShopDevicesDialog(
                                             expanded = userMenuExpanded,
                                             onDismissRequest = { userMenuExpanded = false }
                                         ) {
-                                            allUsers.forEach { user ->
+                                            availableUsers.forEach { user ->
                                                 DropdownMenuItem(
                                                     text = { Text("${user.name} (@${user.username}) \u2022 ${user.role.displayName}") },
                                                     onClick = {
@@ -410,7 +431,7 @@ fun ShopDevicesDialog(
                                             expanded = branchMenuExpanded,
                                             onDismissRequest = { branchMenuExpanded = false }
                                         ) {
-                                            branches.forEach { branch ->
+                                            availableBranches.forEach { branch ->
                                                 DropdownMenuItem(
                                                     text = { Text(branch.name) },
                                                     onClick = {
@@ -426,17 +447,22 @@ fun ShopDevicesDialog(
                                         onClick = {
                                             val user = selectedUser
                                             if (user == null) {
-                                                Toast.makeText(context, "Create a staff user first before pairing a device.", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Create an active Manager or Cashier in your branch first.", Toast.LENGTH_SHORT).show()
+                                                return@Button
+                                            }
+                                            val branchToUse = selectedBranch
+                                            if (branchToUse == null) {
+                                                Toast.makeText(context, "Select an active branch you manage.", Toast.LENGTH_SHORT).show()
                                                 return@Button
                                             }
                                             val nameToUse = newDeviceName.trim().ifBlank { "${user.name}'s Terminal" }
-                                            onAddDevice(nameToUse, user, selectedBranch) { created ->
+                                            onAddDevice(nameToUse, user, branchToUse) { created ->
                                                 lastCreatedDevice = created
                                                 newDeviceName = ""
                                                 showAddForm = false
                                             }
                                         },
-                                        enabled = selectedUser != null,
+                                        enabled = selectedUser != null && selectedBranch != null,
                                         colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier
@@ -458,7 +484,7 @@ fun ShopDevicesDialog(
                     }
 
                     // Device List
-                    if (shopDevices.isEmpty()) {
+                    if (visibleDevices.isEmpty()) {
                         item(key = "empty_devices") {
                             Box(
                                 modifier = Modifier
@@ -488,7 +514,7 @@ fun ShopDevicesDialog(
                             }
                         }
                     } else {
-                        items(shopDevices, key = { it.id }) { device ->
+                        items(visibleDevices, key = { it.id }) { device ->
                             ShopDeviceRowCard(
                                 device = device,
                                 dateFormat = dateFormat,
@@ -649,18 +675,26 @@ private fun ShopDeviceRowCard(
                 }
 
                 if (!device.isOwnerPrimary) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                    ) {
+                    if (device.isActive && device.deviceId.isBlank() && device.joinCode.isNotBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Text(
+                                text = device.joinCode,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 12.sp,
+                                color = OrangePrimary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    } else {
                         Text(
-                            text = device.joinCode,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 12.sp,
-                            color = OrangePrimary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            text = if (device.deviceId.isNotBlank()) "Paired to this shop" else if (!device.isActive) "Invitation paused" else "No active invitation",
+                            fontSize = 10.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -695,17 +729,19 @@ private fun ShopDeviceRowCard(
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        IconButton(
-                            onClick = onCopyJoinCode,
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy Join Code", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        IconButton(
-                            onClick = onShareJoinCode,
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = "Share Join Code", tint = OrangePrimary)
+                        if (device.isActive && device.deviceId.isBlank() && device.joinCode.isNotBlank()) {
+                            IconButton(
+                                onClick = onCopyJoinCode,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy Join Code", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(
+                                onClick = onShareJoinCode,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = "Share Join Code", tint = OrangePrimary)
+                            }
                         }
                         IconButton(
                             onClick = onRequestDelete,

@@ -385,6 +385,7 @@ fun StaffManagementDialog(
     if (isAddingNew || userToEdit != null) {
         StaffFormDialog(
             initialUser = userToEdit,
+            allUsers = allUsers,
             branches = branches,
             language = language,
             onSave = { u ->
@@ -404,6 +405,7 @@ fun StaffManagementDialog(
 @Composable
 fun StaffFormDialog(
     initialUser: User?,
+    allUsers: List<User> = emptyList(),
     branches: List<Branch> = emptyList(),
     language: AppLanguage = AppLanguage.ENGLISH,
     onSave: (User) -> Unit,
@@ -411,6 +413,11 @@ fun StaffFormDialog(
 ) {
     var name by remember { mutableStateOf(initialUser?.name ?: "") }
     var username by remember { mutableStateOf(initialUser?.username ?: "") }
+    val normalizedUsername = (username.ifBlank { name }).trim().lowercase().replace(Regex("\\s+"), "")
+    val usernameConflict = allUsers.any {
+        it.id != initialUser?.id && it.username.trim().equals(normalizedUsername, ignoreCase = true)
+    }
+    val usernameFormatValid = normalizedUsername.matches(Regex("[a-z0-9._-]{2,80}"))
     var phone by remember { mutableStateOf(initialUser?.phone ?: "") }
     var pin by remember { mutableStateOf(if (initialUser != null && initialUser.pinHash.length <= 6) initialUser.pinHash else "") }
     var showPin by remember { mutableStateOf(false) }
@@ -503,9 +510,17 @@ fun StaffFormDialog(
 
                 OutlinedTextField(
                     value = username,
-                    onValueChange = { username = it },
+                    onValueChange = { username = it.trim().lowercase() },
                     label = { Text(if (language == AppLanguage.KINYARWANDA) "Izina ryo Kwinjira *" else "Username *") },
                     placeholder = { Text("e.g. jean") },
+                    isError = !usernameFormatValid || usernameConflict,
+                    supportingText = {
+                        when {
+                            usernameConflict -> Text("This username is already assigned to another worker.")
+                            !usernameFormatValid -> Text("Use 2–80 letters, numbers, dots, underscores or hyphens.")
+                            else -> Text("Unique sign-in name for this shop.")
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true
@@ -707,7 +722,7 @@ fun StaffFormDialog(
                 } else {
                     pin.isNotBlank() && pinValidation != null && pinValidation.isValid
                 }
-                val isFormValid = name.isNotBlank() && isPinValid
+                val isFormValid = name.isNotBlank() && usernameFormatValid && !usernameConflict && isPinValid
 
                 Button(
                     onClick = {
@@ -720,7 +735,7 @@ fun StaffFormDialog(
                             val u = User(
                                 id = initialUser?.id ?: UUID.randomUUID().toString(),
                                 name = name.trim(),
-                                username = username.ifBlank { name.lowercase().replace(" ", "") },
+                                username = normalizedUsername,
                                 phone = phone.trim(),
                                 pinHash = finalPinHash,
                                 role = role,

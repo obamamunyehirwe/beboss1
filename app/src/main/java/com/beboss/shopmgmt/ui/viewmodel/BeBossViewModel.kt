@@ -69,6 +69,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -238,9 +239,9 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
-    val categories: StateFlow<List<String>> = repository.categories.stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
-    )
+    val categories: StateFlow<List<String>> = combine(repository.categories, shopProfile) { stored, profile ->
+        com.beboss.shopmgmt.util.BusinessCatalog.categoriesWithExisting(profile.businessType, stored)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val inventoryValuation: StateFlow<InventoryValuation> = repository.getInventoryValuation().stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000),
@@ -553,6 +554,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     // ------------------------------------------------------------------------
     fun registerNewShopAndOwner(
         shopName: String,
+        businessType: String,
         currencyCode: String,
         currencySymbol: String,
         address: String,
@@ -562,7 +564,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         pin: String,
         password: String
     ) = authCoordinator.registerNewShopAndOwner(
-        shopName, currencyCode, currencySymbol, address, phone,
+        shopName, businessType, currencyCode, currencySymbol, address, phone,
         ownerFullName, username, pin, password
     )
 
@@ -594,6 +596,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     deviceName = deviceName,
                     assignedUser = assignedUser,
                     branch = branch,
+                    creatorDeviceId = deviceId,
                     actor = currentUser.value
                 )
                 scheduleAutoBranchSync()
@@ -612,7 +615,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun toggleShopDeviceActive(deviceId: String, isActive: Boolean) {
         viewModelScope.launch {
             try {
-                repository.toggleShopDeviceActive(deviceId, isActive, actor = currentUser.value)
+                repository.toggleShopDeviceActive(
+                    deviceId,
+                    isActive,
+                    actor = currentUser.value,
+                    actorDeviceId = this@BeBossViewModel.deviceId
+                )
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit(
                     if (isActive) "Shop device enabled (+2,000 FRw/mo when active)."
@@ -629,7 +637,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun deleteShopDevice(deviceId: String) {
         viewModelScope.launch {
             try {
-                repository.deleteShopDevice(deviceId, actor = currentUser.value)
+                repository.deleteShopDevice(deviceId, actor = currentUser.value, actorDeviceId = this@BeBossViewModel.deviceId)
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit("Secondary shop device removed.")
             } catch (e: SecurityException) {

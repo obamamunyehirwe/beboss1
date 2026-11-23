@@ -22,8 +22,11 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE id = :userId LIMIT 1")
     suspend fun getUserById(userId: String): User?
 
-    @Query("SELECT * FROM users WHERE username = :username LIMIT 1")
+    @Query("SELECT * FROM users WHERE lower(username) = lower(:username) LIMIT 1")
     suspend fun getUserByUsername(username: String): User?
+
+    @Query("SELECT * FROM users WHERE lower(username) = lower(:username) AND id <> :excludeUserId LIMIT 1")
+    suspend fun getUserByUsernameExcept(username: String, excludeUserId: String): User?
 
     @Query("SELECT * FROM users WHERE pinHash = :pin AND isActive = 1 LIMIT 1")
     suspend fun getUserByPin(pin: String): User?

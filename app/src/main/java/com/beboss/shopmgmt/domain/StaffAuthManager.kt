@@ -6,7 +6,6 @@ import com.beboss.shopmgmt.data.dao.UserDao
 import com.beboss.shopmgmt.data.model.SyncQueueItem
 import com.beboss.shopmgmt.data.model.SyncTombstone
 import com.beboss.shopmgmt.data.model.User
-import com.beboss.shopmgmt.data.model.UserRole
 import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.HlcClock
 import com.beboss.shopmgmt.util.SecurityUtils
@@ -15,7 +14,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.util.Locale
-import java.util.UUID
 
 /**
  * Domain Manager handling User Authentication, Role-based Access Control, and PBKDF2 credential upgrades.
@@ -80,7 +78,17 @@ class StaffAuthManager(
             user.password
         }
 
+        val normalizedUsername = user.username.trim().lowercase(Locale.ROOT)
+        require(normalizedUsername.matches(Regex("[a-z0-9._-]{2,80}"))) {
+            "Choose a username using 2–80 letters, numbers, dots, underscores or hyphens."
+        }
+        val duplicate = userDao.getUserByUsernameExcept(normalizedUsername, user.id)
+        require(duplicate == null) {
+            "The username @$normalizedUsername is already assigned to ${duplicate?.name ?: "another staff member"}. Choose a unique username."
+        }
+
         val userToSave = user.copy(
+            username = normalizedUsername,
             pinHash = securedPin,
             password = securedPassword,
             updatedAt = System.currentTimeMillis()
@@ -123,50 +131,12 @@ class StaffAuthManager(
         userDao.updateLastLogin(userId)
     }
 
+    /**
+     * Legacy compatibility only. First-run accounts are created exclusively through
+     * the explicit shop-registration flow; never seed demonstration workers or PINs.
+     */
     suspend fun ensureDefaultAdminUser(): User = withContext(Dispatchers.IO) {
-        val count = userDao.getUserCount()
-        if (count == 0) {
-            val defaultOwner = User(
-                id = UUID.randomUUID().toString(),
-                name = "Store Owner",
-                username = "owner",
-                email = "owner@beboss.rw",
-                phone = "+250 788 123 456",
-                pinHash = SecurityUtils.hashPin("2026"),
-                password = SecurityUtils.hashPassword("OwnerSecure2026!"),
-                role = UserRole.OWNER,
-                profileColorHex = "#FF6B1A"
-            )
-            val defaultManager = User(
-                id = UUID.randomUUID().toString(),
-                name = "Store Manager",
-                username = "manager",
-                email = "manager@beboss.rw",
-                phone = "+250 788 654 321",
-                pinHash = SecurityUtils.hashPin("4821"),
-                password = SecurityUtils.hashPassword("ManagerSecure2026!"),
-                role = UserRole.MANAGER,
-                profileColorHex = "#2563EB"
-            )
-            val defaultCashier = User(
-                id = UUID.randomUUID().toString(),
-                name = "Store Cashier",
-                username = "cashier",
-                email = "cashier@beboss.rw",
-                phone = "+250 789 111 222",
-                pinHash = SecurityUtils.hashPin("7392"),
-                password = SecurityUtils.hashPassword("CashierSecure2026!"),
-                role = UserRole.CASHIER,
-                profileColorHex = "#10B981"
-            )
-            userDao.insertAllUsers(listOf(defaultOwner, defaultManager, defaultCashier))
-            defaultOwner
-        } else {
-            userDao.getAllActiveUsers().first().firstOrNull() ?: User(
-                name = "Store Owner",
-                username = "owner",
-                pinHash = SecurityUtils.hashPin("2026")
-            )
-        }
+        userDao.getAllActiveUsersList().firstOrNull()
+            ?: throw IllegalStateException("No active shop user exists. Register the shop owner to create the first account.")
     }
 }
