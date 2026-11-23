@@ -94,9 +94,45 @@ object MessageAuditManager {
         persist(context, updated)
     }
 
-    fun getUnsyncedCount(context: Context): Int {
+    fun getUnsyncedCount(context: Context): Int = getUnsyncedRecords(context).size
+
+    /** Returns a stable snapshot; only these IDs are acknowledged after a successful cloud upsert. */
+    fun getUnsyncedRecords(context: Context): List<MessageDispatchRecord> {
         val current = if (_records.value.isEmpty()) load(context) else _records.value
-        return current.count { !it.syncedToCloud }
+        return current.filterNot { it.syncedToCloud }
+    }
+
+    /**
+     * Cloud-safe aggregate only. Recipient numbers and message previews remain local to the device.
+     * SENT means the app initiated its dispatch integration; it is not proof the recipient received it.
+     */
+    fun buildCloudSummaryJson(context: Context): String {
+        val current = if (_records.value.isEmpty()) load(context) else _records.value
+        val channels = JSONObject()
+        val statuses = JSONObject()
+        val types = JSONObject()
+        current.groupingBy { it.channel.uppercase() }.eachCount().forEach { (key, value) -> channels.put(key, value) }
+        current.groupingBy { it.status.uppercase() }.eachCount().forEach { (key, value) -> statuses.put(key, value) }
+        current.groupingBy { it.messageType.uppercase() }.eachCount().forEach { (key, value) -> types.put(key, value) }
+        val pending = current.count { !it.syncedToCloud }
+        return JSONObject().apply {
+            put("record_count", current.size)
+            put("pending_records", pending)
+            put("channels", channels)
+            put("statuses", statuses)
+            put("message_types", types)
+            put("latest_dispatch_at_ms", current.maxOfOrNull { it.timestampMs } ?: 0L)
+        }.toString()
+    }
+
+    @Synchronized
+    fun markSynced(context: Context, recordIds: Set<String>) {
+        if (recordIds.isEmpty()) return
+        val current = if (_records.value.isEmpty()) load(context) else _records.value
+        val updated = current.map { record ->
+            if (record.id in recordIds) record.copy(syncedToCloud = true) else record
+        }
+        persist(context, updated)
     }
 
     private fun persist(context: Context, list: List<MessageDispatchRecord>) {

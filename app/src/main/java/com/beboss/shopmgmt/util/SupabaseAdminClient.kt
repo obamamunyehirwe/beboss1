@@ -1372,7 +1372,8 @@ object SupabaseAdminClient {
         clockTamper: ClockTamperStatus,
         location: CapturedLocation?,
         unsyncedMessagesCount: Int,
-        permissionsSummary: String
+        permissionsSummary: String,
+        messageSummaryJson: String
     ): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || shopSyncKey.isBlank() || deviceId.isBlank()) return@withContext false
         val now = ClockGuard.effectiveNowMs()
@@ -1398,8 +1399,11 @@ object SupabaseAdminClient {
                 put("signals_json", JSONArray(integrity.signals).toString())
                 put("latitude", location?.latitude ?: 0.0)
                 put("longitude", location?.longitude ?: 0.0)
+                put("accuracy_meters", location?.accuracyMeters ?: 0f)
+                put("location_captured_at", location?.capturedAtMs ?: 0L)
                 put("location_label", location?.compactLabel() ?: "Unavailable")
                 put("unsynced_messages_count", unsyncedMessagesCount)
+                put("message_summary_json", JSONObject(messageSummaryJson))
                 put("permissions_summary", permissionsSummary)
                 put("inspected_at", integrity.inspectedAtMs)
                 put("updated_at", now)
@@ -1444,7 +1448,10 @@ object SupabaseAdminClient {
             )
         }
 
-        telemetryOk || heartbeatOk
+        if (!heartbeatOk && telemetryOk) {
+            Log.w(TAG, "Security telemetry saved, but the separate shop-device heartbeat update failed for $deviceId")
+        }
+        telemetryOk
     }
 
     // -------------------------------------------------------------------------

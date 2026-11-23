@@ -14,15 +14,16 @@ import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.data.repository.BeBossRepository
 import com.beboss.shopmgmt.util.CloudSyncReport
 import com.beboss.shopmgmt.util.CloudSyncScheduler
+import com.beboss.shopmgmt.util.DeviceTelemetryUploader
 import com.beboss.shopmgmt.util.ConnectivityStatus
 import com.beboss.shopmgmt.util.EndpointPingResult
 import com.beboss.shopmgmt.util.LocalNetworkSyncServer
 import com.beboss.shopmgmt.util.LocationHelper
-import com.beboss.shopmgmt.util.MessageAuditManager
 import com.beboss.shopmgmt.util.NetworkConnectivityObserver
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
 import com.beboss.shopmgmt.util.ShopDataTransferManager
 import com.beboss.shopmgmt.util.ShopImportSummary
+import com.beboss.shopmgmt.util.SupabaseAdminClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -132,7 +133,21 @@ class SyncCoordinator(
                 context = application
             )
             _cloudSyncReport.value = report
-            MessageAuditManager.markAllSynced(application)
+            if (SupabaseAdminClient.isConfigured()) {
+                val telemetryUploaded = DeviceTelemetryUploader.upload(
+                    context = application,
+                    database = db,
+                    profile = shopProfile.value,
+                    deviceId = deviceId
+                )
+                if (!telemetryUploaded) {
+                    repository.logSyncEvent(
+                        "DEVICE_TELEMETRY",
+                        "FAILED",
+                        "Security, location and outbound-message summary upload failed; local message records remain pending."
+                    )
+                }
+            }
             if (showResult) emitSnackbar(report.message)
         } catch (e: CancellationException) {
             throw e
@@ -167,7 +182,21 @@ class SyncCoordinator(
                     mergeRemoteSummary = { summary -> repository.mergeShopDataPackageLww(summary) }
                 )
                 _cloudSyncReport.value = report
-                MessageAuditManager.markAllSynced(application)
+                if (SupabaseAdminClient.isConfigured()) {
+                    val telemetryUploaded = DeviceTelemetryUploader.upload(
+                        context = application,
+                        database = db,
+                        profile = shopProfile.value,
+                        deviceId = deviceId
+                    )
+                    if (!telemetryUploaded) {
+                        repository.logSyncEvent(
+                            "DEVICE_TELEMETRY",
+                            "FAILED",
+                            "Security telemetry upload failed; message dispatch records remain pending for retry."
+                        )
+                    }
+                }
                 emitSnackbar(report.message)
             } finally {
                 _isSyncing.value = false
