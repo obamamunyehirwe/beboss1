@@ -138,9 +138,41 @@ Deno.serve(async (request) => {
     return json(400, { error: "Enter a valid shop name and owner name." });
   }
 
+  // Never convert a BeBoss administrator or a POS terminal identity into
+  // an owner account. The phone may be shared; an existing privileged identity
+  // must keep its original purpose.
+  const { data: adminRole, error: roleLookupError } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .eq("role", "admin")
+    .maybeSingle();
+  if (roleLookupError || adminRole) {
+    console.error("[bootstrap-shop-owner] Privileged Auth identity cannot be converted.");
+    return json(403, { error: "This phone is already linked to a privileged BeBoss account. Use a separate owner phone." });
+  }
+  const accountType = String(user.app_metadata?.account_type ?? "");
+  if (accountType === "beboss_pos_device" || accountType === "beboss_admin") {
+    return json(403, { error: "This phone is already linked to a privileged BeBoss account. Use a separate owner phone." });
+  }
+
+  const { data: existingShop, error: existingShopError } = await admin
+    .from("shop_accounts")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+  if (existingShopError) {
+    console.error("[bootstrap-shop-owner] Existing shop lookup failed.");
+    return json(503, { error: "Could not verify the shop registration state. Please retry." });
+  }
+  if (existingShop) {
+    return json(409, { error: "A shop already exists for this owner identity. Choose “Join existing shop” instead of creating a second account." });
+  }
+
+  const priorMetadata = user.app_metadata ?? {};
   const { error: metadataError } = await admin.auth.admin.updateUserById(user.id, {
     app_metadata: {
-      ...(user.app_metadata ?? {}),
+      ...priorMetadata,
       account_type: "beboss_shop_owner",
       beboss_shop_id: id,
     },
@@ -162,6 +194,7 @@ Deno.serve(async (request) => {
     if (bootstrapError.code === "23505") {
       return json(409, { error: "A shop already exists for this owner identity. Choose “Join existing shop” instead of creating a second account." });
     }
+    await admin.auth.admin.updateUserById(user.id, { app_metadata: priorMetadata });
     console.error("[bootstrap-shop-owner] Atomic owner/shop bootstrap failed.");
     return json(503, { error: "Could not complete secure shop registration. Your local data has not been created; retry after checking the connection." });
   }
