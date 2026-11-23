@@ -156,18 +156,30 @@ export const claimMyShopOwner = createServerFn({ method: "POST" })
       throw new Error("The verified account does not match a registered BeBoss shop owner.");
     }
 
-    const now = Date.now();
-    const { error: membershipError } = await supabaseAdmin
+    const { data: existingMembership, error: existingMembershipError } = await supabaseAdmin
       .from("shop_owner_memberships")
-      .upsert({
-        user_id: user.id,
-        shop_id: shop.id,
-        owner_username: String(shop.owner_username),
-        owner_phone: String(shop.owner_phone),
-        status: "ACTIVE",
-        last_verified_at: now,
-        revoked_at: 0,
-      }, { onConflict: "user_id,shop_id" });
+      .select("status,revoked_at")
+      .eq("user_id", user.id)
+      .eq("shop_id", shop.id)
+      .maybeSingle();
+    if (existingMembershipError) throw new Error("Could not validate the owner access record.");
+    if (existingMembership && (existingMembership.status !== "ACTIVE" || Number(existingMembership.revoked_at) > 0)) {
+      throw new Error("Owner access to this shop has been revoked. Contact BeBoss support for a reviewed restoration.");
+    }
+
+    const now = Date.now();
+    const membershipWrite = existingMembership
+      ? supabaseAdmin.from("shop_owner_memberships").update({ last_verified_at: now }).eq("user_id", user.id).eq("shop_id", shop.id).eq("status", "ACTIVE").eq("revoked_at", 0)
+      : supabaseAdmin.from("shop_owner_memberships").insert({
+          user_id: user.id,
+          shop_id: shop.id,
+          owner_username: String(shop.owner_username),
+          owner_phone: String(shop.owner_phone),
+          status: "ACTIVE",
+          last_verified_at: now,
+          revoked_at: 0,
+        });
+    const { error: membershipError } = await membershipWrite;
     if (membershipError) throw new Error("Could not finish secure owner enrollment.");
     return { enrolled: true };
   });
