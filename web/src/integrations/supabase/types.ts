@@ -1321,6 +1321,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      validate_shop_device_auth_invite: {
+        Args: { p_code_hash: string; p_device_id: string }
+        Returns: boolean
+      }
       revoke_shop_device_invites: {
         Args: {
           p_actor_device_id: string
