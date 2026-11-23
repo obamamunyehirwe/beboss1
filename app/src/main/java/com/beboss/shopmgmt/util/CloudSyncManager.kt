@@ -913,6 +913,34 @@ class CloudSyncManager(private val database: AppDatabase) {
         }
     }
 
+    private fun SupabaseStockTransferDto.toLocalTransfer(
+        statusOverride: String = status
+    ): com.beboss.shopmgmt.data.model.StockTransfer =
+        com.beboss.shopmgmt.data.model.StockTransfer(
+            id = id,
+            transferNumber = transferNumber,
+            productId = productId,
+            productName = productName,
+            fromBranchId = fromBranchId,
+            fromBranchName = fromBranchName,
+            toBranchId = toBranchId,
+            toBranchName = toBranchName,
+            quantity = quantity,
+            unit = unit,
+            costValueRwf = costValueRwf,
+            transferDate = transferDate,
+            status = statusOverride,
+            notes = notes,
+            transferredBy = transferredBy,
+            receivedBy = receivedBy,
+            receivedAt = receivedAt,
+            synced = false,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+            hlcTimestamp = hlcTimestamp,
+            lastModifiedDeviceId = lastModifiedDeviceId
+        )
+
     /**
      * Applies owner-portal transfer commands outside the large sync coroutine so Kotlin
      * can compile the worker into a separate JVM method. Claims are operational leases;
@@ -966,32 +994,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                     "REQUESTED" -> {
                         val existing = stockTransferDao.getTransferById(command.id)
                         if (existing == null) {
-                            transferManager.acceptRemoteTransferRequest(
-                                com.beboss.shopmgmt.data.model.StockTransfer(
-                                    id = command.id,
-                                    transferNumber = command.transferNumber,
-                                    productId = command.productId,
-                                    productName = command.productName,
-                                    fromBranchId = command.fromBranchId,
-                                    fromBranchName = command.fromBranchName,
-                                    toBranchId = command.toBranchId,
-                                    toBranchName = command.toBranchName,
-                                    quantity = command.quantity,
-                                    unit = command.unit,
-                                    costValueRwf = command.costValueRwf,
-                                    transferDate = command.transferDate,
-                                    status = "REQUESTED",
-                                    notes = command.notes,
-                                    transferredBy = command.transferredBy,
-                                    receivedBy = command.receivedBy,
-                                    receivedAt = command.receivedAt,
-                                    synced = false,
-                                    createdAt = command.createdAt,
-                                    updatedAt = command.updatedAt,
-                                    hlcTimestamp = command.hlcTimestamp,
-                                    lastModifiedDeviceId = command.lastModifiedDeviceId
-                                )
-                            )
+                            transferManager.acceptRemoteTransferRequest(command.toLocalTransfer("REQUESTED"))
                         } else {
                             transferManager.publishTransferVersion(command.id)
                         }
@@ -1004,8 +1007,15 @@ class CloudSyncManager(private val database: AppDatabase) {
                                 command.receivedBy.ifBlank { "Web shop owner" }
                             )
                             null -> {
-                                SupabaseAdminClient.releaseShopStockTransferClaim(shopSyncKey, command.id, deviceId)
-                                claimed = false
+                                // Portal commands may coalesce before this device's next sync.
+                                // Materialize the request first, then apply receipt exactly once.
+                                val created = transferManager.acceptRemoteTransferRequest(command.toLocalTransfer("REQUESTED"))
+                                if (created.status == "IN_TRANSIT") {
+                                    transferManager.confirmTransferReceived(
+                                        command.id,
+                                        command.receivedBy.ifBlank { "Web shop owner" }
+                                    )
+                                }
                             }
                             else -> transferManager.publishTransferVersion(command.id)
                         }
@@ -1019,8 +1029,16 @@ class CloudSyncManager(private val database: AppDatabase) {
                                 command.notes.ifBlank { "Cancellation requested from My Shop portal" }
                             )
                             null -> {
-                                SupabaseAdminClient.releaseShopStockTransferClaim(shopSyncKey, command.id, deviceId)
-                                claimed = false
+                                // If cancellation arrived before the original request was pulled,
+                                // create and cancel it locally; both stock effects remain transactional.
+                                val created = transferManager.acceptRemoteTransferRequest(command.toLocalTransfer("REQUESTED"))
+                                if (created.status == "IN_TRANSIT") {
+                                    transferManager.rejectOrCancelTransfer(
+                                        command.id,
+                                        command.receivedBy.ifBlank { "Web shop owner" },
+                                        command.notes.ifBlank { "Cancellation requested from My Shop portal" }
+                                    )
+                                }
                             }
                             else -> transferManager.publishTransferVersion(command.id)
                         }
