@@ -1,8 +1,177 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { createPublicClient } from "./server/public-client";
 import { calculateSubscriptionFee, computeShopKey, normalizePhoneLast9 } from "./pricing";
 import { decodeShareToken, extractShopRecords, mergeShareJson, pickLatestDeviceChunkSet, type ShopRecords } from "./snapshot-analytics";
+
+type OwnerAuthContext = {
+  supabase: any;
+  userId: string;
+  claims: Record<string, unknown>;
+  accessToken: string;
+};
+
+function ownerPhoneE164(value: string): string {
+  const digits = String(value ?? "").replace(/\\D/g, "");
+  const local = digits.length === 9 ? digits : digits.startsWith("250") && digits.length === 12 ? digits.slice(3) : digits.startsWith("0") && digits.length === 10 ? digits.slice(1) : "";
+  if (!/^7\\d{8}$/.test(local)) throw new Error("Enter the registered Rwanda mobile phone number.");
+  return `+250${local}`;
+}
+
+function samePhone(left: string, right: string): boolean {
+  return normalizePhoneLast9(left).length === 9 &&
+    normalizePhoneLast9(left) === normalizePhoneLast9(right);
+}
+
+async function requireOwnerSession(context: OwnerAuthContext, username: string, phone: string): Promise<string> {
+  const key = computeShopKey(username, phone);
+  const { data: authData, error: authError } = await context.supabase.auth.getUser(context.accessToken);
+  const user = authData?.user;
+  if (authError || !user?.id || !user.phone_confirmed_at || !samePhone(String(user.phone ?? ""), phone)) {
+    throw new Error("Verify the registered shop owner's phone by SMS before accessing My Shop.");
+  }
+  if (user.id !== context.userId) throw new Error("The authenticated account does not match this owner session.");
+
+  const { data: membership, error: membershipError } = await context.supabase
+    .from("shop_owner_memberships")
+    .select("shop_id")
+    .eq("shop_id", key)
+    .eq("user_id", user.id)
+    .eq("status", "ACTIVE")
+    .eq("revoked_at", 0)
+    .maybeSingle();
+  if (membershipError || !membership || membership.shop_id !== key) {
+    throw new Error("This verified phone is not enrolled as the owner of the requested shop.");
+  }
+  return key;
+}
+
+const ownerEnrollmentSchema = z.object({
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+});
+
+/**
+ * Sends an OTP only to the mobile number already stored on the registered shop.
+ * Responses intentionally do not reveal whether the shop or username exists.
+ */
+export const requestMyShopOwnerOtp = createServerFn({ method: "POST" })
+  .inputValidator((d: z.infer<typeof ownerEnrollmentSchema>) => ownerEnrollmentSchema.parse(d))
+  .handler(async ({ data }) => {
+    const accepted = { accepted: true };
+    const key = computeShopKey(data.username, data.phone);
+    const phone = ownerPhoneE164(data.phone);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: shop, error: shopError } = await supabaseAdmin
+      .from("shop_accounts")
+      .select("id,owner_username,owner_phone")
+      .eq("id", key)
+      .maybeSingle();
+    if (shopError || !shop ||
+        String(shop.owner_username ?? "").trim().toLowerCase() !== data.username.trim().toLowerCase() ||
+        !samePhone(String(shop.owner_phone ?? ""), phone)) {
+      return accepted;
+    }
+
+    const now = Date.now();
+    const windowStart = now - 10 * 60 * 1000;
+    const { count, error: countError } = await supabaseAdmin
+      .from("shop_owner_otp_attempts")
+      .select("id", { count: "exact", head: true })
+      .eq("shop_id", shop.id)
+      .gte("created_at", windowStart);
+    if (countError) throw new Error("Owner verification is temporarily unavailable.");
+    if ((count ?? 0) >= 3) {
+      await supabaseAdmin.from("shop_owner_otp_attempts").insert({
+        shop_id: shop.id,
+        created_at: now,
+        status: "THROTTLED",
+      });
+      return accepted;
+    }
+
+    const { data: attempt, error: attemptError } = await supabaseAdmin
+      .from("shop_owner_otp_attempts")
+      .insert({ shop_id: shop.id, created_at: now, status: "REQUESTED" })
+      .select("id")
+      .single();
+    if (attemptError || !attempt) throw new Error("Owner verification is temporarily unavailable.");
+
+    try {
+      let authUser: { id: string } | null = null;
+      for (let page = 1; page <= 50 && !authUser; page++) {
+        const { data: users, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+        if (error) throw error;
+        const found = users.users.find((candidate) => samePhone(String(candidate.phone ?? ""), phone));
+        if (found) authUser = { id: found.id };
+        if (users.users.length < 1000) break;
+      }
+      if (!authUser) {
+        const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
+          phone,
+          phone_confirm: false,
+          user_metadata: { account_type: "shop_owner" },
+        });
+        if (error || !created.user) throw error ?? new Error("Could not initialize owner authentication.");
+        authUser = { id: created.user.id };
+      }
+
+      const { error: otpError } = await createPublicClient().auth.signInWithOtp({
+        phone,
+        options: { shouldCreateUser: false, channel: "sms" },
+      });
+      if (otpError) throw otpError;
+      await supabaseAdmin.from("shop_owner_otp_attempts").update({ status: "SENT" }).eq("id", attempt.id);
+    } catch (error) {
+      await supabaseAdmin.from("shop_owner_otp_attempts").update({ status: "FAILED" }).eq("id", attempt.id);
+      console.error("[My Shop owner OTP] Delivery failed", error);
+      throw new Error("SMS verification could not be sent. Configure and test the Supabase phone/SMS provider before using My Shop.");
+    }
+    return accepted;
+  });
+
+export const claimMyShopOwner = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: z.infer<typeof ownerEnrollmentSchema>) => ownerEnrollmentSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as OwnerAuthContext;
+    const { data: authData, error: authError } = await ctx.supabase.auth.getUser(ctx.accessToken);
+    const user = authData?.user;
+    const phone = ownerPhoneE164(data.phone);
+    if (authError || !user?.id || !user.phone_confirmed_at || !samePhone(String(user.phone ?? ""), phone)) {
+      throw new Error("The SMS code has not verified the registered owner phone.");
+    }
+
+    const key = computeShopKey(data.username, data.phone);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: shop, error: shopError } = await supabaseAdmin
+      .from("shop_accounts")
+      .select("id,owner_username,owner_phone")
+      .eq("id", key)
+      .maybeSingle();
+    if (shopError || !shop ||
+        String(shop.owner_username ?? "").trim().toLowerCase() !== data.username.trim().toLowerCase() ||
+        !samePhone(String(shop.owner_phone ?? ""), phone)) {
+      throw new Error("The verified account does not match a registered BeBoss shop owner.");
+    }
+
+    const now = Date.now();
+    const { error: membershipError } = await supabaseAdmin
+      .from("shop_owner_memberships")
+      .upsert({
+        user_id: user.id,
+        shop_id: shop.id,
+        owner_username: String(shop.owner_username),
+        owner_phone: String(shop.owner_phone),
+        status: "ACTIVE",
+        last_verified_at: now,
+        revoked_at: 0,
+      }, { onConflict: "user_id,shop_id" });
+    if (membershipError) throw new Error("Could not finish secure owner enrollment.");
+    return { enrolled: true };
+  });
+
 
 export const getPublicSite = createServerFn({ method: "GET" }).handler(async () => {
   const sb = createPublicClient();
