@@ -134,6 +134,8 @@ function AdminQueryStatusBanner() {
 }
 function AdminLayout() {
   const a = useAdminText();
+  const { lang } = useI18n();
+  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const ctx = useAdminCtx();
   const router = useRouter();
   const signOut = async () => {
@@ -298,7 +300,7 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
           </SheetContent>
         </Sheet>
         <div className="admin-topbar-mobile-brand lg:hidden">
-          <Logo to="/admin" suffix="Admin" />
+          <Logo to="/admin" suffix={a("Admin")} />
         </div>
         <div className="hidden sm:block">
           <LivePulse />
@@ -351,7 +353,7 @@ function LivePulse() {
       <span className={cn("size-2 rounded-full", isRecent ? "bg-success" : isError ? "bg-destructive" : "bg-muted-foreground/50")} />
       <Activity className={cn("size-3.5", tone)} />
       <span className="hidden sm:inline">{label}</span>
-      {last ? <span className="text-muted-foreground/80">· last {relativeTime(last.created_at, now)}</span> : null}
+      {last ? <span className="text-muted-foreground/80">· {a("last")} {relativeTime(last.created_at, now, locale)}</span> : null}
     </Link>
   );
 }
