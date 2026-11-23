@@ -11,6 +11,7 @@ import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.AuthRateLimiter
 import com.beboss.shopmgmt.util.Localization
 import com.beboss.shopmgmt.util.SecurityUtils
+import com.beboss.shopmgmt.util.SupabaseAdminClient
 import com.beboss.shopmgmt.util.safeMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -292,7 +293,7 @@ class AuthSessionCoordinator(
     fun secureCurrentDevice(joinCode: String) {
         scope.launch {
             try {
-                val cleanCode = joinCode.trim().uppercase(Locale.ROOT)
+                val cleanCode = joinCode.trim().uppercase()
                 if (!cleanCode.matches(Regex("BB-[A-F0-9]{32}"))) {
                     _authError.value = "Enter a valid one-time secure device code."
                     return@launch
