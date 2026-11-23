@@ -932,6 +932,9 @@ const words: Record<string, readonly [string, string, string]> = {
   "Could not restore your BeBoss session.": ["Ntibyashobotse kugarura iyinjira ryawe rya BeBoss.", "Impossible de restaurer votre session BeBoss.", "Imeshindwa kurejesha kipindi chako cha BeBoss."],
   "Unable to sign in. Check your connection and try again.": ["Ntibyashobotse kwinjira. Genzura interneti wongere ugerageze.", "Impossible de se connecter. Vérifiez votre connexion et réessayez.", "Imeshindwa kuingia. Angalia muunganisho wako kisha ujaribu tena."],
   "Authorized access only": ["Abemerewe gusa", "Accès réservé aux personnes autorisées", "Ufikiaji kwa walioidhinishwa pekee"],
+  "The email or password is incorrect. Check your credentials and try again.": ["Imeyili cyangwa ijambo ry'ibanga si byo. Ongera ugenzure amakuru winjije.", "L’adresse e-mail ou le mot de passe est incorrect. Vérifiez vos identifiants et réessayez.", "Barua pepe au nenosiri si sahihi. Hakiki taarifa zako kisha ujaribu tena."],
+  "Credentials accepted. Verifying your BeBoss access…": ["Amakuru ya konti yakiriwe. Irimo kugenzura uburenganzira bwawe bwa BeBoss…", "Identifiants acceptés. Vérification de votre accès BeBoss…", "Taarifa za kuingia zimekubaliwa. Inathibitisha ruhusa zako za BeBoss…"],
+  "BUSINESS · SALES · INVENTORY": ["UBUCURUZI · IBICURUZWA · UBUKO", "COMMERCE · VENTES · STOCK", "BIASHARA · MAUZO · BIDHAA"],
 };
 export function useAdminText() {
   try {
