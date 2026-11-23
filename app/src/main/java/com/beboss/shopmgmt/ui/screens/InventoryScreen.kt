@@ -104,6 +104,7 @@ import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
 import com.beboss.shopmgmt.ui.theme.WarningAmber
 import com.beboss.shopmgmt.util.AppLanguage
+import com.beboss.shopmgmt.util.BusinessCatalog
 import com.beboss.shopmgmt.util.ExcelCsvExporter
 import com.beboss.shopmgmt.util.Localization
 import com.beboss.shopmgmt.util.PdfReportGenerator
@@ -1010,13 +1011,28 @@ fun ProductFormDialog(
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
+    val categoryOptions = remember(shopProfile.businessType, categories, initialProduct?.category) {
+        BusinessCatalog.categoriesWithExisting(
+            shopProfile.businessType,
+            categories + listOfNotNull(initialProduct?.category)
+        )
+    }
+    val unitOptions = remember(shopProfile.businessType, initialProduct?.unit) {
+        BusinessCatalog.unitsForShop(shopProfile.businessType, initialProduct?.unit.orEmpty())
+    }
     var name by remember { mutableStateOf(initialProduct?.name ?: "") }
-    var category by remember { mutableStateOf(initialProduct?.category ?: "General") }
+    var category by remember(initialProduct?.id, shopProfile.businessType) {
+        mutableStateOf(initialProduct?.category ?: BusinessCatalog.categoriesForShop(shopProfile.businessType).first())
+    }
     var costPriceStr by remember { mutableStateOf(if (initialProduct != null && initialProduct.costPrice > 0) "${initialProduct.costPrice.toInt()}" else "") }
     var sellingPriceStr by remember { mutableStateOf(if (initialProduct != null && initialProduct.sellingPrice > 0) "${initialProduct.sellingPrice.toInt()}" else "") }
     var quantityStr by remember { mutableStateOf(if (initialProduct != null) "${initialProduct.quantityInStock.toInt()}" else "10") }
     var lowThresholdStr by remember { mutableStateOf(if (initialProduct != null) "${initialProduct.lowStockThreshold.toInt()}" else "5") }
-    var unit by remember { mutableStateOf(initialProduct?.unit ?: "pcs") }
+    var unit by remember(initialProduct?.id, shopProfile.businessType) {
+        mutableStateOf(initialProduct?.unit ?: BusinessCatalog.defaultUnit(shopProfile.businessType))
+    }
+    var categoryMenuExpanded by remember { mutableStateOf(false) }
+    var unitMenuExpanded by remember { mutableStateOf(false) }
     var barcode by remember { mutableStateOf(initialProduct?.barcode ?: "") }
 
     val cost = costPriceStr.toDoubleOrNull() ?: 0.0
@@ -1068,15 +1084,37 @@ fun ProductFormDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    label = { Text(Localization.get("inv_form_category", language)) },
-                    placeholder = { Text("Beverages / Grocery") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    singleLine = true
-                )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = category,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(Localization.get("inv_form_category", language)) },
+                        trailingIcon = {
+                            IconButton(onClick = { categoryMenuExpanded = true }) {
+                                Icon(Icons.Default.FilterList, contentDescription = "Choose category")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
+                    )
+                    DropdownMenu(
+                        expanded = categoryMenuExpanded,
+                        onDismissRequest = { categoryMenuExpanded = false },
+                        modifier = Modifier.heightIn(max = 320.dp)
+                    ) {
+                        categoryOptions.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option) },
+                                onClick = {
+                                    category = option
+                                    categoryMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -1138,15 +1176,37 @@ fun ProductFormDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                OutlinedTextField(
-                    value = unit,
-                    onValueChange = { unit = it },
-                    label = { Text(Localization.get("inv_form_unit", language)) },
-                    placeholder = { Text("pcs") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    singleLine = true
-                )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = unit,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(Localization.get("inv_form_unit", language)) },
+                        trailingIcon = {
+                            IconButton(onClick = { unitMenuExpanded = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "Choose unit")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
+                    )
+                    DropdownMenu(
+                        expanded = unitMenuExpanded,
+                        onDismissRequest = { unitMenuExpanded = false },
+                        modifier = Modifier.heightIn(max = 320.dp)
+                    ) {
+                        unitOptions.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option) },
+                                onClick = {
+                                    unit = option
+                                    unitMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
