@@ -103,7 +103,7 @@ create table public.app_config (
   airtel_recipient_name text not null default 'BeBoss Pay',
   per_device_fee_rwf integer not null default 2000,
   apk_download_url text not null default '',
-  apk_version text not null default '2.1.0',
+  apk_version text not null default '2.3.0',
   support_email text not null default '',
   updated_at bigint not null default (extract(epoch from now()) * 1000)::bigint
 );
@@ -126,23 +126,20 @@ declare
   v_workers integer := greatest(coalesce(p_worker_count, 1), 1);
   v_devices integer := greatest(coalesce(p_device_count, 1), 1);
   v_months integer := greatest(coalesce(p_duration_months, 1), 1);
-  v_rate integer;
   v_monthly integer;
   v_gross integer;
   v_discount integer;
 begin
-  select coalesce(nullif(per_device_fee_rwf, 0), 2000) into v_rate from public.app_config where id = 'global';
-  v_rate := coalesce(v_rate, 2000);
   v_monthly := (case when v_branches <= 1 then 5000 when v_branches = 2 then 10000 else 20000 end)
     + (case when v_workers <= 1 then 0 when v_workers <= 3 then 2000 when v_workers <= 5 then 4000 else 4000 + (v_workers - 5) * 1000 end)
-    + greatest(v_devices - 1, 0) * v_rate;
+    + greatest(v_devices - 1, 0) * 2000;
   v_gross := v_monthly * v_months;
   v_discount := case when v_months = 12 then 20 when v_months = 3 then 10 else 0 end;
   return v_gross - ((v_gross * v_discount) / 100);
 end;
 $;
 
--- Use the exact per-device rate captured when a customer submits their plan.
+-- Every additional POS device has a fixed 2,000 FRw monthly rate.
 -- The four-argument helper above remains for existing shop pricing screens.
 create or replace function public.compute_expected_subscription_fee_with_rate(
   p_branch_count integer,
@@ -157,7 +154,7 @@ declare
   v_workers integer := greatest(coalesce(p_worker_count, 1), 1);
   v_devices integer := greatest(coalesce(p_device_count, 1), 1);
   v_months integer := greatest(coalesce(p_duration_months, 1), 1);
-  v_rate integer := greatest(coalesce(p_device_rate, 2000), 0);
+  v_rate integer := 2000;
   v_monthly integer;
   v_gross integer;
   v_discount integer;
