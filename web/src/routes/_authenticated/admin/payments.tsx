@@ -597,8 +597,8 @@ function PaymentsPage() {
             <Button
               variant="success"
               disabled={
-                (Boolean(verifyingPayment?.gateway_provider)
-                  ? !(verifyingPayment?.gateway_status === "VERIFIED" &&
+                (verifyingPayment?.gateway_provider
+                  ? !(verifyingPayment.gateway_status === "VERIFIED" &&
                       Number(verifyingPayment.gateway_verified_at) > 0 &&
                       Number(verifyingPayment.gateway_verified_amount_rwf) === Number(verifyingPayment.amount_rwf) &&
                       String(verifyingPayment.gateway_verified_currency).toUpperCase() === "RWF" &&
