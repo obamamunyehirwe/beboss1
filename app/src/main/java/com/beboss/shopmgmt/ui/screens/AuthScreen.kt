@@ -136,13 +136,15 @@ fun AuthLockScreen(
     onToggleLanguage: () -> Unit,
     onSelectLanguage: ((AppLanguage) -> Unit)? = null,
     onToggleTheme: () -> Unit,
-    onOpenRegister: () -> Unit
+    onOpenRegister: () -> Unit,
+    onSecureCloudAccess: (String) -> Unit = {}
 ) {
     var selectedTab by remember { mutableIntStateOf(0) } // 0: PIN, 1: Password
     var pinInput by remember { mutableStateOf("") }
     var usernameInput by remember { mutableStateOf(currentUser?.username ?: "") }
     var passwordInput by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
+    var secureDeviceCode by remember { mutableStateOf("") }
 
     val activeUser = currentUser ?: allUsers.firstOrNull()
     val haptic = LocalHapticFeedback.current
@@ -606,6 +608,72 @@ fun AuthLockScreen(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                border = BorderStroke(1.dp, cardBorder),
+                elevation = CardDefaults.cardElevation(if (isDarkTheme) 4.dp else 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Secure cloud access",
+                            fontFamily = GopherFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = textPrimary
+                        )
+                    }
+                    Text(
+                        "After verifying the registered owner phone in My Shop, generate a one-time code for this exact terminal and enter it here. This reconnects cloud sync without deleting local sales or inventory.",
+                        fontFamily = GopherFontFamily,
+                        fontSize = 11.sp,
+                        color = textSecondary
+                    )
+                    OutlinedTextField(
+                        value = secureDeviceCode,
+                        onValueChange = { secureDeviceCode = it.filter { ch -> ch.isLetterOrDigit() || ch == '-' }.take(40).uppercase() },
+                        label = { Text("One-time device code", fontFamily = GopherFontFamily) },
+                        leadingIcon = { Icon(Icons.Default.Key, contentDescription = null, tint = OrangePrimary) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("secure_device_code_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = fieldBg,
+                            unfocusedContainerColor = fieldBg,
+                            focusedTextColor = textPrimary,
+                            unfocusedTextColor = textPrimary,
+                            focusedBorderColor = OrangePrimary,
+                            unfocusedBorderColor = cardBorder
+                        )
+                    )
+                    Button(
+                        onClick = {
+                            if (secureDeviceCode.trim().matches(Regex("BB-[A-F0-9]{32}"))) {
+                                onSecureCloudAccess(secureDeviceCode.trim())
+                                secureDeviceCode = ""
+                            }
+                        },
+                        enabled = secureDeviceCode.trim().matches(Regex("BB-[A-F0-9]{32}")),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("secure_device_enroll_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Reconnect secure cloud sync", fontFamily = GopherFontFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
             }
         }
     }
