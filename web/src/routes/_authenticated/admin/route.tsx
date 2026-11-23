@@ -165,7 +165,7 @@ function AdminLayout() {
               <Link to="/">{a("Back to site")}</Link>
             </Button>
             <Button variant="secondary" onClick={signOut}>
-              <LogOut /> Sign out
+              <LogOut /> {a("Sign out")}
             </Button>
           </div>
         </div>
@@ -238,7 +238,7 @@ function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string;
   return (
     <div className="flex h-full flex-col">
       <div className="admin-sidebar-brand px-5 py-5">
-        <Logo to="/admin" suffix="Admin" />
+        <Logo to="/admin" suffix={a("Admin")} />
       </div>
       <nav className="admin-side-nav flex-1 space-y-0.5 overflow-y-auto px-3">
         {NAV.map((n,i) => {
@@ -269,7 +269,7 @@ function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string;
             <p className="truncate text-sm">{email}</p>
             <p className="text-[11px] text-muted-foreground">{a(isAdmin ? "Master admin" : "Support (read-only)")}</p>
           </div>
-          <Button size="icon" variant="ghost" onClick={onSignOut} aria-label="Sign out">
+          <Button size="icon" variant="ghost" onClick={onSignOut} aria-label={a("Sign out")}>
             <LogOut />
           </Button>
         </div>
@@ -288,7 +288,7 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
       <div className="flex items-center gap-2">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
-            <Button size="icon" variant="ghost" className="lg:hidden" aria-label="Open admin menu">
+            <Button size="icon" variant="ghost" className="lg:hidden" aria-label={a("Open admin menu")}>
               <Menu />
             </Button>
           </SheetTrigger>
@@ -313,7 +313,7 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
           setSpinning(true);
           await qc.invalidateQueries({ queryKey: ["admin"] });
           setSpinning(false);
-          toast.success("Data refreshed");
+          toast.success(a("Data refreshed"));
         }}
       >
         <RefreshCw className={cn(spinning && "animate-spin")} /> <span className="hidden sm:inline">{a('Refresh')}</span>
@@ -324,12 +324,13 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
 }
 
 function LivePulse() {
+  const a = useAdminText();
   const { data, isLoading, isError } = useQuery(syncEventsQuery);
   const now = useNow(10_000);
   const last = data?.[0];
   const lastAt = last ? Date.parse(last.created_at) : Number.NaN;
   const isRecent = Number.isFinite(lastAt) && lastAt <= now && now - lastAt < 15 * 60_000;
-  const label = isLoading
+  const label = a(isLoading
     ? "Checking cloud activity"
     : isError
       ? "Cloud activity unavailable"
@@ -337,7 +338,7 @@ function LivePulse() {
         ? "Recent cloud activity"
         : last
           ? "No recent sync activity"
-          : "No sync activity recorded";
+          : "No sync activity recorded");
   const tone = isRecent ? "text-success" : isError ? "text-destructive" : "text-muted-foreground";
 
   return (
