@@ -684,7 +684,8 @@ export const createGatewayCheckout = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof gatewayCheckoutSchema>) => gatewayCheckoutSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
+    const ownerContext = context as unknown as OwnerAuthContext;
+    await requireOwnerSession(ownerContext, data.username, data.phone);
     const supabaseUrl = process.env["SUPABASE_URL"] || import.meta.env["VITE_SUPABASE_URL"];
     const publishableKey = process.env["SUPABASE_PUBLISHABLE_KEY"] || import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"];
     if (!supabaseUrl || !publishableKey) {
@@ -695,6 +696,7 @@ export const createGatewayCheckout = createServerFn({ method: "POST" })
       method: "POST",
       headers: {
         apikey: publishableKey,
+        Authorization: `Bearer ${ownerContext.accessToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(data),
