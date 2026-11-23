@@ -665,9 +665,10 @@ class CloudSyncManager(private val database: AppDatabase) {
                     }
                 }
 
-                // Command rows are excluded from factual merge until a paired phone has
-                // applied the inventory effect and uploaded the resulting final state.
-                val factualRemoteTransfers = remoteTransfers.filterNot { it.status in transferCommandStatuses }
+                // Exclude every claimed command ID, including legacy WEB rows whose
+                // status was one of the old final-looking values (IN_TRANSIT/COMPLETED/CANCELLED).
+                val commandTransferIds = commandTransfers.map { it.id }.toSet()
+                val factualRemoteTransfers = remoteTransfers.filterNot { it.id in commandTransferIds }
                 if (remoteBranches.isNotEmpty() || factualRemoteTransfers.isNotEmpty()) {
                     try {
                         val cloudBranches = remoteBranches.map { dto ->
