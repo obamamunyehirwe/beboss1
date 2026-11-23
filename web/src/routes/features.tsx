@@ -174,14 +174,14 @@ function FeaturesPage() {
           </div>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {SCALE_CAPABILITIES.map((item) => (
-              <article key={a(item.title)} className="rounded-2xl border border-border bg-surface p-5">
+              <article key={item.title} className="rounded-2xl border border-border bg-surface p-5">
                 <div className="flex items-center justify-between gap-3">
                   <span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary">
                     <item.icon className="size-5" />
                   </span>
                   <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{a(item.tag)}</span>
                 </div>
-                <h3 className="mt-4 font-semibold">{item.title}</h3>
+                <h3 className="mt-4 font-semibold">{a(item.title)}</h3>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{a(item.body)}</p>
               </article>
             ))}
