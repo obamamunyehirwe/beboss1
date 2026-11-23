@@ -1,4 +1,3 @@
-import { useCallback } from "react";
 import { useI18n } from "./i18n";
 const words: Record<string, readonly [string, string, string]> = {
   'Cloud sync monitor':['Igenzura ry’ihuza','Suivi de synchronisation','Ufuatiliaji wa usawazishaji'],
@@ -691,10 +690,8 @@ const words: Record<string, readonly [string, string, string]> = {
 export function useAdminText() {
   try {
     const { lang } = useI18n();
-    return useCallback(
-      (s: string) => lang === "en" ? s : (words[s]?.[lang === "rw" ? 0 : lang === "fr" ? 1 : 2] ?? s),
-      [lang],
-    );
+    return (s: string) =>
+      lang === "en" ? s : (words[s]?.[lang === "rw" ? 0 : lang === "fr" ? 1 : 2] ?? s);
   } catch {
     return (s: string) => s;
   }
