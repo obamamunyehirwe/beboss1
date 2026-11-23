@@ -74,15 +74,14 @@ object ExcelCsvExporter {
             writer.write("\uFEFF")
             writer.append("Customer Name,Phone,Category,Outstanding Debt (${shopProfile.currencySymbol}),Credit Limit (${shopProfile.currencySymbol}),Days Overdue,Aging Bucket,Over Limit\n")
             agingSummary.entries.forEach { entry ->
-                val c = entry.customer
-                writer.append("\"${escapeCsv(c.name)}\",")
-                writer.append("\"${escapeCsv(c.phone)}\",")
-                writer.append("\"${escapeCsv(c.category)}\",")
-                writer.append("${c.debtBalance.toLong()},")
-                writer.append("${c.creditLimit.toLong()},")
-                writer.append("${entry.daysOld},")
-                writer.append("\"${escapeCsv(entry.bucketLabel)}\",")
-                writer.append("\"${if (entry.overCreditLimit) "YES" else "NO"}\"\n")
+                writer.append("\"${escapeCsv(entry.customerName)}\",")
+                writer.append("\"${escapeCsv(entry.phone)}\",")
+                writer.append("\"${escapeCsv(entry.category)}\",")
+                writer.append("${entry.debtBalance.toLong()},")
+                writer.append("${entry.creditLimit.toLong()},")
+                writer.append("${entry.oldestUnpaidDays},")
+                writer.append("\"${escapeCsv(entry.agingBucket)}\",")
+                writer.append("\"${if (entry.isOverLimit) "YES" else "NO"}\"\n")
             }
         }
         return file
