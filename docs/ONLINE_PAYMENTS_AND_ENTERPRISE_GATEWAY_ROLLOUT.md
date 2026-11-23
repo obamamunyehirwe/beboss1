@@ -11,7 +11,7 @@ This change adds a server-side hosted-checkout path for Flutterwave and Stripe, 
 - Hosted checkout is initiated server-side using RWF.
 - The checkout allows `card` and `mobilemoneyrwanda`; Flutterwave must have the relevant methods enabled for the merchant account.
 - The hosted return URL is informational only. A browser redirect never marks a payment paid.
-- The webhook signature is checked against the exact raw body using HMAC-SHA256 and the configured webhook secret hash.
+- The webhook verifies Flutterwave's current `verif-hash` header against the configured webhook secret hash using constant-time comparison. Flutterwave sends this configured value verbatim; it is not an HMAC of the raw body.
 - The handler then calls Flutterwave's transaction-verification API and checks the BeBoss reference, successful status, RWF currency and exact expected amount before marking the payment verified.
 
 ### Stripe
