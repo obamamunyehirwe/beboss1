@@ -14,7 +14,7 @@ import { liveConfigured } from '@/lib/live-config';
 import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
-import { addMyShopDevice, claimMyShopOwner, confirmMyShopStockTransfer, createGatewayCheckout, deleteMyShopBranch, lookupMyShop, requestMyShopOwnerOtp, requestMyShopStockTransferCancellation, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
+import { addMyShopDevice, claimMyShopOwner, issueMyShopDeviceAuthInvite, confirmMyShopStockTransfer, createGatewayCheckout, deleteMyShopBranch, lookupMyShop, requestMyShopOwnerOtp, requestMyShopStockTransferCancellation, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
 import { AnnouncementCard } from "@/components/site/AnnouncementBanner";
 import { calculateSubscriptionFee, effectiveShopStatus } from "@/lib/pricing";
 import { daysLeft, formatDateTime, formatRwf, relativeTime } from "@/lib/format";
@@ -96,6 +96,7 @@ function LookupPanel() {
   const st = (s: string) => p.myShop.status[s] ?? s.replaceAll("_", " ");
   const lookup = useServerFn(lookupMyShop);
   const registerDevice = useServerFn(addMyShopDevice);
+  const issueSecureDeviceInvite = useServerFn(issueMyShopDeviceAuthInvite);
   const sendOwnerOtp = useServerFn(requestMyShopOwnerOtp);
   const enrollOwner = useServerFn(claimMyShopOwner);
   const [username, setUsername] = useState("");
@@ -452,9 +453,36 @@ function LookupPanel() {
                       {d.assigned_user_name} · {d.branch_name} · {d.device_id ? (d.last_synced_at ? relativeTime(d.last_synced_at) : "Waiting for first sync") : "Waiting for pairing"}
                     </p>
                   </div>
-                  <Badge variant={!d.is_active ? "danger" : d.device_id ? h === "ONLINE" ? "success" : h === "TODAY" ? "info" : "warning" : "muted"}>
-                    {!d.is_active ? t("deviceOff") : d.device_id ? h === "ONLINE" ? t("deviceOnline") : h === "TODAY" ? t("deviceToday") : t("deviceIdle") : "Awaiting pairing"}
-                  </Badge>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <Badge variant={!d.is_active ? "danger" : d.device_id ? h === "ONLINE" ? "success" : h === "TODAY" ? "info" : "warning" : "muted"}>
+                      {!d.is_active ? t("deviceOff") : d.device_id ? h === "ONLINE" ? t("deviceOnline") : h === "TODAY" ? t("deviceToday") : t("deviceIdle") : "Awaiting pairing"}
+                    </Badge>
+                    {d.is_active && d.device_id ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={deviceBusy}
+                        onClick={async () => {
+                          setDeviceBusy(true);
+                          setIssuedInvite(null);
+                          try {
+                            const invite = await issueSecureDeviceInvite({
+                              data: { username, phone, deviceRecordId: d.id },
+                            });
+                            setIssuedInvite(invite);
+                            toast.success("A secure, device-bound access code was created.");
+                          } catch (error) {
+                            toast.error(error instanceof Error ? error.message : "Could not issue a secure device code.");
+                          } finally {
+                            setDeviceBusy(false);
+                          }
+                        }}
+                      >
+                        <KeyRound className="size-3.5" /> Re-enroll device
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               );
             })}
@@ -542,7 +570,7 @@ function LookupPanel() {
             {issuedInvite ? (
               <div className="mt-4 rounded-xl border border-primary/30 bg-background p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold">Single-use Android join code</p>
+                  <p className="text-sm font-semibold">Single-use secure Android device code</p>
                   <Badge variant="warning">Expires {formatDateTime(issuedInvite.expiresAt)}</Badge>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -561,7 +589,7 @@ function LookupPanel() {
                   </Button>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  On Android, choose “Join existing shop”, enter the shop owner’s username and phone, paste this code, then create the staff PIN and password for the assigned account.
+                  On the exact Android terminal shown above, enter this code in the secure cloud-access field on the lock screen. The code expires in 60 minutes and cannot enroll a different terminal.
                 </p>
               </div>
             ) : null}
