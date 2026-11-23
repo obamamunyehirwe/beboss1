@@ -940,6 +940,10 @@ class BeBossRepository(private val database: AppDatabase) {
                 adminWhatsAppNumber = remoteShop.adminWhatsApp.ifBlank { appCfg?.adminWhatsAppNumber.orEmpty() },
                 autoUnlockedAt = remoteShop.autoUnlockedAt,
                 lastAppliedCloudUnlockAt = remoteShop.autoUnlockedAt,
+                // This device is joining an established shop. Use that shop's cloud
+                // update as its licensing baseline, not this fresh installation's
+                // unregistered local trial-start timestamp.
+                trialStartedAt = remoteShop.updatedAt,
                 lastSyncedAt = now,
                 updatedAt = now
             )
@@ -1226,16 +1230,27 @@ class BeBossRepository(private val database: AppDatabase) {
             val remoteShop = SupabaseAdminClient.fetchShopAccountById(shopSyncKey)
             if (remoteShop != null) {
                 ClockGuard.observeTrustedEpoch(remoteShop.updatedAt)
-                val isDirectUnlockUpdate = remoteShop.autoUnlockedAt > effectiveProfile.lastAppliedCloudUnlockAt
-                val isRemoteExtension = remoteShop.subscriptionStatus == ShopProfile.STATUS_ACTIVE &&
+                // The cloud account must have changed at or after this local shop's
+                // trial baseline. A newly registered shop reusing an old owner key must
+                // not inherit an older shop's subscription expiry or admin-unlock marker.
+                val cloudUpdateBelongsToThisShop = remoteShop.updatedAt >= effectiveProfile.trialStartedAt
+                val isDirectUnlockUpdate = cloudUpdateBelongsToThisShop &&
+                    remoteShop.autoUnlockedAt > effectiveProfile.lastAppliedCloudUnlockAt &&
+                    remoteShop.autoUnlockedAt >= effectiveProfile.trialStartedAt &&
+                    remoteShop.autoUnlockedAt <= ClockGuard.effectiveNowMs()
+                val isRemoteExtension = cloudUpdateBelongsToThisShop &&
+                    remoteShop.subscriptionStatus == ShopProfile.STATUS_ACTIVE &&
                     remoteShop.subscriptionExpiresAt > effectiveProfile.subscriptionExpiresAt + 60_000L
-                val isRemoteLock = (remoteShop.subscriptionStatus == ShopProfile.STATUS_SUSPENDED ||
-                    remoteShop.subscriptionStatus == ShopProfile.STATUS_EXPIRED) &&
+                val isRemoteLock = cloudUpdateBelongsToThisShop &&
+                    (remoteShop.subscriptionStatus == ShopProfile.STATUS_SUSPENDED ||
+                        remoteShop.subscriptionStatus == ShopProfile.STATUS_EXPIRED) &&
                     remoteShop.updatedAt > effectiveProfile.updatedAt &&
                     remoteShop.autoUnlockedAt <= effectiveProfile.lastAppliedCloudUnlockAt
                 cloudSubscriptionAlreadyUpdated = isDirectUnlockUpdate || isRemoteExtension
 
-                if (isDirectUnlockUpdate || isRemoteExtension || isRemoteLock || remoteShop.updatedAt > effectiveProfile.updatedAt) {
+                if (cloudUpdateBelongsToThisShop &&
+                    (isDirectUnlockUpdate || isRemoteExtension || isRemoteLock || remoteShop.updatedAt > effectiveProfile.updatedAt)
+                ) {
                     // A normal paid BB3 code also extends the cloud license. Only
                     // the direct-auto marker should produce a direct-unlock notice.
                     if (
