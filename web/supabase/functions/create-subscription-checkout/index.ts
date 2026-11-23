@@ -27,7 +27,7 @@ function normalizePhone(value: string): string {
 
 function validRwandaPhone(value: string): boolean {
   const national = normalizePhone(value);
-  return /^[72][0-9]{8}$/.test(national);
+  return /^7[0-9]{8}$/.test(national);
 }
 
 function normalizeUsername(value: string): string {
