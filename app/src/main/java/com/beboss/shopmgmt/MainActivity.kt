@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.SyncProblem
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -116,34 +117,87 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            var viewModelReady by remember { mutableStateOf(false) }
-            val viewModel: BeBossViewModel = viewModel()
+            var databaseReady by remember { mutableStateOf(false) }
+            var startupError by remember { mutableStateOf<String?>(null) }
+            var startupAttempt by remember { mutableStateOf(0) }
 
-            LaunchedEffect(Unit) {
-                withContext(Dispatchers.IO) {
-                    try {
+            // Open the encrypted Room database before constructing the ViewModel.
+            // Previously the ViewModel was created first and database errors were
+            // swallowed, which could leave emulator/BlueStacks users with a blank
+            // screen and no actionable error.
+            LaunchedEffect(startupAttempt) {
+                databaseReady = false
+                startupError = null
+                try {
+                    withContext(Dispatchers.IO) {
                         AppDatabase.getDatabase(applicationContext)
-                    } catch (_: Throwable) {}
+                    }
+                    databaseReady = true
+                } catch (error: Throwable) {
+                    startupError = error.localizedMessage
+                        ?.takeIf { it.isNotBlank() }
+                        ?: error.javaClass.simpleName
                 }
-                viewModelReady = true
             }
 
-            val isDarkTheme by viewModel.isDarkTheme.collectAsState(initial = false)
-
-            MyApplicationTheme(darkTheme = isDarkTheme) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    if (!viewModelReady) {
-                        AppSplashScreen(
-                            language = AppLanguage.ENGLISH,
-                            durationMs = 300L,
-                            onSplashFinished = {}
-                        )
-                    } else {
+            if (databaseReady) {
+                val viewModel: BeBossViewModel = viewModel()
+                val isDarkTheme by viewModel.isDarkTheme.collectAsState(initial = false)
+                MyApplicationTheme(darkTheme = isDarkTheme) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
                         activeViewModel = viewModel
                         BeBossApp(viewModel = viewModel)
+                    }
+                }
+            } else {
+                MyApplicationTheme(darkTheme = false) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(28.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            if (startupError == null) {
+                                Text("BeBoss", fontSize = 28.sp, fontWeight = FontWeight.Black)
+                                CircularProgressIndicator(modifier = Modifier.padding(20.dp))
+                                Text("Preparing your secure business workspace…")
+                            } else {
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Filled.Warning,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(42.dp)
+                                )
+                                Text(
+                                    "BeBoss could not open its local database",
+                                    fontSize = 19.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.padding(top = 16.dp)
+                                )
+                                Text(
+                                    startupError.orEmpty(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 12.dp)
+                                )
+                                Text(
+                                    "Your saved shop data has not been deleted. Check available storage and retry.",
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                TextButton(onClick = { startupAttempt++ }) {
+                                    Text("Try again")
+                                }
+                            }
+                        }
                     }
                 }
             }
