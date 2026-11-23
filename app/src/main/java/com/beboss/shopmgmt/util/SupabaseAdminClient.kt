@@ -524,6 +524,7 @@ object SupabaseAdminClient {
         val normalized = when {
             raw.startsWith("+") -> "+$digits"
             digits.startsWith("00") -> "+${digits.drop(2)}"
+            digits.length == 10 && digits.startsWith("0") -> "+250${digits.drop(1)}"
             digits.length == 9 -> "+250$digits"
             else -> "+$digits"
         }
