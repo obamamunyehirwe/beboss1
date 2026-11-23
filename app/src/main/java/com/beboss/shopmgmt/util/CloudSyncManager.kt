@@ -325,8 +325,14 @@ class CloudSyncManager(private val database: AppDatabase) {
                     )
                 }
 
-                // Check if migration 0004 (chunk columns) has been applied
-                val migrationApplied = SupabaseAdminClient.checkSnapshotMigrationApplied()
+                val ownerUsername = cloudOwnerUsername
+                val ownerPhone = cloudOwnerPhone
+                val shopSyncKey = primaryDeviceForIdentity?.shopSyncKey?.takeIf { it.isNotBlank() }
+                    ?: SupabaseAdminClient.computeShopSyncKey(ownerUsername, ownerPhone)
+
+                // Check the snapshot schema through this authenticated tenant session;
+                // anonymous access to shop data is intentionally disabled by RLS v2.
+                val migrationApplied = SupabaseAdminClient.checkSnapshotMigrationApplied(shopSyncKey)
                 if (!migrationApplied) {
                     Log.w(TAG, "Supabase migration 0004 not applied: branch_sync_snapshots missing sync_generation, chunk_index, chunk_count columns. Run migration in Supabase SQL Editor. Sync will use legacy format.")
                     addAuditLog(
@@ -337,10 +343,6 @@ class CloudSyncManager(private val database: AppDatabase) {
                     )
                 }
                 
-                val ownerUsername = cloudOwnerUsername
-                val ownerPhone = cloudOwnerPhone
-                val shopSyncKey = primaryDeviceForIdentity?.shopSyncKey?.takeIf { it.isNotBlank() }
-                    ?: SupabaseAdminClient.computeShopSyncKey(ownerUsername, ownerPhone)
                 val recordsSummary = "${branches.size} branches • ${products.size} items • ${sales.size} sales • ${customers.size} clients (${chunkedTokens.size} chunk(s))"
                 val syncGeneration = UUID.randomUUID().toString()
 
