@@ -8,6 +8,7 @@ import { codesQuery, devicesQuery, paymentsQuery, shopsQuery } from "@/lib/admin
 import { FLAG_LABEL, licenseFlags } from "@/lib/sync-health";
 import { effectiveShopStatus, type ShopLifecycle } from "@/lib/pricing";
 import { daysLeft, formatDate, formatRwf, relativeTime } from "@/lib/format";
+import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/shops/")({
   component: ShopsPage,
@@ -139,10 +140,10 @@ function ShopsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <p>{formatDate(s.subscription_expires_at)}</p>
-                      <p className={`text-xs ${dl < 0 ? "text-destructive" : dl <= 7 ? "text-warning" : "text-muted-foreground"}`}>{dl < 0 ? `${-dl}d ago` : `${dl}d left`}</p>
+                      <p className={`text-xs ${dl < 0 ? "text-destructive" : dl <= 7 ? "text-warning" : "text-muted-foreground"}`}>{dl < 0 ? `${-dl} ${a("days ago")}` : `${dl} ${a("days left")}`}</p>
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {s.branch_count} br • {s.worker_count} staff • {s.dev}/{s.device_limit} dev
+                      {s.branch_count} {a("branches")} • {s.worker_count} {a("staff")} • {s.dev}/{s.device_limit} {a("devices")}
                     </td>
                     <td className="px-4 py-3 font-mono">{formatRwf(s.monthly_fee_rwf)}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{relativeTime(s.updated_at, now)}</td>
