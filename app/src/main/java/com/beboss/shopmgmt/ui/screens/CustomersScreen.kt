@@ -150,7 +150,7 @@ fun CustomersScreen(
     var sortAscending by remember { mutableStateOf(false) }
 
     val agingMap = remember(customerAgingSummary) {
-        customerAgingSummary.entries.associateBy { it.customer.id }
+        customerAgingSummary.entries.associateBy { it.customerId }
     }
 
     var customerToEdit by remember { mutableStateOf<Customer?>(null) }
