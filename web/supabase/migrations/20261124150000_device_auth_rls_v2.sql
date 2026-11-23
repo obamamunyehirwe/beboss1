@@ -583,11 +583,11 @@ revoke all on table public.shop_accounts from public, anon;
 grant select, insert, update, delete on table public.shop_accounts to authenticated, service_role;
 
 -- Legacy device invitation RPCs are no longer public bootstrap paths.
-revoke all on function public.issue_shop_device_invite(text,text,text,text,text,text,bigint) from public, anon;
-revoke all on function public.redeem_shop_device_invite(text,text,text,text) from public, anon;
-revoke all on function public.revoke_shop_device_invites(text,text,text,text) from public, anon;
-revoke all on function public.set_shop_device_active(text,text,text,text,boolean) from public, anon;
-revoke all on function public.delete_shop_device(text,text,text,text) from public, anon;
+revoke all on function public.issue_shop_device_invite(text,text,text,text,text,text,bigint) from public, anon, authenticated;
+revoke all on function public.redeem_shop_device_invite(text,text,text,text) from public, anon, authenticated;
+revoke all on function public.revoke_shop_device_invites(text,text,text,text) from public, anon, authenticated;
+revoke all on function public.set_shop_device_active(text,text,text,text,boolean) from public, anon, authenticated;
+revoke all on function public.delete_shop_device(text,text,text,text) from public, anon, authenticated;
 
 
 -- Native POS owner/manager terminal can issue a new-slot invitation without
@@ -622,7 +622,7 @@ begin
 end;
 $function$;
 
-revoke all on function public.issue_current_device_auth_invite(text,text,bigint) from public, anon;
+revoke all on function public.issue_current_device_auth_invite(text,text,bigint) from public, anon, authenticated;
 grant execute on function public.issue_current_device_auth_invite(text,text,bigint) to authenticated;
 
 revoke all on function public.current_shop_sync_key() from public, anon;
@@ -962,8 +962,8 @@ revoke all on function beboss_private.delete_shop_device(text,text,text,text) fr
 revoke all on function beboss_private.claim_shop_stock_transfer(text,text,bigint) from public, anon, authenticated;
 revoke all on function beboss_private.release_shop_stock_transfer_claim(text,text) from public, anon, authenticated;
 
-revoke all on function public.claim_shop_stock_transfer(text,text,bigint) from public, anon;
-revoke all on function public.release_shop_stock_transfer_claim(text,text) from public, anon;
+revoke all on function public.claim_shop_stock_transfer(text,text,bigint) from public, anon, authenticated;
+revoke all on function public.release_shop_stock_transfer_claim(text,text) from public, anon, authenticated;
 revoke all on function public.revoke_shop_device_invites(text,text,text,text) from public, anon;
 revoke all on function public.set_shop_device_active(text,text,text,text,boolean) from public, anon;
 revoke all on function public.delete_shop_device(text,text,text,text) from public, anon;
