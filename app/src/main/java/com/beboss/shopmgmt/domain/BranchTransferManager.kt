@@ -149,7 +149,9 @@ class BranchTransferManager(
         toBranchName: String,
         quantity: Double,
         notes: String,
-        transferredBy: String = "Store Manager"
+        transferredBy: String = "Store Manager",
+        transferId: String? = null,
+        transferNumberOverride: String? = null
     ): StockTransfer = withContext(Dispatchers.IO) {
         val now = ClockGuard.effectiveNowMs()
         if (fromBranchId == toBranchId) {
@@ -159,9 +161,10 @@ class BranchTransferManager(
             throw IllegalArgumentException("Transfer quantity must be a finite number greater than zero")
         }
         val safeQty = quantity
-        val transferNumber = "TRF-" +
-            SimpleDateFormat("yyMMdd-HHmmss", Locale.getDefault()).format(Date(now)) +
-            "-" + UUID.randomUUID().toString().take(4).uppercase(Locale.ROOT)
+        val transferNumber = transferNumberOverride?.trim()?.takeIf { it.isNotBlank() }
+            ?: ("TRF-" +
+                SimpleDateFormat("yyMMdd-HHmmss", Locale.getDefault()).format(Date(now)) +
+                "-" + UUID.randomUUID().toString().take(4).uppercase(Locale.ROOT))
 
         lateinit var transfer: StockTransfer
         var newSourceQty = 0.0
@@ -187,7 +190,7 @@ class BranchTransferManager(
 
             val costValue = (product.costPrice * safeQty).toLong().coerceAtLeast(0L)
             transfer = StockTransfer(
-                id = UUID.randomUUID().toString(),
+                id = transferId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
                 transferNumber = transferNumber,
                 productId = productId,
                 productName = product.name,
@@ -249,6 +252,59 @@ class BranchTransferManager(
             "Transfer $transferNumber: ${safeQty.toInt()} $productUnit of '$productName' from $fromBranchName -> $toBranchName (${transfer.costValueRwf} FRw)"
         )
         transfer
+    }
+
+    /**
+     * Applies a web-created transfer request through the same inventory transaction as a
+     * locally created transfer. Repeated requests are idempotent by the cloud transfer ID.
+     * Validation failures are persisted as REJECTED lifecycle rows so the owner/admin can
+     * see why stock was not moved.
+     */
+    suspend fun acceptRemoteTransferRequest(request: StockTransfer): StockTransfer = withContext(Dispatchers.IO) {
+        stockTransferDao.getTransferById(request.id)?.let { return@withContext it }
+        try {
+            recordStockTransfer(
+                productId = request.productId,
+                fromBranchId = request.fromBranchId,
+                fromBranchName = request.fromBranchName,
+                toBranchId = request.toBranchId,
+                toBranchName = request.toBranchName,
+                quantity = request.quantity,
+                notes = request.notes,
+                transferredBy = request.transferredBy,
+                transferId = request.id,
+                transferNumberOverride = request.transferNumber
+            )
+        } catch (e: IllegalArgumentException) {
+            val now = ClockGuard.effectiveNowMs()
+            val reason = e.message?.trim().orEmpty().ifBlank { "Transfer validation failed." }.take(400)
+            val rejected = request.copy(
+                status = "REJECTED",
+                notes = listOf(request.notes.trim(), "REJECTED: $reason").filter { it.isNotBlank() }.joinToString(" | "),
+                receivedBy = "SYSTEM",
+                receivedAt = now,
+                updatedAt = now,
+                hlcTimestamp = HlcClock.tick(now),
+                lastModifiedDeviceId = nodeId
+            )
+            if (database != null) {
+                DbWriteMutex.withLock {
+                    database.withTransaction { stockTransferDao.insertTransfer(rejected) }
+                }
+            } else {
+                DbWriteMutex.withLock { stockTransferDao.insertTransfer(rejected) }
+            }
+            syncQueueDao.enqueue(
+                SyncQueueItem(
+                    tableName = "stock_transfers",
+                    recordId = rejected.id,
+                    operation = "CREATE",
+                    payloadJson = buildTransferPayload(rejected)
+                )
+            )
+            BeBossLogger.w(TAG, "Rejected remote transfer ${rejected.transferNumber}: $reason")
+            rejected
+        }
     }
 
     /**
