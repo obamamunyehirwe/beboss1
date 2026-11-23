@@ -25,3 +25,6 @@ verify_jwt = false
 
 [functions.redeem-shop-device-invite]
 verify_jwt = false
+
+[functions.bootstrap-shop-owner]
+verify_jwt = false
