@@ -49,9 +49,9 @@ export const Route = createFileRoute("/my-shop")({
 type Lookup = Awaited<ReturnType<typeof lookupMyShop>>;
 
 function ownerPhoneE164(value: string): string {
-  const digits = value.replace(/\\D/g, "");
+  const digits = value.replace(/\D/g, "");
   const local = digits.length === 9 ? digits : digits.startsWith("250") && digits.length === 12 ? digits.slice(3) : digits.startsWith("0") && digits.length === 10 ? digits.slice(1) : "";
-  if (!/^7\\d{8}$/.test(local)) throw new Error("Enter the registered Rwanda mobile number.");
+  if (!/^7\d{8}$/.test(local)) throw new Error("Enter the registered Rwanda mobile number.");
   return `+250${local}`;
 }
 
@@ -132,7 +132,7 @@ function LookupPanel() {
         if (
           authenticatedUser?.phone_confirmed_at &&
           authenticatedUser.phone &&
-          authenticatedUser.phone.replace(/\\D/g, "").slice(-9) === phone.replace(/\\D/g, "").slice(-9)
+          authenticatedUser.phone.replace(/\D/g, "").slice(-9) === phone.replace(/\D/g, "").slice(-9)
         ) {
           await enrollOwner({ data: { username, phone } });
           setResult(await lookup({ data: { username, phone } }));
@@ -168,7 +168,7 @@ function LookupPanel() {
         {otpSent ? (
           <div className="space-y-2">
             <Label htmlFor="owner-otp">SMS verification code</Label>
-            <Input id="owner-otp" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\\D/g, "").slice(0, 8))} required minLength={4} maxLength={8} inputMode="numeric" autoComplete="one-time-code" placeholder="Enter code" />
+            <Input id="owner-otp" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))} required minLength={4} maxLength={8} inputMode="numeric" autoComplete="one-time-code" placeholder="Enter code" />
           </div>
         ) : null}
         <Button type="submit" variant="hero" disabled={loading}>
