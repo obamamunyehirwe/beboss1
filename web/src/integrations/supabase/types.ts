@@ -1183,6 +1183,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      take_shop_owner_otp_slot: {
+        Args: {
+          p_shop_id: string
+          p_now_ms: number
+          p_window_ms?: number
+          p_max_attempts?: number
+        }
+        Returns: string
+      }
       public_platform_stats: { Args: never; Returns: Json }
       record_apk_download: {
         Args: { p_channel?: string; p_release_id: string }
