@@ -62,13 +62,13 @@ export function calculateSubscriptionFee(
   workers: number,
   months: number,
   devices = 1,
-  perDeviceRate = DEFAULT_PER_DEVICE_FEE,
+  _perDeviceRate = DEFAULT_PER_DEVICE_FEE,
 ): FeeBreakdown {
   const b = clampInt(branches);
   const w = clampInt(workers);
   const m = clampInt(months);
   const d = clampInt(devices);
-  const rate = Number(perDeviceRate) > 0 ? Math.floor(Number(perDeviceRate)) : DEFAULT_PER_DEVICE_FEE;
+  const rate = DEFAULT_PER_DEVICE_FEE;
   const extraDevices = Math.max(0, d - 1);
   const branchFee = branchFeeFor(b);
   const workerFee = workerFeeFor(w);
