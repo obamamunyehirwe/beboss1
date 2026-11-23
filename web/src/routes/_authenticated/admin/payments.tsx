@@ -113,7 +113,7 @@ function PaymentsPage() {
   return (
     <div>
       <PageHeader
-        title="Payments queue"
+        title={a("Payments queue")}
         sub="Verify MTN MoMo and Airtel Money claims from the app and website, then unlock shops."
         actions={
           <>
@@ -203,7 +203,7 @@ function PaymentsPage() {
                 </div>
                 <ManualField label="Payer full name" value={manual.payerName} onChange={(payerName) => setManual({ ...manual, payerName })} required />
                 <ManualField label="Payer phone" value={manual.payerPhone} onChange={(payerPhone) => setManual({ ...manual, payerPhone })} required />
-                <div className="space-y-1.5"><Label>Payment date and time</Label><Input type="datetime-local" value={new Date(manual.paymentTimeMs - new Date(manual.paymentTimeMs).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setManual({ ...manual, paymentTimeMs: event.target.value ? new Date(event.target.value).getTime() : Date.now() })} required /></div><ManualField label="Payment note (optional)" value={manual.paymentNote} onChange={(paymentNote) => setManual({ ...manual, paymentNote })} />
+                <div className="space-y-1.5"><Label>{a("Payment date and time")}</Label><Input type="datetime-local" value={new Date(manual.paymentTimeMs - new Date(manual.paymentTimeMs).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setManual({ ...manual, paymentTimeMs: event.target.value ? new Date(event.target.value).getTime() : Date.now() })} required /></div><ManualField label="Payment note (optional)" value={manual.paymentNote} onChange={(paymentNote) => setManual({ ...manual, paymentNote })} />
                 <div className="space-y-1.5">
                   <Label>{a("Duration")}</Label>
                   <select
@@ -248,7 +248,7 @@ function PaymentsPage() {
       ) : null}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder="Search shop, @username, phone, payer, payment note…" />
+        <SearchInput value={q} onChange={setQ} placeholder={a("Search shop, @username, phone, payer, payment note…")} />
         <FilterChips<Status>
           value={status}
           onChange={setStatus}
@@ -275,7 +275,7 @@ function PaymentsPage() {
       {isLoading ? (
         <LoadingBlock />
       ) : !filtered.length ? (
-        <EmptyState title="No payment claims here" sub="Claims submitted from the BeBoss app (Settings → License) or the website's My shop page appear instantly." />
+        <EmptyState title={a("No payment claims here")} sub="Claims submitted from the BeBoss app (Settings → License) or the website's My shop page appear instantly." />
       ) : (
         <div className="grid gap-3">
           {filtered.map((r) => {
@@ -310,7 +310,7 @@ function PaymentsPage() {
                   <Info label="Plan" value={`${r.duration_months} mo • ${r.branch_count} br • ${r.worker_count} staff • ${r.device_count} dev`} />
                 </dl>
                 <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
-                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer MTN MoMo / Airtel Money confirmation SMS</p>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{a("Customer MTN MoMo / Airtel Money confirmation SMS")}</p>
                   <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{r.payment_note?.trim() || "No confirmation SMS was supplied. Check the merchant transaction history directly before approving."}</pre>
                 </div>
                 {r.admin_verification_note ? <p className="mt-2 text-xs text-muted-foreground">Admin verification: {r.admin_verification_note}</p> : null}
@@ -355,7 +355,7 @@ function PaymentsPage() {
                       title={a("Delete this payment claim?")}
                       description={a("This removes the claim from the queue permanently. Issued codes are not affected.")}
                       destructive
-                      confirmLabel="Delete"
+                      confirmLabel={a("Delete")}
                       onConfirm={() => remove.mutate({ requestId: r.id })}
                     />
                   </div>
@@ -377,14 +377,14 @@ function PaymentsPage() {
           <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder={a("MoMo transaction could not be confirmed")} maxLength={500} />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRejecting(null)}>
-              Cancel
+              {a("Cancel")}
             </Button>
             <Button
               variant="destructive"
               disabled={reject.isPending}
               onClick={() => rejecting && reject.mutate({ requestId: rejecting.id, reason }, { onSuccess: () => setRejecting(null) })}
             >
-              Reject claim
+              {a("Reject claim")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -394,36 +394,36 @@ function PaymentsPage() {
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Verify {verifyingPayment?.provider} payment</DialogTitle>
-            <DialogDescription>Review the customer's SMS, then independently confirm the funds in the official provider merchant transaction history or balance before issuing a BB3 code.</DialogDescription>
+            <DialogDescription>{a("Review the customer's SMS, then independently confirm the funds in the official provider merchant transaction history or balance before issuing a BB3 code.")}</DialogDescription>
           </DialogHeader>
           <div className="max-h-56 overflow-auto rounded-xl border border-border bg-muted/30 p-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer-submitted confirmation SMS</p>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{a("Customer-submitted confirmation SMS")}</p>
             <pre className="whitespace-pre-wrap break-words font-sans text-sm">{verifyingPayment?.payment_note?.trim() || "No SMS was submitted. Do not approve from a claim alone; verify the incoming transaction directly in your merchant account."}</pre>
           </div>
           <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted/30 p-3 text-sm">
-            <p><span className="text-muted-foreground">Shop:</span> {verifyingPayment?.shop_name}</p>
-            <p><span className="text-muted-foreground">Amount:</span> {formatRwf(verifyingPayment?.amount_rwf ?? 0)}</p>
-            <p><span className="text-muted-foreground">Payer:</span> {verifyingPayment?.payer_full_name || "—"}</p>
-            <p><span className="text-muted-foreground">Phone:</span> {verifyingPayment?.payer_phone}</p>
+            <p><span className="text-muted-foreground">{a("Shop:")}</span> {verifyingPayment?.shop_name}</p>
+            <p><span className="text-muted-foreground">{a("Amount:")}</span> {formatRwf(verifyingPayment?.amount_rwf ?? 0)}</p>
+            <p><span className="text-muted-foreground">{a("Payer:")}</span> {verifyingPayment?.payer_full_name || "—"}</p>
+            <p><span className="text-muted-foreground">{a("Phone:")}</span> {verifyingPayment?.payer_phone}</p>
           </div>
-          <Textarea value={verificationNote} onChange={(event) => setVerificationNote(event.target.value)} rows={3} maxLength={500} placeholder="Record what you confirmed in MTN MoMo / Airtel Money merchant history: amount received, sender and time." />
+          <Textarea value={verificationNote} onChange={(event) => setVerificationNote(event.target.value)} rows={3} maxLength={500} placeholder={a("Record what you confirmed in MTN MoMo / Airtel Money merchant history: amount received, sender and time.")} />
           <div className="grid gap-2 rounded-xl border border-border p-3 sm:grid-cols-2">
             <label className="flex cursor-pointer items-start gap-3 rounded-lg p-2 text-sm hover:bg-muted/50">
               <input type="radio" name="approval-mode" className="mt-1 size-4 accent-current" checked={approvalMode === "CODE"} onChange={() => setApprovalMode("CODE")} />
-              <span><strong className="block">Issue signed BB3 code</strong><span className="text-xs text-muted-foreground">The owner enters a payment-linked code in the app.</span></span>
+              <span><strong className="block">{a("Issue signed BB3 code")}</strong><span className="text-xs text-muted-foreground">{a("The owner enters a payment-linked code in the app.")}</span></span>
             </label>
             <label className="flex cursor-pointer items-start gap-3 rounded-lg p-2 text-sm hover:bg-muted/50">
               <input type="radio" name="approval-mode" className="mt-1 size-4 accent-current" checked={approvalMode === "DIRECT"} onChange={() => setApprovalMode("DIRECT")} />
-              <span><strong className="block">Unlock shop in cloud</strong><span className="text-xs text-muted-foreground">Activate this registered shop immediately after verification; no code is needed.</span></span>
+              <span><strong className="block">{a("Unlock shop in cloud")}</strong><span className="text-xs text-muted-foreground">{a("Activate this registered shop immediately after verification; no code is needed.")}</span></span>
             </label>
           </div>
           <p className="text-xs text-muted-foreground">Both options require you to verify the exact payment in the official MTN MoMo / Airtel Money merchant history. A customer SMS or WhatsApp screenshot alone does not confirm settlement.</p>
           <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed">
             <input type="checkbox" className="mt-1 size-4 accent-current" checked={providerVerified} onChange={(event) => setProviderVerified(event.target.checked)} />
-            <span>I independently confirmed that the exact amount was received by BeBoss in the official provider account. The submitted SMS alone is not proof of settlement.</span>
+            <span>{a("I independently confirmed that the exact amount was received by BeBoss in the official provider account. The submitted SMS alone is not proof of settlement.")}</span>
           </label>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setVerifyingPayment(null)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setVerifyingPayment(null)}>{a("Cancel")}</Button>
             <Button variant="success" disabled={!providerVerified || verificationNote.trim().length < 5 || approve.isPending || directUnlock.isPending} onClick={() => verifyingPayment && doApprove(verifyingPayment, verificationNote.trim())}>
               {(approve.isPending || directUnlock.isPending) ? <Loader2 className="animate-spin" /> : <KeyRound />}
               {approvalMode === "DIRECT" ? "Verify payment & unlock shop" : "Confirm payment & issue BB3"}
@@ -468,8 +468,8 @@ function ResultDialog({ result, onClose }: { result: Result | null; onClose: () 
           </div>
         ) : (
           <div className="rounded-2xl border border-success/30 bg-success/10 p-4 text-sm text-success">
-            <p className="font-semibold">Cloud license activated successfully.</p>
-            <p className="mt-1">The shop does not need an unlock code. The owner should connect the Android terminal to the internet and run Sync to receive the new subscription status.</p>
+            <p className="font-semibold">{a("Cloud license activated successfully.")}</p>
+            <p className="mt-1">{a("The shop does not need an unlock code. The owner should connect the Android terminal to the internet and run Sync to receive the new subscription status.")}</p>
           </div>
         )}
         <DialogFooter className="gap-2 sm:gap-2">
