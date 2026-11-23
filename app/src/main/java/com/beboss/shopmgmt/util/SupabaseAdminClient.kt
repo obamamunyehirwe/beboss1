@@ -978,10 +978,12 @@ object SupabaseAdminClient {
                 trustedRemoteLicense != null &&
                     trustedRemoteLicense.autoUnlockedAt > shopProfile.lastAppliedCloudUnlockAt ->
                     trustedRemoteLicense.subscriptionStatus
-                trustedRemoteLicense?.subscriptionStatus == ShopProfile.STATUS_ACTIVE &&
+                trustedRemoteLicense != null &&
+                    trustedRemoteLicense.subscriptionStatus == ShopProfile.STATUS_ACTIVE &&
                     trustedRemoteLicense.subscriptionExpiresAt > shopProfile.subscriptionExpiresAt ->
                     trustedRemoteLicense.subscriptionStatus
-                trustedRemoteLicense?.subscriptionStatus == ShopProfile.STATUS_SUSPENDED &&
+                trustedRemoteLicense != null &&
+                    trustedRemoteLicense.subscriptionStatus == ShopProfile.STATUS_SUSPENDED &&
                     trustedRemoteLicense.updatedAt >= shopProfile.updatedAt ->
                     trustedRemoteLicense.subscriptionStatus
                 shopProfile.isPaidActive -> ShopProfile.STATUS_ACTIVE
