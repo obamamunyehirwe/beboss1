@@ -1853,9 +1853,9 @@ object SupabaseAdminClient {
                         put("received_at", t.receivedAt)
                         put("synced", t.synced)
                         put("created_at", t.createdAt)
-                        put("updated_at", System.currentTimeMillis())
-                        put("hlc_timestamp", HlcClock.tick(t.createdAt))
-                        put("last_modified_device_id", "")
+                        put("updated_at", t.updatedAt.coerceAtLeast(t.createdAt))
+                        put("hlc_timestamp", t.hlcTimestamp.takeIf { it > 0L } ?: HlcClock.tick(t.updatedAt.coerceAtLeast(t.createdAt)))
+                        put("last_modified_device_id", t.lastModifiedDeviceId.ifBlank { "ANDROID" })
                     })
                 }
                 val req = buildRestRequest("shop_stock_transfers?on_conflict=id", tenantSyncKey = shopSyncKey)
