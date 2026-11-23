@@ -42,27 +42,34 @@ describe.skipIf(!enabled)("Supabase security concurrency integration", () => {
     if (database) await database.end({ timeout: 5 });
   });
 
-  it("isolates a tenant's shop-account rows from another tenant's header", async () => {
+  it("denies anonymous PostgREST access even when a forged legacy shop header is supplied", async () => {
     const tenantA = shopFixture();
     const tenantB = shopFixture();
 
-    await database.begin(async (tx) => {
-      await tx.unsafe(
-        "insert into public.shop_accounts (id, shop_name, owner_name, owner_username, owner_phone) values ($1, $2, $3, $4, $5), ($6, $7, $8, $9, $10)",
-        [tenantA.id, "Security fixture A", "Test A", tenantA.username, tenantA.phone, tenantB.id, "Security fixture B", "Test B", tenantB.username, tenantB.phone],
-      );
-      await tx.unsafe("set local role anon");
-      await tx.unsafe("select set_config('request.headers', $1, true)", [
-        JSON.stringify({ "x-shop-sync-key": tenantA.id }),
-      ]);
-      const visible = await tx.unsafe(
-        "select id from public.shop_accounts where id = $1 or id = $2 order by id",
-        [tenantA.id, tenantB.id],
-      );
-      expect(visible.map((row) => row.id)).toEqual([tenantA.id]);
-      await tx.unsafe("reset role");
-      await tx.unsafe("delete from public.shop_accounts where id = $1 or id = $2", [tenantA.id, tenantB.id]);
-    });
+    await database.unsafe(
+      "insert into public.shop_accounts (id, shop_name, owner_name, owner_username, owner_phone) values ($1, $2, $3, $4, $5), ($6, $7, $8, $9, $10)",
+      [tenantA.id, "Security fixture A", "Test A", tenantA.username, tenantA.phone, tenantB.id, "Security fixture B", "Test B", tenantB.username, tenantB.phone],
+    );
+
+    let rejection = "";
+    try {
+      await database.begin(async (tx) => {
+        await tx.unsafe("select set_config('request.headers', $1, true)", [
+          JSON.stringify({ "x-shop-sync-key": tenantA.id }),
+        ]);
+        await tx.unsafe("set local role anon");
+        await tx.unsafe(
+          "select id from public.shop_accounts where id = $1 or id = $2 order by id",
+          [tenantA.id, tenantB.id],
+        );
+      });
+    } catch (error) {
+      rejection = error instanceof Error ? error.message : String(error);
+    } finally {
+      await database.unsafe("delete from public.shop_accounts where id = $1 or id = $2", [tenantA.id, tenantB.id]);
+    }
+
+    expect(rejection.toLowerCase()).toContain("permission denied");
   });
 
   it("removes administrator permission as soon as the user's role row is revoked", async () => {
@@ -93,89 +100,137 @@ describe.skipIf(!enabled)("Supabase security concurrency integration", () => {
     });
   });
 
-  it("rejects a device-management action immediately after a shop actor is deactivated", async () => {
+  it("binds device-management actor ids to the authenticated terminal and revokes inactive staff", async () => {
     const tenant = shopFixture();
-    const actorUserId = "SEC-ACTOR-" + suffix();
-    const actorDeviceId = "SEC-ACTOR-DEVICE-" + suffix();
-    const targetDeviceId = "SEC-TARGET-DEVICE-" + suffix();
-    const actorUsername = "actor-" + suffix();
+    const authUserId = randomUUID();
+    const email = "security-device-" + suffix() + "@example.invalid";
+    const actorUserId = "SEC-STAFF-" + suffix();
+    const actorDeviceRecordId = "SEC-DEVICE-REC-" + suffix();
+    const targetDeviceRecordId = "SEC-TARGET-REC-" + suffix();
+    const actorDeviceId = "DEV-SEC-ACTOR-" + suffix();
+    const spoofedUserId = "SEC-SPOOF-" + suffix();
 
     await database.begin(async (tx) => {
       await tx.unsafe(
-        "insert into public.shop_accounts (id, shop_name, owner_name, owner_username, owner_phone) values ($1, 'Actor revocation fixture', 'Test Owner', $2, $3)",
+        "insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data) values ($1, 'authenticated', 'authenticated', $2, '', now(), now(), now(), '{}'::jsonb, '{}'::jsonb)",
+        [authUserId, email],
+      );
+      await tx.unsafe(
+        "insert into public.shop_accounts (id, shop_name, owner_name, owner_username, owner_phone) values ($1, 'Device auth fixture', 'Test Owner', $2, $3)",
         [tenant.id, tenant.username, tenant.phone],
       );
       await tx.unsafe(
-        "insert into public.shop_users (id, shop_sync_key, shop_name, user_id, full_name, username, phone, role, assigned_branch_id, assigned_branch_name, is_active) values ($1, $2, 'Actor revocation fixture', $3, 'Inactive actor', $4, '', 'CASHIER', 'main_branch', 'Main Store', false)",
-        [actorUserId, tenant.id, actorUserId, actorUsername],
+        "insert into public.shop_users (id, shop_sync_key, shop_name, user_id, full_name, username, phone, role, assigned_branch_id, assigned_branch_name, is_active) values ($1, $2, 'Device auth fixture', $1, 'Active owner', 'security-owner', '', 'OWNER', 'main_branch', 'Main Store', true)",
+        [actorUserId, tenant.id],
       );
       await tx.unsafe(
-        "insert into public.shop_devices (id, shop_sync_key, shop_name, device_id, device_name, assigned_user_id, assigned_username, assigned_user_name, role, branch_id, branch_name, is_owner_primary, is_active) values ($1, $2, 'Actor revocation fixture', $3, 'Actor terminal', $4, $5, 'Inactive actor', 'CASHIER', 'main_branch', 'Main Store', false, true), ($6, $2, 'Actor revocation fixture', '', 'Target terminal', $4, $5, 'Inactive actor', 'CASHIER', 'main_branch', 'Main Store', false, true)",
-        [actorDeviceId, tenant.id, actorDeviceId, actorUserId, actorUsername, targetDeviceId],
+        "insert into public.shop_devices (id, shop_sync_key, shop_name, device_id, device_name, assigned_user_id, assigned_username, assigned_user_name, role, branch_id, branch_name, is_owner_primary, is_active) values ($1, $2, 'Device auth fixture', $3, 'Owner terminal', $4, 'security-owner', 'Active owner', 'OWNER', 'main_branch', 'Main Store', true, true), ($5, $2, 'Device auth fixture', '', 'Target terminal', 'SEC-TARGET-STAFF', 'cashier', 'Target cashier', 'CASHIER', 'main_branch', 'Main Store', false, true)",
+        [actorDeviceRecordId, tenant.id, actorDeviceId, actorUserId, targetDeviceRecordId],
+      );
+      await tx.unsafe(
+        "insert into public.shop_device_auth_sessions (auth_user_id, shop_sync_key, device_record_id, device_id, assigned_user_id, role, branch_id, status, issued_at, expires_at, last_seen_at, revoked_at) values ($1, $2, $3, $4, $5, 'OWNER', 'main_branch', 'ACTIVE', public.now_ms(), public.now_ms() + 3600000, public.now_ms(), 0)",
+        [authUserId, tenant.id, actorDeviceRecordId, actorDeviceId, actorUserId],
       );
     });
 
     let rejection = "";
     try {
       await database.begin(async (tx) => {
+        await tx.unsafe("select set_config('request.jwt.claim.sub', $1, true)", [authUserId]);
+        await tx.unsafe("select set_config('request.jwt.claims', $1, true)", [
+          JSON.stringify({ sub: authUserId, role: "authenticated" }),
+        ]);
         await tx.unsafe("select set_config('request.headers', $1, true)", [
           JSON.stringify({ "x-shop-sync-key": tenant.id }),
         ]);
-        await tx.unsafe("set local role anon");
+        await tx.unsafe("set local role authenticated");
         await tx.unsafe(
           "select public.delete_shop_device($1, $2, $3, $4)",
-          [tenant.id, targetDeviceId, actorDeviceId, actorUserId],
+          [tenant.id, targetDeviceRecordId, actorDeviceId, spoofedUserId],
         );
       });
     } catch (error) {
       rejection = error instanceof Error ? error.message : String(error);
-    } finally {
-      await database.begin(async (tx) => {
-        await tx.unsafe("delete from public.shop_devices where shop_sync_key = $1", [tenant.id]);
-        await tx.unsafe("delete from public.shop_users where shop_sync_key = $1", [tenant.id]);
-        await tx.unsafe("delete from public.shop_accounts where id = $1", [tenant.id]);
-      });
     }
-
-    expect(rejection).toContain("The signed-in shop user is not active.");
-  });
-
-  it("allows only one different device to redeem a single-use invite under concurrent requests", async () => {
-    const tenant = shopFixture();
-    const deviceRecordId = "SEC-DEVICE-" + suffix();
-    const codeHash = createHash("sha256").update(randomUUID()).digest("hex");
-    const deviceA = "SEC-TERMINAL-A-" + suffix();
-    const deviceB = "SEC-TERMINAL-B-" + suffix();
+    expect(rejection).toContain("The authenticated terminal does not match the requested actor.");
 
     await database.begin(async (tx) => {
       await tx.unsafe(
-        "insert into public.shop_accounts (id, shop_name, owner_name, owner_username, owner_phone) values ($1, $2, $3, $4, $5)",
-        [tenant.id, "Invite race fixture", "Test Owner", tenant.username, tenant.phone],
+        "update public.shop_users set is_active = false where shop_sync_key = $1 and user_id = $2",
+        [tenant.id, actorUserId],
       );
-      await tx.unsafe(
-        "insert into public.shop_devices (id, shop_sync_key, device_name, device_id, assigned_user_id, assigned_username, assigned_user_name, role, branch_id, branch_name, is_active) values ($1, $2, $3, '', 'actor-fixture', 'actor-fixture', 'Actor fixture', 'CASHIER', 'main_branch', 'Main Store', true)",
-        [deviceRecordId, tenant.id, "Invite race slot"],
-      );
-      await tx.unsafe(
-        "insert into beboss_private.shop_device_invites (shop_sync_key, device_record_id, code_hash, created_by_device_id, created_by_user_id, assigned_user_id, branch_id, expires_at) values ($1, $2, $3, 'issuer-fixture', 'issuer-fixture', 'actor-fixture', 'main_branch', public.now_ms() + 3600000)",
-        [tenant.id, deviceRecordId, codeHash],
-      );
-    });
-
-    const redeem = (deviceId: string) => database.begin(async (tx) => {
+      await tx.unsafe("select set_config('request.jwt.claim.sub', $1, true)", [authUserId]);
+      await tx.unsafe("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: authUserId, role: "authenticated" }),
+      ]);
       await tx.unsafe("select set_config('request.headers', $1, true)", [
         JSON.stringify({ "x-shop-sync-key": tenant.id }),
       ]);
-      await tx.unsafe("set local role anon");
-      const rows = await tx.unsafe(
-        "select beboss_private.redeem_shop_device_invite($1, $2, $3, $4) as device",
-        [tenant.id, codeHash, deviceId, "Integration test terminal"],
+      await tx.unsafe("set local role authenticated");
+      const contextRows = await tx.unsafe("select public.current_shop_sync_key() as shop_id");
+      expect(contextRows[0].shop_id).toBe("");
+    });
+
+    await database.begin(async (tx) => {
+      await tx.unsafe("delete from public.shop_device_auth_sessions where auth_user_id = $1", [authUserId]);
+      await tx.unsafe("delete from public.shop_devices where shop_sync_key = $1", [tenant.id]);
+      await tx.unsafe("delete from public.shop_users where shop_sync_key = $1", [tenant.id]);
+      await tx.unsafe("delete from public.shop_accounts where id = $1", [tenant.id]);
+      await tx.unsafe("delete from auth.users where id = $1", [authUserId]);
+    });
+  });
+
+  it("allows only one different terminal to redeem a one-time auth invitation concurrently", async () => {
+    const tenant = shopFixture();
+    const ownerAuthUserId = randomUUID();
+    const deviceAuthUserA = randomUUID();
+    const deviceAuthUserB = randomUUID();
+    const ownerEmail = "security-invite-owner-" + suffix() + "@example.invalid";
+    const deviceEmailA = "security-invite-a-" + suffix() + "@example.invalid";
+    const deviceEmailB = "security-invite-b-" + suffix() + "@example.invalid";
+    const deviceRecordId = "SEC-DEVICE-REC-" + suffix();
+    const staffUserId = "SEC-ASSIGNED-" + suffix();
+    const codeHash = createHash("sha256").update(randomUUID()).digest("hex");
+    const deviceA = "DEV-SEC-TERMINAL-A-" + suffix();
+    const deviceB = "DEV-SEC-TERMINAL-B-" + suffix();
+
+    await database.begin(async (tx) => {
+      await tx.unsafe(
+        "insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data) values ($1, 'authenticated', 'authenticated', $2, '', now(), now(), now(), '{}'::jsonb, '{}'::jsonb), ($3, 'authenticated', 'authenticated', $4, '', now(), now(), now(), '{}'::jsonb, '{}'::jsonb), ($5, 'authenticated', 'authenticated', $6, '', now(), now(), now(), '{}'::jsonb, '{}'::jsonb)",
+        [ownerAuthUserId, ownerEmail, deviceAuthUserA, deviceEmailA, deviceAuthUserB, deviceEmailB],
       );
-      return rows[0].device;
+      await tx.unsafe(
+        "insert into public.shop_accounts (id, shop_name, owner_name, owner_username, owner_phone) values ($1, 'Invite race fixture', 'Test Owner', $2, $3)",
+        [tenant.id, tenant.username, tenant.phone],
+      );
+      await tx.unsafe(
+        "insert into public.shop_users (id, shop_sync_key, shop_name, user_id, full_name, username, phone, role, assigned_branch_id, assigned_branch_name, is_active) values ($1, $2, 'Invite race fixture', $1, 'Assigned staff', 'invite-staff', '', 'CASHIER', 'main_branch', 'Main Store', true)",
+        [staffUserId, tenant.id],
+      );
+      await tx.unsafe(
+        "insert into public.shop_devices (id, shop_sync_key, shop_name, device_id, device_name, assigned_user_id, assigned_username, assigned_user_name, role, branch_id, branch_name, is_owner_primary, is_active) values ($1, $2, 'Invite race fixture', '', 'Invite race slot', $3, 'invite-staff', 'Assigned staff', 'CASHIER', 'main_branch', 'Main Store', false, true)",
+        [deviceRecordId, tenant.id, staffUserId],
+      );
+      await tx.unsafe(
+        "insert into beboss_private.shop_device_auth_invites (shop_sync_key, device_record_id, expected_device_id, code_hash, issued_by_auth_user_id, created_at, expires_at) values ($1, $2, '', $3, $4, public.now_ms(), public.now_ms() + 3600000)",
+        [tenant.id, deviceRecordId, codeHash, ownerAuthUserId],
+      );
+    });
+
+    const redeem = (deviceId: string, authUserId: string) => database.begin(async (tx) => {
+      await tx.unsafe("set local role service_role");
+      const rows = await tx.unsafe(
+        "select public.redeem_shop_device_auth_invite($1, $2, $3, $4) as result",
+        [codeHash, deviceId, "Integration test terminal", authUserId],
+      );
+      return rows[0].result;
     });
 
     try {
-      const outcomes = await Promise.allSettled([redeem(deviceA), redeem(deviceB)]);
+      const outcomes = await Promise.allSettled([
+        redeem(deviceA, deviceAuthUserA),
+        redeem(deviceB, deviceAuthUserB),
+      ]);
       expect(outcomes.filter((result) => result.status === "fulfilled")).toHaveLength(1);
       expect(outcomes.filter((result) => result.status === "rejected")).toHaveLength(1);
       const winnerRows = await database.unsafe(
@@ -183,11 +238,19 @@ describe.skipIf(!enabled)("Supabase security concurrency integration", () => {
         [deviceRecordId],
       );
       expect([deviceA, deviceB]).toContain(winnerRows[0].device_id);
+      const sessions = await database.unsafe(
+        "select count(*)::int as count from public.shop_device_auth_sessions where shop_sync_key = $1 and device_record_id = $2 and status = 'ACTIVE'",
+        [tenant.id, deviceRecordId],
+      );
+      expect(sessions[0].count).toBe(1);
     } finally {
       await database.begin(async (tx) => {
-        await tx.unsafe("delete from beboss_private.shop_device_invites where device_record_id = $1", [deviceRecordId]);
-        await tx.unsafe("delete from public.shop_devices where id = $1", [deviceRecordId]);
+        await tx.unsafe("delete from beboss_private.shop_device_auth_invites where device_record_id = $1", [deviceRecordId]);
+        await tx.unsafe("delete from public.shop_device_auth_sessions where shop_sync_key = $1", [tenant.id]);
+        await tx.unsafe("delete from public.shop_devices where shop_sync_key = $1", [tenant.id]);
+        await tx.unsafe("delete from public.shop_users where shop_sync_key = $1", [tenant.id]);
         await tx.unsafe("delete from public.shop_accounts where id = $1", [tenant.id]);
+        await tx.unsafe("delete from auth.users where id = any($1::uuid[])", [[ownerAuthUserId, deviceAuthUserA, deviceAuthUserB]]);
       });
     }
   });
