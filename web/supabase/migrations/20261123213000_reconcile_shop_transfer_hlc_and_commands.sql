@@ -44,6 +44,15 @@ begin
 
   v_old_hlc := coalesce(old.hlc_timestamp, 0);
 
+  -- A lease is operational metadata, not a business mutation. Keep the causal
+  -- version stable when the only changed fields are the claim owner and expiry.
+  if tg_table_name = 'shop_stock_transfers'
+     and (to_jsonb(new) - 'claimed_by_device_id' - 'processing_lease_until')
+         is not distinct from
+         (to_jsonb(old) - 'claimed_by_device_id' - 'processing_lease_until') then
+    return new;
+  end if;
+
   -- A browser still sends an epoch-millisecond number. Treat it as a new server-
   -- ordered mutation, never compare it directly with a packed Android HLC.
   if v_incoming_hlc > 0
@@ -118,10 +127,7 @@ begin
 
   update public.shop_stock_transfers
   set claimed_by_device_id = p_device_id,
-      processing_lease_until = v_now_ms + v_lease_ms,
-      updated_at = greatest(updated_at + 1, v_now_ms),
-      hlc_timestamp = greatest(hlc_timestamp + 1, v_now_ms << 16),
-      last_modified_device_id = p_device_id
+      processing_lease_until = v_now_ms + v_lease_ms
   where id = p_transfer_id
     and shop_sync_key = v_tenant_key
     and (
@@ -157,10 +163,7 @@ begin
 
   update public.shop_stock_transfers
   set claimed_by_device_id = '',
-      processing_lease_until = 0,
-      updated_at = greatest(updated_at + 1, v_now_ms),
-      hlc_timestamp = greatest(hlc_timestamp + 1, v_now_ms << 16),
-      last_modified_device_id = p_device_id
+      processing_lease_until = 0
   where id = p_transfer_id
     and shop_sync_key = v_tenant_key
     and claimed_by_device_id = p_device_id
