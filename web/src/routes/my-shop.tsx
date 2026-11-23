@@ -16,7 +16,7 @@ import { liveConfigured } from '@/lib/live-config';
 import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
-import { addMyShopDevice, confirmMyShopStockTransfer, deleteMyShopBranch, lookupMyShop, submitPaymentProof, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
+import { addMyShopDevice, confirmMyShopStockTransfer, deleteMyShopBranch, lookupMyShop, requestMyShopStockTransferCancellation, submitPaymentProof, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
 import { publicSiteQuery } from "@/lib/queries";
 import { AnnouncementCard } from "@/components/site/AnnouncementBanner";
 import { buildAirtelUssd, buildMtnUssd, calculateSubscriptionFee, effectiveShopStatus } from "@/lib/pricing";
@@ -604,6 +604,7 @@ function BranchManager({
   const deleteBranch = useServerFn(deleteMyShopBranch);
   const upsertTransfer = useServerFn(upsertMyShopStockTransfer);
   const confirmTransfer = useServerFn(confirmMyShopStockTransfer);
+  const requestCancellation = useServerFn(requestMyShopStockTransferCancellation);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -706,17 +707,22 @@ function BranchManager({
   };
 
   const [tf, setTf] = useState({
-    productName: "",
+    productId: "",
     fromBranchId: "",
     toBranchId: "",
     quantity: 1,
-    unit: "pcs",
     notes: "",
   });
 
   const saveTransfer = async () => {
-    if (!tf.productName.trim() || !tf.fromBranchId || !tf.toBranchId || tf.quantity <= 0) {
-      toast.error("Product, both branches and a positive quantity are required.");
+    const product = (result.records?.products ?? []).find((item) => String(item.id ?? "") === tf.productId);
+    if (!product || !tf.fromBranchId || !tf.toBranchId || !Number.isFinite(tf.quantity) || tf.quantity <= 0) {
+      toast.error("Choose a product from the synced inventory, both branches and a positive quantity.");
+      return;
+    }
+    const productBranchId = String(product.branchId ?? "");
+    if (productBranchId && productBranchId !== tf.fromBranchId && !(productBranchId === "main_branch" && tf.fromBranchId === "main_branch")) {
+      toast.error("The selected product is not assigned to the source branch.");
       return;
     }
     if (tf.fromBranchId === tf.toBranchId) {
@@ -733,19 +739,21 @@ function BranchManager({
           phone,
           id: crypto.randomUUID(),
           transferNumber: `TRF-${Date.now().toString().slice(-8)}`,
-          productName: tf.productName,
+          productId: tf.productId,
+          productName: String(product.name ?? ""),
           fromBranchId: tf.fromBranchId,
           fromBranchName: fromName,
           toBranchId: tf.toBranchId,
           toBranchName: toName,
           quantity: tf.quantity,
-          unit: tf.unit,
+          unit: String(product.unit ?? "pcs"),
+          costValueRwf: Math.max(0, Math.round(Number(product.costPrice ?? 0) * tf.quantity)),
           notes: tf.notes,
           transferredBy: "Shop Owner",
         },
       });
-      toast.success("Stock transfer recorded. It will sync to your phone.");
-      setTf({ productName: "", fromBranchId: "", toBranchId: "", quantity: 1, unit: "pcs", notes: "" });
+      toast.success("Transfer request queued. A paired phone must validate source stock before inventory is deducted.");
+      setTf({ productId: "", fromBranchId: "", toBranchId: "", quantity: 1, notes: "" });
       onRefresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save transfer.");
@@ -758,10 +766,25 @@ function BranchManager({
     setBusy(id);
     try {
       await confirmTransfer({ data: { username, phone, id, receivedBy: "Shop Owner" } });
-      toast.success("Transfer confirmed.");
+      toast.success("Receipt request queued. A paired phone will validate it and credit destination stock.");
       onRefresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not confirm transfer.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const cancelRx = async (id: string) => {
+    setBusy(id);
+    try {
+      await requestCancellation({
+        data: { username, phone, id, actorName: "Shop Owner", reason: "Cancellation requested from the My Shop portal" },
+      });
+      toast.success("Cancellation request queued. A paired phone will restore source stock when it applies the request.");
+      onRefresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not request transfer cancellation.");
     } finally {
       setBusy(null);
     }
@@ -772,6 +795,17 @@ function BranchManager({
     name: b.name,
   })) ?? [];
   const branchOptions = branchesForSelect.map((b) => ({ id: b.id, name: b.name }));
+  const productOptions = (result.records?.products ?? [])
+    .map((p) => ({
+      id: String(p.id ?? ""),
+      name: String(p.name ?? "Unnamed product"),
+      branchId: String(p.branchId ?? ""),
+    }))
+    .filter((p) => p.id && p.name);
+  const selectedProduct = productOptions.find((p) => p.id === tf.productId);
+  const sourceBranchOptions = selectedProduct?.branchId
+    ? branchOptions.filter((b) => b.id === selectedProduct.branchId || (selectedProduct.branchId === "main_branch" && b.id === "main_branch"))
+    : branchOptions;
 
   return (
     <div className="space-y-6">
@@ -915,8 +949,16 @@ function BranchManager({
         <h4 className="font-semibold">Stock Transfers ({transfers.length})</h4>
         <div className="grid gap-4 rounded-2xl border border-border bg-surface-2 p-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label>Product</Label>
-            <Input value={tf.productName} onChange={(e) => setTf({ ...tf, productName: e.target.value })} placeholder="Product name" />
+            <Label>Product from synced inventory</Label>
+            <Select value={tf.productId} onValueChange={(value) => setTf({ ...tf, productId: value, fromBranchId: "" })}>
+              <SelectTrigger><SelectValue placeholder="Choose a synced product" /></SelectTrigger>
+              <SelectContent>
+                {productOptions.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {productOptions.length === 0 ? <p className="text-xs text-muted-foreground">Sync the Android inventory first. Product names cannot be entered as free text for a stock transfer.</p> : null}
           </div>
           <div className="space-y-2">
             <Label>Quantity</Label>
@@ -929,7 +971,7 @@ function BranchManager({
                 <SelectValue placeholder="Select source" />
               </SelectTrigger>
               <SelectContent>
-                {branchOptions.map((b) => (
+                {sourceBranchOptions.map((b) => (
                   <SelectItem key={b.id} value={b.id}>
                     {b.name}
                   </SelectItem>
@@ -957,7 +999,7 @@ function BranchManager({
             <Input value={tf.notes} onChange={(e) => setTf({ ...tf, notes: e.target.value })} placeholder="Optional" />
           </div>
           <div className="sm:col-span-2">
-            <Button variant="hero" disabled={busy === "transfer"} onClick={saveTransfer}>
+            <Button variant="hero" disabled={busy === "transfer" || !productOptions.length || !tf.productId}>
               {busy === "transfer" ? <Loader2 className="animate-spin" /> : <Plus />}
               Record transfer
             </Button>
@@ -987,16 +1029,29 @@ function BranchManager({
                     <td className="p-3 text-muted-foreground">{t.to_branch_name}</td>
                     <td className="p-3 font-mono">{t.quantity} {t.unit}</td>
                     <td className="p-3">
-                      <Badge variant={t.status === "COMPLETED" ? "success" : "warning"} className="text-[10px]">
+                      <Badge
+                        variant={t.status === "COMPLETED" ? "success" : t.status === "REJECTED" ? "danger" : t.status === "CANCELLED" ? "muted" : "warning"}
+                        className="text-[10px]"
+                      >
                         {t.status}
                       </Badge>
+                      {t.status === "REQUESTED" ? <p className="mt-1 text-[10px] text-muted-foreground">Waiting for a paired phone to validate stock</p> : null}
+                      {t.status === "RECEIPT_REQUESTED" ? <p className="mt-1 text-[10px] text-muted-foreground">Waiting for the destination phone to confirm receipt</p> : null}
+                      {t.status === "CANCEL_REQUESTED" ? <p className="mt-1 text-[10px] text-muted-foreground">Waiting for a paired phone to restore source stock</p> : null}
+                      {t.status === "REJECTED" && t.notes ? <p className="mt-1 max-w-[220px] text-[10px] text-destructive">{String(t.notes)}</p> : null}
                     </td>
                     <td className="p-3 text-right">
-                      {t.status !== "COMPLETED" ? (
-                        <Button variant="ghost" size="sm" disabled={busy === t.id} onClick={() => confirmRx(t.id)}>
-                          <Check /> Confirm
-                        </Button>
+                      {t.status === "IN_TRANSIT" ? (
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <Button variant="ghost" size="sm" disabled={busy === t.id} onClick={() => confirmRx(t.id)}>
+                            <Check /> Request receipt
+                          </Button>
+                          <Button variant="ghost" size="sm" disabled={busy === t.id} onClick={() => cancelRx(t.id)}>
+                            <Trash2 /> Request cancellation
+                          </Button>
+                        </div>
                       ) : null}
+                      {t.status === "RECEIPT_REQUESTED" || t.status === "CANCEL_REQUESTED" ? <span className="text-muted-foreground">Awaiting mobile processing</span> : null}
                     </td>
                   </tr>
                 ))}
