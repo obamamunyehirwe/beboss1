@@ -972,25 +972,27 @@ class BeBossRepository(private val database: AppDatabase) {
             val cleanJoin = deviceJoinCode.trim().uppercase(Locale.ROOT)
             val shopSyncKey = SupabaseAdminClient.computeShopSyncKey(cleanUser, cleanPhone)
 
-            val remoteShop = SupabaseAdminClient.fetchShopAccountById(shopSyncKey)
-                ?: return@withContext JoinShopCloudResult(
-                    success = false,
-                    message = "Shop account '@$cleanUser' ($cleanPhone) not found in BeBoss Cloud. Ask owner to create account & sync online first."
-                )
-
             val hardwareDeviceId = SupabaseAdminClient.getOrCreateDeviceId(context)
-            // The server hashes and atomically redeems the invitation. A code can only
-            // be claimed by one physical installation; a retry is allowed only by that
-            // same stable hardware ID.
+            // Redeem the owner-issued single-use code before reading any shop row.
+            // The Edge Function provisions a dedicated Supabase Auth identity and
+            // binds it atomically to this physical device and assigned staff account.
             val matchedDevice = SupabaseAdminClient.redeemShopDeviceInvite(
+                context = context,
                 shopSyncKey = shopSyncKey,
                 joinCode = cleanJoin,
                 hardwareDeviceId = hardwareDeviceId,
                 deviceName = thisDeviceName
             ) ?: return@withContext JoinShopCloudResult(
                 success = false,
-                message = "This Join Code is invalid, expired, already used on another device, or the assigned device/branch has been disabled."
+                message = "This secure device code is invalid, expired, already used, or not assigned to this terminal."
             )
+
+            // Only after the terminal JWT is provisioned may it read tenant-scoped data.
+            val remoteShop = SupabaseAdminClient.fetchShopAccountById(shopSyncKey)
+                ?: return@withContext JoinShopCloudResult(
+                    success = false,
+                    message = "The secure device was enrolled, but the shop profile could not be loaded. Retry cloud sync; do not clear this device."
+                )
             val remoteDevices = SupabaseAdminClient.fetchShopDevicesForShop(shopSyncKey)
                 .filterNot { it.id == matchedDevice.id } + matchedDevice
             val appCfg = SupabaseAdminClient.fetchPublicAppConfig()
