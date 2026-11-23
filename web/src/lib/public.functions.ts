@@ -292,6 +292,53 @@ export const submitPaymentProof = createServerFn({ method: "POST" })
     return { ok: true, amount };
   });
 
+const gatewayCheckoutSchema = z.object({
+  provider: z.enum(["flutterwave", "stripe"]),
+  shopName: z.string().trim().min(2).max(120),
+  username: z.string().trim().min(2).max(80).regex(/^[a-zA-Z0-9._-]+$/),
+  phone: z.string().trim().min(9).max(30),
+  payerPhone: z.string().trim().min(9).max(30),
+  payerName: z.string().trim().min(2).max(120),
+  payerEmail: z.string().trim().email().max(254),
+  months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]),
+  branches: z.number().int().min(1).max(100),
+  workers: z.number().int().min(1).max(500),
+  devices: z.number().int().min(1).max(100),
+  idempotencyKey: z.string().uuid(),
+});
+
+export const createSubscriptionCheckout = createServerFn({ method: "POST" })
+  .inputValidator((d: z.infer<typeof gatewayCheckoutSchema>) => gatewayCheckoutSchema.parse(d))
+  .handler(async ({ data }) => {
+    const sb = createPublicClient();
+    const { data: result, error } = await sb.functions.invoke("create-subscription-checkout", {
+      body: data,
+    });
+    if (error) {
+      console.error("[BeBoss payment checkout] Gateway invocation failed", error.message);
+      throw new Error("The secure payment service could not be reached. Please try again.");
+    }
+    if (
+      !result?.ok ||
+      typeof result.checkoutUrl !== "string" ||
+      !result.checkoutUrl.startsWith("https://") ||
+      typeof result.paymentRequestId !== "string"
+    ) {
+      throw new Error(
+        typeof result?.message === "string"
+          ? result.message
+          : "The payment provider did not return a valid secure checkout URL.",
+      );
+    }
+    return {
+      checkoutUrl: result.checkoutUrl as string,
+      paymentRequestId: result.paymentRequestId as string,
+      provider: result.provider as string,
+      amountRwf: Number(result.amountRwf),
+      currency: "RWF" as const,
+    };
+  });
+
 // ---------------------------------------------------------------------------
 // Branch & stock-transfer management (owner portal, tenant-scoped via X-Shop-Sync-Key)
 // Writes set a fresh HLC timestamp so the phone's HLC merge adopts the web edit.
