@@ -31,7 +31,10 @@ Independent retailers, pharmacies, hardware depots, wholesalers, and service bus
 
 BeBoss addresses these directly with an **always-available Android terminal** that completes sales locally in milliseconds, synchronizes over local Wi-Fi/hotspot or cloud when online, and ships with a **4-language offline interface** (`English`, `Ikinyarwanda`, `Français`, `Kiswahili`).
 
-### Current Android Release — 2.3.1 (versionCode 15)
+### Next Android Build — 2.3.1 (versionCode 15; signed release pending)
+
+
+The currently published, signed APK endpoint remains on **2.3.0 (versionCode 14)** until the 2.3.1 release is built with the production upload keystore and uploaded through Admin → App Releases. CI builds a debug APK for installation/testing; a debug-signed APK cannot replace an already installed production-signed app.
 
 - **Supabase cloud sync:** Android uses the project's public `SUPABASE_PUBLISHABLE_KEY` as the `apikey` header and sends a Bearer token only when a real signed-in admin JWT exists. Legacy anon JWT configuration remains supported. A service-role/secret key is never shipped in the APK.
 - **LAN terminal discovery:** opted-in nearby-Wi-Fi access enables discovery of BeBoss terminals on the same Wi-Fi or hotspot. The shop first completes one online cloud sync to provision its random per-shop LAN key; each device then stores that key encrypted by Android Keystore for later offline hotspot sync. Pairing and admin-approved device membership are required before encrypted branch transfer. This is not Bluetooth discovery of arbitrary phones.
