@@ -82,14 +82,7 @@ export const requestMyShopOwnerOtp = createServerFn({ method: "POST" })
       .eq("shop_id", shop.id)
       .gte("created_at", windowStart);
     if (countError) throw new Error("Owner verification is temporarily unavailable.");
-    if ((count ?? 0) >= 3) {
-      await supabaseAdmin.from("shop_owner_otp_attempts").insert({
-        shop_id: shop.id,
-        created_at: now,
-        status: "THROTTLED",
-      });
-      return accepted;
-    }
+    if ((count ?? 0) >= 3) return accepted;
 
     const { data: attempt, error: attemptError } = await supabaseAdmin
       .from("shop_owner_otp_attempts")
@@ -168,18 +161,28 @@ export const claimMyShopOwner = createServerFn({ method: "POST" })
     }
 
     const now = Date.now();
-    const membershipWrite = existingMembership
-      ? supabaseAdmin.from("shop_owner_memberships").update({ last_verified_at: now }).eq("user_id", user.id).eq("shop_id", shop.id).eq("status", "ACTIVE").eq("revoked_at", 0)
-      : supabaseAdmin.from("shop_owner_memberships").insert({
-          user_id: user.id,
-          shop_id: shop.id,
-          owner_username: String(shop.owner_username),
-          owner_phone: String(shop.owner_phone),
-          status: "ACTIVE",
-          last_verified_at: now,
-          revoked_at: 0,
-        });
-    const { error: membershipError } = await membershipWrite;
+    let membershipError: { message: string } | null = null;
+    if (existingMembership) {
+      const result = await supabaseAdmin
+        .from("shop_owner_memberships")
+        .update({ last_verified_at: now })
+        .eq("user_id", user.id)
+        .eq("shop_id", shop.id)
+        .eq("status", "ACTIVE")
+        .eq("revoked_at", 0);
+      membershipError = result.error;
+    } else {
+      const result = await supabaseAdmin.from("shop_owner_memberships").insert({
+        user_id: user.id,
+        shop_id: shop.id,
+        owner_username: String(shop.owner_username),
+        owner_phone: String(shop.owner_phone),
+        status: "ACTIVE",
+        last_verified_at: now,
+        revoked_at: 0,
+      });
+      membershipError = result.error;
+    }
     if (membershipError) throw new Error("Could not finish secure owner enrollment.");
     return { enrolled: true };
   });
