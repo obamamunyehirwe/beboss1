@@ -14,6 +14,9 @@ interface SaleDao {
     @Query("SELECT * FROM sales ORDER BY saleDate DESC")
     fun getAllSales(): Flow<List<Sale>>
 
+    @Query("SELECT * FROM sale_items ORDER BY saleId DESC")
+    fun getAllSaleItems(): Flow<List<SaleItem>>
+
     @Query("SELECT * FROM sales ORDER BY saleDate DESC")
     suspend fun getAllSalesList(): List<Sale>
 
