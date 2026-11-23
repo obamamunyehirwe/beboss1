@@ -15,7 +15,15 @@ function normalizePhone(value: unknown): string {
   const raw = String(value ?? "").trim();
   const digits = raw.replace(/\D/g, "");
   if (!digits) return "";
-  const normalized = raw.startsWith("+") ? `+${digits}` : digits.startsWith("00") ? `+${digits.slice(2)}` : digits.length === 9 ? `+250${digits}` : `+${digits}`;
+  const normalized = raw.startsWith("+")
+    ? `+${digits}`
+    : digits.startsWith("00")
+      ? `+${digits.slice(2)}`
+      : digits.length === 10 && digits.startsWith("0")
+        ? `+250${digits.slice(1)}`
+        : digits.length === 9
+          ? `+250${digits}`
+          : `+${digits}`;
   return /^\+[1-9][0-9]{7,14}$/.test(normalized) ? normalized : "";
 }
 
