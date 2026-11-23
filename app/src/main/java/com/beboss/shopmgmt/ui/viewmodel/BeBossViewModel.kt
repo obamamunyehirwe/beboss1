@@ -594,6 +594,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     deviceName = deviceName,
                     assignedUser = assignedUser,
                     branch = branch,
+                    creatorDeviceId = deviceId,
                     actor = currentUser.value
                 )
                 scheduleAutoBranchSync()
@@ -629,7 +630,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun deleteShopDevice(deviceId: String) {
         viewModelScope.launch {
             try {
-                repository.deleteShopDevice(deviceId, actor = currentUser.value)
+                repository.deleteShopDevice(deviceId, actor = currentUser.value, actorDeviceId = this@BeBossViewModel.deviceId)
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit("Secondary shop device removed.")
             } catch (e: SecurityException) {
