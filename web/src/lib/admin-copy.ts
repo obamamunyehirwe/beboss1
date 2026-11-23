@@ -964,6 +964,12 @@ const words: Record<string, readonly [string, string, string]> = {
   "Used in *182*8*1*CODE*AMOUNT#. Leave empty to use the fallback phone.": ["Ikoreshwa muri *182*8*1*CODE*AMOUNT#. Siga ubusa kugira ngo hakoreshwe telefone isanzwe.", "Utilisé dans *182*8*1*CODE*AMOUNT#. Laissez vide pour utiliser le téléphone de secours.", "Hutumika katika *182*8*1*CODE*AMOUNT#. Acha wazi ili kutumia simu mbadala."],
   "Used in *182*1*1*PHONE*AMOUNT# only when the merchant code is empty.": ["Ikoreshwa muri *182*1*1*PHONE*AMOUNT# gusa iyo kode y'umucuruzi itashyizwemo.", "Utilisé dans *182*1*1*PHONE*AMOUNT# uniquement si le code marchand est vide.", "Hutumika katika *182*1*1*PHONE*AMOUNT# tu ikiwa msimbo wa mfanyabiashara haujawekwa."],
   "Used in *500*1*1*PHONE*AMOUNT#.": ["Ikoreshwa muri *500*1*1*PHONE*AMOUNT#.", "Utilisé dans *500*1*1*PHONE*AMOUNT#.", "Hutumika katika *500*1*1*PHONE*AMOUNT#."],
+  "paying shops": ["amaduka yishyura", "boutiques payantes", "maduka yanayolipa"],
+  "Last month": ["Ukwezi gushize", "Le mois dernier", "Mwezi uliopita"],
+  "waiting": ["bitegereje", "en attente", "inasubiri"],
+  "on trial": ["mu igerageza", "en période d’essai", "kwenye jaribio"],
+  "expired": ["byarangiye", "expiré", "imeisha"],
+  "active": ["bikora", "actif", "hai"],
 };
 export function useAdminText() {
   const { lang } = useI18n();
