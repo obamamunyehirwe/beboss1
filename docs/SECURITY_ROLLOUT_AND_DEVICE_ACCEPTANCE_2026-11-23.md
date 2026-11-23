@@ -37,7 +37,7 @@ Then run from the web directory:
 
 The suite explicitly rejects the production project ref ahlpvlhmpfiyeoercxol. Do not point it at production. The default unit-test command skips this suite unless the opt-in flag is set.
 
-The production rate-limit RPC received a live concurrency smoke test using eight simultaneous database calls with an allowance of five. Exactly five returned allowed=true and three returned allowed=false; the bucket count reached eight. The test key was removed afterwards. This verifies atomic counter behaviour, not the end-to-end contact browser flow or the BB2 redemption workflow.
+The production sliding-window RPC received a live concurrency smoke test using eight simultaneous database calls with an allowance of five. Exactly five returned allowed=true and three returned allowed=false; only five accepted events were stored, and denied calls returned Retry-After values. The test key was removed afterwards. This verifies atomic limiter behaviour, not the end-to-end contact browser flow or the BB2 redemption workflow.
 
 The integration suite is added but has not yet been run against a separate staging database. The tenant visibility test covers the existing RLS header boundary; it does not prove that the legacy deterministic tenant key is secret. It is not evidence that the new random-credential actor/session model is complete.
 
