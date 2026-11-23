@@ -90,7 +90,14 @@ export const lookupMyShop = createServerFn({ method: "POST" })
       snapshotUploadedAt,
       branches: branchRows.data ?? [],
       stockTransfers: transferRows.data ?? [],
-      staff: staffRows.data ?? [],
+      staff: Array.from(
+        new Map(
+          (staffRows.data ?? []).map((staff) => [
+            String(staff.username || staff.user_id).trim().toLowerCase(),
+            staff,
+          ]),
+        ).values(),
+      ),
     };
   });
 
