@@ -142,15 +142,18 @@ class BeBossRepository(private val database: AppDatabase) {
         targetId: String = "",
         allowed: (User) -> Boolean
     ) {
-        val allUsers = try { userDao.getAllUsersDirect() } catch (_: Throwable) { emptyList() }
-        val principal = actor
-            ?: allUsers.firstOrNull { it.role == UserRole.OWNER && it.isActive }
-            ?: allUsers.firstOrNull { it.isActive }
-            ?: allUsers.firstOrNull()
+        val principal = actor ?: run {
+            val allUsers = try { userDao.getAllUsersDirect() } catch (_: Throwable) { emptyList() }
+            allUsers.firstOrNull { it.role == UserRole.OWNER && it.isActive }
+                ?: allUsers.firstOrNull { it.isActive }
+                ?: allUsers.firstOrNull()
+        }
 
-        // If no users exist yet in the database (initial setup/registration phase),
-        // or during registration/setup, allow the action automatically.
-        if (principal == null || allUsers.isEmpty()) {
+        // Setup flows with no explicit actor may proceed before the first owner is
+        // persisted. An explicitly supplied actor is always checked, even when Room
+        // currently contains no user rows (for example, during an isolated operation
+        // or test); an empty users table must never bypass a supplied cashier's RBAC.
+        if (principal == null) {
             return
         }
 
