@@ -629,7 +629,25 @@ private fun ReportExportActionsCard(
                     summary.profitMarginPercent.toInt(),
                     summary.totalSalesCount
                 )
-                ReceiptGenerator.shareReceipt(context, reportText)
+                try {
+                    val cardFile = com.beboss.shopmgmt.util.BrandedShareCardGenerator.generateAnalyticsCardPng(
+                        context = context,
+                        periodName = periodLabel,
+                        summary = summary,
+                        topProducts = topProducts,
+                        profile = shopProfile
+                    )
+                    PdfReportGenerator.shareFileToWhatsAppOrChooser(
+                        context = context,
+                        file = cardFile,
+                        mimeType = "image/png",
+                        caption = reportText,
+                        targetPhone = shopProfile.phone,
+                        chooserTitle = Localization.get("ana_share_text_cta", language)
+                    )
+                } catch (_: Exception) {
+                    ReceiptGenerator.shareReceipt(context, reportText)
+                }
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -638,7 +656,7 @@ private fun ReportExportActionsCard(
         ) {
             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp), tint = OrangePrimary)
             Spacer(modifier = Modifier.width(8.dp))
-            Text(Localization.get("ana_share_text_cta", language), fontWeight = FontWeight.SemiBold, color = OrangePrimary)
+            Text("📊 ${Localization.get("ana_share_text_cta", language)} (WhatsApp Card)", fontWeight = FontWeight.SemiBold, color = OrangePrimary)
         }
     }
 }

@@ -137,6 +137,7 @@ fun CustomersScreen(
     var customerToEdit by remember { mutableStateOf<Customer?>(null) }
     var customerForPayment by remember { mutableStateOf<Customer?>(null) }
     var customerToDelete by remember { mutableStateOf<Customer?>(null) }
+    var customerForReminder by remember { mutableStateOf<Customer?>(null) }
     var showClearAllCustomersDialog by remember { mutableStateOf(false) }
     var isAddingNew by remember { mutableStateOf(false) }
     var showBulkContactsDialog by remember { mutableStateOf(false) }
@@ -378,7 +379,7 @@ fun CustomersScreen(
                         onDelete = { customerToDelete = customer },
                         onSendReminder = {
                             if (customer.phone.isNotBlank()) {
-                                sendDebtReminder(context, customer, shopProfile, language)
+                                customerForReminder = customer
                             } else {
                                 Toast.makeText(context, Localization.format("cust_no_phone_toast_fmt", language, customer.name), Toast.LENGTH_SHORT).show()
                             }
@@ -469,7 +470,53 @@ fun CustomersScreen(
         )
     }
 
-    // Bulk Phone Contacts Import Dialog
+    // Reminder Channel Dialog (WhatsApp Branded Logo Card vs Direct SMS)
+    if (customerForReminder != null) {
+        val target = customerForReminder!!
+        AlertDialog(
+            onDismissRequest = { customerForReminder = null },
+            title = { Text("💬 Remind ${target.name}", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            text = {
+                Text(
+                    text = if (target.debtBalance > 0) {
+                        "Send official branded balance card (${ReceiptGenerator.formatMoney(target.debtBalance, shopProfile)}) via WhatsApp with shop logo, or send direct SMS."
+                    } else {
+                        "Send thank-you notice with BeBoss branded card via WhatsApp or direct SMS."
+                    },
+                    fontSize = 12.5.sp,
+                    color = InkMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        customerForReminder = null
+                        sendDebtReminderWhatsAppCard(context, target, shopProfile, language)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen)
+                ) {
+                    Text("💬 WhatsApp Card (Logo)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = { customerForReminder = null }) {
+                        Text(Localization.get("cancel", language), fontSize = 11.5.sp)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            customerForReminder = null
+                            sendDebtReminder(context, target, shopProfile, language)
+                        }
+                    ) {
+                        Text("📱 SMS", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        )
+    }
+
+    // Bulk Phone Contacts Import Dialog (NO auto-select all — user chooses & can edit before adding)
     if (showBulkContactsDialog) {
         BulkContactsImportDialog(
             language = language,
@@ -488,6 +535,18 @@ fun CustomersScreen(
                 }
                 showBulkContactsDialog = false
                 Toast.makeText(context, Localization.format("cust_imported_toast_fmt", language, selectedContacts.size), Toast.LENGTH_LONG).show()
+            },
+            onPickAndEdit = { contact ->
+                showBulkContactsDialog = false
+                customerToEdit = Customer(
+                    id = UUID.randomUUID().toString(),
+                    name = contact.name,
+                    phone = contact.phone,
+                    email = contact.email,
+                    category = CustomerCategory.REGULAR.displayName,
+                    creditLimit = 500000.0,
+                    city = "Kigali"
+                )
             },
             onDismiss = { showBulkContactsDialog = false }
         )
@@ -826,7 +885,49 @@ private fun sendDebtReminder(context: Context, customer: Customer, shopProfile: 
         )
     }
 
-    SmsHelper.sendSmsOrOpenIntent(context, customer.phone, message)
+    SmsHelper.sendSmsOrOpenIntent(context, customer.phone, message, messageType = "DEBT_REMINDER")
+}
+
+private fun sendDebtReminderWhatsAppCard(
+    context: Context,
+    customer: Customer,
+    shopProfile: ShopProfile,
+    language: AppLanguage
+) {
+    val body = if (customer.debtBalance > 0) {
+        "🧾 *${shopProfile.shopName.ifBlank { "BeBoss Store" }}* — Account Notice\n" +
+            Localization.format(
+                "cust_reminder_sms_due_fmt",
+                language,
+                customer.name,
+                shopProfile.shopName,
+                ReceiptGenerator.formatMoney(customer.debtBalance, shopProfile)
+            )
+    } else {
+        "🙏 *${shopProfile.shopName.ifBlank { "BeBoss Store" }}*\n" +
+            Localization.format(
+                "cust_reminder_sms_thanks_fmt",
+                language,
+                customer.name,
+                shopProfile.shopName
+            )
+    }
+    try {
+        val cardFile = com.beboss.shopmgmt.util.BrandedShareCardGenerator.generateCustomerDebtCardPng(
+            context = context,
+            customer = customer,
+            profile = shopProfile
+        )
+        PdfReportGenerator.sendWhatsAppDirect(
+            context = context,
+            phone = customer.phone,
+            message = body,
+            attachmentFile = cardFile,
+            mimeType = "image/png"
+        )
+    } catch (_: Exception) {
+        PdfReportGenerator.sendWhatsAppDirect(context, customer.phone, body)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1274,11 +1375,13 @@ fun RecordDebtPaymentDialog(
 fun BulkContactsImportDialog(
     language: AppLanguage = AppLanguage.ENGLISH,
     onImport: (List<PickedContactInfo>) -> Unit,
+    onPickAndEdit: (PickedContactInfo) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     var contactsList by remember { mutableStateOf<List<PickedContactInfo>>(emptyList()) }
     var selectedContacts by remember { mutableStateOf<Set<PickedContactInfo>>(emptySet()) }
+    var contactSearchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -1286,7 +1389,7 @@ fun BulkContactsImportDialog(
     ) { granted ->
         if (granted) {
             contactsList = ContactsHelper.fetchAllPhoneContacts(context)
-            selectedContacts = contactsList.toSet()
+            selectedContacts = emptySet() // Never auto-select all contacts
             isLoading = false
         } else {
             isLoading = false
@@ -1298,10 +1401,18 @@ fun BulkContactsImportDialog(
     androidx.compose.runtime.LaunchedEffect(Unit) {
         if (ContactsHelper.hasContactsPermission(context)) {
             contactsList = ContactsHelper.fetchAllPhoneContacts(context)
-            selectedContacts = contactsList.toSet()
+            selectedContacts = emptySet() // User explicitly chooses desired contacts
             isLoading = false
         } else {
             permissionLauncher.launch(android.Manifest.permission.READ_CONTACTS)
+        }
+    }
+
+    val filteredContacts = remember(contactsList, contactSearchQuery) {
+        if (contactSearchQuery.isBlank()) contactsList
+        else contactsList.filter {
+            it.name.contains(contactSearchQuery, ignoreCase = true) ||
+                it.phone.contains(contactSearchQuery, ignoreCase = true)
         }
     }
 
@@ -1309,14 +1420,14 @@ fun BulkContactsImportDialog(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 16.dp),
+                .padding(vertical = 14.dp),
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp)
+                    .padding(18.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1334,20 +1445,61 @@ fun BulkContactsImportDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = Localization.get("cust_contacts_select_hint", language),
-                    fontSize = 12.sp,
+                    text = "Select only the contacts you want, or tap Edit & Add on a contact to customize names, city & credit details.",
+                    fontSize = 11.5.sp,
                     color = InkMedium
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = contactSearchQuery,
+                    onValueChange = { contactSearchQuery = it },
+                    placeholder = { Text("Search name or phone number...", fontSize = 12.5.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = InkMedium, modifier = Modifier.size(18.dp)) },
+                    trailingIcon = {
+                        if (contactSearchQuery.isNotBlank()) {
+                            IconButton(onClick = { contactSearchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear", tint = InkMedium, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    singleLine = true
+                )
+
+                if (selectedContacts.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${selectedContacts.size} selected",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OrangePrimary
+                        )
+                        OutlinedButton(
+                            onClick = { selectedContacts = emptySet() },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Clear Selection", fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
                         Text(Localization.get("cust_contacts_reading", language), fontSize = 13.sp, color = InkMedium)
                     }
-                } else if (contactsList.isEmpty()) {
+                } else if (filteredContacts.isEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
                         Text(Localization.get("cust_contacts_none", language), fontSize = 13.sp, color = InkMedium)
                     }
@@ -1355,10 +1507,10 @@ fun BulkContactsImportDialog(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(280.dp),
+                            .height(270.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(contactsList) { contact ->
+                        items(filteredContacts) { contact ->
                             val isSelected = selectedContacts.contains(contact)
                             Surface(
                                 onClick = {
@@ -1368,23 +1520,45 @@ fun BulkContactsImportDialog(
                                         selectedContacts + contact
                                     }
                                 },
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 color = if (isSelected) Color(0xFFFFF0E6) else Color(0xFFF9FAFB),
-                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, OrangePrimary) else null
+                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, OrangePrimary) else androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFE5E7EB))
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(10.dp),
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(contact.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = InkDark)
-                                        Text(contact.phone, fontSize = 11.sp, color = InkMedium)
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        androidx.compose.material3.Checkbox(
+                                            checked = isSelected,
+                                            onCheckedChange = { checked ->
+                                                selectedContacts = if (checked) {
+                                                    selectedContacts + contact
+                                                } else {
+                                                    selectedContacts - contact
+                                                }
+                                            }
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(contact.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = InkDark)
+                                            Text(contact.phone, fontSize = 11.sp, color = InkMedium)
+                                        }
                                     }
-                                    if (isSelected) {
-                                        Icon(Icons.Default.People, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(18.dp))
+
+                                    OutlinedButton(
+                                        onClick = { onPickAndEdit(contact) },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Edit and add customer", tint = DarkNavy, modifier = Modifier.size(13.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("Edit", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = DarkNavy)
                                     }
                                 }
                             }
@@ -1392,7 +1566,7 @@ fun BulkContactsImportDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

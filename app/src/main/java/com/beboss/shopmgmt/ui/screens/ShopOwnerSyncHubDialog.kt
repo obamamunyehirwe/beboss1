@@ -87,6 +87,7 @@ import com.beboss.shopmgmt.ui.theme.OrangeLight
 import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
 import com.beboss.shopmgmt.util.AppLanguage
+import com.beboss.shopmgmt.util.BrandedShareCardGenerator
 import com.beboss.shopmgmt.util.BranchPeerSyncEvent
 import com.beboss.shopmgmt.util.CloudSyncReport
 import com.beboss.shopmgmt.util.DiscoveredBranchHub
@@ -201,7 +202,7 @@ fun ShopOwnerSyncHubDialog(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "LAN Mesh Auto-Discovery Ã¢â‚¬Â¢ Signed Tokens Ã¢â‚¬Â¢ Full Branch Sync",
+                                text = "LAN Mesh Auto-Discovery • Signed Tokens • Full Branch Sync",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -327,7 +328,7 @@ fun ShopOwnerSyncHubDialog(
                                         Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFF0F172A), modifier = Modifier.fillMaxWidth()) {
                                             Column(modifier = Modifier.padding(10.dp)) {
                                                 Text("Master Endpoint: http://$localServerIp:8989", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Color(0xFF6EE7B7), fontFamily = FontFamily.Monospace)
-                                                Text("Active Connections: $localConnectedClients Ã¢â‚¬Â¢ Auto-Discovery Beacon Active", fontSize = 10.5.sp, color = Color(0xFFCBD5E1))
+                                                Text("Active Connections: $localConnectedClients • Auto-Discovery Beacon Active", fontSize = 10.5.sp, color = Color(0xFFCBD5E1))
                                                 if (!localLastReceivedPacket.isNullOrBlank()) {
                                                     Text("Last Merge: $localLastReceivedPacket", fontSize = 10.5.sp, color = Color(0xFFFDBA74))
                                                 }
@@ -385,9 +386,9 @@ fun ShopOwnerSyncHubDialog(
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Column(modifier = Modifier.weight(1f)) {
-                                                        Text("${hub.shopName} Ã¢â‚¬Â¢ ${hub.branchName}", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = DarkNavy)
+                                                        Text("${hub.shopName} • ${hub.branchName}", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = DarkNavy)
                                                         Text(
-                                                            text = "${hub.ipAddress}:${hub.port} Ã¢â‚¬Â¢ ${hub.branchesCount} branches, ${hub.productsCount} items",
+                                                            text = "${hub.ipAddress}:${hub.port} • ${hub.branchesCount} branches, ${hub.productsCount} items",
                                                             fontSize = 10.5.sp,
                                                             color = InkMedium,
                                                             fontFamily = FontFamily.Monospace
@@ -451,7 +452,7 @@ fun ShopOwnerSyncHubDialog(
                             if (peerSyncEvents.isNotEmpty()) {
                                 Text("Live Mesh Peer Activity", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 peerSyncEvents.take(4).forEach { ev ->
-                                    Text("Ã¢â‚¬Â¢ [${dateFormat.format(Date(ev.timestamp))}] ${ev.peerName} (${ev.peerIp}): ${ev.summary}", fontSize = 11.sp, color = InkMedium)
+                                    Text("• [${dateFormat.format(Date(ev.timestamp))}] ${ev.peerName} (${ev.peerIp}): ${ev.summary}", fontSize = 11.sp, color = InkMedium)
                                 }
                             }
                         }
@@ -728,7 +729,7 @@ fun ShopOwnerSyncHubDialog(
                                         }
                                         Spacer(modifier = Modifier.height(6.dp))
                                         Text(
-                                            text = "Items: ${branchStock.size} Ã¢â‚¬Â¢ Transfers: ${branchTransfers.size} Ã¢â‚¬Â¢ Staff: ${branchStaff.size}",
+                                            text = "Items: ${branchStock.size} • Transfers: ${branchTransfers.size} • Staff: ${branchStaff.size}",
                                             fontSize = 11.5.sp,
                                             color = InkMedium
                                         )
@@ -752,7 +753,21 @@ fun ShopOwnerSyncHubDialog(
                                         users = allUsers,
                                         products = products
                                     )
-                                    PdfReportGenerator.sendWhatsAppDirect(context, shopProfile.phone, summaryText)
+                                    val cardFile = BrandedShareCardGenerator.generateBranchSummaryCardPng(
+                                        context = context,
+                                        profile = shopProfile,
+                                        branchCount = branches.size,
+                                        staffCount = allUsers.size,
+                                        totalRevenue = sales.sumOf { it.totalAmount },
+                                        productCount = products.size
+                                    )
+                                    PdfReportGenerator.sendWhatsAppDirect(
+                                        context = context,
+                                        phone = shopProfile.phone,
+                                        message = summaryText,
+                                        attachmentFile = cardFile,
+                                        mimeType = "image/png"
+                                    )
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -872,7 +887,7 @@ fun ShopOwnerSyncHubDialog(
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
-                                            text = "Pushed: ${cloudSyncReport.itemsPushed} Ã¢â‚¬Â¢ Pulled: ${cloudSyncReport.itemsPulled} Ã¢â‚¬Â¢ Latency: ${cloudSyncReport.latencyMs}ms",
+                                            text = "Pushed: ${cloudSyncReport.itemsPushed} • Pulled: ${cloudSyncReport.itemsPulled} • Latency: ${cloudSyncReport.latencyMs}ms",
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -907,7 +922,7 @@ fun ShopOwnerSyncHubDialog(
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
                                                 Text(log.type, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, color = OrangePrimary)
-                                                Text("${log.status} Ã¢â‚¬Â¢ ${dateFormat.format(Date(log.timestamp))}", fontSize = 10.5.sp, color = InkMedium)
+                                                Text("${log.status} • ${dateFormat.format(Date(log.timestamp))}", fontSize = 10.5.sp, color = InkMedium)
                                             }
                                             Text(log.summary, fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurface)
                                         }
@@ -938,6 +953,6 @@ private fun buildBranchSyncWhatsAppText(
         append("Operator: ${user?.name ?: "Owner"} (@${user?.username ?: "owner"})\n")
         append("Total Sales: ${totalSales.toInt()} ${profile.currencySymbol} (${sales.size} receipts)\n")
         append("Catalog Items: ${products.size} ($lowStock low stock)\n")
-        append("Active Branches: ${branches.size} Ã¢â‚¬Â¢ Staff: ${users.size}\n")
+        append("Active Branches: ${branches.size} • Staff: ${users.size}\n")
     }
 }

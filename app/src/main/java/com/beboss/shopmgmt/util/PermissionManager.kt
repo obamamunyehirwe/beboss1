@@ -53,6 +53,11 @@ object PermissionManager {
         return hasPermission(context, Manifest.permission.CAMERA)
     }
 
+    fun hasLocationPermission(context: Context): Boolean {
+        return hasPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ||
+            hasPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+    }
+
     fun hasNotificationPermission(context: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             hasPermission(context, Manifest.permission.POST_NOTIFICATIONS)
@@ -78,8 +83,8 @@ object PermissionManager {
                 permission = Manifest.permission.READ_CONTACTS,
                 title = "Phone Contacts Access",
                 titleRw = "Uburenganzira bwa Contacts",
-                description = "Import customer names, phones and addresses directly from your device phonebook with 1 tap.",
-                descriptionRw = "Kwinjiza abakiriya, amazina na telefone zabo ako kanya uvanye muri telefoni yawe.",
+                description = "Select individual contacts to add into customers with editable names and credit profiles.",
+                descriptionRw = "Guhitamo abakiriya muri contacts ukabongeraho amazina n'amakuru ya ngombwa.",
                 isGranted = hasContactsPermission(context),
                 isCrucial = true,
                 iconName = "contacts",
@@ -104,33 +109,46 @@ object PermissionManager {
             )
         )
 
-        // Camera
+        // Camera (Barcode + QR)
         list.add(
             AppPermissionItem(
                 permission = Manifest.permission.CAMERA,
-                title = "Camera Barcode Scanner",
-                titleRw = "Kamera yo Gusoma Barcode",
-                description = "Scan product barcodes and collaborator QR passes directly using your device camera.",
-                descriptionRw = "Gusoma barcode z'ibicuruzwa na QR pass z'abakozi ukoresheje kamera ya telefoni.",
+                title = "Camera Barcode & QR Scanner",
+                titleRw = "Kamera yo Gusoma Barcode na QR",
+                description = "Scan product barcodes, receipt QR seals, and branch sync codes in real time.",
+                descriptionRw = "Gusoma barcode z'ibicuruzwa, QR z'inyemezabuguzi n'amashami ukoresheje kamera.",
                 isGranted = hasCameraPermission(context),
-                isCrucial = false,
+                isCrucial = true,
                 iconName = "camera",
                 titleKey = "perm_camera_title",
                 descriptionKey = "perm_camera_desc"
             )
         )
 
-        // Notifications
+        // Foreground Location (Branch & Terminal Audit — no background tracking)
+        list.add(
+            AppPermissionItem(
+                permission = Manifest.permission.ACCESS_FINE_LOCATION,
+                title = "Branch Terminal Location (Foreground)",
+                titleRw = "Aho Iduka Riherereye (GPS)",
+                description = "Attach active branch GPS locality to device telemetry, sales audits, and cloud admin verification.",
+                descriptionRw = "Guhuza aho terminal iherereye n'ubugenzuzi bw'amashami kuri cloud igihe uyikoresha.",
+                isGranted = hasLocationPermission(context),
+                isCrucial = false,
+                iconName = "location"
+            )
+        )
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             list.add(
                 AppPermissionItem(
                     permission = Manifest.permission.POST_NOTIFICATIONS,
                     title = "Business Alerts & Notifications",
                     titleRw = "Imenyesha ry'Ubucuruzi",
-                    description = "Receive instant alerts when stock runs out, debt payment is due, or branch shift finishes.",
-                    descriptionRw = "Kumenyeshwa ibicuruzwa bishize mu bubiko, amadeni arangiye n'amasaha y'akazi.",
+                    description = "Receive instant alerts when stock runs out, debt payment is due, or security checks trigger.",
+                    descriptionRw = "Kumenyeshwa ibicuruzwa bishize mu bubiko, amadeni n'umutekano w'ikoreshwa.",
                     isGranted = hasNotificationPermission(context),
-                    isCrucial = false,
+                    isCrucial = true,
                     iconName = "notifications",
                     titleKey = "perm_notif_title",
                     descriptionKey = "perm_notif_desc"
@@ -141,8 +159,8 @@ object PermissionManager {
                     permission = Manifest.permission.NEARBY_WIFI_DEVICES,
                     title = "Nearby Branch LAN Sync",
                     titleRw = "Guhuza Amashami kuri Wi-Fi",
-                    description = "Discover local master POS hubs over Wi-Fi without requiring device location access.",
-                    descriptionRw = "Kubona amashami ari kuri Wi-Fi imwe mudakenera GPS.",
+                    description = "Discover local master POS hubs over Wi-Fi without requiring continuous location access.",
+                    descriptionRw = "Kubona amashami ari kuri Wi-Fi imwe byihuse.",
                     isGranted = hasNearbyWifiPermission(context),
                     isCrucial = false,
                     iconName = "wifi",
@@ -159,7 +177,8 @@ object PermissionManager {
         val list = mutableListOf(
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.SEND_SMS,
-            Manifest.permission.CAMERA
+            Manifest.permission.CAMERA,
+            Manifest.permission.ACCESS_FINE_LOCATION
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             list.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -168,11 +187,35 @@ object PermissionManager {
     }
 
     fun hasAllCrucialPermissions(context: Context): Boolean {
-        val required = getRequiredPermissionsList()
+        val required = listOf(
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.CAMERA
+        ) + if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            listOf(Manifest.permission.POST_NOTIFICATIONS)
+        } else emptyList()
         return required.all { hasPermission(context, it) }
     }
 
     fun getUngrantedPermissions(context: Context): List<String> {
         return getRequiredPermissionsList().filter { !hasPermission(context, it) }
+    }
+
+    fun summarizePermissionsStatus(context: Context): String {
+        val items = getAllPermissionsStatus(context)
+        val granted = items.count { it.isGranted }
+        return "$granted/${items.size} active (" +
+            items.joinToString(", ") {
+                val short = when (it.iconName) {
+                    "contacts" -> "Contacts"
+                    "sms" -> "SMS"
+                    "camera" -> "Camera"
+                    "location" -> "Location"
+                    "notifications" -> "Notif"
+                    "wifi" -> "WiFi"
+                    else -> it.iconName
+                }
+                "$short:${if (it.isGranted) "ON" else "OFF"}"
+            } + ")"
     }
 }

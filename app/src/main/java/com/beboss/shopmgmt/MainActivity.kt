@@ -45,6 +45,7 @@ import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSiz
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -58,8 +59,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.beboss.shopmgmt.data.db.AppDatabase
+import com.beboss.shopmgmt.ui.components.BeBossBlurLoadingContainer
 import com.beboss.shopmgmt.ui.components.BeBossBottomNav
 import com.beboss.shopmgmt.ui.components.BeBossNavigationRail
 import com.beboss.shopmgmt.ui.components.BeBossTopBar
@@ -285,6 +290,21 @@ private fun BeBossMainContent(
     val isAdminLoading by viewModel.isAdminLoading.collectAsState()
     val adminLastSyncedAt by viewModel.adminLastSyncedAt.collectAsState()
     val idleLockMinutes by viewModel.idleLockMinutes.collectAsState()
+    val blurLoadingState by viewModel.blurLoadingState.collectAsState()
+    val clockTamperStatus by viewModel.clockTamperStatus.collectAsState()
+    val lastCapturedLocation by viewModel.lastCapturedLocation.collectAsState()
+    val messageDispatchRecords by viewModel.messageDispatchRecords.collectAsState()
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.onAppResumedSecurityCheck()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
     var showQuickSpeedDialSheet by remember { mutableStateOf(false) }
@@ -294,6 +314,7 @@ private fun BeBossMainContent(
     var showPaywallAdminConsole by remember { mutableStateOf(false) }
 
     val debtorsCount = remember(customers) { customers.count { it.debtBalance > 0 } }
+    val activeTamperRollback = clockTamperStatus.rollbackDetected || clockTamperStatus.activeTamperLock || deviceIntegrityStatus.clockRollbackDetected
 
     // Proactively check crucial hardware and phone permissions right after splash
     LaunchedEffect(Unit) {
@@ -311,6 +332,7 @@ private fun BeBossMainContent(
         }
     }
 
+    BeBossBlurLoadingContainer(loadingState = blurLoadingState) {
     if (isRegistrationNeeded) {
         ShopRegistrationScreen(
             language = currentLanguage,
@@ -450,9 +472,11 @@ private fun BeBossMainContent(
                             pendingSyncCount = pendingSyncCount,
                             deadLetterSyncCount = deadLetterSyncCount,
                             startupIntegrityOk = startupIntegrityOk,
-                            clockRollbackDetected = ClockGuard.isClockRollbackDetected(),
+                            clockRollbackDetected = activeTamperRollback,
+                            tamperIncidentCount = clockTamperStatus.incidentCount,
                             language = currentLanguage,
                             onRetrySync = { viewModel.performSync() },
+                            onVerifyShield = { viewModel.reInspectSecurityPosture(syncTrustedTime = true) },
                             onOpenSettings = { viewModel.navigateTo(AppScreen.SETTINGS) }
                         )
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -762,7 +786,12 @@ private fun BeBossMainContent(
                                 onSelectLanguage = { lang -> viewModel.setLanguage(lang) },
                                 idleLockMinutes = idleLockMinutes,
                                 onSetIdleLockMinutes = { mins -> viewModel.setIdleLockMinutes(mins) },
-                                adminLastSyncedAt = adminLastSyncedAt
+                                adminLastSyncedAt = adminLastSyncedAt,
+                                clockTamperStatus = clockTamperStatus,
+                                capturedLocation = lastCapturedLocation,
+                                messageRecords = messageDispatchRecords,
+                                onReInspectSecurity = { viewModel.reInspectSecurityPosture(syncTrustedTime = true) },
+                                onCaptureLocation = { viewModel.captureCurrentLocationNow() }
                             )
                         }
                     }
@@ -915,18 +944,27 @@ private fun BeBossMainContent(
             onDeleteShopUser = { user -> viewModel.adminDeleteShopUser(user) },
             onDeleteBranchSnapshot = { snap -> viewModel.adminDeleteBranchSnapshot(snap) },
             onShareWebPortal = { viewModel.shareAdminWebPortal(context) },
+            clockTamperStatus = clockTamperStatus,
+            capturedLocation = lastCapturedLocation,
+            messageRecords = messageDispatchRecords,
+            onReInspectSecurity = { viewModel.reInspectSecurityPosture(syncTrustedTime = true) },
             onDismiss = { showPaywallAdminConsole = false }
         )
     }
 
     // Active Interactive Receipt Dialog
     if (activeReceipt != null) {
+        val receiptCustomerPhone = remember(activeReceipt, customers) {
+            customers.firstOrNull { it.id == activeReceipt!!.sale.customerId }?.phone.orEmpty()
+        }
         ReceiptDialog(
             saleWithItems = activeReceipt!!,
             shopProfile = shopProfile,
             language = currentLanguage,
+            customerPhone = receiptCustomerPhone,
             onDismiss = { viewModel.closeReceipt() }
         )
+    }
     }
 }
 
@@ -937,8 +975,10 @@ private fun BeBossRuntimeStatusBanner(
     deadLetterSyncCount: Int,
     startupIntegrityOk: Boolean?,
     clockRollbackDetected: Boolean,
+    tamperIncidentCount: Int = 0,
     language: AppLanguage,
     onRetrySync: () -> Unit,
+    onVerifyShield: () -> Unit = {},
     onOpenSettings: () -> Unit
 ) {
     val isOfflineWithQueue = connectivityStatus != ConnectivityStatus.AVAILABLE && pendingSyncCount > 0
@@ -962,11 +1002,15 @@ private fun BeBossRuntimeStatusBanner(
         }
         val message = when {
             startupIntegrityOk == false -> Localization.get("banner_db_warning", language)
-            clockRollbackDetected -> Localization.get("banner_clock_rollback", language)
+            clockRollbackDetected -> buildString {
+                append(Localization.get("banner_clock_rollback", language))
+                if (tamperIncidentCount > 0) append(" ($tamperIncidentCount)")
+            }
             deadLetterSyncCount > 0 -> "${Localization.get("banner_dead_letter", language)} ($deadLetterSyncCount)"
             else -> "${Localization.get("banner_offline_queue", language)} ($pendingSyncCount)"
         }
         val actionLabel = when {
+            clockRollbackDetected -> "Verify Shield"
             deadLetterSyncCount > 0 -> Localization.get("retry", language)
             isCritical -> Localization.get("inspect", language)
             else -> null
@@ -997,8 +1041,16 @@ private fun BeBossRuntimeStatusBanner(
                 )
                 if (actionLabel != null) {
                     TextButton(
-                        onClick = { if (deadLetterSyncCount > 0) onRetrySync() else onOpenSettings() },
-                        modifier = Modifier.heightIn(min = 48.dp)
+                        onClick = {
+                            when {
+                                clockRollbackDetected -> onVerifyShield()
+                                deadLetterSyncCount > 0 -> onRetrySync()
+                                else -> onOpenSettings()
+                            }
+                        },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag(if (clockRollbackDetected) "banner_verify_shield_btn" else "banner_action_btn")
                     ) {
                         Text(actionLabel, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }

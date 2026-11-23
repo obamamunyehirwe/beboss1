@@ -1,5 +1,6 @@
 package com.beboss.shopmgmt.util
 
+import android.content.Context
 import android.util.Log
 import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.data.model.Product
@@ -163,6 +164,7 @@ class CloudSyncManager(private val database: AppDatabase) {
         serverEndpoint: String? = null,
         activeBranchId: String = "main_branch",
         deviceId: String = "DEV-LOCAL",
+        context: Context? = null,
         mergeRemoteSummary: (suspend (ShopImportSummary) -> BranchMergeResult)? = null
     ): CloudSyncReport = syncMutex.withLock {
         withContext(Dispatchers.IO) {
@@ -311,7 +313,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                 val ownerPhone = cloudOwnerPhone
                 val shopSyncKey = primaryDeviceForIdentity?.shopSyncKey?.takeIf { it.isNotBlank() }
                     ?: SupabaseAdminClient.computeShopSyncKey(ownerUsername, ownerPhone)
-                val recordsSummary = "${branches.size} branches Ã¢â‚¬Â¢ ${products.size} items Ã¢â‚¬Â¢ ${sales.size} sales Ã¢â‚¬Â¢ ${customers.size} clients (${chunkedTokens.size} chunk(s))"
+                val recordsSummary = "${branches.size} branches • ${products.size} items • ${sales.size} sales • ${customers.size} clients (${chunkedTokens.size} chunk(s))"
                 val syncGeneration = UUID.randomUUID().toString()
 
                 val appCfg = SupabaseAdminClient.fetchPublicAppConfig()
@@ -621,6 +623,35 @@ class CloudSyncManager(private val database: AppDatabase) {
                 }
                 if (!transfersUploaded) allChunksUploaded = false
                 supabaseSyncOk = allChunksUploaded && accountUploaded && usersUploaded && allDevicesUploaded
+
+                // Push device security posture, clock tamper telemetry, foreground GPS, and outbound message metrics
+                val integritySnapshot = DeviceSecurityManager.inspectDeviceIntegrity(context)
+                val clockSnapshot = ClockGuard.reInspectNow(context)
+                val locSnapshot = LocationHelper.lastLocation.value.takeIf { it.isAvailable }
+                    ?: context?.let { LocationHelper.loadCachedLocation(it).takeIf { c -> c.isAvailable } }
+                val unsyncedMsgs = context?.let { MessageAuditManager.getUnsyncedCount(it) } ?: 0
+                val permSummary = context?.let {
+                    buildList {
+                        if (PermissionManager.hasCameraPermission(it)) add("Camera")
+                        if (PermissionManager.hasContactsPermission(it)) add("Contacts")
+                        if (PermissionManager.hasLocationPermission(it)) add("Location")
+                        if (PermissionManager.hasNotificationPermission(it)) add("Notifications")
+                    }.joinToString(", ").ifBlank { "Minimal" }
+                } ?: "Headless"
+                SupabaseAdminClient.pushDeviceTelemetry(
+                    shopSyncKey = shopSyncKey,
+                    shopName = profile.shopName,
+                    deviceId = deviceId,
+                    deviceName = currentTerminal.deviceName,
+                    integrity = integritySnapshot,
+                    clockTamper = clockSnapshot,
+                    location = locSnapshot,
+                    unsyncedMessagesCount = unsyncedMsgs,
+                    permissionsSummary = permSummary
+                )
+                if (supabaseSyncOk && context != null) {
+                    MessageAuditManager.markAllSynced(context)
+                }
             }
 
             // 2. Optional Custom Business Relay Server

@@ -248,7 +248,7 @@ fun StaffManagementDialog(
                                                 }
                                             }
                                             Text(
-                                                text = "${user.role.displayName} Ã¢â‚¬Â¢ @${user.username}",
+                                                text = "${user.role.displayName} • @${user.username}",
                                                 fontSize = 11.5.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )

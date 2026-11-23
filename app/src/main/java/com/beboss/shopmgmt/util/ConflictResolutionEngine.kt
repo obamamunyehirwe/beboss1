@@ -20,7 +20,7 @@ import kotlinx.coroutines.withContext
  *    across offline/online multi-branch merges.
  * 3. Redacted/blank credentials from peer exports NEVER overwrite existing local PBKDF2 hashes.
  * 4. Immutable ledger events (SaleItem, CustomerPayment, PurchaseRecord, StockTransfer) act as a
- *    grow-only set CRDT Ã¢â‚¬â€ deduplicated by ID and never dropped or mutated.
+ *    grow-only set CRDT — deduplicated by ID and never dropped or mutated.
  * 5. Serialized via `DbWriteMutex` inside a single Room transaction so concurrent syncs/checkouts stay consistent.
  */
 object ConflictResolutionEngine {
@@ -151,7 +151,7 @@ object ConflictResolutionEngine {
                     }
                 }
 
-                // 3. Users Ã¢â‚¬â€ NEVER overwrite existing credentials with blank/redacted peer hashes
+                // 3. Users — NEVER overwrite existing credentials with blank/redacted peer hashes
                 val existingUsers = userDao.getAllUsersDirect().associateBy { it.id }
                 val usersToWrite = mutableListOf<com.beboss.shopmgmt.data.model.User>()
                 for (remoteUser in summary.users) {

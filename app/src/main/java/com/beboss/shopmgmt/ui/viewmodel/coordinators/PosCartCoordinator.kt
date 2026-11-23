@@ -18,7 +18,11 @@ import com.beboss.shopmgmt.ui.viewmodel.CartState
 import com.beboss.shopmgmt.ui.viewmodel.HeldCart
 import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.BeBossNotificationManager
+import com.beboss.shopmgmt.util.BrandedShareCardGenerator
+import com.beboss.shopmgmt.util.ClockGuard
+import com.beboss.shopmgmt.util.DeviceSecurityManager
 import com.beboss.shopmgmt.util.MoneyUtils
+import com.beboss.shopmgmt.util.PdfReportGenerator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,7 +48,10 @@ class PosCartCoordinator(
     private val todaySummary: StateFlow<ProfitLossSummary>,
     private val lowStockProducts: StateFlow<List<Product>>,
     private val emitSnackbar: suspend (String) -> Unit,
-    private val onMutationSuccess: () -> Unit
+    private val onMutationSuccess: () -> Unit,
+    private val runWithBlurLoading: (title: String, subtitle: String, block: suspend () -> Unit) -> Unit = { _, _, block ->
+        scope.launch { block() }
+    }
 ) {
     private val cartPrefs by lazy {
         application.getSharedPreferences("beboss_cart_state", Context.MODE_PRIVATE)
@@ -347,8 +354,21 @@ class PosCartCoordinator(
         val state = _cartState.value
         if (state.items.isEmpty()) return
 
-        scope.launch {
+        runWithBlurLoading(
+            if (language.value == AppLanguage.KINYARWANDA) "Gusoza Igurisha..." else "Completing Sale...",
+            if (language.value == AppLanguage.KINYARWANDA) "Kubika inyemezabuguzi no kugenzura ububiko" else "Securing receipt & updating stock ledger"
+        ) {
             try {
+                val tamper = ClockGuard.reInspectNow(application)
+                val integrity = DeviceSecurityManager.inspectDeviceIntegrity(application)
+                if (tamper.rollbackDetected || tamper.activeTamperLock || integrity.clockRollbackDetected) {
+                    BeBossNotificationManager.sendSecurityTamperNotification(
+                        context = application,
+                        title = "Anti-Tamper Shield Alert",
+                        details = tamper.reason.ifBlank { integrity.postureLabel }
+                    )
+                }
+
                 val user = currentUser.value
                 val branch = branches.value.firstOrNull { it.id == selectedBranchId.value }
                     ?: branches.value.firstOrNull { it.isMainBranch }
@@ -359,7 +379,7 @@ class PosCartCoordinator(
                     val momoCents = MoneyUtils.toCents(state.splitMomoAmount)
                     if (cashCents + momoCents <= 0L) {
                         emitSnackbar("Enter Cash and MoMo split amounts before completing a split sale.")
-                        return@launch
+                        return@runWithBlurLoading
                     }
                     val splitSummary = "Split Payment: Cash ${MoneyUtils.centsToDouble(cashCents).toLong()} + MoMo ${MoneyUtils.centsToDouble(momoCents).toLong()} ${shopProfile.value.currencySymbol}"
                     if (state.notes.isBlank()) splitSummary else "${state.notes} | $splitSummary"
@@ -384,7 +404,12 @@ class PosCartCoordinator(
                 _activeReceiptSale.value = saleWithItems
                 clearCart()
 
-                BeBossNotificationManager.sendSaleCompletedNotification(application, sale, shopProfile.value)
+                BeBossNotificationManager.sendSaleCompletedNotification(
+                    application,
+                    sale,
+                    shopProfile.value,
+                    saleWithItems?.items ?: emptyList()
+                )
 
                 val currentLowStock = repository.getProductById(state.items.firstOrNull()?.product?.id ?: "")
                 if (currentLowStock != null && currentLowStock.isLowStock) {
@@ -437,8 +462,12 @@ class PosCartCoordinator(
             return
         }
 
-        scope.launch {
+        runWithBlurLoading(
+            if (language.value == AppLanguage.KINYARWANDA) "Igurisha ry'ako kanya..." else "Quick Checkout...",
+            if (language.value == AppLanguage.KINYARWANDA) "Gutegura inyemezabuguzi" else "Issuing signed POS receipt"
+        ) {
             try {
+                ClockGuard.reInspectNow(application)
                 val sale = repository.processSale(
                     items = listOf(CartItem(product = customProduct, quantity = 1.0, customPrice = amount)),
                     customerId = null,
@@ -493,33 +522,50 @@ class PosCartCoordinator(
         val timeStr = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date())
 
         val text = buildString {
-            append("*${shop.shopName.ifBlank { "BeBoss Store" }} - Daily Business Report*\n")
-            append("$timeStr\n")
-            append("Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â\n")
-            append("*Today's Revenue:* ${summary.totalRevenue.toInt()} ${shop.currencySymbol}\n")
-            append("*Net Estimated Profit:* ${summary.netProfit.toInt()} ${shop.currencySymbol}\n")
-            append("*Transactions Completed:* ${summary.totalSalesCount}\n")
-            append("*Items Sold:* ${summary.totalItemsSold.toInt()}\n")
-            append("*Average Basket Value:* ${summary.averageOrderValue.toInt()} ${shop.currencySymbol}\n")
-            append("Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â\n")
+            append("📊 *${shop.shopName.ifBlank { "BeBoss Store" }} — Daily Business Report*\n")
+            append("📅 $timeStr\n")
+            append("━━━━━━━━━━━━━━━━━━━━\n")
+            append("💰 *Today's Revenue:* ${summary.totalRevenue.toInt()} ${shop.currencySymbol}\n")
+            append("📈 *Net Estimated Profit:* ${summary.netProfit.toInt()} ${shop.currencySymbol}\n")
+            append("🧾 *Transactions Completed:* ${summary.totalSalesCount}\n")
+            append("📦 *Items Sold:* ${summary.totalItemsSold.toInt()}\n")
+            append("🛒 *Average Basket Value:* ${summary.averageOrderValue.toInt()} ${shop.currencySymbol}\n")
+            append("━━━━━━━━━━━━━━━━━━━━\n")
             if (lowStock.isNotEmpty()) {
-                append("*Low Stock Alert (${lowStock.size} items):*\n")
+                append("⚠️ *Low Stock Alert (${lowStock.size} items):*\n")
                 lowStock.take(5).forEach { p ->
-                    append("Ã¢â‚¬Â¢ ${p.name}: ${p.quantityInStock.toInt()} ${p.unit} left\n")
+                    append("• ${p.name}: ${p.quantityInStock.toInt()} ${p.unit} left\n")
                 }
             } else {
-                append("All product stocks are healthy.\n")
+                append("✅ All product stocks are healthy.\n")
             }
-            append("Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â\n")
-            append("_Generated with BeBoss POS_")
+            append("━━━━━━━━━━━━━━━━━━━━\n")
+            append("🛡️ _Generated with BeBoss POS_")
         }
 
-        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, text)
+        try {
+            val cardFile = BrandedShareCardGenerator.generateDailySummaryCardPng(
+                context = context,
+                profile = shop,
+                summary = summary,
+                lowStockCount = lowStock.size
+            )
+            PdfReportGenerator.shareFileToWhatsAppOrChooser(
+                context = context,
+                file = cardFile,
+                mimeType = "image/png",
+                caption = text,
+                targetPhone = shop.phone,
+                chooserTitle = "Share Daily Report"
+            )
+        } catch (_: Exception) {
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+            }
+            val chooser = Intent.createChooser(sendIntent, "Share Daily Report")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
         }
-        val chooser = Intent.createChooser(sendIntent, "Share Daily Report")
-        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(chooser)
     }
 }

@@ -13,7 +13,6 @@ import java.util.Locale
 
 object ReceiptGenerator {
 
-    // Cache last 10 receipts to avoid regenerating
     private val receiptCache = LruCache<String, String>(10)
 
     fun formatMoney(amount: Double, profile: ShopProfile): String {
@@ -60,9 +59,6 @@ object ReceiptGenerator {
         return SecurityUtils.constantTimeEquals(expected, seal.trim().uppercase(Locale.US))
     }
 
-    /**
-     * Builds clean, formatted plain text receipt ideal for WhatsApp, SMS, or thermal Bluetooth receipt printers
-     */
     fun generateTextReceipt(
         sale: Sale,
         items: List<SaleItem>,
@@ -131,9 +127,6 @@ object ReceiptGenerator {
         return result
     }
 
-    /**
-     * Builds styled HTML for WebView printing / PDF generation
-     */
     fun generateHtmlReceipt(
         sale: Sale,
         items: List<SaleItem>,
@@ -224,19 +217,16 @@ object ReceiptGenerator {
                 <div class="footer">
                     <div>${profile.receiptFooter}</div>
                     <div style="margin-top: 4px; font-family: monospace;">Seal: $seal</div>
-                    <div style="margin-top: 4px;">Created with BeBoss Ã¢â‚¬â€ Offline Business Manager</div>
+                    <div style="margin-top: 4px;">Created with BeBoss — Offline Business Manager</div>
                 </div>
             </body>
             </html>
         """.trimIndent()
     }
 
-    /**
-     * Generates a formal digital subscription receipt & official invoice with breakdown of Branches and Staff.
-     */
     fun generateSubscriptionInvoice(
         profile: ShopProfile,
-        breakdown: com.beboss.shopmgmt.util.SubscriptionPriceBreakdown,
+        breakdown: SubscriptionPriceBreakdown,
         txRef: String,
         provider: String,
         payerPhone: String,
@@ -247,7 +237,7 @@ object ReceiptGenerator {
 
         return """
             ================================
-               BEBOSS POS Ã¢â‚¬â€ OFFICIAL RECEIPT
+               BEBOSS POS — OFFICIAL RECEIPT
                   SUBSCRIPTION INVOICE
             ================================
             Shop Name   : ${profile.shopName}
@@ -260,14 +250,14 @@ object ReceiptGenerator {
             SUBSCRIPTION ITEMIZATION:
             --------------------------------
             1. Branch Base Tier:
-               Ã¢â‚¬Â¢ Active Branches : ${breakdown.branchCount}
-               Ã¢â‚¬Â¢ Plan Category   : ${breakdown.branchTierName}
-               Ã¢â‚¬Â¢ Branch Base Fee : ${breakdown.branchBasePrice} FRw/mo
+               • Active Branches : ${breakdown.branchCount}
+               • Plan Category   : ${breakdown.branchTierName}
+               • Branch Base Fee : ${breakdown.branchBasePrice} FRw/mo
 
             2. Staff Administration:
-               Ã¢â‚¬Â¢ Registered Staff: ${breakdown.workerCount} Workers
-               Ã¢â‚¬Â¢ Staff Tier      : ${breakdown.workerTierName}
-               Ã¢â‚¬Â¢ Staff Addon     : ${breakdown.workerFee} FRw/mo
+               • Registered Staff: ${breakdown.workerCount} Workers
+               • Staff Tier      : ${breakdown.workerTierName}
+               • Staff Addon     : ${breakdown.workerFee} FRw/mo
 
             --------------------------------
             Monthly Subtotal    : ${breakdown.monthlySubtotal} FRw
@@ -290,8 +280,11 @@ object ReceiptGenerator {
             action = Intent.ACTION_SEND
             putExtra(Intent.EXTRA_TEXT, text)
             type = "text/plain"
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        val shareIntent = Intent.createChooser(sendIntent, "Share Receipt via")
+        val shareIntent = Intent.createChooser(sendIntent, "Share Receipt via").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
         context.startActivity(shareIntent)
     }
 }

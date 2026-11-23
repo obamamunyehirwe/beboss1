@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 /**
  * Schedules WorkManager network-constrained periodic and immediate background cloud sync
  * so offline registrations, sales, stock, payment proofs, and admin direct unlocks sync
- * automatically whenever internet connectivity appears Ã¢â‚¬â€ even when the app is closed.
+ * automatically whenever internet connectivity appears — even when the app is closed.
  */
 object CloudSyncScheduler {
 

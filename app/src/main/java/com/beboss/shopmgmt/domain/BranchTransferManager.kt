@@ -134,7 +134,7 @@ class BranchTransferManager(
      *
      * Atomicity guarantee: the source product's quantityInStock is decremented and the
      * transfer record is inserted inside a single Room transaction. If the database
-     * crashes mid-write, both operations roll back together Ã¢â‚¬â€ no phantom stock loss.
+     * crashes mid-write, both operations roll back together — no phantom stock loss.
      *
      * The destination branch's stock is credited by inserting a matching product record
      * (or updating the existing one) scoped to the destination branchId.

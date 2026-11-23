@@ -327,7 +327,7 @@ fun DataTransferDialog(
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(backupFile.name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = InkDark)
-                                            Text("$dateFormatted Ã¢â‚¬Â¢ ${sizeKb} KB", fontSize = 10.sp, color = InkMedium)
+                                            Text("$dateFormatted • ${sizeKb} KB", fontSize = 10.sp, color = InkMedium)
                                         }
 
                                         Row {
@@ -413,12 +413,12 @@ fun DataTransferDialog(
                     Text("Exported: $expDate by ${summary.exportedBy}", fontSize = 12.sp, color = InkMedium)
                     Spacer(modifier = Modifier.height(10.dp))
                     Text("Package Contents:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Text("Ã¢â‚¬Â¢ ${summary.branches.size} Branches & ${summary.stockTransfers.size} Stock Transfers", fontSize = 12.sp)
-                    Text("Ã¢â‚¬Â¢ ${summary.productCount} Products & Stock Quantities", fontSize = 12.sp)
-                    Text("Ã¢â‚¬Â¢ ${summary.customerCount} Customers & Outstanding Debt", fontSize = 12.sp)
-                    Text("Ã¢â‚¬Â¢ ${summary.saleCount} Sales Transactions (${summary.purchases.size} Purchases)", fontSize = 12.sp)
-                    Text("Ã¢â‚¬Â¢ ${summary.paymentCount} Customer Debt Repayments", fontSize = 12.sp)
-                    Text("Ã¢â‚¬Â¢ ${summary.userCount} Collaborator Accounts & PINs", fontSize = 12.sp)
+                    Text("• ${summary.branches.size} Branches & ${summary.stockTransfers.size} Stock Transfers", fontSize = 12.sp)
+                    Text("• ${summary.productCount} Products & Stock Quantities", fontSize = 12.sp)
+                    Text("• ${summary.customerCount} Customers & Outstanding Debt", fontSize = 12.sp)
+                    Text("• ${summary.saleCount} Sales Transactions (${summary.purchases.size} Purchases)", fontSize = 12.sp)
+                    Text("• ${summary.paymentCount} Customer Debt Repayments", fontSize = 12.sp)
+                    Text("• ${summary.userCount} Collaborator Accounts & PINs", fontSize = 12.sp)
                     Spacer(modifier = Modifier.height(10.dp))
                     Text("Are you sure you want to verify & merge this branch data into your local database?", fontSize = 12.sp, color = InkMedium)
                 }

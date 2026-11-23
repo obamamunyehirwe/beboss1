@@ -188,7 +188,7 @@ fun BranchManagementDialog(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = if (language == AppLanguage.KINYARWANDA) "${branches.size} Amashami Ã¢â‚¬Â¢ Ihererekanyamutungo rya Stock" else "${branches.size} Outlets Ã¢â‚¬Â¢ Inter-Store Transfers & Analytics",
+                                text = if (language == AppLanguage.KINYARWANDA) "${branches.size} Amashami • Ihererekanyamutungo rya Stock" else "${branches.size} Outlets • Inter-Store Transfers & Analytics",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -634,7 +634,7 @@ fun BranchManagementDialog(
                                                 Spacer(modifier = Modifier.height(4.dp))
 
                                                 Text(
-                                                    text = "${transfer.quantity.toInt()} ${transfer.unit} Ã¢â‚¬Â¢ ${transfer.productName}",
+                                                    text = "${transfer.quantity.toInt()} ${transfer.unit} • ${transfer.productName}",
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 13.sp,
                                                     color = MaterialTheme.colorScheme.onSurface
@@ -772,7 +772,7 @@ fun BranchManagementDialog(
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             Text("Orders: ${branchSales.size}", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            Text("MoMo: ${decimalFormat.format(momoSales)} Ã¢â‚¬Â¢ Cash: ${decimalFormat.format(cashSales)}", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("MoMo: ${decimalFormat.format(momoSales)} • Cash: ${decimalFormat.format(cashSales)}", fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 }
@@ -962,7 +962,7 @@ fun CreateStockTransferDialog(
                     ) {
                         products.forEach { p ->
                             DropdownMenuItem(
-                                text = { Text("${p.name} Ã¢â‚¬â€ ${p.quantityInStock.toInt()} ${p.unit} in stock") },
+                                text = { Text("${p.name} — ${p.quantityInStock.toInt()} ${p.unit} in stock") },
                                 onClick = {
                                     selectedProduct = p
                                     productDropdownExpanded = false

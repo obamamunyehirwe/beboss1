@@ -222,11 +222,11 @@ object OfflineSubscriptionManager {
         // 2. Staff / Worker Administration Addon
         val (workerFee, workerTierName) = when {
             effectiveWorkers <= 1 -> Pair(0, "Solo Operator (Included)")
-            effectiveWorkers in 2..3 -> Pair(2000, "Small Team ($effectiveWorkers Workers Ã¢â‚¬Â¢ +2,000 FRw/mo)")
-            effectiveWorkers in 4..5 -> Pair(4000, "Medium Team ($effectiveWorkers Workers Ã¢â‚¬Â¢ +4,000 FRw/mo)")
+            effectiveWorkers in 2..3 -> Pair(2000, "Small Team ($effectiveWorkers Workers • +2,000 FRw/mo)")
+            effectiveWorkers in 4..5 -> Pair(4000, "Medium Team ($effectiveWorkers Workers • +4,000 FRw/mo)")
             else -> {
                 val addon = 4000 + (effectiveWorkers - 5) * 1000
-                Pair(addon, "Large Team ($effectiveWorkers Workers Ã¢â‚¬Â¢ +$addon FRw/mo)")
+                Pair(addon, "Large Team ($effectiveWorkers Workers • +$addon FRw/mo)")
             }
         }
 
@@ -235,7 +235,7 @@ object OfflineSubscriptionManager {
         val deviceTierName = if (extraDevices == 0) {
             "1st Owner Device Included"
         } else {
-            "$effectiveDevices Devices (1 + $extraDevices Added Ã¢â‚¬Â¢ +$deviceFee FRw/mo)"
+            "$effectiveDevices Devices (1 + $extraDevices Added • +$deviceFee FRw/mo)"
         }
 
         val monthlySubtotal = branchBasePrice + workerFee + deviceFee
@@ -463,26 +463,26 @@ object OfflineSubscriptionManager {
         val deviceCode = getDeviceChallengeCode(shopProfile)
         return buildString {
             append("*BEBOSS SUBSCRIPTION PAYMENT VERIFICATION*\n")
-            append("Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â\n")
-            append("Ã¢â‚¬Â¢ *Shop Name:* ${shopProfile.shopName}\n")
-            append("Ã¢â‚¬Â¢ *Account Username:* ${ownerUsername.ifBlank { "owner" }}\n")
-            append("Ã¢â‚¬Â¢ *Registered Shop Phone:* ${registeredPhone.ifBlank { shopProfile.phone }}\n")
-            append("Ã¢â‚¬Â¢ *Sender MoMo Phone:* ${payerPhone.ifBlank { registeredPhone.ifBlank { shopProfile.phone } }}\n")
+            append("====================\n")
+            append("• *Shop Name:* ${shopProfile.shopName}\n")
+            append("• *Account Username:* ${ownerUsername.ifBlank { "owner" }}\n")
+            append("• *Registered Shop Phone:* ${registeredPhone.ifBlank { shopProfile.phone }}\n")
+            append("• *Sender MoMo Phone:* ${payerPhone.ifBlank { registeredPhone.ifBlank { shopProfile.phone } }}\n")
             if (payerFullName.isNotBlank()) {
-                append("Ã¢â‚¬Â¢ *Names on Sender Phone:* ${payerFullName.trim()}\n")
+                append("• *Names on Sender Phone:* ${payerFullName.trim()}\n")
             }
-            append("Ã¢â‚¬Â¢ *Device Code:* $deviceCode\n")
-            append("Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â\n")
-            append("Ã¢â‚¬Â¢ *Provider:* $provider\n")
-            append("Ã¢â‚¬Â¢ *USSD Dialed:* $ussdCode\n")
-            append("Ã¢â‚¬Â¢ *Amount Paid:* $amountRwf FRw\n")
-            append("Ã¢â‚¬Â¢ *Tier:* $branchCount Branch(es) Ã¢â‚¬Â¢ $workerCount Staff Ã¢â‚¬Â¢ $deviceCount Device(s) ($durationMonths Month(s))\n")
-            append("*Payment time:* " + java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(paymentTimeMs)) + "\\n")
-            if (paymentNote.isNotBlank()) append("*Payment note:* " + paymentNote.trim() + "\\n")
+            append("• *Device Code:* $deviceCode\n")
+            append("====================\n")
+            append("• *Provider:* $provider\n")
+            append("• *USSD Dialed:* $ussdCode\n")
+            append("• *Amount Paid:* $amountRwf FRw\n")
+            append("• *Tier:* $branchCount Branch(es) • $workerCount Staff • $deviceCount Device(s) ($durationMonths Month(s))\n")
+            append("• *Payment Time:* " + java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(paymentTimeMs)) + "\n")
+            if (paymentNote.isNotBlank()) append("• *Payment Note:* " + paymentNote.trim() + "\n")
             if (requestId.isNotBlank()) {
-                append("Ã¢â‚¬Â¢ *Request ID:* ${requestId.take(8).uppercase()}\n")
+                append("• *Request ID:* ${requestId.take(8).uppercase()}\n")
             }
-            append("Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â\n")
+            append("====================\n")
             append("Please confirm receipt on your phone and either send my Unlock Code or Auto-Unlock my shop in Admin Dashboard. Murakoze!")
         }
     }
@@ -547,15 +547,15 @@ object OfflineSubscriptionManager {
     ): String {
         return """
             *BEBOSS SUBSCRIPTION APPROVED!*
-            Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+            ====================
             Hello *@$username* ($shopName),
             Your Mobile Money payment has been verified!
 
             *Your Unlock Code:*
             `$unlockCode`
 
-            Ã¢â‚¬Â¢ *Plan:* $tierName
-            Ã¢â‚¬Â¢ *Duration Added:* +$daysAdded Days
+            • *Plan:* $tierName
+            • *Duration Added:* +$daysAdded Days
 
             *How to Activate:*
             Open BeBoss App -> *Settings* -> *Insert Unlock Code* -> Paste the code above and tap *Verify & Activate*.
@@ -583,14 +583,14 @@ object OfflineSubscriptionManager {
             Hello BeBoss Official Support,
             I want to activate / renew my shop's subscription:
 
-            Ã¢â‚¬Â¢ Shop Name: ${shopProfile.shopName}
-            Ã¢â‚¬Â¢ Account Username: ${ownerUser?.username ?: "owner"}
-            Ã¢â‚¬Â¢ Owner: ${shopProfile.name} (${shopProfile.phone})
-            Ã¢â‚¬Â¢ Active Branches: ${branches.size} (${pricing.branchTierName})
-            Ã¢â‚¬Â¢ Registered Staff: ${allUsers.size} (${pricing.workerTierName})
-            Ã¢â‚¬Â¢ Shop Devices: $effectiveDevices (${pricing.deviceTierName})
-            Ã¢â‚¬Â¢ Monthly Calculated Fee: ${pricing.totalPayable} FRw
-            Ã¢â‚¬Â¢ Device Challenge Code: $deviceCode
+            • Shop Name: ${shopProfile.shopName}
+            • Account Username: ${ownerUser?.username ?: "owner"}
+            • Owner: ${shopProfile.name} (${shopProfile.phone})
+            • Active Branches: ${branches.size} (${pricing.branchTierName})
+            • Registered Staff: ${allUsers.size} (${pricing.workerTierName})
+            • Shop Devices: $effectiveDevices (${pricing.deviceTierName})
+            • Monthly Calculated Fee: ${pricing.totalPayable} FRw
+            • Device Challenge Code: $deviceCode
 
             Please send my unlock activation code or verify my payment. Murakoze!
         """.trimIndent()
@@ -638,7 +638,7 @@ object OfflineSubscriptionManager {
         } catch (e: Exception) {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, "BeBoss Multi-Branch POS Ã¢â‚¬â€ Local Android management for shops and multi-branch stores.")
+                putExtra(Intent.EXTRA_TEXT, "BeBoss Multi-Branch POS — Local Android management for shops and multi-branch stores.")
             }
             context.startActivity(Intent.createChooser(shareIntent, "Share BeBoss App..."))
         }

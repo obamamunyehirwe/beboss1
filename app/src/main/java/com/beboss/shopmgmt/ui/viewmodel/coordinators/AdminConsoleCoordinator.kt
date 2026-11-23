@@ -39,7 +39,10 @@ class AdminConsoleCoordinator(
     private val branches: StateFlow<List<Branch>>,
     private val shopProfile: StateFlow<ShopProfile>,
     private val emitSnackbar: suspend (String) -> Unit,
-    private val triggerCloudSync: () -> Unit
+    private val triggerCloudSync: () -> Unit,
+    private val runWithBlurLoading: (title: String, subtitle: String, block: suspend () -> Unit) -> Unit = { _, _, block ->
+        scope.launch { block() }
+    }
 ) {
     private val _adminSession = MutableStateFlow<SupabaseAdminSession?>(
         SupabaseAdminClient.getCurrentAdminSession()
@@ -91,7 +94,7 @@ class AdminConsoleCoordinator(
     }
 
     fun signInSupabaseAdmin(email: String, password: String) {
-        scope.launch {
+        runWithBlurLoading("Admin Sign-In", "Authenticating Master Admin...") {
             _isAdminAuthenticating.value = true
             _adminAuthError.value = null
             val res = SupabaseAdminClient.signInAdmin(email, password)
@@ -114,7 +117,7 @@ class AdminConsoleCoordinator(
     }
 
     fun signUpSupabaseAdmin(email: String, password: String, fullName: String) {
-        scope.launch {
+        runWithBlurLoading("Admin Setup", "Initializing Master Admin profile...") {
             _isAdminAuthenticating.value = true
             _adminAuthError.value = null
             val res = SupabaseAdminClient.signUpAdmin(email, password, fullName)
@@ -162,7 +165,7 @@ class AdminConsoleCoordinator(
     }
 
     fun activateSubscriptionVoucher(code: String) {
-        scope.launch {
+        runWithBlurLoading("Activating License", "Verifying cryptographic BB3 voucher...") {
             val currentProf = shopProfile.value
             val owner = resolveOwnerUser()
             val branchCount = branches.value.size.coerceAtLeast(1)
@@ -185,7 +188,7 @@ class AdminConsoleCoordinator(
             )
             emitSnackbar(result.message)
             if (result.isValid) {
-                syncAdminDataToSupabase(silent = true)
+                syncAdminDataToSupabaseSuspended(silent = true)
             }
         }
     }
@@ -203,7 +206,7 @@ class AdminConsoleCoordinator(
         paymentNote: String = "",
         onSubmitted: (PaymentVerificationRequest, Boolean) -> Unit = { _, _ -> }
     ) {
-        scope.launch {
+        runWithBlurLoading("Submitting Payment", "Syncing verification claim to Admin Cloud...") {
             val profile = shopProfile.value
             val owner = resolveOwnerUser()
             val safeDevices = deviceCount.coerceAtLeast(1)
@@ -246,7 +249,7 @@ class AdminConsoleCoordinator(
             repository.logSyncEvent(
                 type = "SUPABASE_ADMIN",
                 status = if (synced) "SUCCESS" else "QUEUED",
-                summary = if (synced) "Payment proof synced to Supabase Admin Queue" else "Saved offline Ã¢â‚¬â€ auto-syncs to Supabase when internet returns"
+                summary = if (synced) "Payment proof synced to Supabase Admin Queue" else "Saved offline — auto-syncs to Supabase when internet returns"
             )
             emitSnackbar(
                 if (synced) "Payment verification submitted to Admin Cloud! Send WhatsApp proof now."
@@ -290,34 +293,41 @@ class AdminConsoleCoordinator(
     }
 
     fun checkCloudUnlockApprovals() {
-        syncAdminDataToSupabase(silent = false)
+        runWithBlurLoading("Checking Approvals", "Fetching cloud unlock & security state...") {
+            syncAdminDataToSupabaseSuspended(silent = false)
+        }
     }
 
     fun refreshAdminDashboardData() {
         if (_adminSession.value == null) return
-        scope.launch {
-            _isAdminLoading.value = true
-            val validSession = SupabaseAdminClient.ensureValidAdminSession()
-            _adminSession.value = validSession
-            if (validSession == null) {
-                _adminAuthError.value = "Admin session expired. Sign in again."
-                _isAdminLoading.value = false
-                return@launch
-            }
-            _adminPaymentRequests.value = SupabaseAdminClient.fetchAllPaymentRequests()
-            _adminShopAccounts.value = SupabaseAdminClient.fetchAllShopAccounts()
-            _adminShopUsers.value = SupabaseAdminClient.fetchAllShopUsers()
-            _adminShopDevices.value = SupabaseAdminClient.fetchAllShopDevices()
-            _adminBranchSnapshots.value = SupabaseAdminClient.fetchAllBranchSnapshots()
-            _adminUnlockCodes.value = SupabaseAdminClient.fetchAllUnlockCodes()
-            _adminAuditLogs.value = SupabaseAdminClient.fetchAdminAuditLogs()
-            SupabaseAdminClient.fetchPublicAppConfig()?.let { cfg ->
-                OfflineSubscriptionManager.saveDynamicPaymentConfig(application, cfg)
-                _adminPaymentConfig.value = cfg
-            }
-            _adminLastSyncedAt.value = System.currentTimeMillis()
-            _isAdminLoading.value = false
+        runWithBlurLoading("Refreshing Admin Cloud", "Loading shops, devices & security logs...") {
+            refreshAdminDashboardDataSuspended()
         }
+    }
+
+    private suspend fun refreshAdminDashboardDataSuspended() {
+        if (_adminSession.value == null) return
+        _isAdminLoading.value = true
+        val validSession = SupabaseAdminClient.ensureValidAdminSession()
+        _adminSession.value = validSession
+        if (validSession == null) {
+            _adminAuthError.value = "Admin session expired. Sign in again."
+            _isAdminLoading.value = false
+            return
+        }
+        _adminPaymentRequests.value = SupabaseAdminClient.fetchAllPaymentRequests()
+        _adminShopAccounts.value = SupabaseAdminClient.fetchAllShopAccounts()
+        _adminShopUsers.value = SupabaseAdminClient.fetchAllShopUsers()
+        _adminShopDevices.value = SupabaseAdminClient.fetchAllShopDevices()
+        _adminBranchSnapshots.value = SupabaseAdminClient.fetchAllBranchSnapshots()
+        _adminUnlockCodes.value = SupabaseAdminClient.fetchAllUnlockCodes()
+        _adminAuditLogs.value = SupabaseAdminClient.fetchAdminAuditLogs()
+        SupabaseAdminClient.fetchPublicAppConfig()?.let { cfg ->
+            OfflineSubscriptionManager.saveDynamicPaymentConfig(application, cfg)
+            _adminPaymentConfig.value = cfg
+        }
+        _adminLastSyncedAt.value = System.currentTimeMillis()
+        _isAdminLoading.value = false
     }
 
     fun adminApproveAndGenerateCode(
@@ -325,7 +335,7 @@ class AdminConsoleCoordinator(
         verificationNote: String,
         onGenerated: (Boolean, String) -> Unit
     ) {
-        scope.launch {
+        runWithBlurLoading("Generating Unlock Code", "Signing BB3 voucher in Admin Cloud...") {
             _isAdminLoading.value = true
             val adminName = _adminSession.value?.fullName ?: currentUser.value?.name ?: "BeBoss Master Admin"
             val (ok, code) = SupabaseAdminClient.approvePaymentAndIssueCode(request, adminName, verificationNote)
@@ -337,10 +347,10 @@ class AdminConsoleCoordinator(
                     targetId = request.ownerUsername,
                     details = "Provider payment manually verified: ${verificationNote.take(300)}. Approved ${request.amountRwf} FRw (${request.durationMonths * 30}d) -> ${code.take(18)}..."
                 )
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("Approved & generated unlock code: $code")
             } else {
-                emitSnackbar("Admin Supabase approval failed Ã¢â‚¬â€ sign in as Master Admin.")
+                emitSnackbar("Admin Supabase approval failed — sign in as Master Admin.")
             }
             _isAdminLoading.value = false
             onGenerated(ok, code)
@@ -351,7 +361,7 @@ class AdminConsoleCoordinator(
         request: SupabasePaymentRequestDto,
         onDone: (Boolean) -> Unit = {}
     ) {
-        scope.launch {
+        runWithBlurLoading("Auto-Unlocking Shop", "Activating ${request.shopName} in cloud...") {
             _isAdminLoading.value = true
             val adminName = _adminSession.value?.fullName ?: currentUser.value?.name ?: "BeBoss Master Admin"
             val ok = SupabaseAdminClient.approvePaymentDirectAutoUnlock(request, adminName)
@@ -363,11 +373,11 @@ class AdminConsoleCoordinator(
                     targetId = request.ownerUsername,
                     details = "Auto-unlocked ${request.shopName} (${request.amountRwf} FRw, ${request.deviceCount} devices) without code"
                 )
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 syncAdminDataToSupabaseSuspended(silent = true)
                 emitSnackbar("Auto-Unlocked ${request.shopName} (@${request.ownerUsername}) directly in cloud!")
             } else {
-                emitSnackbar("Direct Auto-Unlock failed Ã¢â‚¬â€ check Master Admin session.")
+                emitSnackbar("Direct Auto-Unlock failed — check Master Admin session.")
             }
             _isAdminLoading.value = false
             onDone(ok)
@@ -375,7 +385,7 @@ class AdminConsoleCoordinator(
     }
 
     fun adminApproveBatchPendingPayments(onDone: (Int, Int) -> Unit = { _, _ -> }) {
-        scope.launch {
+        runWithBlurLoading("Batch Approving Claims", "Verifying pending payment queue...") {
             _isAdminLoading.value = true
             val pending = _adminPaymentRequests.value.filter { it.status == "PENDING_VERIFICATION" }
             val adminName = _adminSession.value?.fullName ?: "BeBoss Master Admin"
@@ -388,7 +398,7 @@ class AdminConsoleCoordinator(
                     targetId = "batch:${res.approvedCount}",
                     details = "Batch approved ${res.approvedCount} pending payment claims (${res.failedCount} failed)"
                 )
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
             }
             _isAdminLoading.value = false
             emitSnackbar("Batch approval: ${res.approvedCount} approved, ${res.failedCount} failed.")
@@ -401,7 +411,7 @@ class AdminConsoleCoordinator(
         reason: String,
         onDone: (Boolean) -> Unit = {}
     ) {
-        scope.launch {
+        runWithBlurLoading("Updating Claim", "Marking payment claim rejected...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.rejectPaymentRequest(request, reason)
             if (ok) {
@@ -412,7 +422,7 @@ class AdminConsoleCoordinator(
                     targetId = request.ownerUsername,
                     details = reason
                 )
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("Payment request marked REJECTED.")
             } else {
                 emitSnackbar("Could not reject request in Supabase.")
@@ -423,7 +433,7 @@ class AdminConsoleCoordinator(
     }
 
     fun adminRevokeCode(codeDto: SupabaseUnlockCodeDto) {
-        scope.launch {
+        runWithBlurLoading("Revoking Code", "Invalidating voucher in Admin Cloud...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.revokeUnlockCode(codeDto)
             if (ok) {
@@ -434,7 +444,7 @@ class AdminConsoleCoordinator(
                     targetId = codeDto.shopUsername,
                     details = "Revoked ${codeDto.unlockCode}"
                 )
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("Revoked unlock code ${codeDto.unlockCode}.")
             } else {
                 emitSnackbar("Could not revoke code in Supabase.")
@@ -451,7 +461,7 @@ class AdminConsoleCoordinator(
         amountRwf: Int,
         onGenerated: (Boolean, String) -> Unit
     ) {
-        scope.launch {
+        runWithBlurLoading("Issuing BB3 Code", "Generating offline unlock voucher...") {
             _isAdminLoading.value = true
             val adminName = _adminSession.value?.fullName ?: currentUser.value?.name ?: "BeBoss Master Admin"
             val deviceCode = SubscriptionSecurityManager.computeDeviceChallenge(shopProfile.value)
@@ -472,7 +482,7 @@ class AdminConsoleCoordinator(
                     targetId = username,
                     details = "$tierCode ($days d, $amountRwf FRw)"
                 )
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
             } else {
                 emitSnackbar("Failed generating BB3 code — verify the server signing key and Admin session.")
             }
@@ -482,7 +492,7 @@ class AdminConsoleCoordinator(
     }
 
     fun adminExtendShopSubscription(shop: SupabaseShopAccountDto, addDays: Int) {
-        scope.launch {
+        runWithBlurLoading("Extending Subscription", "Updating license expiry in Supabase...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.adminExtendShopSubscription(shop, addDays)
             if (ok) {
@@ -493,7 +503,7 @@ class AdminConsoleCoordinator(
                     targetId = shop.ownerUsername,
                     details = "+$addDays days for ${shop.shopName}"
                 )
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("Extended ${shop.shopName} license by +$addDays days.")
             } else {
                 emitSnackbar("Failed extending shop license in Supabase.")
@@ -503,7 +513,7 @@ class AdminConsoleCoordinator(
     }
 
     fun adminSetShopStatus(shop: SupabaseShopAccountDto, status: String) {
-        scope.launch {
+        runWithBlurLoading("Updating Shop Status", "Setting ${shop.shopName} to $status...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.adminSetShopStatus(shop, status)
             if (ok) {
@@ -514,7 +524,7 @@ class AdminConsoleCoordinator(
                     targetId = shop.ownerUsername,
                     details = "${shop.shopName} -> $status"
                 )
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("${shop.shopName} set to $status.")
             } else {
                 emitSnackbar("Failed updating shop status.")
@@ -529,7 +539,7 @@ class AdminConsoleCoordinator(
         workerCount: Int,
         deviceLimit: Int = shop.deviceLimit.coerceAtLeast(1)
     ) {
-        scope.launch {
+        runWithBlurLoading("Updating Quotas", "Applying branch & device limits...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.adminUpdateShopLimits(shop, branchCount, workerCount, deviceLimit)
             if (ok) {
@@ -540,7 +550,7 @@ class AdminConsoleCoordinator(
                     targetId = shop.ownerUsername,
                     details = "${shop.shopName}: $branchCount br / $workerCount stf / $deviceLimit dev"
                 )
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("Updated quotas for ${shop.shopName} ($branchCount br / $workerCount stf / $deviceLimit dev).")
             } else {
                 emitSnackbar("Failed updating shop quotas.")
@@ -550,7 +560,7 @@ class AdminConsoleCoordinator(
     }
 
     fun adminSavePaymentConfig(config: AdminPaymentConfig, onDone: (Boolean) -> Unit = {}) {
-        scope.launch {
+        runWithBlurLoading("Saving Config", "Publishing payment settings to cloud...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.adminSaveAppConfig(config)
             if (ok) {
@@ -566,11 +576,11 @@ class AdminConsoleCoordinator(
     }
 
     fun adminToggleShopDeviceActive(device: SupabaseShopDeviceDto, isActive: Boolean) {
-        scope.launch {
+        runWithBlurLoading("Updating Device", "${if (isActive) "Activating" else "Suspending"} ${device.deviceName}...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.adminToggleShopDeviceActive(device, isActive)
             if (ok) {
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("Device '${device.deviceName}' ${if (isActive) "activated" else "disabled"}.")
             } else {
                 emitSnackbar("Failed updating device in Supabase.")
@@ -580,11 +590,11 @@ class AdminConsoleCoordinator(
     }
 
     fun adminDeleteShopDevice(device: SupabaseShopDeviceDto) {
-        scope.launch {
+        runWithBlurLoading("Removing Device", "Deleting ${device.deviceName} from cloud...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.deleteShopDeviceInCloud(device.shopSyncKey, device.id, useAdmin = true)
             if (ok) {
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("Removed device '${device.deviceName}'.")
             } else {
                 emitSnackbar("Failed deleting device from Supabase.")
@@ -594,11 +604,11 @@ class AdminConsoleCoordinator(
     }
 
     fun adminDeleteShopAccount(shop: SupabaseShopAccountDto) {
-        scope.launch {
+        runWithBlurLoading("Deleting Shop", "Removing ${shop.shopName} from registry...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.adminDeleteShopAccount(shop)
             if (ok) {
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("Deleted shop record ${shop.shopName}.")
             } else {
                 emitSnackbar("Failed deleting shop record.")
@@ -608,11 +618,11 @@ class AdminConsoleCoordinator(
     }
 
     fun adminUpdateShopUserRole(user: SupabaseShopUserDto, newRole: String) {
-        scope.launch {
+        runWithBlurLoading("Updating Staff Role", "Assigning $newRole to @${user.username}...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.adminUpdateShopUser(user, newRole = newRole)
             if (ok) {
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("@${user.username} role updated to $newRole.")
             } else {
                 emitSnackbar("Failed updating user role in Supabase.")
@@ -622,11 +632,11 @@ class AdminConsoleCoordinator(
     }
 
     fun adminToggleShopUserActive(user: SupabaseShopUserDto, newActive: Boolean) {
-        scope.launch {
+        runWithBlurLoading("Updating Staff Status", "${if (newActive) "Reactivating" else "Suspending"} @${user.username}...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.adminUpdateShopUser(user, isActive = newActive)
             if (ok) {
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("@${user.username} ${if (newActive) "reactivated" else "suspended"}.")
             } else {
                 emitSnackbar("Failed updating user status in Supabase.")
@@ -636,11 +646,11 @@ class AdminConsoleCoordinator(
     }
 
     fun adminDeleteShopUser(user: SupabaseShopUserDto) {
-        scope.launch {
+        runWithBlurLoading("Removing Staff", "Deleting @${user.username} from directory...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.adminDeleteShopUser(user)
             if (ok) {
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("Removed user @${user.username} from directory.")
             } else {
                 emitSnackbar("Failed deleting user in Supabase.")
@@ -650,11 +660,11 @@ class AdminConsoleCoordinator(
     }
 
     fun adminDeleteBranchSnapshot(snapshot: SupabaseBranchSnapshotDto) {
-        scope.launch {
+        runWithBlurLoading("Removing Snapshot", "Cleaning ${snapshot.branchName} snapshot...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.adminDeleteBranchSnapshot(snapshot)
             if (ok) {
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("Removed branch snapshot (${snapshot.branchName}).")
             } else {
                 emitSnackbar("Failed removing branch snapshot.")
@@ -672,7 +682,7 @@ class AdminConsoleCoordinator(
     }
 
     fun adminResetShopTrial(shop: SupabaseShopAccountDto, trialDays: Int = ShopProfile.FREE_TRIAL_DAYS) {
-        scope.launch {
+        runWithBlurLoading("Resetting Trial", "Resetting ${shop.shopName} to ${trialDays}-day trial...") {
             _isAdminLoading.value = true
             val ok = SupabaseAdminClient.adminResetShopTrial(shop, trialDays)
             if (ok) {
@@ -683,7 +693,7 @@ class AdminConsoleCoordinator(
                     targetId = shop.ownerUsername,
                     details = "Reset ${shop.shopName} to ${trialDays}-day TRIAL"
                 )
-                refreshAdminDashboardData()
+                refreshAdminDashboardDataSuspended()
                 emitSnackbar("Reset ${shop.shopName} to $trialDays-day Free Trial.")
             } else {
                 emitSnackbar("Failed resetting trial in Supabase.")
@@ -699,7 +709,7 @@ class AdminConsoleCoordinator(
         userReference: String? = null,
         onResult: (PaymentProcessingResult, SubscriptionPriceBreakdown) -> Unit
     ) {
-        scope.launch {
+        runWithBlurLoading("Processing MoMo", "Verifying mobile money transaction...") {
             val currentProf = shopProfile.value
             val owner = resolveOwnerUser()
             val branchCount = branches.value.size.coerceAtLeast(1)
@@ -747,7 +757,7 @@ class AdminConsoleCoordinator(
                     details = "$provider verified ${result.amountPaid} FRw (+${result.planDays}d)"
                 )
                 emitSnackbar(result.message)
-                syncAdminDataToSupabase(silent = true)
+                syncAdminDataToSupabaseSuspended(silent = true)
                 triggerCloudSync()
             } else {
                 emitSnackbar(result.message)

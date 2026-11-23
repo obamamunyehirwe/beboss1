@@ -11,7 +11,6 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.beboss.shopmgmt.MainActivity
-import com.beboss.shopmgmt.R
 import com.beboss.shopmgmt.data.model.Sale
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.data.model.StockTransfer
@@ -25,6 +24,7 @@ object BeBossNotificationManager {
     const val CHANNEL_DEBTS_ID = "beboss_debts_channel"
     const val CHANNEL_SYNC_ID = "beboss_sync_channel"
     const val CHANNEL_TARGETS_ID = "beboss_targets_channel"
+    const val CHANNEL_SECURITY_ID = "beboss_security_channel"
 
     private const val NOTIF_ID_SALE_BASE = 1000
     private const val NOTIF_ID_INVENTORY_BASE = 2000
@@ -32,6 +32,7 @@ object BeBossNotificationManager {
     private const val NOTIF_ID_SYNC = 4001
     private const val NOTIF_ID_TARGET = 5001
     private const val NOTIF_ID_TRANSFER_BASE = 6000
+    private const val NOTIF_ID_SECURITY = 7001
 
     /**
      * Initializes all modern Android Notification Channels with rich audio and vibration properties.
@@ -40,7 +41,6 @@ object BeBossNotificationManager {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-            // 1. Sales & Cash Register Channel
             val salesChannel = NotificationChannel(
                 CHANNEL_SALES_ID,
                 "Sales & Cash Register",
@@ -48,12 +48,11 @@ object BeBossNotificationManager {
             ).apply {
                 description = "Instant notifications on completed sales, receipts, and cash float updates"
                 enableLights(true)
-                lightColor = Color.argb(255, 249, 115, 22) // BeBoss Orange
+                lightColor = Color.argb(255, 249, 115, 22)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 100, 50, 100)
             }
 
-            // 2. Inventory & Stock Alerts Channel
             val inventoryChannel = NotificationChannel(
                 CHANNEL_INVENTORY_ID,
                 "Stock & Inventory Alerts",
@@ -66,7 +65,6 @@ object BeBossNotificationManager {
                 vibrationPattern = longArrayOf(0, 200, 100, 200)
             }
 
-            // 3. Customer Debts & Credit Repayments
             val debtsChannel = NotificationChannel(
                 CHANNEL_DEBTS_ID,
                 "Debts & Credit Repayments",
@@ -74,10 +72,9 @@ object BeBossNotificationManager {
             ).apply {
                 description = "Updates on customer debt payments, debt balances, and payment schedules"
                 enableLights(true)
-                lightColor = Color.argb(255, 22, 163, 74) // Profit Green
+                lightColor = Color.argb(255, 22, 163, 74)
             }
 
-            // 4. Multi-Branch & Cloud Sync Channel
             val syncChannel = NotificationChannel(
                 CHANNEL_SYNC_ID,
                 "Multi-Branch & Cloud Sync",
@@ -86,7 +83,6 @@ object BeBossNotificationManager {
                 description = "Background sync logs, P2P branch data exchange, and database backups"
             }
 
-            // 5. Daily Sales Target & Milestones Channel
             val targetsChannel = NotificationChannel(
                 CHANNEL_TARGETS_ID,
                 "Sales Targets & Milestones",
@@ -94,13 +90,25 @@ object BeBossNotificationManager {
             ).apply {
                 description = "Celebrations when shop hits daily or monthly revenue targets"
                 enableLights(true)
-                lightColor = Color.argb(255, 255, 215, 0) // Gold
+                lightColor = Color.argb(255, 255, 215, 0)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 150, 100, 150, 100, 250)
             }
 
+            val securityChannel = NotificationChannel(
+                CHANNEL_SECURITY_ID,
+                "Security & Anti-Tamper Shield",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Critical anti-tamper, clock rollback, and admin device lock alerts"
+                enableLights(true)
+                lightColor = Color.RED
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 250, 120, 250)
+            }
+
             notificationManager.createNotificationChannels(
-                listOf(salesChannel, inventoryChannel, debtsChannel, syncChannel, targetsChannel)
+                listOf(salesChannel, inventoryChannel, debtsChannel, syncChannel, targetsChannel, securityChannel)
             )
         }
     }
@@ -117,16 +125,12 @@ object BeBossNotificationManager {
         )
     }
 
-    /**
-     * Trigger real high-priority sale notification
-     */
     fun sendSaleCompletedNotification(context: Context, sale: Sale, shopProfile: ShopProfile, items: List<com.beboss.shopmgmt.data.model.SaleItem> = emptyList()) {
         if (!PermissionManager.hasNotificationPermission(context)) return
 
         val currency = shopProfile.currencySymbol.ifBlank { "FRw" }
         val formattedTotal = NumberFormat.getNumberInstance(Locale.US).format(sale.totalAmount)
         val itemCount = if (items.isNotEmpty()) items.sumOf { it.quantitySold.toInt() } else 1
-
         val receiptLabel = if (sale.receiptNumber.isNotBlank()) "Receipt #${sale.receiptNumber}" else "Sale #${sale.id.take(6)}"
 
         val bigText = buildString {
@@ -142,8 +146,8 @@ object BeBossNotificationManager {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_SALES_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload_done)
-            .setContentTitle("Ã°Å¸â€™Â° Sale Completed: $formattedTotal $currency")
-            .setContentText("$receiptLabel Ã¢â‚¬Â¢ $itemCount items via ${sale.paymentMethod}")
+            .setContentTitle("💰 Sale Completed: $formattedTotal $currency")
+            .setContentText("$receiptLabel • $itemCount items via ${sale.paymentMethod}")
             .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
@@ -157,14 +161,9 @@ object BeBossNotificationManager {
                 NOTIF_ID_SALE_BASE + (sale.id.hashCode() % 500),
                 notification
             )
-        } catch (e: SecurityException) {
-            // Missing permission safely handled
-        }
+        } catch (_: SecurityException) {}
     }
 
-    /**
-     * Trigger urgent Low Stock Notification
-     */
     fun sendLowStockNotification(
         context: Context,
         productName: String,
@@ -175,7 +174,7 @@ object BeBossNotificationManager {
         if (!PermissionManager.hasNotificationPermission(context)) return
 
         val stockDisplay = if (currentStock <= 0) "OUT OF STOCK" else "$currentStock $unit remaining"
-        val title = if (currentStock <= 0) "Ã°Å¸Å¡Â¨ Out of Stock: $productName" else "Ã¢Å¡Â Ã¯Â¸Â Low Stock Alert: $productName"
+        val title = if (currentStock <= 0) "🚨 Out of Stock: $productName" else "⚠️ Low Stock Alert: $productName"
 
         val notification = NotificationCompat.Builder(context, CHANNEL_INVENTORY_ID)
             .setSmallIcon(android.R.drawable.stat_notify_error)
@@ -197,14 +196,9 @@ object BeBossNotificationManager {
                 NOTIF_ID_INVENTORY_BASE + (productName.hashCode() % 500),
                 notification
             )
-        } catch (e: SecurityException) {
-            // Handled
-        }
+        } catch (_: SecurityException) {}
     }
 
-    /**
-     * Trigger Debt Repayment notification
-     */
     fun sendDebtPaymentNotification(
         context: Context,
         customerName: String,
@@ -219,8 +213,8 @@ object BeBossNotificationManager {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_DEBTS_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("Ã°Å¸â€™Âµ Debt Payment Received: $formattedPaid $currencySymbol")
-            .setContentText("From $customerName Ã¢â‚¬Â¢ Outstanding balance: $formattedRemaining $currencySymbol")
+            .setContentTitle("💵 Debt Payment Received: $formattedPaid $currencySymbol")
+            .setContentText("From $customerName • Outstanding balance: $formattedRemaining $currencySymbol")
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(
                     "Customer: $customerName\nAmount Paid: $formattedPaid $currencySymbol\nRemaining Debt: $formattedRemaining $currencySymbol\nCustomer credit record has been updated successfully in SQLite ledger."
@@ -237,14 +231,9 @@ object BeBossNotificationManager {
                 NOTIF_ID_DEBT_BASE + (customerName.hashCode() % 500),
                 notification
             )
-        } catch (e: SecurityException) {
-            // Handled
-        }
+        } catch (_: SecurityException) {}
     }
 
-    /**
-     * Trigger Daily Sales Target Milestone celebration
-     */
     fun sendDailyTargetReachedNotification(
         context: Context,
         todayTotal: Double,
@@ -258,7 +247,7 @@ object BeBossNotificationManager {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_TARGETS_ID)
             .setSmallIcon(android.R.drawable.btn_star_big_on)
-            .setContentTitle("Ã°Å¸Å½â€° Daily Sales Target Reached!")
+            .setContentTitle("🎉 Daily Sales Target Reached!")
             .setContentText("Hit $formattedToday / $formattedTarget $currencySymbol today! Outstanding work!")
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(
@@ -273,20 +262,15 @@ object BeBossNotificationManager {
 
         try {
             NotificationManagerCompat.from(context).notify(NOTIF_ID_TARGET, notification)
-        } catch (e: SecurityException) {
-            // Handled
-        }
+        } catch (_: SecurityException) {}
     }
 
-    /**
-     * Trigger Multi-Branch Sync notification
-     */
     fun sendBranchSyncNotification(context: Context, branchName: String = "Main Store", recordsCount: Int = 0) {
         if (!PermissionManager.hasNotificationPermission(context)) return
 
         val notification = NotificationCompat.Builder(context, CHANNEL_SYNC_ID)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("Ã¢Å¡Â¡ Multi-Branch Sync Complete")
+            .setContentTitle("⚡ Multi-Branch Sync Complete")
             .setContentText("Synchronized $recordsCount records with branch '$branchName'")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setAutoCancel(true)
@@ -295,21 +279,16 @@ object BeBossNotificationManager {
 
         try {
             NotificationManagerCompat.from(context).notify(NOTIF_ID_SYNC, notification)
-        } catch (e: SecurityException) {
-            // Handled
-        }
+        } catch (_: SecurityException) {}
     }
 
-    /**
-     * Trigger Stock Transfer notification
-     */
     fun sendStockTransferNotification(context: Context, transfer: StockTransfer) {
         if (!PermissionManager.hasNotificationPermission(context)) return
 
         val notification = NotificationCompat.Builder(context, CHANNEL_SYNC_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("Ã°Å¸â€œÂ¦ Stock Transferred (${transfer.transferNumber})")
-            .setContentText("${transfer.quantity} ${transfer.unit} of ${transfer.productName}: ${transfer.fromBranchName} Ã¢Å¾â€ ${transfer.toBranchName}")
+            .setContentTitle("📦 Stock Transferred (${transfer.transferNumber})")
+            .setContentText("${transfer.quantity} ${transfer.unit} of ${transfer.productName}: ${transfer.fromBranchName} ➜ ${transfer.toBranchName}")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .setContentIntent(getLaunchPendingIntent(context))
@@ -320,23 +299,38 @@ object BeBossNotificationManager {
                 NOTIF_ID_TRANSFER_BASE + (transfer.id.hashCode() % 500),
                 notification
             )
-        } catch (e: SecurityException) {
-            // Handled
-        }
+        } catch (_: SecurityException) {}
     }
 
-    /**
-     * Send test notification across any selected channel
-     */
+    fun sendSecurityTamperNotification(context: Context, title: String, details: String) {
+        if (!PermissionManager.hasNotificationPermission(context)) return
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_SECURITY_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+            .setContentTitle("🛡️ $title")
+            .setContentText(details)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(details))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setColor(0xFFDC2626.toInt())
+            .setContentIntent(getLaunchPendingIntent(context))
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIF_ID_SECURITY, notification)
+        } catch (_: SecurityException) {}
+    }
+
     fun sendTestNotification(context: Context, channelId: String = CHANNEL_SALES_ID) {
         if (!PermissionManager.hasNotificationPermission(context)) return
 
         val (title, text, color) = when (channelId) {
-            CHANNEL_INVENTORY_ID -> Triple("Ã¢Å¡Â Ã¯Â¸Â Low Stock Test Alert", "BeBoss inventory channel is active and notifying for stock thresholds.", 0xFFDC2626.toInt())
-            CHANNEL_DEBTS_ID -> Triple("Ã°Å¸â€™Âµ Debt Reminder Test Alert", "BeBoss customer debt payment channel is active.", 0xFF16A34A.toInt())
-            CHANNEL_TARGETS_ID -> Triple("Ã°Å¸Å½â€° Target Milestone Test Alert", "BeBoss sales target achievement channel is active.", 0xFFEAB308.toInt())
-            CHANNEL_SYNC_ID -> Triple("Ã¢Å¡Â¡ Multi-Branch Sync Test Alert", "BeBoss offline P2P and cloud synchronization channel is active.", 0xFF0284C7.toInt())
-            else -> Triple("Ã°Å¸â€™Â° POS Checkout Test Notification", "BeBoss POS sales & receipt engine notification is 100% active and operational.", 0xFFF97316.toInt())
+            CHANNEL_INVENTORY_ID -> Triple("⚠️ Low Stock Test Alert", "BeBoss inventory channel is active and notifying for stock thresholds.", 0xFFDC2626.toInt())
+            CHANNEL_DEBTS_ID -> Triple("💵 Debt Reminder Test Alert", "BeBoss customer debt payment channel is active.", 0xFF16A34A.toInt())
+            CHANNEL_TARGETS_ID -> Triple("🎉 Target Milestone Test Alert", "BeBoss sales target achievement channel is active.", 0xFFEAB308.toInt())
+            CHANNEL_SYNC_ID -> Triple("⚡ Multi-Branch Sync Test Alert", "BeBoss offline P2P and cloud synchronization channel is active.", 0xFF0284C7.toInt())
+            CHANNEL_SECURITY_ID -> Triple("🛡️ Anti-Tamper Shield Active", "Clock rollback & device integrity monitor is actively protecting BeBoss.", 0xFFDC2626.toInt())
+            else -> Triple("💰 POS Checkout Test Notification", "BeBoss POS sales & receipt engine notification is 100% active and operational.", 0xFFF97316.toInt())
         }
 
         val notification = NotificationCompat.Builder(context, channelId)
@@ -351,20 +345,16 @@ object BeBossNotificationManager {
 
         try {
             NotificationManagerCompat.from(context).notify((System.currentTimeMillis() % 10000).toInt(), notification)
-        } catch (e: SecurityException) {
-            // Handled
-        }
+        } catch (_: SecurityException) {}
     }
 
     fun sendDirectAutoUnlockNotification(context: Context, shopName: String, daysRemaining: Int) {
-        // A licensing notification is only valid after a real shop has been registered
-        // and the entitlement reconciler has verified a paid/admin-authorized period.
         if (shopName.isBlank() || daysRemaining <= 0) return
         if (!PermissionManager.hasNotificationPermission(context)) return
 
         val notification = NotificationCompat.Builder(context, CHANNEL_TARGETS_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("Subscription Auto-Unlocked by Admin!")
+            .setContentTitle("✅ Subscription Auto-Unlocked by Admin!")
             .setContentText("${shopName.ifBlank { "Your BeBoss Shop" }} is now ACTIVE ($daysRemaining days left). All features unlocked!")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
@@ -374,8 +364,6 @@ object BeBossNotificationManager {
 
         try {
             NotificationManagerCompat.from(context).notify(4099, notification)
-        } catch (_: SecurityException) {
-            // Handled
-        }
+        } catch (_: SecurityException) {}
     }
 }

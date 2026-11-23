@@ -53,10 +53,10 @@ object BeBossLogger {
             scrub(message)
         }
         safeLog(Log.ERROR, tag, summary, null)
-        
+
         // Forward to global crash telemetry hook if registered
         crashReporter?.invoke(tag, summary, throwable)
-        
+
         // Forward to Sentry if available (optional dependency)
         try {
             // Sentry integration hook - will be initialized if Sentry is added as dependency
@@ -71,9 +71,9 @@ object BeBossLogger {
      * Forward errors to Sentry without adding another service dependency.
      */
     var crashReporter: ((tag: String, message: String, throwable: Throwable?) -> Unit)? = null
-    
+
     /**
-     * Optional Sentry crash reporter hook Ã¢â‚¬â€ set once in Application.onCreate() to forward
+     * Optional Sentry crash reporter hook — set once in Application.onCreate() to forward
      * errors to Sentry for production crash tracking.
      */
     var SentryCrashReporter: ((tag: String, message: String, throwable: Throwable?) -> Unit)? = null

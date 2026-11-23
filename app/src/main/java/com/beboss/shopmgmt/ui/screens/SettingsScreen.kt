@@ -169,12 +169,18 @@ import com.beboss.shopmgmt.ui.components.PermissionRequestDialog
 import com.beboss.shopmgmt.util.AdminPaymentConfig
 import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.BranchPeerSyncEvent
+import com.beboss.shopmgmt.util.CapturedLocation
+import com.beboss.shopmgmt.util.ClockGuard
+import com.beboss.shopmgmt.util.ClockTamperStatus
 import com.beboss.shopmgmt.util.CloudSyncReport
 import com.beboss.shopmgmt.util.ConnectivityStatus
 import com.beboss.shopmgmt.util.DeviceIntegrityStatus
 import com.beboss.shopmgmt.util.DiscoveredBranchHub
 import com.beboss.shopmgmt.util.LocalServerStatus
 import com.beboss.shopmgmt.util.Localization
+import com.beboss.shopmgmt.util.LocationHelper
+import com.beboss.shopmgmt.util.MessageAuditManager
+import com.beboss.shopmgmt.util.MessageDispatchRecord
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
 import com.beboss.shopmgmt.util.PdfReportGenerator
 import com.beboss.shopmgmt.util.PermissionManager
@@ -310,7 +316,12 @@ fun SettingsScreen(
     onSelectLanguage: ((AppLanguage) -> Unit)? = null,
     idleLockMinutes: Int = 5,
     onSetIdleLockMinutes: (Int) -> Unit = {},
-    adminLastSyncedAt: Long = 0L
+    adminLastSyncedAt: Long = 0L,
+    clockTamperStatus: ClockTamperStatus = ClockGuard.tamperStatus.value,
+    capturedLocation: CapturedLocation = LocationHelper.lastLocation.value,
+    messageRecords: List<MessageDispatchRecord> = MessageAuditManager.records.value,
+    onReInspectSecurity: () -> Unit = {},
+    onCaptureLocation: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -880,6 +891,10 @@ fun SettingsScreen(
         onDeleteShopUser = onAdminDeleteShopUser,
         onDeleteBranchSnapshot = onAdminDeleteBranchSnapshot,
         onShareWebPortal = onShareAdminWebPortal,
+        clockTamperStatus = clockTamperStatus,
+        capturedLocation = capturedLocation,
+        messageRecords = messageRecords,
+        onReInspectSecurity = onReInspectSecurity,
         onDismiss = { showAdminConsoleDialog = false }
     )
 
@@ -920,10 +935,15 @@ fun SettingsScreen(
         localAuditLogs = localAuditLogs,
         adminLastSyncedAt = adminLastSyncedAt,
         language = language,
+        clockTamperStatus = clockTamperStatus,
+        capturedLocation = capturedLocation,
+        messageRecords = messageRecords,
         onVerifyDatabaseIntegrity = onVerifyDatabaseIntegrity,
         onOptimizeDatabase = onOptimizeDatabase,
         onRefreshDatabaseStats = onRefreshDatabaseStats,
         onForceSyncNow = onSyncToCloudNow,
+        onReInspectSecurity = onReInspectSecurity,
+        onCaptureLocation = onCaptureLocation,
         onDismiss = { showDiagnosticsDialog = false }
     )
 }

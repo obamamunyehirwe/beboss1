@@ -378,7 +378,9 @@ fun SalesHistoryScreen(
         )
     }
 
-    // Offline Receipt Seal Cryptographic Verifier Dialog
+    // Offline Receipt Seal Cryptographic Verifier Dialog (with Real QR Scanner)
+    var showQrSealScanner by remember { mutableStateOf(false) }
+
     if (showSealVerifierDialog) {
         AlertDialog(
             onDismissRequest = { showSealVerifierDialog = false },
@@ -396,6 +398,13 @@ fun SalesHistoryScreen(
                         fontSize = 12.sp,
                         color = InkMedium
                     )
+                    OutlinedButton(
+                        onClick = { showQrSealScanner = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("📷 Scan Receipt QR Seal with Camera", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = OrangePrimary)
+                    }
                     OutlinedTextField(
                         value = verifyReceiptNumberInput,
                         onValueChange = {
@@ -465,6 +474,41 @@ fun SalesHistoryScreen(
                     Text(Localization.get("close", language))
                 }
             }
+        )
+    }
+
+    if (showQrSealScanner) {
+        com.beboss.shopmgmt.ui.components.CameraBarcodeScannerDialog(
+            products = emptyList(),
+            onProductScanned = {},
+            onBarcodeScanned = { rawCode ->
+                val parsed = com.beboss.shopmgmt.util.QrCodeGenerator.parseReceiptQrPayload(rawCode)
+                if (parsed != null) {
+                    verifyReceiptNumberInput = parsed.receiptNumber
+                    verifySealInput = parsed.seal
+                    val matched = sales.firstOrNull {
+                        it.receiptNumber.equals(parsed.receiptNumber, ignoreCase = true)
+                    }
+                    verificationResult = if (matched == null) {
+                        false to Localization.format("hist_seal_not_found_fmt", language, parsed.receiptNumber)
+                    } else if (ReceiptGenerator.verifyOfflineReceiptSeal(matched, shopProfile, parsed.seal)) {
+                        true to Localization.format(
+                            "hist_seal_authentic_fmt",
+                            language,
+                            matched.receiptNumber,
+                            ReceiptGenerator.formatMoney(matched.totalAmount, shopProfile)
+                        )
+                    } else {
+                        false to Localization.format("hist_seal_tampered_fmt", language, matched.receiptNumber)
+                    }
+                } else {
+                    verifyReceiptNumberInput = rawCode
+                }
+                showQrSealScanner = false
+            },
+            onDismiss = { showQrSealScanner = false },
+            language = language,
+            qrOnlyOrGeneralMode = true
         )
     }
 }

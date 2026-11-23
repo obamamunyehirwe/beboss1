@@ -89,7 +89,7 @@ data class ShopProfile(
         }
 
     /**
-     * Disabled: zero post-expiry grace bypass Ã¢â‚¬â€ app locks immediately after 4-day trial ends.
+     * Disabled: zero post-expiry grace bypass — app locks immediately after 4-day trial ends.
      */
     val isGracePeriod: Boolean
         get() = false

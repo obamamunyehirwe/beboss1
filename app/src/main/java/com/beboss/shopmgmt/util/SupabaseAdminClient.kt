@@ -287,6 +287,11 @@ object SupabaseAdminClient {
             .connectionSpecs(listOf(modernTlsSpec))
             .followRedirects(false)
             .followSslRedirects(false)
+            .addInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                ClockGuard.observeTrustedServerDateHeader(response.header("Date"))
+                response
+            }
             .apply {
                 buildCertificatePinner()?.let { certificatePinner(it) }
             }
@@ -1358,8 +1363,92 @@ object SupabaseAdminClient {
             }
         }
 
+    suspend fun pushDeviceTelemetry(
+        shopSyncKey: String,
+        shopName: String,
+        deviceId: String,
+        deviceName: String,
+        integrity: DeviceIntegrityStatus,
+        clockTamper: ClockTamperStatus,
+        location: CapturedLocation?,
+        unsyncedMessagesCount: Int,
+        permissionsSummary: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank() || deviceId.isBlank()) return@withContext false
+        val now = ClockGuard.effectiveNowMs()
+        var telemetryOk = false
+
+        try {
+            val payload = JSONObject().apply {
+                put("id", "${shopSyncKey}::${deviceId}")
+                put("shop_sync_key", shopSyncKey)
+                put("shop_name", shopName)
+                put("device_id", deviceId)
+                put("device_name", deviceName)
+                put("risk_score", integrity.riskScore)
+                put("posture_label", integrity.postureLabel)
+                put("is_rooted", integrity.isRooted)
+                put("has_hooking", integrity.hasHookingFramework)
+                put("is_emulator", integrity.isEmulator)
+                put("clock_rollback_detected", clockTamper.rollbackDetected || clockTamper.activeTamperLock)
+                put("tamper_incident_count", clockTamper.incidentCount)
+                put("clock_skew_ms", clockTamper.skewMillis)
+                put("tamper_reason", clockTamper.reason)
+                put("keystore_backing", integrity.keystoreBacking)
+                put("signals_json", JSONArray(integrity.signals).toString())
+                put("latitude", location?.latitude ?: 0.0)
+                put("longitude", location?.longitude ?: 0.0)
+                put("location_label", location?.compactLabel() ?: "Unavailable")
+                put("unsynced_messages_count", unsyncedMessagesCount)
+                put("permissions_summary", permissionsSummary)
+                put("inspected_at", integrity.inspectedAtMs)
+                put("updated_at", now)
+            }
+            val req = buildRestRequest("device_security_telemetry?on_conflict=id", tenantSyncKey = shopSyncKey)
+                .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(req).execute().use { resp ->
+                telemetryOk = resp.isSuccessful
+            }
+        } catch (_: Exception) {
+            telemetryOk = false
+        }
+
+        var heartbeatOk = false
+        try {
+            val encShop = URLEncoder.encode(shopSyncKey, "UTF-8")
+            val encDev = URLEncoder.encode(deviceId, "UTF-8")
+            val patch = JSONObject().apply {
+                put("last_synced_at", now)
+                put("updated_at", now)
+            }
+            val req = buildRestRequest(
+                "shop_devices?shop_sync_key=eq.$encShop&device_id=eq.$encDev",
+                tenantSyncKey = shopSyncKey
+            ).patch(patch.toString().toRequestBody(jsonMediaType)).build()
+            client.newCall(req).execute().use { resp ->
+                heartbeatOk = resp.isSuccessful
+            }
+        } catch (_: Exception) {}
+
+        if ((integrity.isCompromisedRisk || clockTamper.rollbackDetected || clockTamper.activeTamperLock) &&
+            activeAdminSession != null
+        ) {
+            val locInfo = location?.takeIf { it.isAvailable }?.compactLabel() ?: "No GPS"
+            val reasonText = clockTamper.reason.ifBlank { integrity.signals.joinToString(", ") }.ifBlank { integrity.postureLabel }
+            logAdminAudit(
+                action = "DEVICE_SECURITY_ALERT",
+                targetId = deviceId,
+                details = "$shopName ($deviceName) • Risk=${integrity.riskScore}/100 • $reasonText • Loc=$locInfo • OutboundMsgs=$unsyncedMessagesCount"
+            )
+        }
+
+        telemetryOk || heartbeatOk
+    }
+
     // -------------------------------------------------------------------------
-    // SHOP USERS DIRECTORY SYNC (`shop_users`) Ã¢â‚¬â€ Metadata only (No PIN/Password)
+    // SHOP USERS DIRECTORY SYNC (`shop_users`) — Metadata only (No PIN/Password)
     // -------------------------------------------------------------------------
     suspend fun upsertShopUsers(
         shopSyncKey: String,
@@ -2050,7 +2139,9 @@ object SupabaseAdminClient {
             if (!response.isSuccessful) return@withContext null
             JSONArray(response.body?.string().orEmpty().ifBlank { "[]" }).optJSONObject(0)
         }
-    }    /**
+    }
+
+    /**
      * Option 2 Approval: Directly auto-unlock the shop in cloud without requiring an unlock code.
      * The app detects `auto_unlocked_at` / `DIRECT_AUTO_UNLOCK` on background or foreground sync
      * and activates all features automatically.

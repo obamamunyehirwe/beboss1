@@ -17,6 +17,8 @@ import com.beboss.shopmgmt.util.CloudSyncScheduler
 import com.beboss.shopmgmt.util.ConnectivityStatus
 import com.beboss.shopmgmt.util.EndpointPingResult
 import com.beboss.shopmgmt.util.LocalNetworkSyncServer
+import com.beboss.shopmgmt.util.LocationHelper
+import com.beboss.shopmgmt.util.MessageAuditManager
 import com.beboss.shopmgmt.util.NetworkConnectivityObserver
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
 import com.beboss.shopmgmt.util.ShopDataTransferManager
@@ -52,7 +54,10 @@ class SyncCoordinator(
     private val allCustomerPayments: StateFlow<List<CustomerPayment>>,
     private val allStockTransfers: StateFlow<List<StockTransfer>>,
     private val emitSnackbar: suspend (String) -> Unit,
-    private val syncAdminCloud: suspend (Boolean) -> Unit
+    private val syncAdminCloud: suspend (Boolean) -> Unit,
+    private val runWithBlurLoading: (title: String, subtitle: String, block: suspend () -> Unit) -> Unit = { _, _, block ->
+        scope.launch { block() }
+    }
 ) {
     private var autoBranchSyncJob: Job? = null
 
@@ -93,8 +98,6 @@ class SyncCoordinator(
     }
 
     fun scheduleAutoBranchSync(delayMs: Long = 1600L) {
-        // Always schedule OS-level network-constrained background sync so offline writes upload
-        // automatically even if the app is closed before internet returns.
         CloudSyncScheduler.enqueueImmediateSync(application)
         if (connectivityStatus.value != ConnectivityStatus.AVAILABLE) return
         autoBranchSyncJob?.cancel()
@@ -107,7 +110,10 @@ class SyncCoordinator(
     }
 
     fun syncToCloudNow() {
-        scope.launch {
+        runWithBlurLoading(
+            "Syncing Cloud...",
+            "Uploading branch sales, stock & shield telemetry"
+        ) {
             runAutomaticCloudSync(showResult = true)
         }
     }
@@ -116,12 +122,17 @@ class SyncCoordinator(
         if (_isSyncing.value) return
         _isSyncing.value = true
         try {
+            com.beboss.shopmgmt.util.ClockGuard.reInspectNow(application)
+            // Refresh foreground location telemetry when permission is active before pushing to cloud
+            LocationHelper.captureCurrentLocation(application)
             syncAdminCloud(true)
             val report = repository.performSync(
                 activeBranchId = selectedBranchId.value,
-                deviceId = deviceId
+                deviceId = deviceId,
+                context = application
             )
             _cloudSyncReport.value = report
+            MessageAuditManager.markAllSynced(application)
             if (showResult) emitSnackbar(report.message)
         } catch (e: CancellationException) {
             throw e
@@ -140,16 +151,23 @@ class SyncCoordinator(
     }
 
     fun syncToCloudWithEndpoint(endpoint: String? = null) {
-        scope.launch {
+        runWithBlurLoading(
+            "Syncing Relay Server...",
+            "Exchanging branch deltas & security state"
+        ) {
             _isSyncing.value = true
             try {
+                com.beboss.shopmgmt.util.ClockGuard.reInspectNow(application)
+                LocationHelper.captureCurrentLocation(application)
                 val report = repository.cloudSyncManager.syncAllDataToCloud(
                     serverEndpoint = endpoint,
                     activeBranchId = selectedBranchId.value,
                     deviceId = deviceId,
+                    context = application,
                     mergeRemoteSummary = { summary -> repository.mergeShopDataPackageLww(summary) }
                 )
                 _cloudSyncReport.value = report
+                MessageAuditManager.markAllSynced(application)
                 emitSnackbar(report.message)
             } finally {
                 _isSyncing.value = false
@@ -170,7 +188,7 @@ class SyncCoordinator(
                 repository.logSyncEvent("P2P_SERVER", "SUCCESS", "Encrypted LAN Hub started on port ${localNetworkSyncServer.port}")
             } else {
                 scope.launch {
-                    emitSnackbar("Unable to start encrypted LAN Hub Ã¢â‚¬â€ configure BEBOSS_LAN_SYNC_SECRET.")
+                    emitSnackbar("Unable to start encrypted LAN Hub — configure BEBOSS_LAN_SYNC_SECRET.")
                 }
             }
         } else {

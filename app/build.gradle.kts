@@ -1,3 +1,7 @@
+import java.util.Properties
+
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -38,6 +42,28 @@ android {
     }
   }
 
+  val envProps = Properties().apply {
+    val exampleFile = rootProject.file(".env.example")
+    if (exampleFile.exists()) {
+      exampleFile.inputStream().use { load(it) }
+    }
+    val envFile = rootProject.file(".env")
+    if (envFile.exists()) {
+      envFile.inputStream().use { load(it) }
+    }
+  }
+  fun envConfigString(key: String): String {
+    val raw = (
+      envProps.getProperty(key)?.takeIf { it.isNotBlank() }
+        ?: (project.findProperty(key) as? String)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(key)?.takeIf { it.isNotBlank() }
+        ?: ""
+      ).trim()
+    val unquoted = raw.removeSurrounding("\"")
+    val escaped = unquoted.replace("\\", "\\\\").replace("\"", "\\\"")
+    return "\"$escaped\""
+  }
+
   buildTypes {
     release {
       isCrunchPngs = true
@@ -45,15 +71,29 @@ android {
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
-      buildConfigField("String", "SENTRY_DSN", "\"${project.findProperty("SENTRY_DSN") ?: ""}\"")
-      buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
-      buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
+      buildConfigField("String", "BEBOSS_ADMIN_URL", envConfigString("BEBOSS_ADMIN_URL"))
+      buildConfigField("String", "BEBOSS_ADMIN_WHATSAPP", envConfigString("BEBOSS_ADMIN_WHATSAPP"))
+      buildConfigField("String", "BEBOSS_DATASHARE_HMAC_SECRET", envConfigString("BEBOSS_DATASHARE_HMAC_SECRET"))
+      buildConfigField("String", "BEBOSS_LAN_SYNC_SECRET", envConfigString("BEBOSS_LAN_SYNC_SECRET"))
+      buildConfigField("String", "BEBOSS_SECURITY_PEPPER", envConfigString("BEBOSS_SECURITY_PEPPER"))
+      buildConfigField("String", "SENTRY_DSN", envConfigString("SENTRY_DSN"))
+      buildConfigField("String", "SUPABASE_ANON_KEY", envConfigString("SUPABASE_ANON_KEY"))
+      buildConfigField("String", "SUPABASE_CERT_PINS", envConfigString("SUPABASE_CERT_PINS"))
+      buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", envConfigString("SUPABASE_PUBLISHABLE_KEY"))
+      buildConfigField("String", "SUPABASE_URL", envConfigString("SUPABASE_URL"))
     }
     debug { 
       signingConfig = signingConfigs.getByName("debugConfig") 
-      buildConfigField("String", "SENTRY_DSN", "\"${project.findProperty("SENTRY_DSN") ?: ""}\"")
-      buildConfigField("String", "SUPABASE_URL", "\"${project.findProperty("SUPABASE_URL") ?: ""}\"")
-      buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.findProperty("SUPABASE_ANON_KEY") ?: ""}\"")
+      buildConfigField("String", "BEBOSS_ADMIN_URL", envConfigString("BEBOSS_ADMIN_URL"))
+      buildConfigField("String", "BEBOSS_ADMIN_WHATSAPP", envConfigString("BEBOSS_ADMIN_WHATSAPP"))
+      buildConfigField("String", "BEBOSS_DATASHARE_HMAC_SECRET", envConfigString("BEBOSS_DATASHARE_HMAC_SECRET"))
+      buildConfigField("String", "BEBOSS_LAN_SYNC_SECRET", envConfigString("BEBOSS_LAN_SYNC_SECRET"))
+      buildConfigField("String", "BEBOSS_SECURITY_PEPPER", envConfigString("BEBOSS_SECURITY_PEPPER"))
+      buildConfigField("String", "SENTRY_DSN", envConfigString("SENTRY_DSN"))
+      buildConfigField("String", "SUPABASE_ANON_KEY", envConfigString("SUPABASE_ANON_KEY"))
+      buildConfigField("String", "SUPABASE_CERT_PINS", envConfigString("SUPABASE_CERT_PINS"))
+      buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", envConfigString("SUPABASE_PUBLISHABLE_KEY"))
+      buildConfigField("String", "SUPABASE_URL", envConfigString("SUPABASE_URL"))
     }
   }
   compileOptions {
@@ -84,8 +124,17 @@ ksp {
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
+  ignoreList.add("BEBOSS_ADMIN_URL")
+  ignoreList.add("BEBOSS_ADMIN_WHATSAPP")
+  ignoreList.add("BEBOSS_DATASHARE_HMAC_SECRET")
+  ignoreList.add("BEBOSS_LAN_SYNC_SECRET")
+  ignoreList.add("BEBOSS_SECURITY_PEPPER")
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
   ignoreList.add("SENTRY_DSN")
+  ignoreList.add("SUPABASE_ANON_KEY")
+  ignoreList.add("SUPABASE_CERT_PINS")
+  ignoreList.add("SUPABASE_PUBLISHABLE_KEY")
+  ignoreList.add("SUPABASE_URL")
   ignoreList.add("VITE_SUPABASE_URL")
   ignoreList.add("VITE_SUPABASE_PUBLISHABLE_KEY")
   ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
@@ -134,6 +183,8 @@ dependencies {
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
   implementation(libs.androidx.work.runtime.ktx)
+  implementation(libs.zxing.core)
+  implementation(libs.mlkit.barcode.scanning)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

@@ -86,12 +86,18 @@ import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
 import com.beboss.shopmgmt.ui.theme.WarningAmber
 import com.beboss.shopmgmt.util.AppLanguage
+import com.beboss.shopmgmt.util.CapturedLocation
 import com.beboss.shopmgmt.util.ClockGuard
+import com.beboss.shopmgmt.util.ClockTamperStatus
 import com.beboss.shopmgmt.util.ConnectivityStatus
 import com.beboss.shopmgmt.util.CryptoKeyManager
 import com.beboss.shopmgmt.util.DeviceIntegrityStatus
 import com.beboss.shopmgmt.util.DeviceSecurityManager
 import com.beboss.shopmgmt.util.HlcClock
+import com.beboss.shopmgmt.util.LocationHelper
+import com.beboss.shopmgmt.util.MessageAuditManager
+import com.beboss.shopmgmt.util.MessageDispatchRecord
+import com.beboss.shopmgmt.util.PermissionManager
 import com.beboss.shopmgmt.util.SyncAuditLog
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -121,10 +127,15 @@ fun DiagnosticsDialog(
     localAuditLogs: List<LocalAuditLog>,
     adminLastSyncedAt: Long,
     language: AppLanguage = AppLanguage.ENGLISH,
+    clockTamperStatus: ClockTamperStatus = ClockGuard.tamperStatus.value,
+    capturedLocation: CapturedLocation = LocationHelper.lastLocation.value,
+    messageRecords: List<MessageDispatchRecord> = MessageAuditManager.records.value,
     onVerifyDatabaseIntegrity: () -> Unit = {},
     onOptimizeDatabase: () -> Unit = {},
     onRefreshDatabaseStats: () -> Unit = {},
     onForceSyncNow: () -> Unit = {},
+    onReInspectSecurity: () -> Unit = {},
+    onCaptureLocation: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -132,7 +143,7 @@ fun DiagnosticsDialog(
     var auditSearchQuery by remember { mutableStateOf("") }
     var auditFilter by remember { mutableStateOf("ALL") }
 
-    val integrity = deviceIntegrityStatus ?: remember { DeviceSecurityManager.inspectDeviceIntegrity() }
+    val integrity = deviceIntegrityStatus ?: remember(clockTamperStatus) { DeviceSecurityManager.inspectDeviceIntegrity(context) }
     val keystoreStatus = remember { CryptoKeyManager.getHardwareKeystoreStatus() }
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
     val shortDateFormat = remember { SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()) }
@@ -184,11 +195,17 @@ fun DiagnosticsDialog(
         appendLine("=== BEBOSS SECURITY & DIAGNOSTICS REPORT ===")
         appendLine("Shop: ${shopProfile.shopName.ifBlank { "Unregistered" }}")
         appendLine("Generated: ${dateFormat.format(Date())}")
-        appendLine("Posture: ${integrity.postureLabel}")
+        appendLine("Posture: ${integrity.postureLabel} (Risk Score: ${integrity.riskScore}/100)")
         appendLine("Hardware Keystore: $keystoreStatus")
         appendLine("TLS Cert Pinning: ${if (pinConfigured) "Active" else "Not configured"}")
         appendLine("ClockGuard Effective Now: ${dateFormat.format(Date(ClockGuard.effectiveNowMs()))}")
-        appendLine("Clock Rollback Flag: ${ClockGuard.isClockRollbackDetected()}")
+        appendLine("Clock Rollback / Tamper Lock: ${clockTamperStatus.rollbackDetected || clockTamperStatus.activeTamperLock} (Incidents: ${clockTamperStatus.incidentCount})")
+        if (clockTamperStatus.reason.isNotBlank()) {
+            appendLine("ClockGuard Reason: ${clockTamperStatus.reason}")
+        }
+        appendLine("Foreground GPS Location: ${capturedLocation.compactLabel()}")
+        appendLine("Outbound Messages Logged: ${messageRecords.size} (Unsynced: ${messageRecords.count { !it.syncedToCloud }})")
+        appendLine("Permissions: Camera=${PermissionManager.hasCameraPermission(context)}, Contacts=${PermissionManager.hasContactsPermission(context)}, Location=${PermissionManager.hasLocationPermission(context)}, Notifications=${PermissionManager.hasNotificationPermission(context)}")
         appendLine("Connectivity: $connectivityStatus")
         appendLine("Pending Outbox: $pendingSyncCount | Dead-Letter Queue: $deadLetterSyncCount")
         appendLine("DB Engine: SQLCipher AES-256 + ${databaseStats?.journalMode ?: "WAL"} | Status: ${databaseStats?.integrityStatus ?: "OK"}")
@@ -299,9 +316,14 @@ fun DiagnosticsDialog(
                     when (selectedTab) {
                         0 -> SecurityPostureTab(
                             integrity = integrity,
+                            clockTamperStatus = clockTamperStatus,
+                            capturedLocation = capturedLocation,
+                            messageRecords = messageRecords,
                             keystoreStatus = keystoreStatus,
                             pinConfigured = pinConfigured,
                             dateFormat = dateFormat,
+                            onReInspectSecurity = onReInspectSecurity,
+                            onCaptureLocation = onCaptureLocation,
                             onCopyReport = {
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 clipboard.setPrimaryClip(ClipData.newPlainText("BeBoss Diagnostics", buildDiagnosticsTextReport()))
@@ -350,14 +372,21 @@ fun DiagnosticsDialog(
 @Composable
 private fun SecurityPostureTab(
     integrity: DeviceIntegrityStatus,
+    clockTamperStatus: ClockTamperStatus,
+    capturedLocation: CapturedLocation,
+    messageRecords: List<MessageDispatchRecord>,
     keystoreStatus: String,
     pinConfigured: Boolean,
     dateFormat: SimpleDateFormat,
+    onReInspectSecurity: () -> Unit,
+    onCaptureLocation: () -> Unit,
     onCopyReport: () -> Unit,
     onShareReport: () -> Unit
 ) {
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
-    val hasRisk = integrity.isRooted || integrity.hasHookingFramework
+    val tamperActive = clockTamperStatus.rollbackDetected || clockTamperStatus.activeTamperLock || integrity.clockRollbackDetected
+    val hasRisk = integrity.isRooted || integrity.hasHookingFramework || tamperActive
     val statusColor = when {
         hasRisk -> LossRed
         integrity.isCompromisedRisk || integrity.isEmulator -> WarningAmber
@@ -376,30 +405,54 @@ private fun SecurityPostureTab(
             border = BorderStroke(1.dp, statusColor.copy(alpha = 0.45f)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = if (hasRisk) Icons.Default.Warning else Icons.Default.Security,
-                    contentDescription = null,
-                    tint = statusColor,
-                    modifier = Modifier.size(26.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Column {
-                    Text(
-                        text = integrity.postureLabel,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 13.5.sp,
-                        color = statusColor
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (hasRisk) Icons.Default.Warning else Icons.Default.Security,
+                        contentDescription = null,
+                        tint = statusColor,
+                        modifier = Modifier.size(26.dp)
                     )
-                    Text(
-                        text = if (integrity.signals.isEmpty()) "No tampering, hooking, or root binaries detected."
-                        else integrity.signals.joinToString(" \u2022 "),
-                        fontSize = 11.5.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = integrity.postureLabel,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 13.5.sp,
+                            color = statusColor
+                        )
+                        Text(
+                            text = if (integrity.signals.isEmpty()) "No tampering, hooking, or root binaries detected."
+                            else integrity.signals.joinToString(" • "),
+                            fontSize = 11.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = statusColor.copy(alpha = 0.18f)
+                    ) {
+                        Text(
+                            text = "Risk ${integrity.riskScore}/100",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            color = statusColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+                OutlinedButton(
+                    onClick = onReInspectSecurity,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .testTag("diagnostics_reinspect_shield_btn"),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, statusColor.copy(alpha = 0.5f))
+                ) {
+                    Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = statusColor, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Re-Inspect Anti-Tamper Shield (2s)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = statusColor)
                 }
             }
         }
@@ -412,10 +465,23 @@ private fun SecurityPostureTab(
             if (pinConfigured) ProfitGreen else WarningAmber
         )
         DiagnosticKeyValueRow(
-            "ClockGuard Monotonic Time",
-            dateFormat.format(Date(ClockGuard.effectiveNowMs())),
-            if (ClockGuard.isClockRollbackDetected()) LossRed else MaterialTheme.colorScheme.onSurface
+            "ClockGuard Anti-Rollback",
+            if (tamperActive) "TAMPER LOCK (${clockTamperStatus.incidentCount} incidents, skew ${integrity.clockSkewSeconds}s)"
+            else "Monotonic Verified (${clockTamperStatus.incidentCount} incidents)",
+            if (tamperActive) LossRed else ProfitGreen
         )
+        DiagnosticKeyValueRow(
+            "ClockGuard Effective Time",
+            dateFormat.format(Date(ClockGuard.effectiveNowMs(context))),
+            if (tamperActive) LossRed else MaterialTheme.colorScheme.onSurface
+        )
+        if (clockTamperStatus.lastTrustedServerMs > 0L) {
+            DiagnosticKeyValueRow(
+                "Last Server Time Anchor",
+                dateFormat.format(Date(clockTamperStatus.lastTrustedServerMs)),
+                Color(0xFF0284C7)
+            )
+        }
         val hlcNow = HlcClock.current()
         DiagnosticKeyValueRow(
             "HLC Logical Clock",
@@ -424,9 +490,109 @@ private fun SecurityPostureTab(
         )
         DiagnosticKeyValueRow(
             "Root / Hooking Checks",
-            "Rooted: ${integrity.isRooted} \u2022 Hooking: ${integrity.hasHookingFramework}",
+            "Rooted: ${integrity.isRooted} • Hooking: ${integrity.hasHookingFramework}",
             if (hasRisk) LossRed else ProfitGreen
         )
+
+        if (clockTamperStatus.recentIncidents.isNotEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = LossRed.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, LossRed.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Recent ClockGuard Tamper Incidents", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = LossRed)
+                    clockTamperStatus.recentIncidents.take(4).forEach { incident ->
+                        Text("• $incident", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            }
+        }
+
+        // Foreground Location Telemetry Card
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Branch Foreground Location Telemetry", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    text = if (capturedLocation.isAvailable) {
+                        "${capturedLocation.compactLabel()} • ±${capturedLocation.accuracyMeters.toInt()}m (${capturedLocation.provider})"
+                    } else {
+                        "Location not captured yet. Grant foreground Location permission and tap Capture GPS."
+                    },
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = onCaptureLocation,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .testTag("diagnostics_capture_gps_btn"),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Capture GPS Coordinates Now", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // Active Hardware & Permission Access Card
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Real Device Permission Accesses", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Camera Scanner: ${if (PermissionManager.hasCameraPermission(context)) "GRANTED" else "NOT GRANTED"} • " +
+                        "Contacts Picker: ${if (PermissionManager.hasContactsPermission(context)) "GRANTED" else "NOT GRANTED"}\n" +
+                        "Foreground GPS: ${if (PermissionManager.hasLocationPermission(context)) "GRANTED" else "NOT GRANTED"} • " +
+                        "Notifications: ${if (PermissionManager.hasNotificationPermission(context)) "GRANTED" else "NOT GRANTED"}",
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Outbound Messages & WhatsApp Dispatch Audit
+        val smsCount = messageRecords.count { it.channel == "SMS" }
+        val waCount = messageRecords.count { it.channel == "WHATSAPP" }
+        val cardCount = messageRecords.count { it.channel == "SHARE_CARD" }
+        val unsyncedMsgs = messageRecords.count { !it.syncedToCloud }
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "Outbound Message Dispatch Log (${messageRecords.size})",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "SMS: $smsCount • WhatsApp: $waCount • Branded Cards: $cardCount • Pending Cloud Sync: $unsyncedMsgs",
+                    fontSize = 11.sp,
+                    color = if (unsyncedMsgs > 0) OrangePrimary else ProfitGreen,
+                    fontWeight = FontWeight.SemiBold
+                )
+                messageRecords.take(3).forEach { rec ->
+                    Text(
+                        text = "• [${rec.channel}/${rec.messageType}] ${rec.recipient}: ${rec.preview}",
+                        fontSize = 10.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),

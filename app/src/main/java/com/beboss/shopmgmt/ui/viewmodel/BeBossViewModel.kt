@@ -29,6 +29,7 @@ import com.beboss.shopmgmt.data.model.StockTransfer
 import com.beboss.shopmgmt.data.model.TopProductReport
 import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.data.repository.BeBossRepository
+import com.beboss.shopmgmt.ui.components.BlurLoadingUiState
 import com.beboss.shopmgmt.ui.viewmodel.coordinators.AdminConsoleCoordinator
 import com.beboss.shopmgmt.ui.viewmodel.coordinators.AuthSessionCoordinator
 import com.beboss.shopmgmt.ui.viewmodel.coordinators.DatabaseMaintenanceCoordinator
@@ -38,11 +39,17 @@ import com.beboss.shopmgmt.util.AdminPaymentConfig
 import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.BeBossLogger
 import com.beboss.shopmgmt.util.BeBossNotificationManager
+import com.beboss.shopmgmt.util.CapturedLocation
+import com.beboss.shopmgmt.util.ClockGuard
+import com.beboss.shopmgmt.util.ClockTamperStatus
 import com.beboss.shopmgmt.util.CloudSyncReport
 import com.beboss.shopmgmt.util.ConnectivityStatus
 import com.beboss.shopmgmt.util.DeviceIntegrityStatus
 import com.beboss.shopmgmt.util.DeviceSecurityManager
 import com.beboss.shopmgmt.util.EndpointPingResult
+import com.beboss.shopmgmt.util.LocationHelper
+import com.beboss.shopmgmt.util.MessageAuditManager
+import com.beboss.shopmgmt.util.MessageDispatchRecord
 import com.beboss.shopmgmt.util.NetworkConnectivityObserver
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
 import com.beboss.shopmgmt.util.PaymentProcessingResult
@@ -74,8 +81,10 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 
 enum class AppScreen(val stringKey: String, val title: String) {
     DASHBOARD("dashboard", "Dashboard"),
@@ -175,6 +184,14 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     private val _deviceIntegrityStatus = MutableStateFlow(DeviceIntegrityStatus(isCompromisedRisk = false))
     val deviceIntegrityStatus: StateFlow<DeviceIntegrityStatus> = _deviceIntegrityStatus.asStateFlow()
 
+    val clockTamperStatus: StateFlow<ClockTamperStatus> = ClockGuard.tamperStatus
+    val lastCapturedLocation: StateFlow<CapturedLocation> = LocationHelper.lastLocation
+    val messageDispatchRecords: StateFlow<List<MessageDispatchRecord>> = MessageAuditManager.records
+
+    private val _blurLoadingState = MutableStateFlow(BlurLoadingUiState())
+    val blurLoadingState: StateFlow<BlurLoadingUiState> = _blurLoadingState.asStateFlow()
+    private val blurToken = AtomicLong(0L)
+
     private var idleLockJob: Job? = null
     private val _idleLockMinutes = MutableStateFlow(prefs.getInt("idle_lock_minutes", 5).coerceIn(1, 60))
     val idleLockMinutes: StateFlow<Int> = _idleLockMinutes.asStateFlow()
@@ -182,7 +199,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     private val _snackbarMessage = MutableSharedFlow<String>()
     val snackbarMessage: SharedFlow<String> = _snackbarMessage.asSharedFlow()
 
-    // Language & Theme State (EN / RW / FR / SW Ã¢â‚¬â€ 100% local offline translations)
+    // Language & Theme State (EN / RW / FR / SW — 100% local offline translations)
     private val _currentLanguage = MutableStateFlow(
         AppLanguage.fromCode(prefs.getString("lang", "en"))
     )
@@ -339,6 +356,37 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     val syncAuditLogs: StateFlow<List<SyncAuditLog>> = repository.syncAuditLogs
 
     // ------------------------------------------------------------------------
+    // 2-SECOND BOUNDED BLUR LOADING ENGINE
+    // ------------------------------------------------------------------------
+    fun runWithBlurLoading(
+        title: String = "Processing...",
+        subtitle: String = "Syncing & securing shop records",
+        block: suspend () -> Unit
+    ) {
+        val token = blurToken.incrementAndGet()
+        _blurLoadingState.value = BlurLoadingUiState(
+            isLoading = true,
+            title = title,
+            subtitle = subtitle
+        )
+        viewModelScope.launch {
+            delay(2000L)
+            if (blurToken.get() == token && _blurLoadingState.value.isLoading) {
+                _blurLoadingState.value = BlurLoadingUiState()
+            }
+        }
+        viewModelScope.launch {
+            try {
+                block()
+            } finally {
+                if (blurToken.get() == token) {
+                    _blurLoadingState.value = BlurLoadingUiState()
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------
     // FEATURE COORDINATORS
     // ------------------------------------------------------------------------
     private val authCoordinator = AuthSessionCoordinator(
@@ -361,6 +409,10 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     private lateinit var dbCoordinator: DatabaseMaintenanceCoordinator
 
     init {
+        ClockGuard.init(application)
+        LocationHelper.loadCachedLocation(application)
+        MessageAuditManager.load(application)
+
         syncCoordinator = SyncCoordinator(
             application = application,
             db = db,
@@ -379,7 +431,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
             allCustomerPayments = allCustomerPayments,
             allStockTransfers = allStockTransfers,
             emitSnackbar = { msg -> _snackbarMessage.emit(msg) },
-            syncAdminCloud = { silent -> adminCoordinator.syncAdminDataToSupabaseSuspended(silent) }
+            syncAdminCloud = { silent -> adminCoordinator.syncAdminDataToSupabaseSuspended(silent) },
+            runWithBlurLoading = ::runWithBlurLoading
         )
 
         adminCoordinator = AdminConsoleCoordinator(
@@ -391,7 +444,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
             branches = branches,
             shopProfile = shopProfile,
             emitSnackbar = { msg -> _snackbarMessage.emit(msg) },
-            triggerCloudSync = { syncCoordinator.syncToCloudNow() }
+            triggerCloudSync = { syncCoordinator.syncToCloudNow() },
+            runWithBlurLoading = ::runWithBlurLoading
         )
 
         posCoordinator = PosCartCoordinator(
@@ -407,7 +461,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
             todaySummary = todaySummary,
             lowStockProducts = lowStockProducts,
             emitSnackbar = { msg -> _snackbarMessage.emit(msg) },
-            onMutationSuccess = { syncCoordinator.scheduleAutoBranchSync() }
+            onMutationSuccess = { syncCoordinator.scheduleAutoBranchSync() },
+            runWithBlurLoading = ::runWithBlurLoading
         )
 
         dbCoordinator = DatabaseMaintenanceCoordinator(
@@ -432,22 +487,105 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             try {
-                val integrity = DeviceSecurityManager.inspectDeviceIntegrity()
-                _deviceIntegrityStatus.value = integrity
-                if (integrity.isCompromisedRisk) {
-                    repository.recordLocalAudit(
-                        actorName = "System",
-                        actorRole = "SECURITY",
-                        action = "DEVICE_INTEGRITY_WARNING",
-                        targetId = deviceId,
-                        details = integrity.signals.joinToString("; ")
-                    )
-                }
+                reInspectSecurityPostureInternal(syncTrustedTime = false)
             } catch (e: Exception) {
                 BeBossLogger.w("BeBossStartup", "Device integrity check skipped: ${e.message}")
             }
         }
         onUserInteraction()
+    }
+
+    private suspend fun reInspectSecurityPostureInternal(syncTrustedTime: Boolean): Pair<DeviceIntegrityStatus, ClockTamperStatus> {
+        val app = getApplication<Application>()
+        if (syncTrustedTime && SupabaseAdminClient.isConfigured()) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val cfg = SupabaseAdminClient.fetchPublicAppConfig()
+                    if (cfg != null && cfg.updatedAt > 1_700_000_000_000L) {
+                        ClockGuard.observeTrustedEpoch(cfg.updatedAt, app)
+                    }
+                    val serverMs = ClockGuard.tamperStatus.value.lastTrustedServerMs
+                    if (serverMs > 0L) {
+                        ClockGuard.clearRollbackAfterTrustedSync(app, serverMs)
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+        val clockStatus = ClockGuard.reInspectNow(app)
+        val integrity = DeviceSecurityManager.inspectDeviceIntegrity(app)
+        _deviceIntegrityStatus.value = integrity
+        if (integrity.isCompromisedRisk || clockStatus.rollbackDetected || clockStatus.activeTamperLock) {
+            val detailsText = if (clockStatus.reason.isNotBlank()) {
+                "${clockStatus.reason} (${integrity.signals.joinToString("; ")})"
+            } else {
+                integrity.signals.joinToString("; ").ifBlank { integrity.postureLabel }
+            }
+            try {
+                repository.recordLocalAudit(
+                    actorName = "System",
+                    actorRole = "SECURITY",
+                    action = if (clockStatus.rollbackDetected || clockStatus.activeTamperLock) {
+                        "CLOCK_ROLLBACK_TAMPER_DETECTED"
+                    } else {
+                        "DEVICE_INTEGRITY_WARNING"
+                    },
+                    targetId = deviceId,
+                    details = detailsText
+                )
+            } catch (_: Throwable) {}
+            BeBossNotificationManager.sendSecurityTamperNotification(
+                context = app,
+                title = if (clockStatus.rollbackDetected || clockStatus.activeTamperLock) {
+                    "Device Clock Rollback Detected"
+                } else {
+                    "Security Shield Warning"
+                },
+                details = detailsText
+            )
+        }
+        return integrity to clockStatus
+    }
+
+    fun onAppResumedSecurityCheck() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                reInspectSecurityPostureInternal(syncTrustedTime = false)
+            } catch (_: Throwable) {}
+        }
+    }
+
+    fun reInspectSecurityPosture(syncTrustedTime: Boolean = false) {
+        runWithBlurLoading(
+            title = "Inspecting Anti-Tamper Shield...",
+            subtitle = "Verifying monotonic clock, keystore & device posture"
+        ) {
+            val (integrity, clock) = reInspectSecurityPostureInternal(syncTrustedTime = syncTrustedTime)
+            val msg = if (clock.rollbackDetected || clock.activeTamperLock) {
+                "Anti-Tamper Shield ALERT: ${clock.reason.ifBlank { "Clock rollback detected" }} (Risk ${integrity.riskScore}/100)"
+            } else if (integrity.isCompromisedRisk) {
+                "Security Shield Warning: ${integrity.postureLabel} (Risk ${integrity.riskScore}/100)"
+            } else {
+                "Anti-Tamper Shield Verified: No rollback or tamper signals (Risk ${integrity.riskScore}/100)"
+            }
+            _snackbarMessage.emit(msg)
+        }
+    }
+
+    fun captureCurrentLocationNow() {
+        runWithBlurLoading(
+            title = "Capturing Branch GPS...",
+            subtitle = "Reading foreground location & geocoding address"
+        ) {
+            val app = getApplication<Application>()
+            val loc = LocationHelper.captureCurrentLocation(app)
+            if (loc != null && loc.isAvailable) {
+                _snackbarMessage.emit("Branch GPS captured: ${loc.compactLabel()}")
+            } else if (!LocationHelper.hasForegroundLocationPermission(app)) {
+                _snackbarMessage.emit("Grant foreground Location permission in Settings to capture branch GPS.")
+            } else {
+                _snackbarMessage.emit("Unable to obtain GPS fix yet — ensure device Location is enabled.")
+            }
+        }
     }
 
     fun onUserInteraction() {
@@ -590,7 +728,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         branch: Branch?,
         onCreated: (ShopDevice) -> Unit = {}
     ) {
-        viewModelScope.launch {
+        runWithBlurLoading("Registering Terminal...", "Pairing shop device & updating cloud quota") {
             try {
                 val created = repository.addSecondaryShopDevice(
                     deviceName = deviceName,
@@ -601,7 +739,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit(
-                    "Added device '${created.deviceName}' (Join Code: ${created.joinCode} Ã¢â‚¬Â¢ +2,000 FRw/mo)"
+                    "Added device '${created.deviceName}' (Join Code: ${created.joinCode} • +2,000 FRw/mo)"
                 )
                 onCreated(created)
             } catch (e: SecurityException) {
@@ -613,7 +751,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun toggleShopDeviceActive(deviceId: String, isActive: Boolean) {
-        viewModelScope.launch {
+        runWithBlurLoading("Updating Terminal...", "Applying device activation status") {
             try {
                 repository.toggleShopDeviceActive(
                     deviceId,
@@ -635,7 +773,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun deleteShopDevice(deviceId: String) {
-        viewModelScope.launch {
+        runWithBlurLoading("Removing Terminal...", "Revoking device pairing") {
             try {
                 repository.deleteShopDevice(deviceId, actor = currentUser.value, actorDeviceId = this@BeBossViewModel.deviceId)
                 scheduleAutoBranchSync()
@@ -794,7 +932,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     // BRANCH, STAFF, PRODUCT, PURCHASE, CUSTOMER MUTATIONS
     // ------------------------------------------------------------------------
     fun saveBranch(branch: Branch) {
-        viewModelScope.launch {
+        runWithBlurLoading("Saving Branch...", "Updating multi-branch structure & pricing") {
             try {
                 repository.saveBranch(branch, actor = currentUser.value)
                 val allBranches = db.branchDao().getAllActiveBranchesList()
@@ -825,7 +963,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun deleteBranch(branchId: String) {
-        viewModelScope.launch {
+        runWithBlurLoading("Removing Branch...", "Updating branch directory") {
             try {
                 repository.deleteBranch(branchId, actor = currentUser.value)
                 val allBranches = db.branchDao().getAllActiveBranchesList()
@@ -864,7 +1002,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         quantity: Double,
         notes: String = ""
     ) {
-        viewModelScope.launch {
+        runWithBlurLoading("Transferring Stock...", "Moving inventory to $toBranchName") {
             try {
                 val user = currentUser.value
                 val transfer = repository.createStockTransfer(
@@ -899,12 +1037,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun confirmTransferReceived(transferId: String) {
-        viewModelScope.launch {
+        runWithBlurLoading("Confirming Transfer...", "Crediting destination branch inventory") {
             try {
                 val user = currentUser.value
                 repository.confirmTransferReceived(transferId, user?.name ?: "Store Manager")
                 scheduleAutoBranchSync()
-                _snackbarMessage.emit("Transfer confirmed received Ã¢â‚¬â€ destination stock credited.")
+                _snackbarMessage.emit("Transfer confirmed received — destination stock credited.")
             } catch (e: Exception) {
                 _snackbarMessage.emit("Confirm received error: ${e.message}")
             }
@@ -924,7 +1062,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun saveUser(user: User) {
-        viewModelScope.launch {
+        runWithBlurLoading("Saving Staff Member...", "Updating role permissions & cloud roster") {
             try {
                 repository.saveUser(user, actor = currentUser.value)
                 val allBranches = db.branchDao().getAllActiveBranchesList()
@@ -959,11 +1097,11 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun deleteUser(userId: String) {
-        viewModelScope.launch {
+        runWithBlurLoading("Removing Staff...", "Updating branch roster & security access") {
             try {
                 if (currentUser.value?.id == userId) {
                     _snackbarMessage.emit("Cannot delete the currently active account.")
-                    return@launch
+                    return@runWithBlurLoading
                 }
                 repository.deleteUser(userId, actor = currentUser.value)
                 val allBranches = db.branchDao().getAllActiveBranchesList()
@@ -1010,7 +1148,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun saveProduct(product: Product) {
-        viewModelScope.launch {
+        runWithBlurLoading("Saving Product...", "Updating inventory catalog & sync queue") {
             try {
                 repository.saveProduct(product, actor = currentUser.value)
                 scheduleAutoBranchSync()
@@ -1027,7 +1165,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun adjustStock(productId: String, delta: Double, reason: String) {
-        viewModelScope.launch {
+        runWithBlurLoading("Adjusting Stock...", "Updating audited stock ledger") {
             try {
                 repository.adjustStock(productId, delta, reason, actor = currentUser.value)
                 scheduleAutoBranchSync()
@@ -1044,7 +1182,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun deleteProduct(productId: String) {
-        viewModelScope.launch {
+        runWithBlurLoading("Deleting Product...", "Updating catalog & tombstones") {
             try {
                 repository.deleteProduct(productId, actor = currentUser.value)
                 scheduleAutoBranchSync()
@@ -1085,7 +1223,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         invoiceNumber: String = "",
         notes: String = ""
     ) {
-        viewModelScope.launch {
+        runWithBlurLoading("Recording Purchase...", "Crediting stock & Excel purchase ledger") {
             val user = currentUser.value
             val branch = branches.value.firstOrNull { it.id == _selectedBranchId.value }
                 ?: branches.value.firstOrNull { it.isMainBranch }
@@ -1121,7 +1259,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         unitCost: Double,
         supplierName: String
     ) {
-        viewModelScope.launch {
+        runWithBlurLoading("Quick Restocking...", "Updating inventory & adding to cart") {
             val user = currentUser.value
             val branch = branches.value.firstOrNull { it.id == _selectedBranchId.value }
                 ?: branches.value.firstOrNull { it.isMainBranch }
@@ -1167,7 +1305,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun saveCustomer(customer: Customer) {
-        viewModelScope.launch {
+        runWithBlurLoading("Saving Customer...", "Updating CRM & credit ledger") {
             try {
                 repository.saveCustomer(customer, actor = currentUser.value)
                 scheduleAutoBranchSync()
@@ -1189,7 +1327,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         paymentMethod: String = "Cash",
         notes: String = ""
     ) {
-        viewModelScope.launch {
+        runWithBlurLoading("Recording Repayment...", "Updating customer balance & receipt log") {
             try {
                 val user = currentUser.value
                 val branch = branches.value.firstOrNull { it.id == _selectedBranchId.value }
@@ -1242,7 +1380,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun deleteCustomer(customerId: String) {
-        viewModelScope.launch {
+        runWithBlurLoading("Removing Customer...", "Updating customer directory") {
             try {
                 repository.deleteCustomer(customerId, actor = currentUser.value)
                 scheduleAutoBranchSync()
@@ -1273,7 +1411,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun deleteSale(saleId: String, refundReason: String = "") {
-        viewModelScope.launch {
+        runWithBlurLoading("Voiding Sale...", "Restoring stock & recording security audit") {
             try {
                 val saleSnapshot = allSales.value.firstOrNull { it.id == saleId }
                 repository.deleteSale(saleId, actor = currentUser.value)
@@ -1288,7 +1426,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                             append(" (${saleSnapshot.totalAmount.toLong()} ${shopProfile.value.currencySymbol})")
                         }
                         if (refundReason.isNotBlank()) {
-                            append(" Ã¢â‚¬Â¢ Reason: ${refundReason.trim()}")
+                            append(" • Reason: ${refundReason.trim()}")
                         }
                     }
                 )
@@ -1311,7 +1449,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun updateShopProfile(profile: ShopProfile) {
-        viewModelScope.launch {
+        runWithBlurLoading("Saving Shop Settings...", "Updating receipt branding & cloud profile") {
             repository.updateShopProfile(profile)
             scheduleAutoBranchSync()
             val msg = if (_currentLanguage.value == AppLanguage.KINYARWANDA)

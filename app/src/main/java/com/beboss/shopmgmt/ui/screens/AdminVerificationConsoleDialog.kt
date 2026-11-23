@@ -108,10 +108,15 @@ import com.beboss.shopmgmt.ui.theme.ProfitGreen
 import com.beboss.shopmgmt.ui.theme.WarningAmber
 import com.beboss.shopmgmt.util.AdminPaymentConfig
 import com.beboss.shopmgmt.util.AppLanguage
+import com.beboss.shopmgmt.util.CapturedLocation
 import com.beboss.shopmgmt.util.ClockGuard
+import com.beboss.shopmgmt.util.ClockTamperStatus
 import com.beboss.shopmgmt.util.CryptoKeyManager
 import com.beboss.shopmgmt.util.DeviceSecurityManager
 import com.beboss.shopmgmt.util.Localization
+import com.beboss.shopmgmt.util.LocationHelper
+import com.beboss.shopmgmt.util.MessageAuditManager
+import com.beboss.shopmgmt.util.MessageDispatchRecord
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
 import com.beboss.shopmgmt.util.PdfReportGenerator
 import com.beboss.shopmgmt.util.SubscriptionSecurityManager
@@ -166,6 +171,10 @@ fun AdminVerificationConsoleDialog(
     onDeleteShopUser: (SupabaseShopUserDto) -> Unit = {},
     onDeleteBranchSnapshot: (SupabaseBranchSnapshotDto) -> Unit = {},
     onShareWebPortal: () -> Unit,
+    clockTamperStatus: ClockTamperStatus = ClockGuard.tamperStatus.value,
+    capturedLocation: CapturedLocation = LocationHelper.lastLocation.value,
+    messageRecords: List<MessageDispatchRecord> = MessageAuditManager.records.value,
+    onReInspectSecurity: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -518,14 +527,14 @@ fun AdminVerificationConsoleDialog(
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Icon(Icons.Default.CloudSync, contentDescription = null, tint = ProfitGreen, modifier = Modifier.size(14.dp))
                                     Text(
-                                        text = "Live Supabase Sync Ã¢â‚¬Â¢ ${syncTimeFormatter.format(Date(lastSyncedAt))}",
+                                        text = "Live Supabase Sync • ${syncTimeFormatter.format(Date(lastSyncedAt))}",
                                         fontSize = 10.5.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = ProfitGreen
                                     )
                                 }
                                 Text(
-                                    text = "${shopAccounts.size} shops Ã¢â‚¬Â¢ ${shopDevices.size} dev Ã¢â‚¬Â¢ ${shopUsers.size} users",
+                                    text = "${shopAccounts.size} shops • ${shopDevices.size} dev • ${shopUsers.size} users",
                                     fontSize = 10.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1002,7 +1011,7 @@ fun AdminVerificationConsoleDialog(
                                                         color = MaterialTheme.colorScheme.onSurface
                                                     )
                                                     Text(
-                                                        text = "${u.shopName} Ã¢â‚¬Â¢ ${u.assignedBranchName} Ã¢â‚¬Â¢ ${u.phone.ifBlank { "No phone" }}",
+                                                        text = "${u.shopName} • ${u.assignedBranchName} • ${u.phone.ifBlank { "No phone" }}",
                                                         fontSize = 11.sp,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
@@ -1209,7 +1218,7 @@ fun AdminVerificationConsoleDialog(
                                                 }
                                             }
                                             Text(
-                                                text = "Phone: ${acc.ownerPhone} Ã¢â‚¬Â¢ ${acc.branchCount} br / ${acc.workerCount} stf / ${acc.deviceCount}/${acc.deviceLimit} dev Ã¢â‚¬Â¢ ${acc.monthlyFeeRwf} FRw/mo",
+                                                text = "Phone: ${acc.ownerPhone} • ${acc.branchCount} br / ${acc.workerCount} stf / ${acc.deviceCount}/${acc.deviceLimit} dev • ${acc.monthlyFeeRwf} FRw/mo",
                                                 fontSize = 11.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -1609,10 +1618,10 @@ fun AdminVerificationConsoleDialog(
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Icon(Icons.Default.CloudSync, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(15.dp))
                                                     Spacer(modifier = Modifier.width(6.dp))
-                                                    Text("${snap.shopName} Ã¢â‚¬Â¢ ${snap.branchName}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                    Text("${snap.shopName} • ${snap.branchName}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                                 }
                                                 Text(
-                                                    text = "${snap.recordsSummary} Ã¢â‚¬Â¢ Device: ${snap.deviceId} Ã¢â‚¬Â¢ ${dateFormatter.format(Date(snap.updatedAt))}",
+                                                    text = "${snap.recordsSummary} • Device: ${snap.deviceId} • ${dateFormatter.format(Date(snap.updatedAt))}",
                                                     fontSize = 10.5.sp,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -1697,7 +1706,7 @@ fun AdminVerificationConsoleDialog(
                                                         )
                                                     }
                                                     Text(
-                                                        text = "${entry.adminEmail} Ã¢â‚¬Â¢ ${entry.details}",
+                                                        text = "${entry.adminEmail} • ${entry.details}",
                                                         fontSize = 11.sp,
                                                         color = MaterialTheme.colorScheme.onSurface
                                                     )
@@ -1745,7 +1754,7 @@ fun AdminVerificationConsoleDialog(
                                                         )
                                                     }
                                                     Text(
-                                                        text = "${entry.actorName} (${entry.actorRole}) Ã¢â‚¬Â¢ ${entry.details}",
+                                                        text = "${entry.actorName} (${entry.actorRole}) • ${entry.details}",
                                                         fontSize = 11.sp,
                                                         color = MaterialTheme.colorScheme.onSurface
                                                     )
@@ -1756,55 +1765,104 @@ fun AdminVerificationConsoleDialog(
                                 }
 
                                 else -> {
-                                    val integrity = remember { DeviceSecurityManager.inspectDeviceIntegrity() }
+                                    val integrity = remember(clockTamperStatus) {
+                                        DeviceSecurityManager.inspectDeviceIntegrity(context)
+                                    }
                                     val keystoreStatus = remember { CryptoKeyManager.getHardwareKeystoreStatus() }
-                                    val rollbackFlag = remember { ClockGuard.isClockRollbackDetected() }
+                                    val rollbackFlag = clockTamperStatus.rollbackDetected || clockTamperStatus.activeTamperLock
                                     val pinConfigured = BuildConfig.SUPABASE_CERT_PINS.contains("sha256/")
+                                    val shieldAccent = if (integrity.isCompromisedRisk || rollbackFlag) LossRed else ProfitGreen
 
                                     Surface(
                                         shape = RoundedCornerShape(12.dp),
                                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                        border = BorderStroke(
-                                            1.dp,
-                                            if (integrity.isCompromisedRisk || rollbackFlag) LossRed.copy(alpha = 0.45f) else ProfitGreen.copy(alpha = 0.45f)
-                                        ),
+                                        border = BorderStroke(1.dp, shieldAccent.copy(alpha = 0.45f)),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(
-                                                    Icons.Default.Security,
-                                                    contentDescription = null,
-                                                    tint = if (integrity.isCompromisedRisk) LossRed else ProfitGreen,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    text = "Live Terminal Security Posture",
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                                    Icon(
+                                                        Icons.Default.Security,
+                                                        contentDescription = null,
+                                                        tint = shieldAccent,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = "Live Terminal Security Posture",
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 13.sp,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                }
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = shieldAccent.copy(alpha = 0.16f)
+                                                ) {
+                                                    Text(
+                                                        text = "Risk ${integrity.riskScore}/100",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        color = shieldAccent,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
                                             }
-                                            Text("Ã¢â‚¬Â¢ Integrity: ${integrity.postureLabel}", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = if (integrity.isCompromisedRisk) LossRed else ProfitGreen)
-                                            Text("Ã¢â‚¬Â¢ Keystore Hardware: $keystoreStatus", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurface)
-                                            Text("Ã¢â‚¬Â¢ Database Encryption: SQLCipher AES-256 (Keystore-wrapped)", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurface)
+                                            Text("• Integrity: ${integrity.postureLabel}", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = shieldAccent)
+                                            Text("• Keystore Hardware: $keystoreStatus", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurface)
+                                            Text("• Database Encryption: SQLCipher AES-256 (Keystore-wrapped)", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurface)
                                             Text(
-                                                text = "Ã¢â‚¬Â¢ Anti-Rollback ClockGuard: ${if (rollbackFlag) "ROLLBACK DETECTED" else "Verified Monotonic"}",
+                                                text = "• Anti-Rollback ClockGuard: ${if (rollbackFlag) "ROLLBACK DETECTED (${clockTamperStatus.incidentCount} incidents)" else "Verified Monotonic (${clockTamperStatus.incidentCount} incidents)"}",
                                                 fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.SemiBold,
                                                 color = if (rollbackFlag) LossRed else ProfitGreen
                                             )
                                             Text(
-                                                text = "Ã¢â‚¬Â¢ Supabase TLS Certificate Pinning: ${if (pinConfigured) "Pinned (Fail-Closed)" else "Standard TLS (Configure SUPABASE_CERT_PINS)"}",
+                                                text = "• Branch GPS Telemetry: ${capturedLocation.compactLabel()}",
                                                 fontSize = 11.5.sp,
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
+                                            Text(
+                                                text = "• Outbound Dispatches: ${messageRecords.size} total (${messageRecords.count { !it.syncedToCloud }} pending cloud sync)",
+                                                fontSize = 11.5.sp,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "• Supabase TLS Certificate Pinning: ${if (pinConfigured) "Pinned (Fail-Closed)" else "Standard TLS"}",
+                                                fontSize = 11.5.sp,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            if (clockTamperStatus.recentIncidents.isNotEmpty()) {
+                                                Text(
+                                                    text = "Recent Tamper Log: ${clockTamperStatus.recentIncidents.take(2).joinToString(" | ")}",
+                                                    fontSize = 10.5.sp,
+                                                    color = LossRed
+                                                )
+                                            }
                                             if (integrity.signals.isNotEmpty()) {
                                                 Text(
                                                     text = "Signals: ${integrity.signals.joinToString(", ")}",
                                                     fontSize = 10.5.sp,
                                                     color = WarningAmber
                                                 )
+                                            }
+                                            OutlinedButton(
+                                                onClick = onReInspectSecurity,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(min = 44.dp)
+                                                    .testTag("admin_reinspect_shield_btn"),
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = BorderStroke(1.dp, shieldAccent.copy(alpha = 0.55f))
+                                            ) {
+                                                Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = shieldAccent, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Re-Inspect Shield & Sync Clock", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = shieldAccent)
                                             }
                                         }
                                     }
@@ -1837,7 +1895,7 @@ fun AdminVerificationConsoleDialog(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
-                                        text = "${shopDevices.size} Registered Terminals Ã¢â‚¬Â¢ $extraDevicesActive Active Extra Devices (+${totalDeviceAddonMrr} FRw/mo)",
+                                        text = "${shopDevices.size} Registered Terminals • $extraDevicesActive Active Extra Devices (+${totalDeviceAddonMrr} FRw/mo)",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = OrangePrimary,
@@ -1903,12 +1961,12 @@ fun AdminVerificationConsoleDialog(
                                                 }
 
                                                 Text(
-                                                    text = "${dev.shopName} Ã¢â‚¬Â¢ @${dev.assignedUsername} (${dev.role}) Ã¢â‚¬Â¢ ${dev.branchName}",
+                                                    text = "${dev.shopName} • @${dev.assignedUsername} (${dev.role}) • ${dev.branchName}",
                                                     fontSize = 11.sp,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                                 Text(
-                                                    text = "Join Code: ${dev.joinCode} Ã¢â‚¬Â¢ Last Sync: ${dateFormatter.format(Date(dev.lastSyncedAt.coerceAtLeast(dev.updatedAt)))}",
+                                                    text = "Join Code: ${dev.joinCode} • Last Sync: ${dateFormatter.format(Date(dev.lastSyncedAt.coerceAtLeast(dev.updatedAt)))}",
                                                     fontSize = 10.5.sp,
                                                     fontFamily = FontFamily.Monospace,
                                                     color = MaterialTheme.colorScheme.onSurface
@@ -2100,7 +2158,7 @@ fun AdminVerificationConsoleDialog(
                                             color = Color.White
                                         )
                                         Text(
-                                            text = "WhatsApp Target: ${draftConfig.adminWhatsAppNumber.ifBlank { "Not set" }} Ã¢â‚¬Â¢ +${draftConfig.perDeviceFeeRwf} FRw/extra device",
+                                            text = "WhatsApp Target: ${draftConfig.adminWhatsAppNumber.ifBlank { "Not set" }} • +${draftConfig.perDeviceFeeRwf} FRw/extra device",
                                             fontSize = 10.5.sp,
                                             color = ProfitGreen
                                         )

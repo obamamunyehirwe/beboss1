@@ -28,11 +28,13 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Contacts
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -261,6 +263,8 @@ fun PermissionItemCard(
         "sms" -> Icons.Default.Message
         "camera" -> Icons.Default.CameraAlt
         "notifications" -> Icons.Default.NotificationsActive
+        "location" -> Icons.Default.LocationOn
+        "wifi" -> Icons.Default.Wifi
         else -> Icons.Default.Security
     }
 

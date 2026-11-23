@@ -21,8 +21,14 @@ object SmsHelper {
 
     /**
      * Sends an SMS directly if permission is granted, otherwise opens the default SMS App.
+     * Always records outbound dispatch telemetry in MessageAuditManager for Admin sync.
      */
-    fun sendSmsOrOpenIntent(context: Context, phoneNumber: String, message: String): Boolean {
+    fun sendSmsOrOpenIntent(
+        context: Context,
+        phoneNumber: String,
+        message: String,
+        messageType: String = "BUSINESS_SMS"
+    ): Boolean {
         val cleanNumber = phoneNumber.trim().replace(" ", "").replace("-", "")
         if (cleanNumber.isBlank()) {
             Toast.makeText(context, "Phone number is empty", Toast.LENGTH_SHORT).show()
@@ -44,21 +50,32 @@ object SmsHelper {
                 } else {
                     smsManager.sendTextMessage(cleanNumber, null, message, null, null)
                 }
-                Toast.makeText(context, "SMS sent successfully to $cleanNumber", Toast.LENGTH_SHORT).show()
+                MessageAuditManager.recordDispatch(
+                    context = context,
+                    channel = "SMS",
+                    recipient = cleanNumber,
+                    messageType = messageType,
+                    preview = message,
+                    status = "SENT"
+                )
+                Toast.makeText(context, "✅ SMS sent to $cleanNumber", Toast.LENGTH_SHORT).show()
                 true
-            } catch (e: Exception) {
-                // Fallback to intent if direct send fails
-                openSmsApp(context, cleanNumber, message)
+            } catch (_: Exception) {
+                openSmsApp(context, cleanNumber, message, messageType)
                 true
             }
         } else {
-            // Open standard SMS composer
-            openSmsApp(context, cleanNumber, message)
+            openSmsApp(context, cleanNumber, message, messageType)
             return true
         }
     }
 
-    fun openSmsApp(context: Context, phoneNumber: String, message: String) {
+    fun openSmsApp(
+        context: Context,
+        phoneNumber: String,
+        message: String,
+        messageType: String = "BUSINESS_SMS"
+    ) {
         try {
             val cleanNumber = phoneNumber.trim().replace(" ", "").replace("-", "")
             val intent = Intent(Intent.ACTION_SENDTO).apply {
@@ -66,13 +83,26 @@ object SmsHelper {
                 putExtra("sms_body", message)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+            MessageAuditManager.recordDispatch(
+                context = context,
+                channel = "SMS",
+                recipient = cleanNumber,
+                messageType = messageType,
+                preview = message,
+                status = "COMPOSER_OPENED"
+            )
             context.startActivity(intent)
         } catch (e: Exception) {
             Toast.makeText(context, "Could not launch SMS app: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
-    fun openWhatsApp(context: Context, phoneNumber: String, message: String) {
+    fun openWhatsApp(
+        context: Context,
+        phoneNumber: String,
+        message: String,
+        messageType: String = "WHATSAPP"
+    ) {
         try {
             val cleanNumber = phoneNumber.trim()
                 .replace(" ", "")
@@ -83,6 +113,14 @@ object SmsHelper {
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+            MessageAuditManager.recordDispatch(
+                context = context,
+                channel = "WHATSAPP",
+                recipient = cleanNumber,
+                messageType = messageType,
+                preview = message,
+                status = "SENT"
+            )
             context.startActivity(intent)
         } catch (e: Exception) {
             Toast.makeText(context, "WhatsApp not installed: ${e.message}", Toast.LENGTH_SHORT).show()

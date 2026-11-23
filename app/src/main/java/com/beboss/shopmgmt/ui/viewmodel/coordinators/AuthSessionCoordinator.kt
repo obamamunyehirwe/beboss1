@@ -199,7 +199,7 @@ class AuthSessionCoordinator(
                 _isRegistrationNeeded.value = false
                 _isLocked.value = false
                 _authError.value = null
-                emitSnackbar("${shopName.trim()} Ã¢â‚¬â€ ${Localization.get("reg_success_trial", language.value)}")
+                emitSnackbar("${shopName.trim()} — ${Localization.get("reg_success_trial", language.value)}")
 
                 // Immediately enqueue WorkManager (runs when internet connects) and push now if online
                 com.beboss.shopmgmt.util.CloudSyncScheduler.enqueueImmediateSync(application)
@@ -512,7 +512,7 @@ class AuthSessionCoordinator(
         _isLocked.value = true
         _authError.value = null
         scope.launch {
-            emitSnackbar("${user.name} Ã¢â‚¬â€ ${Localization.get("selected_operator_pin_prompt", language.value)}")
+            emitSnackbar("${user.name} — ${Localization.get("selected_operator_pin_prompt", language.value)}")
         }
     }
 

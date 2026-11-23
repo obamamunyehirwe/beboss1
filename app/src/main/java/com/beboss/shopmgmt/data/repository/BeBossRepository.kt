@@ -178,11 +178,13 @@ class BeBossRepository(private val database: AppDatabase) {
 
     suspend fun performSync(
         activeBranchId: String = "main_branch",
-        deviceId: String = "DEV-LOCAL"
+        deviceId: String = "DEV-LOCAL",
+        context: Context? = null
     ): CloudSyncReport =
         cloudSyncManager.syncAllDataToCloud(
             activeBranchId = activeBranchId,
             deviceId = deviceId,
+            context = context,
             mergeRemoteSummary = { summary -> mergeShopDataPackageLww(summary) }
         )
 

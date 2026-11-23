@@ -1096,9 +1096,9 @@ object ShopDataTransferManager {
         if (worker.canApplyDiscounts) perms.add("Custom Discounts")
 
         val pinLine = if (!temporaryPlainPin.isNullOrBlank()) {
-            "Ã¢â‚¬Â¢ Initial PIN: *$temporaryPlainPin* (change after first sign-in)"
+            "• Initial PIN: *$temporaryPlainPin* (change after first sign-in)"
         } else {
-            "Ã¢â‚¬Â¢ Terminal PIN: Request your personal PIN directly from your Store Owner"
+            "• Terminal PIN: Request your personal PIN directly from your Store Owner"
         }
 
         return """
@@ -1106,14 +1106,14 @@ object ShopDataTransferManager {
             You have been granted access to *${shopProfile.shopName}* on BeBoss POS!
 
             *Your Access Profile:*
-            Ã¢â‚¬Â¢ Role: ${worker.role.displayName}
-            Ã¢â‚¬Â¢ Username: ${worker.username}
+            • Role: ${worker.role.displayName}
+            • Username: ${worker.username}
             $pinLine
-            Ã¢â‚¬Â¢ Assigned Branch: ${worker.assignedBranchName}
-            Ã¢â‚¬Â¢ Assigned Permissions: ${perms.joinToString(", ")}
+            • Assigned Branch: ${worker.assignedBranchName}
+            • Assigned Permissions: ${perms.joinToString(", ")}
 
             Please keep your credentials private. You can now log in directly on the store terminal.
-            Ã¢â‚¬â€ ${shopProfile.name.ifBlank { "Store Management" }}
+            — ${shopProfile.name.ifBlank { "Store Management" }}
         """.trimIndent()
     }
 
