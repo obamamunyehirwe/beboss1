@@ -6,6 +6,7 @@ import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import com.beboss.shopmgmt.util.safeMessage
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -503,7 +504,7 @@ fun ReceiptDialog(
                         } catch (error: Exception) {
                             Toast.makeText(
                                 context,
-                                "Unable to create the branded receipt. Please retry. " + error.message.orEmpty(),
+                                "Unable to create the branded receipt. Please retry. " + error.safeMessage(""),
                                 Toast.LENGTH_LONG
                             ).show()
                         }
@@ -545,7 +546,7 @@ fun ReceiptDialog(
                             } catch (error: Exception) {
                                 Toast.makeText(
                                     context,
-                                    "Unable to create the branded PDF receipt. Please retry. " + error.message.orEmpty(),
+                                    "Unable to create the branded PDF receipt. Please retry. " + error.safeMessage(""),
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
@@ -694,6 +695,6 @@ private fun printHtmlReceipt(context: Context, htmlContent: String, jobName: Str
         }
         webView.loadDataWithBaseURL(null, htmlContent, "text/html", "UTF-8", null)
     } catch (e: Exception) {
-        Toast.makeText(context, Localization.format("rec_print_err_fmt", language, e.message ?: ""), Toast.LENGTH_LONG).show()
+        Toast.makeText(context, Localization.format("rec_print_err_fmt", language, e.safeMessage()), Toast.LENGTH_LONG).show()
     }
 }

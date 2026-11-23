@@ -2,6 +2,7 @@ package com.beboss.shopmgmt.ui.screens
 
 import android.content.Context
 import android.widget.Toast
+import com.beboss.shopmgmt.util.safeMessage
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -49,13 +50,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.beboss.shopmgmt.data.model.AnalyticsPeriod
+import com.beboss.shopmgmt.data.model.BranchPerformanceMetric
 import com.beboss.shopmgmt.data.model.CategorySalesShare
+import com.beboss.shopmgmt.data.model.CustomerAgingSummary
 import com.beboss.shopmgmt.data.model.DailyAnalyticsPoint
 import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.ProfitLossSummary
+import com.beboss.shopmgmt.data.model.ReorderSuggestion
 import com.beboss.shopmgmt.data.model.ShopProfile
+import com.beboss.shopmgmt.data.model.StaffPerformanceMetric
 import com.beboss.shopmgmt.data.model.TopProductReport
+import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.ui.components.AnalyticsChart
+import com.beboss.shopmgmt.ui.screens.analytics.BranchComparisonSection
+import com.beboss.shopmgmt.ui.screens.analytics.CustomerAgingSection
+import com.beboss.shopmgmt.ui.screens.analytics.SmartReorderSection
+import com.beboss.shopmgmt.ui.screens.analytics.StaffLeaderboardSection
 import com.beboss.shopmgmt.ui.theme.DarkNavy
 import com.beboss.shopmgmt.ui.theme.LossRed
 import com.beboss.shopmgmt.ui.theme.OrangePrimary
@@ -77,9 +87,19 @@ fun AnalyticsScreen(
     categoryShares: List<CategorySalesShare>,
     products: List<Product> = emptyList(),
     shopProfile: ShopProfile,
+    currentUser: User? = null,
+    branchPerformanceMetrics: List<BranchPerformanceMetric> = emptyList(),
+    staffPerformanceMetrics: List<StaffPerformanceMetric> = emptyList(),
+    customerAgingSummary: CustomerAgingSummary = CustomerAgingSummary(),
+    reorderSuggestions: List<ReorderSuggestion> = emptyList(),
     language: AppLanguage = AppLanguage.ENGLISH,
-    onPeriodSelected: (AnalyticsPeriod) -> Unit
+    onPeriodSelected: (AnalyticsPeriod) -> Unit,
+    onCreatePurchaseOrder: (ReorderSuggestion) -> Unit = {},
+    onExportCustomerAgingCsv: () -> Unit = {}
 ) {
+    val canViewProfit = currentUser?.canViewCostAndProfit ?: true
+    val canExport = currentUser?.canExportReports ?: true
+    val canManageInv = currentUser?.canManageInventory ?: true
     val context = LocalContext.current
     val periods = listOf(
         AnalyticsPeriod.TODAY,
@@ -104,27 +124,37 @@ fun AnalyticsScreen(
                     .verticalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Left Column: Controls, Hero P&L, Demand Forecast & Actions
+                // Left Column: Controls, Hero P&L, Branch & Staff BI, Demand Forecast & Actions
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     PeriodSelectorTabs(periods, selectedPeriod, language, onPeriodSelected)
-                    HeroProfitLossCard(summary, shopProfile, language)
+                    HeroProfitLossCard(summary, shopProfile, language, canViewProfit)
+                    if (branchPerformanceMetrics.isNotEmpty()) {
+                        BranchComparisonSection(branchPerformanceMetrics, shopProfile.currencySymbol, canViewProfit)
+                    }
+                    if (staffPerformanceMetrics.isNotEmpty()) {
+                        StaffLeaderboardSection(staffPerformanceMetrics, shopProfile.currencySymbol, canViewProfit)
+                    }
                     DemandForecastCard(selectedPeriod, topProducts, products, shopProfile, language)
-                    ReportExportActionsCard(context, selectedPeriod, summary, topProducts, categoryShares, shopProfile, language)
+                    if (canExport) {
+                        ReportExportActionsCard(context, selectedPeriod, summary, topProducts, categoryShares, shopProfile, language)
+                    }
                 }
 
-                // Right Column: Charts & Detailed Leaderboards
+                // Right Column: Charts, Leaderboards, AR Aging & Smart Reorder
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     AnalyticsChart(points = chartPoints, currencySymbol = shopProfile.currencySymbol, language = language)
-                    TopSellingProductsCard(topProducts, shopProfile, language)
+                    TopSellingProductsCard(topProducts, shopProfile, language, canViewProfit)
                     if (categoryShares.isNotEmpty()) {
                         CategorySalesShareCard(categoryShares, shopProfile, language)
                     }
+                    CustomerAgingSection(customerAgingSummary, shopProfile.currencySymbol, canExport, onExportCustomerAgingCsv)
+                    SmartReorderSection(reorderSuggestions, shopProfile.currencySymbol, canManageInv, onCreatePurchaseOrder)
                 }
             }
         } else {
@@ -135,14 +165,24 @@ fun AnalyticsScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 item { PeriodSelectorTabs(periods, selectedPeriod, language, onPeriodSelected) }
-                item { HeroProfitLossCard(summary, shopProfile, language) }
+                item { HeroProfitLossCard(summary, shopProfile, language, canViewProfit) }
                 item { AnalyticsChart(points = chartPoints, currencySymbol = shopProfile.currencySymbol, language = language) }
-                item { TopSellingProductsCard(topProducts, shopProfile, language) }
+                if (branchPerformanceMetrics.isNotEmpty()) {
+                    item { BranchComparisonSection(branchPerformanceMetrics, shopProfile.currencySymbol, canViewProfit) }
+                }
+                if (staffPerformanceMetrics.isNotEmpty()) {
+                    item { StaffLeaderboardSection(staffPerformanceMetrics, shopProfile.currencySymbol, canViewProfit) }
+                }
+                item { TopSellingProductsCard(topProducts, shopProfile, language, canViewProfit) }
                 if (categoryShares.isNotEmpty()) {
                     item { CategorySalesShareCard(categoryShares, shopProfile, language) }
                 }
+                item { CustomerAgingSection(customerAgingSummary, shopProfile.currencySymbol, canExport, onExportCustomerAgingCsv) }
+                item { SmartReorderSection(reorderSuggestions, shopProfile.currencySymbol, canManageInv, onCreatePurchaseOrder) }
                 item { DemandForecastCard(selectedPeriod, topProducts, products, shopProfile, language) }
-                item { ReportExportActionsCard(context, selectedPeriod, summary, topProducts, categoryShares, shopProfile, language) }
+                if (canExport) {
+                    item { ReportExportActionsCard(context, selectedPeriod, summary, topProducts, categoryShares, shopProfile, language) }
+                }
                 item { Spacer(modifier = Modifier.height(20.dp)) }
             }
         }
@@ -202,7 +242,8 @@ private fun PeriodSelectorTabs(
 private fun HeroProfitLossCard(
     summary: ProfitLossSummary,
     shopProfile: ShopProfile,
-    language: AppLanguage
+    language: AppLanguage,
+    canViewProfit: Boolean = true
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -217,33 +258,35 @@ private fun HeroProfitLossCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = Localization.get("gross_profit", language).uppercase(),
+                    text = if (canViewProfit) Localization.get("gross_profit", language).uppercase() else Localization.get("gross_revenue", language).uppercase(),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     letterSpacing = 1.sp
                 )
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (summary.isProfitable) ProfitGreen.copy(alpha = 0.14f) else LossRed.copy(alpha = 0.14f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                if (canViewProfit) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (summary.isProfitable) ProfitGreen.copy(alpha = 0.14f) else LossRed.copy(alpha = 0.14f)
                     ) {
-                        Icon(
-                            imageVector = if (summary.isProfitable) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                            contentDescription = null,
-                            tint = if (summary.isProfitable) ProfitGreen else LossRed,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = Localization.format("ana_margin_fmt", language, summary.profitMarginPercent.toInt()),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (summary.isProfitable) ProfitGreen else LossRed
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (summary.isProfitable) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                contentDescription = null,
+                                tint = if (summary.isProfitable) ProfitGreen else LossRed,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = Localization.format("ana_margin_fmt", language, summary.profitMarginPercent.toInt()),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (summary.isProfitable) ProfitGreen else LossRed
+                            )
+                        }
                     }
                 }
             }
@@ -251,10 +294,14 @@ private fun HeroProfitLossCard(
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = (if (summary.netProfit >= 0) "+" else "") + ReceiptGenerator.formatMoney(summary.netProfit, shopProfile),
+                text = if (canViewProfit) {
+                    (if (summary.netProfit >= 0) "+" else "") + ReceiptGenerator.formatMoney(summary.netProfit, shopProfile)
+                } else {
+                    ReceiptGenerator.formatMoney(summary.totalRevenue, shopProfile)
+                },
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Black,
-                color = if (summary.isProfitable) ProfitGreen else LossRed
+                color = if (!canViewProfit) OrangePrimary else if (summary.isProfitable) ProfitGreen else LossRed
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -272,7 +319,7 @@ private fun HeroProfitLossCard(
                     )
                     MetricTile(
                         label = Localization.get("cost_of_goods", language),
-                        value = ReceiptGenerator.formatMoney(summary.totalCost, shopProfile),
+                        value = if (canViewProfit) ReceiptGenerator.formatMoney(summary.totalCost, shopProfile) else "Restricted",
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f)
                     )
@@ -303,7 +350,8 @@ private fun HeroProfitLossCard(
 private fun TopSellingProductsCard(
     topProducts: List<TopProductReport>,
     shopProfile: ShopProfile,
-    language: AppLanguage
+    language: AppLanguage,
+    canViewProfit: Boolean = true
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -376,12 +424,14 @@ private fun TopSellingProductsCard(
                             }
                         }
 
-                        Text(
-                            text = "+${ReceiptGenerator.formatMoney(item.totalProfit, shopProfile)}",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = ProfitGreen
-                        )
+                        if (canViewProfit) {
+                            Text(
+                                text = "+${ReceiptGenerator.formatMoney(item.totalProfit, shopProfile)}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = ProfitGreen
+                            )
+                        }
                     }
                     if (index < topProducts.take(5).size - 1) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
@@ -601,7 +651,7 @@ private fun ReportExportActionsCard(
                         title = Localization.format("ana_share_pdf_period_fmt", language, periodLabel)
                     )
                 } catch (e: Exception) {
-                    Toast.makeText(context, Localization.format("ana_pdf_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, Localization.format("ana_pdf_err_fmt", language, e.safeMessage()), Toast.LENGTH_SHORT).show()
                 }
             },
             modifier = Modifier

@@ -19,6 +19,7 @@ import com.beboss.shopmgmt.util.MoneyUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 /**
  * Domain Manager handling Customer CRM, Debts, Installment Payments, and Credit Limits.
@@ -72,7 +73,10 @@ class CustomerDebtManager(
                     tableName = "customers",
                     recordId = toSave.id,
                     operation = if (isNew) "CREATE" else "UPDATE",
-                    payloadJson = """{"name":"${toSave.name}","phone":"${toSave.phone}"}"""
+                    payloadJson = JSONObject().apply {
+                        put("name", toSave.name)
+                        put("phone", toSave.phone)
+                    }.toString()
                 )
             )
         }
@@ -103,7 +107,13 @@ class CustomerDebtManager(
                         tableName = "customer_payments",
                         recordId = updatedPayment.id,
                         operation = "CREATE",
-                        payloadJson = """{"customerId":"${updatedPayment.customerId}","amount":${updatedPayment.amount},"prevDebt":$currentDebt,"remDebt":$remaining,"method":"${updatedPayment.paymentMethod}"}"""
+                        payloadJson = JSONObject().apply {
+                            put("customerId", updatedPayment.customerId)
+                            put("amount", updatedPayment.amount)
+                            put("prevDebt", currentDebt)
+                            put("remDebt", remaining)
+                            put("method", updatedPayment.paymentMethod)
+                        }.toString()
                     )
                 )
 
@@ -128,7 +138,7 @@ class CustomerDebtManager(
                     tableName = "customers",
                     recordId = customerId,
                     operation = "UPDATE",
-                    payloadJson = """{"debtPayment":$cleanAmt}"""
+                    payloadJson = JSONObject().put("debtPayment", cleanAmt).toString()
                 )
             )
         }
@@ -152,7 +162,7 @@ class CustomerDebtManager(
                     tableName = "customers",
                     recordId = customerId,
                     operation = "DELETE",
-                    payloadJson = """{"id":"$customerId"}"""
+                    payloadJson = JSONObject().put("id", customerId).toString()
                 )
             )
         }

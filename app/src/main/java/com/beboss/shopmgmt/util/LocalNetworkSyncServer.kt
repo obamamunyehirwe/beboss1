@@ -9,6 +9,7 @@ import com.beboss.shopmgmt.BuildConfig
 import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.data.model.User
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -418,12 +419,12 @@ class LocalNetworkSyncServer(
     private fun parseBeaconAndAddHub(raw: String, senderSocketIp: String) {
         try {
             val obj = JSONObject(raw)
-            if (obj.optString("magic") != "BEBOSS_HUB_V3") return
-            val id = obj.optString("id")
-            val claimedIp = obj.optString("ip").ifBlank { senderSocketIp }
+            if (obj.optCleanString("magic") != "BEBOSS_HUB_V3") return
+            val id = obj.optCleanString("id")
+            val claimedIp = obj.optCleanString("ip").ifBlank { senderSocketIp }
             val claimedPort = obj.optInt("port", -1)
             val ts = obj.optLong("ts", 0L)
-            val sig = obj.optString("sig")
+            val sig = obj.optCleanString("sig")
 
             // Enforce source IP match, port range, freshness <=30s, and valid HMAC
             if (claimedIp != senderSocketIp) return
@@ -434,8 +435,8 @@ class LocalNetworkSyncServer(
 
             val hub = DiscoveredBranchHub(
                 id = id.ifBlank { claimedIp },
-                shopName = obj.optString("shopName", "BeBoss Terminal"),
-                branchName = obj.optString("branchName", "Master Hub"),
+                shopName = obj.optCleanString("shopName", "BeBoss Terminal"),
+                branchName = obj.optCleanString("branchName", "Master Hub"),
                 ipAddress = claimedIp,
                 port = claimedPort,
                 productsCount = obj.optInt("productsCount", 0),
@@ -552,9 +553,9 @@ class LocalNetworkSyncServer(
             if (resp.statusCode in 200..299) {
                 val obj = JSONObject(resp.body)
                 val hub = DiscoveredBranchHub(
-                    id = "${obj.optString("hubId")}_$ip",
-                    shopName = obj.optString("hubName", "BeBoss Terminal"),
-                    branchName = obj.optString("branchName", "Master Hub"),
+                    id = "${obj.optCleanString("hubId")}_$ip",
+                    shopName = obj.optCleanString("hubName", "BeBoss Terminal"),
+                    branchName = obj.optCleanString("branchName", "Master Hub"),
                     ipAddress = ip,
                     port = targetPort,
                     productsCount = obj.optInt("productsCount", 0),
@@ -741,7 +742,7 @@ class LocalNetworkSyncServer(
 
     private fun decryptLanBody(body: String, expectedTs: String, expectedNonce: String): String {
         val obj = JSONObject(body)
-        val enc = obj.optString("enc")
+        val enc = obj.optCleanString("enc")
         require(enc.isNotBlank()) { "LAN sync requires encrypted AES-GCM envelope." }
         val aad = "$expectedTs|$expectedNonce".toByteArray(StandardCharsets.UTF_8)
         val plainBytes = CryptoKeyManager.decryptAesGcm(getLanAesKey(), enc, aad)
@@ -872,12 +873,14 @@ class LocalNetworkSyncServer(
                 pulledBranchesCount = pulledBranchesCount,
                 latencyMs = latency
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val latency = System.currentTimeMillis() - startTime
             Log.e(TAG, "P2P WiFi Sync Error", e)
             LocalSyncClientResult(
                 success = false,
-                message = "LAN sync failed ($hubIp): ${e.localizedMessage ?: "Connection error"}",
+                message = "LAN sync failed ($hubIp): ${e.safeMessage("Connection error")}",
                 latencyMs = latency
             )
         }

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.beboss.shopmgmt.data.model.Customer
+import com.beboss.shopmgmt.data.model.CustomerAgingSummary
 import com.beboss.shopmgmt.data.model.InventoryValuation
 import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.Sale
@@ -52,6 +53,75 @@ object ExcelCsvExporter {
                 writer.append("${costVal.toLong()},")
                 writer.append("${retailVal.toLong()},")
                 writer.append("\"$status\"\n")
+            }
+        }
+        return file
+    }
+
+    /**
+     * Exports customer Accounts Receivable (AR) aging buckets to CSV.
+     */
+    fun exportCustomerAgingCsv(
+        context: Context,
+        agingSummary: CustomerAgingSummary,
+        shopProfile: ShopProfile
+    ): File {
+        val fileName = "BeBoss_AR_Aging_${dateFormat.format(Date())}.csv"
+        val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val file = File(exportDir, fileName)
+
+        FileWriter(file).use { writer ->
+            writer.write("\uFEFF")
+            writer.append("Customer Name,Phone,Category,Outstanding Debt (${shopProfile.currencySymbol}),Credit Limit (${shopProfile.currencySymbol}),Days Overdue,Aging Bucket,Over Limit\n")
+            agingSummary.entries.forEach { entry ->
+                val c = entry.customer
+                writer.append("\"${escapeCsv(c.name)}\",")
+                writer.append("\"${escapeCsv(c.phone)}\",")
+                writer.append("\"${escapeCsv(c.category)}\",")
+                writer.append("${c.debtBalance.toLong()},")
+                writer.append("${c.creditLimit.toLong()},")
+                writer.append("${entry.daysOld},")
+                writer.append("\"${escapeCsv(entry.bucketLabel)}\",")
+                writer.append("\"${if (entry.overCreditLimit) "YES" else "NO"}\"\n")
+            }
+        }
+        return file
+    }
+
+    /**
+     * Exports Master Admin registered organizations & payment claims ledger to CSV.
+     */
+    fun exportAdminLedgerCsv(
+        context: Context,
+        shops: List<SupabaseShopAccountDto>,
+        payments: List<SupabasePaymentRequestDto>
+    ): File {
+        val fileName = "BeBoss_Admin_Registry_${dateFormat.format(Date())}.csv"
+        val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val file = File(exportDir, fileName)
+
+        FileWriter(file).use { writer ->
+            writer.write("\uFEFF")
+            writer.append("Record Type,Organization / Shop,Owner Username,Phone,Branches,Staff,Devices,Amount / Monthly Fee (FRw),Status,Reference / Updated\n")
+            shops.forEach { s ->
+                writer.append("SHOP_ACCOUNT,")
+                writer.append("\"${escapeCsv(s.shopName)}\",")
+                writer.append("\"${escapeCsv(s.ownerUsername)}\",")
+                writer.append("\"${escapeCsv(s.ownerPhone)}\",")
+                writer.append("${s.branchCount},${s.workerCount},${s.deviceCount}/${s.deviceLimit},")
+                writer.append("${s.monthlyFeeRwf},")
+                writer.append("\"${escapeCsv(s.subscriptionStatus)}\",")
+                writer.append("\"${dateDisplayFormat.format(Date(s.updatedAt))}\"\n")
+            }
+            payments.forEach { p ->
+                writer.append("PAYMENT_CLAIM,")
+                writer.append("\"${escapeCsv(p.shopName)}\",")
+                writer.append("\"${escapeCsv(p.ownerUsername)}\",")
+                writer.append("\"${escapeCsv(p.payerPhone)}\",")
+                writer.append("${p.branchCount},${p.workerCount},${p.deviceCount},")
+                writer.append("${p.amountRwf},")
+                writer.append("\"${escapeCsv(p.status)}\",")
+                writer.append("\"${escapeCsv(p.provider)} ${escapeCsv(p.generatedUnlockCode)}\"\n")
             }
         }
         return file

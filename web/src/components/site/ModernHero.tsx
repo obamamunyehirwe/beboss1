@@ -22,7 +22,6 @@ const capabilityIcons = [WifiOff, Store, Languages, PackageCheck];
 export function ModernHero() {
   const { lang, t } = useI18n();
   const c = retailCopy[lang];
-  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const [activeFeature, setActiveFeature] = useState(0);
   const statsQuery = useQuery({ ...platformStatsQuery, enabled: liveConfigured });
   const stats = statsQuery.data?.ok ? statsQuery.data.stats : null;
@@ -78,10 +77,10 @@ export function ModernHero() {
               <div className="market-ops-topbar">
                 <div className="market-ops-brand">
                   <img src="/beboss-app-icon.png" alt="" width={42} height={42} />
-                  <span><strong>BeBoss Cloud</strong><small>{c.heroAnalyticsLabel}</small></span>
+                  <span><strong>BeBoss Cloud</strong><small>LIVE PLATFORM ANALYTICS</small></span>
                 </div>
                 <span className={stats ? "market-ops-preview market-ops-preview-live" : "market-ops-preview market-ops-preview-warn"}>
-                  <i />{stats ? c.heroLiveData : statsQuery.isLoading ? c.heroConnecting : c.heroUnavailable}
+                  <i />{stats ? "LIVE SUPABASE DATA" : statsQuery.isLoading ? "CONNECTING" : "DATA UNAVAILABLE"}
                 </span>
               </div>
 
@@ -94,44 +93,44 @@ export function ModernHero() {
                 <span className="market-ops-active-icon" aria-hidden="true"><ActiveIcon size={27} /></span>
               </div>
 
-              <section className="market-live-analytics" aria-label={c.heroAnalyticsLabel}>
+              <section className="market-live-analytics" aria-label="Live BeBoss platform analytics">
                 <div className="market-live-analytics-heading">
-                  <span><Activity size={14} /> {c.heroRealTotals}</span>
-                  <span>{stats?.server_time ? new Date(stats.server_time).toLocaleTimeString(locale) : "—"}</span>
+                  <span><Activity size={14} /> REAL PLATFORM TOTALS</span>
+                  <span>{stats?.server_time ? new Date(stats.server_time).toLocaleTimeString() : "—"}</span>
                 </div>
 
                 {stats ? (
                   <>
                     <div className="market-analytics-kpis">
                       <article>
-                        <span>{c.heroRegisteredShops}</span>
-                        <strong>{stats.shops_total.toLocaleString(locale)}</strong>
-                        <small>{stats.shops_active.toLocaleString(locale)} {c.heroActive}</small>
+                        <span>REGISTERED SHOPS</span>
+                        <strong>{stats.shops_total.toLocaleString()}</strong>
+                        <small>{stats.shops_active.toLocaleString()} active</small>
                       </article>
                       <article>
-                        <span>{c.heroBranches}</span>
-                        <strong>{stats.branches_total.toLocaleString(locale)}</strong>
-                        <small>{c.heroCloudRegistered}</small>
+                        <span>BRANCHES</span>
+                        <strong>{stats.branches_total.toLocaleString()}</strong>
+                        <small>Cloud registered</small>
                       </article>
                       <article>
-                        <span>{c.heroDevicesSynced}</span>
-                        <strong>{stats.devices_synced_24h.toLocaleString(locale)}</strong>
-                        <small>{c.heroLast24Hours}</small>
+                        <span>DEVICES SYNCED</span>
+                        <strong>{stats.devices_synced_24h.toLocaleString()}</strong>
+                        <small>Last 24 hours</small>
                       </article>
                       <article>
-                        <span>{c.heroSyncEvents}</span>
-                        <strong>{stats.sync_events_24h.toLocaleString(locale)}</strong>
+                        <span>SYNC EVENTS</span>
+                        <strong>{stats.sync_events_24h.toLocaleString()}</strong>
                         <small>Last 24 hours</small>
                       </article>
                     </div>
 
                     <div className="market-ops-visual">
                       <div className="market-ops-visual-heading">
-                        <span>{c.heroActivity14Days}</span>
-                        <span className="market-ops-visual-key"><i /> {c.heroSyncedEvents}</span>
+                        <span>14-DAY CLOUD ACTIVITY</span>
+                        <span className="market-ops-visual-key"><i /> Synced events</span>
                       </div>
                       {activity.length > 0 ? (
-                        <div className="market-ops-bars" role="img" aria-label={c.heroActivityAlt}>
+                        <div className="market-ops-bars" role="img" aria-label="Real Supabase sync events over the last 14 days">
                           {activity.map((item) => {
                             const count = Number(item.events) || 0;
                             const height = count > 0 ? Math.max(5, (count / maxEvents) * 100) : 2;
@@ -139,32 +138,32 @@ export function ModernHero() {
                               <span
                                 key={item.day}
                                 style={{ height: `${height}%` }}
-                                title={`${item.day}: ${count.toLocaleString(locale)} ${c.heroEvents}`}
+                                title={`${item.day}: ${count.toLocaleString()} events`}
                                 aria-hidden="true"
                               />
                             );
                           })}
                         </div>
                       ) : (
-                        <p className="market-analytics-empty">{c.heroNoActivity}</p>
+                        <p className="market-analytics-empty">No cloud activity has been recorded yet.</p>
                       )}
                       <div className="market-analytics-axis">
-                        <span>{activity[0]?.day ?? c.hero14DaysAgo}</span>
-                        <span>{activity.at(-1)?.day ?? c.heroToday}</span>
+                        <span>{activity[0]?.day ?? "14 days ago"}</span>
+                        <span>{activity.at(-1)?.day ?? "Today"}</span>
                       </div>
                     </div>
                     <div className="market-live-analytics-foot">
-                      <span>{c.heroLastCloudEvent}</span>
-                      <strong>{stats.last_sync_at ? new Date(stats.last_sync_at).toLocaleString(locale) : c.heroNoCloudEvent}</strong>
+                      <span>Last cloud event</span>
+                      <strong>{stats.last_sync_at ? new Date(stats.last_sync_at).toLocaleString() : "No cloud sync event yet"}</strong>
                     </div>
                   </>
                 ) : (
                   <div className="market-analytics-unavailable" role="status">
                     <div>
-                      <span>{statsQuery.isLoading ? c.heroConnectingDatabase : liveConfigured ? c.heroAnalyticsUnavailable : c.heroMissingConfig}</span>
-                      <small>{c.heroAutoRefresh}</small>
+                      <span>{statsQuery.isLoading ? "Connecting to the live BeBoss database…" : liveConfigured ? "Live analytics are currently unavailable from Supabase." : "Public Supabase configuration is missing from this web build."}</span>
+                      <small>Live totals refresh automatically when the service is reachable. No sample figures are substituted.</small>
                     </div>
-                    <Link to="/status">{c.heroOpenStatus} <ArrowUpRight size={14} /></Link>
+                    <Link to="/status">Open service status <ArrowUpRight size={14} /></Link>
                   </div>
                 )}
               </section>
@@ -188,7 +187,7 @@ export function ModernHero() {
 
               <div className="market-ops-footer">
                 <span><Check size={14} />{c.trial}</span>
-                <Link to="/status">{c.heroCloudStatus} <ArrowUpRight size={15} /></Link>
+                <Link to="/status">Cloud status <ArrowUpRight size={15} /></Link>
               </div>
             </div>
             <div className="market-ops-orbit market-ops-orbit-one" aria-hidden="true" />

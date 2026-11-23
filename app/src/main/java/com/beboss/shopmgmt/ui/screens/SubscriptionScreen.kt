@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import com.beboss.shopmgmt.util.normalizeUnlockCodeInput
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -764,7 +765,7 @@ fun SubscriptionScreen(
                         maxLines = 5
                     )
 
-                    if (proofError != null) {
+                    proofError?.let { errorText ->
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = LossRed.copy(alpha = 0.14f),
@@ -772,7 +773,7 @@ fun SubscriptionScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = proofError!!,
+                                text = errorText,
                                 color = LossRed,
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
@@ -958,7 +959,7 @@ fun SubscriptionScreen(
                     Button(
                         onClick = {
                             if (voucherInput.isNotBlank()) {
-                                val cleaned = voucherInput.trim().uppercase(Locale.ROOT)
+                                val cleaned = normalizeUnlockCodeInput(voucherInput)
                                 lastAutoTriggeredCode = cleaned
                                 onActivateVoucher(cleaned)
                                 voucherInput = ""

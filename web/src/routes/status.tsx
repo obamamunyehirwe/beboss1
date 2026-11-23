@@ -29,8 +29,7 @@ export const Route = createFileRoute("/status")({
 const tooltipStyle = { background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, color: "var(--foreground)", fontSize: 12 };
 
 function StatusPage() {
-  const { t, lang } = useI18n();
-  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
+  const { t } = useI18n();
   const { data, isFetching } = useSuspenseQuery(platformStatsQuery);
   const now = useNow(15_000);
   const s = data.stats;
@@ -43,7 +42,7 @@ function StatusPage() {
         { icon: Activity, label: t("statusSynced24h"), value: s.devices_synced_24h },
         { icon: Boxes, label: t("statusEvents24h"), value: s.sync_events_24h },
         { icon: KeyRound, label: t("statusCodes"), value: s.codes_redeemed },
-        { icon: Clock, label: t("statusLastSync"), value: s.last_sync_at ? relativeTime(s.last_sync_at, now, locale) : "—" },
+        { icon: Clock, label: t("statusLastSync"), value: s.last_sync_at ? relativeTime(s.last_sync_at, now) : "—" },
       ]
     : [];
 
@@ -72,7 +71,7 @@ function StatusPage() {
           {tiles.map((x) => (
             <div key={x.label} className="rounded-2xl border border-border bg-card p-5">
               <x.icon className="size-5 text-primary" />
-              <p className="mt-3 font-display text-3xl font-bold">{typeof x.value === "number" ? x.value.toLocaleString(locale) : x.value}</p>
+              <p className="mt-3 font-display text-3xl font-bold">{typeof x.value === "number" ? x.value.toLocaleString() : x.value}</p>
               <p className="mt-1 text-sm text-muted-foreground">{x.label}</p>
             </div>
           ))}

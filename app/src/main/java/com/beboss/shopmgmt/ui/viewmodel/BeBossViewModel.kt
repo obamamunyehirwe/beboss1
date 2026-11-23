@@ -7,13 +7,16 @@ import androidx.lifecycle.viewModelScope
 import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.data.model.AnalyticsPeriod
 import com.beboss.shopmgmt.data.model.Branch
+import com.beboss.shopmgmt.data.model.BranchPerformanceMetric
 import com.beboss.shopmgmt.data.model.CartItem
 import com.beboss.shopmgmt.data.model.CategorySalesShare
 import com.beboss.shopmgmt.data.model.Customer
+import com.beboss.shopmgmt.data.model.CustomerAgingSummary
 import com.beboss.shopmgmt.data.model.CustomerPayment
 import com.beboss.shopmgmt.data.model.DailyAnalyticsPoint
 import com.beboss.shopmgmt.data.model.DatabaseEngineStats
 import com.beboss.shopmgmt.data.model.DatabaseMaintenanceResult
+import com.beboss.shopmgmt.data.model.DeadLetterItem
 import com.beboss.shopmgmt.data.model.InventoryValuation
 import com.beboss.shopmgmt.data.model.LocalAuditLog
 import com.beboss.shopmgmt.data.model.PaymentVerificationRequest
@@ -21,14 +24,19 @@ import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.ProfitLossSummary
 import com.beboss.shopmgmt.data.model.PurchaseRecord
 import com.beboss.shopmgmt.data.model.PurchaseSummary
+import com.beboss.shopmgmt.data.model.ReorderSuggestion
 import com.beboss.shopmgmt.data.model.Sale
 import com.beboss.shopmgmt.data.model.SaleWithItems
 import com.beboss.shopmgmt.data.model.ShopDevice
 import com.beboss.shopmgmt.data.model.ShopProfile
+import com.beboss.shopmgmt.data.model.StaffPerformanceMetric
 import com.beboss.shopmgmt.data.model.StockTransfer
+import com.beboss.shopmgmt.data.model.SyncQueueItem
 import com.beboss.shopmgmt.data.model.TopProductReport
 import com.beboss.shopmgmt.data.model.User
+import com.beboss.shopmgmt.data.model.UserRole
 import com.beboss.shopmgmt.data.repository.BeBossRepository
+import com.beboss.shopmgmt.domain.AnalyticsEngine
 import com.beboss.shopmgmt.ui.components.BlurLoadingUiState
 import com.beboss.shopmgmt.ui.viewmodel.coordinators.AdminConsoleCoordinator
 import com.beboss.shopmgmt.ui.viewmodel.coordinators.AuthSessionCoordinator
@@ -42,6 +50,7 @@ import com.beboss.shopmgmt.util.BeBossNotificationManager
 import com.beboss.shopmgmt.util.CapturedLocation
 import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.ClockTamperStatus
+import com.beboss.shopmgmt.util.CloudHealthDiagnosticsDto
 import com.beboss.shopmgmt.util.CloudSyncReport
 import com.beboss.shopmgmt.util.ConnectivityStatus
 import com.beboss.shopmgmt.util.DeviceIntegrityStatus
@@ -59,12 +68,15 @@ import com.beboss.shopmgmt.util.SupabaseAdminClient
 import com.beboss.shopmgmt.util.SupabaseAdminSession
 import com.beboss.shopmgmt.util.SupabaseAuditLogDto
 import com.beboss.shopmgmt.util.SupabaseBranchSnapshotDto
+import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
 import com.beboss.shopmgmt.util.SupabasePaymentRequestDto
 import com.beboss.shopmgmt.util.SupabaseShopAccountDto
 import com.beboss.shopmgmt.util.SupabaseShopDeviceDto
 import com.beboss.shopmgmt.util.SupabaseShopUserDto
 import com.beboss.shopmgmt.util.SupabaseUnlockCodeDto
 import com.beboss.shopmgmt.util.SyncAuditLog
+import com.beboss.shopmgmt.util.safeMessage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -260,11 +272,6 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         com.beboss.shopmgmt.util.BusinessCatalog.categoriesWithExisting(profile.businessType, stored)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val inventoryValuation: StateFlow<InventoryValuation> = repository.getInventoryValuation().stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000),
-        InventoryValuation(0, 0.0, 0.0, 0.0, 0.0, 0, 0)
-    )
-
     // Customers
     private val _customerSearchQuery = MutableStateFlow("")
     val customerSearchQuery: StateFlow<String> = _customerSearchQuery.asStateFlow()
@@ -294,48 +301,9 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
-    val purchaseSummary: StateFlow<PurchaseSummary> = allPurchases.map { purchases ->
-        val totalCost = purchases.sumOf { it.totalPurchaseCost }
-        val totalUnits = purchases.sumOf { it.quantityPurchased }
-        val suppliers = purchases.map { it.supplierName.lowercase() }.distinct().size
-        val avg = if (purchases.isNotEmpty()) totalCost / purchases.size else 0.0
-        PurchaseSummary(
-            totalPurchasesCount = purchases.size,
-            totalUnitsBought = totalUnits,
-            totalExpenditure = totalCost,
-            uniqueSuppliersCount = suppliers,
-            averagePurchaseCost = avg
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PurchaseSummary())
-
-    // Analytics
+    // Analytics Period
     private val _selectedAnalyticsPeriod = MutableStateFlow(AnalyticsPeriod.THIS_WEEK)
     val selectedAnalyticsPeriod: StateFlow<AnalyticsPeriod> = _selectedAnalyticsPeriod.asStateFlow()
-
-    val profitLossSummary: StateFlow<ProfitLossSummary> = _selectedAnalyticsPeriod
-        .flatMapLatest { period -> repository.getProfitLossForPeriod(period) }
-        .stateIn(
-            viewModelScope, SharingStarted.WhileSubscribed(5000),
-            ProfitLossSummary(0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, true, "This Week")
-        )
-
-    val dailyChartPoints: StateFlow<List<DailyAnalyticsPoint>> = _selectedAnalyticsPeriod
-        .flatMapLatest { period -> repository.getDailyAnalyticsPoints(period) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val topProducts: StateFlow<List<TopProductReport>> = _selectedAnalyticsPeriod
-        .flatMapLatest { period -> repository.getTopProducts(period) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val categoryBreakdown: StateFlow<List<CategorySalesShare>> = _selectedAnalyticsPeriod
-        .flatMapLatest { period -> repository.getCategorySalesBreakdown(period) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val todaySummary: StateFlow<ProfitLossSummary> = repository.getProfitLossForPeriod(AnalyticsPeriod.TODAY)
-        .stateIn(
-            viewModelScope, SharingStarted.WhileSubscribed(5000),
-            ProfitLossSummary(0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, true, "Today")
-        )
 
     // Sync Queue, Audit & Licensing Flows
     val pendingSyncCount: StateFlow<Int> = repository.pendingSyncCount.stateIn(
@@ -378,6 +346,11 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             try {
                 block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                BeBossLogger.e("BeBossViewModel", "Action failed inside runWithBlurLoading", e)
+                _snackbarMessage.emit(e.safeMessage("Action failed"))
             } finally {
                 if (blurToken.get() == token) {
                     _blurLoadingState.value = BlurLoadingUiState()
@@ -398,10 +371,108 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         language = currentLanguage,
         emitSnackbar = { msg -> _snackbarMessage.emit(msg) },
         onRegistrationCloudSync = {
-            adminCoordinator.syncAdminDataToSupabaseSuspended(silent = true)
             syncCoordinator.syncToCloudNow()
         }
     )
+
+    val effectiveBranchId: StateFlow<String> = combine(_selectedBranchId, authCoordinator.currentUser) { selected, user ->
+        if (user != null && user.role != UserRole.OWNER && user.assignedBranchId.isNotBlank()) {
+            user.assignedBranchId
+        } else {
+            selected
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "ALL")
+
+    val isBranchLockedForCurrentUser: StateFlow<Boolean> = authCoordinator.currentUser.map { user ->
+        user != null && user.role != UserRole.OWNER && user.assignedBranchId.isNotBlank()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val scopedProducts: StateFlow<List<Product>> = combine(allProducts, effectiveBranchId) { prods, branchId ->
+        AnalyticsEngine.filterProductsByBranch(prods, branchId)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val scopedLowStockProducts: StateFlow<List<Product>> = combine(lowStockProducts, effectiveBranchId) { prods, branchId ->
+        AnalyticsEngine.filterProductsByBranch(prods, branchId)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val scopedSales: StateFlow<List<Sale>> = combine(allSales, effectiveBranchId) { sales, branchId ->
+        AnalyticsEngine.filterSalesByBranch(sales, branchId)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val scopedPurchases: StateFlow<List<PurchaseRecord>> = combine(allPurchases, effectiveBranchId) { purchases, branchId ->
+        if (branchId.isBlank() || branchId == "ALL") purchases else purchases.filter { it.branchId == branchId }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val inventoryValuation: StateFlow<InventoryValuation> = scopedProducts.map { prods ->
+        AnalyticsEngine.computeInventoryValuation(prods)
+    }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000),
+        InventoryValuation(0, 0.0, 0.0, 0.0, 0.0, 0, 0)
+    )
+
+    val purchaseSummary: StateFlow<PurchaseSummary> = scopedPurchases.map { purchases ->
+        val totalCost = purchases.sumOf { it.totalPurchaseCost }
+        val totalUnits = purchases.sumOf { it.quantityPurchased }
+        val suppliers = purchases.map { it.supplierName.lowercase() }.distinct().size
+        val avg = if (purchases.isNotEmpty()) totalCost / purchases.size else 0.0
+        PurchaseSummary(
+            totalPurchasesCount = purchases.size,
+            totalUnitsBought = totalUnits,
+            totalExpenditure = totalCost,
+            uniqueSuppliersCount = suppliers,
+            averagePurchaseCost = avg
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PurchaseSummary())
+
+    val profitLossSummary: StateFlow<ProfitLossSummary> = combine(_selectedAnalyticsPeriod, effectiveBranchId) { period, branchId ->
+        period to branchId
+    }.flatMapLatest { (period, branchId) ->
+        repository.getProfitLossForPeriod(period, branchId)
+    }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000),
+        ProfitLossSummary(0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, true, "This Week")
+    )
+
+    val dailyChartPoints: StateFlow<List<DailyAnalyticsPoint>> = combine(_selectedAnalyticsPeriod, effectiveBranchId) { period, branchId ->
+        period to branchId
+    }.flatMapLatest { (period, branchId) ->
+        repository.getDailyAnalyticsPoints(period, branchId)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val topProducts: StateFlow<List<TopProductReport>> = _selectedAnalyticsPeriod
+        .flatMapLatest { period -> repository.getTopProducts(period) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val categoryBreakdown: StateFlow<List<CategorySalesShare>> = _selectedAnalyticsPeriod
+        .flatMapLatest { period -> repository.getCategorySalesBreakdown(period) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val todaySummary: StateFlow<ProfitLossSummary> = effectiveBranchId
+        .flatMapLatest { branchId -> repository.getProfitLossForPeriod(AnalyticsPeriod.TODAY, branchId) }
+        .stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5000),
+            ProfitLossSummary(0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, true, "Today")
+        )
+
+    val branchPerformanceMetrics: StateFlow<List<BranchPerformanceMetric>> =
+        combine(branches, allSales, allProducts, _selectedAnalyticsPeriod) { branchList, sales, prods, period ->
+            AnalyticsEngine.computeBranchPerformance(branchList, sales, prods, period)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val staffPerformanceMetrics: StateFlow<List<StaffPerformanceMetric>> =
+        combine(scopedSales, _selectedAnalyticsPeriod) { sales, period ->
+            AnalyticsEngine.computeStaffPerformance(sales, period)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val customerAgingSummary: StateFlow<CustomerAgingSummary> =
+        combine(customers, allSales) { custList, sales ->
+            AnalyticsEngine.computeCustomerAging(custList, sales)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CustomerAgingSummary())
+
+    val reorderSuggestions: StateFlow<List<ReorderSuggestion>> =
+        combine(scopedProducts, scopedSales) { prods, sales ->
+            AnalyticsEngine.computeReorderSuggestions(prods, sales)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private lateinit var adminCoordinator: AdminConsoleCoordinator
     private lateinit var syncCoordinator: SyncCoordinator
@@ -421,7 +492,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
             deviceId = deviceId,
             scope = viewModelScope,
             currentUser = authCoordinator.currentUser,
-            selectedBranchId = selectedBranchId,
+            selectedBranchId = effectiveBranchId,
             shopProfile = shopProfile,
             allUsers = allUsers,
             branches = branches,
@@ -432,7 +503,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
             allStockTransfers = allStockTransfers,
             emitSnackbar = { msg -> _snackbarMessage.emit(msg) },
             syncAdminCloud = { silent -> adminCoordinator.syncAdminDataToSupabaseSuspended(silent) },
-            runWithBlurLoading = ::runWithBlurLoading
+            runWithBlurLoading = ::runWithBlurLoading,
+            isRegistrationNeeded = authCoordinator.isRegistrationNeeded
         )
 
         adminCoordinator = AdminConsoleCoordinator(
@@ -454,12 +526,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
             scope = viewModelScope,
             language = currentLanguage,
             currentUser = authCoordinator.currentUser,
-            selectedBranchId = selectedBranchId,
+            selectedBranchId = effectiveBranchId,
             branches = branches,
             shopProfile = shopProfile,
-            allSales = allSales,
+            allSales = scopedSales,
             todaySummary = todaySummary,
-            lowStockProducts = lowStockProducts,
+            lowStockProducts = scopedLowStockProducts,
             emitSnackbar = { msg -> _snackbarMessage.emit(msg) },
             onMutationSuccess = { syncCoordinator.scheduleAutoBranchSync() },
             runWithBlurLoading = ::runWithBlurLoading
@@ -482,14 +554,18 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                 authCoordinator.checkAuthenticationAndInit()
                 syncCoordinator.setupAutoCloudSyncOnInternet()
                 dbCoordinator.verifyStartupIntegritySilently()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 BeBossLogger.e("BeBossStartup", "One startup subsystem failed", e)
             }
 
             try {
                 reInspectSecurityPostureInternal(syncTrustedTime = false)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                BeBossLogger.w("BeBossStartup", "Device integrity check skipped: ${e.message}")
+                BeBossLogger.w("BeBossStartup", "Device integrity check skipped: ${e.safeMessage()}")
             }
         }
         onUserInteraction()
@@ -632,6 +708,10 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     val discoveredHubs get() = syncCoordinator.discoveredHubs
     val isDiscoveringHubs get() = syncCoordinator.isDiscoveringHubs
     val peerSyncEvents get() = syncCoordinator.peerSyncEvents
+    val pendingSyncItems: StateFlow<List<SyncQueueItem>> get() = syncCoordinator.pendingSyncItems
+    val deadLetterQueueItems: StateFlow<List<SyncQueueItem>> get() = syncCoordinator.deadLetterQueueItems
+    val deadLetterRecords: StateFlow<List<DeadLetterItem>> get() = syncCoordinator.deadLetterRecords
+    val shopDeviceTelemetry: StateFlow<List<SupabaseDeviceTelemetryDto>> get() = syncCoordinator.shopDeviceTelemetry
 
     // Delegated Admin Console Flows
     val adminSession: StateFlow<SupabaseAdminSession?> get() = adminCoordinator.adminSession
@@ -644,6 +724,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     val adminBranchSnapshots: StateFlow<List<SupabaseBranchSnapshotDto>> get() = adminCoordinator.adminBranchSnapshots
     val adminUnlockCodes: StateFlow<List<SupabaseUnlockCodeDto>> get() = adminCoordinator.adminUnlockCodes
     val adminAuditLogs: StateFlow<List<SupabaseAuditLogDto>> get() = adminCoordinator.adminAuditLogs
+    val adminDeviceTelemetry: StateFlow<List<SupabaseDeviceTelemetryDto>> get() = adminCoordinator.adminDeviceTelemetry
+    val adminCloudHealth: StateFlow<CloudHealthDiagnosticsDto?> get() = adminCoordinator.adminCloudHealth
     val adminPaymentConfig: StateFlow<AdminPaymentConfig> get() = adminCoordinator.adminPaymentConfig
     val isAdminLoading: StateFlow<Boolean> get() = adminCoordinator.isAdminLoading
     val adminLastSyncedAt: StateFlow<Long> get() = adminCoordinator.adminLastSyncedAt
@@ -680,10 +762,24 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun navigateTo(screen: AppScreen) {
+        val user = currentUser.value
+        if (screen == AppScreen.ANALYTICS && user != null && !user.canViewAnalytics) {
+            viewModelScope.launch {
+                _snackbarMessage.emit("Permission denied: Analytics access is restricted for ${user.role.name}.")
+            }
+            return
+        }
         _currentScreen.value = screen
     }
 
     fun selectBranch(branchId: String) {
+        val user = currentUser.value
+        if (user != null && user.role != UserRole.OWNER && user.assignedBranchId.isNotBlank() && branchId != user.assignedBranchId) {
+            viewModelScope.launch {
+                _snackbarMessage.emit("Branch scope locked to ${user.assignedBranchName.ifBlank { "your assigned branch" }}.")
+            }
+            return
+        }
         _selectedBranchId.value = branchId
     }
 
@@ -742,10 +838,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     "Added device '${created.deviceName}' (Join Code: ${created.joinCode} • +2,000 FRw/mo)"
                 )
                 onCreated(created)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Device error: ${e.message}")
+                _snackbarMessage.emit("Device error: ${e.safeMessage()}")
             }
         }
     }
@@ -764,10 +862,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     if (isActive) "Shop device enabled (+2,000 FRw/mo when active)."
                     else "Shop device paused."
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Device toggle error: ${e.message}")
+                _snackbarMessage.emit("Device toggle error: ${e.safeMessage()}")
             }
         }
     }
@@ -778,10 +878,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                 repository.deleteShopDevice(deviceId, actor = currentUser.value, actorDeviceId = this@BeBossViewModel.deviceId)
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit("Secondary shop device removed.")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Remove device error: ${e.message}")
+                _snackbarMessage.emit("Remove device error: ${e.safeMessage()}")
             }
         }
     }
@@ -843,6 +945,10 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun importBranchShareToken(tokenOrJson: String, onDone: (Boolean, String) -> Unit = { _, _ -> }) =
         syncCoordinator.importBranchShareToken(tokenOrJson, onDone)
     fun importShopPackage(summary: ShopImportSummary) = syncCoordinator.importShopPackage(summary)
+    fun refreshShopDeviceTelemetry() = syncCoordinator.refreshShopTelemetry()
+    fun requeueDeadLetter(id: String) = syncCoordinator.requeueDeadLetter(id)
+    fun requeueAllDeadLetters() = syncCoordinator.requeueAllDeadLetters()
+    fun discardDeadLetter(id: String) = syncCoordinator.discardDeadLetter(id)
 
     // ------------------------------------------------------------------------
     // ADMIN CONSOLE & SUBSCRIPTION DELEGATION
@@ -920,6 +1026,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun adminDeleteShopUser(user: SupabaseShopUserDto) = adminCoordinator.adminDeleteShopUser(user)
     fun adminDeleteBranchSnapshot(snapshot: SupabaseBranchSnapshotDto) = adminCoordinator.adminDeleteBranchSnapshot(snapshot)
     fun shareAdminWebPortal(context: Context) = adminCoordinator.shareAdminWebPortal(context)
+    fun runAdminCloudDiagnostics() = adminCoordinator.runAdminCloudHealthDiagnostics()
+    fun loadMoreAdminShops() = adminCoordinator.loadMoreAdminShops()
+    fun loadMoreAdminPaymentRequests() = adminCoordinator.loadMoreAdminPaymentRequests()
+    fun loadMoreAdminTelemetry() = adminCoordinator.loadMoreAdminTelemetry()
+    fun exportAdminLedgerCsv(context: Context) = adminCoordinator.exportAdminLedgerCsv(context)
+    fun exportAdminExecutivePdf(context: Context) = adminCoordinator.exportAdminExecutivePdf(context)
     fun processDirectSubscriptionPayment(
         provider: String,
         phone: String,
@@ -954,10 +1066,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     "Ishami '${branch.name}' ryabitswe neza (${newPricing.monthlySubtotal} FRw/mo)."
                 else "Branch '${branch.name}' saved (${newPricing.monthlySubtotal} FRw/mo)."
                 _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Branch error: ${e.message}")
+                _snackbarMessage.emit("Branch error: ${e.safeMessage()}")
             }
         }
     }
@@ -985,10 +1099,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     "Ishami ryasibwe."
                 else "Branch removed."
                 _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Delete branch error: ${e.message}")
+                _snackbarMessage.emit("Delete branch error: ${e.safeMessage()}")
             }
         }
     }
@@ -1022,17 +1138,25 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     "Kwohereza ibicuruzwa (${quantity.toInt()} ${transfer.productName}) muri $toBranchName byakozwe neza!"
                 else "Stock transfer of ${quantity.toInt()} ${transfer.productName} to $toBranchName recorded!"
                 _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _snackbarMessage.emit("Transfer error: ${e.message}")
+                _snackbarMessage.emit("Transfer error: ${e.safeMessage()}")
             }
         }
     }
 
     fun deleteStockTransfer(id: String) {
         viewModelScope.launch {
-            repository.deleteStockTransfer(id)
-            scheduleAutoBranchSync()
-            _snackbarMessage.emit("Stock transfer log removed.")
+            try {
+                repository.deleteStockTransfer(id)
+                scheduleAutoBranchSync()
+                _snackbarMessage.emit("Stock transfer log removed.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _snackbarMessage.emit("Delete transfer error: ${e.safeMessage()}")
+            }
         }
     }
 
@@ -1040,11 +1164,37 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         runWithBlurLoading("Confirming Transfer...", "Crediting destination branch inventory") {
             try {
                 val user = currentUser.value
-                repository.confirmTransferReceived(transferId, user?.name ?: "Store Manager")
+                repository.confirmTransferReceived(transferId, user?.name ?: "Store Manager", actor = user)
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit("Transfer confirmed received — destination stock credited.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: SecurityException) {
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Confirm received error: ${e.message}")
+                _snackbarMessage.emit("Confirm received error: ${e.safeMessage()}")
+            }
+        }
+    }
+
+    fun rejectStockTransfer(transferId: String, reason: String = "Cancelled at destination") {
+        runWithBlurLoading("Cancelling Transfer...", "Returning reserved stock to source branch") {
+            try {
+                val user = currentUser.value
+                repository.rejectOrCancelTransfer(
+                    transferId = transferId,
+                    actorName = user?.name ?: "Store Manager",
+                    reason = reason,
+                    actor = user
+                )
+                scheduleAutoBranchSync()
+                _snackbarMessage.emit("Transfer cancelled — stock returned to source branch.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: SecurityException) {
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
+            } catch (e: Exception) {
+                _snackbarMessage.emit("Cancel transfer error: ${e.safeMessage()}")
             }
         }
     }
@@ -1055,8 +1205,10 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                 repository.updateBranchOperationalStatus(branchId, status)
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit("Branch status updated to $status.")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _snackbarMessage.emit("Status update error: ${e.message}")
+                _snackbarMessage.emit("Status update error: ${e.safeMessage()}")
             }
         }
     }
@@ -1088,10 +1240,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit("Staff member '${user.name}' saved (${newPricing.monthlySubtotal} FRw/mo total plan).")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Staff save error: ${e.message}")
+                _snackbarMessage.emit("Staff save error: ${e.safeMessage()}")
             }
         }
     }
@@ -1127,10 +1281,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit("Staff account removed.")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Staff delete error: ${e.message}")
+                _snackbarMessage.emit("Staff delete error: ${e.safeMessage()}")
             }
         }
     }
@@ -1156,10 +1312,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     "Igicuruzwa '${product.name}' cyabitswe neza."
                 else "Product '${product.name}' saved."
                 _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Product save error: ${e.message}")
+                _snackbarMessage.emit("Product save error: ${e.safeMessage()}")
             }
         }
     }
@@ -1173,10 +1331,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     "Ingano y'ububiko yahinduwe (${if (delta > 0) "+$delta" else "$delta"})."
                 else "Stock adjusted (${if (delta > 0) "+$delta" else "$delta"})."
                 _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Stock adjust error: ${e.message}")
+                _snackbarMessage.emit("Stock adjust error: ${e.safeMessage()}")
             }
         }
     }
@@ -1190,10 +1350,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     "Igicuruzwa cyasibwe."
                 else "Product deleted."
                 _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Delete product error: ${e.message}")
+                _snackbarMessage.emit("Delete product error: ${e.safeMessage()}")
             }
         }
     }
@@ -1204,10 +1366,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                 repository.restoreProduct(productId, actor = currentUser.value)
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit("Product restored.")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Restore error: ${e.message}")
+                _snackbarMessage.emit("Restore error: ${e.safeMessage()}")
             }
         }
     }
@@ -1224,32 +1388,38 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         notes: String = ""
     ) {
         runWithBlurLoading("Recording Purchase...", "Crediting stock & Excel purchase ledger") {
-            val user = currentUser.value
-            val branch = branches.value.firstOrNull { it.id == _selectedBranchId.value }
-                ?: branches.value.firstOrNull { it.isMainBranch }
-                ?: Branch()
+            try {
+                val user = currentUser.value
+                val branch = branches.value.firstOrNull { it.id == _selectedBranchId.value }
+                    ?: branches.value.firstOrNull { it.isMainBranch }
+                    ?: Branch()
 
-            val purchase = repository.recordPurchaseOrder(
-                productId = productId,
-                quantity = quantity,
-                unitCostPrice = unitCostPrice,
-                newSellingPrice = newSellingPrice,
-                supplierName = supplierName,
-                supplierPhone = supplierPhone,
-                paymentStatus = paymentStatus,
-                invoiceNumber = invoiceNumber,
-                branchId = branch.id,
-                branchName = branch.name,
-                buyerId = user?.id ?: "",
-                buyerName = user?.name ?: "Shop Manager",
-                notes = notes
-            )
-            scheduleAutoBranchSync()
+                val purchase = repository.recordPurchaseOrder(
+                    productId = productId,
+                    quantity = quantity,
+                    unitCostPrice = unitCostPrice,
+                    newSellingPrice = newSellingPrice,
+                    supplierName = supplierName,
+                    supplierPhone = supplierPhone,
+                    paymentStatus = paymentStatus,
+                    invoiceNumber = invoiceNumber,
+                    branchId = branch.id,
+                    branchName = branch.name,
+                    buyerId = user?.id ?: "",
+                    buyerName = user?.name ?: "Shop Manager",
+                    notes = notes
+                )
+                scheduleAutoBranchSync()
 
-            val msg = if (_currentLanguage.value == AppLanguage.KINYARWANDA)
-                "Kugura ibicuruzwa (${purchase.quantityPurchased.toInt()} ${purchase.productName}) byanditswe neza muri Excel Ledger!"
-            else "Stock In / Purchase order for ${purchase.quantityPurchased.toInt()} ${purchase.productName} recorded successfully in Excel Ledger!"
-            _snackbarMessage.emit(msg)
+                val msg = if (_currentLanguage.value == AppLanguage.KINYARWANDA)
+                    "Kugura ibicuruzwa (${purchase.quantityPurchased.toInt()} ${purchase.productName}) byanditswe neza muri Excel Ledger!"
+                else "Stock In / Purchase order for ${purchase.quantityPurchased.toInt()} ${purchase.productName} recorded successfully in Excel Ledger!"
+                _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _snackbarMessage.emit("Purchase order error: ${e.safeMessage()}")
+            }
         }
     }
 
@@ -1260,43 +1430,55 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         supplierName: String
     ) {
         runWithBlurLoading("Quick Restocking...", "Updating inventory & adding to cart") {
-            val user = currentUser.value
-            val branch = branches.value.firstOrNull { it.id == _selectedBranchId.value }
-                ?: branches.value.firstOrNull { it.isMainBranch }
-                ?: Branch()
+            try {
+                val user = currentUser.value
+                val branch = branches.value.firstOrNull { it.id == _selectedBranchId.value }
+                    ?: branches.value.firstOrNull { it.isMainBranch }
+                    ?: Branch()
 
-            repository.recordPurchaseOrder(
-                productId = product.id,
-                quantity = quantityToAdd,
-                unitCostPrice = unitCost,
-                newSellingPrice = product.sellingPrice,
-                supplierName = supplierName.ifBlank { "Immediate Supplier" },
-                branchId = branch.id,
-                branchName = branch.name,
-                buyerId = user?.id ?: "",
-                buyerName = user?.name ?: "Shop Manager",
-                notes = "Quick POS 1-Tap Restock"
-            )
+                repository.recordPurchaseOrder(
+                    productId = product.id,
+                    quantity = quantityToAdd,
+                    unitCostPrice = unitCost,
+                    newSellingPrice = product.sellingPrice,
+                    supplierName = supplierName.ifBlank { "Immediate Supplier" },
+                    branchId = branch.id,
+                    branchName = branch.name,
+                    buyerId = user?.id ?: "",
+                    buyerName = user?.name ?: "Shop Manager",
+                    notes = "Quick POS 1-Tap Restock"
+                )
 
-            val updatedProd = repository.getProductById(product.id) ?: product.copy(quantityInStock = product.quantityInStock + quantityToAdd)
-            addToCart(updatedProd, 1.0)
-            scheduleAutoBranchSync()
+                val updatedProd = repository.getProductById(product.id) ?: product.copy(quantityInStock = product.quantityInStock + quantityToAdd)
+                addToCart(updatedProd, 1.0)
+                scheduleAutoBranchSync()
 
-            val msg = if (_currentLanguage.value == AppLanguage.KINYARWANDA)
-                "${product.name} yongerewe mu bubiko (+${quantityToAdd.toInt()}) kandi yongerewe muri POS Cart!"
-            else "Restocked ${product.name} (+${quantityToAdd.toInt()} units) and added to POS cart!"
-            _snackbarMessage.emit(msg)
+                val msg = if (_currentLanguage.value == AppLanguage.KINYARWANDA)
+                    "${product.name} yongerewe mu bubiko (+${quantityToAdd.toInt()}) kandi yongerewe muri POS Cart!"
+                else "Restocked ${product.name} (+${quantityToAdd.toInt()} units) and added to POS cart!"
+                _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _snackbarMessage.emit("Quick restock error: ${e.safeMessage()}")
+            }
         }
     }
 
     fun deletePurchaseRecord(purchaseId: String) {
         viewModelScope.launch {
-            repository.deletePurchaseRecord(purchaseId)
-            scheduleAutoBranchSync()
-            val msg = if (_currentLanguage.value == AppLanguage.KINYARWANDA)
-                "Inyandiko yo kugura yasibwe."
-            else "Purchase order removed from ledger."
-            _snackbarMessage.emit(msg)
+            try {
+                repository.deletePurchaseRecord(purchaseId)
+                scheduleAutoBranchSync()
+                val msg = if (_currentLanguage.value == AppLanguage.KINYARWANDA)
+                    "Inyandiko yo kugura yasibwe."
+                else "Purchase order removed from ledger."
+                _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _snackbarMessage.emit("Delete purchase error: ${e.safeMessage()}")
+            }
         }
     }
 
@@ -1313,10 +1495,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     "Umukiriya '${customer.name}' yanditswe neza."
                 else "Customer '${customer.name}' saved."
                 _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Customer save error: ${e.message}")
+                _snackbarMessage.emit("Customer save error: ${e.safeMessage()}")
             }
         }
     }
@@ -1371,10 +1555,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
                 _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Debt payment error: ${e.message}")
+                _snackbarMessage.emit("Debt payment error: ${e.safeMessage()}")
             }
         }
     }
@@ -1388,10 +1574,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     "Umukiriya yasibwe."
                 else "Customer removed."
                 _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Customer remove error: ${e.message}")
+                _snackbarMessage.emit("Customer remove error: ${e.safeMessage()}")
             }
         }
     }
@@ -1402,10 +1590,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                 repository.restoreCustomer(customerId, actor = currentUser.value)
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit("Customer restored.")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Permission denied")
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Restore error: ${e.message}")
+                _snackbarMessage.emit("Restore error: ${e.safeMessage()}")
             }
         }
     }
@@ -1436,10 +1626,12 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     "Igurisha ryasubijwe/ryasibwe neza, ububiko bwasubijweho."
                 else "Sale refunded/voided with audit log and stock restored."
                 _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
-                _snackbarMessage.emit(e.message ?: "Manager/Owner approval required to refund or void sales.")
+                _snackbarMessage.emit(e.safeMessage("Manager/Owner approval required to refund or void sales."))
             } catch (e: Exception) {
-                _snackbarMessage.emit("Failed to refund/void sale: ${e.message}")
+                _snackbarMessage.emit("Failed to refund/void sale: ${e.safeMessage()}")
             }
         }
     }
@@ -1450,64 +1642,111 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
 
     fun updateShopProfile(profile: ShopProfile) {
         runWithBlurLoading("Saving Shop Settings...", "Updating receipt branding & cloud profile") {
-            repository.updateShopProfile(profile)
-            scheduleAutoBranchSync()
-            val msg = if (_currentLanguage.value == AppLanguage.KINYARWANDA)
-                "Amakuru y'ububiko yavuguruwe."
-            else "Shop profile updated."
-            _snackbarMessage.emit(msg)
+            try {
+                repository.updateShopProfile(profile, actor = currentUser.value)
+                scheduleAutoBranchSync()
+                val msg = if (_currentLanguage.value == AppLanguage.KINYARWANDA)
+                    "Amakuru y'ububiko yavuguruwe."
+                else "Shop profile updated."
+                _snackbarMessage.emit(msg)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: SecurityException) {
+                _snackbarMessage.emit(e.safeMessage("Permission denied"))
+            } catch (e: Exception) {
+                _snackbarMessage.emit("Settings save error: ${e.safeMessage()}")
+            }
         }
     }
 
     fun testNotification(channelType: String) {
         val app = getApplication<Application>()
         val shop = shopProfile.value
+        val activeBranch = branches.value.firstOrNull { it.id == effectiveBranchId.value }
+            ?: branches.value.firstOrNull { it.isMainBranch }
+            ?: branches.value.firstOrNull()
         when (channelType) {
             "SALE" -> {
-                val dummySale = Sale(
+                val realSale = scopedSales.value.firstOrNull() ?: Sale(
                     id = UUID.randomUUID().toString(),
-                    customerName = "Makuza Eric",
+                    customerName = "Walk-in Customer",
                     saleDate = System.currentTimeMillis(),
-                    totalAmount = 45000.0,
-                    paymentMethod = "MOMO",
-                    receiptNumber = "REC-DEMO-001"
+                    totalAmount = todaySummary.value.totalRevenue,
+                    paymentMethod = "CASH",
+                    receiptNumber = "LIVE-${System.currentTimeMillis().toString().takeLast(5)}",
+                    branchId = activeBranch?.id ?: "main_branch",
+                    branchName = activeBranch?.name ?: shop.shopName.ifBlank { "Main Store" }
                 )
-                BeBossNotificationManager.sendSaleCompletedNotification(app, dummySale, shop)
+                BeBossNotificationManager.sendSaleCompletedNotification(app, realSale, shop)
             }
             "LOW_STOCK" -> {
-                BeBossNotificationManager.sendLowStockNotification(app, "Inyange Milk 500ml", 2.0, 5.0, "Cartons")
+                val lowProd = scopedLowStockProducts.value.firstOrNull() ?: scopedProducts.value.firstOrNull()
+                if (lowProd != null) {
+                    BeBossNotificationManager.sendLowStockNotification(
+                        app,
+                        lowProd.name,
+                        lowProd.quantityInStock,
+                        lowProd.lowStockThreshold,
+                        lowProd.unit
+                    )
+                } else {
+                    BeBossNotificationManager.sendLowStockNotification(
+                        app,
+                        "${shop.shopName.ifBlank { "Shop" }} Inventory Check",
+                        0.0,
+                        shop.lowStockThresholdDefault,
+                        "units"
+                    )
+                }
             }
             "DEBT" -> {
-                BeBossNotificationManager.sendDebtPaymentNotification(app, "Gasana Jean", 25000.0, 10000.0, shop.currencySymbol)
+                val debtor = customersWithDebt.value.firstOrNull() ?: customers.value.firstOrNull()
+                BeBossNotificationManager.sendDebtPaymentNotification(
+                    app,
+                    debtor?.name ?: "Credit Account",
+                    debtor?.debtBalance ?: 0.0,
+                    0.0,
+                    shop.currencySymbol
+                )
             }
             "TRANSFER" -> {
-                val branchList = branches.value
-                val from = branchList.firstOrNull()?.name ?: "${shop.shopName} (HQ)"
-                val to = branchList.getOrNull(1)?.name ?: "Outlet Branch"
-                val prod = allProducts.value.firstOrNull()
-                val transfer = StockTransfer(
-                    transferNumber = "TRF-${(1000..9999).random()}",
-                    productId = prod?.id ?: "prod_sample",
-                    productName = prod?.name ?: "Inventory Goods",
-                    fromBranchId = branchList.firstOrNull()?.id ?: "main_branch",
-                    fromBranchName = from,
-                    toBranchId = branchList.getOrNull(1)?.id ?: "branch_secondary",
-                    toBranchName = to,
-                    quantity = 15.0,
-                    unit = prod?.unit ?: "units"
-                )
-                BeBossNotificationManager.sendStockTransferNotification(app, transfer)
+                val latestTransfer = allStockTransfers.value.firstOrNull() ?: run {
+                    val branchList = branches.value
+                    val from = activeBranch ?: branchList.firstOrNull()
+                    val to = branchList.firstOrNull { it.id != from?.id } ?: from
+                    val prod = scopedProducts.value.firstOrNull()
+                    StockTransfer(
+                        transferNumber = "TRF-${System.currentTimeMillis().toString().takeLast(4)}",
+                        productId = prod?.id ?: "",
+                        productName = prod?.name ?: "Stock Dispatch",
+                        fromBranchId = from?.id ?: "main_branch",
+                        fromBranchName = from?.name ?: "${shop.shopName.ifBlank { "HQ" }}",
+                        toBranchId = to?.id ?: "main_branch",
+                        toBranchName = to?.name ?: "Branch Outlet",
+                        quantity = 1.0,
+                        unit = prod?.unit ?: "units"
+                    )
+                }
+                BeBossNotificationManager.sendStockTransferNotification(app, latestTransfer)
             }
             "TARGET" -> {
-                BeBossNotificationManager.sendDailyTargetReachedNotification(app, 250000.0, 200000.0, shop.currencySymbol)
+                val target = activeBranch?.dailySalesTargetRwf?.takeIf { it > 0L }?.toDouble()
+                    ?: shop.dailySalesTarget.takeIf { it > 0.0 }
+                    ?: 100_000.0
+                BeBossNotificationManager.sendDailyTargetReachedNotification(
+                    app,
+                    todaySummary.value.totalRevenue,
+                    target,
+                    shop.currencySymbol
+                )
             }
             "SYNC" -> {
-                val branchName = branches.value.firstOrNull()?.name ?: "${shop.shopName} (HQ)"
-                BeBossNotificationManager.sendBranchSyncNotification(app, branchName, allProducts.value.size)
+                val branchName = activeBranch?.name ?: shop.shopName.ifBlank { "Headquarters" }
+                BeBossNotificationManager.sendBranchSyncNotification(app, branchName, scopedProducts.value.size)
             }
         }
         viewModelScope.launch {
-            _snackbarMessage.emit("Sent real Android notification: $channelType")
+            _snackbarMessage.emit("Dispatched live $channelType notification alert.")
         }
     }
 

@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import com.beboss.shopmgmt.util.safeMessage
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -204,7 +205,7 @@ fun DataTransferDialog(
                                         refreshBackups()
                                         Toast.makeText(context, "Saved to Storage: ${f.name}", Toast.LENGTH_LONG).show()
                                     } catch (e: Exception) {
-                                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Export error: ${e.safeMessage()}", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             },
@@ -242,7 +243,7 @@ fun DataTransferDialog(
                             }
                         }
 
-                        if (latestExportedFile != null) {
+                        latestExportedFile?.let { exportedFile ->
                             Spacer(modifier = Modifier.height(8.dp))
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
@@ -260,11 +261,11 @@ fun DataTransferDialog(
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text("Exported Successfully", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ProfitGreen)
                                         }
-                                        Text(latestExportedFile!!.name, fontSize = 10.sp, color = InkDark)
+                                        Text(exportedFile.name, fontSize = 10.sp, color = InkDark)
                                     }
                                     Button(
                                         onClick = {
-                                            ShopDataTransferManager.shareBackupFile(context, latestExportedFile!!, shopProfile.shopName)
+                                            ShopDataTransferManager.shareBackupFile(context, exportedFile, shopProfile.shopName)
                                         },
                                         modifier = Modifier.heightIn(min = 48.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen),
@@ -348,7 +349,7 @@ fun DataTransferDialog(
                                                         val summary = ShopDataTransferManager.parseShopPackageFile(backupFile)
                                                         selectedBackupForPreview = summary
                                                     } catch (e: Exception) {
-                                                        Toast.makeText(context, "Cannot parse backup: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, "Cannot parse backup: ${e.safeMessage()}", Toast.LENGTH_SHORT).show()
                                                     }
                                                 },
                                                 modifier = Modifier.size(48.dp)
@@ -395,8 +396,7 @@ fun DataTransferDialog(
     }
 
     // Preview / Restore Confirmation Dialog
-    if (selectedBackupForPreview != null) {
-        val summary = selectedBackupForPreview!!
+    selectedBackupForPreview?.let { summary ->
         val expDate = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(summary.exportedAt))
 
         AlertDialog(
@@ -477,7 +477,7 @@ fun DataTransferDialog(
                             showManualJsonInput = false
                             selectedBackupForPreview = summary
                         } catch (e: Exception) {
-                            Toast.makeText(context, "Invalid token or JSON: ${e.message}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Invalid token or JSON: ${e.safeMessage()}", Toast.LENGTH_SHORT).show()
                         }
                     },
                     enabled = manualJsonText.isNotBlank(),

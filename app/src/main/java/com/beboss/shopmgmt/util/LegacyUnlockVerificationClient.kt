@@ -58,13 +58,13 @@ object LegacyUnlockVerificationClient {
                 val raw = response.body?.string().orEmpty()
                 val json = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
                 if (!response.isSuccessful || !json.optBoolean("valid", false)) {
-                    val message = json.optString("message")
+                    val message = json.optCleanString("message")
                         .ifBlank { "This legacy BB2 code could not be verified. Check the code and internet connection." }
                     return@withContext invalid(message)
                 }
 
                 val days = json.optInt("days", 0)
-                val tier = json.optString("tier", "SINGLE").uppercase(Locale.ROOT)
+                val tier = json.optCleanString("tier", "SINGLE").uppercase(Locale.ROOT)
                 val amount = json.optInt("amount_rwf", 0)
                 if (days !in 1..800) {
                     return@withContext invalid("The server returned an invalid legacy subscription period.")
@@ -77,10 +77,14 @@ object LegacyUnlockVerificationClient {
                     verifiedAmount = amount
                 )
             }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
         } catch (error: Exception) {
-            invalid(error.message?.takeIf { it.isNotBlank() }
-                ?.let { "Could not reach BeBoss to verify this legacy code: $it" }
-                ?: "Could not reach BeBoss to verify this legacy code. Connect to the internet and retry.")
+            val detail = error.safeMessage("")
+            invalid(
+                if (detail.isNotBlank()) "Could not reach BeBoss to verify this legacy code: $detail"
+                else "Could not reach BeBoss to verify this legacy code. Connect to the internet and retry."
+            )
         }
     }
 

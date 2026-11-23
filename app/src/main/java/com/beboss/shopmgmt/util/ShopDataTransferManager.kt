@@ -174,6 +174,13 @@ object ShopDataTransferManager {
             put("taxRate", profile.taxRate)
             put("tinNumber", profile.tinNumber)
             put("receiptFooter", profile.receiptFooter)
+            put("receiptHeader", profile.receiptHeader)
+            put("dailySalesTarget", profile.dailySalesTarget)
+            put("monthlyRevenueTarget", profile.monthlyRevenueTarget)
+            put("targetMarginPercent", profile.targetMarginPercent)
+            put("cashRegisterFloat", profile.cashRegisterFloat)
+            put("showTaxOnReceipt", profile.showTaxOnReceipt)
+            put("businessType", profile.businessType)
             put("isOnlineSyncEnabled", profile.isOnlineSyncEnabled)
             put("backendServerUrl", profile.backendServerUrl)
             put("lastSyncedAt", profile.lastSyncedAt)
@@ -650,7 +657,7 @@ object ShopDataTransferManager {
         require(schemaVersion in 1..CURRENT_SCHEMA_VERSION) {
             "Unsupported BeBoss sync schema version: $schemaVersion"
         }
-        val packetNonce = meta?.optString("nonce", "").orEmpty()
+        val packetNonce = meta?.optCleanString("nonce", "").orEmpty()
         val expiresAt = meta?.optLong("expiresAt", 0L) ?: 0L
         if (isToken && expiresAt > 0L && ClockGuard.effectiveNowMs() > expiresAt) {
             throw IllegalArgumentException("Branch Share Token has expired. Request a fresh token.")
@@ -664,8 +671,8 @@ object ShopDataTransferManager {
             }
         }
         val exportedAt = meta?.optLong("timestamp") ?: ClockGuard.effectiveNowMs()
-        val exportedBy = meta?.optString("exportedBy") ?: "Owner"
-        val branchScopeName = meta?.optString("branchScopeName")?.takeIf { it.isNotBlank() }
+        val exportedBy = meta?.optCleanString("exportedBy", "Owner")?.ifBlank { "Owner" } ?: "Owner"
+        val branchScopeName = meta?.optCleanString("branchScopeName")?.takeIf { it.isNotBlank() }
 
         // Shop Profile
         var shopProfile: ShopProfile? = null
@@ -673,24 +680,31 @@ object ShopDataTransferManager {
             val sObj = root.getJSONObject("shopProfile")
             shopProfile = ShopProfile(
                 id = sObj.optLong("id", 1L),
-                shopName = sObj.optString("shopName", "My Shop"),
-                name = sObj.optString("name", ""),
-                phone = sObj.optString("phone", ""),
-                email = sObj.optString("email", ""),
-                address = sObj.optString("address", ""),
-                currencyCode = sObj.optString("currencyCode", "RWF"),
-                currencySymbol = sObj.optString("currencySymbol", "FRw"),
+                shopName = sObj.optCleanString("shopName", "My Shop"),
+                name = sObj.optCleanString("name", ""),
+                phone = sObj.optCleanString("phone", ""),
+                email = sObj.optCleanString("email", ""),
+                address = sObj.optCleanString("address", ""),
+                currencyCode = sObj.optCleanString("currencyCode", "RWF"),
+                currencySymbol = sObj.optCleanString("currencySymbol", "FRw"),
                 taxRate = sObj.optDouble("taxRate", 0.0),
-                tinNumber = sObj.optString("tinNumber", ""),
-                receiptFooter = sObj.optString("receiptFooter", "Thank you for your business!"),
+                tinNumber = sObj.optCleanString("tinNumber", ""),
+                receiptFooter = sObj.optCleanString("receiptFooter", "Thank you for your business!"),
+                receiptHeader = sObj.optCleanString("receiptHeader", ""),
+                dailySalesTarget = sObj.optDouble("dailySalesTarget", 0.0),
+                monthlyRevenueTarget = sObj.optDouble("monthlyRevenueTarget", 0.0),
+                targetMarginPercent = sObj.optDouble("targetMarginPercent", 25.0),
+                cashRegisterFloat = sObj.optDouble("cashRegisterFloat", 0.0),
+                showTaxOnReceipt = sObj.optBoolean("showTaxOnReceipt", true),
+                businessType = sObj.optCleanString("businessType", "sector_retail"),
                 isOnlineSyncEnabled = sObj.optBoolean("isOnlineSyncEnabled", true),
-                backendServerUrl = sObj.optString("backendServerUrl", "https://api.beboss.app/v1"),
+                backendServerUrl = sObj.optCleanString("backendServerUrl", "https://api.beboss.app/v1"),
                 lastSyncedAt = sObj.optLong("lastSyncedAt", 0L),
                 createdAt = sObj.optLong("createdAt", System.currentTimeMillis()),
                 updatedAt = sObj.optLong("updatedAt", System.currentTimeMillis()),
                 syncVersion = sObj.optLong("syncVersion", 1L),
                 hlcTimestamp = sObj.optLong("hlcTimestamp", 0L),
-                lastModifiedDeviceId = sObj.optString("lastModifiedDeviceId", "")
+                lastModifiedDeviceId = sObj.optCleanString("lastModifiedDeviceId", "")
             )
         }
 
@@ -702,29 +716,29 @@ object ShopDataTransferManager {
                 val b = bArr.getJSONObject(i)
                 branches.add(
                     Branch(
-                        id = b.optString("id"),
-                        name = b.optString("name", "Branch"),
-                        code = b.optString("code", "BR-01"),
-                        address = b.optString("address", "Kigali, Rwanda"),
-                        phone = b.optString("phone", ""),
-                        managerUserId = b.optString("managerUserId", ""),
-                        managerName = b.optString("managerName", ""),
+                        id = b.optCleanString("id"),
+                        name = b.optCleanString("name", "Branch"),
+                        code = b.optCleanString("code", "BR-01"),
+                        address = b.optCleanString("address", "Kigali, Rwanda"),
+                        phone = b.optCleanString("phone", ""),
+                        managerUserId = b.optCleanString("managerUserId", ""),
+                        managerName = b.optCleanString("managerName", ""),
                         isMainBranch = b.optBoolean("isMainBranch", false),
                         isActive = b.optBoolean("isActive", true),
-                        colorHex = b.optString("colorHex", "#FF6B1A"),
+                        colorHex = b.optCleanString("colorHex", "#FF6B1A"),
                         dailySalesTargetRwf = b.optLong("dailySalesTargetRwf", 0L),
                         monthlyTargetRwf = b.optLong("monthlyTargetRwf", 0L),
                         openingCashFloat = b.optLong("openingCashFloat", 0L),
                         stockValueRwf = b.optLong("stockValueRwf", 0L),
                         productCount = b.optInt("productCount", 0),
-                        operationalStatus = b.optString("operationalStatus", "OPEN"),
-                        email = b.optString("email", ""),
-                        notes = b.optString("notes", ""),
+                        operationalStatus = b.optCleanString("operationalStatus", "OPEN"),
+                        email = b.optCleanString("email", ""),
+                        notes = b.optCleanString("notes", ""),
                         createdAt = b.optLong("createdAt", System.currentTimeMillis()),
                         updatedAt = b.optLong("updatedAt", System.currentTimeMillis()),
                         syncVersion = b.optLong("syncVersion", 1L),
                         hlcTimestamp = b.optLong("hlcTimestamp", 0L),
-                        lastModifiedDeviceId = b.optString("lastModifiedDeviceId", "")
+                        lastModifiedDeviceId = b.optCleanString("lastModifiedDeviceId", "")
                     )
                 )
             }
@@ -736,21 +750,21 @@ object ShopDataTransferManager {
             val uArr = root.getJSONArray("users")
             for (i in 0 until uArr.length()) {
                 val u = uArr.getJSONObject(i)
-                val roleName = u.optString("role", "CASHIER")
+                val roleName = u.optCleanString("role", "CASHIER")
                 val role = try { UserRole.valueOf(roleName) } catch (_: Exception) { UserRole.CASHIER }
                 users.add(
                     User(
-                        id = u.optString("id"),
-                        name = u.optString("name"),
-                        username = u.optString("username"),
-                        email = u.optString("email", ""),
-                        phone = u.optString("phone", ""),
+                        id = u.optCleanString("id"),
+                        name = u.optCleanString("name"),
+                        username = u.optCleanString("username"),
+                        email = u.optCleanString("email", ""),
+                        phone = u.optCleanString("phone", ""),
                         pinHash = "",
                         password = "",
                         role = role,
-                        assignedBranchId = u.optString("assignedBranchId", ""),
-                        assignedBranchName = u.optString("assignedBranchName", "All Branches"),
-                        profileColorHex = u.optString("profileColorHex", "#FF6B1A"),
+                        assignedBranchId = u.optCleanString("assignedBranchId", ""),
+                        assignedBranchName = u.optCleanString("assignedBranchName", "All Branches"),
+                        profileColorHex = u.optCleanString("profileColorHex", "#FF6B1A"),
                         isActive = u.optBoolean("isActive", true),
                         canSellPOS = u.optBoolean("canSellPOS", true),
                         canApplyDiscounts = u.optBoolean("canApplyDiscounts", role != UserRole.CASHIER),
@@ -769,7 +783,7 @@ object ShopDataTransferManager {
                         updatedAt = u.optLong("updatedAt", System.currentTimeMillis()),
                         syncVersion = u.optLong("syncVersion", 1L),
                         hlcTimestamp = u.optLong("hlcTimestamp", 0L),
-                        lastModifiedDeviceId = u.optString("lastModifiedDeviceId", "")
+                        lastModifiedDeviceId = u.optCleanString("lastModifiedDeviceId", "")
                     )
                 )
             }
@@ -783,22 +797,22 @@ object ShopDataTransferManager {
                 val p = pArr.getJSONObject(i)
                 products.add(
                     Product(
-                        id = p.optString("id"),
-                        name = p.optString("name"),
-                        category = p.optString("category", "General"),
-                        barcode = p.optString("barcode", ""),
+                        id = p.optCleanString("id"),
+                        name = p.optCleanString("name"),
+                        category = p.optCleanString("category", "General"),
+                        barcode = p.optCleanString("barcode", ""),
                         costPrice = p.optDouble("costPrice", 0.0),
                         sellingPrice = p.optDouble("sellingPrice", 0.0),
                         quantityInStock = p.optDouble("quantityInStock", 0.0),
                         lowStockThreshold = p.optDouble("lowStockThreshold", 5.0),
-                        unit = p.optString("unit", "pcs"),
-                        branchId = p.optString("branchId", "main_branch"),
+                        unit = p.optCleanString("unit", "pcs"),
+                        branchId = p.optCleanString("branchId", "main_branch"),
                         isDeleted = p.optBoolean("isDeleted", false),
                         createdAt = p.optLong("createdAt", System.currentTimeMillis()),
                         updatedAt = p.optLong("updatedAt", System.currentTimeMillis()),
                         syncVersion = p.optLong("syncVersion", 1L),
                         hlcTimestamp = p.optLong("hlcTimestamp", 0L),
-                        lastModifiedDeviceId = p.optString("lastModifiedDeviceId", "")
+                        lastModifiedDeviceId = p.optCleanString("lastModifiedDeviceId", "")
                     )
                 )
             }
@@ -812,23 +826,23 @@ object ShopDataTransferManager {
                 val c = cArr.getJSONObject(i)
                 customers.add(
                     Customer(
-                        id = c.optString("id"),
-                        name = c.optString("name"),
-                        phone = c.optString("phone", ""),
-                        email = c.optString("email", ""),
-                        address = c.optString("address", ""),
-                        city = c.optString("city", "Kigali"),
-                        taxIdOrNin = c.optString("taxIdOrNin", ""),
-                        category = c.optString("category", "Regular Customer"),
+                        id = c.optCleanString("id"),
+                        name = c.optCleanString("name"),
+                        phone = c.optCleanString("phone", ""),
+                        email = c.optCleanString("email", ""),
+                        address = c.optCleanString("address", ""),
+                        city = c.optCleanString("city", "Kigali"),
+                        taxIdOrNin = c.optCleanString("taxIdOrNin", ""),
+                        category = c.optCleanString("category", "Regular Customer"),
                         creditLimit = c.optDouble("creditLimit", 500000.0),
-                        notes = c.optString("notes", ""),
+                        notes = c.optCleanString("notes", ""),
                         debtBalance = c.optDouble("debtBalance", 0.0),
                         isDeleted = c.optBoolean("isDeleted", false),
                         createdAt = c.optLong("createdAt", System.currentTimeMillis()),
                         updatedAt = c.optLong("updatedAt", System.currentTimeMillis()),
                         syncVersion = c.optLong("syncVersion", 1L),
                         hlcTimestamp = c.optLong("hlcTimestamp", 0L),
-                        lastModifiedDeviceId = c.optString("lastModifiedDeviceId", "")
+                        lastModifiedDeviceId = c.optCleanString("lastModifiedDeviceId", "")
                     )
                 )
             }
@@ -842,28 +856,28 @@ object ShopDataTransferManager {
                 val s = sArr.getJSONObject(i)
                 sales.add(
                     Sale(
-                        id = s.optString("id"),
-                        receiptNumber = s.optString("receiptNumber"),
-                        customerId = s.optString("customerId").ifBlank { null },
-                        customerName = s.optString("customerName", "Walk-in Customer"),
+                        id = s.optCleanString("id"),
+                        receiptNumber = s.optCleanString("receiptNumber"),
+                        customerId = s.optCleanString("customerId").ifBlank { null },
+                        customerName = s.optCleanString("customerName", "Walk-in Customer"),
                         saleDate = s.optLong("saleDate", s.optLong("timestamp", System.currentTimeMillis())),
                         totalAmount = s.optDouble("totalAmount", 0.0),
                         totalCost = s.optDouble("totalCost", 0.0),
                         totalProfit = s.optDouble("totalProfit", 0.0),
                         discountAmount = s.optDouble("discountAmount", 0.0),
-                        paymentMethod = s.optString("paymentMethod", "CASH"),
-                        paymentStatus = s.optString("paymentStatus", "PAID"),
+                        paymentMethod = s.optCleanString("paymentMethod", "CASH"),
+                        paymentStatus = s.optCleanString("paymentStatus", "PAID"),
                         amountPaid = s.optDouble("amountPaid", 0.0),
-                        notes = s.optString("notes", ""),
-                        branchId = s.optString("branchId", "main_branch"),
-                        branchName = s.optString("branchName", "Main Branch"),
-                        cashierId = s.optString("cashierId", ""),
-                        cashierName = s.optString("cashierName", "Shop Operator"),
+                        notes = s.optCleanString("notes", ""),
+                        branchId = s.optCleanString("branchId", "main_branch"),
+                        branchName = s.optCleanString("branchName", "Main Branch"),
+                        cashierId = s.optCleanString("cashierId", ""),
+                        cashierName = s.optCleanString("cashierName", "Shop Operator"),
                         synced = s.optBoolean("synced", false),
                         updatedAt = s.optLong("updatedAt", System.currentTimeMillis()),
                         syncVersion = s.optLong("syncVersion", 1L),
                         hlcTimestamp = s.optLong("hlcTimestamp", 0L),
-                        lastModifiedDeviceId = s.optString("lastModifiedDeviceId", "")
+                        lastModifiedDeviceId = s.optCleanString("lastModifiedDeviceId", "")
                     )
                 )
             }
@@ -877,18 +891,18 @@ object ShopDataTransferManager {
                 val item = iArr.getJSONObject(i)
                 saleItems.add(
                     SaleItem(
-                        id = item.optString("id"),
-                        saleId = item.optString("saleId"),
-                        productId = item.optString("productId"),
-                        productName = item.optString("productName"),
-                        category = item.optString("category", "General"),
-                        unit = item.optString("unit", "pcs"),
+                        id = item.optCleanString("id"),
+                        saleId = item.optCleanString("saleId"),
+                        productId = item.optCleanString("productId"),
+                        productName = item.optCleanString("productName"),
+                        category = item.optCleanString("category", "General"),
+                        unit = item.optCleanString("unit", "pcs"),
                         quantitySold = item.optDouble("quantitySold", item.optDouble("quantity", 1.0)),
                         costPriceAtSale = item.optDouble("costPriceAtSale", item.optDouble("unitCostPrice", 0.0)),
                         unitPriceAtSale = item.optDouble("unitPriceAtSale", item.optDouble("unitSellingPrice", 0.0)),
                         subtotal = item.optDouble("subtotal", item.optDouble("totalPrice", 0.0)),
                         profit = item.optDouble("profit", 0.0),
-                        branchId = item.optString("branchId", "main_branch")
+                        branchId = item.optCleanString("branchId", "main_branch")
                     )
                 )
             }
@@ -902,19 +916,19 @@ object ShopDataTransferManager {
                 val py = pyArr.getJSONObject(i)
                 payments.add(
                     CustomerPayment(
-                        id = py.optString("id"),
-                        customerId = py.optString("customerId"),
-                        customerName = py.optString("customerName", "Customer"),
+                        id = py.optCleanString("id"),
+                        customerId = py.optCleanString("customerId"),
+                        customerName = py.optCleanString("customerName", "Customer"),
                         amount = py.optDouble("amount", py.optDouble("amountPaid", 0.0)),
                         previousDebt = py.optDouble("previousDebt", 0.0),
                         remainingDebt = py.optDouble("remainingDebt", 0.0),
-                        paymentMethod = py.optString("paymentMethod", "Cash"),
-                        notes = py.optString("notes", ""),
-                        receiptNumber = py.optString("receiptNumber", "PAY-${System.currentTimeMillis().toString().takeLast(6)}"),
+                        paymentMethod = py.optCleanString("paymentMethod", "Cash"),
+                        notes = py.optCleanString("notes", ""),
+                        receiptNumber = py.optCleanString("receiptNumber", "PAY-${System.currentTimeMillis().toString().takeLast(6)}"),
                         paymentDate = py.optLong("paymentDate", py.optLong("timestamp", System.currentTimeMillis())),
-                        recordedBy = py.optString("recordedBy", "Shop Owner"),
-                        branchId = py.optString("branchId", "main_branch"),
-                        branchName = py.optString("branchName", "Main Branch")
+                        recordedBy = py.optCleanString("recordedBy", "Shop Owner"),
+                        branchId = py.optCleanString("branchId", "main_branch"),
+                        branchName = py.optCleanString("branchName", "Main Branch")
                     )
                 )
             }
@@ -928,23 +942,23 @@ object ShopDataTransferManager {
                 val pu = puArr.getJSONObject(i)
                 purchases.add(
                     PurchaseRecord(
-                        id = pu.optString("id"),
-                        productId = pu.optString("productId"),
-                        productName = pu.optString("productName"),
-                        category = pu.optString("category", "General"),
-                        supplierName = pu.optString("supplierName", "Local Wholesale Supplier"),
-                        supplierPhone = pu.optString("supplierPhone", ""),
+                        id = pu.optCleanString("id"),
+                        productId = pu.optCleanString("productId"),
+                        productName = pu.optCleanString("productName"),
+                        category = pu.optCleanString("category", "General"),
+                        supplierName = pu.optCleanString("supplierName", "Local Wholesale Supplier"),
+                        supplierPhone = pu.optCleanString("supplierPhone", ""),
                         quantityPurchased = pu.optDouble("quantityPurchased", 1.0),
                         unitCostPrice = pu.optDouble("unitCostPrice", 0.0),
                         totalPurchaseCost = pu.optDouble("totalPurchaseCost", 0.0),
                         sellingPriceAtPurchase = pu.optDouble("sellingPriceAtPurchase", 0.0),
-                        paymentStatus = pu.optString("paymentStatus", "PAID_CASH"),
-                        invoiceNumber = pu.optString("invoiceNumber", ""),
-                        branchId = pu.optString("branchId", "main_branch"),
-                        branchName = pu.optString("branchName", "Main Store"),
-                        purchasedByUserId = pu.optString("purchasedByUserId", ""),
-                        purchasedByName = pu.optString("purchasedByName", "Shop Manager"),
-                        notes = pu.optString("notes", ""),
+                        paymentStatus = pu.optCleanString("paymentStatus", "PAID_CASH"),
+                        invoiceNumber = pu.optCleanString("invoiceNumber", ""),
+                        branchId = pu.optCleanString("branchId", "main_branch"),
+                        branchName = pu.optCleanString("branchName", "Main Store"),
+                        purchasedByUserId = pu.optCleanString("purchasedByUserId", ""),
+                        purchasedByName = pu.optCleanString("purchasedByName", "Shop Manager"),
+                        notes = pu.optCleanString("notes", ""),
                         purchaseDate = pu.optLong("purchaseDate", System.currentTimeMillis()),
                         isSynced = pu.optBoolean("isSynced", false),
                         createdAt = pu.optLong("createdAt", System.currentTimeMillis())
@@ -961,22 +975,22 @@ object ShopDataTransferManager {
                 val tr = trArr.getJSONObject(i)
                 transfers.add(
                     StockTransfer(
-                        id = tr.optString("id"),
-                        transferNumber = tr.optString("transferNumber"),
-                        productId = tr.optString("productId"),
-                        productName = tr.optString("productName"),
-                        fromBranchId = tr.optString("fromBranchId"),
-                        fromBranchName = tr.optString("fromBranchName"),
-                        toBranchId = tr.optString("toBranchId"),
-                        toBranchName = tr.optString("toBranchName"),
+                        id = tr.optCleanString("id"),
+                        transferNumber = tr.optCleanString("transferNumber"),
+                        productId = tr.optCleanString("productId"),
+                        productName = tr.optCleanString("productName"),
+                        fromBranchId = tr.optCleanString("fromBranchId"),
+                        fromBranchName = tr.optCleanString("fromBranchName"),
+                        toBranchId = tr.optCleanString("toBranchId"),
+                        toBranchName = tr.optCleanString("toBranchName"),
                         quantity = tr.optDouble("quantity", 0.0),
-                        unit = tr.optString("unit", "pcs"),
+                        unit = tr.optCleanString("unit", "pcs"),
                         costValueRwf = tr.optLong("costValueRwf", 0L),
                         transferDate = tr.optLong("transferDate", System.currentTimeMillis()),
-                        status = tr.optString("status", "COMPLETED"),
-                        notes = tr.optString("notes", ""),
-                        transferredBy = tr.optString("transferredBy", "Store Operator"),
-                        receivedBy = tr.optString("receivedBy", ""),
+                        status = tr.optCleanString("status", "COMPLETED"),
+                        notes = tr.optCleanString("notes", ""),
+                        transferredBy = tr.optCleanString("transferredBy", "Store Operator"),
+                        receivedBy = tr.optCleanString("receivedBy", ""),
                         receivedAt = tr.optLong("receivedAt", 0L),
                         synced = tr.optBoolean("synced", false),
                         createdAt = tr.optLong("createdAt", System.currentTimeMillis())
@@ -991,17 +1005,17 @@ object ShopDataTransferManager {
             val tombArr = root.getJSONArray("tombstones")
             for (i in 0 until tombArr.length()) {
                 val t = tombArr.getJSONObject(i)
-                val tableName = t.optString("tableName")
-                val recordId = t.optString("recordId")
+                val tableName = t.optCleanString("tableName")
+                val recordId = t.optCleanString("recordId")
                 if (tableName.isNotBlank() && recordId.isNotBlank()) {
                     tombstones.add(
                         SyncTombstone(
-                            id = t.optString("id").ifBlank { SyncTombstone.keyFor(tableName, recordId) },
+                            id = t.optCleanString("id").ifBlank { SyncTombstone.keyFor(tableName, recordId) },
                             tableName = tableName,
                             recordId = recordId,
                             deletedAt = t.optLong("deletedAt", ClockGuard.effectiveNowMs()),
                             hlcTimestamp = t.optLong("hlcTimestamp", 0L),
-                            deletedByDeviceId = t.optString("deletedByDeviceId", "")
+                            deletedByDeviceId = t.optCleanString("deletedByDeviceId", "")
                         )
                     )
                 }

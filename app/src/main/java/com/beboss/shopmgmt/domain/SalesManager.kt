@@ -21,6 +21,7 @@ import com.beboss.shopmgmt.util.MoneyUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -67,7 +68,8 @@ class SalesManager(
         branchId: String = "main_branch",
         branchName: String = "Main Store",
         cashierId: String = "",
-        cashierName: String = "Shop Operator"
+        cashierName: String = "Shop Operator",
+        enforceCreditLimit: Boolean = true
     ): Sale = withContext(Dispatchers.IO) {
         require(items.isNotEmpty()) { "Cannot checkout an empty cart." }
         ensureSufficientStorage()
@@ -102,6 +104,18 @@ class SalesManager(
                 }
                 val unpaidDebtCents = (netTotalCents - paidCents).coerceAtLeast(0L)
                 val unpaidDebt = MoneyUtils.centsToDouble(unpaidDebtCents)
+
+                if (enforceCreditLimit && customerId != null && unpaidDebt > 0.0) {
+                    val customer = customerDao.getCustomerById(customerId)
+                    if (customer != null && customer.creditLimit > 0.0) {
+                        val projectedDebt = customer.debtBalance + unpaidDebt
+                        if (projectedDebt > customer.creditLimit + 0.01) {
+                            throw IllegalStateException(
+                                "Credit limit exceeded for ${customer.name}: current debt ${customer.debtBalance.toLong()} + new credit ${unpaidDebt.toLong()} exceeds limit ${customer.creditLimit.toLong()}."
+                            )
+                        }
+                    }
+                }
 
                 val receiptNum = "REC-" + SimpleDateFormat("yyMMdd-HHmmss", Locale.getDefault()).format(Date(now))
 
@@ -151,8 +165,9 @@ class SalesManager(
                 saleDao.insertSale(sale)
                 saleDao.insertSaleItems(saleItems)
 
-                // Decrement product inventory safely and atomically
+                // Decrement product inventory safely and atomically for catalog items
                 for (item in items) {
+                    if (item.product.id.startsWith("custom_")) continue
                     val updatedRows = productDao.decrementStock(item.product.id, item.quantity, now)
                     if (updatedRows <= 0) {
                         throw IllegalStateException("Insufficient stock or product deleted for '${item.product.name}' (Requested: ${item.quantity}).")
@@ -170,7 +185,11 @@ class SalesManager(
                         tableName = "sales",
                         recordId = saleId,
                         operation = "CREATE",
-                        payloadJson = """{"total":$netTotal,"itemsCount":${items.size},"receipt":"$receiptNum"}"""
+                        payloadJson = JSONObject().apply {
+                            put("total", netTotal)
+                            put("itemsCount", items.size)
+                            put("receipt", receiptNum)
+                        }.toString()
                     )
                 )
 
@@ -227,7 +246,10 @@ class SalesManager(
                             tableName = "sales",
                             recordId = saleId,
                             operation = "DELETE",
-                            payloadJson = """{"deleted":true,"saleId":"$saleId"}"""
+                            payloadJson = JSONObject().apply {
+                                put("deleted", true)
+                                put("saleId", saleId)
+                            }.toString()
                         )
                     )
                 }

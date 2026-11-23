@@ -2,6 +2,7 @@ package com.beboss.shopmgmt.ui.screens
 
 import android.content.Context
 import android.widget.Toast
+import com.beboss.shopmgmt.util.safeMessage
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -72,6 +73,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,7 +95,9 @@ import com.beboss.shopmgmt.data.model.InventoryValuation
 import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.PurchaseRecord
 import com.beboss.shopmgmt.data.model.PurchaseSummary
+import com.beboss.shopmgmt.data.model.ReorderSuggestion
 import com.beboss.shopmgmt.data.model.ShopProfile
+import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.ui.components.PurchasesLedgerView
 import com.beboss.shopmgmt.ui.theme.BackgroundLight
 import com.beboss.shopmgmt.ui.theme.DarkNavy
@@ -122,8 +126,11 @@ fun InventoryScreen(
     categories: List<String>,
     inventoryValuation: InventoryValuation,
     shopProfile: ShopProfile,
+    currentUser: User? = null,
     purchases: List<PurchaseRecord> = emptyList(),
     purchaseSummary: PurchaseSummary = PurchaseSummary(),
+    prefillReorderSuggestion: ReorderSuggestion? = null,
+    onClearPrefillReorder: () -> Unit = {},
     language: AppLanguage = AppLanguage.ENGLISH,
     onSaveProduct: (Product) -> Unit,
     onAdjustStock: (String, Double, String) -> Unit,
@@ -133,7 +140,17 @@ fun InventoryScreen(
     onDeletePurchase: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val canManageInventory = currentUser?.canManageInventory ?: true
+    val canDeleteRecords = currentUser?.canDeleteRecords ?: true
+    val canExportReports = currentUser?.canExportReports ?: true
+    val canViewCostAndProfit = currentUser?.canViewCostAndProfit ?: true
+
     var selectedInventoryTab by remember { mutableStateOf(0) } // 0 = Stock Ledger, 1 = Purchases / Inflow
+    LaunchedEffect(prefillReorderSuggestion) {
+        if (prefillReorderSuggestion != null) {
+            selectedInventoryTab = 1
+        }
+    }
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
     var showOnlyLowStock by remember { mutableStateOf(false) }
@@ -162,7 +179,7 @@ fun InventoryScreen(
                     Toast.makeText(context, Localization.get("inv_import_empty", language), Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                Toast.makeText(context, Localization.format("inv_import_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, Localization.format("inv_import_err_fmt", language, e.safeMessage()), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -262,6 +279,12 @@ fun InventoryScreen(
                     purchaseSummary = purchaseSummary,
                     shopProfile = shopProfile,
                     language = language,
+                    canManageInventory = canManageInventory,
+                    canDeleteRecords = canDeleteRecords,
+                    canExportReports = canExportReports,
+                    canViewCostAndProfit = canViewCostAndProfit,
+                    prefillReorderSuggestion = prefillReorderSuggestion,
+                    onClearPrefillReorder = onClearPrefillReorder,
                     onRecordPurchase = { prodId, qty, cost, sellPrice, supplier, phone, status, inv, notes ->
                         onRecordPurchase?.invoke(prodId, qty, cost, sellPrice, supplier, phone, status, inv, notes)
                     },
@@ -319,24 +342,26 @@ fun InventoryScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // Cost value
-                            Surface(
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(0xFFF9FAFB),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
-                            ) {
-                                Column(modifier = Modifier.padding(8.dp)) {
-                                    Text(Localization.get("inv_total_cost", language), fontSize = 10.sp, color = InkMedium, fontWeight = FontWeight.Medium)
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = ReceiptGenerator.formatMoney(inventoryValuation.totalCostValue, shopProfile),
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = InkDark,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                            if (canViewCostAndProfit) {
+                                // Cost value
+                                Surface(
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFFF9FAFB),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+                                ) {
+                                    Column(modifier = Modifier.padding(8.dp)) {
+                                        Text(Localization.get("inv_total_cost", language), fontSize = 10.sp, color = InkMedium, fontWeight = FontWeight.Medium)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = ReceiptGenerator.formatMoney(inventoryValuation.totalCostValue, shopProfile),
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = InkDark,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
 
@@ -361,24 +386,26 @@ fun InventoryScreen(
                                 }
                             }
 
-                            // Potential Profit
-                            Surface(
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(0xFFDCFCE7),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF86EFAC))
-                            ) {
-                                Column(modifier = Modifier.padding(8.dp)) {
-                                    Text(Localization.get("inv_est_profit", language), fontSize = 10.sp, color = InkMedium, fontWeight = FontWeight.Medium)
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "+${ReceiptGenerator.formatMoney(inventoryValuation.potentialProfit, shopProfile)}",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = ProfitGreen,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                            if (canViewCostAndProfit) {
+                                // Potential Profit
+                                Surface(
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFFDCFCE7),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF86EFAC))
+                                ) {
+                                    Column(modifier = Modifier.padding(8.dp)) {
+                                        Text(Localization.get("inv_est_profit", language), fontSize = 10.sp, color = InkMedium, fontWeight = FontWeight.Medium)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "+${ReceiptGenerator.formatMoney(inventoryValuation.potentialProfit, shopProfile)}",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = ProfitGreen,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -390,56 +417,62 @@ fun InventoryScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            OutlinedButton(
-                                onClick = {
-                                    try {
-                                        val file = ExcelCsvExporter.exportProductsCsv(context, products, shopProfile)
-                                        ExcelCsvExporter.shareCsvFile(context, file, Localization.get("inv_share_csv_title", language))
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, Localization.format("inv_export_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(15.dp), tint = OrangePrimary)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(Localization.get("inv_excel_csv_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
+                            if (canExportReports) {
+                                OutlinedButton(
+                                    onClick = {
+                                        try {
+                                            val file = ExcelCsvExporter.exportProductsCsv(context, products, shopProfile)
+                                            ExcelCsvExporter.shareCsvFile(context, file, Localization.get("inv_share_csv_title", language))
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, Localization.format("inv_export_err_fmt", language, e.safeMessage()), Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(15.dp), tint = OrangePrimary)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(Localization.get("inv_excel_csv_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
+                                }
                             }
 
-                            OutlinedButton(
-                                onClick = {
-                                    filePickerLauncher.launch("text/*")
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(15.dp), tint = InkDark)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(Localization.get("inv_import_csv_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = InkDark)
+                            if (canManageInventory) {
+                                OutlinedButton(
+                                    onClick = {
+                                        filePickerLauncher.launch("text/*")
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(15.dp), tint = InkDark)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(Localization.get("inv_import_csv_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = InkDark)
+                                }
                             }
 
-                            OutlinedButton(
-                                onClick = {
-                                    try {
-                                        val pdf = PdfReportGenerator.generateInventoryValuationPdf(context, products, inventoryValuation, shopProfile)
-                                        PdfReportGenerator.sharePdf(context, pdf, Localization.get("inv_share_pdf_title", language))
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, Localization.format("inv_pdf_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(15.dp), tint = LossRed)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(Localization.get("inv_pdf_report_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LossRed)
+                            if (canExportReports) {
+                                OutlinedButton(
+                                    onClick = {
+                                        try {
+                                            val pdf = PdfReportGenerator.generateInventoryValuationPdf(context, products, inventoryValuation, shopProfile)
+                                            PdfReportGenerator.sharePdf(context, pdf, Localization.get("inv_share_pdf_title", language))
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, Localization.format("inv_pdf_err_fmt", language, e.safeMessage()), Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(15.dp), tint = LossRed)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(Localization.get("inv_pdf_report_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LossRed)
+                                }
                             }
 
-                            if (onClearAllProducts != null && products.isNotEmpty()) {
+                            if (onClearAllProducts != null && canDeleteRecords && products.isNotEmpty()) {
                                 OutlinedButton(
                                     onClick = { showClearAllProductsDialog = true },
                                     modifier = Modifier.weight(1f),
@@ -572,12 +605,14 @@ fun InventoryScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(Localization.get("inv_no_match", language), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
                             Spacer(modifier = Modifier.height(10.dp))
-                            Button(
-                                onClick = { isAddingNewProduct = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text(Localization.get("inv_add_to_sheet_btn", language))
+                            if (canManageInventory) {
+                                Button(
+                                    onClick = { isAddingNewProduct = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(Localization.get("inv_add_to_sheet_btn", language))
+                                }
                             }
                         }
                     }
@@ -590,6 +625,9 @@ fun InventoryScreen(
                         shopProfile = shopProfile,
                         language = language,
                         isEven = index % 2 == 0,
+                        canManageInventory = canManageInventory,
+                        canDeleteRecords = canDeleteRecords,
+                        canViewCostAndProfit = canViewCostAndProfit,
                         onQuickAddStock = { delta ->
                             onAdjustStock(product.id, delta, "Quick +$delta stock addition")
                         },
@@ -609,7 +647,7 @@ fun InventoryScreen(
         } // closes Column
 
         // FAB to Add Product
-        if (selectedInventoryTab == 0) {
+        if (selectedInventoryTab == 0 && canManageInventory) {
             FloatingActionButton(
                 onClick = { isAddingNewProduct = true },
                 modifier = Modifier
@@ -656,13 +694,13 @@ fun InventoryScreen(
     }
 
     // Stock Adjust Dialog
-    if (productToAdjust != null) {
+    productToAdjust?.let { targetProduct ->
         StockAdjustDialog(
-            product = productToAdjust!!,
+            product = targetProduct,
             shopProfile = shopProfile,
             language = language,
             onConfirm = { delta, reason ->
-                onAdjustStock(productToAdjust!!.id, delta, reason)
+                onAdjustStock(targetProduct.id, delta, reason)
                 productToAdjust = null
             },
             onDismiss = { productToAdjust = null }
@@ -670,15 +708,15 @@ fun InventoryScreen(
     }
 
     // Delete Confirmation
-    if (productToDelete != null) {
+    productToDelete?.let { deleteTarget ->
         AlertDialog(
             onDismissRequest = { productToDelete = null },
             title = { Text(Localization.get("inv_delete_product_cd", language), fontWeight = FontWeight.Bold) },
-            text = { Text(Localization.format("inv_delete_confirm_msg_fmt", language, productToDelete!!.name)) },
+            text = { Text(Localization.format("inv_delete_confirm_msg_fmt", language, deleteTarget.name)) },
             confirmButton = {
                 Button(
                     onClick = {
-                        onDeleteProduct(productToDelete!!.id)
+                        onDeleteProduct(deleteTarget.id)
                         productToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed)
@@ -842,6 +880,9 @@ private fun ExcelProductRow(
     shopProfile: ShopProfile,
     language: AppLanguage = AppLanguage.ENGLISH,
     isEven: Boolean,
+    canManageInventory: Boolean = true,
+    canDeleteRecords: Boolean = true,
+    canViewCostAndProfit: Boolean = true,
     onQuickAddStock: (Double) -> Unit,
     onQuickReduceStock: (Double) -> Unit,
     onEdit: () -> Unit,
@@ -875,7 +916,7 @@ private fun ExcelProductRow(
             Column(
                 modifier = Modifier
                     .weight(2.2f)
-                    .clickable { onEdit() }
+                    .clickable(enabled = canManageInventory) { onEdit() }
             ) {
                 Text(
                     text = product.name,
@@ -921,33 +962,35 @@ private fun ExcelProductRow(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(2.dp))
+                if (canManageInventory) {
+                    Spacer(modifier = Modifier.height(2.dp))
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    // Quick -1
-                    Surface(
-                        onClick = { onQuickReduceStock(1.0) },
-                        shape = CircleShape,
-                        color = Color(0xFFE5E7EB),
-                        modifier = Modifier.size(20.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Remove, contentDescription = "-1", tint = InkDark, modifier = Modifier.size(12.dp))
+                        // Quick -1
+                        Surface(
+                            onClick = { onQuickReduceStock(1.0) },
+                            shape = CircleShape,
+                            color = Color(0xFFE5E7EB),
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Remove, contentDescription = "-1", tint = InkDark, modifier = Modifier.size(12.dp))
+                            }
                         }
-                    }
 
-                    // Quick +1
-                    Surface(
-                        onClick = { onQuickAddStock(1.0) },
-                        shape = CircleShape,
-                        color = OrangeLight,
-                        modifier = Modifier.size(20.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Add, contentDescription = "+1", tint = OrangePrimary, modifier = Modifier.size(12.dp))
+                        // Quick +1
+                        Surface(
+                            onClick = { onQuickAddStock(1.0) },
+                            shape = CircleShape,
+                            color = OrangeLight,
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Add, contentDescription = "+1", tint = OrangePrimary, modifier = Modifier.size(12.dp))
+                            }
                         }
                     }
                 }
@@ -965,12 +1008,14 @@ private fun ExcelProductRow(
                     color = OrangePrimary,
                     maxLines = 1
                 )
-                Text(
-                    text = Localization.format("inv_pct_profit_fmt", language, product.profitMarginPercent.toInt()),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = ProfitGreen
-                )
+                if (canViewCostAndProfit) {
+                    Text(
+                        text = Localization.format("inv_pct_profit_fmt", language, product.profitMarginPercent.toInt()),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = ProfitGreen
+                    )
+                }
             }
 
             // Actions Menu
@@ -979,23 +1024,27 @@ private fun ExcelProductRow(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onAdjust,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(Icons.Default.Inventory, contentDescription = Localization.get("restock", language), tint = OrangePrimary, modifier = Modifier.size(16.dp))
+                if (canManageInventory) {
+                    IconButton(
+                        onClick = onAdjust,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Inventory, contentDescription = Localization.get("restock", language), tint = OrangePrimary, modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = Localization.get("edit", language), tint = InkDark, modifier = Modifier.size(16.dp))
+                    }
                 }
-                IconButton(
-                    onClick = onEdit,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = Localization.get("edit", language), tint = InkDark, modifier = Modifier.size(16.dp))
-                }
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = Localization.get("inv_delete_product_cd", language), tint = LossRed, modifier = Modifier.size(16.dp))
+                if (canDeleteRecords) {
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = Localization.get("inv_delete_product_cd", language), tint = LossRed, modifier = Modifier.size(16.dp))
+                    }
                 }
             }
         }

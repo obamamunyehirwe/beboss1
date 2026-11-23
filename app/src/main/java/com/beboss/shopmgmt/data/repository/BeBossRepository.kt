@@ -11,6 +11,7 @@ import com.beboss.shopmgmt.data.model.CustomerPayment
 import com.beboss.shopmgmt.data.model.DailyAnalyticsPoint
 import com.beboss.shopmgmt.data.model.DatabaseEngineStats
 import com.beboss.shopmgmt.data.model.DatabaseMaintenanceResult
+import com.beboss.shopmgmt.data.model.DeadLetterItem
 import com.beboss.shopmgmt.data.model.InventoryValuation
 import com.beboss.shopmgmt.data.model.PaymentVerificationRequest
 import com.beboss.shopmgmt.data.model.Product
@@ -47,14 +48,17 @@ import com.beboss.shopmgmt.util.SecurityUtils
 import com.beboss.shopmgmt.util.ShopDataTransferManager
 import com.beboss.shopmgmt.util.ShopImportSummary
 import com.beboss.shopmgmt.util.SupabaseAdminClient
+import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
 import com.beboss.shopmgmt.util.SupabaseSyncResult
 import com.beboss.shopmgmt.util.SyncAuditLog
 import com.beboss.shopmgmt.util.VoucherValidationResult
+import com.beboss.shopmgmt.util.safeMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 import java.util.UUID
@@ -115,11 +119,40 @@ class BeBossRepository(private val database: AppDatabase) {
     val analyticsEngine = AnalyticsEngine(saleDao)
     val cloudSyncManager = CloudSyncManager(database)
 
-    // Sync Audit Logs & Pending Queue & Local Audit Logs
+    // Sync Audit Logs & Pending Queue & Dead-Letter Queue & Local Audit Logs
     val syncAuditLogs: StateFlow<List<SyncAuditLog>> = cloudSyncManager.syncAuditLogs
     val pendingSyncCount: Flow<Int> = syncQueueDao.getPendingCount()
     val deadLetterSyncCount: Flow<Int> = syncQueueDao.getDeadLetterCountFlow()
+    val pendingSyncQueue: Flow<List<SyncQueueItem>> = syncQueueDao.getPendingQueueFlow()
+    val deadLetterSyncQueue: Flow<List<SyncQueueItem>> = syncQueueDao.getDeadLetterQueueFlow()
+    val deadLetterItems: Flow<List<DeadLetterItem>> = database.deadLetterDao().getAllItems()
     val localAuditLogs: Flow<List<LocalAuditLog>> = localAuditLogDao.getRecentLogs()
+
+    suspend fun requeueSyncItem(id: String) = withContext(Dispatchers.IO) {
+        cloudSyncManager.requeueSingleDeadLetter(id)
+    }
+
+    suspend fun requeueAllDeadLetters(): Int = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        var count = syncQueueDao.requeueDeadLetters(now)
+        val dlList = database.deadLetterDao().getAllItemsList()
+        for (dl in dlList) {
+            cloudSyncManager.requeueSingleDeadLetter(dl.id)
+            count++
+        }
+        count
+    }
+
+    suspend fun discardDeadLetterItem(id: String) = withContext(Dispatchers.IO) {
+        cloudSyncManager.discardDeadLetter(id)
+    }
+
+    suspend fun clearAllPendingSyncQueue() = withContext(Dispatchers.IO) {
+        syncQueueDao.clearQueue()
+    }
+
+    suspend fun fetchShopTelemetry(shopSyncKey: String): List<SupabaseDeviceTelemetryDto> =
+        SupabaseAdminClient.fetchDeviceTelemetryForShop(shopSyncKey)
 
     suspend fun recordLocalAudit(actorName: String, actorRole: String, action: String, targetId: String = "", details: String = "") {
         localAuditLogDao.insertLog(
@@ -179,12 +212,14 @@ class BeBossRepository(private val database: AppDatabase) {
     suspend fun performSync(
         activeBranchId: String = "main_branch",
         deviceId: String = "DEV-LOCAL",
-        context: Context? = null
+        context: Context? = null,
+        retryDeadLetters: Boolean = false
     ): CloudSyncReport =
         cloudSyncManager.syncAllDataToCloud(
             activeBranchId = activeBranchId,
             deviceId = deviceId,
             context = context,
+            retryDeadLetters = retryDeadLetters,
             mergeRemoteSummary = { summary -> mergeShopDataPackageLww(summary) }
         )
 
@@ -262,8 +297,28 @@ class BeBossRepository(private val database: AppDatabase) {
     suspend fun refreshAllBranchStockSnapshots() =
         branchTransferManager.refreshAllBranchStockSnapshots()
 
-    suspend fun confirmTransferReceived(transferId: String, receivedBy: String): StockTransfer =
-        branchTransferManager.confirmTransferReceived(transferId, receivedBy)
+    suspend fun confirmTransferReceived(transferId: String, receivedBy: String, actor: User? = null): StockTransfer {
+        if (actor != null) {
+            requirePermission(actor, "CONFIRM_TRANSFER", transferId) {
+                it.canManageInventory || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+            }
+        }
+        return branchTransferManager.confirmTransferReceived(transferId, receivedBy)
+    }
+
+    suspend fun rejectOrCancelTransfer(
+        transferId: String,
+        actorName: String,
+        reason: String = "",
+        actor: User? = null
+    ): StockTransfer {
+        if (actor != null) {
+            requirePermission(actor, "CANCEL_TRANSFER", transferId) {
+                it.canManageInventory || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+            }
+        }
+        return branchTransferManager.rejectOrCancelTransfer(transferId, actorName, reason)
+    }
 
     // -------------------------------------------------------------
     // USERS & AUTHENTICATION
@@ -320,7 +375,12 @@ class BeBossRepository(private val database: AppDatabase) {
         return shopProfileDao.getShopProfileDirect() ?: ShopProfile()
     }
 
-    suspend fun updateShopProfile(profile: ShopProfile) = withContext(Dispatchers.IO) {
+    suspend fun updateShopProfile(profile: ShopProfile, actor: User? = null) = withContext(Dispatchers.IO) {
+        if (actor != null) {
+            requirePermission(actor, "UPDATE_SHOP_SETTINGS", profile.id.toString()) {
+                it.canManageShopSettings || it.role == UserRole.OWNER
+            }
+        }
         val updated = profile.copy(updatedAt = System.currentTimeMillis())
         shopProfileDao.insertOrUpdateProfile(updated)
         syncQueueDao.enqueue(
@@ -328,7 +388,12 @@ class BeBossRepository(private val database: AppDatabase) {
                 tableName = "shop_profile",
                 recordId = updated.id.toString(),
                 operation = "UPDATE",
-                payloadJson = """{"shopName":"${updated.shopName}","currency":"${updated.currencyCode}"}"""
+                payloadJson = JSONObject().apply {
+                    put("shopName", updated.shopName)
+                    put("currency", updated.currencyCode)
+                    put("phone", updated.phone)
+                    put("updatedAt", updated.updatedAt)
+                }.toString()
             )
         )
     }
@@ -424,10 +489,21 @@ class BeBossRepository(private val database: AppDatabase) {
         branchId: String = "main_branch",
         branchName: String = "Main Store",
         cashierId: String = "",
-        cashierName: String = "Shop Operator"
+        cashierName: String = "Shop Operator",
+        enforceCreditLimit: Boolean = true
     ): Sale = salesManager.processSale(
-        items, customerId, customerName, discountAmount, paymentMethod, amountPaid, notes,
-        branchId, branchName, cashierId, cashierName
+        items = items,
+        customerId = customerId,
+        customerName = customerName,
+        discountAmount = discountAmount,
+        paymentMethod = paymentMethod,
+        amountPaid = amountPaid,
+        notes = notes,
+        branchId = branchId,
+        branchName = branchName,
+        cashierId = cashierId,
+        cashierName = cashierName,
+        enforceCreditLimit = enforceCreditLimit
     )
 
     // -------------------------------------------------------------
@@ -437,11 +513,17 @@ class BeBossRepository(private val database: AppDatabase) {
 
     fun getPurchaseSummary(): Flow<PurchaseSummary> = inventoryManager.getPurchaseSummary()
 
-    fun getProfitLossForPeriod(period: AnalyticsPeriod): Flow<ProfitLossSummary> =
-        analyticsEngine.getProfitLossForPeriod(period)
+    fun getProfitLossForPeriod(
+        period: AnalyticsPeriod,
+        branchIdFilter: String = "ALL"
+    ): Flow<ProfitLossSummary> =
+        analyticsEngine.getProfitLossForPeriod(period, branchIdFilter)
 
-    fun getDailyAnalyticsPoints(period: AnalyticsPeriod): Flow<List<DailyAnalyticsPoint>> =
-        analyticsEngine.getDailyAnalyticsPoints(period)
+    fun getDailyAnalyticsPoints(
+        period: AnalyticsPeriod,
+        branchIdFilter: String = "ALL"
+    ): Flow<List<DailyAnalyticsPoint>> =
+        analyticsEngine.getDailyAnalyticsPoints(period, branchIdFilter)
 
     fun getTopProducts(period: AnalyticsPeriod, limit: Int = 10): Flow<List<TopProductReport>> =
         analyticsEngine.getTopProducts(period, limit)
@@ -1041,10 +1123,12 @@ class BeBossRepository(private val database: AppDatabase) {
                 shopName = remoteShop.shopName,
                 signedInUser = pairedUser
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             JoinShopCloudResult(
                 success = false,
-                message = "Cloud pairing failed: ${e.message}"
+                message = "Cloud pairing failed: ${e.safeMessage("Unable to pair with shop right now.")}"
             )
         }
     }
@@ -1490,8 +1574,13 @@ class BeBossRepository(private val database: AppDatabase) {
                 approvedCodesFound = approvedDtos,
                 directAutoUnlocked = directAutoUnlocked
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            SupabaseSyncResult(success = false, message = "Supabase sync pending: ${e.message}")
+            SupabaseSyncResult(
+                success = false,
+                message = "Supabase sync pending: ${e.safeMessage("Cloud server unreachable")}"
+            )
         }
     }
 
@@ -1634,7 +1723,7 @@ class BeBossRepository(private val database: AppDatabase) {
         } catch (e: Exception) {
             DatabaseMaintenanceResult(
                 success = false,
-                message = "Optimization error: ${e.message}",
+                message = "Optimization error: ${e.safeMessage("Database optimization failed")}",
                 durationMs = System.currentTimeMillis() - start
             )
         }
@@ -1656,7 +1745,7 @@ class BeBossRepository(private val database: AppDatabase) {
         } catch (e: Exception) {
             DatabaseMaintenanceResult(
                 success = false,
-                message = "Integrity check failed: ${e.message}",
+                message = "Integrity check failed: ${e.safeMessage("Integrity check failed")}",
                 durationMs = System.currentTimeMillis() - start
             )
         }

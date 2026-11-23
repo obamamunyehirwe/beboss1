@@ -62,7 +62,7 @@ object PaymentGatewayManager {
             }
             context.startActivity(intent)
         } catch (e: Exception) {
-            Toast.makeText(context, "Could not open dialer: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Could not open dialer: ${e.safeMessage("No phone app available")}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -78,7 +78,7 @@ object PaymentGatewayManager {
             }
             context.startActivity(intent)
         } catch (e: Exception) {
-            Toast.makeText(context, "Could not open dialer: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Could not open dialer: ${e.safeMessage("No phone app available")}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -138,9 +138,9 @@ object PaymentGatewayManager {
                 if (code in 200..299) {
                     val respStr = conn.inputStream.bufferedReader().use { it.readText() }
                     val json = JSONObject(respStr)
-                    val status = json.optString("status").uppercase(Locale.ROOT)
+                    val status = json.optCleanString("status").uppercase(Locale.ROOT)
                     val responseAmount = json.optInt("amount", amount)
-                    val confirmedRef = json.optString("transactionRef", txRef)
+                    val confirmedRef = json.optCleanString("transactionRef", txRef)
                     val confirmed = status in setOf("SUCCESS", "SUCCESSFUL") && responseAmount == amount
 
                     return@withContext PaymentProcessingResult(
@@ -152,15 +152,17 @@ object PaymentGatewayManager {
                         provider = provider,
                         payerPhone = effectivePhone,
                         timestamp = now,
-                        message = json.optString(
+                        message = json.optCleanString(
                             "message",
                             if (confirmed) "Payment confirmed by the configured payment endpoint."
                             else "Payment has not been verified. Submit your proof for admin review."
                         )
                     )
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.w(TAG, "Online payment push fallback to local verification: ${e.message}")
+                Log.w(TAG, "Online payment push fallback to local verification: ${e.safeMessage("Connection failed")}")
             }
         }
 

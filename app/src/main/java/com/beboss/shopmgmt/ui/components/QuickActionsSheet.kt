@@ -344,8 +344,8 @@ fun QuickCustomSaleDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                if (errorMessage != null) {
-                    Text(errorMessage!!, color = LossRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                errorMessage?.let { err ->
+                    Text(err, color = LossRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
 
                 // Amount input field

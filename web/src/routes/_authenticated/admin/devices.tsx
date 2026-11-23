@@ -36,7 +36,7 @@ function DevicesPage() {
   return (
     <div>
       <PageHeader
-        title={a("Devices")}
+        title="Devices"
         sub={`Paired terminals across all shops • extra-device add-ons ${formatRwf(addonMrr)} / month`}
         actions={
           <Button size="sm" variant="glass" onClick={() => downloadCsv(`beboss-devices-${Date.now()}.csv`, rows)}>
@@ -45,7 +45,7 @@ function DevicesPage() {
         }
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder={a("Search device, shop, join code, user, branch…")} />
+        <SearchInput value={q} onChange={setQ} placeholder="Search device, shop, join code, user, branch…" />
         <FilterChips<F>
           value={f}
           onChange={setF}
@@ -60,18 +60,18 @@ function DevicesPage() {
       {isLoading ? (
         <LoadingBlock />
       ) : !rows.length ? (
-        <EmptyState title={a("No devices")} sub="Devices register when a shop owner pairs a new phone with a join code." />
+        <EmptyState title="No devices" sub="Devices register when a shop owner pairs a new phone with a join code." />
       ) : (
         <TableShell>
           <table className="w-full text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">{a("Device")}</th>
-                <th className="px-4 py-3">{a("Shop")}</th>
-                <th className="px-4 py-3">{a("User & branch")}</th>
-                <th className="px-4 py-3">{a("Join code")}</th>
-                <th className="px-4 py-3">{a("Last sync")}</th>
-                <th className="px-4 py-3">{a("Status")}</th>
+                <th className="px-4 py-3">Device</th>
+                <th className="px-4 py-3">Shop</th>
+                <th className="px-4 py-3">User & branch</th>
+                <th className="px-4 py-3">Join code</th>
+                <th className="px-4 py-3">Last sync</th>
+                <th className="px-4 py-3">Status</th>
                 {isAdmin ? <th className="px-4 py-3" /> : null}
               </tr>
             </thead>
@@ -117,7 +117,7 @@ function DevicesPage() {
                           title={a(`Remove ${d.device_name || "this device"}?`)}
                           description={a("The device is unpaired from the shop. It will need a new join code to sync again.")}
                           destructive
-                          confirmLabel={a("Remove")}
+                          confirmLabel="Remove"
                           onConfirm={() => del.mutate({ id: d.id })}
                         />
                       </div>

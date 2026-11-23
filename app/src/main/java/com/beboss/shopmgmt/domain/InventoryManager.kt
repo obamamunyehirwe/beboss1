@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -72,7 +73,11 @@ class InventoryManager(
                     tableName = "products",
                     recordId = toSave.id,
                     operation = if (isNew) "CREATE" else "UPDATE",
-                    payloadJson = """{"name":"${toSave.name}","sellingPrice":${toSave.sellingPrice},"qty":${toSave.quantityInStock}}"""
+                    payloadJson = JSONObject().apply {
+                        put("name", toSave.name)
+                        put("sellingPrice", toSave.sellingPrice)
+                        put("qty", toSave.quantityInStock)
+                    }.toString()
                 )
             )
         }
@@ -89,7 +94,11 @@ class InventoryManager(
                     tableName = "products",
                     recordId = productId,
                     operation = "UPDATE",
-                    payloadJson = """{"stockAdjustment":$adjustmentDelta,"newStock":$newStock,"reason":"$reason"}"""
+                    payloadJson = JSONObject().apply {
+                        put("stockAdjustment", adjustmentDelta)
+                        put("newStock", newStock)
+                        put("reason", reason)
+                    }.toString()
                 )
             )
         }
@@ -113,7 +122,7 @@ class InventoryManager(
                     tableName = "products",
                     recordId = productId,
                     operation = "DELETE",
-                    payloadJson = """{"id":"$productId"}"""
+                    payloadJson = JSONObject().put("id", productId).toString()
                 )
             )
         }
@@ -218,7 +227,13 @@ class InventoryManager(
                         tableName = "purchases",
                         recordId = purchase.id,
                         operation = "CREATE",
-                        payloadJson = """{"productId":"$productId","qty":$quantity,"unitCost":$unitCostPrice,"total":${purchase.totalPurchaseCost},"supplier":"$supplierName"}"""
+                        payloadJson = JSONObject().apply {
+                            put("productId", productId)
+                            put("qty", quantity)
+                            put("unitCost", unitCostPrice)
+                            put("total", purchase.totalPurchaseCost)
+                            put("supplier", supplierName)
+                        }.toString()
                     )
                 )
 
@@ -240,7 +255,7 @@ class InventoryManager(
                 tableName = "purchases",
                 recordId = purchaseId,
                 operation = "DELETE",
-                payloadJson = """{"id":"$purchaseId"}"""
+                payloadJson = JSONObject().put("id", purchaseId).toString()
             )
         )
     }

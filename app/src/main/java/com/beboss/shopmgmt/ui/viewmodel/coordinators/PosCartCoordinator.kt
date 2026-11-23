@@ -23,6 +23,9 @@ import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.DeviceSecurityManager
 import com.beboss.shopmgmt.util.MoneyUtils
 import com.beboss.shopmgmt.util.PdfReportGenerator
+import com.beboss.shopmgmt.util.optCleanString
+import com.beboss.shopmgmt.util.safeMessage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -118,7 +121,7 @@ class PosCartCoordinator(
                 val restoredItems = mutableListOf<CartItem>()
                 for (i in 0 until itemsArr.length()) {
                     val obj = itemsArr.getJSONObject(i)
-                    val prodId = obj.optString("productId")
+                    val prodId = obj.optCleanString("productId")
                     val qty = obj.optDouble("quantity", 0.0)
                     if (prodId.isBlank() || qty <= 0.0) continue
                     val prod = repository.getProductById(prodId) ?: continue
@@ -131,16 +134,18 @@ class PosCartCoordinator(
                 if (restoredItems.isNotEmpty() || !root.isNull("selectedCustomerId")) {
                     _cartState.value = CartState(
                         items = restoredItems,
-                        selectedCustomerId = if (root.isNull("selectedCustomerId")) null else root.optString("selectedCustomerId"),
-                        selectedCustomerName = root.optString("selectedCustomerName", "Walk-in Customer"),
+                        selectedCustomerId = if (root.isNull("selectedCustomerId")) null else root.optCleanString("selectedCustomerId").ifBlank { null },
+                        selectedCustomerName = root.optCleanString("selectedCustomerName", "Walk-in Customer"),
                         discountAmount = root.optDouble("discountAmount", 0.0).coerceAtLeast(0.0),
-                        paymentMethod = root.optString("paymentMethod", "CASH"),
-                        amountPaidInput = root.optString("amountPaidInput", ""),
-                        splitCashInput = root.optString("splitCashInput", ""),
-                        splitMomoInput = root.optString("splitMomoInput", ""),
-                        notes = root.optString("notes", "")
+                        paymentMethod = root.optCleanString("paymentMethod", "CASH"),
+                        amountPaidInput = root.optCleanString("amountPaidInput", ""),
+                        splitCashInput = root.optCleanString("splitCashInput", ""),
+                        splitMomoInput = root.optCleanString("splitMomoInput", ""),
+                        notes = root.optCleanString("notes", "")
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 cartPrefs.edit().remove("draft_json").apply()
             }
@@ -193,7 +198,7 @@ class PosCartCoordinator(
                     val items = mutableListOf<CartItem>()
                     for (j in 0 until itemsArr.length()) {
                         val itemObj = itemsArr.getJSONObject(j)
-                        val prodId = itemObj.optString("productId")
+                        val prodId = itemObj.optCleanString("productId")
                         val qty = itemObj.optDouble("quantity", 0.0)
                         if (prodId.isBlank() || qty <= 0.0) continue
                         val prod = repository.getProductById(prodId) ?: continue
@@ -206,20 +211,22 @@ class PosCartCoordinator(
                     if (items.isNotEmpty()) {
                         restored.add(
                             HeldCart(
-                                id = obj.optString("id"),
-                                label = obj.optString("label", "Held Cart"),
+                                id = obj.optCleanString("id"),
+                                label = obj.optCleanString("label", "Held Cart"),
                                 heldAt = obj.optLong("heldAt", System.currentTimeMillis()),
                                 items = items,
-                                selectedCustomerId = if (obj.isNull("selectedCustomerId")) null else obj.optString("selectedCustomerId"),
-                                selectedCustomerName = obj.optString("selectedCustomerName", "Walk-in Customer"),
+                                selectedCustomerId = if (obj.isNull("selectedCustomerId")) null else obj.optCleanString("selectedCustomerId").ifBlank { null },
+                                selectedCustomerName = obj.optCleanString("selectedCustomerName", "Walk-in Customer"),
                                 discountAmount = obj.optDouble("discountAmount", 0.0).coerceAtLeast(0.0),
-                                paymentMethod = obj.optString("paymentMethod", "CASH"),
-                                notes = obj.optString("notes", "")
+                                paymentMethod = obj.optCleanString("paymentMethod", "CASH"),
+                                notes = obj.optCleanString("notes", "")
                             )
                         )
                     }
                 }
                 _heldCarts.value = restored
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 cartPrefs.edit().remove("held_carts_json").apply()
             }
@@ -280,6 +287,13 @@ class PosCartCoordinator(
     }
 
     fun setCartDiscount(discount: Double) {
+        val user = currentUser.value
+        if (user != null && !user.canApplyDiscounts && discount > 0.0) {
+            scope.launch {
+                emitSnackbar("Permission denied: ${user.name} is not allowed to apply discounts.")
+            }
+            return
+        }
         updateAndPersistCart { it.copy(discountAmount = discount.coerceAtLeast(0.0)) }
     }
 
@@ -427,10 +441,12 @@ class PosCartCoordinator(
                 else "Sale recorded successfully! Receipt ready."
                 emitSnackbar(msg)
                 onMutationSuccess()
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: SQLiteFullException) {
                 emitSnackbar("Storage full! Free up device storage or run WAL Checkpoint in Settings before completing this sale.")
             } catch (e: Exception) {
-                emitSnackbar("Error processing sale: ${e.message}")
+                emitSnackbar("Error processing sale: ${e.safeMessage()}")
             }
         }
     }
@@ -488,8 +504,10 @@ class PosCartCoordinator(
                     "Igurisha ry'ako kanya (${amount.toInt()} FRw) ryakozwe neza!"
                 else "Quick sale (${amount.toInt()} RWF) completed! Receipt ready."
                 emitSnackbar(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                emitSnackbar("Quick sale error: ${e.message}")
+                emitSnackbar("Quick sale error: ${e.safeMessage()}")
             }
         }
     }

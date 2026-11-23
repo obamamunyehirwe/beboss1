@@ -245,6 +245,46 @@ data class BatchApprovalResult(
     val issuedCodes: List<Pair<String, String>> = emptyList()
 )
 
+data class SupabaseDeviceTelemetryDto(
+    val id: String,
+    val shopSyncKey: String,
+    val shopName: String,
+    val deviceId: String,
+    val deviceName: String,
+    val riskScore: Int,
+    val postureLabel: String,
+    val isRooted: Boolean,
+    val hasHooking: Boolean,
+    val isEmulator: Boolean,
+    val clockRollbackDetected: Boolean,
+    val tamperIncidentCount: Int,
+    val clockSkewMs: Long,
+    val tamperReason: String,
+    val keystoreBacking: String,
+    val signals: List<String>,
+    val latitude: Double,
+    val longitude: Double,
+    val accuracyMeters: Float,
+    val locationCapturedAt: Long,
+    val locationLabel: String,
+    val unsyncedMessagesCount: Int,
+    val permissionsSummary: String,
+    val inspectedAt: Long,
+    val updatedAt: Long
+)
+
+data class CloudHealthDiagnosticsDto(
+    val checkedAt: Long,
+    val postgrestReachable: Boolean,
+    val latencyMs: Long,
+    val snapshotSchemaReady: Boolean,
+    val telemetryTableReady: Boolean,
+    val branchesTableReady: Boolean,
+    val transfersTableReady: Boolean,
+    val adminSessionValid: Boolean,
+    val summaryMessage: String
+)
+
 /**
  * Supabase PostgREST + GoTrue Auth Client for:
  * 1. Authenticated Admin Licensing Operations (`shop_accounts`, `payment_requests`, `unlock_codes`, `admin_profiles`, `admin_audit_logs`)
@@ -516,14 +556,14 @@ object SupabaseAdminClient {
                 val raw = response.body?.string().orEmpty()
                 val json = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
                 if (!response.isSuccessful) {
-                    val message = json.optString("message")
-                        .ifBlank { json.optString("error") }
+                    val message = json.optCleanString("message")
+                        .ifBlank { json.optCleanString("error") }
                         .ifBlank { "Secure BB3 payment signing failed (HTTP ${response.code})." }
                     return@withContext Result.failure(IllegalStateException(message))
                 }
-                val code = json.optString("code").trim()
-                val digest = json.optString("planDigest").trim().uppercase(Locale.ROOT)
-                val returnedRequestId = json.optString("requestId").trim()
+                val code = json.optCleanString("code").trim()
+                val digest = json.optCleanString("planDigest").trim().uppercase(Locale.ROOT)
+                val returnedRequestId = json.optCleanString("requestId").trim()
                 if (!SubscriptionSecurityManager.isCompleteUnlockCodeFormat(code) || !code.startsWith("BB3-")) {
                     return@withContext Result.failure(IllegalStateException("The BB3 signing service returned an invalid code."))
                 }
@@ -535,8 +575,8 @@ object SupabaseAdminClient {
                         code = code,
                         planDigest = digest,
                         requestId = returnedRequestId,
-                        shopId = json.optString("shopId"),
-                        tierCode = json.optString("tier"),
+                        shopId = json.optCleanString("shopId"),
+                        tierCode = json.optCleanString("tier"),
                         days = json.optInt("days", 0),
                         amountRwf = json.optInt("amountRwf", 0),
                         paymentTimeMs = json.optLong("paymentTimeMs", 0L)
@@ -578,9 +618,9 @@ object SupabaseAdminClient {
                 val raw = resp.body?.string().orEmpty()
                 val json = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
                 if (!resp.isSuccessful) {
-                    val rawMessage = json.optString("error_description")
-                        .ifBlank { json.optString("msg") }
-                        .ifBlank { json.optString("message") }
+                    val rawMessage = json.optCleanString("error_description")
+                        .ifBlank { json.optCleanString("msg") }
+                        .ifBlank { json.optCleanString("message") }
                         .ifBlank { "Sign in failed (HTTP ${resp.code})" }
                     val msg = if (rawMessage.contains("invalid login credentials", ignoreCase = true)) {
                         "Email or password is incorrect. Only accounts with an active BeBoss Super Admin role can sign in here."
@@ -596,6 +636,8 @@ object SupabaseAdminClient {
                 logAdminAudit("ADMIN_LOGIN", session.email, "Signed in via Android Admin Console")
                 Result.success(session)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -628,14 +670,14 @@ object SupabaseAdminClient {
 
     private fun parseAuthSession(json: JSONObject, fallbackEmail: String, fallbackName: String = "BeBoss Admin"): SupabaseAdminSession? {
         val sessionObj = json.optJSONObject("session") ?: json
-        val accessToken = sessionObj.optString("access_token")
+        val accessToken = sessionObj.optCleanString("access_token")
         if (accessToken.isBlank()) return null
-        val refreshToken = sessionObj.optString("refresh_token")
+        val refreshToken = sessionObj.optCleanString("refresh_token")
         val expiresIn = sessionObj.optLong("expires_in", 3600L)
         val userObj = json.optJSONObject("user") ?: sessionObj.optJSONObject("user") ?: JSONObject()
-        val userId = userObj.optString("id")
-        val email = userObj.optString("email").ifBlank { fallbackEmail.trim().lowercase(Locale.ROOT) }
-        val metaName = userObj.optJSONObject("user_metadata")?.optString("full_name").orEmpty()
+        val userId = userObj.optCleanString("id")
+        val email = userObj.optCleanString("email").ifBlank { fallbackEmail.trim().lowercase(Locale.ROOT) }
+        val metaName = userObj.optJSONObject("user_metadata")?.optCleanString("full_name").orEmpty()
         return SupabaseAdminSession(
             accessToken = accessToken,
             refreshToken = refreshToken,
@@ -835,18 +877,18 @@ object SupabaseAdminClient {
                     (0 until arr.length()).map { i ->
                         val o = arr.getJSONObject(i)
                         SupabaseBranchSnapshotDto(
-                            id = o.optString("id"),
-                            shopSyncKey = o.optString("shop_sync_key"),
-                            deviceId = o.optString("device_id"),
-                            syncGeneration = o.optString("sync_generation"),
+                            id = o.optCleanString("id"),
+                            shopSyncKey = o.optCleanString("shop_sync_key"),
+                            deviceId = o.optCleanString("device_id"),
+                            syncGeneration = o.optCleanString("sync_generation"),
                             chunkIndex = o.optInt("chunk_index", 0),
                             chunkCount = o.optInt("chunk_count", 0),
-                            branchId = o.optString("branch_id"),
-                            branchName = o.optString("branch_name"),
-                            shopName = o.optString("shop_name"),
-                            ownerUsername = o.optString("owner_username"),
-                            payloadToken = o.optString("payload_token"),
-                            recordsSummary = o.optString("records_summary"),
+                            branchId = o.optCleanString("branch_id"),
+                            branchName = o.optCleanString("branch_name"),
+                            shopName = o.optCleanString("shop_name"),
+                            ownerUsername = o.optCleanString("owner_username"),
+                            payloadToken = o.optCleanString("payload_token"),
+                            recordsSummary = o.optCleanString("records_summary"),
                             updatedAt = o.optLong("updated_at", 0L)
                         )
                     }
@@ -935,15 +977,15 @@ object SupabaseAdminClient {
                 if (arr.length() == 0) return@withContext null
                 val o = arr.getJSONObject(0)
                 AdminPaymentConfig(
-                    adminWhatsAppNumber = o.optString("admin_whatsapp_number"),
-                    mtnMoMoCode = o.optString("mtn_momo_code", "054321"),
-                    mtnMoMoPhone = o.optString("mtn_momo_phone", "0788765432"),
-                    mtnRecipientName = o.optString("mtn_recipient_name", "BeBoss Pay"),
-                    airtelMoneyPhone = o.optString("airtel_money_phone", "0738765432"),
-                    airtelRecipientName = o.optString("airtel_recipient_name", "BeBoss Pay"),
+                    adminWhatsAppNumber = o.optCleanString("admin_whatsapp_number"),
+                    mtnMoMoCode = o.optCleanString("mtn_momo_code", "054321"),
+                    mtnMoMoPhone = o.optCleanString("mtn_momo_phone", "0788765432"),
+                    mtnRecipientName = o.optCleanString("mtn_recipient_name", "BeBoss Pay"),
+                    airtelMoneyPhone = o.optCleanString("airtel_money_phone", "0738765432"),
+                    airtelRecipientName = o.optCleanString("airtel_recipient_name", "BeBoss Pay"),
                     perDeviceFeeRwf = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF,
-                    apkDownloadUrl = o.optString("apk_download_url", ""),
-                    apkVersion = o.optString("apk_version", "2.3.0").ifBlank { "2.3.0" },
+                    apkDownloadUrl = o.optCleanString("apk_download_url", ""),
+                    apkVersion = o.optCleanString("apk_version", "2.3.0").ifBlank { "2.3.0" },
                     updatedAt = o.optLong("updated_at", 0L)
                 )
             }
@@ -1107,7 +1149,7 @@ object SupabaseAdminClient {
                     return@withContext null
                 }
                 val arr = JSONArray(resp.body?.string().orEmpty().ifBlank { "[]" })
-                val secret = arr.optJSONObject(0)?.optString("lan_sync_secret").orEmpty()
+                val secret = arr.optJSONObject(0)?.optCleanString("lan_sync_secret").orEmpty()
                     .trim().lowercase(Locale.ROOT)
                 secret.takeIf { it.matches(Regex("[a-f0-9]{64}")) }
             }
@@ -1403,10 +1445,13 @@ object SupabaseAdminClient {
             }
         }
 
-    suspend fun fetchAllShopDevices(): List<SupabaseShopDeviceDto> = withContext(Dispatchers.IO) {
+    suspend fun fetchAllShopDevices(limit: Int = 250, offset: Int = 0): List<SupabaseShopDeviceDto> = withContext(Dispatchers.IO) {
         if (!isConfigured() || ensureValidAdminSession() == null) return@withContext emptyList()
         try {
-            val req = buildRestRequest("shop_devices?order=updated_at.desc&limit=250", useAdminJwtIfAvailable = true)
+            val req = buildRestRequest(
+                "shop_devices?order=updated_at.desc&limit=${limit.coerceIn(1, 500)}&offset=${offset.coerceAtLeast(0)}",
+                useAdminJwtIfAvailable = true
+            )
                 .get()
                 .build()
             client.newCall(req).execute().use { resp ->
@@ -1483,7 +1528,12 @@ object SupabaseAdminClient {
                 put("location_captured_at", location?.capturedAtMs ?: 0L)
                 put("location_label", location?.compactLabel() ?: "Unavailable")
                 put("unsynced_messages_count", unsyncedMessagesCount)
-                put("message_summary_json", JSONObject(messageSummaryJson))
+                val parsedSummaryJson = try {
+                    if (messageSummaryJson.isBlank()) JSONObject() else JSONObject(messageSummaryJson)
+                } catch (_: Exception) {
+                    JSONObject()
+                }
+                put("message_summary_json", parsedSummaryJson)
                 put("permissions_summary", permissionsSummary)
                 put("inspected_at", integrity.inspectedAtMs)
                 put("updated_at", now)
@@ -1532,6 +1582,109 @@ object SupabaseAdminClient {
             Log.w(TAG, "Security telemetry saved, but the separate shop-device heartbeat update failed for $deviceId")
         }
         telemetryOk
+    }
+
+    suspend fun fetchDeviceTelemetryForAdmin(
+        limit: Int = 100,
+        offset: Int = 0
+    ): List<SupabaseDeviceTelemetryDto> = withContext(Dispatchers.IO) {
+        if (!isConfigured() || ensureValidAdminSession() == null) return@withContext emptyList()
+        try {
+            val req = buildRestRequest(
+                "device_security_telemetry?order=updated_at.desc&limit=${limit.coerceIn(1, 500)}&offset=${offset.coerceAtLeast(0)}",
+                useAdminJwtIfAvailable = true
+            ).get().build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext emptyList()
+                val arr = JSONArray(resp.body?.string().orEmpty().ifBlank { "[]" })
+                (0 until arr.length()).map { parseDeviceTelemetryDto(arr.getJSONObject(it)) }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchDeviceTelemetryForAdmin error: ${e.safeMessage()}")
+            emptyList()
+        }
+    }
+
+    suspend fun fetchDeviceTelemetryForShop(
+        shopSyncKey: String,
+        limit: Int = 100
+    ): List<SupabaseDeviceTelemetryDto> = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank()) return@withContext emptyList()
+        try {
+            val enc = URLEncoder.encode(shopSyncKey, "UTF-8")
+            val req = buildRestRequest(
+                "device_security_telemetry?shop_sync_key=eq.$enc&order=updated_at.desc&limit=${limit.coerceIn(1, 250)}",
+                tenantSyncKey = shopSyncKey
+            ).get().build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext emptyList()
+                val arr = JSONArray(resp.body?.string().orEmpty().ifBlank { "[]" })
+                (0 until arr.length()).map { parseDeviceTelemetryDto(arr.getJSONObject(it)) }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchDeviceTelemetryForShop error: ${e.safeMessage()}")
+            emptyList()
+        }
+    }
+
+    suspend fun runCloudHealthDiagnostics(): CloudHealthDiagnosticsDto = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        if (!isConfigured()) {
+            return@withContext CloudHealthDiagnosticsDto(
+                checkedAt = now,
+                postgrestReachable = false,
+                latencyMs = -1L,
+                snapshotSchemaReady = false,
+                telemetryTableReady = false,
+                branchesTableReady = false,
+                transfersTableReady = false,
+                adminSessionValid = false,
+                summaryMessage = "Cloud client is not configured in BuildConfig."
+            )
+        }
+        val sessionValid = ensureValidAdminSession() != null
+        val start = System.currentTimeMillis()
+        var postgrestOk = false
+        try {
+            val req = buildRestRequest("app_config?select=id&limit=1").get().build()
+            client.newCall(req).execute().use { resp ->
+                postgrestOk = resp.isSuccessful
+            }
+        } catch (_: Exception) {}
+        val latency = (System.currentTimeMillis() - start).coerceAtLeast(1L)
+
+        fun probeTable(query: String, useAdmin: Boolean = true): Boolean {
+            return try {
+                val req = buildRestRequest(query, useAdminJwtIfAvailable = useAdmin).get().build()
+                client.newCall(req).execute().use { it.isSuccessful }
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        val snapshotSchemaOk = probeTable("branch_sync_snapshots?select=id,sync_generation,chunk_index,chunk_count&limit=1", useAdmin = sessionValid)
+        val telemetryOk = probeTable("device_security_telemetry?select=id,risk_score&limit=1", useAdmin = sessionValid)
+        val branchesOk = probeTable("shop_branches?select=id,operational_status&limit=1", useAdmin = sessionValid)
+        val transfersOk = probeTable("shop_stock_transfers?select=id,status&limit=1", useAdmin = sessionValid)
+
+        val readyCount = listOf(postgrestOk, snapshotSchemaOk, telemetryOk, branchesOk, transfersOk).count { it }
+        val summary = buildString {
+            append(if (postgrestOk) "PostgREST Online (${latency}ms)" else "PostgREST Unreachable")
+            append(" • Checks $readyCount/5")
+            if (!snapshotSchemaOk) append(" • Legacy snapshot columns")
+            if (!telemetryOk) append(" • Telemetry table restricted/missing")
+        }
+        CloudHealthDiagnosticsDto(
+            checkedAt = now,
+            postgrestReachable = postgrestOk,
+            latencyMs = latency,
+            snapshotSchemaReady = snapshotSchemaOk,
+            telemetryTableReady = telemetryOk,
+            branchesTableReady = branchesOk,
+            transfersTableReady = transfersOk,
+            adminSessionValid = sessionValid,
+            summaryMessage = summary
+        )
     }
 
     // -------------------------------------------------------------------------
@@ -1911,11 +2064,14 @@ object SupabaseAdminClient {
     // -------------------------------------------------------------------------
     // AUTHENTICATED ADMIN CONSOLE OPERATIONS
     // -------------------------------------------------------------------------
-    suspend fun fetchAllPaymentRequests(): List<SupabasePaymentRequestDto> = withContext(Dispatchers.IO) {
+    suspend fun fetchAllPaymentRequests(limit: Int = 100, offset: Int = 0): List<SupabasePaymentRequestDto> = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext emptyList()
         try {
             val paymentColumns = "id,shop_name,owner_username,owner_phone,device_challenge,provider,ussd_code,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,created_at,updated_at"
-            val req = buildRestRequest("payment_requests?select=$paymentColumns&order=created_at.desc&limit=100", useAdminJwtIfAvailable = true)
+            val req = buildRestRequest(
+                "payment_requests?select=$paymentColumns&order=created_at.desc&limit=${limit.coerceIn(1, 500)}&offset=${offset.coerceAtLeast(0)}",
+                useAdminJwtIfAvailable = true
+            )
                 .get()
                 .build()
             client.newCall(req).execute().use { resp ->
@@ -1929,10 +2085,13 @@ object SupabaseAdminClient {
         }
     }
 
-    suspend fun fetchAllShopAccounts(): List<SupabaseShopAccountDto> = withContext(Dispatchers.IO) {
+    suspend fun fetchAllShopAccounts(limit: Int = 150, offset: Int = 0): List<SupabaseShopAccountDto> = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext emptyList()
         try {
-            val req = buildRestRequest("shop_accounts?order=updated_at.desc&limit=150", useAdminJwtIfAvailable = true)
+            val req = buildRestRequest(
+                "shop_accounts?order=updated_at.desc&limit=${limit.coerceIn(1, 500)}&offset=${offset.coerceAtLeast(0)}",
+                useAdminJwtIfAvailable = true
+            )
                 .get()
                 .build()
             client.newCall(req).execute().use { resp ->
@@ -1946,10 +2105,13 @@ object SupabaseAdminClient {
         }
     }
 
-    suspend fun fetchAllShopUsers(): List<SupabaseShopUserDto> = withContext(Dispatchers.IO) {
+    suspend fun fetchAllShopUsers(limit: Int = 250, offset: Int = 0): List<SupabaseShopUserDto> = withContext(Dispatchers.IO) {
         if (!isConfigured() || activeAdminSession == null) return@withContext emptyList()
         try {
-            val req = buildRestRequest("shop_users?order=updated_at.desc&limit=250", useAdminJwtIfAvailable = true)
+            val req = buildRestRequest(
+                "shop_users?order=updated_at.desc&limit=${limit.coerceIn(1, 500)}&offset=${offset.coerceAtLeast(0)}",
+                useAdminJwtIfAvailable = true
+            )
                 .get()
                 .build()
             client.newCall(req).execute().use { resp ->
@@ -1963,10 +2125,13 @@ object SupabaseAdminClient {
         }
     }
 
-    suspend fun fetchAllBranchSnapshots(): List<SupabaseBranchSnapshotDto> = withContext(Dispatchers.IO) {
+    suspend fun fetchAllBranchSnapshots(limit: Int = 150, offset: Int = 0): List<SupabaseBranchSnapshotDto> = withContext(Dispatchers.IO) {
         if (!isConfigured() || activeAdminSession == null) return@withContext emptyList()
         try {
-            val req = buildRestRequest("branch_sync_snapshots?order=updated_at.desc&limit=150", useAdminJwtIfAvailable = true)
+            val req = buildRestRequest(
+                "branch_sync_snapshots?order=updated_at.desc&limit=${limit.coerceIn(1, 500)}&offset=${offset.coerceAtLeast(0)}",
+                useAdminJwtIfAvailable = true
+            )
                 .get()
                 .build()
             client.newCall(req).execute().use { resp ->
@@ -1975,29 +2140,35 @@ object SupabaseAdminClient {
                 (0 until arr.length()).map { idx ->
                     val o = arr.getJSONObject(idx)
                     SupabaseBranchSnapshotDto(
-                        id = o.optString("id"),
-                        shopSyncKey = o.optString("shop_sync_key"),
-                        deviceId = o.optString("device_id"),
-                        branchId = o.optString("branch_id"),
-                        branchName = o.optString("branch_name"),
-                        shopName = o.optString("shop_name"),
-                        ownerUsername = o.optString("owner_username"),
-                        payloadToken = o.optString("payload_token"),
-                        recordsSummary = o.optString("records_summary"),
+                        id = o.optCleanString("id"),
+                        shopSyncKey = o.optCleanString("shop_sync_key"),
+                        deviceId = o.optCleanString("device_id"),
+                        syncGeneration = o.optCleanString("sync_generation"),
+                        chunkIndex = o.optInt("chunk_index", 0),
+                        chunkCount = o.optInt("chunk_count", 0),
+                        branchId = o.optCleanString("branch_id"),
+                        branchName = o.optCleanString("branch_name"),
+                        shopName = o.optCleanString("shop_name"),
+                        ownerUsername = o.optCleanString("owner_username"),
+                        payloadToken = o.optCleanString("payload_token"),
+                        recordsSummary = o.optCleanString("records_summary"),
                         updatedAt = o.optLong("updated_at", 0L)
                     )
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "fetchAllBranchSnapshots error: ${e.message}")
+            Log.e(TAG, "fetchAllBranchSnapshots error: ${e.safeMessage()}")
             emptyList()
         }
     }
 
-    suspend fun fetchAllUnlockCodes(): List<SupabaseUnlockCodeDto> = withContext(Dispatchers.IO) {
+    suspend fun fetchAllUnlockCodes(limit: Int = 100, offset: Int = 0): List<SupabaseUnlockCodeDto> = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext emptyList()
         try {
-            val req = buildRestRequest("unlock_codes?order=issued_at.desc&limit=100", useAdminJwtIfAvailable = true)
+            val req = buildRestRequest(
+                "unlock_codes?order=issued_at.desc&limit=${limit.coerceIn(1, 500)}&offset=${offset.coerceAtLeast(0)}",
+                useAdminJwtIfAvailable = true
+            )
                 .get()
                 .build()
             client.newCall(req).execute().use { resp ->
@@ -2006,15 +2177,18 @@ object SupabaseAdminClient {
                 (0 until arr.length()).map { parseUnlockCodeDto(arr.getJSONObject(it)) }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "fetchAllUnlockCodes error: ${e.message}")
+            Log.e(TAG, "fetchAllUnlockCodes error: ${e.safeMessage()}")
             emptyList()
         }
     }
 
-    suspend fun fetchAdminAuditLogs(): List<SupabaseAuditLogDto> = withContext(Dispatchers.IO) {
+    suspend fun fetchAdminAuditLogs(limit: Int = 60, offset: Int = 0): List<SupabaseAuditLogDto> = withContext(Dispatchers.IO) {
         if (!isConfigured() || activeAdminSession == null) return@withContext emptyList()
         try {
-            val req = buildRestRequest("admin_audit_logs?order=created_at.desc&limit=60", useAdminJwtIfAvailable = true)
+            val req = buildRestRequest(
+                "admin_audit_logs?order=created_at.desc&limit=${limit.coerceIn(1, 500)}&offset=${offset.coerceAtLeast(0)}",
+                useAdminJwtIfAvailable = true
+            )
                 .get()
                 .build()
             client.newCall(req).execute().use { resp ->
@@ -2023,17 +2197,17 @@ object SupabaseAdminClient {
                 (0 until arr.length()).map { idx ->
                     val o = arr.getJSONObject(idx)
                     SupabaseAuditLogDto(
-                        id = o.optString("id"),
-                        adminEmail = o.optString("admin_email"),
-                        action = o.optString("action"),
-                        targetId = o.optString("target_id"),
-                        details = o.optString("details"),
+                        id = o.optCleanString("id"),
+                        adminEmail = o.optCleanString("admin_email"),
+                        action = o.optCleanString("action"),
+                        targetId = o.optCleanString("target_id"),
+                        details = o.optCleanString("details"),
                         createdAt = o.optLong("created_at", 0L)
                     )
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "fetchAdminAuditLogs error: ${e.message}")
+            Log.e(TAG, "fetchAdminAuditLogs error: ${e.safeMessage()}")
             emptyList()
         }
     }
@@ -2057,7 +2231,7 @@ object SupabaseAdminClient {
         }
 
         val signed = requestServerSignedBB3Code(request.id, verificationNote).getOrElse { error ->
-            return@withContext Pair(false, error.message ?: "Unable to sign a secure payment-linked BB3 unlock code.")
+            return@withContext Pair(false, error.safeMessage("Unable to sign a secure payment-linked BB3 unlock code."))
         }
 
         val paymentTimeMs = request.paymentTimeMs.takeIf { it > 0L } ?: request.createdAt.takeIf { it > 0L } ?: signed.paymentTimeMs
@@ -2136,11 +2310,11 @@ object SupabaseAdminClient {
             }
             if (!insertResult) {
                 val existing = findUnlockCodeRecordForPayment(request.id)
-                if (existing == null || existing.optString("plan_digest") != signed.planDigest || existing.optString("unlock_code").isBlank()) {
+                if (existing == null || existing.optCleanString("plan_digest") != signed.planDigest || existing.optCleanString("unlock_code").isBlank()) {
                     return@withContext Pair(false, "Could not create the one permitted unlock-code record for this payment.")
                 }
-                codeToUse = existing.optString("unlock_code")
-                codeId = existing.optString("id")
+                codeToUse = existing.optCleanString("unlock_code")
+                codeId = existing.optCleanString("id")
             }
 
             val prPatch = JSONObject().apply {
@@ -2169,7 +2343,7 @@ object SupabaseAdminClient {
             }
             if (!claimWon) {
                 val current = getPaymentRequestStatus(request.id)
-                if (current?.optString("status") == "APPROVED" && current.optString("generated_unlock_code") == codeToUse) {
+                if (current?.optCleanString("status") == "APPROVED" && current.optCleanString("generated_unlock_code") == codeToUse) {
                     return@withContext Pair(true, codeToUse)
                 }
                 if (insertedNewCode) {
@@ -2197,9 +2371,12 @@ object SupabaseAdminClient {
                 details = "Manually confirmed in provider records: ${verificationNote.trim()}. Customer SMS: ${request.paymentNote.ifBlank { "not supplied" }}. Verified ${request.provider} payment ${verifiedAmountRwf} FRw for ${request.durationMonths} months, ${request.branchCount} branches, ${request.workerCount} staff, ${request.deviceCount} devices; unique BB3 code linked to ${request.id}."
             )
             Pair(true, codeToUse)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "approvePaymentAndIssueCode error: " + e.message, e)
-            Pair(false, e.message ?: "Unable to complete payment approval.")
+            val errMsg = e.safeMessage("Unable to complete payment approval.")
+            Log.e(TAG, "approvePaymentAndIssueCode error: $errMsg", e)
+            Pair(false, errMsg)
         }
     }
 
@@ -2215,7 +2392,7 @@ object SupabaseAdminClient {
 
     private suspend fun findUnlockCodeForPayment(paymentRequestId: String): String? {
         val record = findUnlockCodeRecordForPayment(paymentRequestId) ?: return null
-        return record.optString("unlock_code").takeIf { it.isNotBlank() && record.optString("status") in setOf("ISSUED", "REDEEMED") }
+        return record.optCleanString("unlock_code").takeIf { it.isNotBlank() && record.optCleanString("status") in setOf("ISSUED", "REDEEMED") }
     }
 
     private suspend fun getPaymentRequestStatus(paymentRequestId: String): JSONObject? = withContext(Dispatchers.IO) {
@@ -2245,9 +2422,10 @@ object SupabaseAdminClient {
         request: SupabasePaymentRequestDto,
         reason: String
     ): Boolean = withContext(Dispatchers.IO) {
-        if (!isConfigured() || activeAdminSession == null) return@withContext false
+        val session = ensureValidAdminSession()
+        if (!isConfigured() || session == null) return@withContext false
         try {
-            val operatorLabel = "${activeAdminSession!!.fullName} (${activeAdminSession!!.email})"
+            val operatorLabel = "${session.fullName} (${session.email})"
             val cleanReason = reason.trim().ifBlank { "Payment reference could not be confirmed by Admin" }
             val prPatch = JSONObject().apply {
                 put("status", "REJECTED")
@@ -2643,28 +2821,28 @@ object SupabaseAdminClient {
 
     private fun parsePaymentRequestDto(o: JSONObject): SupabasePaymentRequestDto {
         return SupabasePaymentRequestDto(
-            id = o.optString("id"),
-            shopName = o.optString("shop_name"),
-            ownerUsername = o.optString("owner_username"),
-            ownerPhone = o.optString("owner_phone"),
-            deviceChallenge = o.optString("device_challenge"),
-            provider = o.optString("provider"),
-            ussdCode = o.optString("ussd_code"),
-            payerPhone = o.optString("payer_phone"),
-            payerFullName = o.optString("payer_full_name"),
+            id = o.optCleanString("id"),
+            shopName = o.optCleanString("shop_name"),
+            ownerUsername = o.optCleanString("owner_username"),
+            ownerPhone = o.optCleanString("owner_phone"),
+            deviceChallenge = o.optCleanString("device_challenge"),
+            provider = o.optCleanString("provider"),
+            ussdCode = o.optCleanString("ussd_code"),
+            payerPhone = o.optCleanString("payer_phone"),
+            payerFullName = o.optCleanString("payer_full_name"),
             paymentTimeMs = o.optLong("payment_time_ms", o.optLong("created_at", 0L)),
-            paymentNote = o.optString("payment_note"),
+            paymentNote = o.optCleanString("payment_note"),
             amountRwf = o.optInt("amount_rwf", 0),
             durationMonths = o.optInt("duration_months", 1),
             branchCount = o.optInt("branch_count", 1),
             workerCount = o.optInt("worker_count", 1),
             deviceCount = o.optInt("device_count", 1).coerceAtLeast(1),
             feePerDeviceRwf = OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF,
-            status = o.optString("status", "PENDING_VERIFICATION"),
-            approvalMode = o.optString("approval_mode"),
-            generatedUnlockCode = o.optString("generated_unlock_code"),
-            verifiedByAdmin = o.optString("verified_by_admin"),
-            rejectionReason = o.optString("rejection_reason"),
+            status = o.optCleanString("status", "PENDING_VERIFICATION"),
+            approvalMode = o.optCleanString("approval_mode"),
+            generatedUnlockCode = o.optCleanString("generated_unlock_code"),
+            verifiedByAdmin = o.optCleanString("verified_by_admin"),
+            rejectionReason = o.optCleanString("rejection_reason"),
             createdAt = o.optLong("created_at", 0L),
             updatedAt = o.optLong("updated_at", 0L)
         )
@@ -2672,16 +2850,16 @@ object SupabaseAdminClient {
 
     private fun parseUnlockCodeDto(o: JSONObject): SupabaseUnlockCodeDto {
         return SupabaseUnlockCodeDto(
-            id = o.optString("id"),
-            unlockCode = o.optString("unlock_code"),
-            shopUsername = o.optString("shop_username"),
-            shopPhone = o.optString("shop_phone"),
-            deviceChallenge = o.optString("device_challenge"),
-            tierCode = o.optString("tier_code"),
+            id = o.optCleanString("id"),
+            unlockCode = o.optCleanString("unlock_code"),
+            shopUsername = o.optCleanString("shop_username"),
+            shopPhone = o.optCleanString("shop_phone"),
+            deviceChallenge = o.optCleanString("device_challenge"),
+            tierCode = o.optCleanString("tier_code"),
             planDays = o.optInt("plan_days", 30),
             amountRwf = o.optInt("amount_rwf", 5000),
-            status = o.optString("status", "ISSUED"),
-            issuedByAdmin = o.optString("issued_by_admin"),
+            status = o.optCleanString("status", "ISSUED"),
+            issuedByAdmin = o.optCleanString("issued_by_admin"),
             issuedAt = o.optLong("issued_at", 0L),
             redeemedAt = if (o.isNull("redeemed_at")) null else o.optLong("redeemed_at")
         )
@@ -2689,40 +2867,40 @@ object SupabaseAdminClient {
 
     private fun parseShopAccountDto(o: JSONObject): SupabaseShopAccountDto {
         return SupabaseShopAccountDto(
-            id = o.optString("id"),
-            shopName = o.optString("shop_name"),
-            ownerName = o.optString("owner_name"),
-            ownerUsername = o.optString("owner_username"),
-            ownerPhone = o.optString("owner_phone"),
-            deviceChallenge = o.optString("device_challenge"),
+            id = o.optCleanString("id"),
+            shopName = o.optCleanString("shop_name"),
+            ownerName = o.optCleanString("owner_name"),
+            ownerUsername = o.optCleanString("owner_username"),
+            ownerPhone = o.optCleanString("owner_phone"),
+            deviceChallenge = o.optCleanString("device_challenge"),
             branchCount = o.optInt("branch_count", 1),
             workerCount = o.optInt("worker_count", 1),
             deviceCount = o.optInt("device_count", 1).coerceAtLeast(1),
             deviceLimit = o.optInt("device_limit", 1).coerceAtLeast(1),
-            adminWhatsApp = o.optString("admin_whatsapp"),
+            adminWhatsApp = o.optCleanString("admin_whatsapp"),
             autoUnlockedAt = o.optLong("auto_unlocked_at", 0L),
             monthlyFeeRwf = o.optInt("monthly_fee_rwf", 5000),
-            subscriptionStatus = o.optString("subscription_status", "ACTIVE"),
+            subscriptionStatus = o.optCleanString("subscription_status", "ACTIVE"),
             subscriptionExpiresAt = o.optLong("subscription_expires_at", 0L),
             updatedAt = o.optLong("updated_at", 0L),
-            businessType = BusinessCatalog.normalize(o.optString("business_type", "sector_retail"))
+            businessType = BusinessCatalog.normalize(o.optCleanString("business_type", "sector_retail"))
         )
     }
 
     private fun parseShopDeviceDto(o: JSONObject): SupabaseShopDeviceDto {
         return SupabaseShopDeviceDto(
-            id = o.optString("id"),
-            shopSyncKey = o.optString("shop_sync_key"),
-            shopName = o.optString("shop_name"),
-            deviceId = o.optString("device_id"),
-            deviceName = o.optString("device_name"),
-            joinCode = o.optString("join_code"),
-            assignedUserId = o.optString("assigned_user_id"),
-            assignedUsername = o.optString("assigned_username"),
-            assignedUserName = o.optString("assigned_user_name"),
-            role = o.optString("role", "CASHIER"),
-            branchId = o.optString("branch_id", "main_branch"),
-            branchName = o.optString("branch_name", "Main Store"),
+            id = o.optCleanString("id"),
+            shopSyncKey = o.optCleanString("shop_sync_key"),
+            shopName = o.optCleanString("shop_name"),
+            deviceId = o.optCleanString("device_id"),
+            deviceName = o.optCleanString("device_name"),
+            joinCode = o.optCleanString("join_code"),
+            assignedUserId = o.optCleanString("assigned_user_id"),
+            assignedUsername = o.optCleanString("assigned_username"),
+            assignedUserName = o.optCleanString("assigned_user_name"),
+            role = o.optCleanString("role", "CASHIER"),
+            branchId = o.optCleanString("branch_id", "main_branch"),
+            branchName = o.optCleanString("branch_name", "Main Store"),
             isOwnerPrimary = o.optBoolean("is_owner_primary", false),
             isActive = o.optBoolean("is_active", true),
             monthlyFeeAddonRwf = o.optInt("monthly_fee_addon_rwf", 2000),
@@ -2734,16 +2912,16 @@ object SupabaseAdminClient {
 
     private fun parseShopUserDto(o: JSONObject): SupabaseShopUserDto {
         return SupabaseShopUserDto(
-            id = o.optString("id"),
-            shopSyncKey = o.optString("shop_sync_key"),
-            shopName = o.optString("shop_name"),
-            userId = o.optString("user_id"),
-            fullName = o.optString("full_name"),
-            username = o.optString("username"),
-            phone = o.optString("phone"),
-            role = o.optString("role", "CASHIER"),
-            assignedBranchId = o.optString("assigned_branch_id"),
-            assignedBranchName = o.optString("assigned_branch_name", "All Branches"),
+            id = o.optCleanString("id"),
+            shopSyncKey = o.optCleanString("shop_sync_key"),
+            shopName = o.optCleanString("shop_name"),
+            userId = o.optCleanString("user_id"),
+            fullName = o.optCleanString("full_name"),
+            username = o.optCleanString("username"),
+            phone = o.optCleanString("phone"),
+            role = o.optCleanString("role", "CASHIER"),
+            assignedBranchId = o.optCleanString("assigned_branch_id"),
+            assignedBranchName = o.optCleanString("assigned_branch_name", "All Branches"),
             isActive = o.optBoolean("is_active", true),
             updatedAt = o.optLong("updated_at", 0L)
         )
@@ -2751,60 +2929,99 @@ object SupabaseAdminClient {
 
     private fun parseBranchDto(o: JSONObject): SupabaseBranchDto {
         return SupabaseBranchDto(
-            id = o.optString("id"),
-            shopSyncKey = o.optString("shop_sync_key"),
-            shopName = o.optString("shop_name"),
-            name = o.optString("name", "Branch"),
-            code = o.optString("code", "BR-01"),
-            address = o.optString("address", ""),
-            phone = o.optString("phone", ""),
-            managerUserId = o.optString("manager_user_id", ""),
-            managerName = o.optString("manager_name", ""),
+            id = o.optCleanString("id"),
+            shopSyncKey = o.optCleanString("shop_sync_key"),
+            shopName = o.optCleanString("shop_name"),
+            name = o.optCleanString("name", "Branch"),
+            code = o.optCleanString("code", "BR-01"),
+            address = o.optCleanString("address", ""),
+            phone = o.optCleanString("phone", ""),
+            managerUserId = o.optCleanString("manager_user_id", ""),
+            managerName = o.optCleanString("manager_name", ""),
             isMainBranch = o.optBoolean("is_main_branch", false),
             isActive = o.optBoolean("is_active", true),
-            colorHex = o.optString("color_hex", "#FF6B1A"),
+            colorHex = o.optCleanString("color_hex", "#FF6B1A"),
             dailySalesTargetRwf = o.optLong("daily_sales_target_rwf", 0L),
             monthlyTargetRwf = o.optLong("monthly_target_rwf", 0L),
             openingCashFloat = o.optLong("opening_cash_float", 0L),
             stockValueRwf = o.optLong("stock_value_rwf", 0L),
             productCount = o.optInt("product_count", 0),
-            operationalStatus = o.optString("operational_status", "OPEN"),
-            email = o.optString("email", ""),
-            notes = o.optString("notes", ""),
+            operationalStatus = o.optCleanString("operational_status", "OPEN"),
+            email = o.optCleanString("email", ""),
+            notes = o.optCleanString("notes", ""),
             createdAt = o.optLong("created_at", 0L),
             updatedAt = o.optLong("updated_at", 0L),
             syncVersion = o.optLong("sync_version", 1L),
             hlcTimestamp = o.optLong("hlc_timestamp", 0L),
-            lastModifiedDeviceId = o.optString("last_modified_device_id", "")
+            lastModifiedDeviceId = o.optCleanString("last_modified_device_id", "")
         )
     }
 
     private fun parseStockTransferDto(o: JSONObject): SupabaseStockTransferDto {
         return SupabaseStockTransferDto(
-            id = o.optString("id"),
-            shopSyncKey = o.optString("shop_sync_key"),
-            shopName = o.optString("shop_name"),
-            transferNumber = o.optString("transfer_number"),
-            productId = o.optString("product_id"),
-            productName = o.optString("product_name"),
-            fromBranchId = o.optString("from_branch_id"),
-            fromBranchName = o.optString("from_branch_name"),
-            toBranchId = o.optString("to_branch_id"),
-            toBranchName = o.optString("to_branch_name"),
+            id = o.optCleanString("id"),
+            shopSyncKey = o.optCleanString("shop_sync_key"),
+            shopName = o.optCleanString("shop_name"),
+            transferNumber = o.optCleanString("transfer_number"),
+            productId = o.optCleanString("product_id"),
+            productName = o.optCleanString("product_name"),
+            fromBranchId = o.optCleanString("from_branch_id"),
+            fromBranchName = o.optCleanString("from_branch_name"),
+            toBranchId = o.optCleanString("to_branch_id"),
+            toBranchName = o.optCleanString("to_branch_name"),
             quantity = o.optDouble("quantity", 0.0),
-            unit = o.optString("unit", "pcs"),
+            unit = o.optCleanString("unit", "pcs"),
             costValueRwf = o.optLong("cost_value_rwf", 0L),
             transferDate = o.optLong("transfer_date", 0L),
-            status = o.optString("status", "IN_TRANSIT"),
-            notes = o.optString("notes", ""),
-            transferredBy = o.optString("transferred_by", ""),
-            receivedBy = o.optString("received_by", ""),
+            status = o.optCleanString("status", "IN_TRANSIT"),
+            notes = o.optCleanString("notes", ""),
+            transferredBy = o.optCleanString("transferred_by", ""),
+            receivedBy = o.optCleanString("received_by", ""),
             receivedAt = o.optLong("received_at", 0L),
             synced = o.optBoolean("synced", true),
             createdAt = o.optLong("created_at", 0L),
             updatedAt = o.optLong("updated_at", 0L),
             hlcTimestamp = o.optLong("hlc_timestamp", 0L),
-            lastModifiedDeviceId = o.optString("last_modified_device_id", "")
+            lastModifiedDeviceId = o.optCleanString("last_modified_device_id", "")
+        )
+    }
+
+    private fun parseDeviceTelemetryDto(o: JSONObject): SupabaseDeviceTelemetryDto {
+        val rawSignals = o.optCleanString("signals_json", "[]")
+        val signalList = try {
+            val arr = JSONArray(rawSignals.ifBlank { "[]" })
+            (0 until arr.length()).mapNotNull { idx ->
+                arr.optString(idx)?.takeIf { it.isNotBlank() && it != "null" }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        return SupabaseDeviceTelemetryDto(
+            id = o.optCleanString("id"),
+            shopSyncKey = o.optCleanString("shop_sync_key"),
+            shopName = o.optCleanString("shop_name"),
+            deviceId = o.optCleanString("device_id"),
+            deviceName = o.optCleanString("device_name", "Terminal"),
+            riskScore = o.optInt("risk_score", 0),
+            postureLabel = o.optCleanString("posture_label", "UNKNOWN"),
+            isRooted = o.optBoolean("is_rooted", false),
+            hasHooking = o.optBoolean("has_hooking", false),
+            isEmulator = o.optBoolean("is_emulator", false),
+            clockRollbackDetected = o.optBoolean("clock_rollback_detected", false),
+            tamperIncidentCount = o.optInt("tamper_incident_count", 0),
+            clockSkewMs = o.optLong("clock_skew_ms", 0L),
+            tamperReason = o.optCleanString("tamper_reason", ""),
+            keystoreBacking = o.optCleanString("keystore_backing", ""),
+            signals = signalList,
+            latitude = o.optDouble("latitude", 0.0),
+            longitude = o.optDouble("longitude", 0.0),
+            accuracyMeters = o.optDouble("accuracy_meters", 0.0).toFloat(),
+            locationCapturedAt = o.optLong("location_captured_at", 0L),
+            locationLabel = o.optCleanString("location_label", "Unavailable"),
+            unsyncedMessagesCount = o.optInt("unsynced_messages_count", 0),
+            permissionsSummary = o.optCleanString("permissions_summary", ""),
+            inspectedAt = o.optLong("inspected_at", 0L),
+            updatedAt = o.optLong("updated_at", 0L)
         )
     }
 }

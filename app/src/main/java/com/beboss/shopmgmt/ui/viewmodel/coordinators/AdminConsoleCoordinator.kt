@@ -9,9 +9,12 @@ import com.beboss.shopmgmt.data.model.UserRole
 import com.beboss.shopmgmt.data.repository.BeBossRepository
 import com.beboss.shopmgmt.util.AdminPaymentConfig
 import com.beboss.shopmgmt.util.BeBossNotificationManager
+import com.beboss.shopmgmt.util.CloudHealthDiagnosticsDto
 import com.beboss.shopmgmt.util.CloudSyncScheduler
+import com.beboss.shopmgmt.util.ExcelCsvExporter
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
 import com.beboss.shopmgmt.util.PaymentProcessingResult
+import com.beboss.shopmgmt.util.PdfReportGenerator
 import com.beboss.shopmgmt.util.ShopDataTransferManager
 import com.beboss.shopmgmt.util.SubscriptionPriceBreakdown
 import com.beboss.shopmgmt.util.SubscriptionSecurityManager
@@ -19,11 +22,14 @@ import com.beboss.shopmgmt.util.SupabaseAdminClient
 import com.beboss.shopmgmt.util.SupabaseAdminSession
 import com.beboss.shopmgmt.util.SupabaseAuditLogDto
 import com.beboss.shopmgmt.util.SupabaseBranchSnapshotDto
+import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
 import com.beboss.shopmgmt.util.SupabasePaymentRequestDto
 import com.beboss.shopmgmt.util.SupabaseShopAccountDto
 import com.beboss.shopmgmt.util.SupabaseShopDeviceDto
 import com.beboss.shopmgmt.util.SupabaseShopUserDto
 import com.beboss.shopmgmt.util.SupabaseUnlockCodeDto
+import com.beboss.shopmgmt.util.safeMessage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,6 +82,12 @@ class AdminConsoleCoordinator(
     private val _adminAuditLogs = MutableStateFlow<List<SupabaseAuditLogDto>>(emptyList())
     val adminAuditLogs: StateFlow<List<SupabaseAuditLogDto>> = _adminAuditLogs.asStateFlow()
 
+    private val _adminDeviceTelemetry = MutableStateFlow<List<SupabaseDeviceTelemetryDto>>(emptyList())
+    val adminDeviceTelemetry: StateFlow<List<SupabaseDeviceTelemetryDto>> = _adminDeviceTelemetry.asStateFlow()
+
+    private val _adminCloudHealth = MutableStateFlow<CloudHealthDiagnosticsDto?>(null)
+    val adminCloudHealth: StateFlow<CloudHealthDiagnosticsDto?> = _adminCloudHealth.asStateFlow()
+
     private val _adminPaymentConfig = MutableStateFlow(
         OfflineSubscriptionManager.getCurrentPaymentConfig()
     )
@@ -97,21 +109,28 @@ class AdminConsoleCoordinator(
         runWithBlurLoading("Admin Sign-In", "Authenticating Master Admin...") {
             _isAdminAuthenticating.value = true
             _adminAuthError.value = null
-            val res = SupabaseAdminClient.signInAdmin(email, password)
-            _isAdminAuthenticating.value = false
-            res.onSuccess { sess ->
-                _adminSession.value = sess
-                repository.recordLocalAudit(
-                    actorName = sess.fullName,
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_SIGN_IN",
-                    targetId = sess.email,
-                    details = "Signed in to Master Admin Console"
-                )
-                refreshAdminDashboardData()
-                emitSnackbar("Authenticated as Master Admin (${sess.email})")
-            }.onFailure { err ->
-                _adminAuthError.value = err.message ?: "Admin sign-in failed"
+            try {
+                val res = SupabaseAdminClient.signInAdmin(email, password)
+                res.onSuccess { sess ->
+                    _adminSession.value = sess
+                    repository.recordLocalAudit(
+                        actorName = sess.fullName,
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_SIGN_IN",
+                        targetId = sess.email,
+                        details = "Signed in to Master Admin Console"
+                    )
+                    refreshAdminDashboardData()
+                    emitSnackbar("Authenticated as Master Admin (${sess.email})")
+                }.onFailure { err ->
+                    _adminAuthError.value = err.safeMessage("Admin sign-in failed")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _adminAuthError.value = e.safeMessage("Admin sign-in failed")
+            } finally {
+                _isAdminAuthenticating.value = false
             }
         }
     }
@@ -120,21 +139,28 @@ class AdminConsoleCoordinator(
         runWithBlurLoading("Admin Setup", "Initializing Master Admin profile...") {
             _isAdminAuthenticating.value = true
             _adminAuthError.value = null
-            val res = SupabaseAdminClient.signUpAdmin(email, password, fullName)
-            _isAdminAuthenticating.value = false
-            res.onSuccess { sess ->
-                _adminSession.value = sess
-                repository.recordLocalAudit(
-                    actorName = sess.fullName,
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_INITIALIZED",
-                    targetId = sess.email,
-                    details = "Initialized Master Admin account"
-                )
-                refreshAdminDashboardData()
-                emitSnackbar("Master Admin profile initialized (${sess.email})")
-            }.onFailure { err ->
-                _adminAuthError.value = err.message ?: "Admin initialization failed"
+            try {
+                val res = SupabaseAdminClient.signUpAdmin(email, password, fullName)
+                res.onSuccess { sess ->
+                    _adminSession.value = sess
+                    repository.recordLocalAudit(
+                        actorName = sess.fullName,
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_INITIALIZED",
+                        targetId = sess.email,
+                        details = "Initialized Master Admin account"
+                    )
+                    refreshAdminDashboardData()
+                    emitSnackbar("Master Admin profile initialized (${sess.email})")
+                }.onFailure { err ->
+                    _adminAuthError.value = err.safeMessage("Admin initialization failed")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _adminAuthError.value = e.safeMessage("Admin initialization failed")
+            } finally {
+                _isAdminAuthenticating.value = false
             }
         }
     }
@@ -151,6 +177,8 @@ class AdminConsoleCoordinator(
             _adminBranchSnapshots.value = emptyList()
             _adminUnlockCodes.value = emptyList()
             _adminAuditLogs.value = emptyList()
+            _adminDeviceTelemetry.value = emptyList()
+            _adminCloudHealth.value = null
             _adminAuthError.value = null
             if (prev != null) {
                 repository.recordLocalAudit(
@@ -288,7 +316,15 @@ class AdminConsoleCoordinator(
 
     fun syncAdminDataToSupabase(silent: Boolean = false) {
         scope.launch {
-            syncAdminDataToSupabaseSuspended(silent)
+            try {
+                syncAdminDataToSupabaseSuspended(silent)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (!silent) {
+                    emitSnackbar("Cloud sync failed: ${e.safeMessage()}")
+                }
+            }
         }
     }
 
@@ -308,26 +344,140 @@ class AdminConsoleCoordinator(
     private suspend fun refreshAdminDashboardDataSuspended() {
         if (_adminSession.value == null) return
         _isAdminLoading.value = true
-        val validSession = SupabaseAdminClient.ensureValidAdminSession()
-        _adminSession.value = validSession
-        if (validSession == null) {
-            _adminAuthError.value = "Admin session expired. Sign in again."
+        try {
+            val validSession = SupabaseAdminClient.ensureValidAdminSession()
+            _adminSession.value = validSession
+            if (validSession == null) {
+                _adminAuthError.value = "Admin session expired. Sign in again."
+                return
+            }
+            _adminPaymentRequests.value = SupabaseAdminClient.fetchAllPaymentRequests()
+            _adminShopAccounts.value = SupabaseAdminClient.fetchAllShopAccounts()
+            _adminShopUsers.value = SupabaseAdminClient.fetchAllShopUsers()
+            _adminShopDevices.value = SupabaseAdminClient.fetchAllShopDevices()
+            _adminBranchSnapshots.value = SupabaseAdminClient.fetchAllBranchSnapshots()
+            _adminUnlockCodes.value = SupabaseAdminClient.fetchAllUnlockCodes()
+            _adminAuditLogs.value = SupabaseAdminClient.fetchAdminAuditLogs()
+            _adminDeviceTelemetry.value = SupabaseAdminClient.fetchDeviceTelemetryForAdmin()
+            SupabaseAdminClient.fetchPublicAppConfig()?.let { cfg ->
+                OfflineSubscriptionManager.saveDynamicPaymentConfig(application, cfg)
+                _adminPaymentConfig.value = cfg
+            }
+            _adminLastSyncedAt.value = System.currentTimeMillis()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emitSnackbar("Admin cloud refresh failed: ${e.safeMessage()}")
+        } finally {
             _isAdminLoading.value = false
-            return
         }
-        _adminPaymentRequests.value = SupabaseAdminClient.fetchAllPaymentRequests()
-        _adminShopAccounts.value = SupabaseAdminClient.fetchAllShopAccounts()
-        _adminShopUsers.value = SupabaseAdminClient.fetchAllShopUsers()
-        _adminShopDevices.value = SupabaseAdminClient.fetchAllShopDevices()
-        _adminBranchSnapshots.value = SupabaseAdminClient.fetchAllBranchSnapshots()
-        _adminUnlockCodes.value = SupabaseAdminClient.fetchAllUnlockCodes()
-        _adminAuditLogs.value = SupabaseAdminClient.fetchAdminAuditLogs()
-        SupabaseAdminClient.fetchPublicAppConfig()?.let { cfg ->
-            OfflineSubscriptionManager.saveDynamicPaymentConfig(application, cfg)
-            _adminPaymentConfig.value = cfg
+    }
+
+    fun runAdminCloudHealthDiagnostics() {
+        runWithBlurLoading("Cloud Diagnostics", "Probing Supabase PostgREST & schema...") {
+            try {
+                val res = SupabaseAdminClient.runCloudHealthDiagnostics()
+                _adminCloudHealth.value = res
+                emitSnackbar(res.summaryMessage)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Diagnostics failed: ${e.safeMessage()}")
+            }
         }
-        _adminLastSyncedAt.value = System.currentTimeMillis()
-        _isAdminLoading.value = false
+    }
+
+    fun loadMoreAdminShops() {
+        if (_adminSession.value == null) return
+        scope.launch {
+            try {
+                val offset = _adminShopAccounts.value.size
+                val next = SupabaseAdminClient.fetchAllShopAccounts(limit = 150, offset = offset)
+                if (next.isEmpty()) {
+                    emitSnackbar("All cloud shop accounts are loaded (${_adminShopAccounts.value.size}).")
+                } else {
+                    _adminShopAccounts.value = (_adminShopAccounts.value + next).distinctBy { it.id }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Load more shops failed: ${e.safeMessage()}")
+            }
+        }
+    }
+
+    fun loadMoreAdminPaymentRequests() {
+        if (_adminSession.value == null) return
+        scope.launch {
+            try {
+                val offset = _adminPaymentRequests.value.size
+                val next = SupabaseAdminClient.fetchAllPaymentRequests(limit = 100, offset = offset)
+                if (next.isEmpty()) {
+                    emitSnackbar("All payment verification records are loaded (${_adminPaymentRequests.value.size}).")
+                } else {
+                    _adminPaymentRequests.value = (_adminPaymentRequests.value + next).distinctBy { it.id }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Load more payments failed: ${e.safeMessage()}")
+            }
+        }
+    }
+
+    fun loadMoreAdminTelemetry() {
+        if (_adminSession.value == null) return
+        scope.launch {
+            try {
+                val offset = _adminDeviceTelemetry.value.size
+                val next = SupabaseAdminClient.fetchDeviceTelemetryForAdmin(limit = 100, offset = offset)
+                if (next.isEmpty()) {
+                    emitSnackbar("All device security telemetry records are loaded (${_adminDeviceTelemetry.value.size}).")
+                } else {
+                    _adminDeviceTelemetry.value = (_adminDeviceTelemetry.value + next).distinctBy { it.id }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Load more telemetry failed: ${e.safeMessage()}")
+            }
+        }
+    }
+
+    fun exportAdminLedgerCsv(context: Context) {
+        scope.launch {
+            try {
+                val file = ExcelCsvExporter.exportAdminLedgerCsv(
+                    context = context,
+                    shops = _adminShopAccounts.value,
+                    payments = _adminPaymentRequests.value
+                )
+                PdfReportGenerator.shareFile(context, file, "text/csv", "Share BeBoss Admin Ledger CSV")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Admin CSV export failed: ${e.safeMessage()}")
+            }
+        }
+    }
+
+    fun exportAdminExecutivePdf(context: Context) {
+        scope.launch {
+            try {
+                val file = PdfReportGenerator.generateAdminExecutiveReportPdf(
+                    context = context,
+                    shops = _adminShopAccounts.value,
+                    payments = _adminPaymentRequests.value,
+                    auditLogs = _adminAuditLogs.value,
+                    telemetry = _adminDeviceTelemetry.value
+                )
+                PdfReportGenerator.shareFile(context, file, "application/pdf", "Share BeBoss Executive Report PDF")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Executive PDF export failed: ${e.safeMessage()}")
+            }
+        }
     }
 
     fun adminApproveAndGenerateCode(
@@ -337,23 +487,35 @@ class AdminConsoleCoordinator(
     ) {
         runWithBlurLoading("Generating Unlock Code", "Signing BB3 voucher in Admin Cloud...") {
             _isAdminLoading.value = true
-            val adminName = _adminSession.value?.fullName ?: currentUser.value?.name ?: "BeBoss Master Admin"
-            val (ok, code) = SupabaseAdminClient.approvePaymentAndIssueCode(request, adminName, verificationNote)
-            if (ok) {
-                repository.recordLocalAudit(
-                    actorName = adminName,
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_APPROVE_PAYMENT",
-                    targetId = request.ownerUsername,
-                    details = "Provider payment manually verified: ${verificationNote.take(300)}. Approved ${request.amountRwf} FRw (${request.durationMonths * 30}d) -> ${code.take(18)}..."
-                )
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("Approved & generated unlock code: $code")
-            } else {
-                emitSnackbar("Admin Supabase approval failed — sign in as Master Admin.")
+            var ok = false
+            var code = ""
+            try {
+                val adminName = _adminSession.value?.fullName ?: currentUser.value?.name ?: "BeBoss Master Admin"
+                val result = SupabaseAdminClient.approvePaymentAndIssueCode(request, adminName, verificationNote)
+                ok = result.first
+                code = result.second
+                if (ok) {
+                    repository.recordLocalAudit(
+                        actorName = adminName,
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_APPROVE_PAYMENT",
+                        targetId = request.ownerUsername,
+                        details = "Provider payment manually verified: ${verificationNote.take(300)}. Approved ${request.amountRwf} FRw (${request.durationMonths * 30}d) -> ${code.take(18)}..."
+                    )
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("Approved & generated unlock code: $code")
+                } else {
+                    emitSnackbar(code.ifBlank { "Admin Supabase approval failed — sign in as Master Admin." })
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                code = e.safeMessage("Admin Supabase approval failed")
+                emitSnackbar(code)
+            } finally {
+                _isAdminLoading.value = false
+                onGenerated(ok, code)
             }
-            _isAdminLoading.value = false
-            onGenerated(ok, code)
         }
     }
 
@@ -363,46 +525,65 @@ class AdminConsoleCoordinator(
     ) {
         runWithBlurLoading("Auto-Unlocking Shop", "Activating ${request.shopName} in cloud...") {
             _isAdminLoading.value = true
-            val adminName = _adminSession.value?.fullName ?: currentUser.value?.name ?: "BeBoss Master Admin"
-            val ok = SupabaseAdminClient.approvePaymentDirectAutoUnlock(request, adminName)
-            if (ok) {
-                repository.recordLocalAudit(
-                    actorName = adminName,
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_DIRECT_AUTO_UNLOCK",
-                    targetId = request.ownerUsername,
-                    details = "Auto-unlocked ${request.shopName} (${request.amountRwf} FRw, ${request.deviceCount} devices) without code"
-                )
-                refreshAdminDashboardDataSuspended()
-                syncAdminDataToSupabaseSuspended(silent = true)
-                emitSnackbar("Auto-Unlocked ${request.shopName} (@${request.ownerUsername}) directly in cloud!")
-            } else {
-                emitSnackbar("Direct Auto-Unlock failed — check Master Admin session.")
+            var ok = false
+            try {
+                val adminName = _adminSession.value?.fullName ?: currentUser.value?.name ?: "BeBoss Master Admin"
+                ok = SupabaseAdminClient.approvePaymentDirectAutoUnlock(request, adminName)
+                if (ok) {
+                    repository.recordLocalAudit(
+                        actorName = adminName,
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_DIRECT_AUTO_UNLOCK",
+                        targetId = request.ownerUsername,
+                        details = "Auto-unlocked ${request.shopName} (${request.amountRwf} FRw, ${request.deviceCount} devices) without code"
+                    )
+                    refreshAdminDashboardDataSuspended()
+                    syncAdminDataToSupabaseSuspended(silent = true)
+                    emitSnackbar("Auto-Unlocked ${request.shopName} (@${request.ownerUsername}) directly in cloud!")
+                } else {
+                    emitSnackbar("Direct Auto-Unlock failed — check Master Admin session.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Direct Auto-Unlock failed: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
+                onDone(ok)
             }
-            _isAdminLoading.value = false
-            onDone(ok)
         }
     }
 
     fun adminApproveBatchPendingPayments(onDone: (Int, Int) -> Unit = { _, _ -> }) {
         runWithBlurLoading("Batch Approving Claims", "Verifying pending payment queue...") {
             _isAdminLoading.value = true
-            val pending = _adminPaymentRequests.value.filter { it.status == "PENDING_VERIFICATION" }
-            val adminName = _adminSession.value?.fullName ?: "BeBoss Master Admin"
-            val res = SupabaseAdminClient.approvePaymentBatch(pending, adminName)
-            if (res.approvedCount > 0) {
-                repository.recordLocalAudit(
-                    actorName = adminName,
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_BATCH_APPROVE",
-                    targetId = "batch:${res.approvedCount}",
-                    details = "Batch approved ${res.approvedCount} pending payment claims (${res.failedCount} failed)"
-                )
-                refreshAdminDashboardDataSuspended()
+            var approvedCount = 0
+            var failedCount = 0
+            try {
+                val pending = _adminPaymentRequests.value.filter { it.status == "PENDING_VERIFICATION" }
+                val adminName = _adminSession.value?.fullName ?: "BeBoss Master Admin"
+                val res = SupabaseAdminClient.approvePaymentBatch(pending, adminName)
+                approvedCount = res.approvedCount
+                failedCount = res.failedCount
+                if (approvedCount > 0) {
+                    repository.recordLocalAudit(
+                        actorName = adminName,
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_BATCH_APPROVE",
+                        targetId = "batch:$approvedCount",
+                        details = "Batch approved $approvedCount pending payment claims ($failedCount failed)"
+                    )
+                    refreshAdminDashboardDataSuspended()
+                }
+                emitSnackbar("Batch approval: $approvedCount approved, $failedCount failed.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Batch approval failed: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
+                onDone(approvedCount, failedCount)
             }
-            _isAdminLoading.value = false
-            emitSnackbar("Batch approval: ${res.approvedCount} approved, ${res.failedCount} failed.")
-            onDone(res.approvedCount, res.failedCount)
         }
     }
 
@@ -413,43 +594,58 @@ class AdminConsoleCoordinator(
     ) {
         runWithBlurLoading("Updating Claim", "Marking payment claim rejected...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.rejectPaymentRequest(request, reason)
-            if (ok) {
-                repository.recordLocalAudit(
-                    actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_REJECT_PAYMENT",
-                    targetId = request.ownerUsername,
-                    details = reason
-                )
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("Payment request marked REJECTED.")
-            } else {
-                emitSnackbar("Could not reject request in Supabase.")
+            var ok = false
+            try {
+                ok = SupabaseAdminClient.rejectPaymentRequest(request, reason)
+                if (ok) {
+                    repository.recordLocalAudit(
+                        actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_REJECT_PAYMENT",
+                        targetId = request.ownerUsername,
+                        details = reason
+                    )
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("Payment request marked REJECTED.")
+                } else {
+                    emitSnackbar("Could not reject request in Supabase.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Could not reject request: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
+                onDone(ok)
             }
-            _isAdminLoading.value = false
-            onDone(ok)
         }
     }
 
     fun adminRevokeCode(codeDto: SupabaseUnlockCodeDto) {
         runWithBlurLoading("Revoking Code", "Invalidating voucher in Admin Cloud...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.revokeUnlockCode(codeDto)
-            if (ok) {
-                repository.recordLocalAudit(
-                    actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_REVOKE_CODE",
-                    targetId = codeDto.shopUsername,
-                    details = "Revoked ${codeDto.unlockCode}"
-                )
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("Revoked unlock code ${codeDto.unlockCode}.")
-            } else {
-                emitSnackbar("Could not revoke code in Supabase.")
+            try {
+                val ok = SupabaseAdminClient.revokeUnlockCode(codeDto)
+                if (ok) {
+                    repository.recordLocalAudit(
+                        actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_REVOKE_CODE",
+                        targetId = codeDto.shopUsername,
+                        details = "Revoked ${codeDto.unlockCode}"
+                    )
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("Revoked unlock code ${codeDto.unlockCode}.")
+                } else {
+                    emitSnackbar("Could not revoke code in Supabase.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Could not revoke code: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 
@@ -463,73 +659,99 @@ class AdminConsoleCoordinator(
     ) {
         runWithBlurLoading("Issuing BB3 Code", "Generating offline unlock voucher...") {
             _isAdminLoading.value = true
-            val adminName = _adminSession.value?.fullName ?: currentUser.value?.name ?: "BeBoss Master Admin"
-            val deviceCode = SubscriptionSecurityManager.computeDeviceChallenge(shopProfile.value)
-            val (ok, code) = SupabaseAdminClient.issueManualUnlockCode(
-                username = username,
-                registeredPhone = registeredPhone,
-                deviceChallenge = deviceCode,
-                tierCode = tierCode,
-                days = days,
-                amountRwf = amountRwf,
-                adminName = adminName
-            )
-            if (ok) {
-                repository.recordLocalAudit(
-                    actorName = adminName,
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_ISSUE_MANUAL_CODE",
-                    targetId = username,
-                    details = "$tierCode ($days d, $amountRwf FRw)"
+            var ok = false
+            var code = ""
+            try {
+                val adminName = _adminSession.value?.fullName ?: currentUser.value?.name ?: "BeBoss Master Admin"
+                val deviceCode = SubscriptionSecurityManager.computeDeviceChallenge(shopProfile.value)
+                val result = SupabaseAdminClient.issueManualUnlockCode(
+                    username = username,
+                    registeredPhone = registeredPhone,
+                    deviceChallenge = deviceCode,
+                    tierCode = tierCode,
+                    days = days,
+                    amountRwf = amountRwf,
+                    adminName = adminName
                 )
-                refreshAdminDashboardDataSuspended()
-            } else {
-                emitSnackbar("Failed generating BB3 code — verify the server signing key and Admin session.")
+                ok = result.first
+                code = result.second
+                if (ok) {
+                    repository.recordLocalAudit(
+                        actorName = adminName,
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_ISSUE_MANUAL_CODE",
+                        targetId = username,
+                        details = "$tierCode ($days d, $amountRwf FRw)"
+                    )
+                    refreshAdminDashboardDataSuspended()
+                } else {
+                    emitSnackbar(code.ifBlank { "Failed generating BB3 code — verify the server signing key and Admin session." })
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                code = e.safeMessage("Failed generating BB3 code")
+                emitSnackbar(code)
+            } finally {
+                _isAdminLoading.value = false
+                onGenerated(ok, code)
             }
-            _isAdminLoading.value = false
-            onGenerated(ok, code)
         }
     }
 
     fun adminExtendShopSubscription(shop: SupabaseShopAccountDto, addDays: Int) {
         runWithBlurLoading("Extending Subscription", "Updating license expiry in Supabase...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.adminExtendShopSubscription(shop, addDays)
-            if (ok) {
-                repository.recordLocalAudit(
-                    actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_EXTEND_SHOP",
-                    targetId = shop.ownerUsername,
-                    details = "+$addDays days for ${shop.shopName}"
-                )
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("Extended ${shop.shopName} license by +$addDays days.")
-            } else {
-                emitSnackbar("Failed extending shop license in Supabase.")
+            try {
+                val ok = SupabaseAdminClient.adminExtendShopSubscription(shop, addDays)
+                if (ok) {
+                    repository.recordLocalAudit(
+                        actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_EXTEND_SHOP",
+                        targetId = shop.ownerUsername,
+                        details = "+$addDays days for ${shop.shopName}"
+                    )
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("Extended ${shop.shopName} license by +$addDays days.")
+                } else {
+                    emitSnackbar("Failed extending shop license in Supabase.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed extending shop license: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 
     fun adminSetShopStatus(shop: SupabaseShopAccountDto, status: String) {
         runWithBlurLoading("Updating Shop Status", "Setting ${shop.shopName} to $status...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.adminSetShopStatus(shop, status)
-            if (ok) {
-                repository.recordLocalAudit(
-                    actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_SET_SHOP_STATUS",
-                    targetId = shop.ownerUsername,
-                    details = "${shop.shopName} -> $status"
-                )
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("${shop.shopName} set to $status.")
-            } else {
-                emitSnackbar("Failed updating shop status.")
+            try {
+                val ok = SupabaseAdminClient.adminSetShopStatus(shop, status)
+                if (ok) {
+                    repository.recordLocalAudit(
+                        actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_SET_SHOP_STATUS",
+                        targetId = shop.ownerUsername,
+                        details = "${shop.shopName} -> $status"
+                    )
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("${shop.shopName} set to $status.")
+                } else {
+                    emitSnackbar("Failed updating shop status.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed updating shop status: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 
@@ -541,135 +763,199 @@ class AdminConsoleCoordinator(
     ) {
         runWithBlurLoading("Updating Quotas", "Applying branch & device limits...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.adminUpdateShopLimits(shop, branchCount, workerCount, deviceLimit)
-            if (ok) {
-                repository.recordLocalAudit(
-                    actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_UPDATE_SHOP_LIMITS",
-                    targetId = shop.ownerUsername,
-                    details = "${shop.shopName}: $branchCount br / $workerCount stf / $deviceLimit dev"
-                )
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("Updated quotas for ${shop.shopName} ($branchCount br / $workerCount stf / $deviceLimit dev).")
-            } else {
-                emitSnackbar("Failed updating shop quotas.")
+            try {
+                val ok = SupabaseAdminClient.adminUpdateShopLimits(shop, branchCount, workerCount, deviceLimit)
+                if (ok) {
+                    repository.recordLocalAudit(
+                        actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_UPDATE_SHOP_LIMITS",
+                        targetId = shop.ownerUsername,
+                        details = "${shop.shopName}: $branchCount br / $workerCount stf / $deviceLimit dev"
+                    )
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("Updated quotas for ${shop.shopName} ($branchCount br / $workerCount stf / $deviceLimit dev).")
+                } else {
+                    emitSnackbar("Failed updating shop quotas.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed updating shop quotas: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 
     fun adminSavePaymentConfig(config: AdminPaymentConfig, onDone: (Boolean) -> Unit = {}) {
         runWithBlurLoading("Saving Config", "Publishing payment settings to cloud...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.adminSaveAppConfig(config)
-            if (ok) {
-                OfflineSubscriptionManager.saveDynamicPaymentConfig(application, config.copy(updatedAt = System.currentTimeMillis()))
-                _adminPaymentConfig.value = OfflineSubscriptionManager.getCurrentPaymentConfig()
-                emitSnackbar("Saved Admin WhatsApp & MoMo/Airtel USSD numbers globally!")
-            } else {
-                emitSnackbar("Failed saving payment config to Supabase.")
+            var ok = false
+            try {
+                ok = SupabaseAdminClient.adminSaveAppConfig(config)
+                if (ok) {
+                    OfflineSubscriptionManager.saveDynamicPaymentConfig(application, config.copy(updatedAt = System.currentTimeMillis()))
+                    _adminPaymentConfig.value = OfflineSubscriptionManager.getCurrentPaymentConfig()
+                    emitSnackbar("Saved Admin WhatsApp & MoMo/Airtel USSD numbers globally!")
+                } else {
+                    emitSnackbar("Failed saving payment config to Supabase.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed saving payment config: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
+                onDone(ok)
             }
-            _isAdminLoading.value = false
-            onDone(ok)
         }
     }
 
     fun adminToggleShopDeviceActive(device: SupabaseShopDeviceDto, isActive: Boolean) {
         runWithBlurLoading("Updating Device", "${if (isActive) "Activating" else "Suspending"} ${device.deviceName}...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.adminToggleShopDeviceActive(device, isActive)
-            if (ok) {
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("Device '${device.deviceName}' ${if (isActive) "activated" else "disabled"}.")
-            } else {
-                emitSnackbar("Failed updating device in Supabase.")
+            try {
+                val ok = SupabaseAdminClient.adminToggleShopDeviceActive(device, isActive)
+                if (ok) {
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("Device '${device.deviceName}' ${if (isActive) "activated" else "disabled"}.")
+                } else {
+                    emitSnackbar("Failed updating device in Supabase.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed updating device: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 
     fun adminDeleteShopDevice(device: SupabaseShopDeviceDto) {
         runWithBlurLoading("Removing Device", "Deleting ${device.deviceName} from cloud...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.deleteShopDeviceInCloud(device.shopSyncKey, device.id, useAdmin = true)
-            if (ok) {
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("Removed device '${device.deviceName}'.")
-            } else {
-                emitSnackbar("Failed deleting device from Supabase.")
+            try {
+                val ok = SupabaseAdminClient.deleteShopDeviceInCloud(device.shopSyncKey, device.id, useAdmin = true)
+                if (ok) {
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("Removed device '${device.deviceName}'.")
+                } else {
+                    emitSnackbar("Failed deleting device from Supabase.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed deleting device: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 
     fun adminDeleteShopAccount(shop: SupabaseShopAccountDto) {
         runWithBlurLoading("Deleting Shop", "Removing ${shop.shopName} from registry...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.adminDeleteShopAccount(shop)
-            if (ok) {
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("Deleted shop record ${shop.shopName}.")
-            } else {
-                emitSnackbar("Failed deleting shop record.")
+            try {
+                val ok = SupabaseAdminClient.adminDeleteShopAccount(shop)
+                if (ok) {
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("Deleted shop record ${shop.shopName}.")
+                } else {
+                    emitSnackbar("Failed deleting shop record.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed deleting shop record: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 
     fun adminUpdateShopUserRole(user: SupabaseShopUserDto, newRole: String) {
         runWithBlurLoading("Updating Staff Role", "Assigning $newRole to @${user.username}...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.adminUpdateShopUser(user, newRole = newRole)
-            if (ok) {
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("@${user.username} role updated to $newRole.")
-            } else {
-                emitSnackbar("Failed updating user role in Supabase.")
+            try {
+                val ok = SupabaseAdminClient.adminUpdateShopUser(user, newRole = newRole)
+                if (ok) {
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("@${user.username} role updated to $newRole.")
+                } else {
+                    emitSnackbar("Failed updating user role in Supabase.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed updating user role: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 
     fun adminToggleShopUserActive(user: SupabaseShopUserDto, newActive: Boolean) {
         runWithBlurLoading("Updating Staff Status", "${if (newActive) "Reactivating" else "Suspending"} @${user.username}...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.adminUpdateShopUser(user, isActive = newActive)
-            if (ok) {
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("@${user.username} ${if (newActive) "reactivated" else "suspended"}.")
-            } else {
-                emitSnackbar("Failed updating user status in Supabase.")
+            try {
+                val ok = SupabaseAdminClient.adminUpdateShopUser(user, isActive = newActive)
+                if (ok) {
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("@${user.username} ${if (newActive) "reactivated" else "suspended"}.")
+                } else {
+                    emitSnackbar("Failed updating user status in Supabase.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed updating user status: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 
     fun adminDeleteShopUser(user: SupabaseShopUserDto) {
         runWithBlurLoading("Removing Staff", "Deleting @${user.username} from directory...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.adminDeleteShopUser(user)
-            if (ok) {
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("Removed user @${user.username} from directory.")
-            } else {
-                emitSnackbar("Failed deleting user in Supabase.")
+            try {
+                val ok = SupabaseAdminClient.adminDeleteShopUser(user)
+                if (ok) {
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("Removed user @${user.username} from directory.")
+                } else {
+                    emitSnackbar("Failed deleting user in Supabase.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed deleting user: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 
     fun adminDeleteBranchSnapshot(snapshot: SupabaseBranchSnapshotDto) {
         runWithBlurLoading("Removing Snapshot", "Cleaning ${snapshot.branchName} snapshot...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.adminDeleteBranchSnapshot(snapshot)
-            if (ok) {
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("Removed branch snapshot (${snapshot.branchName}).")
-            } else {
-                emitSnackbar("Failed removing branch snapshot.")
+            try {
+                val ok = SupabaseAdminClient.adminDeleteBranchSnapshot(snapshot)
+                if (ok) {
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("Removed branch snapshot (${snapshot.branchName}).")
+                } else {
+                    emitSnackbar("Failed removing branch snapshot.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed removing branch snapshot: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 
@@ -677,28 +963,35 @@ class AdminConsoleCoordinator(
         try {
             ShopDataTransferManager.exportAndShareAdminWebPortal(context)
         } catch (e: Exception) {
-            scope.launch { emitSnackbar("Cannot export Web Portal: ${e.message}") }
+            scope.launch { emitSnackbar("Cannot export Web Portal: ${e.safeMessage()}") }
         }
     }
 
     fun adminResetShopTrial(shop: SupabaseShopAccountDto, trialDays: Int = ShopProfile.FREE_TRIAL_DAYS) {
         runWithBlurLoading("Resetting Trial", "Resetting ${shop.shopName} to ${trialDays}-day trial...") {
             _isAdminLoading.value = true
-            val ok = SupabaseAdminClient.adminResetShopTrial(shop, trialDays)
-            if (ok) {
-                repository.recordLocalAudit(
-                    actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
-                    actorRole = "MASTER_ADMIN",
-                    action = "ADMIN_RESET_TRIAL",
-                    targetId = shop.ownerUsername,
-                    details = "Reset ${shop.shopName} to ${trialDays}-day TRIAL"
-                )
-                refreshAdminDashboardDataSuspended()
-                emitSnackbar("Reset ${shop.shopName} to $trialDays-day Free Trial.")
-            } else {
-                emitSnackbar("Failed resetting trial in Supabase.")
+            try {
+                val ok = SupabaseAdminClient.adminResetShopTrial(shop, trialDays)
+                if (ok) {
+                    repository.recordLocalAudit(
+                        actorName = _adminSession.value?.fullName ?: "MASTER_ADMIN",
+                        actorRole = "MASTER_ADMIN",
+                        action = "ADMIN_RESET_TRIAL",
+                        targetId = shop.ownerUsername,
+                        details = "Reset ${shop.shopName} to ${trialDays}-day TRIAL"
+                    )
+                    refreshAdminDashboardDataSuspended()
+                    emitSnackbar("Reset ${shop.shopName} to $trialDays-day Free Trial.")
+                } else {
+                    emitSnackbar("Failed resetting trial in Supabase.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed resetting trial: ${e.safeMessage()}")
+            } finally {
+                _isAdminLoading.value = false
             }
-            _isAdminLoading.value = false
         }
     }
 

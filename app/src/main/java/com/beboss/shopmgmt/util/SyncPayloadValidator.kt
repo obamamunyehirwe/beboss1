@@ -41,7 +41,7 @@ object SyncPayloadValidator {
         val root = try {
             JSONObject(trimmed)
         } catch (e: Exception) {
-            throw IllegalArgumentException("Invalid sync package JSON: ${e.message}", e)
+            throw IllegalArgumentException("Invalid sync package JSON: ${e.safeMessage("Malformed JSON")}", e)
         }
 
         // Verify at least one recognized BeBoss envelope section exists
@@ -74,12 +74,12 @@ object SyncPayloadValidator {
         if (salesArr != null && saleItemsArr != null) {
             val saleIds = HashSet<String>(salesArr.length())
             for (i in 0 until salesArr.length()) {
-                val id = salesArr.optJSONObject(i)?.optString("id", "").orEmpty().trim()
+                val id = salesArr.optJSONObject(i)?.optCleanString("id", "").orEmpty().trim()
                 if (id.isNotEmpty()) saleIds.add(id)
             }
             for (i in 0 until saleItemsArr.length()) {
                 val item = saleItemsArr.optJSONObject(i) ?: continue
-                val fkSaleId = item.optString("saleId", "").trim()
+                val fkSaleId = item.optCleanString("saleId", "").trim()
                 require(fkSaleId.isNotEmpty() && fkSaleId in saleIds) {
                     "Orphan foreign key at saleItems[$i]: saleId '$fkSaleId' missing from sales."
                 }
@@ -100,25 +100,25 @@ object SyncPayloadValidator {
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i)
                 ?: throw IllegalArgumentException("Invalid object at $section[$i].")
-            val id = obj.optString("id", "").trim()
+            val id = obj.optCleanString("id", "").trim()
             require(id.isNotEmpty() && id.length <= 128) {
                 "Missing or invalid record id at $section[$i]."
             }
             when (section) {
                 "branches" -> {
-                    require(obj.optString("name", "").isNotBlank()) { "Blank branch name at branches[$i]." }
+                    require(obj.optCleanString("name", "").isNotBlank()) { "Blank branch name at branches[$i]." }
                 }
                 "users" -> {
-                    require(obj.optString("username", "").isNotBlank()) { "Blank username at users[$i]." }
+                    require(obj.optCleanString("username", "").isNotBlank()) { "Blank username at users[$i]." }
                 }
                 "products" -> {
-                    require(obj.optString("name", "").isNotBlank()) { "Blank product name at products[$i]." }
+                    require(obj.optCleanString("name", "").isNotBlank()) { "Blank product name at products[$i]." }
                     assertFiniteNonNegative(obj.optDouble("costPrice", 0.0), "products[$i].costPrice")
                     assertFiniteNonNegative(obj.optDouble("sellingPrice", 0.0), "products[$i].sellingPrice")
                     assertFiniteNonNegative(obj.optDouble("quantityInStock", 0.0), "products[$i].quantityInStock")
                 }
                 "customers" -> {
-                    require(obj.optString("name", "").isNotBlank()) { "Blank customer name at customers[$i]." }
+                    require(obj.optCleanString("name", "").isNotBlank()) { "Blank customer name at customers[$i]." }
                     assertFiniteNonNegative(obj.optDouble("creditLimit", 0.0), "customers[$i].creditLimit")
                     assertFiniteNonNegative(obj.optDouble("debtBalance", 0.0), "customers[$i].debtBalance")
                 }
@@ -128,14 +128,14 @@ object SyncPayloadValidator {
                     assertFiniteNonNegative(obj.optDouble("discountAmount", 0.0), "sales[$i].discountAmount")
                 }
                 "saleItems" -> {
-                    require(obj.optString("saleId", "").isNotBlank()) { "Blank saleId at saleItems[$i]." }
+                    require(obj.optCleanString("saleId", "").isNotBlank()) { "Blank saleId at saleItems[$i]." }
                     assertFiniteNonNegative(obj.optDouble("quantitySold", 0.0), "saleItems[$i].quantitySold")
                     assertFiniteNonNegative(obj.optDouble("unitPriceAtSale", 0.0), "saleItems[$i].unitPriceAtSale")
                     assertFiniteNonNegative(obj.optDouble("costPriceAtSale", 0.0), "saleItems[$i].costPriceAtSale")
                     assertFiniteNonNegative(obj.optDouble("subtotal", 0.0), "saleItems[$i].subtotal")
                 }
                 "customerPayments" -> {
-                    require(obj.optString("customerId", "").isNotBlank()) { "Blank customerId at customerPayments[$i]." }
+                    require(obj.optCleanString("customerId", "").isNotBlank()) { "Blank customerId at customerPayments[$i]." }
                     assertFiniteNonNegative(obj.optDouble("amount", 0.0), "customerPayments[$i].amount")
                 }
                 "purchases" -> {
@@ -147,8 +147,8 @@ object SyncPayloadValidator {
                     assertFiniteNonNegative(obj.optDouble("quantity", 0.0), "stockTransfers[$i].quantity")
                 }
                 "tombstones" -> {
-                    require(obj.optString("tableName", "").isNotBlank()) { "Blank tableName at tombstones[$i]." }
-                    require(obj.optString("recordId", "").isNotBlank()) { "Blank recordId at tombstones[$i]." }
+                    require(obj.optCleanString("tableName", "").isNotBlank()) { "Blank tableName at tombstones[$i]." }
+                    require(obj.optCleanString("recordId", "").isNotBlank()) { "Blank recordId at tombstones[$i]." }
                     assertFiniteNonNegative(obj.optDouble("deletedAt", 0.0), "tombstones[$i].deletedAt")
                 }
             }

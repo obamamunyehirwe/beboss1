@@ -33,7 +33,7 @@ function UsersPage() {
   return (
     <div>
       <PageHeader
-        title={a("Shop staff")}
+        title="Shop staff"
         sub="Owners, managers and cashiers synced from every shop. PINs and passwords never leave the phones."
         actions={
           <Button size="sm" variant="glass" onClick={() => downloadCsv(`beboss-staff-${Date.now()}.csv`, rows)}>
@@ -42,7 +42,7 @@ function UsersPage() {
         }
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder={a("Search name, @username, phone, shop, branch…")} />
+        <SearchInput value={q} onChange={setQ} placeholder="Search name, @username, phone, shop, branch…" />
         <FilterChips<F>
           value={f}
           onChange={setF}
@@ -58,7 +58,7 @@ function UsersPage() {
       {isLoading ? (
         <LoadingBlock />
       ) : !rows.length ? (
-        <EmptyState title={a("No staff accounts")} />
+        <EmptyState title="No staff accounts" />
       ) : (
         <TableShell>
           <table className="w-full text-sm">
@@ -117,7 +117,7 @@ function UsersPage() {
                         title={a("Remove staff account?")}
                         description={a("Removes this person from the cloud directory. The shop owner can re-add them from the app.")}
                         destructive
-                        confirmLabel={a("Remove")}
+                        confirmLabel="Remove"
                         onConfirm={() => del.mutate({ id: u.id })}
                       />
                     </td>

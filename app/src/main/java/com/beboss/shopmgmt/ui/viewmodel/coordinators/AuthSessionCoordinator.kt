@@ -11,12 +11,15 @@ import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.AuthRateLimiter
 import com.beboss.shopmgmt.util.Localization
 import com.beboss.shopmgmt.util.SecurityUtils
+import com.beboss.shopmgmt.util.safeMessage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 class AuthSessionCoordinator(
@@ -42,37 +45,37 @@ class AuthSessionCoordinator(
     private val _authError = MutableStateFlow<String?>(null)
     val authError: StateFlow<String?> = _authError.asStateFlow()
 
-    fun checkAuthenticationAndInit() {
-        scope.launch(Dispatchers.IO) {
-            try {
-                val savedUserId = prefs.getString("active_user_id", null)
-                val savedUser = if (!savedUserId.isNullOrBlank()) {
-                    db.userDao().getUserById(savedUserId)?.takeIf { it.isActive }
-                } else {
-                    null
-                }
-
-                val activeUsers = db.userDao().getAllActiveUsersList()
-                if (activeUsers.isEmpty()) {
-                    // A legacy install may still contain deactivated demonstration or
-                    // retired staff rows. Registration depends on real active accounts,
-                    // not the raw historical row count.
-                    _currentUser.value = null
-                    _isRegistrationNeeded.value = true
-                    _isLocked.value = true
-                    return@launch
-                }
-
-                val preselected = savedUser ?: activeUsers.firstOrNull()
-                _currentUser.value = preselected
-                _isRegistrationNeeded.value = false
-                // Always require explicit user authentication on cold launch
-                _isLocked.value = true
-            } catch (e: Throwable) {
-                _authError.value = "Startup database error: ${e.message}"
-                _isLocked.value = true
-                _isRegistrationNeeded.value = false
+    suspend fun checkAuthenticationAndInit() = withContext(Dispatchers.IO) {
+        try {
+            val savedUserId = prefs.getString("active_user_id", null)
+            val savedUser = if (!savedUserId.isNullOrBlank()) {
+                db.userDao().getUserById(savedUserId)?.takeIf { it.isActive }
+            } else {
+                null
             }
+
+            val activeUsers = db.userDao().getAllActiveUsersList()
+            if (activeUsers.isEmpty()) {
+                // A legacy install may still contain deactivated demonstration or
+                // retired staff rows. Registration depends on real active accounts,
+                // not the raw historical row count.
+                _currentUser.value = null
+                _isRegistrationNeeded.value = true
+                _isLocked.value = true
+                return@withContext
+            }
+
+            val preselected = savedUser ?: activeUsers.firstOrNull()
+            _currentUser.value = preselected
+            _isRegistrationNeeded.value = false
+            // Always require explicit user authentication on cold launch
+            _isLocked.value = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            _authError.value = "Startup database error: ${e.safeMessage("Unable to initialize local database")}"
+            _isLocked.value = true
+            _isRegistrationNeeded.value = false
         }
     }
 
@@ -205,10 +208,14 @@ class AuthSessionCoordinator(
                 com.beboss.shopmgmt.util.CloudSyncScheduler.enqueueImmediateSync(application)
                 try {
                     onRegistrationCloudSync()
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) {
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _authError.value = "Registration failed: ${e.message}"
+                _authError.value = "Registration failed: ${e.safeMessage("Could not complete shop registration")}"
             }
         }
     }
@@ -265,11 +272,15 @@ class AuthSessionCoordinator(
                 com.beboss.shopmgmt.util.CloudSyncScheduler.enqueueImmediateSync(application)
                 try {
                     onRegistrationCloudSync()
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) {
                 }
                 emitSnackbar(res.message)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _authError.value = "Join shop error: ${e.message}"
+                _authError.value = "Join shop error: ${e.safeMessage("Unable to join shop from cloud")}"
             }
         }
     }
@@ -292,40 +303,46 @@ class AuthSessionCoordinator(
         }
 
         scope.launch {
-            val user = repository.getUserByPin(pin.trim())
-            if (user != null) {
-                AuthRateLimiter.recordSuccess(rateKey, application)
-                AuthRateLimiter.recordSuccess("pin:${user.id}", application)
-                _currentUser.value = user
-                _isLocked.value = false
-                _authError.value = null
-                prefs.edit().putString("active_user_id", user.id).apply()
-                repository.updateLastLogin(user.id)
-                repository.recordLocalAudit(
-                    actorName = user.name,
-                    actorRole = user.role.name,
-                    action = "LOGIN_PIN_SUCCESS",
-                    targetId = user.username,
-                    details = "Unlocked terminal via PBKDF2 PIN verification"
-                )
-                val welcome = "${Localization.get("welcome_back_prefix", language.value)}, ${user.name}!"
-                emitSnackbar(welcome)
-            } else {
-                val failResult = AuthRateLimiter.recordFailure(rateKey, application)
-                _authError.value = if (!failResult.allowed) {
-                    failResult.message
+            try {
+                val user = repository.getUserByPin(pin.trim())
+                if (user != null) {
+                    AuthRateLimiter.recordSuccess(rateKey, application)
+                    AuthRateLimiter.recordSuccess("pin:${user.id}", application)
+                    _currentUser.value = user
+                    _isLocked.value = false
+                    _authError.value = null
+                    prefs.edit().putString("active_user_id", user.id).apply()
+                    repository.updateLastLogin(user.id)
+                    repository.recordLocalAudit(
+                        actorName = user.name,
+                        actorRole = user.role.name,
+                        action = "LOGIN_PIN_SUCCESS",
+                        targetId = user.username,
+                        details = "Unlocked terminal via PBKDF2 PIN verification"
+                    )
+                    val welcome = "${Localization.get("welcome_back_prefix", language.value)}, ${user.name}!"
+                    emitSnackbar(welcome)
                 } else {
-                    val remainingBeforeLockout = (3 - failResult.failedAttempts).coerceAtLeast(0)
-                    val attemptsNote = if (remainingBeforeLockout > 0) " ($remainingBeforeLockout)" else ""
-                    "${Localization.get("incorrect_pin", language.value)}$attemptsNote"
+                    val failResult = AuthRateLimiter.recordFailure(rateKey, application)
+                    _authError.value = if (!failResult.allowed) {
+                        failResult.message
+                    } else {
+                        val remainingBeforeLockout = (3 - failResult.failedAttempts).coerceAtLeast(0)
+                        val attemptsNote = if (remainingBeforeLockout > 0) " ($remainingBeforeLockout)" else ""
+                        "${Localization.get("incorrect_pin", language.value)}$attemptsNote"
+                    }
+                    repository.recordLocalAudit(
+                        actorName = _currentUser.value?.username ?: "Unknown",
+                        actorRole = "SECURITY",
+                        action = "LOGIN_PIN_FAILED",
+                        targetId = rateKey,
+                        details = _authError.value.orEmpty()
+                    )
                 }
-                repository.recordLocalAudit(
-                    actorName = _currentUser.value?.username ?: "Unknown",
-                    actorRole = "SECURITY",
-                    action = "LOGIN_PIN_FAILED",
-                    targetId = rateKey,
-                    details = _authError.value.orEmpty()
-                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _authError.value = "PIN verification error: ${e.safeMessage("Unable to verify PIN")}"
             }
         }
         return true
@@ -350,53 +367,59 @@ class AuthSessionCoordinator(
         }
 
         scope.launch {
-            val user = repository.getUserByUsername(cleanUsername)
-            if (user != null && !user.isActive) {
-                _authError.value = Localization.get("account_suspended_err", language.value)
-                repository.recordLocalAudit(
-                    actorName = user.username,
-                    actorRole = user.role.name,
-                    action = "LOGIN_SUSPENDED_BLOCKED",
-                    targetId = user.id,
-                    details = "Suspended user attempted credential login"
-                )
-                return@launch
-            }
-            val secret = pinOrPass.trim()
-            val isValid = user != null && user.isActive && (
-                SecurityUtils.verifyPin(secret, user.pinHash) ||
-                    SecurityUtils.verifyPassword(secret, user.password)
-                )
-            if (user != null && isValid) {
-                AuthRateLimiter.recordSuccess(rateKey, application)
-                _currentUser.value = user
-                _isLocked.value = false
-                _authError.value = null
-                prefs.edit().putString("active_user_id", user.id).apply()
-                repository.updateLastLogin(user.id)
-                repository.recordLocalAudit(
-                    actorName = user.name,
-                    actorRole = user.role.name,
-                    action = "LOGIN_CREDENTIALS_SUCCESS",
-                    targetId = user.username,
-                    details = "Authenticated with PBKDF2 password/PIN"
-                )
-                val welcome = "${Localization.get("logged_in_as_prefix", language.value)} ${user.name} (${user.role.displayName})"
-                emitSnackbar(welcome)
-            } else {
-                val failResult = AuthRateLimiter.recordFailure(rateKey, application)
-                _authError.value = if (!failResult.allowed) {
-                    failResult.message
-                } else {
-                    Localization.get("invalid_credentials", language.value)
+            try {
+                val user = repository.getUserByUsername(cleanUsername)
+                if (user != null && !user.isActive) {
+                    _authError.value = Localization.get("account_suspended_err", language.value)
+                    repository.recordLocalAudit(
+                        actorName = user.username,
+                        actorRole = user.role.name,
+                        action = "LOGIN_SUSPENDED_BLOCKED",
+                        targetId = user.id,
+                        details = "Suspended user attempted credential login"
+                    )
+                    return@launch
                 }
-                repository.recordLocalAudit(
-                    actorName = cleanUsername.ifBlank { "Unknown" },
-                    actorRole = "SECURITY",
-                    action = "LOGIN_CREDENTIALS_FAILED",
-                    targetId = rateKey,
-                    details = _authError.value.orEmpty()
-                )
+                val secret = pinOrPass.trim()
+                val isValid = user != null && user.isActive && (
+                    SecurityUtils.verifyPin(secret, user.pinHash) ||
+                        SecurityUtils.verifyPassword(secret, user.password)
+                    )
+                if (user != null && isValid) {
+                    AuthRateLimiter.recordSuccess(rateKey, application)
+                    _currentUser.value = user
+                    _isLocked.value = false
+                    _authError.value = null
+                    prefs.edit().putString("active_user_id", user.id).apply()
+                    repository.updateLastLogin(user.id)
+                    repository.recordLocalAudit(
+                        actorName = user.name,
+                        actorRole = user.role.name,
+                        action = "LOGIN_CREDENTIALS_SUCCESS",
+                        targetId = user.username,
+                        details = "Authenticated with PBKDF2 password/PIN"
+                    )
+                    val welcome = "${Localization.get("logged_in_as_prefix", language.value)} ${user.name} (${user.role.displayName})"
+                    emitSnackbar(welcome)
+                } else {
+                    val failResult = AuthRateLimiter.recordFailure(rateKey, application)
+                    _authError.value = if (!failResult.allowed) {
+                        failResult.message
+                    } else {
+                        Localization.get("invalid_credentials", language.value)
+                    }
+                    repository.recordLocalAudit(
+                        actorName = cleanUsername.ifBlank { "Unknown" },
+                        actorRole = "SECURITY",
+                        action = "LOGIN_CREDENTIALS_FAILED",
+                        targetId = rateKey,
+                        details = _authError.value.orEmpty()
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _authError.value = "Sign-in error: ${e.safeMessage("Unable to verify credentials")}"
             }
         }
         return true
@@ -418,14 +441,19 @@ class AuthSessionCoordinator(
             _authError.value = null
             prefs.edit().putString("active_user_id", active.id).apply()
             scope.launch {
-                repository.updateLastLogin(active.id)
-                repository.recordLocalAudit(
-                    actorName = active.name,
-                    actorRole = active.role.name,
-                    action = "UNLOCK_PIN_SUCCESS",
-                    targetId = active.username,
-                    details = "Unlocked active session via PIN"
-                )
+                try {
+                    repository.updateLastLogin(active.id)
+                    repository.recordLocalAudit(
+                        actorName = active.name,
+                        actorRole = active.role.name,
+                        action = "UNLOCK_PIN_SUCCESS",
+                        targetId = active.username,
+                        details = "Unlocked active session via PIN"
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
             }
             return true
         }
@@ -438,13 +466,18 @@ class AuthSessionCoordinator(
             _isLocked.value = true
             _authError.value = Localization.get("biometric_required_err", language.value)
             scope.launch {
-                repository.recordLocalAudit(
-                    actorName = active?.username ?: "Unknown",
-                    actorRole = "SECURITY",
-                    action = "UNLOCK_BIOMETRIC_REJECTED",
-                    targetId = active?.id ?: "",
-                    details = "Biometric unlock rejected (verified=$verifiedByHardware, active=${active != null})"
-                )
+                try {
+                    repository.recordLocalAudit(
+                        actorName = active?.username ?: "Unknown",
+                        actorRole = "SECURITY",
+                        action = "UNLOCK_BIOMETRIC_REJECTED",
+                        targetId = active?.id ?: "",
+                        details = "Biometric unlock rejected (verified=$verifiedByHardware, active=${active != null})"
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
             }
             return
         }
@@ -455,15 +488,20 @@ class AuthSessionCoordinator(
         _authError.value = null
         prefs.edit().putString("active_user_id", active.id).apply()
         scope.launch {
-            repository.updateLastLogin(active.id)
-            repository.recordLocalAudit(
-                actorName = active.name,
-                actorRole = active.role.name,
-                action = "UNLOCK_BIOMETRIC_SUCCESS",
-                targetId = active.username,
-                details = "Unlocked via BIOMETRIC_STRONG CryptoObject"
-            )
-            emitSnackbar("${Localization.get("unlocked_biometric_prefix", language.value)}: ${active.name}")
+            try {
+                repository.updateLastLogin(active.id)
+                repository.recordLocalAudit(
+                    actorName = active.name,
+                    actorRole = active.role.name,
+                    action = "UNLOCK_BIOMETRIC_SUCCESS",
+                    targetId = active.username,
+                    details = "Unlocked via BIOMETRIC_STRONG CryptoObject"
+                )
+                emitSnackbar("${Localization.get("unlocked_biometric_prefix", language.value)}: ${active.name}")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -494,16 +532,21 @@ class AuthSessionCoordinator(
         _isLocked.value = true
         _authError.value = null
         scope.launch {
-            if (previous != null) {
-                repository.recordLocalAudit(
-                    actorName = previous.name,
-                    actorRole = previous.role.name,
-                    action = "LOGOUT",
-                    targetId = previous.username,
-                    details = "Operator logged out"
-                )
+            try {
+                if (previous != null) {
+                    repository.recordLocalAudit(
+                        actorName = previous.name,
+                        actorRole = previous.role.name,
+                        action = "LOGOUT",
+                        targetId = previous.username,
+                        details = "Operator logged out"
+                    )
+                }
+                emitSnackbar(Localization.get("logged_out_success", language.value))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
             }
-            emitSnackbar(Localization.get("logged_out_success", language.value))
         }
     }
 

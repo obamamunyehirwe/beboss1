@@ -86,3 +86,67 @@ data class CategorySalesShare(
     val revenue: Double,
     val percentage: Double
 )
+
+data class BranchPerformanceMetric(
+    val branchId: String,
+    val branchName: String,
+    val branchCode: String,
+    val operationalStatus: String,
+    val revenue: Double,
+    val cost: Double,
+    val netProfit: Double,
+    val marginPercent: Double,
+    val salesCount: Int,
+    val stockValueRwf: Long,
+    val dailyTargetRwf: Long,
+    val monthlyTargetRwf: Long,
+    val targetProgressPercent: Double
+)
+
+data class StaffPerformanceMetric(
+    val cashierId: String,
+    val cashierName: String,
+    val salesCount: Int,
+    val revenue: Double,
+    val profit: Double,
+    val avgOrderValue: Double,
+    val totalDiscountsGiven: Double
+)
+
+data class CustomerAgingEntry(
+    val customerId: String,
+    val customerName: String,
+    val phone: String,
+    val debtBalance: Double,
+    val creditLimit: Double,
+    val creditUtilizationPercent: Double,
+    val isOverLimit: Boolean,
+    val oldestUnpaidDays: Int,
+    val agingBucket: String // "0-30d", "31-60d", "61-90d", "90+d"
+)
+
+data class CustomerAgingSummary(
+    val totalReceivable: Double,
+    val bucket0To30: Double,
+    val bucket31To60: Double,
+    val bucket61To90: Double,
+    val bucket90Plus: Double,
+    val overLimitCount: Int,
+    val entries: List<CustomerAgingEntry>
+)
+
+data class ReorderSuggestion(
+    val productId: String,
+    val productName: String,
+    val category: String,
+    val branchId: String,
+    val unit: String,
+    val currentStock: Double,
+    val lowStockThreshold: Double,
+    val unitsSoldInPeriod: Double,
+    val suggestedOrderQty: Double,
+    val estimatedUnitCost: Double,
+    val estimatedOrderCost: Double,
+    val urgency: String // "CRITICAL" | "LOW" | "REORDER"
+)
+

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import com.beboss.shopmgmt.util.safeMessage
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -52,6 +53,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -67,6 +69,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -89,10 +92,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.beboss.shopmgmt.data.model.Customer
+import com.beboss.shopmgmt.data.model.CustomerAgingEntry
+import com.beboss.shopmgmt.data.model.CustomerAgingSummary
 import com.beboss.shopmgmt.data.model.CustomerCategory
 import com.beboss.shopmgmt.data.model.CustomerPayment
 import com.beboss.shopmgmt.data.model.Sale
 import com.beboss.shopmgmt.data.model.ShopProfile
+import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.ui.theme.BackgroundLight
 import com.beboss.shopmgmt.ui.theme.DarkNavy
 import com.beboss.shopmgmt.ui.theme.InkDark
@@ -101,6 +107,7 @@ import com.beboss.shopmgmt.ui.theme.LossRed
 import com.beboss.shopmgmt.ui.theme.OrangeLight
 import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
+import com.beboss.shopmgmt.ui.theme.WarningAmber
 import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.ContactsHelper
 import com.beboss.shopmgmt.util.ExcelCsvExporter
@@ -120,19 +127,31 @@ fun CustomersScreen(
     customers: List<Customer>,
     totalOutstandingDebt: Double,
     shopProfile: ShopProfile,
+    currentUser: User? = null,
+    customerAgingSummary: CustomerAgingSummary = CustomerAgingSummary(),
     allSales: List<Sale> = emptyList(),
     allPayments: List<CustomerPayment> = emptyList(),
     language: AppLanguage = AppLanguage.ENGLISH,
     onSaveCustomer: (Customer) -> Unit,
     onRecordPayment: (String, Double) -> Unit,
     onDeleteCustomer: (String) -> Unit,
-    onClearAllCustomers: (() -> Unit)? = null
+    onClearAllCustomers: (() -> Unit)? = null,
+    onExportAgingCsv: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val canManageCustomers = currentUser?.canManageCustomers ?: true
+    val canCollectDebt = currentUser?.canCollectDebt ?: true
+    val canDeleteRecords = currentUser?.canDeleteRecords ?: true
+    val canExportReports = currentUser?.canExportReports ?: true
+
     var searchQuery by remember { mutableStateOf("") }
-    var filterOnlyDebt by remember { mutableStateOf(false) }
+    var filterMode by remember { mutableStateOf("ALL") } // ALL, OWES, OVERDUE_30, OVER_LIMIT
     var sortField by remember { mutableStateOf(CustomerSortField.DEBT) }
     var sortAscending by remember { mutableStateOf(false) }
+
+    val agingMap = remember(customerAgingSummary) {
+        customerAgingSummary.entries.associateBy { it.customer.id }
+    }
 
     var customerToEdit by remember { mutableStateOf<Customer?>(null) }
     var customerForPayment by remember { mutableStateOf<Customer?>(null) }
@@ -143,13 +162,19 @@ fun CustomersScreen(
     var showBulkContactsDialog by remember { mutableStateOf(false) }
 
     val filtered = customers.filter { c ->
-        val matchesDebt = !filterOnlyDebt || c.debtBalance > 0
+        val aging = agingMap[c.id]
+        val matchesMode = when (filterMode) {
+            "OWES" -> c.debtBalance > 0
+            "OVERDUE_30" -> c.debtBalance > 0 && (aging?.daysOld ?: 0) >= 31
+            "OVER_LIMIT" -> c.debtBalance > 0 && (aging?.overCreditLimit == true || (c.creditLimit > 0 && c.debtBalance > c.creditLimit))
+            else -> true
+        }
         val matchesSearch = searchQuery.isBlank() ||
                 c.name.contains(searchQuery, ignoreCase = true) ||
                 c.phone.contains(searchQuery, ignoreCase = true) ||
                 c.category.contains(searchQuery, ignoreCase = true) ||
                 c.city.contains(searchQuery, ignoreCase = true)
-        matchesDebt && matchesSearch
+        matchesMode && matchesSearch
     }.let { list ->
         when (sortField) {
             CustomerSortField.NAME -> if (sortAscending) list.sortedBy { it.name.lowercase() } else list.sortedByDescending { it.name.lowercase() }
@@ -215,51 +240,68 @@ fun CustomersScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // Action button row: Excel Export, Bulk Contacts Import
+                        // Action button row: Excel Export, AR Aging Export, Bulk Contacts Import
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            OutlinedButton(
-                                onClick = {
-                                    try {
-                                        val file = ExcelCsvExporter.exportCustomersCsv(context, customers, shopProfile)
-                                        ExcelCsvExporter.shareCsvFile(context, file, Localization.get("cust_share_csv_title", language))
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, Localization.format("inv_export_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(15.dp), tint = OrangePrimary)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(Localization.get("export_excel_csv", language), fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-
-                            OutlinedButton(
-                                onClick = { showBulkContactsDialog = true },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Icon(Icons.Default.Contacts, contentDescription = null, modifier = Modifier.size(15.dp), tint = DarkNavy)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(Localization.get("import_contacts", language), fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = DarkNavy, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-
-                            if (onClearAllCustomers != null && customers.isNotEmpty()) {
+                            if (canExportReports) {
                                 OutlinedButton(
-                                    onClick = { showClearAllCustomersDialog = true },
+                                    onClick = {
+                                        try {
+                                            val file = ExcelCsvExporter.exportCustomersCsv(context, customers, shopProfile)
+                                            ExcelCsvExporter.shareCsvFile(context, file, Localization.get("cust_share_csv_title", language))
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, Localization.format("inv_export_err_fmt", language, e.safeMessage()), Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(14.dp), tint = OrangePrimary)
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(Localization.get("export_excel_csv", language), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = OrangePrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+
+                                if (customerAgingSummary.entries.isNotEmpty()) {
+                                    OutlinedButton(
+                                        onClick = onExportAgingCsv,
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(14.dp), tint = LossRed)
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("AR Aging", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LossRed, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+
+                            if (canManageCustomers) {
+                                OutlinedButton(
+                                    onClick = { showBulkContactsDialog = true },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.Contacts, contentDescription = null, modifier = Modifier.size(14.dp), tint = DarkNavy)
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(Localization.get("import_contacts", language), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = DarkNavy, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+
+                            if (onClearAllCustomers != null && canDeleteRecords && customers.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = { showClearAllCustomersDialog = true },
+                                    modifier = Modifier.weight(0.9f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = LossRed)
                                 ) {
-                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(15.dp), tint = LossRed)
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(Localization.get("cust_clear_all_btn", language), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LossRed)
+                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(14.dp), tint = LossRed)
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(Localization.get("cust_clear_all_btn", language), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LossRed, maxLines = 1)
                                 }
                             }
                         }
@@ -298,23 +340,50 @@ fun CustomersScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(
-                                selected = !filterOnlyDebt,
-                                onClick = { filterOnlyDebt = false },
-                                label = { Text(Localization.format("cust_all_count_fmt", language, customers.size), fontSize = 11.sp) },
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = OrangePrimary, selectedLabelColor = Color.White),
-                                shape = RoundedCornerShape(8.dp)
-                            )
-
-                            val debtCount = customers.count { it.debtBalance > 0 }
-                            FilterChip(
-                                selected = filterOnlyDebt,
-                                onClick = { filterOnlyDebt = true },
-                                label = { Text(Localization.format("cust_owes_count_fmt", language, debtCount), fontSize = 11.sp) },
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LossRed, selectedLabelColor = Color.White),
-                                shape = RoundedCornerShape(8.dp)
-                            )
+                        val debtCount = customers.count { it.debtBalance > 0 }
+                        val overdueCount = customerAgingSummary.entries.count { it.daysOld >= 31 }
+                        val overLimitCount = customerAgingSummary.overLimitCount
+                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            item {
+                                FilterChip(
+                                    selected = filterMode == "ALL",
+                                    onClick = { filterMode = "ALL" },
+                                    label = { Text(Localization.format("cust_all_count_fmt", language, customers.size), fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = OrangePrimary, selectedLabelColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                            item {
+                                FilterChip(
+                                    selected = filterMode == "OWES",
+                                    onClick = { filterMode = "OWES" },
+                                    label = { Text(Localization.format("cust_owes_count_fmt", language, debtCount), fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LossRed, selectedLabelColor = Color.White),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                            if (overdueCount > 0) {
+                                item {
+                                    FilterChip(
+                                        selected = filterMode == "OVERDUE_30",
+                                        onClick = { filterMode = "OVERDUE_30" },
+                                        label = { Text("31+ Days ($overdueCount)", fontSize = 11.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = WarningAmber, selectedLabelColor = Color.White),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                            }
+                            if (overLimitCount > 0) {
+                                item {
+                                    FilterChip(
+                                        selected = filterMode == "OVER_LIMIT",
+                                        onClick = { filterMode = "OVER_LIMIT" },
+                                        label = { Text("Over Limit ($overLimitCount)", fontSize = 11.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LossRed, selectedLabelColor = Color.White),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -356,12 +425,14 @@ fun CustomersScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(Localization.get("cust_empty_ledger", language), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
                             Spacer(modifier = Modifier.height(10.dp))
-                            Button(
-                                onClick = { isAddingNew = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text(Localization.get("cust_add_to_ledger_btn", language))
+                            if (canManageCustomers) {
+                                Button(
+                                    onClick = { isAddingNew = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(Localization.get("cust_add_to_ledger_btn", language))
+                                }
                             }
                         }
                     }
@@ -371,9 +442,13 @@ fun CustomersScreen(
                     ExcelCustomerRow(
                         index = index + 1,
                         customer = customer,
+                        agingEntry = agingMap[customer.id],
                         shopProfile = shopProfile,
                         language = language,
                         isEven = index % 2 == 0,
+                        canManageCustomers = canManageCustomers,
+                        canCollectDebt = canCollectDebt,
+                        canDeleteRecords = canDeleteRecords,
                         onRecordPayment = { customerForPayment = customer },
                         onEdit = { customerToEdit = customer },
                         onDelete = { customerToDelete = customer },
@@ -397,7 +472,7 @@ fun CustomersScreen(
                                 )
                                 PdfReportGenerator.sharePdf(context, pdfFile, Localization.format("cust_statement_title_fmt", language, customer.name))
                             } catch (e: Exception) {
-                                Toast.makeText(context, Localization.format("cust_stmt_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, Localization.format("cust_stmt_err_fmt", language, e.safeMessage()), Toast.LENGTH_SHORT).show()
                             }
                         },
                         onCallPhone = {
@@ -414,19 +489,21 @@ fun CustomersScreen(
         }
 
         // FAB to Add Customer
-        FloatingActionButton(
-            onClick = { isAddingNew = true },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(20.dp),
-            containerColor = OrangePrimary,
-            contentColor = Color.White,
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Row(modifier = Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Add, contentDescription = Localization.get("add_customer", language))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(Localization.get("add_customer", language), fontWeight = FontWeight.Bold)
+        if (canManageCustomers) {
+            FloatingActionButton(
+                onClick = { isAddingNew = true },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(20.dp),
+                containerColor = OrangePrimary,
+                contentColor = Color.White,
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(modifier = Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Add, contentDescription = Localization.get("add_customer", language))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(Localization.get("add_customer", language), fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -457,13 +534,13 @@ fun CustomersScreen(
     }
 
     // Record Debt Payment Dialog
-    if (customerForPayment != null) {
+    customerForPayment?.let { paymentCustomer ->
         RecordDebtPaymentDialog(
-            customer = customerForPayment!!,
+            customer = paymentCustomer,
             shopProfile = shopProfile,
             language = language,
             onConfirm = { amount ->
-                onRecordPayment(customerForPayment!!.id, amount)
+                onRecordPayment(paymentCustomer.id, amount)
                 customerForPayment = null
             },
             onDismiss = { customerForPayment = null }
@@ -471,8 +548,7 @@ fun CustomersScreen(
     }
 
     // Reminder Channel Dialog (WhatsApp Branded Logo Card vs Direct SMS)
-    if (customerForReminder != null) {
-        val target = customerForReminder!!
+    customerForReminder?.let { target ->
         AlertDialog(
             onDismissRequest = { customerForReminder = null },
             title = { Text("💬 Remind ${target.name}", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
@@ -591,15 +667,15 @@ fun CustomersScreen(
     }
 
     // Delete Confirmation Dialog
-    if (customerToDelete != null) {
+    customerToDelete?.let { deleteTarget ->
         AlertDialog(
             onDismissRequest = { customerToDelete = null },
             title = { Text(Localization.get("cust_delete_cd", language), fontWeight = FontWeight.Bold) },
-            text = { Text(Localization.format("cust_delete_confirm_msg_fmt", language, customerToDelete!!.name)) },
+            text = { Text(Localization.format("cust_delete_confirm_msg_fmt", language, deleteTarget.name)) },
             confirmButton = {
                 Button(
                     onClick = {
-                        onDeleteCustomer(customerToDelete!!.id)
+                        onDeleteCustomer(deleteTarget.id)
                         customerToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed)
@@ -738,9 +814,13 @@ private fun ExcelCustomerTableHeaderRow(
 private fun ExcelCustomerRow(
     index: Int,
     customer: Customer,
+    agingEntry: CustomerAgingEntry? = null,
     shopProfile: ShopProfile,
     language: AppLanguage,
     isEven: Boolean,
+    canManageCustomers: Boolean = true,
+    canCollectDebt: Boolean = true,
+    canDeleteRecords: Boolean = true,
     onRecordPayment: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -771,11 +851,11 @@ private fun ExcelCustomerRow(
                 textAlign = TextAlign.Center
             )
 
-            // Name + Phone + Category
+            // Name + Phone + Category + Credit Utilization
             Column(
                 modifier = Modifier
                     .weight(2.2f)
-                    .clickable { onEdit() }
+                    .clickable(enabled = canManageCustomers) { onEdit() }
             ) {
                 Text(
                     text = customer.name,
@@ -801,9 +881,22 @@ private fun ExcelCustomerRow(
                         )
                     }
                 }
+                if (customer.debtBalance > 0 && customer.creditLimit > 0) {
+                    val ratio = (customer.debtBalance / customer.creditLimit).toFloat().coerceIn(0f, 1f)
+                    val overLimit = customer.debtBalance > customer.creditLimit
+                    Spacer(modifier = Modifier.height(3.dp))
+                    LinearProgressIndicator(
+                        progress = { ratio },
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f)
+                            .height(4.dp),
+                        color = if (overLimit) LossRed else if (ratio >= 0.8f) WarningAmber else OrangePrimary,
+                        trackColor = Color(0xFFE5E7EB)
+                    )
+                }
             }
 
-            // Debt Column
+            // Debt Column + AR Aging Badge
             Column(
                 modifier = Modifier.weight(1.3f),
                 horizontalAlignment = Alignment.End
@@ -816,11 +909,17 @@ private fun ExcelCustomerRow(
                         color = LossRed,
                         maxLines = 1
                     )
+                    val badgeText = when {
+                        agingEntry?.overCreditLimit == true || (customer.creditLimit > 0 && customer.debtBalance > customer.creditLimit) ->
+                            "OVER LIMIT"
+                        agingEntry != null -> agingEntry.bucketLabel
+                        else -> Localization.get("cust_unpaid_debt", language)
+                    }
                     Text(
-                        text = Localization.get("cust_unpaid_debt", language),
+                        text = badgeText,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        color = LossRed
+                        color = if (agingEntry != null && agingEntry.daysOld < 31 && !agingEntry.overCreditLimit) WarningAmber else LossRed
                     )
                 } else {
                     Text(
@@ -838,7 +937,7 @@ private fun ExcelCustomerRow(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (customer.debtBalance > 0) {
+                if (customer.debtBalance > 0 && canCollectDebt) {
                     Surface(
                         onClick = onRecordPayment,
                         shape = RoundedCornerShape(6.dp),
@@ -878,26 +977,30 @@ private fun ExcelCustomerRow(
                     Spacer(modifier = Modifier.width(3.dp))
                 }
 
-                Surface(
-                    onClick = onEdit,
-                    shape = RoundedCornerShape(6.dp),
-                    color = Color(0xFFF3F4F6),
-                    modifier = Modifier.size(26.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Edit, contentDescription = Localization.get("edit", language), tint = InkDark, modifier = Modifier.size(14.dp))
+                if (canManageCustomers) {
+                    Surface(
+                        onClick = onEdit,
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFFF3F4F6),
+                        modifier = Modifier.size(26.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Edit, contentDescription = Localization.get("edit", language), tint = InkDark, modifier = Modifier.size(14.dp))
+                        }
                     }
+                    Spacer(modifier = Modifier.width(3.dp))
                 }
-                Spacer(modifier = Modifier.width(3.dp))
 
-                Surface(
-                    onClick = onDelete,
-                    shape = RoundedCornerShape(6.dp),
-                    color = Color(0xFFFEE2E2),
-                    modifier = Modifier.size(26.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Delete, contentDescription = Localization.get("cust_delete_cd", language), tint = LossRed, modifier = Modifier.size(14.dp))
+                if (canDeleteRecords) {
+                    Surface(
+                        onClick = onDelete,
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFFFEE2E2),
+                        modifier = Modifier.size(26.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Delete, contentDescription = Localization.get("cust_delete_cd", language), tint = LossRed, modifier = Modifier.size(14.dp))
+                        }
                     }
                 }
             }

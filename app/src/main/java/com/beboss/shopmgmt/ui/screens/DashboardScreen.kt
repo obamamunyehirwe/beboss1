@@ -31,10 +31,12 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Store
+import androidx.compose.material.icons.filled.SyncProblem
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Warning
@@ -71,6 +73,7 @@ import com.beboss.shopmgmt.data.model.ProfitLossSummary
 import com.beboss.shopmgmt.data.model.Sale
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.data.model.User
+import com.beboss.shopmgmt.data.model.UserRole
 import com.beboss.shopmgmt.ui.theme.LossRed
 import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
@@ -97,15 +100,22 @@ fun DashboardScreen(
     language: AppLanguage,
     branches: List<Branch> = emptyList(),
     selectedBranchId: String = "ALL",
+    isBranchLocked: Boolean = false,
     connectivityStatus: ConnectivityStatus = ConnectivityStatus.AVAILABLE,
     isSyncing: Boolean = false,
     cloudSyncReport: CloudSyncReport? = null,
+    pendingSyncCount: Int = 0,
+    deadLetterSyncCount: Int = 0,
     onSelectBranch: (String) -> Unit = {},
+    onOpenSyncHub: () -> Unit = {},
     onNavigate: (AppScreen) -> Unit,
     onOpenReceipt: (String) -> Unit,
     onRestockClick: (Product) -> Unit,
     onAddProductClick: () -> Unit
 ) {
+    val canViewCostAndProfit = currentUser?.canViewCostAndProfit ?: true
+    val canViewAnalytics = currentUser?.canViewAnalytics ?: true
+    val canManageInventory = currentUser?.canManageInventory ?: true
     var branchMenuExpanded by remember { mutableStateOf(false) }
     val activeBranchLabel = remember(branches, selectedBranchId, language) {
         if (selectedBranchId == "ALL") {
@@ -132,10 +142,14 @@ fun DashboardScreen(
             ) {
                 Box(modifier = Modifier.weight(1f)) {
                     Surface(
-                        onClick = { if (branches.isNotEmpty()) branchMenuExpanded = true },
+                        onClick = { if (!isBranchLocked && branches.isNotEmpty()) branchMenuExpanded = true },
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isBranchLocked) OrangePrimary.copy(alpha = 0.55f)
+                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 42.dp)
@@ -150,7 +164,7 @@ fun DashboardScreen(
                                 Icon(Icons.Default.Store, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = activeBranchLabel,
+                                    text = if (isBranchLocked) "$activeBranchLabel • Locked" else activeBranchLabel,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface,
@@ -158,14 +172,16 @@ fun DashboardScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            if (branches.isNotEmpty()) {
+                            if (isBranchLocked) {
+                                Icon(Icons.Default.Lock, contentDescription = "Assigned Branch Locked", tint = OrangePrimary, modifier = Modifier.size(14.dp))
+                            } else if (branches.isNotEmpty()) {
                                 Icon(Icons.Default.ArrowDropDown, contentDescription = Localization.get("dash_switch_branch_cd", language), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
 
                     DropdownMenu(
-                        expanded = branchMenuExpanded,
+                        expanded = branchMenuExpanded && !isBranchLocked,
                         onDismissRequest = { branchMenuExpanded = false }
                     ) {
                         DropdownMenuItem(
@@ -206,7 +222,7 @@ fun DashboardScreen(
                 }
 
                 Surface(
-                    onClick = { onNavigate(AppScreen.SETTINGS) },
+                    onClick = onOpenSyncHub,
                     shape = RoundedCornerShape(12.dp),
                     color = syncColor.copy(alpha = 0.12f),
                     border = BorderStroke(1.dp, syncColor.copy(alpha = 0.35f)),
@@ -256,6 +272,59 @@ fun DashboardScreen(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = subColor
+                        )
+                    }
+                }
+            }
+        }
+
+        // Actionable Cloud Outbox / Dead-Letter Queue Alert
+        if (deadLetterSyncCount > 0 || pendingSyncCount > 0) {
+            item {
+                val isErrorAlert = deadLetterSyncCount > 0
+                val alertColor = if (isErrorAlert) LossRed else WarningAmber
+                Surface(
+                    onClick = onOpenSyncHub,
+                    shape = RoundedCornerShape(14.dp),
+                    color = alertColor.copy(alpha = 0.10f),
+                    border = BorderStroke(1.dp, alertColor.copy(alpha = 0.4f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("dashboard_sync_alert_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                Icons.Default.SyncProblem,
+                                contentDescription = null,
+                                tint = alertColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isErrorAlert) {
+                                    "$deadLetterSyncCount cloud sync item(s) failed ($pendingSyncCount queued) — tap to inspect"
+                                } else {
+                                    "$pendingSyncCount offline record(s) queued for cloud sync"
+                                },
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = alertColor
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Sync Hub",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = alertColor
                         )
                     }
                 }
@@ -389,12 +458,12 @@ fun DashboardScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Stats Strip (Profit & Margin)
+                        // Stats Strip (Profit & Stock Value — gated by RBAC)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            // Net Profit
+                            // Net Profit or Avg Sale (depending on canViewCostAndProfit)
                             Surface(
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp),
@@ -410,14 +479,18 @@ fun DashboardScreen(
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
-                                            Localization.get("today_profit", language), 
-                                            fontSize = 11.sp, 
+                                            if (canViewCostAndProfit) Localization.get("today_profit", language)
+                                            else "Avg Sale",
+                                            fontSize = 11.sp,
                                             color = Color(0xFFD1D5DB)
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = ReceiptGenerator.formatMoney(todaySummary.netProfit, shopProfile),
+                                        text = ReceiptGenerator.formatMoney(
+                                            if (canViewCostAndProfit) todaySummary.netProfit else todaySummary.averageSaleValue,
+                                            shopProfile
+                                        ),
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF4ADE80)
@@ -425,7 +498,7 @@ fun DashboardScreen(
                                 }
                             }
 
-                            // Current Stock Value
+                            // Current Stock Value (Cost if allowed, else Retail Value)
                             Surface(
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp),
@@ -441,20 +514,67 @@ fun DashboardScreen(
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
-                                            Localization.get("total_stock_value", language), 
-                                            fontSize = 11.sp, 
+                                            if (canViewCostAndProfit) Localization.get("total_stock_value", language)
+                                            else "Retail Stock",
+                                            fontSize = 11.sp,
                                             color = Color(0xFFD1D5DB)
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = ReceiptGenerator.formatMoney(inventoryValuation.totalCostValue, shopProfile),
+                                        text = ReceiptGenerator.formatMoney(
+                                            if (canViewCostAndProfit) inventoryValuation.totalCostValue else inventoryValuation.totalRetailValue,
+                                            shopProfile
+                                        ),
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFFFF9E66)
                                     )
                                 }
                             }
+                        }
+
+                        // Branch / Shop Daily Target Progress
+                        val dailyTarget = remember(branches, selectedBranchId, shopProfile) {
+                            if (selectedBranchId != "ALL") {
+                                branches.firstOrNull { it.id == selectedBranchId }?.dailySalesTargetRwf?.toDouble()
+                                    ?: shopProfile.dailySalesTarget
+                            } else {
+                                val sumBranchTargets = branches.sumOf { it.dailySalesTargetRwf }.toDouble()
+                                if (sumBranchTargets > 0.0) sumBranchTargets else shopProfile.dailySalesTarget
+                            }
+                        }
+                        if (dailyTarget > 0.0) {
+                            val pct = ((todaySummary.totalRevenue / dailyTarget) * 100.0).coerceIn(0.0, 999.0)
+                            val frac = (todaySummary.totalRevenue / dailyTarget).toFloat().coerceIn(0f, 1f)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Daily Goal (${pct.toInt()}%)",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFD1D5DB),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "${ReceiptGenerator.formatMoney(todaySummary.totalRevenue, shopProfile)} / ${ReceiptGenerator.formatMoney(dailyTarget, shopProfile)}",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFFFD8BF),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(5.dp))
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { frac },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp),
+                                color = if (pct >= 100.0) Color(0xFF4ADE80) else OrangePrimary,
+                                trackColor = Color(0x33FFFFFF)
+                            )
                         }
                     }
                 }
@@ -487,14 +607,25 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    QuickActionButton(
-                        title = Localization.get("add_product_action", language),
-                        icon = Icons.Default.Add,
-                        backgroundColor = MaterialTheme.colorScheme.surface,
-                        iconColor = OrangePrimary,
-                        modifier = Modifier.weight(1f),
-                        onClick = onAddProductClick
-                    )
+                    if (canManageInventory) {
+                        QuickActionButton(
+                            title = Localization.get("add_product_action", language),
+                            icon = Icons.Default.Add,
+                            backgroundColor = MaterialTheme.colorScheme.surface,
+                            iconColor = OrangePrimary,
+                            modifier = Modifier.weight(1f),
+                            onClick = onAddProductClick
+                        )
+                    } else {
+                        QuickActionButton(
+                            title = Localization.get("inventory", language),
+                            icon = Icons.Default.Inventory,
+                            backgroundColor = MaterialTheme.colorScheme.surface,
+                            iconColor = OrangePrimary,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onNavigate(AppScreen.INVENTORY) }
+                        )
+                    }
 
                     QuickActionButton(
                         title = Localization.get("record_payment_action", language),
@@ -505,14 +636,25 @@ fun DashboardScreen(
                         onClick = { onNavigate(AppScreen.CUSTOMERS) }
                     )
 
-                    QuickActionButton(
-                        title = Localization.get("financial_reports_action", language),
-                        icon = Icons.Default.Assessment,
-                        backgroundColor = MaterialTheme.colorScheme.surface,
-                        iconColor = Color(0xFF2563EB),
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigate(AppScreen.ANALYTICS) }
-                    )
+                    if (canViewAnalytics) {
+                        QuickActionButton(
+                            title = Localization.get("financial_reports_action", language),
+                            icon = Icons.Default.Assessment,
+                            backgroundColor = MaterialTheme.colorScheme.surface,
+                            iconColor = Color(0xFF2563EB),
+                            modifier = Modifier.weight(1f),
+                            onClick = { onNavigate(AppScreen.ANALYTICS) }
+                        )
+                    } else {
+                        QuickActionButton(
+                            title = Localization.get("sales_history", language),
+                            icon = Icons.Default.Receipt,
+                            backgroundColor = MaterialTheme.colorScheme.surface,
+                            iconColor = Color(0xFF2563EB),
+                            modifier = Modifier.weight(1f),
+                            onClick = { onNavigate(AppScreen.SALES_HISTORY) }
+                        )
+                    }
                 }
             }
         }

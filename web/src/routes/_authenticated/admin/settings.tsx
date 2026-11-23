@@ -64,7 +64,7 @@ function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={a("Settings")} sub="Live configuration shared by the website and every BeBoss app." />
+      <PageHeader title="Settings" sub="Live configuration shared by the website and every BeBoss app." />
 
       <form
         onSubmit={(e) => {
@@ -78,17 +78,17 @@ function SettingsPage() {
             <Wallet className="size-4 text-primary" /> {a("Mobile money & support")}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <F label={a("MTN MoMo merchant / pay code")} v={cfg.mtn_momo_code} on={(v) => set("mtn_momo_code", v)} inputMode="numeric" hint={a("Used in *182*8*1*CODE*AMOUNT#. Leave empty to use the fallback phone.")} />
-            <F label={a("MTN MoMo fallback phone")} v={cfg.mtn_momo_phone} on={(v) => set("mtn_momo_phone", v)} inputMode="tel" hint={a("Used in *182*1*1*PHONE*AMOUNT# only when the merchant code is empty.")} />
-            <F label={a("MTN recipient name")} v={cfg.mtn_recipient_name} on={(v) => set("mtn_recipient_name", v)} />
-            <F label={a("Airtel Money receiving phone")} v={cfg.airtel_money_phone} on={(v) => set("airtel_money_phone", v)} inputMode="tel" hint={a("Used in *500*1*1*PHONE*AMOUNT#.")} />
+            <F label="MTN MoMo merchant / pay code" v={cfg.mtn_momo_code} on={(v) => set("mtn_momo_code", v)} inputMode="numeric" hint="Used in *182*8*1*CODE*AMOUNT#. Leave empty to use the fallback phone." />
+            <F label="MTN MoMo fallback phone" v={cfg.mtn_momo_phone} on={(v) => set("mtn_momo_phone", v)} inputMode="tel" hint="Used in *182*1*1*PHONE*AMOUNT# only when the merchant code is empty." />
+            <F label="MTN recipient name" v={cfg.mtn_recipient_name} on={(v) => set("mtn_recipient_name", v)} />
+            <F label="Airtel Money receiving phone" v={cfg.airtel_money_phone} on={(v) => set("airtel_money_phone", v)} inputMode="tel" hint="Used in *500*1*1*PHONE*AMOUNT#." />
             <F label="Airtel recipient name" v={cfg.airtel_recipient_name} on={(v) => set("airtel_recipient_name", v)} />
             <div className="space-y-1.5">
-              <Label>{a("Extra POS terminal fee (FRw / month)")}</Label>
+              <Label>Extra POS terminal fee (FRw / month)</Label>
               <div className="flex h-10 items-center rounded-md border border-input bg-muted px-3 text-sm font-semibold">
-                {a("2,000 FRw per additional paired device")}
+                2,000 FRw per additional paired device
               </div>
-              <p className="text-xs text-muted-foreground">{a("The primary owner terminal is included. Every additional active POS device is billed at a fixed 2,000 FRw each month.")}</p>
+              <p className="text-xs text-muted-foreground">The primary owner terminal is included. Every additional active POS device is billed at a fixed 2,000 FRw each month.</p>
             </div>
             <F label="Admin WhatsApp (with country code)" v={cfg.admin_whatsapp_number} on={(v) => set("admin_whatsapp_number", v)} inputMode="tel" hint="e.g. 250788123456" />
             <F label="Support email" v={cfg.support_email} on={(v) => set("support_email", v)} inputMode="email" />
@@ -99,9 +99,9 @@ function SettingsPage() {
             <Smartphone className="size-4 text-primary" /> {a("App update channel")}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <F label={a("Latest app version")} v={cfg.apk_version} on={(v) => set("apk_version", v)} />
-            <F label={a("Minimum required version")} v={cfg.min_app_version} on={(v) => set("min_app_version", v)} hint={a("Older app versions can be blocked from cloud access when a critical update is required.")} />
-            <F label={a("APK download link")} v={cfg.apk_download_url} on={(v) => set("apk_download_url", v)} hint={a("Set automatically when you publish a release")} />
+            <F label="Latest app version" v={cfg.apk_version} on={(v) => set("apk_version", v)} />
+            <F label="Minimum required version" v={cfg.min_app_version} on={(v) => set("min_app_version", v)} hint="Older app versions can be blocked from cloud access when a critical update is required." />
+            <F label="APK download link" v={cfg.apk_download_url} on={(v) => set("apk_download_url", v)} hint="Set automatically when you publish a release" />
           </div>
           <div className="rounded-2xl border border-border bg-muted/40 p-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
@@ -229,7 +229,7 @@ function ConnectionPanel({ origin }: { origin: string }) {
         <Smartphone className="size-4 text-primary" /> {a("Connect the Android app")}
       </h2>
       <p className="mt-2 text-sm text-muted-foreground">
-        {a("Put these values in the app's")} <span className="font-mono">{a(".env")}</span> file and rebuild the APK. Existing app code works unchanged — shops, payments, codes, devices, staff and branch sync all flow into this admin center. These are public app values, not secrets.
+        Put these values in the app's <span className="font-mono">.env</span> file and rebuild the APK. Existing app code works unchanged — shops, payments, codes, devices, staff and branch sync all flow into this admin center. These are public app values, not secrets.
       </p>
       <div className="mt-4 space-y-2">
         {lines.map(([k, v]) => (
@@ -292,7 +292,7 @@ function DatashareKeyPanel() {
           {q.data?.configured ? <Badge variant="success">{a("Configured")}</Badge> : <Badge variant="muted">{a("Optional")}</Badge>}
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          {a("The value built into the app as")} <span className="font-mono">BEBOSS_DATASHARE_HMAC_SECRET</span>. With it, every shop's Retail insights tab confirms the phone's branch data was not altered on the way. Insights still work without it.
+          The value built into the app as <span className="font-mono">BEBOSS_DATASHARE_HMAC_SECRET</span>. With it, every shop's Retail insights tab confirms the phone's branch data was not altered on the way. Insights still work without it.
         </p>
       </div>
       <form

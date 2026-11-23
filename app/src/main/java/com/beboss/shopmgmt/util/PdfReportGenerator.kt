@@ -207,6 +207,18 @@ object PdfReportGenerator {
             canvas.drawText("-${ReceiptGenerator.formatMoney(sale.discountAmount, profile)}", 475f, currentY + 10f, paint)
         }
 
+        if (profile.taxRate > 0.0 && profile.showTaxOnReceipt) {
+            val taxFraction = profile.taxRate / (100.0 + profile.taxRate)
+            val vatIncluded = sale.totalAmount * taxFraction
+            currentY += 20f
+            paint.color = grayMedium
+            paint.typeface = Typeface.DEFAULT
+            canvas.drawText("VAT Included (${String.format(Locale.US, "%.1f", profile.taxRate)}%):", 320f, currentY + 10f, paint)
+            paint.color = darkInk
+            paint.typeface = Typeface.DEFAULT_BOLD
+            canvas.drawText(ReceiptGenerator.formatMoney(vatIncluded, profile), 475f, currentY + 10f, paint)
+        }
+
         currentY += 26f
         paint.color = primaryOrange
         canvas.drawRoundRect(RectF(300f, currentY - 6f, 565f, currentY + 30f), 8f, 8f, paint)
@@ -755,7 +767,7 @@ object PdfReportGenerator {
             val chooser = Intent.createChooser(sendIntent, title)
             context.startActivity(chooser)
         } catch (e: Exception) {
-            Toast.makeText(context, "Error sharing PDF: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Error sharing PDF: ${e.safeMessage("Unable to share PDF")}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -866,15 +878,16 @@ object PdfReportGenerator {
         paint.textSize = 11f
         paint.typeface = Typeface.DEFAULT
         canvas.drawText("Username: @${staff.username}", 170f, 212f, paint)
-        canvas.drawText("Contact Phone: ${staff.phone.ifBlank { "N/A" }}", 170f, 230f, paint)
+        canvas.drawText("Contact Phone: ${staff.phone.ifBlank { "N/A" }} • Branch: ${staff.assignedBranchName.ifBlank { "All Branches" }}", 170f, 230f, paint)
 
-        // PIN Security Box
-        paint.color = Color.rgb(254, 226, 226)
-        canvas.drawRoundRect(RectF(170f, 245f, 380f, 295f), 8f, 8f, paint)
-        paint.color = Color.rgb(185, 28, 28)
+        // PIN Security Box (Never expose raw PBKDF2 hash on shareable documents)
+        paint.color = Color.rgb(236, 253, 245)
+        canvas.drawRoundRect(RectF(170f, 245f, 445f, 295f), 8f, 8f, paint)
+        paint.color = Color.rgb(6, 95, 70)
         paint.textSize = 11f
         paint.typeface = Typeface.DEFAULT_BOLD
-        canvas.drawText("FAST UNLOCK PIN: ${staff.pinHash}", 185f, 275f, paint)
+        val pinStatus = if (staff.pinHash.isNotBlank()) "Configured (PBKDF2 Protected)" else "Not Set"
+        canvas.drawText("FAST UNLOCK PIN: $pinStatus", 185f, 275f, paint)
 
         // Granted Permissions Section
         paint.color = darkInk
@@ -1063,7 +1076,7 @@ object PdfReportGenerator {
             }
             context.startActivity(chooser)
         } catch (e: Exception) {
-            Toast.makeText(context, "Unable to share card: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Unable to share card: ${e.safeMessage("Share unavailable")}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1085,7 +1098,7 @@ object PdfReportGenerator {
             )
             context.startActivity(intent)
         } catch (e: Exception) {
-            Toast.makeText(context, "Cannot open SMS app: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Cannot open SMS app: ${e.safeMessage("SMS app unavailable")}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1097,7 +1110,133 @@ object PdfReportGenerator {
             }
             context.startActivity(intent)
         } catch (e: Exception) {
-            Toast.makeText(context, "Cannot open Phone dialer: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Cannot open Phone dialer: ${e.safeMessage("Dialer unavailable")}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun shareFile(context: Context, file: File, mimeType: String, title: String) {
+        try {
+            val uri = getUriForFile(context, file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = mimeType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, title)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, title).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        } catch (e: Exception) {
+            Toast.makeText(context, "Unable to share file: ${e.safeMessage("Share unavailable")}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun generateAdminExecutiveReportPdf(
+        context: Context,
+        shops: List<SupabaseShopAccountDto>,
+        payments: List<SupabasePaymentRequestDto>,
+        auditLogs: List<SupabaseAuditLogDto>,
+        telemetry: List<SupabaseDeviceTelemetryDto>
+    ): File {
+        val pdfDoc = PdfDocument()
+        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+        val page = pdfDoc.startPage(pageInfo)
+        val canvas = page.canvas
+
+        val paint = Paint().apply { isAntiAlias = true }
+        val primaryOrange = Color.rgb(255, 107, 26)
+        val darkInk = Color.rgb(17, 24, 39)
+        val grayMedium = Color.rgb(107, 114, 128)
+        val lightGray = Color.rgb(243, 244, 246)
+        val greenOk = Color.rgb(16, 185, 129)
+        val redAlert = Color.rgb(220, 38, 38)
+
+        paint.color = primaryOrange
+        canvas.drawRect(0f, 0f, 595f, 10f, paint)
+
+        paint.color = Color.rgb(254, 243, 235)
+        canvas.drawRoundRect(RectF(30f, 24f, 565f, 102f), 12f, 12f, paint)
+
+        paint.color = primaryOrange
+        paint.textSize = 18f
+        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        canvas.drawText("BEBOSS EXECUTIVE FLEET & REVENUE REPORT", 46f, 56f, paint)
+
+        paint.color = grayMedium
+        paint.textSize = 10.5f
+        paint.typeface = Typeface.DEFAULT
+        val generatedAt = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date())
+        canvas.drawText("Generated: $generatedAt • Master Cloud Registry Snapshot", 46f, 78f, paint)
+
+        // KPI Strip
+        val activeShops = shops.count { it.subscriptionStatus.equals("ACTIVE", ignoreCase = true) }
+        val trialShops = shops.count { it.subscriptionStatus.equals("TRIAL", ignoreCase = true) }
+        val mrrRwf = shops.filter { it.subscriptionStatus.equals("ACTIVE", ignoreCase = true) }.sumOf { it.monthlyFeeRwf.toLong() }
+        val pendingPay = payments.count { it.status == "PENDING_VERIFICATION" }
+        val highRiskDevices = telemetry.count { it.riskScore >= 40 || it.clockRollbackDetected || it.isRooted }
+
+        paint.color = lightGray
+        canvas.drawRoundRect(RectF(30f, 118f, 565f, 196f), 10f, 10f, paint)
+        paint.color = darkInk
+        paint.textSize = 12f
+        paint.typeface = Typeface.DEFAULT_BOLD
+        canvas.drawText("Organizations: ${shops.size} (${activeShops} Active, ${trialShops} Trial)", 46f, 144f, paint)
+        canvas.drawText("Estimated Cloud MRR: $mrrRwf FRw/mo", 330f, 144f, paint)
+        canvas.drawText("Pending MoMo/Airtel Proofs: $pendingPay", 46f, 172f, paint)
+        paint.color = if (highRiskDevices > 0) redAlert else greenOk
+        canvas.drawText("Fleet Security Risk Alerts: $highRiskDevices / ${telemetry.size} terminals", 330f, 172f, paint)
+
+        // Registered Organizations Table
+        var curY = 230f
+        paint.color = primaryOrange
+        canvas.drawRoundRect(RectF(30f, curY - 16f, 565f, curY + 10f), 6f, 6f, paint)
+        paint.color = Color.WHITE
+        paint.textSize = 10f
+        paint.typeface = Typeface.DEFAULT_BOLD
+        canvas.drawText("ORGANIZATION / SHOP", 42f, curY, paint)
+        canvas.drawText("OWNER", 225f, curY, paint)
+        canvas.drawText("QUOTA (BR/STF/DEV)", 340f, curY, paint)
+        canvas.drawText("PLAN & STATUS", 475f, curY, paint)
+        curY += 24f
+
+        shops.take(12).forEach { s ->
+            paint.color = darkInk
+            paint.textSize = 9.5f
+            paint.typeface = Typeface.DEFAULT_BOLD
+            canvas.drawText(s.shopName.take(26), 42f, curY, paint)
+            paint.color = grayMedium
+            paint.typeface = Typeface.DEFAULT
+            canvas.drawText("@${s.ownerUsername}".take(16), 225f, curY, paint)
+            canvas.drawText("${s.branchCount} / ${s.workerCount} / ${s.deviceCount}/${s.deviceLimit}", 340f, curY, paint)
+            paint.color = if (s.subscriptionStatus == "ACTIVE") greenOk else darkInk
+            paint.typeface = Typeface.DEFAULT_BOLD
+            canvas.drawText("${s.monthlyFeeRwf} • ${s.subscriptionStatus}", 475f, curY, paint)
+            curY += 20f
+        }
+
+        // Security Telemetry Alerts / Recent Audits
+        curY = maxOf(curY + 16f, 520f)
+        paint.color = darkInk
+        paint.textSize = 12f
+        paint.typeface = Typeface.DEFAULT_BOLD
+        canvas.drawText("RECENT ADMIN AUDIT & FLEET SECURITY EVENTS", 30f, curY, paint)
+        curY += 20f
+        auditLogs.take(10).forEach { log ->
+            paint.color = grayMedium
+            paint.textSize = 9f
+            paint.typeface = Typeface.DEFAULT
+            canvas.drawText("• [${log.action}] ${log.targetId}: ${log.details}".take(96), 36f, curY, paint)
+            curY += 16f
+        }
+
+        paint.color = grayMedium
+        paint.textSize = 8.5f
+        canvas.drawText("Confidential — BeBoss Enterprise Cloud Operations", 30f, 815f, paint)
+
+        pdfDoc.finishPage(page)
+        val file = File(getReportsDir(context), "BeBoss_Executive_Report_${System.currentTimeMillis()}.pdf")
+        FileOutputStream(file).use { pdfDoc.writeTo(it) }
+        pdfDoc.close()
+        return file
     }
 }

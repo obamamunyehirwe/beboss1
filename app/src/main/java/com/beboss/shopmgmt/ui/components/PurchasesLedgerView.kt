@@ -2,6 +2,7 @@ package com.beboss.shopmgmt.ui.components
 
 import android.content.Context
 import android.widget.Toast
+import com.beboss.shopmgmt.util.safeMessage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,6 +83,7 @@ import androidx.compose.ui.window.Dialog
 import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.PurchaseRecord
 import com.beboss.shopmgmt.data.model.PurchaseSummary
+import com.beboss.shopmgmt.data.model.ReorderSuggestion
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.ui.theme.DarkNavy
 import com.beboss.shopmgmt.ui.theme.InkDark
@@ -109,7 +112,13 @@ fun PurchasesLedgerView(
     shopProfile: ShopProfile,
     onRecordPurchase: (productId: String, qty: Double, cost: Double, sellPrice: Double?, supplier: String, phone: String, status: String, invoice: String, notes: String) -> Unit,
     onDeletePurchase: (String) -> Unit,
-    language: AppLanguage = AppLanguage.ENGLISH
+    language: AppLanguage = AppLanguage.ENGLISH,
+    canManageInventory: Boolean = true,
+    canDeleteRecords: Boolean = true,
+    canExportReports: Boolean = true,
+    canViewCostAndProfit: Boolean = true,
+    prefillReorderSuggestion: ReorderSuggestion? = null,
+    onClearPrefillReorder: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
@@ -122,8 +131,19 @@ fun PurchasesLedgerView(
     var purchaseToDelete by remember { mutableStateOf<PurchaseRecord?>(null) }
     var selectedPurchaseDetail by remember { mutableStateOf<PurchaseRecord?>(null) }
 
+    LaunchedEffect(prefillReorderSuggestion) {
+        if (prefillReorderSuggestion != null && canManageInventory) {
+            showAddPurchaseDialog = true
+        }
+    }
+
     val suppliersList = remember(purchases) {
         listOf("All") + purchases.map { it.supplierName }.filter { it.isNotBlank() }.distinct()
+    }
+    val recentSuppliers = remember(purchases) {
+        purchases.mapNotNull { rec ->
+            rec.supplierName.trim().takeIf { it.isNotBlank() }?.let { it to rec.supplierPhone.trim() }
+        }.distinctBy { it.first.lowercase(Locale.getDefault()) }.take(6)
     }
 
     val filteredPurchases = purchases.filter { p ->
@@ -260,34 +280,38 @@ fun PurchasesLedgerView(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = {
-                                try {
-                                    val file = ExcelCsvExporter.exportPurchasesCsv(context, purchases, shopProfile)
-                                    ExcelCsvExporter.shareCsvFile(context, file, Localization.get("pur_share_csv_title", language))
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, Localization.format("pur_export_err_fmt", language, e.message ?: ""), Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                        ) {
-                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(15.dp), tint = OrangePrimary)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(Localization.get("pur_export_excel_csv", language), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
+                        if (canExportReports) {
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val file = ExcelCsvExporter.exportPurchasesCsv(context, purchases, shopProfile)
+                                        ExcelCsvExporter.shareCsvFile(context, file, Localization.get("pur_share_csv_title", language))
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, Localization.format("pur_export_err_fmt", language, e.safeMessage()), Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(15.dp), tint = OrangePrimary)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(Localization.get("pur_export_excel_csv", language), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
+                            }
                         }
 
-                        Button(
-                            onClick = { showAddPurchaseDialog = true },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color.White)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(Localization.get("pur_buy_restock_btn", language), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        if (canManageInventory) {
+                            Button(
+                                onClick = { showAddPurchaseDialog = true },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color.White)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(Localization.get("pur_buy_restock_btn", language), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
                         }
                     }
                 }
@@ -424,10 +448,14 @@ fun PurchasesLedgerView(
                             Text(Localization.get("pur_col_product_name", language), width = Modifier.width(150.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                             Text(Localization.get("pur_col_supplier_vendor", language), width = Modifier.width(140.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
                             Text(Localization.get("pur_col_qty_in", language), width = Modifier.width(70.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
-                            Text(Localization.get("pur_col_unit_cost", language), width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
-                            Text(Localization.get("pur_col_total_cost", language), width = Modifier.width(100.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
+                            if (canViewCostAndProfit) {
+                                Text(Localization.get("pur_col_unit_cost", language), width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
+                                Text(Localization.get("pur_col_total_cost", language), width = Modifier.width(100.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
+                            }
                             Text(Localization.get("pur_col_sell_price", language), width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
-                            Text(Localization.get("pur_col_est_profit", language), width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
+                            if (canViewCostAndProfit) {
+                                Text(Localization.get("pur_col_est_profit", language), width = Modifier.width(90.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.End)
+                            }
                             Text(Localization.get("pur_col_status", language), width = Modifier.width(80.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.Center)
                             Text(Localization.get("pur_col_actions", language), width = Modifier.width(70.dp), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.5.sp, textAlign = TextAlign.Center)
                         }
@@ -453,10 +481,14 @@ fun PurchasesLedgerView(
                                 Text(record.productName, width = Modifier.width(150.dp), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = InkDark, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(record.supplierName, width = Modifier.width(140.dp), fontSize = 11.sp, color = InkMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text("${record.quantityPurchased.toInt()}", width = Modifier.width(70.dp), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = InkDark, textAlign = TextAlign.End)
-                                Text(ReceiptGenerator.formatMoney(record.unitCostPrice, shopProfile), width = Modifier.width(90.dp), fontSize = 11.sp, color = InkDark, textAlign = TextAlign.End)
-                                Text(ReceiptGenerator.formatMoney(record.totalPurchaseCost, shopProfile), width = Modifier.width(100.dp), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = DarkNavy, textAlign = TextAlign.End)
+                                if (canViewCostAndProfit) {
+                                    Text(ReceiptGenerator.formatMoney(record.unitCostPrice, shopProfile), width = Modifier.width(90.dp), fontSize = 11.sp, color = InkDark, textAlign = TextAlign.End)
+                                    Text(ReceiptGenerator.formatMoney(record.totalPurchaseCost, shopProfile), width = Modifier.width(100.dp), fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = DarkNavy, textAlign = TextAlign.End)
+                                }
                                 Text(ReceiptGenerator.formatMoney(record.sellingPriceAtPurchase, shopProfile), width = Modifier.width(90.dp), fontSize = 11.sp, color = OrangePrimary, textAlign = TextAlign.End)
-                                Text(ReceiptGenerator.formatMoney(profit, shopProfile), width = Modifier.width(90.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ProfitGreen, textAlign = TextAlign.End)
+                                if (canViewCostAndProfit) {
+                                    Text(ReceiptGenerator.formatMoney(profit, shopProfile), width = Modifier.width(90.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ProfitGreen, textAlign = TextAlign.End)
+                                }
                                 
                                 Box(modifier = Modifier.width(80.dp), contentAlignment = Alignment.Center) {
                                     Surface(
@@ -474,11 +506,13 @@ fun PurchasesLedgerView(
                                 }
 
                                 Row(modifier = Modifier.width(70.dp), horizontalArrangement = Arrangement.Center) {
-                                    IconButton(
-                                        onClick = { purchaseToDelete = record },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = Localization.get("delete", language), tint = LossRed, modifier = Modifier.size(15.dp))
+                                    if (canDeleteRecords) {
+                                        IconButton(
+                                            onClick = { purchaseToDelete = record },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = Localization.get("delete", language), tint = LossRed, modifier = Modifier.size(15.dp))
+                                        }
                                     }
                                 }
                             }
@@ -506,12 +540,19 @@ fun PurchasesLedgerView(
         AddPurchaseOrderDialog(
             products = products,
             shopProfile = shopProfile,
-            onDismiss = { showAddPurchaseDialog = false },
+            onDismiss = {
+                showAddPurchaseDialog = false
+                onClearPrefillReorder()
+            },
             onConfirm = { prodId, qty, cost, sellPrice, supplier, phone, status, inv, notes ->
                 onRecordPurchase(prodId, qty, cost, sellPrice, supplier, phone, status, inv, notes)
                 showAddPurchaseDialog = false
+                onClearPrefillReorder()
             },
-            language = language
+            language = language,
+            initialProduct = prefillReorderSuggestion?.product,
+            initialQuantity = prefillReorderSuggestion?.recommendedOrderQty,
+            recentSuppliers = recentSuppliers
         )
     }
 
@@ -635,14 +676,25 @@ fun AddPurchaseOrderDialog(
     shopProfile: ShopProfile,
     onDismiss: () -> Unit,
     onConfirm: (productId: String, qty: Double, cost: Double, sellPrice: Double?, supplier: String, phone: String, status: String, invoice: String, notes: String) -> Unit,
-    language: AppLanguage = AppLanguage.ENGLISH
+    language: AppLanguage = AppLanguage.ENGLISH,
+    initialProduct: Product? = null,
+    initialQuantity: Double? = null,
+    recentSuppliers: List<Pair<String, String>> = emptyList()
 ) {
-    var selectedProduct by remember { mutableStateOf(products.firstOrNull()) }
-    var quantityStr by remember { mutableStateOf("10") }
-    var unitCostStr by remember { mutableStateOf(selectedProduct?.costPrice?.toString() ?: "1000") }
-    var sellingPriceStr by remember { mutableStateOf(selectedProduct?.sellingPrice?.toString() ?: "1300") }
-    var supplierName by remember { mutableStateOf("Inyange Wholesale Depot") }
-    var supplierPhone by remember { mutableStateOf("+250 788 123 000") }
+    var selectedProduct by remember(initialProduct?.id) {
+        mutableStateOf(initialProduct ?: products.firstOrNull())
+    }
+    var quantityStr by remember(initialQuantity) {
+        mutableStateOf(initialQuantity?.toInt()?.coerceAtLeast(1)?.toString() ?: "10")
+    }
+    var unitCostStr by remember(selectedProduct?.id) {
+        mutableStateOf(selectedProduct?.costPrice?.takeIf { it > 0 }?.toLong()?.toString() ?: "")
+    }
+    var sellingPriceStr by remember(selectedProduct?.id) {
+        mutableStateOf(selectedProduct?.sellingPrice?.takeIf { it > 0 }?.toLong()?.toString() ?: "")
+    }
+    var supplierName by remember { mutableStateOf("") }
+    var supplierPhone by remember { mutableStateOf("") }
     var invoiceNumber by remember { mutableStateOf("") }
     var paymentStatus by remember { mutableStateOf("PAID_CASH") }
     var notes by remember { mutableStateOf("") }
@@ -758,6 +810,25 @@ fun AddPurchaseOrderDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                if (recentSuppliers.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        recentSuppliers.forEach { (sName, sPhone) ->
+                            FilterChip(
+                                selected = supplierName.equals(sName, ignoreCase = true),
+                                onClick = {
+                                    supplierName = sName
+                                    if (sPhone.isNotBlank()) supplierPhone = sPhone
+                                },
+                                label = { Text(sName, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -766,17 +837,21 @@ fun AddPurchaseOrderDialog(
                         value = supplierName,
                         onValueChange = { supplierName = it },
                         label = { Text(Localization.get("pur_supplier_name_label", language)) },
+                        placeholder = { Text("Enter supplier / vendor name") },
                         modifier = Modifier.weight(1.2f),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
                     )
 
                     OutlinedTextField(
                         value = supplierPhone,
                         onValueChange = { supplierPhone = it },
                         label = { Text(Localization.get("pur_supplier_phone_label", language)) },
+                        placeholder = { Text("+250 7XX XXX XXX") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
                     )
                 }
 

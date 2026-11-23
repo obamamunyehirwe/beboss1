@@ -280,9 +280,10 @@ fun CameraBarcodeScannerDialog(
                                                 barcodeScanner.process(inputImage)
                                                     .addOnSuccessListener(mainExecutor) { barcodes ->
                                                         val first = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }
-                                                        if (first != null) {
+                                                        val rawVal = first?.rawValue
+                                                        if (first != null && !rawVal.isNullOrBlank()) {
                                                             val fmt = if (first.format == Barcode.FORMAT_QR_CODE) "QR Code" else "Barcode"
-                                                            handleRawDetection(first.rawValue!!, fmt)
+                                                            handleRawDetection(rawVal, fmt)
                                                         }
                                                     }
                                                     .addOnCompleteListener {
@@ -337,8 +338,8 @@ fun CameraBarcodeScannerDialog(
                                 .padding(bottom = 10.dp)
                         ) {
                             Text(
-                                text = if (lastDetectedCode != null) "✅ $lastDetectedFormat: ${lastDetectedCode!!.take(22)}"
-                                else "Point camera at 1D Barcode or QR Seal",
+                                text = lastDetectedCode?.let { "✅ $lastDetectedFormat: ${it.take(22)}" }
+                                    ?: "Point camera at 1D Barcode or QR Seal",
                                 fontSize = 10.5.sp,
                                 color = Color.White,
                                 fontWeight = FontWeight.SemiBold,
@@ -405,7 +406,8 @@ fun CameraBarcodeScannerDialog(
                 )
 
                 // Detected QR / Uncatalogued Barcode Result Banner
-                if (lastDetectedCode != null && matchedProduct == null) {
+                val detectedSnapshot = lastDetectedCode
+                if (detectedSnapshot != null && matchedProduct == null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Surface(
                         shape = RoundedCornerShape(10.dp),
@@ -420,11 +422,11 @@ fun CameraBarcodeScannerDialog(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Detected $lastDetectedFormat:", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = DarkNavy)
-                                Text(lastDetectedCode!!, fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = InkDark)
+                                Text(detectedSnapshot, fontSize = 11.5.sp, fontFamily = FontFamily.Monospace, color = InkDark)
                             }
                             Button(
                                 onClick = {
-                                    onBarcodeScanned(lastDetectedCode!!)
+                                    onBarcodeScanned(detectedSnapshot)
                                     onDismiss()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = DarkNavy),
@@ -467,7 +469,7 @@ fun CameraBarcodeScannerDialog(
                 }
 
                 // Matched Product Result Card
-                if (matchedProduct != null) {
+                matchedProduct?.let { product ->
                     Spacer(modifier = Modifier.height(10.dp))
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -484,15 +486,15 @@ fun CameraBarcodeScannerDialog(
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ProfitGreen, modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
-                                    Text(matchedProduct!!.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
+                                    Text(product.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
                                     Text(
                                         Localization.format(
                                             "scan_match_meta_fmt",
                                             language,
-                                            matchedProduct!!.sellingPrice.toInt().toString(),
+                                            product.sellingPrice.toInt().toString(),
                                             "FRw",
-                                            matchedProduct!!.quantityInStock.toInt(),
-                                            matchedProduct!!.unit
+                                            product.quantityInStock.toInt(),
+                                            product.unit
                                         ),
                                         fontSize = 12.sp,
                                         color = InkMedium
@@ -501,7 +503,7 @@ fun CameraBarcodeScannerDialog(
                             }
                             Button(
                                 onClick = {
-                                    onProductScanned(matchedProduct!!)
+                                    onProductScanned(product)
                                     onDismiss()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen),

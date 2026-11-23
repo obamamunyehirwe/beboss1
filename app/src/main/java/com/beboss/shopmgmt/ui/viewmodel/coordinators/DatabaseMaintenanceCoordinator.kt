@@ -7,6 +7,8 @@ import com.beboss.shopmgmt.data.model.DatabaseMaintenanceResult
 import com.beboss.shopmgmt.data.repository.BeBossRepository
 import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.BeBossLogger
+import com.beboss.shopmgmt.util.safeMessage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,6 +45,8 @@ class DatabaseMaintenanceCoordinator(
                 if (!result.success) {
                     BeBossLogger.e("DatabaseMaintenance", "Startup integrity issue: ${result.message}")
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _startupIntegrityOk.value = false
                 BeBossLogger.e("DatabaseMaintenance", "Startup integrity check exception", e)
@@ -55,6 +59,8 @@ class DatabaseMaintenanceCoordinator(
         scope.launch {
             try {
                 _databaseStats.value = repository.getDatabaseStats(targetCtx)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 BeBossLogger.e("DatabaseMaintenance", "Failed to get database stats", e)
             }
@@ -76,8 +82,10 @@ class DatabaseMaintenanceCoordinator(
                     details = result.message
                 )
                 emitSnackbar(result.message)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                emitSnackbar("Optimization failed: ${e.message}")
+                emitSnackbar("Optimization failed: ${e.safeMessage()}")
             } finally {
                 _isOptimizingDb.value = false
             }
@@ -98,9 +106,11 @@ class DatabaseMaintenanceCoordinator(
                     details = result.message
                 )
                 emitSnackbar(result.message)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _startupIntegrityOk.value = false
-                emitSnackbar("Integrity check failed: ${e.message}")
+                emitSnackbar("Integrity check failed: ${e.safeMessage()}")
             } finally {
                 _isOptimizingDb.value = false
             }
@@ -124,8 +134,10 @@ class DatabaseMaintenanceCoordinator(
                     "Amateka yose yo kugurisha yasibwe! Ibicuruzwa n'abakiriya byagumyeho."
                 else "All sales & transaction history reset! Products & customers preserved."
                 emitSnackbar(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                emitSnackbar("Failed to reset transactions: ${e.message}")
+                emitSnackbar("Failed to reset transactions: ${e.safeMessage()}")
             }
         }
     }
@@ -147,8 +159,10 @@ class DatabaseMaintenanceCoordinator(
                     "Ibicuruzwa byose byasibwe mu bubiko!"
                 else "All products and inventory stock wiped from database!"
                 emitSnackbar(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                emitSnackbar("Failed to clear products: ${e.message}")
+                emitSnackbar("Failed to clear products: ${e.safeMessage()}")
             }
         }
     }
@@ -170,8 +184,10 @@ class DatabaseMaintenanceCoordinator(
                     "Abakiriya bose n'imyenda byasibwe!"
                 else "All customers and credit debt records cleared!"
                 emitSnackbar(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                emitSnackbar("Failed to clear customers: ${e.message}")
+                emitSnackbar("Failed to clear customers: ${e.safeMessage()}")
             }
         }
     }
@@ -188,8 +204,10 @@ class DatabaseMaintenanceCoordinator(
                     "Porogaramu yose yasubijwe ku ntangiriro (Factory Reset)! Amakuru yose yasibwe."
                 else "Whole app factory reset complete! All products, customers & transactions wiped clean."
                 emitSnackbar(msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                emitSnackbar("Failed to reset app: ${e.message}")
+                emitSnackbar("Failed to reset app: ${e.safeMessage()}")
             }
         }
     }
@@ -199,8 +217,10 @@ class DatabaseMaintenanceCoordinator(
             try {
                 repository.seedSampleShopData()
                 emitSnackbar("Sample demo data loaded successfully!")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                emitSnackbar("Failed to load sample data: ${e.message}")
+                emitSnackbar("Failed to load sample data: ${e.safeMessage()}")
             }
         }
     }

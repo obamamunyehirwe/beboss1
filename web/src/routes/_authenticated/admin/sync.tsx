@@ -212,16 +212,16 @@ function SyncMonitor() {
         }
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-        <StatCard label={a("Total Shops")} value={stats.totalShops} sub={a("registered businesses")} icon={Store} tone="brand" />
-        <StatCard label={a("Active Now")} value={stats.activeShops} sub={a("sync signal in last 15 min")} icon={Wifi} tone="success" />
-        <StatCard label={a("Synced Staff")} value={stats.activeStaff} sub={`${stats.totalStaff} ${a("staff accounts across shops")}`} icon={Users} tone="info" />
-        <StatCard label={a("Snapshot Uploads (24h)")} value={stats.snapshotUploads24h} sub={a("uploaded phone datasets")} icon={Activity} tone="info" />
-        <StatCard label={a("Reported Failures")} value={stats.reportedFailures} sub={a("cloud-reported only; local retries stay on device")} icon={AlertTriangle} tone={stats.reportedFailures > 0 ? "danger" : "info"} />
-        <StatCard label={a("Branch Snapshots")} value={stats.snapshots} sub={a("stored phone datasets")} icon={Boxes} tone="brand" />
-        <StatCard label={a("Registered Branches")} value={stats.totalBranches} sub={a("normalized cross-shop branch records")} icon={Store} tone="info" />
-        <StatCard label={a("Stock Transfers")} value={stats.totalTransfers} sub={a("cross-branch stock movements")} icon={Boxes} tone="info" />
-        <StatCard label={a("Stale Devices")} value={stats.staleDevices} sub={a("active, no sync for 7+ days")} icon={Clock} tone={stats.staleDevices > 0 ? "danger" : "success"} />
-        <StatCard label={a("Security Alerts")} value={stats.securityAlerts} sub={a("rollback, root, hooking, emulator or high risk")} icon={AlertTriangle} tone={stats.securityAlerts > 0 ? "danger" : "success"} />
+        <StatCard label="Total Shops" value={stats.totalShops} sub="registered businesses" icon={Store} tone="brand" />
+        <StatCard label="Active Now" value={stats.activeShops} sub="sync signal in last 15 min" icon={Wifi} tone="success" />
+        <StatCard label="Synced Staff" value={stats.activeStaff} sub={`${stats.totalStaff} staff accounts across shops`} icon={Users} tone="info" />
+        <StatCard label="Snapshot Uploads (24h)" value={stats.snapshotUploads24h} sub="uploaded phone datasets" icon={Activity} tone="info" />
+        <StatCard label="Reported Failures" value={stats.reportedFailures} sub="cloud-reported only; local retries stay on device" icon={AlertTriangle} tone={stats.reportedFailures > 0 ? "danger" : "info"} />
+        <StatCard label="Branch Snapshots" value={stats.snapshots} sub="stored phone datasets" icon={Boxes} tone="brand" />
+        <StatCard label="Registered Branches" value={stats.totalBranches} sub="normalized cross-shop branch records" icon={Store} tone="info" />
+        <StatCard label="Stock Transfers" value={stats.totalTransfers} sub="cross-branch stock movements" icon={Boxes} tone="info" />
+        <StatCard label="Stale Devices" value={stats.staleDevices} sub="active, no sync for 7+ days" icon={Clock} tone={stats.staleDevices > 0 ? "danger" : "success"} />
+        <StatCard label="Security Alerts" value={stats.securityAlerts} sub="rollback, root, hooking, emulator or high risk" icon={AlertTriangle} tone={stats.securityAlerts > 0 ? "danger" : "success"} />
       </div>
 
       {[
@@ -711,7 +711,7 @@ function LiveActivity({ events, loading, now }: { events: SyncEvent[]; loading: 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder={a("Search shop, device, detail…")} />
+        <SearchInput value={q} onChange={setQ} placeholder="Search shop, device, detail…" />
         <FilterChips<EntityFilter>
           value={f}
           onChange={setF}
@@ -724,7 +724,7 @@ function LiveActivity({ events, loading, now }: { events: SyncEvent[]; loading: 
       {loading ? (
         <LoadingBlock />
       ) : !rows.length ? (
-        <EmptyState title={a("No sync activity yet")} sub={a("As soon as a phone with BeBoss goes online, its sync shows up here in real time.")} />
+        <EmptyState title="No sync activity yet" sub="As soon as a phone with BeBoss goes online, its sync shows up here in real time." />
       ) : (
         <ol className="relative space-y-2 border-l border-border pl-5">
           {rows.slice(0, 250).map((e) => {
@@ -775,7 +775,7 @@ function DeviceHealthTable({ now }: { now: number }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder={a("Search shop, device, user, branch…")} />
+        <SearchInput value={q} onChange={setQ} placeholder="Search shop, device, user, branch…" />
         <FilterChips<HealthFilter>
           value={f}
           onChange={setF}
@@ -788,17 +788,17 @@ function DeviceHealthTable({ now }: { now: number }) {
       {isLoading ? (
         <LoadingBlock />
       ) : !rows.length ? (
-        <EmptyState title={a("No devices")} />
+        <EmptyState title="No devices" />
       ) : (
         <TableShell>
           <table className="w-full min-w-[720px] text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">{a("Device")}</th>
-                <th className="px-4 py-3">{a("Shop / branch")}</th>
-                <th className="px-4 py-3">{a("User")}</th>
-                <th className="px-4 py-3">{a("Health")}</th>
-                <th className="px-4 py-3">{a("Last sync")}</th>
+                <th className="px-4 py-3">Device</th>
+                <th className="px-4 py-3">Shop / branch</th>
+                <th className="px-4 py-3">User</th>
+                <th className="px-4 py-3">Health</th>
+                <th className="px-4 py-3">Last sync</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -877,7 +877,7 @@ function SecurityTelemetryTable({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder={a("Search shop, device, security signal, GPS label…")} />
+        <SearchInput value={q} onChange={setQ} placeholder="Search shop, device, security signal, GPS label…" />
         <FilterChips
           value={filter}
           onChange={setFilter}
@@ -921,7 +921,7 @@ function SecurityTelemetryTable({
             })),
           )}
         >
-          <Download /> {a("Export security data")}
+          <Download /> Export security data
         </Button>
       </div>
 
@@ -931,21 +931,21 @@ function SecurityTelemetryTable({
 
       {loading ? <LoadingBlock /> : !filtered.length ? (
         <EmptyState
-          title={a("No device security telemetry")}
-          sub={a("Paired terminals appear here after a successful online security sync. Missing data is not treated as a clean device.")}
+          title="No device security telemetry"
+          sub="Paired terminals appear here after a successful online security sync. Missing data is not treated as a clean device."
         />
       ) : (
         <TableShell>
           <table className="w-full min-w-[1440px] text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">{a("Device / shop")}</th>
-                <th className="px-4 py-3">{a("Risk posture")}</th>
-                <th className="px-4 py-3">{a("Tamper detection")}</th>
-                <th className="px-4 py-3">{a("GPS / location")}</th>
-                <th className="px-4 py-3">{a("Outbound activity")}</th>
-                <th className="px-4 py-3">{a("Permissions")}</th>
-                <th className="px-4 py-3">{a("Last inspected")}</th>
+                <th className="px-4 py-3">Device / shop</th>
+                <th className="px-4 py-3">Risk posture</th>
+                <th className="px-4 py-3">Tamper detection</th>
+                <th className="px-4 py-3">GPS / location</th>
+                <th className="px-4 py-3">Outbound activity</th>
+                <th className="px-4 py-3">Permissions</th>
+                <th className="px-4 py-3">Last inspected</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -1003,7 +1003,7 @@ function SecurityTelemetryTable({
                         <a href={mapUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-primary hover:underline">
                           Open map · ±{Math.round(row.accuracy_meters)} m
                         </a>
-                      ) : <p className="mt-1 text-muted-foreground">{a("No recent permitted GPS fix")}</p>}
+                      ) : <p className="mt-1 text-muted-foreground">No recent permitted GPS fix</p>}
                       <p className="mt-1 text-muted-foreground">
                         {row.location_captured_at ? relativeTime(row.location_captured_at, now) : "Not captured"}
                       </p>
@@ -1048,7 +1048,7 @@ function Snapshots({ now }: { now: number }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder={a("Search shop, branch, device, summary…")} />
+        <SearchInput value={q} onChange={setQ} placeholder="Search shop, branch, device, summary…" />
         {isAdmin && stale.length ? (
           <ConfirmAction
             trigger={
@@ -1058,27 +1058,27 @@ function Snapshots({ now }: { now: number }) {
             }
             title={a("Remove stale snapshots?")}
             description={a("Snapshots not refreshed for 14+ days are deleted. Active devices re-upload fresh ones on their next sync.")}
-            confirmLabel={a("Prune")}
+            confirmLabel="Prune"
             destructive
             onConfirm={() => stale.forEach((s) => del.mutate({ id: s.id }))}
           />
         ) : null}
       </div>
-      <p className="text-xs text-muted-foreground">{a("Snapshots are HMAC-signed and compressed; they are relayed through the cloud and can be inspected only by authorized admin sessions.")}</p>
+      <p className="text-xs text-muted-foreground">Snapshots are HMAC-signed and compressed; they are relayed through the cloud and can be inspected only by authorized admin sessions.</p>
       {isLoading ? (
         <LoadingBlock />
       ) : !rows.length ? (
-        <EmptyState title={a("No snapshots")} sub="Multi-branch shops upload snapshots automatically when online." />
+        <EmptyState title="No snapshots" sub="Multi-branch shops upload snapshots automatically when online." />
       ) : (
         <TableShell>
           <table className="w-full min-w-[720px] text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">{a("Shop")}</th>
-                <th className="px-4 py-3">{a("Branch")}</th>
-                <th className="px-4 py-3">{a("Device")}</th>
-                <th className="px-4 py-3">{a("Summary")}</th>
-                <th className="px-4 py-3">{a("Updated")}</th>
+                <th className="px-4 py-3">Shop</th>
+                <th className="px-4 py-3">Branch</th>
+                <th className="px-4 py-3">Device</th>
+                <th className="px-4 py-3">Summary</th>
+                <th className="px-4 py-3">Updated</th>
                 {isAdmin ? <th className="px-4 py-3" /> : null}
               </tr>
             </thead>
@@ -1101,14 +1101,14 @@ function Snapshots({ now }: { now: number }) {
                     <td className="px-4 py-3 text-right">
                       <ConfirmAction
                         trigger={
-                          <Button size="icon" variant="ghost" aria-label={a("Delete snapshot")}>
+                          <Button size="icon" variant="ghost" aria-label="Delete snapshot">
                             <Trash2 />
                           </Button>
                         }
                         title={a("Delete this snapshot?")}
-                        description={a("The branch device re-uploads it on its next sync.")}
+                        description="The branch device re-uploads it on its next sync."
                         destructive
-                        confirmLabel={a("Delete")}
+                        confirmLabel="Delete"
                         onConfirm={() => del.mutate({ id: s.id })}
                       />
                     </td>

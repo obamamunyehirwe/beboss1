@@ -8,6 +8,8 @@ import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import com.beboss.shopmgmt.util.normalizeUnlockCodeInput
+import com.beboss.shopmgmt.util.safeMessage
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.spring
@@ -397,7 +399,7 @@ fun SettingsScreen(
         .ifBlank { shopProfile.adminWhatsAppNumber.trim() }
 
     LaunchedEffect(settingsUnlockCodeInput) {
-        val clean = settingsUnlockCodeInput.trim().uppercase()
+        val clean = normalizeUnlockCodeInput(settingsUnlockCodeInput)
         if (SubscriptionSecurityManager.isCompleteUnlockCodeFormat(clean) && clean != lastAutoSubmittedCode) {
             lastAutoSubmittedCode = clean
             onActivateVoucher(clean)
@@ -493,8 +495,9 @@ fun SettingsScreen(
                 onDialAirtel = { OfflineSubscriptionManager.dialAirtelMoney(context, currentPricing.totalPayable) },
                 onShowSubscriptionDialog = { showSubscriptionDialog = true },
                 onActivateVoucher = { code ->
-                    lastAutoSubmittedCode = code.uppercase()
-                    onActivateVoucher(code)
+                    val normalized = normalizeUnlockCodeInput(code)
+                    lastAutoSubmittedCode = normalized
+                    onActivateVoucher(normalized)
                     settingsUnlockCodeInput = ""
                 },
                 onSyncCloudApprovals = onCheckCloudApproval,
@@ -3149,6 +3152,6 @@ private fun printThermalTestPage(
         }
         webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
     } catch (e: Exception) {
-        Toast.makeText(context, "Unable to open print service: ${e.message}", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "Unable to open print service: ${e.safeMessage()}", Toast.LENGTH_LONG).show()
     }
 }

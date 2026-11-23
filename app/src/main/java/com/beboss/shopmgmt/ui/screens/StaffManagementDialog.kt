@@ -2,6 +2,7 @@ package com.beboss.shopmgmt.ui.screens
 
 import android.content.Context
 import android.widget.Toast
+import com.beboss.shopmgmt.util.safeMessage
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -342,7 +343,7 @@ fun StaffManagementDialog(
                                                     val pdf = PdfReportGenerator.generateStaffBadgePdf(context, user, shopProfile)
                                                     PdfReportGenerator.sharePdf(context, pdf, "Access Pass - ${user.name}")
                                                 } catch (e: Exception) {
-                                                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, "Error: ${e.safeMessage()}", Toast.LENGTH_SHORT).show()
                                                 }
                                             }
                                         ) {

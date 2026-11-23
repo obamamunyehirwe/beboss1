@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.util.Locale
 
 /**
@@ -100,7 +101,15 @@ class StaffAuthManager(
                 tableName = "users",
                 recordId = userToSave.id,
                 operation = "UPDATE",
-                payloadJson = """{"id":"${userToSave.id}","name":"${userToSave.name}","username":"${userToSave.username}","role":"${userToSave.role.name}","branchId":"${userToSave.assignedBranchId}","phone":"${userToSave.phone}","isActive":${userToSave.isActive}}"""
+                payloadJson = JSONObject().apply {
+                    put("id", userToSave.id)
+                    put("name", userToSave.name)
+                    put("username", userToSave.username)
+                    put("role", userToSave.role.name)
+                    put("branchId", userToSave.assignedBranchId)
+                    put("phone", userToSave.phone)
+                    put("isActive", userToSave.isActive)
+                }.toString()
             )
         )
     }
@@ -122,7 +131,7 @@ class StaffAuthManager(
                 tableName = "users",
                 recordId = userId,
                 operation = "DELETE",
-                payloadJson = """{"id":"$userId"}"""
+                payloadJson = JSONObject().put("id", userId).toString()
             )
         )
     }

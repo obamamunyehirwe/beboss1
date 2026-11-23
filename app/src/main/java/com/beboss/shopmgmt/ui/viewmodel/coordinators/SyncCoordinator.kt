@@ -6,10 +6,12 @@ import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.data.model.Branch
 import com.beboss.shopmgmt.data.model.Customer
 import com.beboss.shopmgmt.data.model.CustomerPayment
+import com.beboss.shopmgmt.data.model.DeadLetterItem
 import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.Sale
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.data.model.StockTransfer
+import com.beboss.shopmgmt.data.model.SyncQueueItem
 import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.data.repository.BeBossRepository
 import com.beboss.shopmgmt.util.CloudSyncReport
@@ -24,6 +26,8 @@ import com.beboss.shopmgmt.util.OfflineSubscriptionManager
 import com.beboss.shopmgmt.util.ShopDataTransferManager
 import com.beboss.shopmgmt.util.ShopImportSummary
 import com.beboss.shopmgmt.util.SupabaseAdminClient
+import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
+import com.beboss.shopmgmt.util.safeMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,12 +62,17 @@ class SyncCoordinator(
     private val syncAdminCloud: suspend (Boolean) -> Unit,
     private val runWithBlurLoading: (title: String, subtitle: String, block: suspend () -> Unit) -> Unit = { _, _, block ->
         scope.launch { block() }
-    }
+    },
+    private val isRegistrationNeeded: StateFlow<Boolean> = MutableStateFlow(false)
 ) {
     private var autoBranchSyncJob: Job? = null
 
     val connectivityStatus: StateFlow<ConnectivityStatus> = connectivityObserver.networkStatus
-        .stateIn(scope, SharingStarted.WhileSubscribed(5000), ConnectivityStatus.AVAILABLE)
+        .stateIn(
+            scope,
+            SharingStarted.WhileSubscribed(5000),
+            if (connectivityObserver.isCurrentlyConnected()) ConnectivityStatus.AVAILABLE else ConnectivityStatus.UNAVAILABLE
+        )
 
     private val _cloudSyncReport = MutableStateFlow<CloudSyncReport?>(null)
     val cloudSyncReport: StateFlow<CloudSyncReport?> = _cloudSyncReport.asStateFlow()
@@ -83,28 +92,119 @@ class SyncCoordinator(
     val isDiscoveringHubs = localNetworkSyncServer.isDiscoveringHubs
     val peerSyncEvents = localNetworkSyncServer.peerSyncEvents
 
+    val pendingSyncItems: StateFlow<List<SyncQueueItem>> = repository.pendingSyncQueue
+        .stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val deadLetterQueueItems: StateFlow<List<SyncQueueItem>> = repository.deadLetterSyncQueue
+        .stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val deadLetterRecords: StateFlow<List<DeadLetterItem>> = repository.deadLetterItems
+        .stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _shopDeviceTelemetry = MutableStateFlow<List<SupabaseDeviceTelemetryDto>>(emptyList())
+    val shopDeviceTelemetry: StateFlow<List<SupabaseDeviceTelemetryDto>> = _shopDeviceTelemetry.asStateFlow()
+
+    fun refreshShopTelemetry() {
+        scope.launch {
+            try {
+                val primaryDevice = repository.getAllShopDevicesList().firstOrNull { it.isOwnerPrimary }
+                val owner = allUsers.value.firstOrNull { it.role.toString().equals("OWNER", true) }
+                val username = owner?.username?.trim()?.ifBlank { shopProfile.value.email.substringBefore("@").trim() }
+                    ?: shopProfile.value.email.substringBefore("@").trim()
+                val phone = owner?.phone?.trim()?.ifBlank { shopProfile.value.phone.trim() }
+                    ?: shopProfile.value.phone.trim()
+                val shopKey = primaryDevice?.shopSyncKey?.takeIf { it.isNotBlank() }
+                    ?: if (username.isNotBlank() && phone.filter { it.isDigit() }.takeLast(9).length == 9) {
+                        SupabaseAdminClient.computeShopSyncKey(username, phone)
+                    } else ""
+                if (shopKey.isNotBlank()) {
+                    _shopDeviceTelemetry.value = repository.fetchShopTelemetry(shopKey)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun requeueDeadLetter(id: String) {
+        scope.launch {
+            try {
+                repository.requeueSyncItem(id)
+                emitSnackbar("Sync record queued for immediate retry.")
+                if (connectivityStatus.value == ConnectivityStatus.AVAILABLE) {
+                    runAutomaticCloudSync(showResult = false, retryDeadLetters = false)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Could not requeue sync record: ${e.safeMessage()}")
+            }
+        }
+    }
+
+    fun requeueAllDeadLetters() {
+        scope.launch {
+            try {
+                val count = repository.requeueAllDeadLetters()
+                emitSnackbar(
+                    if (count > 0) "Re-queued $count failed sync record(s)." else "No failed sync records to retry."
+                )
+                if (count > 0 && connectivityStatus.value == ConnectivityStatus.AVAILABLE) {
+                    runAutomaticCloudSync(showResult = true, retryDeadLetters = true)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Failed re-queuing records: ${e.safeMessage()}")
+            }
+        }
+    }
+
+    fun discardDeadLetter(id: String) {
+        scope.launch {
+            try {
+                repository.discardDeadLetterItem(id)
+                emitSnackbar("Discarded failed sync record.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Could not discard sync record: ${e.safeMessage()}")
+            }
+        }
+    }
+
     fun setupAutoCloudSyncOnInternet() {
         scope.launch(Dispatchers.IO) {
-            OfflineSubscriptionManager.initConfigCache(application)
-            CloudSyncScheduler.schedulePeriodicSync(application)
             try {
+                OfflineSubscriptionManager.initConfigCache(application)
+                CloudSyncScheduler.schedulePeriodicSync(application)
                 repository.ensureDefaultBranches()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                repository.logSyncEvent("BRANCH_AUTO_SYNC", "FAILED", "Could not prepare branch data: ${e.message}")
+                repository.logSyncEvent("BRANCH_AUTO_SYNC", "FAILED", "Could not prepare branch data: ${e.safeMessage()}")
             }
             connectivityStatus.collect { status ->
-                if (status == ConnectivityStatus.AVAILABLE) runAutomaticCloudSync()
+                if (status == ConnectivityStatus.AVAILABLE && !isRegistrationNeeded.value && allUsers.value.isNotEmpty()) {
+                    runAutomaticCloudSync()
+                }
             }
         }
     }
 
     fun scheduleAutoBranchSync(delayMs: Long = 1600L) {
+        if (isRegistrationNeeded.value) return
         CloudSyncScheduler.enqueueImmediateSync(application)
-        if (connectivityStatus.value != ConnectivityStatus.AVAILABLE) return
+        if (connectivityStatus.value != ConnectivityStatus.AVAILABLE || allUsers.value.isEmpty()) return
         autoBranchSyncJob?.cancel()
         autoBranchSyncJob = scope.launch {
             delay(delayMs)
-            if (connectivityStatus.value == ConnectivityStatus.AVAILABLE && !_isSyncing.value) {
+            if (connectivityStatus.value == ConnectivityStatus.AVAILABLE &&
+                !isRegistrationNeeded.value &&
+                allUsers.value.isNotEmpty() &&
+                !_isSyncing.value
+            ) {
                 runAutomaticCloudSync()
             }
         }
@@ -115,7 +215,7 @@ class SyncCoordinator(
             "Syncing Cloud...",
             "Uploading branch sales, stock & shield telemetry"
         ) {
-            runAutomaticCloudSync(showResult = true)
+            runAutomaticCloudSync(showResult = true, retryDeadLetters = true)
         }
     }
 
@@ -155,18 +255,32 @@ class SyncCoordinator(
         return localNetworkSyncServer.useCachedShopSharedSecret(shopSyncKey)
     }
 
-    private suspend fun runAutomaticCloudSync(showResult: Boolean = false) {
-        if (_isSyncing.value) return
-        _isSyncing.value = true
+    private suspend fun runAutomaticCloudSync(showResult: Boolean = false, retryDeadLetters: Boolean = false) {
+        if (!showResult && (isRegistrationNeeded.value || db.userDao().getAllActiveUsersList().isEmpty())) {
+            return
+        }
+        if (!_isSyncing.compareAndSet(expect = false, update = true)) return
         try {
-            com.beboss.shopmgmt.util.ClockGuard.reInspectNow(application)
-            // Refresh foreground location telemetry when permission is active before pushing to cloud
-            LocationHelper.captureCurrentLocation(application)
-            syncAdminCloud(true)
+            try {
+                com.beboss.shopmgmt.util.ClockGuard.reInspectNow(application)
+                // Refresh foreground location telemetry when permission is active before pushing to cloud
+                LocationHelper.captureCurrentLocation(application)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+            try {
+                syncAdminCloud(true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                repository.logSyncEvent("SUPABASE_ADMIN", "FAILED", "Admin cloud check failed: ${e.safeMessage("Check connection")}")
+            }
             val report = repository.performSync(
                 activeBranchId = selectedBranchId.value,
                 deviceId = deviceId,
-                context = application
+                context = application,
+                retryDeadLetters = retryDeadLetters
             )
             _cloudSyncReport.value = report
             // First cloud sync provisions the shop-scoped LAN key; every paired terminal
@@ -178,7 +292,7 @@ class SyncCoordinator(
                     "Shop LAN pairing key is not available yet. Keep cloud sync online and retry before using local terminal discovery."
                 )
             }
-            if (SupabaseAdminClient.isConfigured()) {
+            if (SupabaseAdminClient.isConfigured() && report.state != com.beboss.shopmgmt.util.CloudSyncState.SYNCED) {
                 val telemetryUploaded = DeviceTelemetryUploader.upload(
                     context = application,
                     database = db,
@@ -193,11 +307,12 @@ class SyncCoordinator(
                     )
                 }
             }
+            refreshShopTelemetry()
             if (showResult) emitSnackbar(report.message)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            val message = "Automatic cloud sync failed: ${e.localizedMessage ?: "Unknown error"}"
+            val message = "Automatic cloud sync failed: ${e.safeMessage("Check your internet connection and retry")}"
             repository.logSyncEvent("BRANCH_AUTO_SYNC", "FAILED", message)
             _cloudSyncReport.value = CloudSyncReport(
                 state = com.beboss.shopmgmt.util.CloudSyncState.ERROR,
@@ -215,15 +330,21 @@ class SyncCoordinator(
             "Syncing Relay Server...",
             "Exchanging branch deltas & security state"
         ) {
-            _isSyncing.value = true
+            if (!_isSyncing.compareAndSet(expect = false, update = true)) return@runWithBlurLoading
             try {
-                com.beboss.shopmgmt.util.ClockGuard.reInspectNow(application)
-                LocationHelper.captureCurrentLocation(application)
+                try {
+                    com.beboss.shopmgmt.util.ClockGuard.reInspectNow(application)
+                    LocationHelper.captureCurrentLocation(application)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
                 val report = repository.cloudSyncManager.syncAllDataToCloud(
                     serverEndpoint = endpoint,
                     activeBranchId = selectedBranchId.value,
                     deviceId = deviceId,
                     context = application,
+                    retryDeadLetters = true,
                     mergeRemoteSummary = { summary -> repository.mergeShopDataPackageLww(summary) }
                 )
                 _cloudSyncReport.value = report
@@ -234,7 +355,7 @@ class SyncCoordinator(
                         "Shop LAN pairing key is not available yet; retry once the shop account has synchronized."
                     )
                 }
-                if (SupabaseAdminClient.isConfigured()) {
+                if (SupabaseAdminClient.isConfigured() && report.state != com.beboss.shopmgmt.util.CloudSyncState.SYNCED) {
                     val telemetryUploaded = DeviceTelemetryUploader.upload(
                         context = application,
                         database = db,
@@ -250,6 +371,17 @@ class SyncCoordinator(
                     }
                 }
                 emitSnackbar(report.message)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val message = "Relay sync failed: ${e.safeMessage("Unable to reach sync server")}"
+                repository.logSyncEvent("RELAY_SYNC", "FAILED", message)
+                _cloudSyncReport.value = CloudSyncReport(
+                    state = com.beboss.shopmgmt.util.CloudSyncState.ERROR,
+                    message = message,
+                    lastSyncTimestamp = shopProfile.value.lastSyncedAt
+                )
+                emitSnackbar(message)
             } finally {
                 _isSyncing.value = false
             }
@@ -299,15 +431,24 @@ class SyncCoordinator(
     fun syncWithLocalMasterHub(hubIp: String) {
         scope.launch {
             _isP2pSyncing.value = true
-            val res = localNetworkSyncServer.syncWithMasterHub(hubIp, currentUser.value)
-            _isP2pSyncing.value = false
-            repository.logSyncEvent(
-                type = "P2P_CLIENT",
-                status = if (res.success) "SUCCESS" else "FAILED",
-                summary = res.message,
-                latencyMs = res.latencyMs
-            )
-            emitSnackbar(res.message)
+            try {
+                val res = localNetworkSyncServer.syncWithMasterHub(hubIp, currentUser.value)
+                repository.logSyncEvent(
+                    type = "P2P_CLIENT",
+                    status = if (res.success) "SUCCESS" else "FAILED",
+                    summary = res.message,
+                    latencyMs = res.latencyMs
+                )
+                emitSnackbar(res.message)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val err = "P2P sync failed: ${e.safeMessage("Could not connect to master hub")}"
+                repository.logSyncEvent(type = "P2P_CLIENT", status = "FAILED", summary = err)
+                emitSnackbar(err)
+            } finally {
+                _isP2pSyncing.value = false
+            }
         }
     }
 
@@ -332,8 +473,10 @@ class SyncCoordinator(
                 val token = ShopDataTransferManager.createCompressedSyncToken(json)
                 repository.logSyncEvent("BRANCH_TOKEN", "SUCCESS", "Generated signed BBSHARE1 token (${token.length} chars)")
                 onReady(token)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                emitSnackbar("Failed to build branch share token: ${e.message}")
+                emitSnackbar("Failed to build branch share token: ${e.safeMessage()}")
             }
         }
     }
@@ -359,8 +502,10 @@ class SyncCoordinator(
                 )
                 repository.logSyncEvent("FILE_EXPORT", "SUCCESS", "Exported ${file.name} with full branch ledger")
                 onReady(file)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                emitSnackbar("Export error: ${e.message}")
+                emitSnackbar("Export error: ${e.safeMessage()}")
             }
         }
     }
@@ -381,8 +526,10 @@ class SyncCoordinator(
                 )
                 emitSnackbar(msg)
                 onDone(true, msg)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                val err = "Branch DataShare import failed: ${e.message}"
+                val err = "Branch DataShare import failed: ${e.safeMessage()}"
                 emitSnackbar(err)
                 onDone(false, err)
             }
@@ -401,8 +548,10 @@ class SyncCoordinator(
                     details = "Merged shop package from ${summary.exportedBy}"
                 )
                 emitSnackbar("Shop data package successfully restored!")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                emitSnackbar("Error restoring shop data: ${e.message}")
+                emitSnackbar("Error restoring shop data: ${e.safeMessage()}")
             }
         }
     }

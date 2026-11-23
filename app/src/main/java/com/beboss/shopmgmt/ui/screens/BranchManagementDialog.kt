@@ -101,6 +101,7 @@ import com.beboss.shopmgmt.ui.theme.LossRed
 import com.beboss.shopmgmt.ui.theme.OrangeLight
 import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
+import com.beboss.shopmgmt.ui.theme.WarningAmber
 import com.beboss.shopmgmt.util.AppLanguage
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
@@ -130,6 +131,9 @@ fun BranchManagementDialog(
     onSaveBranch: (Branch) -> Unit,
     onDeleteBranch: (String) -> Unit,
     onCreateStockTransfer: (productId: String, fromBranchId: String, fromBranchName: String, toBranchId: String, toBranchName: String, quantity: Double, notes: String) -> Unit = { _, _, _, _, _, _, _ -> },
+    onConfirmTransferReceived: (String) -> Unit = {},
+    onRejectStockTransfer: (String, String) -> Unit = { _, _ -> },
+    onUpdateBranchStatus: (String, String) -> Unit = { _, _ -> },
     onDeleteStockTransfer: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
@@ -140,6 +144,8 @@ fun BranchManagementDialog(
     var branchToDelete by remember { mutableStateOf<Branch?>(null) }
     var isCreatingTransfer by remember { mutableStateOf(false) }
     var transferToDelete by remember { mutableStateOf<StockTransfer?>(null) }
+    var transferToCancel by remember { mutableStateOf<StockTransfer?>(null) }
+    var cancelTransferReason by remember { mutableStateOf("Cancelled at destination — returning to source stock") }
 
     val decimalFormat = remember { DecimalFormat("#,###") }
     val totalRevenueAll = remember(sales) { sales.sumOf { it.totalAmount } }
@@ -443,6 +449,51 @@ fun BranchManagementDialog(
                                                 }
                                             }
 
+                                            Spacer(modifier = Modifier.height(6.dp))
+
+                                            val opColor = when (branch.operationalStatus.uppercase(Locale.US)) {
+                                                "CLOSED" -> LossRed
+                                                "PAUSED" -> WarningAmber
+                                                else -> ProfitGreen
+                                            }
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(999.dp),
+                                                    color = opColor.copy(alpha = 0.14f)
+                                                ) {
+                                                    Text(
+                                                        text = branch.operationalStatus,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = opColor,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                                if (branch.dailySalesTargetRwf > 0L) {
+                                                    val pct = ((branchRevenue / branch.dailySalesTargetRwf.toDouble()) * 100.0).coerceIn(0.0, 999.0)
+                                                    Text(
+                                                        text = "Target: ${decimalFormat.format(branch.dailySalesTargetRwf)} $currencySymbol (${pct.toInt()}%)",
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = if (pct >= 100.0) ProfitGreen else OrangePrimary
+                                                    )
+                                                }
+                                            }
+
+                                            if (branch.dailySalesTargetRwf > 0L) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                LinearProgressIndicator(
+                                                    progress = { (branchRevenue / branch.dailySalesTargetRwf.toDouble()).toFloat().coerceIn(0f, 1f) },
+                                                    modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)),
+                                                    color = if (branchRevenue >= branch.dailySalesTargetRwf) ProfitGreen else OrangePrimary,
+                                                    trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                                                )
+                                            }
+
                                             Spacer(modifier = Modifier.height(8.dp))
                                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                                             Spacer(modifier = Modifier.height(6.dp))
@@ -608,25 +659,30 @@ fun BranchManagementDialog(
                                                         )
                                                     }
 
+                                                    val transferColor = when (transfer.status.uppercase(Locale.US)) {
+                                                        "COMPLETED" -> ProfitGreen
+                                                        "CANCELLED" -> LossRed
+                                                        else -> WarningAmber
+                                                    }
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Surface(
                                                             shape = RoundedCornerShape(4.dp),
-                                                            color = ProfitGreen.copy(alpha = 0.15f)
+                                                            color = transferColor.copy(alpha = 0.15f)
                                                         ) {
                                                             Text(
                                                                 text = transfer.status,
                                                                 fontSize = 9.5.sp,
                                                                 fontWeight = FontWeight.Bold,
-                                                                color = ProfitGreen,
+                                                                color = transferColor,
                                                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                                             )
                                                         }
                                                         Spacer(modifier = Modifier.width(4.dp))
                                                         IconButton(
                                                             onClick = { transferToDelete = transfer },
-                                                            modifier = Modifier.size(24.dp)
+                                                            modifier = Modifier.size(32.dp)
                                                         ) {
-                                                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = LossRed, modifier = Modifier.size(14.dp))
+                                                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = LossRed, modifier = Modifier.size(16.dp))
                                                         }
                                                     }
                                                 }
@@ -661,6 +717,36 @@ fun BranchManagementDialog(
                                                 ) {
                                                     Text("By: ${transfer.transferredBy}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                     Text(dateStr, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+
+                                                if (transfer.status.equals("IN_TRANSIT", ignoreCase = true)) {
+                                                    Spacer(modifier = Modifier.height(8.dp))
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        Button(
+                                                            onClick = { onConfirmTransferReceived(transfer.id) },
+                                                            colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen),
+                                                            shape = RoundedCornerShape(8.dp),
+                                                            modifier = Modifier.weight(1f)
+                                                        ) {
+                                                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                            Spacer(Modifier.width(4.dp))
+                                                            Text("Confirm Received", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                        }
+                                                        OutlinedButton(
+                                                            onClick = {
+                                                                cancelTransferReason = "Cancelled at destination"
+                                                                transferToCancel = transfer
+                                                            },
+                                                            border = BorderStroke(1.dp, LossRed.copy(alpha = 0.6f)),
+                                                            shape = RoundedCornerShape(8.dp),
+                                                            modifier = Modifier.weight(1f)
+                                                        ) {
+                                                            Text("Cancel / Return", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LossRed)
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -819,15 +905,15 @@ fun BranchManagementDialog(
     }
 
     // Delete Branch Confirmation Dialog
-    if (branchToDelete != null) {
+    branchToDelete?.let { deleteBranchTarget ->
         AlertDialog(
             onDismissRequest = { branchToDelete = null },
             title = { Text(if (language == AppLanguage.KINYARWANDA) "Gusiba Ishami" else "Delete Branch Outlet", fontWeight = FontWeight.Bold) },
-            text = { Text(if (language == AppLanguage.KINYARWANDA) "Wizera neza ko ushaka gusiba ishami '${branchToDelete!!.name}'?" else "Are you sure you want to remove '${branchToDelete!!.name}'? Its historic sales will remain archived.") },
+            text = { Text(if (language == AppLanguage.KINYARWANDA) "Wizera neza ko ushaka gusiba ishami '${deleteBranchTarget.name}'?" else "Are you sure you want to remove '${deleteBranchTarget.name}'? Its historic sales will remain archived.") },
             confirmButton = {
                 Button(
                     onClick = {
-                        onDeleteBranch(branchToDelete!!.id)
+                        onDeleteBranch(deleteBranchTarget.id)
                         branchToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed)
@@ -844,15 +930,15 @@ fun BranchManagementDialog(
     }
 
     // Delete Transfer Confirmation Dialog
-    if (transferToDelete != null) {
+    transferToDelete?.let { deleteTransferTarget ->
         AlertDialog(
             onDismissRequest = { transferToDelete = null },
             title = { Text(if (language == AppLanguage.KINYARWANDA) "Gusiba Transfer" else "Delete Transfer Record", fontWeight = FontWeight.Bold) },
-            text = { Text("Are you sure you want to remove transfer '${transferToDelete!!.transferNumber}'?") },
+            text = { Text("Are you sure you want to remove transfer '${deleteTransferTarget.transferNumber}'?") },
             confirmButton = {
                 Button(
                     onClick = {
-                        onDeleteStockTransfer(transferToDelete!!.id)
+                        onDeleteStockTransfer(deleteTransferTarget.id)
                         transferToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed)
@@ -863,6 +949,41 @@ fun BranchManagementDialog(
             dismissButton = {
                 OutlinedButton(onClick = { transferToDelete = null }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    transferToCancel?.let { cancelTarget ->
+        AlertDialog(
+            onDismissRequest = { transferToCancel = null },
+            title = { Text("Cancel & Return Stock Transfer", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Return ${cancelTarget.quantity.toInt()} ${cancelTarget.unit} of ${cancelTarget.productName} back to ${cancelTarget.fromBranchName}?")
+                    OutlinedTextField(
+                        value = cancelTransferReason,
+                        onValueChange = { cancelTransferReason = it },
+                        label = { Text("Cancellation Reason") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRejectStockTransfer(cancelTarget.id, cancelTransferReason.trim().ifBlank { "Cancelled" })
+                        transferToCancel = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = LossRed)
+                ) {
+                    Text("Return Stock", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { transferToCancel = null }) {
+                    Text("Keep In-Transit")
                 }
             }
         )
@@ -1078,13 +1199,16 @@ fun CreateStockTransferDialog(
 
                 Button(
                     onClick = {
-                        if (isValid) {
+                        val prod = selectedProduct
+                        val src = fromBranch
+                        val dst = toBranch
+                        if (prod != null && src != null && dst != null && src != dst && parsedQty > 0) {
                             onTransfer(
-                                selectedProduct!!.id,
-                                fromBranch!!.id,
-                                fromBranch!!.name,
-                                toBranch!!.id,
-                                toBranch!!.name,
+                                prod.id,
+                                src.id,
+                                src.name,
+                                dst.id,
+                                dst.name,
                                 parsedQty,
                                 notes
                             )
@@ -1121,6 +1245,12 @@ fun BranchFormDialog(
     var code by remember { mutableStateOf(initialBranch?.code ?: "BR-0${branchesCount + 1}") }
     var address by remember { mutableStateOf(initialBranch?.address ?: "Kigali, Rwanda") }
     var phone by remember { mutableStateOf(initialBranch?.phone ?: "+250 ") }
+    var email by remember { mutableStateOf(initialBranch?.email ?: "") }
+    var dailyTargetInput by remember { mutableStateOf(initialBranch?.dailySalesTargetRwf?.takeIf { it > 0L }?.toString() ?: "") }
+    var monthlyTargetInput by remember { mutableStateOf(initialBranch?.monthlyTargetRwf?.takeIf { it > 0L }?.toString() ?: "") }
+    var openingFloatInput by remember { mutableStateOf(initialBranch?.openingCashFloat?.takeIf { it > 0L }?.toString() ?: "") }
+    var operationalStatus by remember { mutableStateOf(initialBranch?.operationalStatus?.ifBlank { "OPEN" } ?: "OPEN") }
+    var notes by remember { mutableStateOf(initialBranch?.notes ?: "") }
     var managerUserId by remember { mutableStateOf(initialBranch?.managerUserId ?: "") }
     var managerName by remember { mutableStateOf(initialBranch?.managerName ?: "") }
     var isMain by remember { mutableStateOf(initialBranch?.isMainBranch ?: false) }
@@ -1259,6 +1389,89 @@ fun BranchFormDialog(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Branch Email (Optional)") },
+                    placeholder = { Text("branch@company.com") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = dailyTargetInput,
+                        onValueChange = { dailyTargetInput = it.filter { ch -> ch.isDigit() } },
+                        label = { Text("Daily Target") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = monthlyTargetInput,
+                        onValueChange = { monthlyTargetInput = it.filter { ch -> ch.isDigit() } },
+                        label = { Text("Monthly Target") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = openingFloatInput,
+                    onValueChange = { openingFloatInput = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Opening Cash Register Float") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text("Operational Status", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    listOf("OPEN", "PAUSED", "CLOSED").forEach { st ->
+                        val selected = operationalStatus == st
+                        OutlinedButton(
+                            onClick = { operationalStatus = st },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (selected) OrangePrimary.copy(alpha = 0.16f) else Color.Transparent
+                            )
+                        ) {
+                            Text(
+                                st,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (selected) OrangePrimary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Branch Notes / Shift Rules") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    maxLines = 2
+                )
+
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Is Main HQ Branch switch
@@ -1326,6 +1539,12 @@ fun BranchFormDialog(
                                     managerName = managerName.trim(),
                                     isMainBranch = isMain,
                                     isActive = isActive,
+                                    dailySalesTargetRwf = dailyTargetInput.toLongOrNull() ?: 0L,
+                                    monthlyTargetRwf = monthlyTargetInput.toLongOrNull() ?: 0L,
+                                    openingCashFloat = openingFloatInput.toLongOrNull() ?: 0L,
+                                    operationalStatus = operationalStatus,
+                                    email = email.trim(),
+                                    notes = notes.trim(),
                                     createdAt = initialBranch?.createdAt ?: System.currentTimeMillis(),
                                     updatedAt = System.currentTimeMillis()
                                 )

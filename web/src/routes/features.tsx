@@ -32,7 +32,6 @@ import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { ReceiptVerifier } from "@/components/site/ReceiptVerifier";
 import { SECTORS } from "@/components/site/content";
 import { useI18n } from "@/lib/i18n";
-import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/features")({
   head: () => ({
@@ -93,19 +92,18 @@ const SCALE_CAPABILITIES = [
 
 function FeaturesPage() {
   const { t, p } = useI18n();
-  const a = useAdminText();
   return (
     <SiteLayout>
       <PageHero eyebrow={t("navFeatures")} title={t("featuresTitle")} sub={t("featuresSub")}>
         <div className="flex flex-wrap items-center gap-3">
           <Button asChild variant="hero" size="lg">
             <Link to="/download">
-              {a("Download the Android app")} <ArrowRight />
+              Download the Android app <ArrowRight />
             </Link>
           </Button>
           <Button asChild variant="glass" size="lg">
             <Link to="/pricing">
-              {a("View plans")} <ArrowUpRight />
+              View plans <ArrowUpRight />
             </Link>
           </Button>
         </div>
@@ -116,29 +114,29 @@ function FeaturesPage() {
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               <CheckCircle2 className="size-3.5" />
-              {a("Product capability map")}
+              Product capability map
             </div>
             <h2 id="feature-catalog-title" className="mt-4 text-3xl font-bold sm:text-4xl">
-              {a("Daily retail work, connected from the counter to management")}
+              Daily retail work, connected from the counter to management
             </h2>
             <p className="mt-3 text-base leading-7 text-muted-foreground">
-              {a("BeBoss combines checkout, stock movement, customer balances, staff workflows and operational reporting in one Android-first system. The capabilities below describe what the product is built to do; each rollout should validate its devices, staff roles, branch structure and data before going live.")}
+              BeBoss combines checkout, stock movement, customer balances, staff workflows and operational reporting in one Android-first system. The capabilities below describe what the product is built to do; each rollout should validate its devices, staff roles, branch structure and data before going live.
             </p>
           </div>
 
           {p.features.map((g, gi) => (
             <section key={gi} className="grid gap-6 border-t border-border pt-8 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10">
               <div className="lg:sticky lg:top-24 lg:self-start">
-                <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-primary">{a("Capability group")} 0{gi + 1}</p>
+                <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-primary">Capability group 0{gi + 1}</p>
                 <h3 className="mt-2 text-2xl font-bold">{g.title}</h3>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   {gi === 0
-                    ? a("Fast, accountable transactions for busy tills and customer-facing teams.")
+                    ? "Fast, accountable transactions for busy tills and customer-facing teams."
                     : gi === 1
-                      ? a("Stock and money records that help managers make decisions from recorded business activity.")
+                      ? "Stock and money records that help managers make decisions from recorded business activity."
                       : gi === 2
-                        ? a("Keep each branch and operator connected while preserving local workflows.")
-                        : a("Protect business records and make access to the operating system accountable.")}
+                        ? "Keep each branch and operator connected while preserving local workflows."
+                        : "Protect business records and make access to the operating system accountable."}
                 </p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -163,13 +161,13 @@ function FeaturesPage() {
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-semibold text-success">
               <Network className="size-3.5" />
-              {a("Built for growing operations")}
+              Built for growing operations
             </div>
             <h2 id="scale-title" className="mt-4 text-3xl font-bold sm:text-4xl">
-              {a("Start with one store. Keep the operating model as the business expands.")}
+              Start with one store. Keep the operating model as the business expands.
             </h2>
             <p className="mt-3 leading-7 text-muted-foreground">
-              {a("The same product model supports a single counter, a multi-branch retailer, a pharmacy group, a wholesale operation or a growing distribution business. Larger deployments should be rolled out by branch and role, with named operational owners and acceptance checks at each stage.")}
+              The same product model supports a single counter, a multi-branch retailer, a pharmacy group, a wholesale operation or a growing distribution business. Larger deployments should be rolled out by branch and role, with named operational owners and acceptance checks at each stage.
             </p>
           </div>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -179,28 +177,28 @@ function FeaturesPage() {
                   <span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary">
                     <item.icon className="size-5" />
                   </span>
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{a(item.tag)}</span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{item.tag}</span>
                 </div>
-                <h3 className="mt-4 font-semibold">{a(item.title)}</h3>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{a(item.body)}</p>
+                <h3 className="mt-4 font-semibold">{item.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.body}</p>
               </article>
             ))}
           </div>
           <div className="mt-8 grid gap-4 border-t border-border pt-6 md:grid-cols-3">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-primary">{a("01 · Configure")}</p>
-              <h3 className="mt-2 font-semibold">{a("Map the organisation")}</h3>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">{a("Define shops, branches, terminals, staff responsibilities and product ownership before rollout.")}</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-primary">01 · Configure</p>
+              <h3 className="mt-2 font-semibold">Map the organisation</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Define shops, branches, terminals, staff responsibilities and product ownership before rollout.</p>
             </div>
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-primary">{a("02 · Pilot")}</p>
-              <h3 className="mt-2 font-semibold">{a("Validate real workflows")}</h3>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">{a("Test checkout, offline operation, printer models, stock reconciliation, payment review and device recovery with representative teams.")}</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-primary">02 · Pilot</p>
+              <h3 className="mt-2 font-semibold">Validate real workflows</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Test checkout, offline operation, printer models, stock reconciliation, payment review and device recovery with representative teams.</p>
             </div>
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-primary">{a("03 · Expand")}</p>
-              <h3 className="mt-2 font-semibold">{a("Roll out with oversight")}</h3>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">{a("Use central administration and branch-level routines to extend the deployment after each pilot gate is accepted.")}</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-primary">03 · Expand</p>
+              <h3 className="mt-2 font-semibold">Roll out with oversight</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Use central administration and branch-level routines to extend the deployment after each pilot gate is accepted.</p>
             </div>
           </div>
         </section>
@@ -209,32 +207,32 @@ function FeaturesPage() {
           <div className="rounded-[2.5rem] border border-border bg-card p-6 sm:p-9">
             <div className="flex items-center gap-3 text-primary">
               <ShieldCheck className="size-6" />
-              <span className="text-xs font-bold uppercase tracking-[0.16em]">{a("Security implementation")}</span>
+              <span className="text-xs font-bold uppercase tracking-[0.16em]">Security implementation</span>
             </div>
-            <h2 className="mt-3 text-3xl font-bold">{a("Safeguards with clear boundaries")}</h2>
+            <h2 className="mt-3 text-3xl font-bold">Safeguards with clear boundaries</h2>
             <p className="mt-3 text-sm leading-7 text-muted-foreground">
-              {a("BeBoss uses multiple layers of protection, but software cannot eliminate every device, staff, network or operational risk. Hardware-backed Keystore support depends on the Android device, and a checksum should not be confused with a digital signature.")}
+              BeBoss uses multiple layers of protection, but software cannot eliminate every device, staff, network or operational risk. Hardware-backed Keystore support depends on the Android device, and a checksum should not be confused with a digital signature.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-border bg-surface p-4">
                 <Database className="size-5 text-primary" />
-                <h3 className="mt-3 font-semibold">{a("Encrypted local database")}</h3>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">{a("Room and SQLCipher protect local business records at rest; Android Keystore protects the database key material.")}</p>
+                <h3 className="mt-3 font-semibold">Encrypted local database</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">Room and SQLCipher protect local business records at rest; Android Keystore protects the database key material.</p>
               </div>
               <div className="rounded-2xl border border-border bg-surface p-4">
                 <Cpu className="size-5 text-primary" />
-                <h3 className="mt-3 font-semibold">{a("Device integrity signals")}</h3>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">{a("Clock rollback detection and device security telemetry help administrators investigate unusual device state.")}</p>
+                <h3 className="mt-3 font-semibold">Device integrity signals</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">Clock rollback detection and device security telemetry help administrators investigate unusual device state.</p>
               </div>
               <div className="rounded-2xl border border-border bg-surface p-4">
                 <KeyRound className="size-5 text-primary" />
-                <h3 className="mt-3 font-semibold">{a("Payment-linked BB3 codes")}</h3>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">{a("New BB3 codes use server-side ECDSA P-256 signatures and bind activation to a verified payment claim and registered shop.")}</p>
+                <h3 className="mt-3 font-semibold">Payment-linked BB3 codes</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">New BB3 codes use server-side ECDSA P-256 signatures and bind activation to a verified payment claim and registered shop.</p>
               </div>
               <div className="rounded-2xl border border-border bg-surface p-4">
                 <Lock className="size-5 text-primary" />
-                <h3 className="mt-3 font-semibold">{a("Scoped shop data")}</h3>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">{a("Shop-scoped access policies are used to separate customer business records between tenants.")}</p>
+                <h3 className="mt-3 font-semibold">Scoped shop data</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">Shop-scoped access policies are used to separate customer business records between tenants.</p>
               </div>
             </div>
           </div>
@@ -242,13 +240,13 @@ function FeaturesPage() {
           <div className="rounded-[2.5rem] border border-warning/25 bg-warning/5 p-6 sm:p-9">
             <div className="flex items-center gap-3 text-warning">
               <CheckCircle2 className="size-6" />
-              <span className="text-xs font-bold uppercase tracking-[0.16em]">{a("Operational transparency")}</span>
+              <span className="text-xs font-bold uppercase tracking-[0.16em]">Operational transparency</span>
             </div>
-            <h2 className="mt-3 text-2xl font-bold">{a("Important integration boundaries")}</h2>
+            <h2 className="mt-3 text-2xl font-bold">Important integration boundaries</h2>
             <div className="mt-5 space-y-4 text-sm leading-6 text-muted-foreground">
-              <p><strong className="text-foreground">{a("Mobile Money:")}</strong> {a("payment instructions and proof submission are supported, but settlement must be checked against the official MTN MoMo or Airtel Money merchant record before an administrator approves activation. Do not treat a customer screenshot or SMS as settlement confirmation.")}</p>
-              <p><strong className="text-foreground">{a("Receipt verification:")}</strong> {a("the receipt checksum detects changes to included receipt fields. It is not a PKI digital signature and should not be presented as independent proof of issuer identity.")}</p>
-              <p><strong className="text-foreground">{a("Enterprise integrations:")}</strong> {a("external ERP connectors, corporate SSO, contractual uptime SLAs and independent compliance certifications are not represented as delivered capabilities by this release.")}</p>
+              <p><strong className="text-foreground">Mobile Money:</strong> payment instructions and proof submission are supported, but settlement must be checked against the official MTN MoMo or Airtel Money merchant record before an administrator approves activation. Do not treat a customer screenshot or SMS as settlement confirmation.</p>
+              <p><strong className="text-foreground">Receipt verification:</strong> the receipt checksum detects changes to included receipt fields. It is not a PKI digital signature and should not be presented as independent proof of issuer identity.</p>
+              <p><strong className="text-foreground">Enterprise integrations:</strong> external ERP connectors, corporate SSO, contractual uptime SLAs and independent compliance certifications are not represented as delivered capabilities by this release.</p>
             </div>
           </div>
         </section>
@@ -259,10 +257,10 @@ function FeaturesPage() {
 
         <section className="rounded-[2rem] border border-border bg-surface p-8 sm:p-12">
           <div className="max-w-3xl">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">{a("Where BeBoss fits")}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Where BeBoss fits</p>
             <h2 className="mt-2 text-3xl font-bold">{t("sectorsTitle")}</h2>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              {a("The product's checkout, stock, customer balance and branch workflows can be configured for a wide range of retail and service operations.")}
+              The product's checkout, stock, customer balance and branch workflows can be configured for a wide range of retail and service operations.
             </p>
           </div>
           <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -276,11 +274,11 @@ function FeaturesPage() {
           <div className="mt-10 flex flex-wrap items-center gap-3">
             <Button asChild variant="hero" size="lg">
               <Link to="/download">
-                {a("Download BeBoss")} <ArrowRight />
+                Download BeBoss <ArrowRight />
               </Link>
             </Button>
             <Button asChild variant="glass" size="lg">
-              <Link to="/contact">{a("Discuss a multi-branch pilot")} <ArrowUpRight /></Link>
+              <Link to="/contact">Discuss a multi-branch pilot <ArrowUpRight /></Link>
             </Button>
           </div>
         </section>

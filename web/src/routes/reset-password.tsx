@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/site/Logo";
 import { supabase } from "@/integrations/supabase/client";
-import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/reset-password")({
   head: () => ({
@@ -25,7 +24,6 @@ export const Route = createFileRoute("/reset-password")({
 });
 
 function ResetPage() {
-  const a = useAdminText();
   const navigate = useNavigate();
   const [ready, setReady] = useState(false);
   const [isInvitation, setIsInvitation] = useState(false);
@@ -46,7 +44,7 @@ function ResetPage() {
         if (error) toast.error(error.message);
         if (data.session && (inviteMode || recoveryMode)) setReady(true);
       } catch (error) {
-        if (active) toast.error(error instanceof Error ? error.message : a("Could not verify this password link."));
+        if (active) toast.error(error instanceof Error ? error.message : "Could not verify this password link.");
       }
     };
     void restoreVerifiedSession();
@@ -68,7 +66,7 @@ function ResetPage() {
     event.preventDefault();
     if (!ready || busy) return;
     if (pw.length < 10) {
-      toast.error(a("Use at least 10 characters for your password."));
+      toast.error("Use at least 10 characters for your password.");
       return;
     }
     setBusy(true);
@@ -78,10 +76,10 @@ function ResetPage() {
         toast.error(error.message);
         return;
       }
-      toast.success(isInvitation ? a("Your admin password is set. Welcome to BeBoss.") : a("Password updated."));
+      toast.success(isInvitation ? "Your admin password is set. Welcome to BeBoss." : "Password updated.");
       navigate({ to: "/admin" });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : a("Could not update your password."));
+      toast.error(error instanceof Error ? error.message : "Could not update your password.");
     } finally {
       setBusy(false);
     }
@@ -90,28 +88,28 @@ function ResetPage() {
   return (
     <div className="reset-page-shell grid min-h-screen place-items-center bg-ember px-4">
       <div className="w-full max-w-sm space-y-6">
-        <div className="flex justify-center"><Logo suffix={a("Admin")} /></div>
+        <div className="flex justify-center"><Logo suffix="Admin" /></div>
         <form onSubmit={submit} className="reset-page-card space-y-4 rounded-3xl border border-border bg-card p-7">
           <div className="grid size-11 place-items-center rounded-2xl border border-primary/25 bg-primary/10 text-primary">
             <ShieldCheck size={21} />
           </div>
-          <h1 className="text-xl font-bold">{isInvitation ? a("Set your admin password") : a("Choose a new password")}</h1>
+          <h1 className="text-xl font-bold">{isInvitation ? "Set your admin password" : "Choose a new password"}</h1>
           {!ready ? (
             <p className="text-sm text-muted-foreground">
-              {a("Open the secure invitation or password-reset link from your email to continue.")}
+              Open the secure invitation or password-reset link from your email to continue.
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              {isInvitation ? a("Create a password for your invited BeBoss admin account.") : a("Choose a new password for your BeBoss admin account.")}
+              {isInvitation ? "Create a password for your invited BeBoss admin account." : "Choose a new password for your BeBoss admin account."}
             </p>
           )}
           <div className="space-y-2">
-            <Label htmlFor="np">{a("New password")}</Label>
+            <Label htmlFor="np">New password</Label>
             <Input id="np" type="password" value={pw} onChange={(event) => setPw(event.target.value)} minLength={10} required autoComplete="new-password" disabled={!ready || busy} />
           </div>
           <Button type="submit" variant="hero" className="w-full" disabled={!ready || busy}>
             {busy ? <Loader2 className="animate-spin" /> : null}
-            {isInvitation ? a("Set password and continue") : a("Update password")}
+            {isInvitation ? "Set password and continue" : "Update password"}
           </Button>
         </form>
       </div>

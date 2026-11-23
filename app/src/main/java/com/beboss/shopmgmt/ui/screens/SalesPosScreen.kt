@@ -57,6 +57,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -84,9 +85,12 @@ import com.beboss.shopmgmt.data.model.CartItem
 import com.beboss.shopmgmt.data.model.Customer
 import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.ShopProfile
+import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.ui.theme.BackgroundLight
 import com.beboss.shopmgmt.ui.theme.InkDark
 import com.beboss.shopmgmt.ui.theme.InkMedium
+import com.beboss.shopmgmt.ui.theme.LossRed
+import com.beboss.shopmgmt.ui.theme.LossRedLight
 import com.beboss.shopmgmt.ui.theme.OrangeLight
 import com.beboss.shopmgmt.ui.theme.OrangePrimary
 import com.beboss.shopmgmt.ui.theme.ProfitGreen
@@ -107,6 +111,7 @@ fun SalesPosScreen(
     cartState: CartState,
     heldCarts: List<HeldCart> = emptyList(),
     shopProfile: ShopProfile,
+    currentUser: User? = null,
     language: AppLanguage = AppLanguage.ENGLISH,
     onAddToCart: (Product) -> Unit,
     onUpdateQuantity: (String, Double) -> Unit,
@@ -531,6 +536,51 @@ fun SalesPosScreen(
                     }
                 }
 
+                val selectedCustomerObj = customers.firstOrNull { it.id == cartState.selectedCustomerId }
+                if (selectedCustomerObj != null && selectedCustomerObj.creditLimit > 0.0) {
+                    val projectedDebt = selectedCustomerObj.debtBalance +
+                        if (cartState.paymentMethod == "CREDIT_DEBT") (cartState.netTotal - cartState.effectiveAmountPaid).coerceAtLeast(0.0) else 0.0
+                    val utilRatio = (selectedCustomerObj.debtBalance / selectedCustomerObj.creditLimit).toFloat().coerceIn(0f, 1f)
+                    val remainingCredit = (selectedCustomerObj.creditLimit - selectedCustomerObj.debtBalance).coerceAtLeast(0.0)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (projectedDebt > selectedCustomerObj.creditLimit) LossRedLight else Color(0xFFF3F4F6),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(
+                                    "Credit Limit: ${ReceiptGenerator.formatMoney(selectedCustomerObj.creditLimit, shopProfile)}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = InkDark
+                                )
+                                Text(
+                                    "Available: ${ReceiptGenerator.formatMoney(remainingCredit, shopProfile)}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (projectedDebt > selectedCustomerObj.creditLimit) LossRed else ProfitGreen
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { utilRatio },
+                                modifier = Modifier.fillMaxWidth().height(5.dp),
+                                color = if (selectedCustomerObj.debtBalance >= selectedCustomerObj.creditLimit) LossRed else OrangePrimary,
+                                trackColor = Color(0xFFE5E7EB)
+                            )
+                            if (cartState.paymentMethod == "CREDIT_DEBT" && projectedDebt > selectedCustomerObj.creditLimit) {
+                                Text(
+                                    "Credit limit exceeded by ${ReceiptGenerator.formatMoney(projectedDebt - selectedCustomerObj.creditLimit, shopProfile)}. Reduce balance or collect upfront payment.",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = LossRed
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Cart Items List
@@ -797,14 +847,22 @@ fun SalesPosScreen(
                 }
 
                 // Discount and Amount Paid inputs
+                val canDiscount = currentUser?.canApplyDiscounts ?: true
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedTextField(
                         value = if (cartState.discountAmount > 0) cartState.discountAmount.toString() else "",
-                        onValueChange = { onSetDiscount(it.toDoubleOrNull() ?: 0.0) },
-                        label = { Text(Localization.format("pos_discount_label_fmt", language, shopProfile.currencySymbol), fontSize = 12.sp) },
+                        onValueChange = { if (canDiscount) onSetDiscount(it.toDoubleOrNull() ?: 0.0) },
+                        enabled = canDiscount,
+                        label = {
+                            Text(
+                                if (canDiscount) Localization.format("pos_discount_label_fmt", language, shopProfile.currencySymbol)
+                                else "Discount (Restricted)",
+                                fontSize = 12.sp
+                            )
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp),
@@ -828,6 +886,10 @@ fun SalesPosScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Totals & Profit Breakdown Box
+                val showVat = shopProfile.taxRate > 0.0 && shopProfile.showTaxOnReceipt
+                val includedTax = if (showVat) cartState.netTotal * (shopProfile.taxRate / (100.0 + shopProfile.taxRate)) else 0.0
+                val canViewProfit = currentUser?.canViewCostAndProfit ?: true
+
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0xFFFFF0E6),
@@ -851,6 +913,15 @@ fun SalesPosScreen(
                                 Text("-${ReceiptGenerator.formatMoney(cartState.discountAmount, shopProfile)}", fontSize = 13.sp, color = ProfitGreen)
                             }
                         }
+                        if (showVat) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Incl. VAT (${shopProfile.taxRate.toInt()}%):", fontSize = 12.sp, color = InkMedium)
+                                Text(ReceiptGenerator.formatMoney(includedTax, shopProfile), fontSize = 12.sp, color = InkDark)
+                            }
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
@@ -864,24 +935,31 @@ fun SalesPosScreen(
                             )
                         }
 
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color(0xFFFFD8BF))
+                        if (canViewProfit) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color(0xFFFFD8BF))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(Localization.get("pos_est_profit_sale", language), fontSize = 12.sp, color = InkMedium)
-                            Text(
-                                "+${ReceiptGenerator.formatMoney(cartState.estimatedProfit, shopProfile)}",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = ProfitGreen
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(Localization.get("pos_est_profit_sale", language), fontSize = 12.sp, color = InkMedium)
+                                Text(
+                                    "+${ReceiptGenerator.formatMoney(cartState.estimatedProfit, shopProfile)}",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ProfitGreen
+                                )
+                            }
                         }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
+
+                val creditLimitExceeded = cartState.paymentMethod == "CREDIT_DEBT" &&
+                    selectedCustomerObj != null &&
+                    selectedCustomerObj.creditLimit > 0.0 &&
+                    (selectedCustomerObj.debtBalance + (cartState.netTotal - cartState.effectiveAmountPaid).coerceAtLeast(0.0)) > selectedCustomerObj.creditLimit
 
                 // Complete Sale Button
                 Button(
@@ -891,6 +969,7 @@ fun SalesPosScreen(
                             onCheckout()
                         }
                     },
+                    enabled = !creditLimitExceeded,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
@@ -1075,7 +1154,7 @@ fun BarcodeLookupDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                if (matchedProduct != null) {
+                matchedProduct?.let { product ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = Color(0xFFDCFCE7),
@@ -1087,15 +1166,15 @@ fun BarcodeLookupDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text(matchedProduct!!.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
+                                Text(product.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkDark)
                                 Text(
-                                    Localization.format("pos_price_stock_meta_fmt", language, "${matchedProduct!!.sellingPrice} $currencySymbol", "${matchedProduct!!.quantityInStock}"),
+                                    Localization.format("pos_price_stock_meta_fmt", language, "${product.sellingPrice} $currencySymbol", "${product.quantityInStock}"),
                                     fontSize = 12.sp,
                                     color = InkMedium
                                 )
                             }
                             Button(
-                                onClick = { onProductScanned(matchedProduct!!) },
+                                onClick = { onProductScanned(product) },
                                 colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
@@ -1103,8 +1182,10 @@ fun BarcodeLookupDialog(
                             }
                         }
                     }
-                } else if (barcodeInput.isNotBlank()) {
-                    Text(Localization.format("pos_barcode_no_match_fmt", language, barcodeInput), color = Color(0xFFDC2626), fontSize = 12.sp)
+                } ?: run {
+                    if (barcodeInput.isNotBlank()) {
+                        Text(Localization.format("pos_barcode_no_match_fmt", language, barcodeInput), color = Color(0xFFDC2626), fontSize = 12.sp)
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

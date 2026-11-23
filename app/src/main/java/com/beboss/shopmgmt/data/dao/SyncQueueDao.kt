@@ -22,6 +22,12 @@ interface SyncQueueDao {
     @Query("SELECT COUNT(*) FROM sync_queue WHERE status = 'PENDING'")
     fun getPendingCount(): Flow<Int>
 
+    @Query("SELECT * FROM sync_queue WHERE status = 'DEAD_LETTER' ORDER BY createdAt DESC")
+    fun getDeadLetterQueueFlow(): Flow<List<SyncQueueItem>>
+
+    @Query("SELECT * FROM sync_queue WHERE status != 'SYNCED' ORDER BY createdAt DESC LIMIT 200")
+    fun getActiveAndFailedQueueFlow(): Flow<List<SyncQueueItem>>
+
     @Query("SELECT COUNT(*) FROM sync_queue WHERE status = 'DEAD_LETTER'")
     suspend fun getDeadLetterCount(): Int
 
@@ -48,6 +54,12 @@ interface SyncQueueDao {
 
     @Query("UPDATE sync_queue SET status = 'SYNCED', syncedAt = :syncedAt, lastError = '' WHERE id IN (:ids)")
     suspend fun markAllSynced(ids: List<String>, syncedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE sync_queue SET status = 'PENDING', retryCount = 0, nextAttemptAt = :nowMs, lastError = '' WHERE status = 'DEAD_LETTER'")
+    suspend fun requeueDeadLetters(nowMs: Long = System.currentTimeMillis()): Int
+
+    @Query("UPDATE sync_queue SET status = 'PENDING', retryCount = 0, nextAttemptAt = :nowMs, lastError = '' WHERE id = :id")
+    suspend fun requeueItem(id: String, nowMs: Long = System.currentTimeMillis()): Int
 
     @Query("DELETE FROM sync_queue WHERE status = 'SYNCED'")
     suspend fun purgeSyncedItems()

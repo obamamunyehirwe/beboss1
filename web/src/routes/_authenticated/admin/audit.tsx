@@ -6,14 +6,12 @@ import { Button } from "@/components/ui/button";
 import { EmptyState, LoadingBlock, PageHeader, SearchInput, StatusBadge, TableShell, downloadCsv, matches } from "@/components/admin/ui";
 import { auditQuery } from "@/lib/admin-queries";
 import { formatDateTime } from "@/lib/format";
-import { useAdminText } from "@/lib/admin-copy";
 
 export const Route = createFileRoute("/_authenticated/admin/audit")({
   component: AuditPage,
 });
 
 function AuditPage() {
-  const a = useAdminText();
   const { data, isLoading } = useQuery(auditQuery);
   const [q, setQ] = useState("");
   const [action, setAction] = useState("ALL");
@@ -22,18 +20,18 @@ function AuditPage() {
   return (
     <div>
       <PageHeader
-        title={a("Audit log")}
+        title="Audit log"
         sub="Every admin action — from the web admin center and the in-app master console — recorded with who, what and when."
         actions={
           <Button size="sm" variant="glass" onClick={() => downloadCsv(`beboss-audit-${Date.now()}.csv`, rows.map((r) => ({ ...r, created_at_iso: new Date(r.created_at).toISOString() })))}>
-            <Download /> {a("Export")}
+            <Download /> Export
           </Button>
         }
       />
       <div className="mb-4 flex flex-wrap gap-3">
         <SearchInput value={q} onChange={setQ} placeholder="Search admin, target, details…" />
         <select value={action} onChange={(e) => setAction(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
-          <option value="ALL">{a("All actions")}</option>
+          <option value="ALL">All actions</option>
           {actions.map((a) => (
             <option key={a} value={a}>
               {a}
@@ -44,17 +42,17 @@ function AuditPage() {
       {isLoading ? (
         <LoadingBlock />
       ) : !rows.length ? (
-        <EmptyState title={a("No audit entries")} />
+        <EmptyState title="No audit entries" />
       ) : (
         <TableShell>
           <table className="w-full text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">{a("When")}</th>
-                <th className="px-4 py-3">{a("Action")}</th>
-                <th className="px-4 py-3">{a("Target")}</th>
-                <th className="px-4 py-3">{a("Details")}</th>
-                <th className="px-4 py-3">{a("Admin")}</th>
+                <th className="px-4 py-3">When</th>
+                <th className="px-4 py-3">Action</th>
+                <th className="px-4 py-3">Target</th>
+                <th className="px-4 py-3">Details</th>
+                <th className="px-4 py-3">Admin</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">

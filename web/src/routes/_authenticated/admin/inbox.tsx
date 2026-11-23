@@ -36,9 +36,9 @@ function InboxPage() {
 
   return (
     <div>
-      <PageHeader title={a("Inbox")} sub="Messages from the website contact form, updated live." />
+      <PageHeader title="Inbox" sub="Messages from the website contact form, updated live." />
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder={a("Search name, shop, phone, message…")} />
+        <SearchInput value={q} onChange={setQ} placeholder="Search name, shop, phone, message…" />
         <FilterChips<F>
           value={f}
           onChange={setF}
@@ -54,7 +54,7 @@ function InboxPage() {
       {isLoading ? (
         <LoadingBlock />
       ) : !rows.length ? (
-        <EmptyState title={a("Inbox zero")} sub="New messages from the Contact page show up here instantly." />
+        <EmptyState title="Inbox zero" sub="New messages from the Contact page show up here instantly." />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
           <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
@@ -159,7 +159,7 @@ function MessageDetail({ m }: { m: ContactMessage }) {
             title={a("Delete this message?")}
             description={a("It is removed permanently.")}
             destructive
-            confirmLabel={a("Delete")}
+            confirmLabel="Delete"
             onConfirm={() => del.mutate({ id: m.id })}
           />
         ) : (
@@ -186,7 +186,7 @@ function AiDraft({ m }: { m: ContactMessage }) {
     <div className="mt-4 rounded-2xl border border-primary/30 bg-primary/5 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-center gap-2 text-sm font-medium">
-          <Bot className="size-4 text-primary" /> {a("AI reply draft")}
+          <Bot className="size-4 text-primary" /> AI reply draft
         </p>
         <div className="flex items-center gap-2">
           <Select value={tone} onValueChange={(v) => setTone(v as "friendly" | "formal")}>
@@ -194,8 +194,8 @@ function AiDraft({ m }: { m: ContactMessage }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="friendly">{a("Friendly")}</SelectItem>
-              <SelectItem value="formal">{a("Formal")}</SelectItem>
+              <SelectItem value="friendly">Friendly</SelectItem>
+              <SelectItem value="formal">Formal</SelectItem>
             </SelectContent>
           </Select>
           <Button size="sm" variant="soft" disabled={draft.isPending} onClick={() => draft.mutate()}>
@@ -208,26 +208,26 @@ function AiDraft({ m }: { m: ContactMessage }) {
           <Textarea className="mt-3" rows={6} value={text} onChange={(e) => setText(e.target.value)} />
           <div className="mt-2 flex flex-wrap justify-end gap-2">
             <Button size="sm" variant="glass" onClick={async () => { await navigator.clipboard.writeText(text); toast.success("Copied"); }}>
-              <Copy /> {a("Copy")}
+              <Copy /> Copy
             </Button>
             {m.phone ? (
               <Button size="sm" variant="success" asChild>
                 <a href={buildWhatsAppUrl(m.phone, text)} target="_blank" rel="noreferrer">
-                  <MessageCircle /> {a("Send on WhatsApp")}
+                  <MessageCircle /> Send on WhatsApp
                 </a>
               </Button>
             ) : null}
             {m.email ? (
               <Button size="sm" variant="glass" asChild>
                 <a href={`mailto:${m.email}?subject=${encodeURIComponent("Re: your BeBoss message")}&body=${encodeURIComponent(text)}`}>
-                  <Mail /> {a("Email it")}
+                  <Mail /> Email it
                 </a>
               </Button>
             ) : null}
           </div>
         </>
       ) : (
-        <p className="mt-2 text-xs text-muted-foreground">{a("Writes a reply in the customer's language using your current prices and payment numbers. Review before sending.")}</p>
+        <p className="mt-2 text-xs text-muted-foreground">Writes a reply in the customer's language using your current prices and payment numbers. Review before sending.</p>
       )}
     </div>
   );

@@ -155,7 +155,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                 reachable = false,
                 latencyMs = latency,
                 statusCode = 0,
-                message = "Unreachable: ${e.localizedMessage ?: "Connection timed out"}"
+                message = "Unreachable: ${e.safeMessage("Connection timed out")}"
             )
         }
     }
@@ -165,6 +165,7 @@ class CloudSyncManager(private val database: AppDatabase) {
         activeBranchId: String = "main_branch",
         deviceId: String = "DEV-LOCAL",
         context: Context? = null,
+        retryDeadLetters: Boolean = false,
         mergeRemoteSummary: (suspend (ShopImportSummary) -> BranchMergeResult)? = null
     ): CloudSyncReport = syncMutex.withLock {
         withContext(Dispatchers.IO) {
@@ -239,7 +240,34 @@ class CloudSyncManager(private val database: AppDatabase) {
 
             val tombstones = database.syncTombstoneDao().getAllTombstonesList()
 
-            // Process due outbox items
+            val deadLetterDao = database.deadLetterDao()
+
+            // Process due outbox items (and optionally requeue dead letters on manual sync)
+            if (retryDeadLetters) {
+                syncQueueDao.requeueDeadLetters(now)
+                for (dl in deadLetterDao.getAllItemsList()) {
+                    val existing = syncQueueDao.getSyncQueueItem(dl.originalItemId)
+                    if (existing == null) {
+                        syncQueueDao.enqueue(
+                            com.beboss.shopmgmt.data.model.SyncQueueItem(
+                                id = dl.originalItemId,
+                                tableName = dl.tableName,
+                                recordId = dl.originalItemId,
+                                operation = dl.operation,
+                                payloadJson = dl.payloadJson,
+                                retryCount = 0,
+                                status = "PENDING",
+                                lastError = "",
+                                nextAttemptAt = now,
+                                createdAt = dl.createdAt
+                            )
+                        )
+                    } else if (existing.status == "DEAD_LETTER") {
+                        syncQueueDao.requeueItem(existing.id, now)
+                    }
+                    deadLetterDao.deleteById(dl.id)
+                }
+            }
             val dueQueueItems = syncQueueDao.getDueQueueItems(nowMs = now, limit = 250)
 
             val chunkedTokens = ShopDataTransferManager.exportChunkedTokens(
@@ -492,12 +520,19 @@ class CloudSyncManager(private val database: AppDatabase) {
                         users = latestUsers
                     )
 
-                val peerSnapshots = SupabaseAdminClient.latestCompleteSnapshotChunks(
-                    SupabaseAdminClient.fetchShopBranchSnapshots(
-                        shopSyncKey = shopSyncKey,
-                        excludingDeviceId = deviceId
+                val peerSnapshots = try {
+                    SupabaseAdminClient.latestCompleteSnapshotChunks(
+                        SupabaseAdminClient.fetchShopBranchSnapshots(
+                            shopSyncKey = shopSyncKey,
+                            excludingDeviceId = deviceId
+                        )
                     )
-                )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to fetch cloud branch snapshots: ${e.safeMessage("Snapshot fetch failed")}")
+                    emptyList()
+                }
 
                 for (snap in peerSnapshots) {
                     try {
@@ -509,7 +544,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        Log.w(TAG, "Skipped corrupt branch snapshot ${snap.id}: ${e.message}")
+                        Log.w(TAG, "Skipped corrupt branch snapshot ${snap.id}: ${e.safeMessage("Corrupt snapshot")}")
                     }
                 }
 
@@ -597,7 +632,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        Log.w(TAG, "Failed to merge cloud branches/transfers: ${e.message}")
+                        Log.w(TAG, "Failed to merge cloud branches/transfers: ${e.safeMessage("Merge failed")}")
                     }
                 }
 
@@ -648,7 +683,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                 isSafeEndpointUrl(endpoint)
 
             if (hasCustomEndpoint) {
-                val cleanEp = endpoint!!.trim().removeSuffix("/")
+                val cleanEp = endpoint?.trim()?.removeSuffix("/").orEmpty()
                 val exportJson = ShopDataTransferManager.createExportJson(
                     profile = profile,
                     users = users,
@@ -692,21 +727,21 @@ class CloudSyncManager(private val database: AppDatabase) {
                                     val rProducts = respJson.getJSONArray("remoteProducts")
                                     for (i in 0 until rProducts.length()) {
                                         val rp = rProducts.getJSONObject(i)
-                                        val pId = rp.optString("id", "").ifBlank { UUID.randomUUID().toString() }
+                                        val pId = rp.optCleanString("id", "").ifBlank { UUID.randomUUID().toString() }
                                         val remoteUpdated = rp.optLong("updatedAt", 0L)
                                         val existingProd = productDao.getProductById(pId)
                                         if (existingProd == null || remoteUpdated > existingProd.updatedAt) {
                                             productDao.insertProduct(
                                                 Product(
                                                     id = pId,
-                                                    name = rp.optString("name", "Product"),
-                                                    category = rp.optString("category", "General"),
+                                                    name = rp.optCleanString("name", "Product"),
+                                                    category = rp.optCleanString("category", "General"),
                                                     costPrice = rp.optDouble("costPrice", 0.0).coerceAtLeast(0.0),
                                                     sellingPrice = rp.optDouble("sellingPrice", 0.0).coerceAtLeast(0.0),
                                                     quantityInStock = rp.optDouble("quantityInStock", 0.0).coerceAtLeast(0.0),
-                                                    unit = rp.optString("unit", "pcs"),
-                                                    barcode = rp.optString("barcode", ""),
-                                                    branchId = rp.optString("branchId", "main_branch").ifBlank { "main_branch" },
+                                                    unit = rp.optCleanString("unit", "pcs"),
+                                                    barcode = rp.optCleanString("barcode", ""),
+                                                    branchId = rp.optCleanString("branchId", "main_branch").ifBlank { "main_branch" },
                                                     updatedAt = remoteUpdated
                                                 )
                                             )
@@ -722,8 +757,10 @@ class CloudSyncManager(private val database: AppDatabase) {
                         } else {
                             break
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
-                        Log.w(TAG, "Custom server sync attempt $attempt failed: ${e.message}")
+                        Log.w(TAG, "Custom server sync attempt $attempt failed: ${e.safeMessage("Connection failed")}")
                         if (attempt < 3) {
                             delay(400L * (1 shl (attempt - 1)) + Random.nextLong(50, 250))
                         }
@@ -761,13 +798,29 @@ class CloudSyncManager(private val database: AppDatabase) {
                     val nextRetry = qItem.retryCount + 1
                     val isDead = nextRetry >= MAX_QUEUE_RETRIES
                     val backoffMs = min(3_600_000L, 5_000L * (1L shl nextRetry.coerceAtMost(8))) + Random.nextLong(200, 1000)
+                    val errText = "Cloud unreachable on attempt #$nextRetry"
                     syncQueueDao.recordAttemptFailure(
                         id = qItem.id,
                         retryCount = nextRetry,
                         nextAttemptAt = now + backoffMs,
-                        lastError = "Cloud unreachable on attempt #$nextRetry",
+                        lastError = errText,
                         status = if (isDead) "DEAD_LETTER" else "PENDING"
                     )
+                    if (isDead) {
+                        val existingDl = deadLetterDao.getByOriginalItemId(qItem.id)
+                        deadLetterDao.insert(
+                            com.beboss.shopmgmt.data.model.DeadLetterItem(
+                                id = existingDl?.id ?: java.util.UUID.randomUUID().toString(),
+                                originalItemId = qItem.id,
+                                tableName = qItem.tableName,
+                                operation = qItem.operation,
+                                payloadJson = qItem.payloadJson,
+                                failureReason = errText,
+                                failureCount = nextRetry,
+                                createdAt = qItem.createdAt
+                            )
+                        )
+                    }
                 }
 
                 val latency = System.currentTimeMillis() - startTime
@@ -793,6 +846,9 @@ class CloudSyncManager(private val database: AppDatabase) {
 
             if (dueQueueItems.isNotEmpty()) {
                 syncQueueDao.markAllSynced(dueQueueItems.map { it.id }, now)
+                for (syncedItem in dueQueueItems) {
+                    deadLetterDao.getByOriginalItemId(syncedItem.id)?.let { deadLetterDao.delete(it) }
+                }
             }
             val unsyncedSales = saleDao.getUnsyncedSales()
             for (s in unsyncedSales) {
@@ -828,16 +884,17 @@ class CloudSyncManager(private val database: AppDatabase) {
             throw e
         } catch (e: Exception) {
             val latency = System.currentTimeMillis() - startTime
-            Log.e(TAG, "Cloud branch sync failed", e)
+            val errMsg = e.safeMessage("Could not complete cloud sync")
+            Log.e(TAG, "Cloud branch sync failed: $errMsg", e)
             addAuditLog(
                 type = "BRANCH_AUTO_SYNC",
                 status = "FAILED",
-                summary = "Error: ${e.localizedMessage ?: "Unknown"}",
+                summary = "Error: $errMsg",
                 latencyMs = latency
             )
             CloudSyncReport(
                 state = CloudSyncState.ERROR,
-                message = "Branch sync error: ${e.localizedMessage ?: "Unknown"}",
+                message = "Branch sync error: $errMsg",
                 latencyMs = latency
             )
         }
@@ -888,6 +945,50 @@ class CloudSyncManager(private val database: AppDatabase) {
         }
     }
 
+    suspend fun requeueSingleDeadLetter(idOrOriginalId: String) {
+        val syncQueueDao = database.syncQueueDao()
+        val deadLetterDao = database.deadLetterDao()
+        val now = System.currentTimeMillis()
+        syncQueueDao.requeueItem(idOrOriginalId, now)
+        val dlItem = deadLetterDao.getAllItemsList().firstOrNull {
+            it.id == idOrOriginalId || it.originalItemId == idOrOriginalId
+        }
+        if (dlItem != null) {
+            if (syncQueueDao.getSyncQueueItem(dlItem.originalItemId) == null) {
+                syncQueueDao.enqueue(
+                    com.beboss.shopmgmt.data.model.SyncQueueItem(
+                        id = dlItem.originalItemId,
+                        tableName = dlItem.tableName,
+                        recordId = dlItem.originalItemId,
+                        operation = dlItem.operation,
+                        payloadJson = dlItem.payloadJson,
+                        retryCount = 0,
+                        status = "PENDING",
+                        lastError = "",
+                        nextAttemptAt = now,
+                        createdAt = dlItem.createdAt
+                    )
+                )
+            } else {
+                syncQueueDao.requeueItem(dlItem.originalItemId, now)
+            }
+            deadLetterDao.delete(dlItem)
+        }
+    }
+
+    suspend fun discardDeadLetter(idOrOriginalId: String) {
+        val syncQueueDao = database.syncQueueDao()
+        val deadLetterDao = database.deadLetterDao()
+        syncQueueDao.deleteSyncQueueItem(idOrOriginalId)
+        val dlItem = deadLetterDao.getAllItemsList().firstOrNull {
+            it.id == idOrOriginalId || it.originalItemId == idOrOriginalId
+        }
+        if (dlItem != null) {
+            syncQueueDao.deleteSyncQueueItem(dlItem.originalItemId)
+            deadLetterDao.delete(dlItem)
+        }
+    }
+
     /**
      * Sync with exponential backoff retry logic.
      * Attempts to sync up to maxRetries times with increasing delays.
@@ -898,6 +999,8 @@ class CloudSyncManager(private val database: AppDatabase) {
             try {
                 val report = syncAllDataToCloud()
                 return report.state == CloudSyncState.SYNCED
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (attempt < maxRetries - 1) {
                     kotlinx.coroutines.delay(delay)

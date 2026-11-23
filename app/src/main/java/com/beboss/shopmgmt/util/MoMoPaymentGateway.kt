@@ -199,7 +199,8 @@ object MoMoPaymentGateway {
 
         // Execute real HTTP API call to configured payment gateway endpoint
         val referenceId = UUID.randomUUID().toString()
-        val requestUrl = if (backendUrl!!.endsWith("/")) "${backendUrl}api/momo/request-to-pay" else "$backendUrl/api/momo/request-to-pay"
+        val safeBackendUrl = backendUrl.orEmpty().trim()
+        val requestUrl = if (safeBackendUrl.endsWith("/")) "${safeBackendUrl}api/momo/request-to-pay" else "$safeBackendUrl/api/momo/request-to-pay"
 
         try {
             val jsonBody = JSONObject().apply {
@@ -239,8 +240,8 @@ object MoMoPaymentGateway {
             }
 
             val respJson = try { JSONObject(responseBody) } catch (_: Exception) { JSONObject() }
-            val status = respJson.optString("status", "PENDING").uppercase(Locale.ROOT)
-            val financialId = respJson.optString("financialTransactionId", "")
+            val status = respJson.optCleanString("status", "PENDING").uppercase(Locale.ROOT)
+            val financialId = respJson.optCleanString("financialTransactionId", "")
 
             when (status) {
                 "SUCCESSFUL", "SUCCESS" -> {
@@ -260,7 +261,7 @@ object MoMoPaymentGateway {
                     // Poll gateway up to 3 times with delay
                     var pollStatus = "PENDING"
                     var pollFinancialId = ""
-                    val statusUrl = if (backendUrl.endsWith("/")) "${backendUrl}api/momo/status/$referenceId" else "$backendUrl/api/momo/status/$referenceId"
+                    val statusUrl = if (safeBackendUrl.endsWith("/")) "${safeBackendUrl}api/momo/status/$referenceId" else "$safeBackendUrl/api/momo/status/$referenceId"
 
                     for (attempt in 1..3) {
                         delay(2500)
@@ -269,12 +270,14 @@ object MoMoPaymentGateway {
                             val pollResp = httpClient.newCall(pollReq).execute()
                             if (pollResp.isSuccessful) {
                                 val pJson = JSONObject(pollResp.body?.string() ?: "{}")
-                                pollStatus = pJson.optString("status", "PENDING").uppercase(Locale.ROOT)
-                                pollFinancialId = pJson.optString("financialTransactionId", "")
+                                pollStatus = pJson.optCleanString("status", "PENDING").uppercase(Locale.ROOT)
+                                pollFinancialId = pJson.optCleanString("financialTransactionId", "")
                                 if (pollStatus == "SUCCESSFUL" || pollStatus == "SUCCESS") break
                             }
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
                         } catch (e: Exception) {
-                            Log.w(TAG, "Polling attempt $attempt failed: ${e.message}")
+                            Log.w(TAG, "Polling attempt $attempt failed: ${e.safeMessage("Poll error")}")
                         }
                     }
 
@@ -314,10 +317,12 @@ object MoMoPaymentGateway {
                         amount = amount,
                         provider = provider,
                         payerPhone = normalizedPhone,
-                        message = "Payment $status: ${respJson.optString("message", "User declined or insufficient balance.")}"
+                        message = "Payment $status: ${respJson.optCleanString("message", "User declined or insufficient balance.")}"
                     )
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Gateway communication exception", e)
             GatewayTransactionResult(
@@ -329,7 +334,7 @@ object MoMoPaymentGateway {
                 amount = amount,
                 provider = provider,
                 payerPhone = normalizedPhone,
-                message = "Could not reach payment gateway: ${e.localizedMessage ?: "Connection timed out"}"
+                message = "Could not reach payment gateway: ${e.safeMessage("Connection timed out")}"
             )
         }
     }

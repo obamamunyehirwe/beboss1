@@ -120,10 +120,14 @@ import com.beboss.shopmgmt.util.MessageDispatchRecord
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
 import com.beboss.shopmgmt.util.PdfReportGenerator
 import com.beboss.shopmgmt.util.SubscriptionSecurityManager
+import com.beboss.shopmgmt.ui.screens.admin.AdminCloudHealthTab
+import com.beboss.shopmgmt.ui.screens.admin.AdminFleetTelemetryTab
+import com.beboss.shopmgmt.util.CloudHealthDiagnosticsDto
 import com.beboss.shopmgmt.util.SupabaseAdminClient
 import com.beboss.shopmgmt.util.SupabaseAdminSession
 import com.beboss.shopmgmt.util.SupabaseAuditLogDto
 import com.beboss.shopmgmt.util.SupabaseBranchSnapshotDto
+import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
 import com.beboss.shopmgmt.util.SupabasePaymentRequestDto
 import com.beboss.shopmgmt.util.SupabaseShopAccountDto
 import com.beboss.shopmgmt.util.SupabaseShopDeviceDto
@@ -171,6 +175,14 @@ fun AdminVerificationConsoleDialog(
     onDeleteShopUser: (SupabaseShopUserDto) -> Unit = {},
     onDeleteBranchSnapshot: (SupabaseBranchSnapshotDto) -> Unit = {},
     onShareWebPortal: () -> Unit,
+    deviceTelemetry: List<SupabaseDeviceTelemetryDto> = emptyList(),
+    cloudHealth: CloudHealthDiagnosticsDto? = null,
+    onRunCloudDiagnostics: () -> Unit = {},
+    onLoadMoreShops: () -> Unit = {},
+    onLoadMorePayments: () -> Unit = {},
+    onLoadMoreTelemetry: () -> Unit = {},
+    onExportAdminCsv: () -> Unit = {},
+    onExportExecutivePdf: () -> Unit = {},
     clockTamperStatus: ClockTamperStatus = ClockGuard.tamperStatus.value,
     capturedLocation: CapturedLocation = LocationHelper.lastLocation.value,
     messageRecords: List<MessageDispatchRecord> = MessageAuditManager.records.value,
@@ -597,11 +609,24 @@ fun AdminVerificationConsoleDialog(
                             modifier = Modifier.testTag("admin_tab_pay_config"),
                             text = { Text(Localization.get("admin_tab_pay_config", language), fontSize = 11.5.sp, fontWeight = FontWeight.Bold) }
                         )
+                        Tab(
+                            selected = selectedTab == 9,
+                            onClick = { selectedTab = 9 },
+                            modifier = Modifier.testTag("admin_tab_telemetry"),
+                            text = { Text("Telemetry (${deviceTelemetry.size})", fontSize = 11.5.sp, fontWeight = FontWeight.Bold) }
+                        )
+                        Tab(
+                            selected = selectedTab == 10,
+                            onClick = { selectedTab = 10 },
+                            modifier = Modifier.testTag("admin_tab_cloud_health"),
+                            text = { Text("Cloud & Exports", fontSize = 11.5.sp, fontWeight = FontWeight.Bold) }
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
                     if (lastGeneratedCode != null) {
+                        val generatedCodeSnapshot = lastGeneratedCode.orEmpty()
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = ProfitGreen.copy(alpha = 0.1f),
@@ -611,7 +636,7 @@ fun AdminVerificationConsoleDialog(
                             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text("${Localization.get("admin_kpi_bb3_issued", language)} (@$lastTargetUsername)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ProfitGreen)
                                 Text(
-                                    text = lastGeneratedCode!!,
+                                    text = generatedCodeSnapshot,
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Black,
@@ -621,7 +646,7 @@ fun AdminVerificationConsoleDialog(
                                     OutlinedButton(
                                         onClick = {
                                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            clipboard.setPrimaryClip(ClipData.newPlainText("BeBoss Unlock Code", lastGeneratedCode!!))
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("BeBoss Unlock Code", generatedCodeSnapshot))
                                             Toast.makeText(context, "Unlock code copied!", Toast.LENGTH_SHORT).show()
                                         },
                                         modifier = Modifier
@@ -638,7 +663,7 @@ fun AdminVerificationConsoleDialog(
                                             val msg = OfflineSubscriptionManager.buildAdminUnlockReplyWhatsAppMessage(
                                                 shopName = shopProfile.shopName.ifBlank { "BeBoss Shop" },
                                                 username = lastTargetUsername,
-                                                unlockCode = lastGeneratedCode!!,
+                                                unlockCode = generatedCodeSnapshot,
                                                 daysAdded = lastTargetDays,
                                                 tierName = "$manualTier ($lastTargetAmount FRw)"
                                             )
@@ -949,6 +974,14 @@ fun AdminVerificationConsoleDialog(
                                         }
                                     }
                                 }
+                                if (paymentRequests.size >= 100) {
+                                    OutlinedButton(
+                                        onClick = onLoadMorePayments,
+                                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp).testTag("admin_load_more_payments_btn")
+                                    ) {
+                                        Text("Load More Payment Claims")
+                                    }
+                                }
                             }
                         }
 
@@ -1092,6 +1125,14 @@ fun AdminVerificationConsoleDialog(
                                                 }
                                             }
                                         }
+                                    }
+                                }
+                                if (shopAccounts.size >= 150) {
+                                    OutlinedButton(
+                                        onClick = onLoadMoreShops,
+                                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp).testTag("admin_load_more_shops_btn")
+                                    ) {
+                                        Text("Load More Shop Accounts")
                                     }
                                 }
                             }
@@ -2007,7 +2048,7 @@ fun AdminVerificationConsoleDialog(
                             }
                         }
 
-                        else -> {
+                        8 -> {
                             // TAB 8: GLOBAL PAYMENT NUMBERS, USSD & ADMIN WHATSAPP CONFIG
                             var cfgWhatsApp by remember(paymentConfig) { mutableStateOf(paymentConfig.adminWhatsAppNumber) }
                             var cfgMtnCode by remember(paymentConfig) { mutableStateOf(paymentConfig.mtnMoMoCode) }
@@ -2194,14 +2235,35 @@ fun AdminVerificationConsoleDialog(
                                 }
                             }
                         }
+
+                        9 -> {
+                            AdminFleetTelemetryTab(
+                                telemetryList = deviceTelemetry,
+                                isLoading = isLoading,
+                                onRefresh = onRefresh,
+                                onLoadMore = onLoadMoreTelemetry
+                            )
+                        }
+
+                        else -> {
+                            AdminCloudHealthTab(
+                                cloudHealth = cloudHealth,
+                                shopCount = shopAccounts.size,
+                                paymentCount = paymentRequests.size,
+                                telemetryCount = deviceTelemetry.size,
+                                isLoading = isLoading,
+                                onRunDiagnostics = onRunCloudDiagnostics,
+                                onExportAdminCsv = onExportAdminCsv,
+                                onExportExecutivePdf = onExportExecutivePdf
+                            )
+                        }
                     }
                 }
             }
         }
     }
 
-    if (requestToVerify != null) {
-        val selectedPayment = requestToVerify!!
+    requestToVerify?.let { selectedPayment ->
         AlertDialog(
             onDismissRequest = { requestToVerify = null },
             title = { Text("Verify ${selectedPayment.provider} payment", fontWeight = FontWeight.Bold) },
@@ -2237,7 +2299,7 @@ fun AdminVerificationConsoleDialog(
         )
     }
 
-    if (requestToReject != null) {
+    requestToReject?.let { rejectTarget ->
         AlertDialog(
             onDismissRequest = { requestToReject = null },
             title = {
@@ -2250,7 +2312,7 @@ fun AdminVerificationConsoleDialog(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Rejecting claim from @${requestToReject!!.ownerUsername} (${requestToReject!!.amountRwf} FRw).",
+                        text = "Rejecting claim from @${rejectTarget.ownerUsername} (${rejectTarget.amountRwf} FRw).",
                         fontSize = 12.sp
                     )
                     OutlinedTextField(
@@ -2264,7 +2326,7 @@ fun AdminVerificationConsoleDialog(
             confirmButton = {
                 Button(
                     onClick = {
-                        onRejectPayment(requestToReject!!, rejectReasonInput.trim())
+                        onRejectPayment(rejectTarget, rejectReasonInput.trim())
                         requestToReject = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed)

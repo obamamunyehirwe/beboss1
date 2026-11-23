@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import com.beboss.shopmgmt.data.model.Sale
 import com.beboss.shopmgmt.data.model.ShopProfile
+import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.ui.theme.BackgroundLight
 import com.beboss.shopmgmt.ui.theme.InkDark
 import com.beboss.shopmgmt.ui.theme.InkMedium
@@ -70,10 +71,13 @@ import com.beboss.shopmgmt.util.ReceiptGenerator
 fun SalesHistoryScreen(
     sales: List<Sale>,
     shopProfile: ShopProfile,
+    currentUser: User? = null,
     language: AppLanguage = AppLanguage.ENGLISH,
     onOpenReceipt: (String) -> Unit,
     onDeleteSale: ((String, String) -> Unit)? = null
 ) {
+    val canDeleteSales = currentUser?.canDeleteRecords ?: true
+    val canViewProfit = currentUser?.canViewCostAndProfit ?: true
     var searchQuery by remember { mutableStateOf("") }
     var selectedPaymentMethod by remember { mutableStateOf("All") }
     var saleToDelete by remember { mutableStateOf<Sale?>(null) }
@@ -244,7 +248,7 @@ fun SalesHistoryScreen(
                                         fontSize = 11.sp,
                                         color = InkMedium
                                     )
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Surface(
                                             shape = RoundedCornerShape(4.dp),
                                             color = Color(0xFFF3F4F6)
@@ -255,6 +259,22 @@ fun SalesHistoryScreen(
                                                 color = InkDark,
                                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                             )
+                                        }
+                                        if (sale.branchName.isNotBlank()) {
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = OrangeLight
+                                            ) {
+                                                Text(
+                                                    text = sale.branchName,
+                                                    fontSize = 9.5.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = OrangePrimary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -270,15 +290,17 @@ fun SalesHistoryScreen(
                                         fontWeight = FontWeight.Black,
                                         color = InkDark
                                     )
-                                    Text(
-                                        text = Localization.format("hist_profit_fmt", language, ReceiptGenerator.formatMoney(sale.totalProfit, shopProfile)),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = ProfitGreen
-                                    )
+                                    if (canViewProfit) {
+                                        Text(
+                                            text = Localization.format("hist_profit_fmt", language, ReceiptGenerator.formatMoney(sale.totalProfit, shopProfile)),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = ProfitGreen
+                                        )
+                                    }
                                 }
 
-                                if (onDeleteSale != null) {
+                                if (onDeleteSale != null && canDeleteSales) {
                                     Spacer(modifier = Modifier.width(6.dp))
                                     IconButton(
                                         onClick = { saleToDelete = sale },
@@ -321,15 +343,18 @@ fun SalesHistoryScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = Localization.format(
-                            "hist_void_bullets_fmt",
-                            language,
-                            saleToDelete!!.receiptNumber,
-                            ReceiptGenerator.formatMoney(saleToDelete!!.totalAmount, shopProfile)
-                        ),
-                        fontSize = 12.sp
-                    )
+                    val targetSale = saleToDelete
+                    if (targetSale != null) {
+                        Text(
+                            text = Localization.format(
+                                "hist_void_bullets_fmt",
+                                language,
+                                targetSale.receiptNumber,
+                                ReceiptGenerator.formatMoney(targetSale.totalAmount, shopProfile)
+                            ),
+                            fontSize = 12.sp
+                        )
+                    }
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(quickReasons) { preset ->
                             FilterChip(
@@ -354,11 +379,13 @@ fun SalesHistoryScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val id = saleToDelete!!.id
+                        val id = saleToDelete?.id
                         val reason = refundReasonInput.trim()
                         saleToDelete = null
                         refundReasonInput = ""
-                        onDeleteSale?.invoke(id, reason)
+                        if (id != null) {
+                            onDeleteSale?.invoke(id, reason)
+                        }
                     },
                     enabled = refundReasonInput.trim().length >= 3,
                     colors = ButtonDefaults.buttonColors(containerColor = LossRed),
@@ -425,8 +452,7 @@ fun SalesHistoryScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    if (verificationResult != null) {
-                        val (valid, msg) = verificationResult!!
+                    verificationResult?.let { (valid, msg) ->
                         Surface(
                             shape = RoundedCornerShape(10.dp),
                             color = (if (valid) ProfitGreen else LossRed).copy(alpha = 0.14f),

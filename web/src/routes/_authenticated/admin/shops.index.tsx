@@ -8,8 +8,6 @@ import { codesQuery, devicesQuery, paymentsQuery, shopsQuery } from "@/lib/admin
 import { FLAG_LABEL, licenseFlags } from "@/lib/sync-health";
 import { effectiveShopStatus, type ShopLifecycle } from "@/lib/pricing";
 import { daysLeft, formatDate, formatRwf, relativeTime } from "@/lib/format";
-import { useAdminText } from "@/lib/admin-copy";
-import { useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/admin/shops/")({
   component: ShopsPage,
@@ -19,9 +17,6 @@ type F = ShopLifecycle | "ALL" | "EXPIRING" | "FLAGGED";
 type SortKey = "updated" | "expiry" | "fee" | "name";
 
 function ShopsPage() {
-  const a = useAdminText();
-  const { lang } = useI18n();
-  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const { data, isLoading } = useQuery(shopsQuery);
   const { data: devices } = useQuery(devicesQuery);
   const { data: codes } = useQuery(codesQuery);
@@ -69,8 +64,8 @@ function ShopsPage() {
   return (
     <div>
       <PageHeader
-        title={a("Shops")}
-        sub={a("Every registered BeBoss shop, its license, quotas and remote controls.")}
+        title="Shops"
+        sub="Every registered BeBoss shop, its license, quotas and remote controls."
         actions={
           <Button size="sm" variant="glass" onClick={() => downloadCsv(`beboss-shops-${Date.now()}.csv`, rows.map(({ eff, dev, flags, ...r }) => ({ ...r, effective_status: eff, paired_devices: dev, review_flags: flags.join(" ") })))}>
             <Download /> Export
@@ -78,12 +73,12 @@ function ShopsPage() {
         }
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <SearchInput value={q} onChange={setQ} placeholder={a("Search shop, owner, @username or phone…")} />
+        <SearchInput value={q} onChange={setQ} placeholder="Search shop, owner, @username or phone…" />
         <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
-          <option value="updated">{a("Last synced")}</option>
-          <option value="expiry">{a("Expiry soonest")}</option>
-          <option value="fee">{a("Highest fee")}</option>
-          <option value="name">{a("Name A–Z")}</option>
+          <option value="updated">Last synced</option>
+          <option value="expiry">Expiry soonest</option>
+          <option value="fee">Highest fee</option>
+          <option value="name">Name A–Z</option>
         </select>
       </div>
       <div className="mb-4">
@@ -105,18 +100,18 @@ function ShopsPage() {
       {isLoading ? (
         <LoadingBlock />
       ) : !rows.length ? (
-        <EmptyState title={a("No shops match")} sub={a("Shops appear here automatically when the BeBoss app syncs with internet.")} />
+        <EmptyState title="No shops match" sub="Shops appear here automatically when the BeBoss app syncs with internet." />
       ) : (
         <TableShell>
           <table className="w-full min-w-[820px] text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">{a("Shop")}</th>
-                <th className="px-4 py-3">{a("Status")}</th>
-                <th className="px-4 py-3">{a("Expires")}</th>
-                <th className="px-4 py-3">{a("Plan")}</th>
-                <th className="px-4 py-3">{a("Fee / mo")}</th>
-                <th className="px-4 py-3">{a("Last sync")}</th>
+                <th className="px-4 py-3">Shop</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Expires</th>
+                <th className="px-4 py-3">Plan</th>
+                <th className="px-4 py-3">Fee / mo</th>
+                <th className="px-4 py-3">Last sync</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -143,15 +138,15 @@ function ShopsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <p>{formatDate(s.subscription_expires_at)}</p>
-                      <p className={`text-xs ${dl < 0 ? "text-destructive" : dl <= 7 ? "text-warning" : "text-muted-foreground"}`}>{dl < 0 ? `${-dl} ${a("days ago")}` : `${dl} ${a("days left")}`}</p>
+                      <p className={`text-xs ${dl < 0 ? "text-destructive" : dl <= 7 ? "text-warning" : "text-muted-foreground"}`}>{dl < 0 ? `${-dl}d ago` : `${dl}d left`}</p>
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {s.branch_count} {a("branches")} • {s.worker_count} {a("staff")} • {s.dev}/{s.device_limit} {a("devices")}
+                      {s.branch_count} br • {s.worker_count} staff • {s.dev}/{s.device_limit} dev
                     </td>
                     <td className="px-4 py-3 font-mono">{formatRwf(s.monthly_fee_rwf)}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{relativeTime(s.updated_at, now, locale)}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{relativeTime(s.updated_at, now)}</td>
                     <td className="px-4 py-3 text-right">
-                      <Link to="/admin/shops/$shopId" params={{ shopId: s.id }} className="inline-flex text-muted-foreground hover:text-foreground" aria-label={`${a("Open shop")} ${s.shop_name}`}>
+                      <Link to="/admin/shops/$shopId" params={{ shopId: s.id }} className="inline-flex text-muted-foreground hover:text-foreground" aria-label={`Open ${s.shop_name}`}>
                         <ChevronRight className="size-4" />
                       </Link>
                     </td>

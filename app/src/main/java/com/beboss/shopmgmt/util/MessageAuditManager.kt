@@ -42,12 +42,12 @@ object MessageAuditManager {
                     val o = arr.optJSONObject(i) ?: continue
                     add(
                         MessageDispatchRecord(
-                            id = o.optString("id"),
-                            channel = o.optString("channel"),
-                            recipient = o.optString("recipient"),
-                            messageType = o.optString("messageType"),
-                            preview = o.optString("preview"),
-                            status = o.optString("status", "SENT"),
+                            id = o.optCleanString("id"),
+                            channel = o.optCleanString("channel"),
+                            recipient = o.optCleanString("recipient"),
+                            messageType = o.optCleanString("messageType"),
+                            preview = o.optCleanString("preview"),
+                            status = o.optCleanString("status", "SENT"),
                             timestampMs = o.optLong("timestampMs", 0L),
                             syncedToCloud = o.optBoolean("syncedToCloud", false)
                         )

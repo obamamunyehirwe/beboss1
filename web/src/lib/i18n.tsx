@@ -18,24 +18,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("en");
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(STORAGE);
-      if (saved && Object.prototype.hasOwnProperty.call(DICTS, saved)) {
-        setLangState(saved as Lang);
-      }
-    } catch {
-      // Continue with the default language when browser storage is unavailable.
-    }
-    const syncLanguage = (event: StorageEvent) => {
-      if (event.key !== STORAGE) return;
-      if (event.newValue && Object.prototype.hasOwnProperty.call(DICTS, event.newValue)) {
-        setLangState(event.newValue as Lang);
-      } else if (event.newValue === null) {
-        setLangState("en");
-      }
-    };
-    window.addEventListener("storage", syncLanguage);
-    return () => window.removeEventListener("storage", syncLanguage);
+    const saved = window.localStorage.getItem(STORAGE) as Lang | null;
+    if (saved && saved in DICTS) setLangState(saved);
   }, []);
 
   useEffect(() => {
@@ -46,13 +30,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     () => ({
       lang,
       setLang: (l) => {
-        if (!Object.prototype.hasOwnProperty.call(DICTS, l)) return;
         setLangState(l);
-        try {
-          window.localStorage.setItem(STORAGE, l);
-        } catch {
-          // Keep the current selection for this session when storage is unavailable.
-        }
+        window.localStorage.setItem(STORAGE, l);
       },
       t: (k) => DICTS[lang][k] ?? DICTS.en[k],
       p: PAGES[lang],
@@ -74,24 +53,8 @@ export function useStoredPageCopy(): PageCopy {
   const [lang, setLang] = useState<Lang>("en");
   useEffect(() => {
     if (ctx) return;
-    try {
-      const saved = window.localStorage.getItem(STORAGE);
-      if (saved && Object.prototype.hasOwnProperty.call(PAGES, saved)) {
-        setLang(saved as Lang);
-      }
-    } catch {
-      setLang("en");
-    }
-    const syncLanguage = (event: StorageEvent) => {
-      if (event.key !== STORAGE) return;
-      if (event.newValue && Object.prototype.hasOwnProperty.call(PAGES, event.newValue)) {
-        setLang(event.newValue as Lang);
-      } else if (event.newValue === null) {
-        setLang("en");
-      }
-    };
-    window.addEventListener("storage", syncLanguage);
-    return () => window.removeEventListener("storage", syncLanguage);
+    const saved = window.localStorage.getItem(STORAGE) as Lang | null;
+    if (saved && saved in PAGES) setLang(saved);
   }, [ctx]);
   return ctx ? ctx.p : PAGES[lang];
 }

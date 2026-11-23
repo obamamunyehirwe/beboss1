@@ -43,12 +43,12 @@ function AnnouncementsPage() {
   return (
     <div>
       <PageHeader
-        title={a("Announcements")}
+        title="Announcements"
         sub="Broadcast news, promotions and outage notices to the website, the Android app, or a single shop."
         actions={
           isAdmin ? (
             <Button variant="hero" size="sm" onClick={() => setEditing("new")}>
-              <Plus /> {a("New announcement")}
+              <Plus /> New announcement
             </Button>
           ) : null
         }
@@ -56,7 +56,7 @@ function AnnouncementsPage() {
       {isLoading ? (
         <LoadingBlock />
       ) : !data?.length ? (
-        <EmptyState title={a("No announcements yet")} sub="Create one to show a banner on the website and inside shop owners' My shop page. The app can read the same messages." />
+        <EmptyState title="No announcements yet" sub="Create one to show a banner on the website and inside shop owners' My shop page. The app can read the same messages." />
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
           {data.map((item) => {
@@ -66,7 +66,7 @@ function AnnouncementsPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={st === "LIVE" ? "ACTIVE" : st === "SCHEDULED" ? "PENDING_VERIFICATION" : "REVOKED"} />
                   <span className="text-xs text-muted-foreground">{st.toLowerCase()} · {item.audience.toLowerCase()} {item.target_shop_key ? `· shop ${item.target_shop_key}` : "· everyone"}</span>
-                  {item.translations && Object.keys(item.translations as object).length ? <span className="text-xs text-success">· {a("translated RW · FR · SW")}</span> : <span className="text-xs text-muted-foreground">{a("· English only")}</span>}
+                  {item.translations && Object.keys(item.translations as object).length ? <span className="text-xs text-success">· {a("translated RW · FR · SW")}</span> : <span className="text-xs text-muted-foreground">· English only</span>}
                 </div>
                 <div className="mt-3">
                   <AnnouncementCard a={item} />
@@ -89,7 +89,7 @@ function AnnouncementsPage() {
                         title={a("Delete announcement?")}
                         description={a("It disappears from the website and apps immediately.")}
                         destructive
-                        confirmLabel={a("Delete")}
+                        confirmLabel="Delete"
                         onConfirm={() => del.mutate({ id: item.id })}
                       />
                     </span>
@@ -192,18 +192,18 @@ function Editor({ initial, onDone }: { initial: Announcement | null; onDone: () 
           <Select value={f.audience} onValueChange={(v) => setF({ ...f, audience: v as AnnouncementInput["audience"] })}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">{a("Website and app")}</SelectItem>
-              <SelectItem value="WEBSITE">{a("Website only")}</SelectItem>
-              <SelectItem value="APP">{a("App and My shop only")}</SelectItem>
+              <SelectItem value="ALL">Website and app</SelectItem>
+              <SelectItem value="WEBSITE">Website only</SelectItem>
+              <SelectItem value="APP">App and My shop only</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>{a("Button label")}</Label>
+          <Label>Button label</Label>
           <Input value={f.cta_label} onChange={(e) => setF({ ...f, cta_label: e.target.value })} maxLength={40} placeholder={a("e.g. See pricing")} />
         </div>
         <div className="space-y-1.5">
-          <Label>{a("Button link")}</Label>
+          <Label>Button link</Label>
           <Input value={f.cta_url} onChange={(e) => setF({ ...f, cta_url: e.target.value })} maxLength={500} placeholder={a("/pricing or https://…")} />
         </div>
         <div className="space-y-1.5">
@@ -216,15 +216,15 @@ function Editor({ initial, onDone }: { initial: Announcement | null; onDone: () 
         </div>
       </div>
       <div className="space-y-1.5">
-        <Label>{a("Only for one shop (optional)")}</Label>
+        <Label>Only for one shop (optional)</Label>
         <Input value={f.target_shop_key} onChange={(e) => setF({ ...f, target_shop_key: e.target.value })} maxLength={200} placeholder={a("shop key, e.g. mama_788123456 — leave empty for everyone")} />
       </div>
       <label className="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm">
-        {a("Active")}
+        Active
         <Switch checked={f.is_active} onCheckedChange={(v) => setF({ ...f, is_active: v })} />
       </label>
       <div>
-        <p className="mb-2 text-xs text-muted-foreground">{a("Preview")}</p>
+        <p className="mb-2 text-xs text-muted-foreground">Preview</p>
         <AnnouncementCard a={preview} />
       </div>
       <Button type="submit" variant="hero" className="w-full" disabled={save.isPending}>

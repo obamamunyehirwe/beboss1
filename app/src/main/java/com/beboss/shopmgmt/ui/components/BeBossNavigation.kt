@@ -102,6 +102,7 @@ fun BeBossTopBar(
     currentScreen: AppScreen,
     shopProfile: ShopProfile,
     currentUser: User? = null,
+    activeBranchLabel: String = "",
     pendingSyncCount: Int,
     isSyncing: Boolean,
     language: AppLanguage,
@@ -170,6 +171,17 @@ fun BeBossTopBar(
                                 fontSize = 10.5.sp,
                                 color = OrangePrimary,
                                 fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (activeBranchLabel.isNotBlank()) {
+                            Text(
+                                text = " • $activeBranchLabel",
+                                fontFamily = GopherFontFamily,
+                                fontSize = 10.sp,
+                                color = ProfitGreen,
+                                fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -306,52 +318,67 @@ fun BeBossBottomNav(
     cartItemCount: Int,
     lowStockCount: Int,
     debtorCount: Int = 0,
+    canViewAnalytics: Boolean = true,
     language: AppLanguage,
     onNavigate: (AppScreen) -> Unit,
     onOpenQuickActions: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
 
-    val navItems = listOf(
-        NavItem(
-            screen = AppScreen.DASHBOARD,
-            label = Localization.get("dashboard", language),
-            icon = Icons.Default.Dashboard,
-            badgeCount = 0
-        ),
-        NavItem(
-            screen = AppScreen.SALES_POS,
-            label = Localization.get("sales_pos", language),
-            icon = Icons.Default.AddShoppingCart,
-            badgeCount = cartItemCount,
-            isBadgePrimary = true
-        ),
-        NavItem(
-            screen = AppScreen.INVENTORY,
-            label = Localization.get("inventory", language),
-            icon = Icons.Default.Inventory2,
-            badgeCount = lowStockCount,
-            isBadgeError = true
-        ),
-        NavItem(
-            screen = AppScreen.ANALYTICS,
-            label = Localization.get("analytics", language),
-            icon = Icons.Default.BarChart,
-            badgeCount = 0
-        ),
-        NavItem(
-            screen = AppScreen.CUSTOMERS,
-            label = Localization.get("customers", language),
-            icon = Icons.Default.People,
-            badgeCount = debtorCount
-        ),
-        NavItem(
-            screen = AppScreen.SETTINGS,
-            label = Localization.get("settings", language),
-            icon = Icons.Default.Settings,
-            badgeCount = 0
+    val navItems = buildList {
+        add(
+            NavItem(
+                screen = AppScreen.DASHBOARD,
+                label = Localization.get("dashboard", language),
+                icon = Icons.Default.Dashboard,
+                badgeCount = 0
+            )
         )
-    )
+        add(
+            NavItem(
+                screen = AppScreen.SALES_POS,
+                label = Localization.get("sales_pos", language),
+                icon = Icons.Default.AddShoppingCart,
+                badgeCount = cartItemCount,
+                isBadgePrimary = true
+            )
+        )
+        add(
+            NavItem(
+                screen = AppScreen.INVENTORY,
+                label = Localization.get("inventory", language),
+                icon = Icons.Default.Inventory2,
+                badgeCount = lowStockCount,
+                isBadgeError = true
+            )
+        )
+        if (canViewAnalytics) {
+            add(
+                NavItem(
+                    screen = AppScreen.ANALYTICS,
+                    label = Localization.get("analytics", language),
+                    icon = Icons.Default.BarChart,
+                    badgeCount = 0
+                )
+            )
+        }
+        add(
+            NavItem(
+                screen = AppScreen.CUSTOMERS,
+                label = Localization.get("customers", language),
+                icon = Icons.Default.People,
+                badgeCount = debtorCount
+            )
+        )
+        add(
+            NavItem(
+                screen = AppScreen.SETTINGS,
+                label = Localization.get("settings", language),
+                icon = Icons.Default.Settings,
+                badgeCount = 0
+            )
+        )
+    }
 
     val selectedIndex = navItems.indexOfFirst { it.screen == currentScreen }.coerceAtLeast(0)
 
@@ -530,51 +557,66 @@ fun BeBossNavigationRail(
     cartItemCount: Int,
     lowStockCount: Int,
     debtorCount: Int = 0,
+    canViewAnalytics: Boolean = true,
     language: AppLanguage,
     onNavigate: (AppScreen) -> Unit,
     onOpenQuickActions: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
-    val navItems = listOf(
-        NavItem(
-            screen = AppScreen.DASHBOARD,
-            label = Localization.get("dashboard", language),
-            icon = Icons.Default.Dashboard,
-            badgeCount = 0
-        ),
-        NavItem(
-            screen = AppScreen.SALES_POS,
-            label = Localization.get("sales_pos", language),
-            icon = Icons.Default.AddShoppingCart,
-            badgeCount = cartItemCount,
-            isBadgePrimary = true
-        ),
-        NavItem(
-            screen = AppScreen.INVENTORY,
-            label = Localization.get("inventory", language),
-            icon = Icons.Default.Inventory2,
-            badgeCount = lowStockCount,
-            isBadgeError = true
-        ),
-        NavItem(
-            screen = AppScreen.ANALYTICS,
-            label = Localization.get("analytics", language),
-            icon = Icons.Default.BarChart,
-            badgeCount = 0
-        ),
-        NavItem(
-            screen = AppScreen.CUSTOMERS,
-            label = Localization.get("customers", language),
-            icon = Icons.Default.People,
-            badgeCount = debtorCount
-        ),
-        NavItem(
-            screen = AppScreen.SETTINGS,
-            label = Localization.get("settings", language),
-            icon = Icons.Default.Settings,
-            badgeCount = 0
+    val navItems = buildList {
+        add(
+            NavItem(
+                screen = AppScreen.DASHBOARD,
+                label = Localization.get("dashboard", language),
+                icon = Icons.Default.Dashboard,
+                badgeCount = 0
+            )
         )
-    )
+        add(
+            NavItem(
+                screen = AppScreen.SALES_POS,
+                label = Localization.get("sales_pos", language),
+                icon = Icons.Default.AddShoppingCart,
+                badgeCount = cartItemCount,
+                isBadgePrimary = true
+            )
+        )
+        add(
+            NavItem(
+                screen = AppScreen.INVENTORY,
+                label = Localization.get("inventory", language),
+                icon = Icons.Default.Inventory2,
+                badgeCount = lowStockCount,
+                isBadgeError = true
+            )
+        )
+        if (canViewAnalytics) {
+            add(
+                NavItem(
+                    screen = AppScreen.ANALYTICS,
+                    label = Localization.get("analytics", language),
+                    icon = Icons.Default.BarChart,
+                    badgeCount = 0
+                )
+            )
+        }
+        add(
+            NavItem(
+                screen = AppScreen.CUSTOMERS,
+                label = Localization.get("customers", language),
+                icon = Icons.Default.People,
+                badgeCount = debtorCount
+            )
+        )
+        add(
+            NavItem(
+                screen = AppScreen.SETTINGS,
+                label = Localization.get("settings", language),
+                icon = Icons.Default.Settings,
+                badgeCount = 0
+            )
+        )
+    }
 
     androidx.compose.material3.NavigationRail(
         containerColor = MaterialTheme.colorScheme.surface,

@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.beboss.shopmgmt.util.safeMessage
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.ui.components.BeBossBlurLoadingContainer
@@ -134,9 +135,7 @@ class MainActivity : ComponentActivity() {
                     }
                     databaseReady = true
                 } catch (error: Throwable) {
-                    startupError = error.localizedMessage
-                        ?.takeIf { it.isNotBlank() }
-                        ?: error.javaClass.simpleName
+                    startupError = error.safeMessage(error.javaClass.simpleName)
                 }
             }
 
@@ -1007,12 +1006,12 @@ private fun BeBossMainContent(
     }
 
     // Active Interactive Receipt Dialog
-    if (activeReceipt != null) {
-        val receiptCustomerPhone = remember(activeReceipt, customers) {
-            customers.firstOrNull { it.id == activeReceipt!!.sale.customerId }?.phone.orEmpty()
+    activeReceipt?.let { receipt ->
+        val receiptCustomerPhone = remember(receipt, customers) {
+            customers.firstOrNull { it.id == receipt.sale.customerId }?.phone.orEmpty()
         }
         ReceiptDialog(
-            saleWithItems = activeReceipt!!,
+            saleWithItems = receipt,
             shopProfile = shopProfile,
             language = currentLanguage,
             customerPhone = receiptCustomerPhone,

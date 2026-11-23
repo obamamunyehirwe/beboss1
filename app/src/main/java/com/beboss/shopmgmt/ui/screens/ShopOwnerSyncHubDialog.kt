@@ -6,6 +6,7 @@ import android.content.Context
 import android.Manifest
 import android.os.Build
 import android.widget.Toast
+import com.beboss.shopmgmt.util.safeMessage
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FileUpload
@@ -82,8 +84,11 @@ import com.beboss.shopmgmt.data.model.CustomerPayment
 import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.Sale
 import com.beboss.shopmgmt.data.model.ShopProfile
+import com.beboss.shopmgmt.data.model.DeadLetterItem
 import com.beboss.shopmgmt.data.model.StockTransfer
+import com.beboss.shopmgmt.data.model.SyncQueueItem
 import com.beboss.shopmgmt.data.model.User
+import com.beboss.shopmgmt.ui.screens.sync.SyncOutboxDeadLetterTab
 import com.beboss.shopmgmt.ui.theme.DarkNavy
 import com.beboss.shopmgmt.ui.theme.InkDark
 import com.beboss.shopmgmt.ui.theme.InkMedium
@@ -102,6 +107,7 @@ import com.beboss.shopmgmt.util.PdfReportGenerator
 import com.beboss.shopmgmt.util.PermissionManager
 import com.beboss.shopmgmt.util.ShopDataTransferManager
 import com.beboss.shopmgmt.util.ShopImportSummary
+import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
 import com.beboss.shopmgmt.util.SyncAuditLog
 import java.io.File
 import java.text.SimpleDateFormat
@@ -131,6 +137,14 @@ fun ShopOwnerSyncHubDialog(
     peerSyncEvents: List<BranchPeerSyncEvent> = emptyList(),
     isP2pSyncing: Boolean = false,
     syncAuditLogs: List<SyncAuditLog> = emptyList(),
+    pendingSyncItems: List<SyncQueueItem> = emptyList(),
+    deadLetterQueueItems: List<SyncQueueItem> = emptyList(),
+    deadLetterRecords: List<DeadLetterItem> = emptyList(),
+    shopDeviceTelemetry: List<SupabaseDeviceTelemetryDto> = emptyList(),
+    onRetryDeadLetter: (String) -> Unit = {},
+    onRetryAllDeadLetters: () -> Unit = {},
+    onDiscardDeadLetter: (String) -> Unit = {},
+    onRefreshShopTelemetry: () -> Unit = {},
     onStartLanDiscovery: () -> Unit = {},
     onStopLanDiscovery: () -> Unit = {},
     onGenerateBranchShareToken: ((branchIdFilter: String?, onReady: (String) -> Unit) -> Unit)? = null,
@@ -173,6 +187,7 @@ fun ShopOwnerSyncHubDialog(
     }
 
     LaunchedEffect(Unit) {
+        onRefreshShopTelemetry()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             !PermissionManager.hasNearbyWifiPermission(context)
         ) {
@@ -303,6 +318,23 @@ fun ShopOwnerSyncHubDialog(
                                 Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text("Audit (${syncAuditLogs.size})", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    )
+                    val outboxIssueCount = pendingSyncItems.size + deadLetterQueueItems.size + deadLetterRecords.size
+                    Tab(
+                        selected = selectedTab == 5,
+                        onClick = { selectedTab = 5 },
+                        modifier = Modifier.testTag("sync_tab_outbox_telemetry"),
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CloudQueue, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    if (outboxIssueCount > 0) "Outbox ($outboxIssueCount)" else "Outbox & Telemetry",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     )
@@ -601,7 +633,7 @@ fun ShopOwnerSyncHubDialog(
                                 }
                             }
 
-                            if (!generatedShareToken.isNullOrBlank()) {
+                            generatedShareToken?.takeIf { it.isNotBlank() }?.let { shareToken ->
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
                                     color = Color(0xFFF0FDF4),
@@ -610,13 +642,13 @@ fun ShopOwnerSyncHubDialog(
                                 ) {
                                     Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text(
-                                            text = "Signed Compressed Token Ready (${generatedShareToken!!.length} chars)",
+                                            text = "Signed Compressed Token Ready (${shareToken.length} chars)",
                                             fontSize = 11.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = ProfitGreen
                                         )
                                         Text(
-                                            text = generatedShareToken!!.take(96) + "...",
+                                            text = shareToken.take(96) + "...",
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 10.sp,
                                             color = DarkNavy
@@ -625,7 +657,7 @@ fun ShopOwnerSyncHubDialog(
                                             OutlinedButton(
                                                 onClick = {
                                                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                    cm.setPrimaryClip(ClipData.newPlainText("BeBoss Branch Token", generatedShareToken))
+                                                    cm.setPrimaryClip(ClipData.newPlainText("BeBoss Branch Token", shareToken))
                                                     Toast.makeText(context, "Copied BBSHARE1 token!", Toast.LENGTH_SHORT).show()
                                                 },
                                                 modifier = Modifier.weight(1f)
@@ -636,7 +668,7 @@ fun ShopOwnerSyncHubDialog(
                                             }
                                             Button(
                                                 onClick = {
-                                                    PdfReportGenerator.sendWhatsAppDirect(context, shopProfile.phone, generatedShareToken!!)
+                                                    PdfReportGenerator.sendWhatsAppDirect(context, shopProfile.phone, shareToken)
                                                 },
                                                 colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen),
                                                 modifier = Modifier.weight(1f)
@@ -667,14 +699,14 @@ fun ShopOwnerSyncHubDialog(
                                 shape = RoundedCornerShape(10.dp)
                             )
 
-                            if (mergeFeedback != null) {
+                            mergeFeedback?.let { feedbackMsg ->
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
                                     color = if (isMergeSuccess) Color(0xFFDCFCE7) else Color(0xFFFEE2E2),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
-                                        text = mergeFeedback!!,
+                                        text = feedbackMsg,
                                         color = if (isMergeSuccess) ProfitGreen else LossRed,
                                         fontSize = 11.5.sp,
                                         fontWeight = FontWeight.Bold,
@@ -697,7 +729,7 @@ fun ShopOwnerSyncHubDialog(
                                             importTokenOrJson = ""
                                         } catch (e: Exception) {
                                             isMergeSuccess = false
-                                            mergeFeedback = "Verification failed: ${e.message}"
+                                            mergeFeedback = "Verification failed: ${e.safeMessage()}"
                                         }
                                     }
                                 },
@@ -871,15 +903,15 @@ fun ShopOwnerSyncHubDialog(
                                 shape = RoundedCornerShape(10.dp)
                             )
 
-                            if (pingResultState != null) {
+                            pingResultState?.let { pingResult ->
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = if (pingResultState!!.reachable) ProfitGreen.copy(alpha = 0.14f) else LossRed.copy(alpha = 0.14f),
+                                    color = if (pingResult.reachable) ProfitGreen.copy(alpha = 0.14f) else LossRed.copy(alpha = 0.14f),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
-                                        text = pingResultState!!.message,
-                                        color = if (pingResultState!!.reachable) ProfitGreen else LossRed,
+                                        text = pingResult.message,
+                                        color = if (pingResult.reachable) ProfitGreen else LossRed,
                                         fontSize = 11.5.sp,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(8.dp)
@@ -958,6 +990,26 @@ fun ShopOwnerSyncHubDialog(
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    5 -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 320.dp, max = 440.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            SyncOutboxDeadLetterTab(
+                                pendingSyncItems = pendingSyncItems,
+                                deadLetterQueueItems = deadLetterQueueItems,
+                                deadLetterRecords = deadLetterRecords,
+                                shopDeviceTelemetry = shopDeviceTelemetry,
+                                onRetryDeadLetter = onRetryDeadLetter,
+                                onRetryAllDeadLetters = onRetryAllDeadLetters,
+                                onDiscardDeadLetter = onDiscardDeadLetter,
+                                onRefreshTelemetry = onRefreshShopTelemetry
+                            )
                         }
                     }
                 }

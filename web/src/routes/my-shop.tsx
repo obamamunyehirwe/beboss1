@@ -24,7 +24,6 @@ import { daysLeft, formatDateTime, formatRwf, relativeTime } from "@/lib/format"
 import { deviceHealth } from "@/lib/sync-health";
 import { ReceiptVerifier } from "@/components/site/ReceiptVerifier";
 import { cn } from "@/lib/utils";
-import { useAdminText } from "@/lib/admin-copy";
 
 const searchSchema = z.object({
   pay: z.coerce.number().optional(),
@@ -46,15 +45,10 @@ export const Route = createFileRoute("/my-shop")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
-  component: liveConfigured ? MyShopPage : MyShopUnavailable,
+  component: liveConfigured ? MyShopPage : () => <ServiceUnavailable title="navMyShop" />,
 });
 
 type Lookup = Awaited<ReturnType<typeof lookupMyShop>>;
-
-function MyShopUnavailable() {
-  const { t } = useI18n();
-  return <ServiceUnavailable title={t("navMyShop")} />;
-}
 
 function statusVariant(s: string) {
   if (s === "ACTIVE" || s === "APPROVED" || s === "ISSUED") return "success" as const;
@@ -93,7 +87,6 @@ function MyShopPage() {
 }
 
 function LookupPanel() {
-  const a = useAdminText();
   const { t, p } = useI18n();
   const st = (s: string) => p.myShop.status[s] ?? s.replaceAll("_", " ");
   const lookup = useServerFn(lookupMyShop);
@@ -179,8 +172,8 @@ function LookupPanel() {
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-display text-lg font-bold">{a("Synced Cloud Store Records")}</h3>
-                <Badge variant="success" className="text-xs">{a("Live from Android")}</Badge>
+                <h3 className="font-display text-lg font-bold">Synced Cloud Store Records</h3>
+                <Badge variant="success" className="text-xs">Live from Android</Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Relayed from mobile devices • Last sync: {relativeTime(result.snapshotUploadedAt || Date.now())} • Currency: {result.records.currency || "FRw"}
@@ -203,7 +196,7 @@ function LookupPanel() {
                 Staff Directory ({result.records.staff.length})
               </TabsTrigger>
               <TabsTrigger value="branches">
-                <Plus className="size-4" /> {a("Branches & Transfers")}
+                <Plus className="size-4" /> Branches & Transfers
               </TabsTrigger>
             </TabsList>
 
@@ -213,12 +206,12 @@ function LookupPanel() {
                 <table className="w-full text-left text-xs">
                   <thead className="border-b border-border bg-surface uppercase text-muted-foreground">
                     <tr>
-                      <th className="p-3">{a("Product")}</th>
-                      <th className="p-3">{a("Category")}</th>
+                      <th className="p-3">Product</th>
+                      <th className="p-3">Category</th>
                       <th className="p-3">Stock</th>
-                      <th className="p-3">{a("Buying Cost")}</th>
-                      <th className="p-3">{a("Selling Price")}</th>
-                      <th className="p-3">{a("Margin %")}</th>
+                      <th className="p-3">Buying Cost</th>
+                      <th className="p-3">Selling Price</th>
+                      <th className="p-3">Margin %</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -253,11 +246,11 @@ function LookupPanel() {
                 <table className="w-full text-left text-xs">
                   <thead className="border-b border-border bg-surface uppercase text-muted-foreground">
                     <tr>
-                      <th className="p-3">{a("Customer")}</th>
-                      <th className="p-3">{a("Phone")}</th>
-                      <th className="p-3">{a("Debt Balance")}</th>
-                      <th className="p-3">{a("Credit Limit")}</th>
-                      <th className="p-3 text-right">{a("Reminder Action")}</th>
+                      <th className="p-3">Customer</th>
+                      <th className="p-3">Phone</th>
+                      <th className="p-3">Debt Balance</th>
+                      <th className="p-3">Credit Limit</th>
+                      <th className="p-3 text-right">Reminder Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -276,7 +269,7 @@ function LookupPanel() {
                             {c.phone && c.debt > 0 ? (
                               <Button size="sm" variant="glass" asChild className="h-7 text-[11px]">
                                 <a href={`https://wa.me/${c.phone.replace(/\D/g, "")}?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer">
-                                  {a("WhatsApp Reminder")}
+                                  WhatsApp Reminder
                                 </a>
                               </Button>
                             ) : (
@@ -297,12 +290,12 @@ function LookupPanel() {
                 <table className="w-full text-left text-xs">
                   <thead className="border-b border-border bg-surface uppercase text-muted-foreground">
                     <tr>
-                      <th className="p-3">{a("Receipt No")}</th>
-                      <th className="p-3">{a("Timestamp")}</th>
-                      <th className="p-3">{a("Total")}</th>
-                      <th className="p-3">{a("Net Profit")}</th>
-                      <th className="p-3">{a("Payment Method")}</th>
-                      <th className="p-3">{a("Cashier")}</th>
+                      <th className="p-3">Receipt No</th>
+                      <th className="p-3">Timestamp</th>
+                      <th className="p-3">Total</th>
+                      <th className="p-3">Net Profit</th>
+                      <th className="p-3">Payment Method</th>
+                      <th className="p-3">Cashier</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border font-mono">
@@ -331,11 +324,11 @@ function LookupPanel() {
                 <table className="w-full text-left text-xs">
                   <thead className="border-b border-border bg-surface uppercase text-muted-foreground">
                     <tr>
-                      <th className="p-3">{a("Staff Member")}</th>
-                      <th className="p-3">{a("Username")}</th>
-                      <th className="p-3">{a("Branch")}</th>
-                      <th className="p-3">{a("Role")}</th>
-                      <th className="p-3">{a("Status")}</th>
+                      <th className="p-3">Staff Member</th>
+                      <th className="p-3">Username</th>
+                      <th className="p-3">Branch</th>
+                      <th className="p-3">Role</th>
+                      <th className="p-3">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -379,7 +372,7 @@ function LookupPanel() {
       {/* Snapshots Notice if no records decoded yet */}
       {result && shop && (!result.records || result.records.products.length === 0) && (
         <div className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">
-          <p className="font-semibold text-foreground">{a("Cloud Sync Snapshot Status")}</p>
+          <p className="font-semibold text-foreground">Cloud Sync Snapshot Status</p>
           <p className="mt-1">
             {result.snapshots && result.snapshots.length > 0
               ? `Your phone has uploaded ${result.snapshots.length} cloud snapshot(s). Latest summary: "${result.snapshots[0]?.records_summary || "Sync active"}".`
@@ -401,7 +394,7 @@ function LookupPanel() {
             <Smartphone className="size-4 text-primary" /> {t("myDevices")}
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            {a("Device slots, staff roles and branch assignments are shared with the Android app through the same shop cloud account.")}
+            Device slots, staff roles and branch assignments are shared with the Android app through the same shop cloud account.
           </p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {result.devices.map((d) => {
@@ -428,10 +421,10 @@ function LookupPanel() {
           <div className="mt-6 rounded-2xl border border-border bg-surface-2 p-4">
             <div className="flex items-center gap-2">
               <Plus className="size-4 text-primary" />
-              <h4 className="font-semibold">{a("Register an additional POS device")}</h4>
+              <h4 className="font-semibold">Register an additional POS device</h4>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {a("The owner terminal must already be registered and synced. Choose an active staff account and the branch assigned to that staff member. A single-use join code expires after 60 minutes.")}
+              The owner terminal must already be registered and synced. Choose an active staff account and the branch assigned to that staff member. A single-use join code expires after 60 minutes.
             </p>
             {result.devices.some((d) => d.is_owner_primary && d.is_active && d.device_id) ? (
               <form
@@ -444,7 +437,7 @@ function LookupPanel() {
                   const assigned = staff.find((u) => u.user_id === userId);
                   const branchId = assignedBranchId || assigned?.assigned_branch_id || "";
                   if (!userId || !branchId || !deviceName.trim()) {
-                    toast.error(a("Select an active staff account, its assigned branch and a device name."));
+                    toast.error("Select an active staff account, its assigned branch and a device name.");
                     return;
                   }
                   setDeviceBusy(true);
@@ -454,7 +447,7 @@ function LookupPanel() {
                       data: { username, phone, deviceName, assignedUserId: userId, branchId },
                     });
                     setIssuedInvite(created);
-                    toast.success(a("Device slot registered in BeBoss Cloud."));
+                    toast.success("Device slot registered in BeBoss Cloud.");
                     setResult(await lookup({ data: { username, phone } }));
                   } catch (err) {
                     toast.error(err instanceof Error ? err.message : "Could not register the POS device.");
@@ -464,16 +457,16 @@ function LookupPanel() {
                 }}
               >
                 <div className="space-y-2">
-                  <Label htmlFor="device-name">{a("Device name")}</Label>
-                  <Input id="device-name" value={deviceName} onChange={(e) => setDeviceName(e.target.value)} placeholder={a("e.g. Nyabugogo Counter 2")} required maxLength={120} />
+                  <Label htmlFor="device-name">Device name</Label>
+                  <Input id="device-name" value={deviceName} onChange={(e) => setDeviceName(e.target.value)} placeholder="e.g. Nyabugogo Counter 2" required maxLength={120} />
                 </div>
                 <div className="space-y-2">
-                  <Label>{a("Assigned staff account")}</Label>
+                  <Label>Assigned staff account</Label>
                   <Select value={assignedUserId || result.staff.find((u) => u.is_active && u.role !== "OWNER")?.user_id || ""} onValueChange={(value) => {
                     setAssignedUserId(value);
                     setAssignedBranchId(result.staff.find((u) => u.user_id === value)?.assigned_branch_id || "");
                   }}>
-                    <SelectTrigger><SelectValue placeholder={a("Choose active staff")} /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Choose active staff" /></SelectTrigger>
                     <SelectContent>
                       {result.staff.filter((u) => u.is_active && u.role !== "OWNER").map((u) => (
                         <SelectItem key={u.user_id} value={u.user_id}>{u.full_name} · @{u.username} · {u.role}</SelectItem>
@@ -482,9 +475,9 @@ function LookupPanel() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>{a("Assigned branch")}</Label>
+                  <Label>Assigned branch</Label>
                   <Select value={assignedBranchId || result.staff.find((u) => u.user_id === (assignedUserId || result.staff.find((x) => x.is_active && x.role !== "OWNER")?.user_id))?.assigned_branch_id || ""} onValueChange={setAssignedBranchId}>
-                    <SelectTrigger><SelectValue placeholder={a("Choose assigned branch")} /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Choose assigned branch" /></SelectTrigger>
                     <SelectContent>
                       {result.branches.filter((b) => b.is_active && b.id === result.staff.find((u) => u.user_id === (assignedUserId || result.staff.find((x) => x.is_active && x.role !== "OWNER")?.user_id))?.assigned_branch_id).map((b) => (
                         <SelectItem key={b.id} value={b.id}>{b.name} · {b.code}</SelectItem>
@@ -495,20 +488,20 @@ function LookupPanel() {
                 <div className="flex items-end">
                   <Button type="submit" variant="hero" disabled={deviceBusy || result.staff.filter((u) => u.is_active && u.role !== "OWNER").length === 0 || result.branches.filter((b) => b.is_active).length === 0}>
                     {deviceBusy ? <Loader2 className="animate-spin" /> : <Plus />}
-                    {a("Register device & create join code")}
+                    Register device & create join code
                   </Button>
                 </div>
               </form>
             ) : (
               <p className="mt-3 rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning-foreground">
-                {a("Open the BeBoss Android app on the registered owner terminal, sign in as the owner, and sync once before registering additional devices here.")}
+                Open the BeBoss Android app on the registered owner terminal, sign in as the owner, and sync once before registering additional devices here.
               </p>
             )}
             {issuedInvite ? (
               <div className="mt-4 rounded-xl border border-primary/30 bg-background p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold">{a("Single-use Android join code")}</p>
-                  <Badge variant="warning">{a("Expires")} {formatDateTime(issuedInvite.expiresAt)}</Badge>
+                  <p className="text-sm font-semibold">Single-use Android join code</p>
+                  <Badge variant="warning">Expires {formatDateTime(issuedInvite.expiresAt)}</Badge>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <code className="rounded-lg border border-border bg-surface px-3 py-2 font-mono text-lg font-bold tracking-wider">{issuedInvite.joinCode}</code>
@@ -519,14 +512,14 @@ function LookupPanel() {
                     onClick={async () => {
                       await navigator.clipboard.writeText(issuedInvite.joinCode);
                       setCopied(issuedInvite.id);
-                      toast.success(a("Join code copied. It will not be shown again after this page is refreshed."));
+                      toast.success("Join code copied. It will not be shown again after this page is refreshed.");
                     }}
                   >
                     {copied === issuedInvite.id ? <Check /> : <Copy />} Copy code
                   </Button>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  {a("On Android, choose “Join existing shop”, enter the shop owner’s username and phone, paste this code, then create the staff PIN and password for the assigned account.")}
+                  On Android, choose “Join existing shop”, enter the shop owner’s username and phone, paste this code, then create the staff PIN and password for the assigned account.
                 </p>
               </div>
             ) : null}
@@ -607,7 +600,6 @@ function BranchManager({
   result: Lookup;
   onRefresh: () => void;
 }) {
-  const a = useAdminText();
   const upsertBranch = useServerFn(upsertMyShopBranch);
   const deleteBranch = useServerFn(deleteMyShopBranch);
   const upsertTransfer = useServerFn(upsertMyShopStockTransfer);
@@ -665,7 +657,7 @@ function BranchManager({
 
   const saveBranch = async () => {
     if (!form.name.trim()) {
-      toast.error(a("Branch name is required."));
+      toast.error("Branch name is required.");
       return;
     }
     setBusy("branch");
@@ -690,11 +682,11 @@ function BranchManager({
           notes: form.notes,
         },
       });
-      toast.success(editing ? a("Branch updated. It will sync to your phone.") : a("Branch created. It will sync to your phone."));
+      toast.success(editing ? "Branch updated. It will sync to your phone." : "Branch created. It will sync to your phone.");
       resetForm();
       onRefresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : a("Could not save branch."));
+      toast.error(e instanceof Error ? e.message : "Could not save branch.");
     } finally {
       setBusy(null);
     }
@@ -704,10 +696,10 @@ function BranchManager({
     setBusy(id);
     try {
       await deleteBranch({ data: { username, phone, id } });
-      toast.success(a("Branch removed. It will sync to your phone."));
+      toast.success("Branch removed. It will sync to your phone.");
       onRefresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : a("Could not delete branch."));
+      toast.error(e instanceof Error ? e.message : "Could not delete branch.");
     } finally {
       setBusy(null);
     }
@@ -724,11 +716,11 @@ function BranchManager({
 
   const saveTransfer = async () => {
     if (!tf.productName.trim() || !tf.fromBranchId || !tf.toBranchId || tf.quantity <= 0) {
-      toast.error(a("Product, both branches and a positive quantity are required."));
+      toast.error("Product, both branches and a positive quantity are required.");
       return;
     }
     if (tf.fromBranchId === tf.toBranchId) {
-      toast.error(a("Source and destination branches must differ."));
+      toast.error("Source and destination branches must differ.");
       return;
     }
     setBusy("transfer");
@@ -752,7 +744,7 @@ function BranchManager({
           transferredBy: "Shop Owner",
         },
       });
-      toast.success(a("Stock transfer recorded. It will sync to your phone."));
+      toast.success("Stock transfer recorded. It will sync to your phone.");
       setTf({ productName: "", fromBranchId: "", toBranchId: "", quantity: 1, unit: "pcs", notes: "" });
       onRefresh();
     } catch (e) {
@@ -766,7 +758,7 @@ function BranchManager({
     setBusy(id);
     try {
       await confirmTransfer({ data: { username, phone, id, receivedBy: "Shop Owner" } });
-      toast.success(a("Transfer confirmed."));
+      toast.success("Transfer confirmed.");
       onRefresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not confirm transfer.");
@@ -789,26 +781,26 @@ function BranchManager({
           <h4 className="font-semibold">Branches ({branches.length})</h4>
           {editing ? (
             <Button variant="ghost" size="sm" onClick={resetForm}>
-              {a("Cancel edit")}
+              Cancel edit
             </Button>
           ) : null}
         </div>
         {branches.length === 0 ? (
           <p className="rounded-2xl border border-border bg-surface/50 p-4 text-sm text-muted-foreground">
-            {a("No branches yet. Create your first branch below; it will sync to your phone automatically.")}
+            No branches yet. Create your first branch below; it will sync to your phone automatically.
           </p>
         ) : (
           <div className="max-h-[320px] overflow-auto rounded-2xl border border-border">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border bg-surface uppercase text-muted-foreground">
                 <tr>
-                  <th className="p-3">{a("Name")}</th>
-                  <th className="p-3">{a("Code")}</th>
-                  <th className="p-3">{a("Manager")}</th>
-                  <th className="p-3">{a("Status")}</th>
-                  <th className="p-3">{a("Stock Value")}</th>
-                  <th className="p-3">{a("Products")}</th>
-                  <th className="p-3 text-right">{a("Actions")}</th>
+                  <th className="p-3">Name</th>
+                  <th className="p-3">Code</th>
+                  <th className="p-3">Manager</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Stock Value</th>
+                  <th className="p-3">Products</th>
+                  <th className="p-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -816,7 +808,7 @@ function BranchManager({
                   <tr key={b.id} className="hover:bg-surface/50">
                     <td className="p-3 font-medium">
                       {b.name}
-                      {b.is_main_branch ? <Badge variant="info" className="ml-2 text-[10px]">{a("HQ")}</Badge> : null}
+                      {b.is_main_branch ? <Badge variant="info" className="ml-2 text-[10px]">HQ</Badge> : null}
                     </td>
                     <td className="p-3 font-mono text-muted-foreground">{b.code || "—"}</td>
                     <td className="p-3 text-muted-foreground">{b.manager_name || "—"}</td>
@@ -830,7 +822,7 @@ function BranchManager({
                     <td className="p-3">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => startEdit(b)}>
-                          {a("Edit")}
+                          Edit
                         </Button>
                         <Button variant="ghost" size="sm" disabled={busy === b.id} onClick={() => removeBranch(b.id)}>
                           <Trash2 className="size-4" />
@@ -848,57 +840,57 @@ function BranchManager({
       {/* Branch form */}
       <div className="grid gap-4 rounded-2xl border border-border bg-surface-2 p-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label>{a("Branch name")}</Label>
+          <Label>Branch name</Label>
           <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Kimironko Branch" />
         </div>
         <div className="space-y-2">
-          <Label>{a("Code")}</Label>
+          <Label>Code</Label>
           <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="BR-02" />
         </div>
         <div className="space-y-2">
-          <Label>{a("Phone")}</Label>
+          <Label>Phone</Label>
           <Input value={form.phoneBranch} onChange={(e) => setForm({ ...form, phoneBranch: e.target.value })} placeholder="0788 000 000" />
         </div>
         <div className="space-y-2">
-          <Label>{a("Manager")}</Label>
-          <Input value={form.managerName} onChange={(e) => setForm({ ...form, managerName: e.target.value })} placeholder={a("Manager name")} />
+          <Label>Manager</Label>
+          <Input value={form.managerName} onChange={(e) => setForm({ ...form, managerName: e.target.value })} placeholder="Manager name" />
         </div>
         <div className="space-y-2 sm:col-span-2">
-          <Label>{a("Address")}</Label>
-          <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={a("Kigali, Rwanda")} />
+          <Label>Address</Label>
+          <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Kigali, Rwanda" />
         </div>
         <div className="space-y-2">
-          <Label>{a("Operational status")}</Label>
+          <Label>Operational status</Label>
           <Select value={form.operationalStatus} onValueChange={(v) => setForm({ ...form, operationalStatus: v as typeof form.operationalStatus })}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="OPEN">{a("OPEN")}</SelectItem>
-              <SelectItem value="CLOSED">{a("CLOSED")}</SelectItem>
-              <SelectItem value="SUSPENDED">{a("SUSPENDED")}</SelectItem>
+              <SelectItem value="OPEN">OPEN</SelectItem>
+              <SelectItem value="CLOSED">CLOSED</SelectItem>
+              <SelectItem value="SUSPENDED">SUSPENDED</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>{a("Daily sales target (RWF)")}</Label>
+          <Label>Daily sales target (RWF)</Label>
           <Input type="number" min={0} value={form.dailySalesTargetRwf} onChange={(e) => setForm({ ...form, dailySalesTargetRwf: Number(e.target.value) || 0 })} />
         </div>
         <div className="space-y-2">
-          <Label>{a("Monthly target (RWF)")}</Label>
+          <Label>Monthly target (RWF)</Label>
           <Input type="number" min={0} value={form.monthlyTargetRwf} onChange={(e) => setForm({ ...form, monthlyTargetRwf: Number(e.target.value) || 0 })} />
         </div>
         <div className="space-y-2">
-          <Label>{a("Opening cash float (RWF)")}</Label>
+          <Label>Opening cash float (RWF)</Label>
           <Input type="number" min={0} value={form.openingCashFloat} onChange={(e) => setForm({ ...form, openingCashFloat: Number(e.target.value) || 0 })} />
         </div>
         <div className="space-y-2">
-          <Label>{a("Email")}</Label>
+          <Label>Email</Label>
           <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="branch@shop.rw" />
         </div>
         <div className="space-y-2 sm:col-span-2">
-          <Label>{a("Notes")}</Label>
-          <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder={a("Optional notes")} />
+          <Label>Notes</Label>
+          <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes" />
         </div>
         <div className="flex items-center gap-2 sm:col-span-2">
           <input
@@ -908,7 +900,7 @@ function BranchManager({
             onChange={(e) => setForm({ ...form, isMainBranch: e.target.checked })}
             className="size-4 accent-primary"
           />
-          <Label htmlFor="is-main">{a("This is the main/head office branch")}</Label>
+          <Label htmlFor="is-main">This is the main/head office branch</Label>
         </div>
         <div className="sm:col-span-2">
           <Button variant="hero" disabled={busy === "branch"} onClick={saveBranch}>
@@ -923,18 +915,18 @@ function BranchManager({
         <h4 className="font-semibold">Stock Transfers ({transfers.length})</h4>
         <div className="grid gap-4 rounded-2xl border border-border bg-surface-2 p-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label>{a("Product")}</Label>
-            <Input value={tf.productName} onChange={(e) => setTf({ ...tf, productName: e.target.value })} placeholder={a("Product name")} />
+            <Label>Product</Label>
+            <Input value={tf.productName} onChange={(e) => setTf({ ...tf, productName: e.target.value })} placeholder="Product name" />
           </div>
           <div className="space-y-2">
-            <Label>{a("Quantity")}</Label>
+            <Label>Quantity</Label>
             <Input type="number" min={0} value={tf.quantity} onChange={(e) => setTf({ ...tf, quantity: Number(e.target.value) || 0 })} />
           </div>
           <div className="space-y-2">
-            <Label>{a("From branch")}</Label>
+            <Label>From branch</Label>
             <Select value={tf.fromBranchId} onValueChange={(v) => setTf({ ...tf, fromBranchId: v })}>
               <SelectTrigger>
-                <SelectValue placeholder={a("Select source")} />
+                <SelectValue placeholder="Select source" />
               </SelectTrigger>
               <SelectContent>
                 {branchOptions.map((b) => (
@@ -946,10 +938,10 @@ function BranchManager({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>{a("To branch")}</Label>
+            <Label>To branch</Label>
             <Select value={tf.toBranchId} onValueChange={(v) => setTf({ ...tf, toBranchId: v })}>
               <SelectTrigger>
-                <SelectValue placeholder={a("Select destination")} />
+                <SelectValue placeholder="Select destination" />
               </SelectTrigger>
               <SelectContent>
                 {branchOptions.map((b) => (
@@ -961,8 +953,8 @@ function BranchManager({
             </Select>
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label>{a("Notes")}</Label>
-            <Input value={tf.notes} onChange={(e) => setTf({ ...tf, notes: e.target.value })} placeholder={a("Optional")} />
+            <Label>Notes</Label>
+            <Input value={tf.notes} onChange={(e) => setTf({ ...tf, notes: e.target.value })} placeholder="Optional" />
           </div>
           <div className="sm:col-span-2">
             <Button variant="hero" disabled={busy === "transfer"} onClick={saveTransfer}>
@@ -977,13 +969,13 @@ function BranchManager({
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border bg-surface uppercase text-muted-foreground">
                 <tr>
-                  <th className="p-3">{a("Number")}</th>
-                  <th className="p-3">{a("Product")}</th>
-                  <th className="p-3">{a("From")}</th>
-                  <th className="p-3">{a("To")}</th>
-                  <th className="p-3">{a("Qty")}</th>
-                  <th className="p-3">{a("Status")}</th>
-                  <th className="p-3 text-right">{a("Action")}</th>
+                  <th className="p-3">Number</th>
+                  <th className="p-3">Product</th>
+                  <th className="p-3">From</th>
+                  <th className="p-3">To</th>
+                  <th className="p-3">Qty</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -1002,7 +994,7 @@ function BranchManager({
                     <td className="p-3 text-right">
                       {t.status !== "COMPLETED" ? (
                         <Button variant="ghost" size="sm" disabled={busy === t.id} onClick={() => confirmRx(t.id)}>
-                          <Check /> {a("Confirm")}
+                          <Check /> Confirm
                         </Button>
                       ) : null}
                     </td>
@@ -1013,7 +1005,7 @@ function BranchManager({
           </div>
         ) : (
           <p className="rounded-2xl border border-border bg-surface/50 p-4 text-sm text-muted-foreground">
-            {a("No stock transfers yet. Record one above; it will sync to your phone automatically.")}
+            No stock transfers yet. Record one above; it will sync to your phone automatically.
           </p>
         )}
       </div>
@@ -1022,7 +1014,6 @@ function BranchManager({
 }
 
 function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>; onDone: () => void }) {
-  const a = useAdminText();
   const { t, p } = useI18n();
   const submit = useServerFn(submitPaymentProof);
   const { data: site } = useQuery(publicSiteQuery);
@@ -1082,7 +1073,7 @@ function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>
         <Field label={p.myShop.payerName} value={f.payerName} onChange={(v) => set("payerName", v)} min={2} max={120} />
         <Field label={p.myShop.payerPhone} value={f.payerPhone} onChange={(v) => set("payerPhone", v)} min={9} max={30} tel />
         <div className="space-y-2">
-          <Label>{a("Payment date and time")}</Label>
+          <Label>Payment date and time</Label>
           <Input
             type="datetime-local"
             value={new Date(f.paymentTimeMs - new Date(f.paymentTimeMs).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)}
@@ -1091,9 +1082,9 @@ function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>
           />
         </div>
         <div className="space-y-2 sm:col-span-2">
-          <Label>{a("MTN MoMo / Airtel Money confirmation SMS")}</Label>
-          <p className="text-xs text-muted-foreground">{a("After paying, copy the successful payment SMS from your phone's Messages app and paste its full text here. No screenshot is required. Never include your mobile money PIN.")}</p>
-          <Textarea value={f.paymentNote} onChange={(e) => set("paymentNote", e.target.value)} required minLength={8} maxLength={1000} rows={4} placeholder={a("Paste the full successful MTN MoMo or Airtel Money confirmation SMS...")} />
+          <Label>MTN MoMo / Airtel Money confirmation SMS</Label>
+          <p className="text-xs text-muted-foreground">After paying, copy the successful payment SMS from your phone's Messages app and paste its full text here. No screenshot is required. Never include your mobile money PIN.</p>
+          <Textarea value={f.paymentNote} onChange={(e) => set("paymentNote", e.target.value)} required minLength={8} maxLength={1000} rows={4} placeholder="Paste the full successful MTN MoMo or Airtel Money confirmation SMS..." />
         </div>
         <div className="space-y-2">
           <Label>{t("calcCycle")}</Label>
