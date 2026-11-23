@@ -85,6 +85,9 @@ begin
   select m.shop_id
     into v_shop_id
   from public.shop_owner_memberships m
+  join public.shop_accounts a
+    on a.id = m.shop_id
+   and a.remote_kill_switch = false
   where m.user_id = v_user_id
     and m.status = 'ACTIVE'
     and m.revoked_at = 0
