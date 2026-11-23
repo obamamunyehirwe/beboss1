@@ -602,7 +602,10 @@ class CloudSyncManager(private val database: AppDatabase) {
                                 receivedBy = dto.receivedBy,
                                 receivedAt = dto.receivedAt,
                                 synced = dto.synced,
-                                createdAt = dto.createdAt
+                                createdAt = dto.createdAt,
+                                updatedAt = dto.updatedAt,
+                                hlcTimestamp = dto.hlcTimestamp,
+                                lastModifiedDeviceId = dto.lastModifiedDeviceId
                             )
                         }
                         val summary = ShopImportSummary(
