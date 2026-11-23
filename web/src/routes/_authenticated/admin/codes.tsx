@@ -194,7 +194,7 @@ function CodesPage() {
                             </Button>
                           }
                           title={a("Revoke this code?")}
-                          description="The code is marked revoked in the registry. Codes already pasted into an offline phone can't be pulled back, so also suspend the shop if needed."
+                          description={a("The code is marked revoked in the registry. Codes already pasted into an offline phone can't be pulled back, so also suspend the shop if needed.")}
                           destructive
                           confirmLabel={a("Revoke")}
                           onConfirm={() => revoke.mutate({ id: c.id })}
