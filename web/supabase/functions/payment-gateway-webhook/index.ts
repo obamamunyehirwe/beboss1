@@ -79,10 +79,10 @@ async function verifyFlutterwave(rawBody: string, request: Request) {
   if (!constantTimeTextEqual(signature, expected)) return jsonResponse(401, { message: "Invalid Flutterwave webhook signature." });
 
   const event = JSON.parse(rawBody);
-  const eventId = String(event?.id ?? "");
-  const eventType = String(event?.type ?? "");
-  const transactionId = String(event?.data?.id ?? "");
-  const txRef = String(event?.data?.tx_ref ?? "");
+  const transactionId = String(event?.data?.id ?? event?.data?.transaction_id ?? "");
+  const txRef = String(event?.data?.tx_ref ?? event?.data?.reference ?? "");
+  const eventId = String(event?.id ?? event?.data?.id ?? event?.data?.flw_ref ?? txRef);
+  const eventType = String(event?.type ?? event?.event ?? "charge.completed");
   if (!eventId || !transactionId || !txRef) return jsonResponse(400, { message: "Invalid Flutterwave event payload." });
 
   const filters = new URLSearchParams({
