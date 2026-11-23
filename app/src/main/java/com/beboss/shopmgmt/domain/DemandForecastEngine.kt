@@ -21,7 +21,6 @@ object DemandForecastEngine {
     const val DEFAULT_REVIEW_PERIOD_DAYS = 7
     const val MAX_PLANNING_DAYS = 90
 
-    private const val DAY_MS = 86_400_000L
     private const val HALF_LIFE_DAYS = 28.0
     private const val Z_90_PERCENT_SERVICE_LEVEL = 1.28
 
@@ -49,8 +48,19 @@ object DemandForecastEngine {
     ): ProductForecast {
         val safeLeadDays = leadTimeDays.coerceIn(1, MAX_PLANNING_DAYS)
         val safeReviewDays = reviewPeriodDays.coerceIn(1, MAX_PLANNING_DAYS)
-        val currentDayStart = Math.floorDiv(nowMs, DAY_MS) * DAY_MS
-        val firstDayStart = currentDayStart - ((HISTORY_DAYS - 1L) * DAY_MS)
+        val today = Calendar.getInstance().apply {
+            timeInMillis = nowMs
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val dayStarts = LongArray(HISTORY_DAYS) { index ->
+            (today.clone() as Calendar).apply {
+                add(Calendar.DAY_OF_YEAR, index - (HISTORY_DAYS - 1))
+            }.timeInMillis
+        }
+        val firstDayStart = dayStarts.first()
         val dailyDemand = DoubleArray(HISTORY_DAYS)
 
         val eligibleSales = sales.asSequence()
@@ -65,7 +75,20 @@ object DemandForecastEngine {
                 val effectiveBranch = item.branchId.ifBlank { sale.branchId }
                 if (!matchesBranch(effectiveBranch, branchIdFilter)) return@forEach
 
-                val dayIndex = ((sale.saleDate - firstDayStart) / DAY_MS).toInt()
+                // Find the local calendar day containing this sale. Binary search avoids
+                // assuming every day is exactly 24 hours (DST/time-zone safe).
+                var low = 0
+                var high = dayStarts.lastIndex
+                var dayIndex = -1
+                while (low <= high) {
+                    val mid = (low + high) ushr 1
+                    if (dayStarts[mid] <= sale.saleDate) {
+                        dayIndex = mid
+                        low = mid + 1
+                    } else {
+                        high = mid - 1
+                    }
+                }
                 if (dayIndex in dailyDemand.indices) {
                     dailyDemand[dayIndex] += item.quantitySold
                 }
@@ -126,7 +149,7 @@ object DemandForecastEngine {
         val weekdayTotals = DoubleArray(8)
         val weekdayCounts = IntArray(8)
         dailyDemand.forEachIndexed { index, quantity ->
-            calendar.timeInMillis = firstDayStart + index * DAY_MS
+            calendar.timeInMillis = dayStarts[index]
             val weekday = calendar.get(Calendar.DAY_OF_WEEK)
             weekdayTotals[weekday] += quantity
             weekdayCounts[weekday]++
@@ -140,12 +163,15 @@ object DemandForecastEngine {
             return (shrunkMean / baseline).coerceIn(0.60, 1.50)
         }
 
-        val nextDay = currentDayStart + DAY_MS
+        val nextDay = (today.clone() as Calendar).apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+        }
         fun forecastForDays(days: Int): Double {
             var expected = 0.0
+            val forecastCalendar = nextDay.clone() as Calendar
             for (offset in 0 until days) {
-                calendar.timeInMillis = nextDay + offset * DAY_MS
-                expected += forecastDaily * weekdayFactor(calendar.get(Calendar.DAY_OF_WEEK))
+                if (offset > 0) forecastCalendar.add(Calendar.DAY_OF_YEAR, 1)
+                expected += forecastDaily * weekdayFactor(forecastCalendar.get(Calendar.DAY_OF_WEEK))
             }
             return expected
         }
