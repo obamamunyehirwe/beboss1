@@ -367,6 +367,7 @@ function Toolbar({ children, onExport }: { children: React.ReactNode; onExport: 
 }
 
 function Pager({ page, total, onChange }: { page: number; total: number; onChange: (page: number) => void }) {
+  const a = useAdminText();
   const pageCount = Math.ceil(total / PAGE_SIZE);
   if (pageCount <= 1) return null;
   return (
