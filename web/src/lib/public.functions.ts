@@ -539,3 +539,54 @@ export const requestMyShopStockTransferCancellation = createServerFn({ method: "
     }
     throw new Error("Only an in-transit transfer can be cancelled.");
   });
+
+
+
+const gatewayCheckoutSchema = z.object({
+  gateway: z.enum(["flutterwave", "stripe"]),
+  shopName: z.string().trim().min(2).max(120),
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+  payerPhone: z.string().trim().min(9).max(30),
+  payerName: z.string().trim().min(2).max(120),
+  payerEmail: z.string().trim().email().max(254),
+  months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]),
+  branches: z.number().int().min(1).max(100),
+  workers: z.number().int().min(1).max(500),
+  devices: z.number().int().min(1).max(100),
+});
+
+export const createGatewayCheckout = createServerFn({ method: "POST" })
+  .inputValidator((d: z.infer<typeof gatewayCheckoutSchema>) => gatewayCheckoutSchema.parse(d))
+  .handler(async ({ data }) => {
+    const supabaseUrl = process.env["SUPABASE_URL"] || import.meta.env["VITE_SUPABASE_URL"];
+    const publishableKey = process.env["SUPABASE_PUBLISHABLE_KEY"] || import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"];
+    if (!supabaseUrl || !publishableKey) {
+      throw new Error("The BeBoss online payment service is not configured.");
+    }
+
+    const response = await fetch(`${supabaseUrl.replace(/\\/+$/, "")}/functions/v1/create-payment-checkout`, {
+      method: "POST",
+      headers: {
+        apikey: publishableKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok !== true || typeof body?.checkoutUrl !== "string") {
+      throw new Error(String(body?.message ?? "The payment provider could not start checkout."));
+    }
+    const checkoutUrl = new URL(body.checkoutUrl);
+    if (checkoutUrl.protocol !== "https:" || !["checkout.flutterwave.com", "checkout.stripe.com"].includes(checkoutUrl.hostname)) {
+      throw new Error("The payment provider returned an unsafe checkout destination.");
+    }
+    return {
+      paymentRequestId: String(body.paymentRequestId),
+      provider: String(body.provider),
+      reference: String(body.reference),
+      amountRwf: Number(body.amountRwf),
+      currency: "RWF" as const,
+      checkoutUrl: checkoutUrl.toString(),
+    };
+  });
