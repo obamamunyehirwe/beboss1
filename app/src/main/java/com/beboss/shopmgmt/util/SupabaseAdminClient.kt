@@ -543,7 +543,7 @@ object SupabaseAdminClient {
             return@withContext Result.failure(IllegalStateException("Enter your administrator password."))
         }
         if (!isConfigured()) {
-            return@withContext Result.failure(IllegalStateException("Configure SUPABASE_URL and SUPABASE_ANON_KEY in app secrets."))
+            return@withContext Result.failure(IllegalStateException("Configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or the legacy SUPABASE_ANON_KEY) in app secrets."))
         }
         try {
             val payload = JSONObject().apply {
@@ -1059,6 +1059,34 @@ object SupabaseAdminClient {
         } catch (e: Exception) {
             Log.e(TAG, "upsertShopAccount error: ${e.message}")
             false
+        }
+    }
+
+    /**
+     * Read the random 256-bit LAN pairing key belonging to the current shop.
+     * RLS scopes the row using X-Shop-Sync-Key; only the matching shop record is selected.
+     */
+    suspend fun fetchShopLanSyncSecret(shopSyncKey: String): String? = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank()) return@withContext null
+        try {
+            val enc = URLEncoder.encode(shopSyncKey.trim(), "UTF-8")
+            val req = buildRestRequest(
+                "shop_accounts?select=lan_sync_secret&id=eq.$enc&limit=1",
+                tenantSyncKey = shopSyncKey
+            ).get().build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    Log.w(TAG, "fetchShopLanSyncSecret HTTP ${resp.code}: ${resp.body?.string()}")
+                    return@withContext null
+                }
+                val arr = JSONArray(resp.body?.string().orEmpty().ifBlank { "[]" })
+                val secret = arr.optJSONObject(0)?.optString("lan_sync_secret").orEmpty()
+                    .trim().lowercase(Locale.ROOT)
+                secret.takeIf { it.matches(Regex("[a-f0-9]{64}")) }
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "fetchShopLanSyncSecret failed: ${error.message}")
+            null
         }
     }
 
