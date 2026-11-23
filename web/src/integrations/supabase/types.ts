@@ -508,6 +508,12 @@ export type Database = {
           duration_months: number
           fee_per_device_rwf: number
           generated_unlock_code: string
+          gateway_amount_rwf: number
+          gateway_currency: string
+          gateway_provider: string
+          gateway_reference: string
+          gateway_transaction_id: string
+          gateway_verified_at: number
           id: string
           owner_phone: string
           owner_username: string
@@ -536,6 +542,12 @@ export type Database = {
           duration_months?: number
           fee_per_device_rwf?: number
           generated_unlock_code?: string
+          gateway_amount_rwf?: number
+          gateway_currency?: string
+          gateway_provider?: string
+          gateway_reference?: string
+          gateway_transaction_id?: string
+          gateway_verified_at?: number
           id: string
           owner_phone: string
           owner_username: string
@@ -564,6 +576,12 @@ export type Database = {
           duration_months?: number
           fee_per_device_rwf?: number
           generated_unlock_code?: string
+          gateway_amount_rwf?: number
+          gateway_currency?: string
+          gateway_provider?: string
+          gateway_reference?: string
+          gateway_transaction_id?: string
+          gateway_verified_at?: number
           id?: string
           owner_phone?: string
           owner_username?: string
