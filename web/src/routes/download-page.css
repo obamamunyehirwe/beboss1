@@ -1,0 +1,91 @@
+.download-page-layout,
+.download-release-card,
+.download-side-column {
+  min-width: 0;
+}
+.download-release-card,
+.download-qr-card {
+  box-shadow: 0 22px 55px -42px color-mix(in srgb, var(--foreground) 35%, transparent);
+}
+.download-app-art {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--card));
+  box-shadow: 0 12px 26px -20px var(--primary);
+}
+.download-app-art img {
+  display: block;
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
+}
+.download-qr-surface {
+  overflow: hidden;
+  isolation: isolate;
+}
+.download-qr-code {
+  display: block;
+  width: min(100%, 232px);
+  height: auto;
+  max-width: 100%;
+  shape-rendering: crispEdges;
+}
+.download-qr-surface svg rect {
+  shape-rendering: crispEdges;
+}
+.download-qr-surface svg image {
+  image-rendering: auto;
+}
+@media (max-width: 640px) {
+  .download-page-layout {
+    padding-top: 28px;
+    padding-bottom: 36px;
+  }
+  .download-release-card,
+  .download-qr-card {
+    border-radius: 23px;
+  }
+  .download-app-art {
+    width: 62px;
+    height: 62px;
+    border-radius: 18px;
+  }
+  .download-app-art img {
+    width: 48px;
+    height: 48px;
+  }
+}
+@media print {
+  .site-nav,
+  .site-footer,
+  .site-page-hero,
+  .download-release-card,
+  .download-install-card,
+  .download-page-layout > aside > section:last-child,
+  button {
+    display: none !important;
+  }
+  .site-public-main {
+    padding-top: 0 !important;
+  }
+  .download-qr-card {
+    display: block !important;
+    width: 100%;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  .download-qr-surface {
+    width: 270px !important;
+    max-width: 270px !important;
+    margin-inline: auto;
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

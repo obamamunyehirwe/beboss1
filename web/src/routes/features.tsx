@@ -1,5 +1,32 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, BarChart3, Bluetooth, Building2, Cloud, Fingerprint, HandCoins, KeyRound, Languages, LineChart, Lock, Printer, Receipt, RefreshCcw, ScanBarcode, ShieldCheck, Smartphone, Split, Users, WifiOff, CheckCircle2, Cpu, Database } from "lucide-react";
+import {
+  Activity,
+  ArrowRight,
+  ArrowUpRight,
+  BarChart3,
+  Bluetooth,
+  Building2,
+  CheckCircle2,
+  Cloud,
+  Cpu,
+  Database,
+  Fingerprint,
+  HandCoins,
+  KeyRound,
+  Languages,
+  LineChart,
+  Lock,
+  Network,
+  Printer,
+  Receipt,
+  RefreshCcw,
+  ScanBarcode,
+  ShieldCheck,
+  Smartphone,
+  Split,
+  Users,
+  WifiOff,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { ReceiptVerifier } from "@/components/site/ReceiptVerifier";
@@ -9,10 +36,18 @@ import { useI18n } from "@/lib/i18n";
 export const Route = createFileRoute("/features")({
   head: () => ({
     meta: [
-      { title: "Features — BeBoss POS for Android" },
-      { name: "description", content: "Offline-first Android POS for recording sales, stock and customer credit, with USSD payment shortcuts and admin-reviewed subscription proofs." },
-      { property: "og:title", content: "BeBoss POS features" },
-      { property: "og:description", content: "Every tool a growing African retailer needs — offline, multi-branch and in 4 languages." },
+      { title: "BeBoss POS features — checkout, inventory and multi-branch operations" },
+      {
+        name: "description",
+        content:
+          "Explore BeBoss Android POS capabilities: offline sales, inventory, customer credit, staff roles, branch operations, encrypted local storage and the central web admin console.",
+      },
+      { property: "og:title", content: "BeBoss POS — product capabilities" },
+      {
+        property: "og:description",
+        content:
+          "A connected retail operating platform designed to grow from one counter to multi-location teams.",
+      },
       { property: "og:type", content: "website" },
       { property: "og:image", content: "/Friendly%20Modern%20Store%20Checkout.png" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -28,91 +63,224 @@ const GROUP_ICONS = [
   [Lock, Fingerprint, ShieldCheck, KeyRound, Languages],
 ];
 
+const SCALE_CAPABILITIES = [
+  {
+    icon: Building2,
+    title: "Multi-location operations",
+    body: "Organize staff and terminals by branch, review branch-level performance, and record stock movements between locations. Consolidated visibility is designed to help an operator manage more than one counter without losing local accountability.",
+    tag: "Branch-aware workflows",
+  },
+  {
+    icon: Users,
+    title: "People and permissions",
+    body: "Separate owner, manager and cashier responsibilities with named staff accounts and PIN-based operator access. Staff activity can be reviewed against the shop and branch context instead of relying on one shared counter login.",
+    tag: "Role-based access",
+  },
+  {
+    icon: Database,
+    title: "Offline-to-cloud data flow",
+    body: "Sales and stock operations are recorded locally on the Android terminal. Encrypted device-to-device transfer can use the shop's Wi-Fi or hotspot, while cloud synchronization uses the configured Supabase project when internet access is available.",
+    tag: "Local-first architecture",
+  },
+  {
+    icon: Activity,
+    title: "Central operating oversight",
+    body: "The web Admin Center brings together shop records, device controls, payment claims, unlock-code issuance, release management, inbox, announcements, audit activity and operational analytics.",
+    tag: "Web command center",
+  },
+];
+
 function FeaturesPage() {
   const { t, p } = useI18n();
   return (
     <SiteLayout>
-      <PageHero eyebrow={t("navFeatures")} title={t("featuresTitle")} sub={t("featuresSub")} />
-      <div className="mx-auto max-w-7xl space-y-20 px-4 py-20 sm:px-6">
-        {p.features.map((g, gi) => (
-          <section key={gi} className="grid gap-8 lg:grid-cols-[280px_1fr]">
-            <h2 className="text-2xl font-bold lg:sticky lg:top-24 lg:self-start">{g.title}</h2>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {g.items.map((i, ii) => {
-                const Icon = GROUP_ICONS[gi]?.[ii] ?? ShieldCheck;
-                return (
-                <div key={ii} className="rounded-3xl border border-border bg-card bg-card-sheen p-6 transition-colors hover:border-primary/40">
-                  <Icon className="size-6 text-primary" />
-                  <h3 className="mt-4 text-lg font-semibold">{i.t}</h3>
-                  <p className="mt-2 text-sm text-muted-foreground">{i.d}</p>
-                </div>
-                );
-              })}
-            </div>
-          </section>
-        ))}
+      <PageHero eyebrow={t("navFeatures")} title={t("featuresTitle")} sub={t("featuresSub")}>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button asChild variant="hero" size="lg">
+            <Link to="/download">
+              Download the Android app <ArrowRight />
+            </Link>
+          </Button>
+          <Button asChild variant="glass" size="lg">
+            <Link to="/pricing">
+              View plans <ArrowUpRight />
+            </Link>
+          </Button>
+        </div>
+      </PageHero>
 
-        {/* Cryptographic Receipt Verification Section */}
+      <div className="mx-auto max-w-7xl space-y-20 px-4 py-16 sm:px-6 sm:py-20">
+        <section aria-labelledby="feature-catalog-title" className="space-y-8">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              <CheckCircle2 className="size-3.5" />
+              Product capability map
+            </div>
+            <h2 id="feature-catalog-title" className="mt-4 text-3xl font-bold sm:text-4xl">
+              Daily retail work, connected from the counter to management
+            </h2>
+            <p className="mt-3 text-base leading-7 text-muted-foreground">
+              BeBoss combines checkout, stock movement, customer balances, staff workflows and operational reporting in one Android-first system. The capabilities below describe what the product is built to do; each rollout should validate its devices, staff roles, branch structure and data before going live.
+            </p>
+          </div>
+
+          {p.features.map((g, gi) => (
+            <section key={gi} className="grid gap-6 border-t border-border pt-8 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10">
+              <div className="lg:sticky lg:top-24 lg:self-start">
+                <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-primary">Capability group 0{gi + 1}</p>
+                <h3 className="mt-2 text-2xl font-bold">{g.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  {gi === 0
+                    ? "Fast, accountable transactions for busy tills and customer-facing teams."
+                    : gi === 1
+                      ? "Stock and money records that help managers make decisions from recorded business activity."
+                      : gi === 2
+                        ? "Keep each branch and operator connected while preserving local workflows."
+                        : "Protect business records and make access to the operating system accountable."}
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {g.items.map((item, ii) => {
+                  const Icon = GROUP_ICONS[gi]?.[ii] ?? ShieldCheck;
+                  return (
+                    <article key={ii} className="group rounded-3xl border border-border bg-card bg-card-sheen p-6 transition-all duration-200 hover:-translate-y-1 hover:border-primary/40">
+                      <span className="grid size-11 place-items-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+                        <Icon className="size-5" />
+                      </span>
+                      <h4 className="mt-4 text-lg font-semibold">{item.t}</h4>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.d}</p>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </section>
+
+        <section aria-labelledby="scale-title" className="overflow-hidden rounded-[2.5rem] border border-border bg-card p-6 shadow-soft sm:p-10 lg:p-12">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-semibold text-success">
+              <Network className="size-3.5" />
+              Built for growing operations
+            </div>
+            <h2 id="scale-title" className="mt-4 text-3xl font-bold sm:text-4xl">
+              Start with one store. Keep the operating model as the business expands.
+            </h2>
+            <p className="mt-3 leading-7 text-muted-foreground">
+              The same product model supports a single counter, a multi-branch retailer, a pharmacy group, a wholesale operation or a growing distribution business. Larger deployments should be rolled out by branch and role, with named operational owners and acceptance checks at each stage.
+            </p>
+          </div>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {SCALE_CAPABILITIES.map((item) => (
+              <article key={item.title} className="rounded-2xl border border-border bg-surface p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary">
+                    <item.icon className="size-5" />
+                  </span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{item.tag}</span>
+                </div>
+                <h3 className="mt-4 font-semibold">{item.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.body}</p>
+              </article>
+            ))}
+          </div>
+          <div className="mt-8 grid gap-4 border-t border-border pt-6 md:grid-cols-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-primary">01 · Configure</p>
+              <h3 className="mt-2 font-semibold">Map the organisation</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Define shops, branches, terminals, staff responsibilities and product ownership before rollout.</p>
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-primary">02 · Pilot</p>
+              <h3 className="mt-2 font-semibold">Validate real workflows</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Test checkout, offline operation, printer models, stock reconciliation, payment review and device recovery with representative teams.</p>
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-primary">03 · Expand</p>
+              <h3 className="mt-2 font-semibold">Roll out with oversight</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Use central administration and branch-level routines to extend the deployment after each pilot gate is accepted.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,.9fr)]">
+          <div className="rounded-[2.5rem] border border-border bg-card p-6 sm:p-9">
+            <div className="flex items-center gap-3 text-primary">
+              <ShieldCheck className="size-6" />
+              <span className="text-xs font-bold uppercase tracking-[0.16em]">Security implementation</span>
+            </div>
+            <h2 className="mt-3 text-3xl font-bold">Safeguards with clear boundaries</h2>
+            <p className="mt-3 text-sm leading-7 text-muted-foreground">
+              BeBoss uses multiple layers of protection, but software cannot eliminate every device, staff, network or operational risk. Hardware-backed Keystore support depends on the Android device, and a checksum should not be confused with a digital signature.
+            </p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-border bg-surface p-4">
+                <Database className="size-5 text-primary" />
+                <h3 className="mt-3 font-semibold">Encrypted local database</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">Room and SQLCipher protect local business records at rest; Android Keystore protects the database key material.</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-surface p-4">
+                <Cpu className="size-5 text-primary" />
+                <h3 className="mt-3 font-semibold">Device integrity signals</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">Clock rollback detection and device security telemetry help administrators investigate unusual device state.</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-surface p-4">
+                <KeyRound className="size-5 text-primary" />
+                <h3 className="mt-3 font-semibold">Payment-linked BB3 codes</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">New BB3 codes use server-side ECDSA P-256 signatures and bind activation to a verified payment claim and registered shop.</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-surface p-4">
+                <Lock className="size-5 text-primary" />
+                <h3 className="mt-3 font-semibold">Scoped shop data</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">Shop-scoped access policies are used to separate customer business records between tenants.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[2.5rem] border border-warning/25 bg-warning/5 p-6 sm:p-9">
+            <div className="flex items-center gap-3 text-warning">
+              <CheckCircle2 className="size-6" />
+              <span className="text-xs font-bold uppercase tracking-[0.16em]">Operational transparency</span>
+            </div>
+            <h2 className="mt-3 text-2xl font-bold">Important integration boundaries</h2>
+            <div className="mt-5 space-y-4 text-sm leading-6 text-muted-foreground">
+              <p><strong className="text-foreground">Mobile Money:</strong> payment instructions and proof submission are supported, but settlement must be checked against the official MTN MoMo or Airtel Money merchant record before an administrator approves activation. Do not treat a customer screenshot or SMS as settlement confirmation.</p>
+              <p><strong className="text-foreground">Receipt verification:</strong> the receipt checksum detects changes to included receipt fields. It is not a PKI digital signature and should not be presented as independent proof of issuer identity.</p>
+              <p><strong className="text-foreground">Enterprise integrations:</strong> external ERP connectors, corporate SSO, contractual uptime SLAs and independent compliance certifications are not represented as delivered capabilities by this release.</p>
+            </div>
+          </div>
+        </section>
+
         <section className="space-y-6">
           <ReceiptVerifier />
         </section>
 
-        {/* Security Deep Dive Matrix */}
-        <section className="rounded-[2.5rem] border border-border bg-card p-8 sm:p-12 shadow-soft">
-          <div className="max-w-2xl mb-8">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-semibold text-success">
-              <Lock className="size-3.5" />
-              Security implementation notes
-            </span>
-            <h2 className="mt-2 text-3xl font-bold">Safeguards and their limits</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              BeBoss includes device and application safeguards, but no software can prevent every theft, device compromise, staff error or network risk.
+        <section className="rounded-[2rem] border border-border bg-surface p-8 sm:p-12">
+          <div className="max-w-3xl">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Where BeBoss fits</p>
+            <h2 className="mt-2 text-3xl font-bold">{t("sectorsTitle")}</h2>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              The product's checkout, stock, customer balance and branch workflows can be configured for a wide range of retail and service operations.
             </p>
           </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded-2xl border border-border bg-surface p-5 space-y-2">
-              <div className="flex items-center gap-2 text-primary font-bold text-sm">
-                <Database className="size-4" /> SQLCipher AES-256
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Database at rest uses SQLCipher encryption. The database passphrase is protected using Android Keystore; hardware-backed availability depends on the device.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-border bg-surface p-5 space-y-2">
-              <div className="flex items-center gap-2 text-primary font-bold text-sm">
-                <Cpu className="size-4" /> ClockGuard Anti-Rollback
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Uses monotonic elapsed time and stored state to detect some clock rollbacks. This is a safeguard, not a guarantee against all device tampering.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-border bg-surface p-5 space-y-2">
-              <div className="flex items-center gap-2 text-primary font-bold text-sm">
-                <KeyRound className="size-4" /> Payment-linked BB3 ECDSA Unlock
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                New unlock codes use server-side ECDSA P-256 signatures and bind one verified payment request to its exact plan and registered shop. Historical BB2 codes are verified online against their original issued record.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-[2rem] border border-border bg-surface p-8 sm:p-12">
-          <h2 className="text-3xl font-bold">{t("sectorsTitle")}</h2>
-          <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {SECTORS.map((s, si) => (
-              <div key={si} className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-4 text-sm">
-                <s.icon className="size-5 text-primary" />
-                {p.sectors[si] ?? s.name}
+          <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {SECTORS.map((sector, index) => (
+              <div key={index} className="flex min-h-14 items-center gap-3 rounded-2xl border border-border bg-card px-4 py-4 text-sm">
+                <sector.icon className="size-5 shrink-0 text-primary" />
+                <span>{p.sectors[index] ?? sector.name}</span>
               </div>
             ))}
           </div>
-          <Button asChild variant="hero" size="lg" className="mt-10">
-            <Link to="/download">
-              {t("ctaDownload")} <ArrowRight />
-            </Link>
-          </Button>
+          <div className="mt-10 flex flex-wrap items-center gap-3">
+            <Button asChild variant="hero" size="lg">
+              <Link to="/download">
+                Download BeBoss <ArrowRight />
+              </Link>
+            </Button>
+            <Button asChild variant="glass" size="lg">
+              <Link to="/contact">Discuss a multi-branch pilot <ArrowUpRight /></Link>
+            </Button>
+          </div>
         </section>
       </div>
     </SiteLayout>

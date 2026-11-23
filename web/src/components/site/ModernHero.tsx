@@ -7,7 +7,6 @@ import {
   Check,
   Languages,
   PackageCheck,
-  RefreshCw,
   Store,
   WifiOff,
 } from "lucide-react";
@@ -49,10 +48,6 @@ export function ModernHero() {
     event.preventDefault();
     setActiveFeature(nextIndex);
     document.getElementById(`market-feature-${nextIndex}`)?.focus();
-  };
-
-  const refreshAnalytics = () => {
-    void statsQuery.refetch();
   };
 
   return (
@@ -164,11 +159,11 @@ export function ModernHero() {
                   </>
                 ) : (
                   <div className="market-analytics-unavailable" role="status">
-                    <span>{statsQuery.isLoading ? "Connecting to the live BeBoss database…" : liveConfigured ? "Live analytics could not be loaded from Supabase." : "Public Supabase configuration is missing from this web build."}</span>
-                    <button type="button" onClick={refreshAnalytics} disabled={statsQuery.isFetching}>
-                      <RefreshCw size={13} className={statsQuery.isFetching ? "animate-spin" : ""} />
-                      {statsQuery.isFetching ? "Refreshing" : "Retry live data"}
-                    </button>
+                    <div>
+                      <span>{statsQuery.isLoading ? "Connecting to the live BeBoss database…" : liveConfigured ? "Live analytics are currently unavailable from Supabase." : "Public Supabase configuration is missing from this web build."}</span>
+                      <small>Live totals refresh automatically when the service is reachable. No sample figures are substituted.</small>
+                    </div>
+                    <Link to="/status">Open service status <ArrowUpRight size={14} /></Link>
                   </div>
                 )}
               </section>
