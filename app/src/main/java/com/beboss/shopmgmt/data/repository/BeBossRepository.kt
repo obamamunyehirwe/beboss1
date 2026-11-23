@@ -1168,6 +1168,30 @@ class BeBossRepository(private val database: AppDatabase) {
             }
             val shopSyncKey = identityPrimary?.shopSyncKey?.takeIf { it.isNotBlank() }
                 ?: SupabaseAdminClient.computeShopSyncKey(username, phone)
+
+            // Never query or apply subscription state merely because this installation
+            // can derive an owner's tenant key. A registered active terminal assigned
+            // to an active local shop user must exist first.
+            val currentHardwareId = context?.let { SupabaseAdminClient.getOrCreateDeviceId(it) }
+            val currentTerminal = if (!currentHardwareId.isNullOrBlank()) {
+                shopDeviceDao.getByDeviceId(currentHardwareId)
+            } else {
+                identityPrimary
+            }
+            val terminalUser = currentTerminal?.let { userDao.getUserById(it.assignedUserId) }
+            if (currentTerminal == null ||
+                !currentTerminal.isActive ||
+                currentTerminal.shopSyncKey != shopSyncKey ||
+                terminalUser == null ||
+                !terminalUser.isActive ||
+                terminalUser.role.name != currentTerminal.role
+            ) {
+                return@withContext SupabaseSyncResult(
+                    success = false,
+                    message = "Cloud licensing was not checked because this installation is not paired to an active shop user."
+                )
+            }
+
             var directAutoUnlocked = false
             var allDevicesUploaded = false
             var allPaymentRequestsUploaded = true
@@ -1203,7 +1227,14 @@ class BeBossRepository(private val database: AppDatabase) {
                 if (isDirectUnlockUpdate || isRemoteExtension || isRemoteLock || remoteShop.updatedAt > effectiveProfile.updatedAt) {
                     // A normal paid BB3 code also extends the cloud license. Only
                     // the direct-auto marker should produce a direct-unlock notice.
-                    if (isDirectUnlockUpdate) directAutoUnlocked = true
+                    if (
+                        isDirectUnlockUpdate &&
+                        remoteShop.autoUnlockedAt >= effectiveProfile.trialStartedAt &&
+                        remoteShop.autoUnlockedAt <= ClockGuard.effectiveNowMs() &&
+                        effectiveProfile.shopName.isNotBlank()
+                    ) {
+                        directAutoUnlocked = true
+                    }
                     effectiveProfile = effectiveProfile.copy(
                         subscriptionStatus = if (isDirectUnlockUpdate || isRemoteExtension) ShopProfile.STATUS_ACTIVE else remoteShop.subscriptionStatus,
                         subscriptionExpiresAt = if (isRemoteLock) remoteShop.subscriptionExpiresAt else maxOf(effectiveProfile.subscriptionExpiresAt, remoteShop.subscriptionExpiresAt),
@@ -1230,7 +1261,8 @@ class BeBossRepository(private val database: AppDatabase) {
                             shopSyncKey = rd.shopSyncKey,
                             deviceId = rd.deviceId,
                             deviceName = rd.deviceName,
-                            joinCode = rd.joinCode,
+                            // The invitation secret is retained only on the issuing device.
+                            joinCode = if (rd.deviceId.isBlank()) localDev?.joinCode.orEmpty() else "",
                             assignedUserId = rd.assignedUserId,
                             assignedUsername = rd.assignedUsername,
                             assignedUserName = rd.assignedUserName,
