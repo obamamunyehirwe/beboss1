@@ -99,9 +99,9 @@ function SettingsPage() {
             <Smartphone className="size-4 text-primary" /> {a("App update channel")}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <F label="Latest app version" v={cfg.apk_version} on={(v) => set("apk_version", v)} />
-            <F label="Minimum required version" v={cfg.min_app_version} on={(v) => set("min_app_version", v)} hint="Older app versions can be blocked from cloud access when a critical update is required." />
-            <F label="APK download link" v={cfg.apk_download_url} on={(v) => set("apk_download_url", v)} hint="Set automatically when you publish a release" />
+            <F label={a("Latest app version")} v={cfg.apk_version} on={(v) => set("apk_version", v)} />
+            <F label={a("Minimum required version")} v={cfg.min_app_version} on={(v) => set("min_app_version", v)} hint={a("Older app versions can be blocked from cloud access when a critical update is required.")} />
+            <F label={a("APK download link")} v={cfg.apk_download_url} on={(v) => set("apk_download_url", v)} hint={a("Set automatically when you publish a release")} />
           </div>
           <div className="rounded-2xl border border-border bg-muted/40 p-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
