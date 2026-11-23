@@ -16,3 +16,9 @@ verify_jwt = false
 
 [functions.submit-public-contact]
 verify_jwt = false
+
+[functions.create-payment-checkout]
+verify_jwt = true
+
+[functions.payment-gateway-webhook]
+verify_jwt = false

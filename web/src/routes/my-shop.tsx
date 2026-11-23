@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@/lib/use-server-fn";
-import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, Loader2, Plus, Search, Send, Smartphone, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -8,7 +7,6 @@ import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,14 +14,14 @@ import { liveConfigured } from '@/lib/live-config';
 import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
-import { addMyShopDevice, confirmMyShopStockTransfer, deleteMyShopBranch, lookupMyShop, requestMyShopStockTransferCancellation, submitPaymentProof, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
-import { publicSiteQuery } from "@/lib/queries";
+import { addMyShopDevice, claimMyShopOwner, confirmMyShopStockTransfer, createGatewayCheckout, deleteMyShopBranch, lookupMyShop, requestMyShopOwnerOtp, requestMyShopStockTransferCancellation, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
 import { AnnouncementCard } from "@/components/site/AnnouncementBanner";
-import { buildAirtelUssd, buildMtnUssd, calculateSubscriptionFee, effectiveShopStatus } from "@/lib/pricing";
+import { calculateSubscriptionFee, effectiveShopStatus } from "@/lib/pricing";
 import { daysLeft, formatDateTime, formatRwf, relativeTime } from "@/lib/format";
 import { deviceHealth } from "@/lib/sync-health";
 import { ReceiptVerifier } from "@/components/site/ReceiptVerifier";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 
 const searchSchema = z.object({
   pay: z.coerce.number().optional(),
@@ -38,9 +36,9 @@ export const Route = createFileRoute("/my-shop")({
   head: () => ({
     meta: [
       { title: "My shop — check your BeBoss license & payments" },
-      { name: "description", content: "Shop owners: check your BeBoss plan, expiry date, payment verification status and unlock codes, or submit a MoMo payment proof." },
+      { name: "description", content: "Shop owners: securely verify their owner phone, check subscription status and pay for BeBoss through a hosted checkout." },
       { property: "og:title", content: "Check your BeBoss shop license" },
-      { property: "og:description", content: "See your plan status and unlock codes, or submit your Mobile Money payment proof." },
+      { property: "og:description", content: "Verify the registered shop owner phone to manage the BeBoss subscription securely." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -49,6 +47,13 @@ export const Route = createFileRoute("/my-shop")({
 });
 
 type Lookup = Awaited<ReturnType<typeof lookupMyShop>>;
+
+function ownerPhoneE164(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  const local = digits.length === 9 ? digits : digits.startsWith("250") && digits.length === 12 ? digits.slice(3) : digits.startsWith("0") && digits.length === 10 ? digits.slice(1) : "";
+  if (!/^7\d{8}$/.test(local)) throw new Error("Enter the registered Rwanda mobile number.");
+  return `+250${local}`;
+}
 
 function statusVariant(s: string) {
   if (s === "ACTIVE" || s === "APPROVED" || s === "ISSUED") return "success" as const;
@@ -71,14 +76,14 @@ function MyShopPage() {
               <Search className="size-4" /> {t("lookup")}
             </TabsTrigger>
             <TabsTrigger value="pay">
-              <Send className="size-4" /> {t("submitProof")}
+              <Send className="size-4" /> Pay securely
             </TabsTrigger>
           </TabsList>
           <TabsContent value="check">
             <LookupPanel />
           </TabsContent>
           <TabsContent value="pay">
-            <ProofPanel initial={search} onDone={() => setTab("check")} />
+            <ProofPanel initial={search} />
           </TabsContent>
         </Tabs>
       </div>
@@ -91,8 +96,12 @@ function LookupPanel() {
   const st = (s: string) => p.myShop.status[s] ?? s.replaceAll("_", " ");
   const lookup = useServerFn(lookupMyShop);
   const registerDevice = useServerFn(addMyShopDevice);
+  const sendOwnerOtp = useServerFn(requestMyShopOwnerOtp);
+  const enrollOwner = useServerFn(claimMyShopOwner);
   const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Lookup | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -106,10 +115,37 @@ function LookupPanel() {
     e.preventDefault();
     setLoading(true);
     try {
-      setResult(await lookup({ data: { username, phone } }));
+      if (otpSent) {
+        const normalizedPhone = ownerPhoneE164(phone);
+        const { error } = await supabase.auth.verifyOtp({
+          phone: normalizedPhone,
+          token: otp.trim(),
+          type: "sms",
+        });
+        if (error) throw new Error("The one-time code is invalid or expired. Request a new code and try again.");
+        await enrollOwner({ data: { username, phone } });
+        setResult(await lookup({ data: { username, phone } }));
+        toast.success("Owner phone verified. My Shop is now securely authenticated.");
+      } else {
+        const { data: current } = await supabase.auth.getSession();
+        const authenticatedUser = current.session?.user;
+        if (
+          authenticatedUser?.phone_confirmed_at &&
+          authenticatedUser.phone &&
+          authenticatedUser.phone.replace(/\D/g, "").slice(-9) === phone.replace(/\D/g, "").slice(-9)
+        ) {
+          await enrollOwner({ data: { username, phone } });
+          setResult(await lookup({ data: { username, phone } }));
+          toast.success("Owner session verified.");
+        } else {
+          await sendOwnerOtp({ data: { username, phone } });
+          setOtpSent(true);
+          toast.info("If the details match a registered shop, an SMS verification code has been sent to its owner phone.");
+        }
+      }
     } catch (err) {
       console.error(err);
-      toast.error(p.myShop.lookupFailed);
+      toast.error(err instanceof Error ? err.message : p.myShop.lookupFailed);
     } finally {
       setLoading(false);
     }
@@ -123,15 +159,21 @@ function LookupPanel() {
       <form onSubmit={submit} className="grid gap-4 rounded-3xl border border-border bg-card p-6 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <div className="space-y-2">
           <Label htmlFor="u">{t("username")}</Label>
-          <Input id="u" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="mama_shop" required minLength={2} maxLength={80} autoComplete="username" />
+          <Input id="u" value={username} onChange={(e) => { setUsername(e.target.value); setOtpSent(false); setOtp(""); }} placeholder="mama_shop" required minLength={2} maxLength={80} autoComplete="username" />
         </div>
         <div className="space-y-2">
           <Label htmlFor="p">{t("phone")}</Label>
-          <Input id="p" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0788 123 456" required inputMode="tel" maxLength={30} />
+          <Input id="p" value={phone} onChange={(e) => { setPhone(e.target.value); setOtpSent(false); setOtp(""); }} placeholder="0788 123 456" required inputMode="tel" maxLength={30} />
         </div>
+        {otpSent ? (
+          <div className="space-y-2">
+            <Label htmlFor="owner-otp">SMS verification code</Label>
+            <Input id="owner-otp" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))} required minLength={4} maxLength={8} inputMode="numeric" autoComplete="one-time-code" placeholder="Enter code" />
+          </div>
+        ) : null}
         <Button type="submit" variant="hero" disabled={loading}>
-          {loading ? <Loader2 className="animate-spin" /> : <Search />}
-          {t("lookup")}
+          {loading ? <Loader2 className="animate-spin" /> : otpSent ? <KeyRound /> : <Search />}
+          {otpSent ? "Verify & open My Shop" : "Send owner verification code"}
         </Button>
       </form>
 
@@ -575,9 +617,15 @@ function LookupPanel() {
                     {pay.provider} • {formatRwf(pay.amount_rwf)} • {pay.duration_months} {t("calcMonths")}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {formatDateTime(pay.payment_time_ms || pay.created_at)}{pay.payment_note ? ` • ${pay.payment_note}` : ""}
-                    {pay.rejection_reason ? ` • ${pay.rejection_reason}` : ""}
+                    {formatDateTime(pay.payment_time_ms || pay.created_at)}{pay.rejection_reason ? ` • ${pay.rejection_reason}` : ""}
                   </p>
+                  {Number(pay.gateway_verified_at) > 0 ? (
+                    <p className="mt-1 text-xs font-medium text-success">
+                      Provider verified: {pay.gateway_provider} • {pay.gateway_reference} • {pay.gateway_transaction_id} • {formatRwf(pay.gateway_amount_rwf)} {pay.gateway_currency}
+                    </p>
+                  ) : pay.payment_note ? (
+                    <p className="mt-1 text-xs text-muted-foreground">Legacy payment note submitted for manual review</p>
+                  ) : null}
                 </div>
                 <Badge variant={statusVariant(pay.status)}>{st(pay.status)}</Badge>
               </div>
@@ -1068,41 +1116,69 @@ function BranchManager({
   );
 }
 
-function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>; onDone: () => void }) {
-  const { t, p } = useI18n();
-  const submit = useServerFn(submitPaymentProof);
-  const { data: site } = useQuery(publicSiteQuery);
+function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
+  const { t } = useI18n();
+  const startCheckout = useServerFn(createGatewayCheckout);
+  const sendOwnerOtp = useServerFn(requestMyShopOwnerOtp);
+  const enrollOwner = useServerFn(claimMyShopOwner);
+  const [otpSent, setOtpSent] = useState(false);
+  const [ownerVerified, setOwnerVerified] = useState(false);
+  const [ownerOtp, setOwnerOtp] = useState("");
   const [f, setF] = useState({
     shopName: "",
     username: "",
     phone: "",
-    provider: "MTN MoMo" as "MTN MoMo" | "Airtel Money",
+    gateway: "flutterwave" as "flutterwave" | "stripe",
     payerPhone: "",
     payerName: "",
-    paymentTimeMs: Date.now(),
-    paymentNote: "",
+    payerEmail: "",
     months: ([1, 3, 6, 12].includes(Number(initial.m)) ? Number(initial.m) : 1) as 1 | 3 | 6 | 12,
     branches: initial.b ?? 1,
     workers: initial.w ?? 1,
     devices: initial.d ?? 1,
   });
   const [sending, setSending] = useState(false);
-  const cfg = site?.config ?? {};
-  const calc = calculateSubscriptionFee(f.branches, f.workers, f.months, f.devices, Number(site?.config?.per_device_fee_rwf) || 2000);
-  const ussd = f.provider === "MTN MoMo" ? buildMtnUssd(calc.total, cfg) : buildAirtelUssd(calc.total, cfg);
+  const calc = calculateSubscriptionFee(f.branches, f.workers, f.months, f.devices, 2_000);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSending(true);
     try {
-      await submit({ data: { ...f, ussd, paymentTimeMs: f.paymentTimeMs, paymentNote: f.paymentNote } });
-      toast.success(p.myShop.proofSent);
-      onDone();
+      if (!ownerVerified) {
+        const { data: authState } = await supabase.auth.getSession();
+        const sessionPhone = authState.session?.user.phone ?? "";
+        const matchesSession = Boolean(
+          authState.session?.user.phone_confirmed_at &&
+          sessionPhone.replace(/\\D/g, "").slice(-9) === f.phone.replace(/\\D/g, "").slice(-9)
+        );
+
+        if (matchesSession) {
+          await enrollOwner({ data: { username: f.username, phone: f.phone } });
+          setOwnerVerified(true);
+        } else if (!otpSent) {
+          await sendOwnerOtp({ data: { username: f.username, phone: f.phone } });
+          setOtpSent(true);
+          toast.info("An SMS verification code has been requested for the registered shop owner phone.");
+          setSending(false);
+          return;
+        } else {
+          const { error } = await supabase.auth.verifyOtp({
+            phone: ownerPhoneE164(f.phone),
+            token: ownerOtp.trim(),
+            type: "sms",
+          });
+          if (error) throw new Error("The one-time code is invalid or expired. Request a new code and try again.");
+          await enrollOwner({ data: { username: f.username, phone: f.phone } });
+          setOwnerVerified(true);
+        }
+      }
+
+      const checkout = await startCheckout({ data: f });
+      window.location.assign(checkout.checkoutUrl);
     } catch (err) {
       console.error(err);
-      toast.error(p.myShop.sendFailed);
-    } finally {
+      toast.error(err instanceof Error ? err.message : "The payment provider could not start checkout.");
       setSending(false);
     }
   };
@@ -1111,42 +1187,41 @@ function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>
     <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
       <div className="grid gap-4 rounded-3xl border border-border bg-card p-6 sm:grid-cols-2">
         <Field label={t("shopName")} value={f.shopName} onChange={(v) => set("shopName", v)} min={2} max={120} />
-        <Field label={t("username")} value={f.username} onChange={(v) => set("username", v)} min={2} max={80} />
-        <Field label={t("phone")} value={f.phone} onChange={(v) => set("phone", v)} min={9} max={30} tel />
+        <Field label={t("username")} value={f.username} onChange={(v) => { set("username", v); setOtpSent(false); setOwnerVerified(false); setOwnerOtp(""); }} min={2} max={80} />
+        <Field label={t("phone")} value={f.phone} onChange={(v) => { set("phone", v); setOtpSent(false); setOwnerVerified(false); setOwnerOtp(""); }} min={9} max={30} tel />
+        <div className="space-y-2 sm:col-span-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="checkout-owner-otp">Registered owner SMS verification</Label>
+            {ownerVerified ? <span className="text-xs font-semibold text-success">Owner verified</span> : null}
+          </div>
+          {otpSent && !ownerVerified ? (
+            <Input id="checkout-owner-otp" value={ownerOtp} onChange={(e) => setOwnerOtp(e.target.value.replace(/\\D/g, "").slice(0, 8))} required minLength={4} maxLength={8} inputMode="numeric" autoComplete="one-time-code" placeholder="Enter the SMS code" />
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {ownerVerified ? "This checkout is linked to the verified shop owner session." : "BeBoss sends a one-time code only to the phone already registered to this shop. Verify ownership before payment."}
+            </p>
+          )}
+        </div>
         <div className="space-y-2">
-          <Label>{t("payWith")}</Label>
-          <Select value={f.provider} onValueChange={(v) => set("provider", v as typeof f.provider)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
+          <Label>Payment gateway</Label>
+          <Select value={f.gateway} onValueChange={(v) => set("gateway", v as typeof f.gateway)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="MTN MoMo">MTN MoMo</SelectItem>
-              <SelectItem value="Airtel Money">Airtel Money</SelectItem>
+              <SelectItem value="flutterwave">Flutterwave — MTN MoMo, Airtel Money and card</SelectItem>
+              <SelectItem value="stripe">Stripe — bank cards (eligible merchant account required)</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        <Field label={p.myShop.payerName} value={f.payerName} onChange={(v) => set("payerName", v)} min={2} max={120} />
-        <Field label={p.myShop.payerPhone} value={f.payerPhone} onChange={(v) => set("payerPhone", v)} min={9} max={30} tel />
-        <div className="space-y-2">
-          <Label>Payment date and time</Label>
-          <Input
-            type="datetime-local"
-            value={new Date(f.paymentTimeMs - new Date(f.paymentTimeMs).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)}
-            onChange={(e) => set("paymentTimeMs", e.target.value ? new Date(e.target.value).getTime() : Date.now())}
-            required
-          />
-        </div>
+        <Field label="Payer full name" value={f.payerName} onChange={(v) => set("payerName", v)} min={2} max={120} />
+        <Field label="Payer phone" value={f.payerPhone} onChange={(v) => set("payerPhone", v)} min={9} max={30} tel />
         <div className="space-y-2 sm:col-span-2">
-          <Label>MTN MoMo / Airtel Money confirmation SMS</Label>
-          <p className="text-xs text-muted-foreground">After paying, copy the successful payment SMS from your phone's Messages app and paste its full text here. No screenshot is required. Never include your mobile money PIN.</p>
-          <Textarea value={f.paymentNote} onChange={(e) => set("paymentNote", e.target.value)} required minLength={8} maxLength={1000} rows={4} placeholder="Paste the full successful MTN MoMo or Airtel Money confirmation SMS..." />
+          <Label htmlFor="payer-email">Payer email</Label>
+          <Input id="payer-email" type="email" value={f.payerEmail} onChange={(e) => set("payerEmail", e.target.value)} required maxLength={254} autoComplete="email" />
         </div>
         <div className="space-y-2">
           <Label>{t("calcCycle")}</Label>
           <Select value={String(f.months)} onValueChange={(v) => set("months", Number(v) as typeof f.months)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               {[1, 3, 6, 12].map((m) => (
                 <SelectItem key={m} value={String(m)}>
@@ -1164,15 +1239,17 @@ function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>
         <p className="text-sm text-muted-foreground">{t("calcTotal")}</p>
         <p className="font-display text-4xl font-extrabold text-gradient-brand">{formatRwf(calc.total)}</p>
         <div className="rounded-2xl border border-border bg-background/60 p-4">
-          <p className="text-xs text-muted-foreground">{t("dialThis")}</p>
-          <a href={`tel:${encodeURIComponent(ussd)}`} className="font-mono text-lg font-semibold text-primary">
-            {ussd}
-          </a>
+          <p className="text-sm font-semibold">Secure hosted checkout</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            BeBoss creates your checkout securely on its server. The provider confirms settlement directly to BeBoss; a browser redirect or payment SMS is not treated as proof of payment.
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Flutterwave supports RWF card and Rwanda Mobile Money, subject to merchant payment-method activation. Stripe requires an active merchant account in a supported country.
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground">{p.myShop.amountNote}</p>
         <Button type="submit" variant="hero" size="lg" className="mt-auto" disabled={sending}>
           {sending ? <Loader2 className="animate-spin" /> : <Send />}
-          {t("submitProof")}
+          {ownerVerified ? "Continue to secure payment" : otpSent ? "Verify owner & continue" : "Verify owner and pay"}
         </Button>
       </div>
     </form>

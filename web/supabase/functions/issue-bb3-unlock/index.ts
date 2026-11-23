@@ -138,8 +138,8 @@ Deno.serve(async (request: Request) => {
     const input = await request.json();
     const providerVerified = input?.providerVerified === true;
     const verificationNote = String(input?.verificationNote ?? "").trim();
-    if (!providerVerified || verificationNote.length < 5 || verificationNote.length > 500) {
-      return json(403, { message: "Manual MTN MoMo / Airtel Money provider verification is required before BB3 signing." });
+    if (!providerVerified || verificationNote.length > 500) {
+      return json(403, { message: "An authorized provider verification is required before BB3 signing." });
     }
     const paymentRequestId = String(input?.paymentRequestId ?? "").trim();
     if (!paymentRequestId || paymentRequestId.length > 200) {
@@ -151,6 +151,8 @@ Deno.serve(async (request: Request) => {
       "provider", "payer_phone", "payer_full_name", "amount_rwf", "duration_months",
       "branch_count", "worker_count", "device_count", "fee_per_device_rwf",
       "payment_time_ms", "payment_note", "status", "created_at",
+      "gateway_provider", "gateway_reference", "gateway_transaction_id",
+      "gateway_amount_rwf", "gateway_currency", "gateway_verified_at",
     ].join(",");
     const paymentQuery = new URLSearchParams({
       select: paymentColumns,
@@ -162,6 +164,33 @@ Deno.serve(async (request: Request) => {
     const paymentRows = await paymentResponse.json();
     const payment = paymentRows?.[0];
     if (!payment) return json(404, { message: "The submitted payment request was not found." });
+
+    let gatewayVerified = false;
+    if (Number(payment.gateway_verified_at) > 0 &&
+        String(payment.gateway_currency ?? "") === "RWF" &&
+        Number(payment.gateway_amount_rwf) === Number(payment.amount_rwf) &&
+        String(payment.gateway_reference ?? "").trim() &&
+        String(payment.gateway_transaction_id ?? "").trim()) {
+      const gatewayQuery = new URLSearchParams({
+        select: "provider,provider_reference,provider_transaction_id,amount_rwf,currency,status,verified_at",
+        payment_request_id: `eq.${paymentRequestId}`,
+        provider_reference: `eq.${String(payment.gateway_reference)}`,
+        provider_transaction_id: `eq.${String(payment.gateway_transaction_id)}`,
+        provider: `eq.${String(payment.gateway_provider)}`,
+        amount_rwf: `eq.${Number(payment.amount_rwf)}`,
+        currency: "eq.RWF",
+        status: "eq.VERIFIED",
+        verified_at: `eq.${Number(payment.gateway_verified_at)}`,
+        limit: "1",
+      });
+      const gatewayResponse = await adminRest(`payment_gateway_transactions?${gatewayQuery.toString()}`);
+      if (!gatewayResponse.ok) return json(503, { message: "Could not verify the provider settlement ledger." });
+      const gatewayRows = await gatewayResponse.json();
+      gatewayVerified = Array.isArray(gatewayRows) && gatewayRows.length === 1;
+    }
+    if (verificationNote.length < 5 && !gatewayVerified) {
+      return json(403, { message: "This payment has no server-verified gateway settlement or administrator verification note." });
+    }
     if (!["PENDING_VERIFICATION", "REJECTED"].includes(String(payment.status))) {
       return json(409, { message: "Only a pending or rejected payment can receive a new unlock code." });
     }

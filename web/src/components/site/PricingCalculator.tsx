@@ -81,7 +81,7 @@ export function PricingCalculator({ config }: Props) {
         </div>
         <div className="mt-auto flex flex-wrap gap-2 pt-2">
           <Button asChild variant="hero" className="flex-1">
-            <Link to="/my-shop" search={{ pay: 1, b: branches, w: workers, d: devices, m: months }}>{t("submitProof")}</Link>
+            <Link to="/my-shop" search={{ pay: 1, b: branches, w: workers, d: devices, m: months }}>Pay securely</Link>
           </Button>
           {wa ? (
             <Button asChild variant="glass">

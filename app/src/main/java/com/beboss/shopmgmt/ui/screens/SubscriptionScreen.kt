@@ -3,6 +3,8 @@ package com.beboss.shopmgmt.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import com.beboss.shopmgmt.util.normalizeUnlockCodeInput
 import androidx.compose.foundation.BorderStroke
@@ -157,18 +159,6 @@ fun SubscriptionScreen(
             deviceCount = selectedDeviceCount
         )
     }
-
-    var selectedPaymentProvider by remember { mutableStateOf("MTN MoMo") }
-    var usernameProofInput by remember(ownerAccount?.username) { mutableStateOf(ownerAccount?.username ?: "") }
-    var registeredPhoneInput by remember(ownerAccount?.phone, shopProfile.phone) {
-        mutableStateOf(ownerAccount?.phone?.ifBlank { shopProfile.phone } ?: shopProfile.phone)
-    }
-    var payerPhoneInput by remember(shopProfile.phone) { mutableStateOf(shopProfile.phone) }
-    var payerFullNameInput by remember(ownerAccount?.name, shopProfile.name) {
-        mutableStateOf(ownerAccount?.name?.ifBlank { shopProfile.name } ?: shopProfile.name)
-    }
-    var paymentNoteInput by remember { mutableStateOf("") }
-    var proofError by remember { mutableStateOf<String?>(null) }
 
     var voucherInput by remember { mutableStateOf("") }
     var lastAutoTriggeredCode by remember { mutableStateOf("") }
@@ -564,313 +554,80 @@ fun SubscriptionScreen(
                 }
             }
 
-            // 3. Pay through the operator and send payment details for admin review.
+            // 3. Secure online payment through the BeBoss hosted checkout.
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(2.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Payment, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(22.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = Localization.get("sub_step2_title", language),
+                            text = "Secure online payment",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
 
-                    val resolvedAdminWa = livePaymentConfig.adminWhatsAppNumber.trim()
-                        .ifBlank { shopProfile.adminWhatsAppNumber.trim() }
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        border = BorderStroke(1.dp, OrangePrimary.copy(alpha = 0.3f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = Localization.get("sub_live_pay_config_title", language),
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = OrangePrimary
-                            )
-                            Text(
-                                text = Localization.format(
-                                    "sub_mtn_config_row_fmt",
-                                    language,
-                                    livePaymentConfig.mtnMoMoCode.ifBlank { livePaymentConfig.mtnMoMoPhone },
-                                    livePaymentConfig.mtnRecipientName,
-                                    breakdown.ussdMtnCode
-                                ),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = Localization.format(
-                                    "sub_airtel_config_row_fmt",
-                                    language,
-                                    livePaymentConfig.airtelMoneyPhone,
-                                    livePaymentConfig.airtelRecipientName,
-                                    breakdown.ussdAirtelCode
-                                ),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = Localization.format(
-                                    "sub_admin_wa_row_fmt",
-                                    language,
-                                    resolvedAdminWa.ifBlank { Localization.get("sub_admin_wa_unset", language) }
-                                ),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (resolvedAdminWa.isNotBlank()) ProfitGreen else LossRed
-                            )
-                        }
-                    }
-
                     Text(
-                        text = Localization.format("sub_ussd_instructions_fmt", language, breakdown.totalPayable),
-                        fontSize = 11.5.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 16.5.sp
-                    )
-
-                    // Real USSD Dial Buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                selectedPaymentProvider = "MTN MoMo"
-                                OfflineSubscriptionManager.dialMtnMoMo(context, breakdown.totalPayable)
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 48.dp)
-                                .testTag("dial_mtn_ussd_button"),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFCC00))
-                        ) {
-                            Text(
-                                text = Localization.get("sub_mtn_ussd_btn", language),
-                                color = Color(0xFF0F172A),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                selectedPaymentProvider = "Airtel Money"
-                                OfflineSubscriptionManager.dialAirtelMoney(context, breakdown.totalPayable)
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 48.dp)
-                                .testTag("dial_airtel_ussd_button"),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
-                        ) {
-                            Text(
-                                text = Localization.get("sub_airtel_ussd_btn", language),
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    Text(
-                        text = Localization.get("sub_creds_to_wa_header", language),
-                        fontSize = 12.5.sp,
+                        text = "Your subscription total is ${breakdown.totalPayable} RWF for ${selectedDurationMonths} month(s).",
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-
-                    OutlinedTextField(
-                        value = usernameProofInput,
-                        onValueChange = { usernameProofInput = it; proofError = null },
-                        label = { Text(Localization.get("sub_created_username_label", language)) },
-                        leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = OrangePrimary) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("payment_proof_username_input"),
-                        shape = RoundedCornerShape(10.dp),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = registeredPhoneInput,
-                        onValueChange = { registeredPhoneInput = it; proofError = null },
-                        label = { Text(Localization.get("sub_registered_phone_label", language)) },
-                        leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = OrangePrimary) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("payment_proof_phone_input"),
-                        shape = RoundedCornerShape(10.dp),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = payerFullNameInput,
-                        onValueChange = { payerFullNameInput = it; proofError = null },
-                        label = { Text(Localization.get("payer_full_name_label", language)) },
-                        placeholder = { Text("Jean Paul Habimana") },
-                        leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null, tint = OrangePrimary) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("payment_proof_payer_name_input"),
-                        shape = RoundedCornerShape(10.dp),
-                        singleLine = true
-                    )
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = payerPhoneInput,
-                            onValueChange = { payerPhoneInput = it; proofError = null },
-                            label = { Text(Localization.get("sub_sender_phone_short_label", language)) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("payment_proof_sender_phone_input"),
-                            shape = RoundedCornerShape(10.dp),
-                            singleLine = true
-                        )
-                    }
                     Text(
-                        text = "After paying, open Messages, copy the successful MTN MoMo or Airtel Money confirmation SMS, and paste its full text below. No screenshot is required. Never share your Mobile Money PIN.",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "Use BeBoss hosted checkout to pay through Flutterwave with Rwanda MTN MoMo, Airtel Money or card. Stripe card checkout is shown only when the connected merchant account is eligible. The provider verifies settlement directly with BeBoss; a payment SMS, USSD dial or browser redirect cannot mark your subscription as paid.",
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 16.sp
                     )
-                    OutlinedTextField(
-                        value = paymentNoteInput,
-                        onValueChange = { paymentNoteInput = it; proofError = null },
-                        label = { Text("MTN MoMo / Airtel Money confirmation SMS") },
-                        placeholder = { Text("Paste the full successful payment SMS here...") },
-                        modifier = Modifier.fillMaxWidth().testTag("payment_proof_note_input"),
-                        shape = RoundedCornerShape(10.dp),
-                        minLines = 3,
-                        maxLines = 5
-                    )
-
-                    proofError?.let { errorText ->
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = LossRed.copy(alpha = 0.14f),
-                            border = BorderStroke(1.dp, LossRed.copy(alpha = 0.4f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = errorText,
-                                color = LossRed,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(8.dp)
-                            )
-                        }
-                    }
-
-                    val activeUssdCode = if (selectedPaymentProvider.contains("AIRTEL", ignoreCase = true))
-                        breakdown.ussdAirtelCode else breakdown.ussdMtnCode
 
                     Button(
                         onClick = {
-                            val cleanUser = usernameProofInput.trim().ifBlank { ownerAccount?.username ?: "" }
-                            val cleanPhone = registeredPhoneInput.trim().ifBlank { shopProfile.phone }
-                            val cleanPayerPhone = payerPhoneInput.trim().ifBlank { cleanPhone }
-                            val cleanPayerName = payerFullNameInput.trim()
-                            if (cleanUser.isBlank() || cleanPhone.isBlank() || cleanPayerName.isBlank()) {
-                                proofError = Localization.get("sub_proof_err_required", language)
-                                return@Button
-                            }
-                            if (paymentNoteInput.trim().length < 8) {
-                                proofError = "Paste the successful MTN MoMo or Airtel Money confirmation SMS before submitting. No screenshot is needed."
-                                return@Button
-                            }
-                            proofError = null
-                            if (onSubmitPaymentVerification != null) {
-                                onSubmitPaymentVerification(
-                                    selectedPaymentProvider,
-                                    cleanPayerPhone,
-                                    cleanPayerName,
-                                    cleanUser,
-                                    cleanPhone,
-                                    selectedDurationMonths,
-                                    selectedBranchCount,
-                                    selectedWorkerCount,
-                                    selectedDeviceCount,
-                                    paymentNoteInput.trim()
-                                ) { req, _ ->
-                                    OfflineSubscriptionManager.sendPaymentProofViaWhatsApp(
-                                        context = context,
-                                        shopProfile = shopProfile,
-                                        ownerUsername = cleanUser,
-                                        registeredPhone = cleanPhone,
-                                        provider = selectedPaymentProvider,
-                                        ussdCode = activeUssdCode,
-                                        amountRwf = breakdown.totalPayable,
-                                        durationMonths = selectedDurationMonths,
-                                        branchCount = selectedBranchCount,
-                                        workerCount = selectedWorkerCount,
-                                        deviceCount = selectedDeviceCount,
-                                        payerPhone = cleanPayerPhone,
-                                        payerFullName = cleanPayerName,
-                                        requestId = req.id,
-                                        paymentTimeMs = req.paymentTimeMs,
-                                        paymentNote = paymentNoteInput.trim(),
-                                        adminWhatsAppNumber = resolvedAdminWa
-                                    )
-                                }
-                            } else {
-                                OfflineSubscriptionManager.sendPaymentProofViaWhatsApp(
-                                    context = context,
-                                    shopProfile = shopProfile,
-                                    ownerUsername = cleanUser,
-                                    registeredPhone = cleanPhone,
-                                    provider = selectedPaymentProvider,
-                                    ussdCode = activeUssdCode,
-                                    amountRwf = breakdown.totalPayable,
-                                    durationMonths = selectedDurationMonths,
-                                    branchCount = selectedBranchCount,
-                                    workerCount = selectedWorkerCount,
-                                    deviceCount = selectedDeviceCount,
-                                    payerPhone = cleanPayerPhone,
-                                    payerFullName = cleanPayerName,
-                                    paymentTimeMs = System.currentTimeMillis(),
-                                    paymentNote = paymentNoteInput.trim(),
-                                    adminWhatsAppNumber = resolvedAdminWa
-                                )
+                            val checkoutUri = Uri.parse("https://beboss.rw/my-shop").buildUpon()
+                                .appendQueryParameter("pay", "1")
+                                .appendQueryParameter("b", selectedBranchCount.toString())
+                                .appendQueryParameter("w", selectedWorkerCount.toString())
+                                .appendQueryParameter("d", selectedDeviceCount.toString())
+                                .appendQueryParameter("m", selectedDurationMonths.toString())
+                                .build()
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, checkoutUri))
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "No browser is available to open secure checkout.", Toast.LENGTH_LONG).show()
                             }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 50.dp)
-                            .testTag("submit_whatsapp_proof_button"),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen)
+                            .heightIn(min = 52.dp)
+                            .testTag("open_online_checkout_button"),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Payment, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = Localization.get("sub_submit_wa_proof_btn", language),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.5.sp
-                        )
+                        Text("Continue to Flutterwave / Stripe", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                     }
 
-
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Next: verify the registered shop owner by SMS in the browser, complete payment on the provider page, then return to BeBoss to check payment verification and enter the BB3 activation code issued after administrator approval.",
+                            modifier = Modifier.padding(12.dp),
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp
+                        )
+                    }
                 }
             }
 

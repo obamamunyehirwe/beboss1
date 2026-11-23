@@ -1,8 +1,190 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { createPublicClient } from "./server/public-client";
 import { calculateSubscriptionFee, computeShopKey, normalizePhoneLast9 } from "./pricing";
 import { decodeShareToken, extractShopRecords, mergeShareJson, pickLatestDeviceChunkSet, type ShopRecords } from "./snapshot-analytics";
+
+type OwnerAuthContext = {
+  supabase: any;
+  userId: string;
+  claims: Record<string, unknown>;
+  accessToken: string;
+};
+
+function ownerPhoneE164(value: string): string {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  const local = digits.length === 9 ? digits : digits.startsWith("250") && digits.length === 12 ? digits.slice(3) : digits.startsWith("0") && digits.length === 10 ? digits.slice(1) : "";
+  if (!/^7\d{8}$/.test(local)) throw new Error("Enter the registered Rwanda mobile phone number.");
+  return `+250${local}`;
+}
+
+function samePhone(left: string, right: string): boolean {
+  return normalizePhoneLast9(left).length === 9 &&
+    normalizePhoneLast9(left) === normalizePhoneLast9(right);
+}
+
+async function requireOwnerSession(context: OwnerAuthContext, username: string, phone: string): Promise<string> {
+  const key = computeShopKey(username, phone);
+  const { data: authData, error: authError } = await context.supabase.auth.getUser(context.accessToken);
+  const user = authData?.user;
+  if (authError || !user?.id || !user.phone_confirmed_at || !samePhone(String(user.phone ?? ""), phone)) {
+    throw new Error("Verify the registered shop owner's phone by SMS before accessing My Shop.");
+  }
+  if (user.id !== context.userId) throw new Error("The authenticated account does not match this owner session.");
+
+  const { data: membership, error: membershipError } = await context.supabase
+    .from("shop_owner_memberships")
+    .select("shop_id")
+    .eq("shop_id", key)
+    .eq("user_id", user.id)
+    .eq("status", "ACTIVE")
+    .eq("revoked_at", 0)
+    .maybeSingle();
+  if (membershipError || !membership || membership.shop_id !== key) {
+    throw new Error("This verified phone is not enrolled as the owner of the requested shop.");
+  }
+  return key;
+}
+
+const ownerEnrollmentSchema = z.object({
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+});
+
+/**
+ * Sends an OTP only to the mobile number already stored on the registered shop.
+ * Responses intentionally do not reveal whether the shop or username exists.
+ */
+export const requestMyShopOwnerOtp = createServerFn({ method: "POST" })
+  .inputValidator((d: z.infer<typeof ownerEnrollmentSchema>) => ownerEnrollmentSchema.parse(d))
+  .handler(async ({ data }) => {
+    const accepted = { accepted: true };
+    const key = computeShopKey(data.username, data.phone);
+    const phone = ownerPhoneE164(data.phone);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: shop, error: shopError } = await supabaseAdmin
+      .from("shop_accounts")
+      .select("id,owner_username,owner_phone")
+      .eq("id", key)
+      .maybeSingle();
+    if (shopError || !shop ||
+        String(shop.owner_username ?? "").trim().toLowerCase() !== data.username.trim().toLowerCase() ||
+        !samePhone(String(shop.owner_phone ?? ""), phone)) {
+      return accepted;
+    }
+
+    const now = Date.now();
+    const { data: attemptId, error: attemptError } = await supabaseAdmin.rpc("take_shop_owner_otp_slot", {
+      p_shop_id: shop.id,
+      p_now_ms: now,
+      p_window_ms: 10 * 60 * 1000,
+      p_max_attempts: 3,
+    });
+    if (attemptError) throw new Error("Owner verification is temporarily unavailable.");
+    if (!attemptId) return accepted;
+    const attempt = { id: String(attemptId) };
+
+    try {
+      const { data: existingUserId, error: lookupError } = await supabaseAdmin.rpc("find_auth_user_by_phone", {
+        p_phone: phone,
+      });
+      if (lookupError) throw new Error("Could not prepare secure owner authentication.");
+      if (!existingUserId) {
+        const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
+          phone,
+          phone_confirm: false,
+          user_metadata: { account_type: "shop_owner" },
+        });
+        if (error || !created.user) {
+          // Concurrent OTP requests may race to create the same phone account.
+          // Re-read by exact phone and continue only when the winner now exists.
+          const { data: concurrentUserId, error: retryLookupError } = await supabaseAdmin.rpc("find_auth_user_by_phone", {
+            p_phone: phone,
+          });
+          if (retryLookupError || !concurrentUserId) {
+            throw error ?? new Error("Could not initialize owner authentication.");
+          }
+        }
+      }
+
+      const { error: otpError } = await createPublicClient().auth.signInWithOtp({
+        phone,
+        options: { shouldCreateUser: false, channel: "sms" },
+      });
+      if (otpError) throw otpError;
+      await supabaseAdmin.from("shop_owner_otp_attempts").update({ status: "SENT" }).eq("id", attempt.id);
+    } catch (error) {
+      await supabaseAdmin.from("shop_owner_otp_attempts").update({ status: "FAILED" }).eq("id", attempt.id);
+      console.error("[My Shop owner OTP] Delivery failed", error);
+      throw new Error("SMS verification could not be sent. Configure and test the Supabase phone/SMS provider before using My Shop.");
+    }
+    return accepted;
+  });
+
+export const claimMyShopOwner = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: z.infer<typeof ownerEnrollmentSchema>) => ownerEnrollmentSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as OwnerAuthContext;
+    const { data: authData, error: authError } = await ctx.supabase.auth.getUser(ctx.accessToken);
+    const user = authData?.user;
+    const phone = ownerPhoneE164(data.phone);
+    if (authError || !user?.id || !user.phone_confirmed_at || !samePhone(String(user.phone ?? ""), phone)) {
+      throw new Error("The SMS code has not verified the registered owner phone.");
+    }
+
+    const key = computeShopKey(data.username, data.phone);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: shop, error: shopError } = await supabaseAdmin
+      .from("shop_accounts")
+      .select("id,owner_username,owner_phone")
+      .eq("id", key)
+      .maybeSingle();
+    if (shopError || !shop ||
+        String(shop.owner_username ?? "").trim().toLowerCase() !== data.username.trim().toLowerCase() ||
+        !samePhone(String(shop.owner_phone ?? ""), phone)) {
+      throw new Error("The verified account does not match a registered BeBoss shop owner.");
+    }
+
+    const { data: existingMembership, error: existingMembershipError } = await supabaseAdmin
+      .from("shop_owner_memberships")
+      .select("status,revoked_at")
+      .eq("user_id", user.id)
+      .eq("shop_id", shop.id)
+      .maybeSingle();
+    if (existingMembershipError) throw new Error("Could not validate the owner access record.");
+    if (existingMembership && (existingMembership.status !== "ACTIVE" || Number(existingMembership.revoked_at) > 0)) {
+      throw new Error("Owner access to this shop has been revoked. Contact BeBoss support for a reviewed restoration.");
+    }
+
+    const now = Date.now();
+    let membershipError: { message: string } | null = null;
+    if (existingMembership) {
+      const result = await supabaseAdmin
+        .from("shop_owner_memberships")
+        .update({ last_verified_at: now })
+        .eq("user_id", user.id)
+        .eq("shop_id", shop.id)
+        .eq("status", "ACTIVE")
+        .eq("revoked_at", 0);
+      membershipError = result.error;
+    } else {
+      const result = await supabaseAdmin.from("shop_owner_memberships").insert({
+        user_id: user.id,
+        shop_id: shop.id,
+        owner_username: String(shop.owner_username),
+        owner_phone: String(shop.owner_phone),
+        status: "ACTIVE",
+        last_verified_at: now,
+        revoked_at: 0,
+      });
+      membershipError = result.error;
+    }
+    if (membershipError) throw new Error("Could not finish secure owner enrollment.");
+    return { enrolled: true };
+  });
+
 
 export const getPublicSite = createServerFn({ method: "GET" }).handler(async () => {
   const sb = createPublicClient();
@@ -39,14 +221,15 @@ const lookupSchema = z.object({
 });
 
 export const lookupMyShop = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof lookupSchema>) => lookupSchema.parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     if (normalizePhoneLast9(data.phone).length < 9) throw new Error("Enter the full phone number registered in the app.");
-    const key = computeShopKey(data.username, data.phone);
     const sb = createPublicClient(key);
     const [shop, pays, codes, devices, news, snaps, branchRows, transferRows, staffRows] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, owner_name, owner_username, business_type, branch_count, worker_count, device_count, device_limit, monthly_fee_rwf, subscription_status, subscription_expires_at, remote_kill_switch, updated_at").eq("id", key).maybeSingle(),
-      sb.from("payment_requests").select("id, provider, amount_rwf, duration_months, payment_time_ms, payment_note, status, approval_mode, generated_unlock_code, rejection_reason, created_at, updated_at").order("created_at", { ascending: false }).limit(20),
+      sb.from("payment_requests").select("id, provider, amount_rwf, duration_months, payment_time_ms, payment_note, status, approval_mode, generated_unlock_code, rejection_reason, created_at, updated_at, gateway_provider, gateway_reference, gateway_transaction_id, gateway_amount_rwf, gateway_currency, gateway_verified_at").order("created_at", { ascending: false }).limit(20),
       sb.from("unlock_codes").select("unlock_code, tier_code, plan_days, status, issued_at, redeemed_at").order("issued_at", { ascending: false }).limit(20),
       sb.from("shop_devices").select("id, device_name, device_id, role, branch_name, branch_id, is_active, is_owner_primary, assigned_user_id, assigned_user_name, last_synced_at").eq("shop_sync_key", key).order("last_synced_at", { ascending: false }).limit(50),
       sb.from("announcements").select("*").in("audience", ["ALL", "APP"]).order("starts_at", { ascending: false }).limit(5),
@@ -73,7 +256,6 @@ export const lookupMyShop = createServerFn({ method: "POST" })
     }
 
     return {
-      shopKey: key,
       shop: shop.data ?? null,
       payments: pays.data ?? [],
       codes: codes.data ?? [],
@@ -117,9 +299,10 @@ const addShopDeviceSchema = z.object({
 });
 
 export const addMyShopDevice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof addShopDeviceSchema>) => addShopDeviceSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     const sb = createPublicClient(key);
     const [shopResult, ownerResult, primaryResult, userResult, branchResult, devicesResult, usersResult, branchesResult, configResult] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, device_count, device_limit, branch_count, worker_count, remote_kill_switch").eq("id", key).maybeSingle(),
@@ -229,69 +412,6 @@ export const addMyShopDevice = createServerFn({ method: "POST" })
     return { ok: true, id: slot.id, joinCode, expiresAt };
   });
 
-const proofSchema = z.object({
-  shopName: z.string().trim().min(2).max(120),
-  username: z.string().trim().min(2).max(80),
-  phone: z.string().trim().min(9).max(30),
-  provider: z.enum(["MTN MoMo", "Airtel Money"]),
-  payerPhone: z.string().trim().min(9).max(30),
-  payerName: z.string().trim().min(2).max(120),
-  paymentTimeMs: z.number().int().positive().optional(),
-  paymentNote: z.string().trim().min(8, "Paste the successful MTN MoMo or Airtel Money confirmation SMS.").max(1000),
-  months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]),
-  branches: z.number().int().min(1).max(100),
-  workers: z.number().int().min(1).max(500),
-  devices: z.number().int().min(1).max(100),
-  ussd: z.string().max(80),
-});
-
-export const submitPaymentProof = createServerFn({ method: "POST" })
-  .inputValidator((d: z.infer<typeof proofSchema>) => proofSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
-    const sb = createPublicClient(key);
-    const { data: config } = await sb
-      .from("app_config")
-      .select("per_device_fee_rwf")
-      .eq("id", "global")
-      .maybeSingle();
-    const feePerDeviceRwf = Math.max(0, Number(config?.per_device_fee_rwf) || 2000);
-    const amount = calculateSubscriptionFee(
-      data.branches,
-      data.workers,
-      data.months,
-      data.devices,
-      feePerDeviceRwf,
-    ).total;
-    const now = Date.now();
-    const { error } = await sb.from("payment_requests").insert({
-      id: `WEB-${crypto.randomUUID()}`,
-      shop_name: data.shopName,
-      owner_username: data.username.toLowerCase(),
-      owner_phone: data.phone,
-      provider: data.provider,
-      ussd_code: data.ussd,
-      payer_phone: data.payerPhone,
-      payer_full_name: data.payerName,
-      amount_rwf: amount,
-      duration_months: data.months,
-      branch_count: data.branches,
-      worker_count: data.workers,
-      device_count: data.devices,
-      fee_per_device_rwf: feePerDeviceRwf,
-      payment_time_ms: Number(data.paymentTimeMs || now),
-      payment_note: data.paymentNote.trim(),
-      status: "PENDING_VERIFICATION",
-      source: "WEB",
-      created_at: now,
-      updated_at: now,
-    });
-    if (error) {
-      throw new Error("Could not submit your payment proof. Please try again.");
-    }
-    return { ok: true, amount };
-  });
-
 // ---------------------------------------------------------------------------
 // Branch & stock-transfer management (owner portal, tenant-scoped via X-Shop-Sync-Key)
 // Writes set a fresh HLC timestamp so the phone's HLC merge adopts the web edit.
@@ -317,9 +437,10 @@ const branchSchema = z.object({
 });
 
 export const upsertMyShopBranch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof branchSchema>) => branchSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     const sb = createPublicClient(key);
     const now = Date.now();
     const { error } = await sb.from("shop_branches").upsert(
@@ -362,9 +483,10 @@ const branchIdSchema = z.object({
 });
 
 export const deleteMyShopBranch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof branchIdSchema>) => branchIdSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     const sb = createPublicClient(key);
     const now = Date.now();
     // RLS allows tenant update but not delete; soft-delete via is_active=false + fresh HLC.
@@ -396,10 +518,11 @@ const transferSchema = z.object({
 });
 
 export const upsertMyShopStockTransfer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof transferSchema>) => transferSchema.parse(d))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     if (data.fromBranchId === data.toBranchId) throw new Error("Source and destination branches must differ.");
-    const key = computeShopKey(data.username, data.phone);
     const sb = createPublicClient(key);
     const { data: existing, error: readError } = await sb
       .from("shop_stock_transfers")
@@ -458,9 +581,10 @@ const confirmTransferSchema = z.object({
 });
 
 export const confirmMyShopStockTransfer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof confirmTransferSchema>) => confirmTransferSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     const sb = createPublicClient(key);
     const now = Date.now();
     const { data: updated, error } = await sb
@@ -503,9 +627,10 @@ const cancelTransferSchema = z.object({
 });
 
 export const requestMyShopStockTransferCancellation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof cancelTransferSchema>) => cancelTransferSchema.parse(d))
-  .handler(async ({ data }) => {
-    const key = computeShopKey(data.username, data.phone);
+  .handler(async ({ data, context }) => {
+    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
     const sb = createPublicClient(key);
     const now = Date.now();
     const { data: updated, error } = await sb
@@ -538,4 +663,59 @@ export const requestMyShopStockTransferCancellation = createServerFn({ method: "
       return { ok: true, id: data.id, status: current.status, reused: true };
     }
     throw new Error("Only an in-transit transfer can be cancelled.");
+  });
+
+
+
+const gatewayCheckoutSchema = z.object({
+  gateway: z.enum(["flutterwave", "stripe"]),
+  shopName: z.string().trim().min(2).max(120),
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+  payerPhone: z.string().trim().min(9).max(30),
+  payerName: z.string().trim().min(2).max(120),
+  payerEmail: z.string().trim().email().max(254),
+  months: z.union([z.literal(1), z.literal(3), z.literal(6), z.literal(12)]),
+  branches: z.number().int().min(1).max(100),
+  workers: z.number().int().min(1).max(500),
+  devices: z.number().int().min(1).max(100),
+});
+
+export const createGatewayCheckout = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: z.infer<typeof gatewayCheckoutSchema>) => gatewayCheckoutSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const ownerContext = context as unknown as OwnerAuthContext;
+    await requireOwnerSession(ownerContext, data.username, data.phone);
+    const supabaseUrl = process.env["SUPABASE_URL"] || import.meta.env["VITE_SUPABASE_URL"];
+    const publishableKey = process.env["SUPABASE_PUBLISHABLE_KEY"] || import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"];
+    if (!supabaseUrl || !publishableKey) {
+      throw new Error("The BeBoss online payment service is not configured.");
+    }
+
+    const response = await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/create-payment-checkout`, {
+      method: "POST",
+      headers: {
+        apikey: publishableKey,
+        Authorization: `Bearer ${ownerContext.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok !== true || typeof body?.checkoutUrl !== "string") {
+      throw new Error(String(body?.message ?? "The payment provider could not start checkout."));
+    }
+    const checkoutUrl = new URL(body.checkoutUrl);
+    if (checkoutUrl.protocol !== "https:" || !["checkout.flutterwave.com", "checkout.stripe.com"].includes(checkoutUrl.hostname)) {
+      throw new Error("The payment provider returned an unsafe checkout destination.");
+    }
+    return {
+      paymentRequestId: String(body.paymentRequestId),
+      provider: String(body.provider),
+      reference: String(body.reference),
+      amountRwf: Number(body.amountRwf),
+      currency: "RWF" as const,
+      checkoutUrl: checkoutUrl.toString(),
+    };
   });

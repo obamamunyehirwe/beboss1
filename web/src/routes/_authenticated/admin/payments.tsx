@@ -59,11 +59,16 @@ function PaymentsPage() {
     rows.forEach((r) => (c[r.status] = (c[r.status] ?? 0) + 1));
     return c;
   }, [rows]);
-  const filtered = rows.filter((r) => (status === "ALL" || r.status === status) && (source === "ALL" || (r.source || "APP") === source) && matches(q, r.shop_name, r.owner_username, r.owner_phone, r.payer_phone, r.payer_full_name, r.generated_unlock_code, r.payment_note, r.admin_verification_note));
+  const filtered = rows.filter((r) => (status === "ALL" || r.status === status) && (source === "ALL" || (r.source || "APP") === source) && matches(q, r.shop_name, r.owner_username, r.owner_phone, r.payer_phone, r.payer_full_name, r.generated_unlock_code, r.payment_note, r.admin_verification_note, r.gateway_reference, r.gateway_transaction_id));
   const pending = rows.filter((r) => r.status === "PENDING_VERIFICATION");
   const rate = Number(cfg?.per_device_fee_rwf) || 2000;
 
   const doApprove = (r: PaymentRequest, note: string) => {
+    const providerNote = note.trim() || (
+      Number(r.gateway_verified_at) > 0
+        ? `Automated ${r.gateway_provider} settlement ${r.gateway_reference} verified at ${new Date(r.gateway_verified_at).toISOString()}.`
+        : ""
+    );
     const onFinished = () => {
       setVerifyingPayment(null);
       setProviderVerified(false);
@@ -72,7 +77,7 @@ function PaymentsPage() {
     };
     if (approvalMode === "DIRECT") {
       directUnlock.mutate(
-        { requestId: r.id, providerVerified: true, verificationNote: note },
+        { requestId: r.id, providerVerified: true, verificationNote: providerNote },
         {
           onSuccess: (res) => {
             onFinished();
@@ -309,10 +314,22 @@ function PaymentsPage() {
                   <Info label="Registered owner phone" value={r.owner_phone} mono />
                   <Info label="Plan" value={`${r.duration_months} mo • ${r.branch_count} br • ${r.worker_count} staff • ${r.device_count} dev`} />
                 </dl>
-                <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
-                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Customer MTN MoMo / Airtel Money confirmation SMS</p>
-                  <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{r.payment_note?.trim() || "No confirmation SMS was supplied. Check the merchant transaction history directly before approving."}</pre>
-                </div>
+                {Number(r.gateway_verified_at) > 0 ? (
+                  <div className="mt-3 rounded-xl border border-success/30 bg-success/5 p-3">
+                    <p className="text-sm font-semibold text-success">Provider settlement independently verified</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {r.gateway_provider} • reference {r.gateway_reference} • transaction {r.gateway_transaction_id}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {formatRwf(r.gateway_amount_rwf)} • {r.gateway_currency} • verified {formatDateTime(r.gateway_verified_at)}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Legacy customer payment proof</p>
+                    <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{r.payment_note?.trim() || "No provider webhook has verified this payment. Independently confirm legacy MTN/Airtel claims in the merchant portal before approval."}</pre>
+                  </div>
+                )}
                 {r.admin_verification_note ? <p className="mt-2 text-xs text-muted-foreground">Admin verification: {r.admin_verification_note}</p> : null}
                 {r.amount_rwf !== calc.total ? (
                   <p className="mt-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
@@ -328,8 +345,22 @@ function PaymentsPage() {
                   <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
                     {r.status === "PENDING_VERIFICATION" || r.status === "REJECTED" ? (
                       <>
-                        <Button size="sm" variant="success" disabled={busy} onClick={() => { setVerifyingPayment(r); setProviderVerified(false); setVerificationNote(""); }}>
-                          {busy ? <Loader2 className="animate-spin" /> : <KeyRound />} {a("Review SMS & verify payment")}
+                        <Button
+                          size="sm"
+                          variant="success"
+                          disabled={busy}
+                          onClick={() => {
+                            if (Number(r.gateway_verified_at) > 0) {
+                              doApprove(r, "");
+                            } else {
+                              setVerifyingPayment(r);
+                              setProviderVerified(false);
+                              setVerificationNote("");
+                            }
+                          }}
+                        >
+                          {busy ? <Loader2 className="animate-spin" /> : <KeyRound />}
+                          {Number(r.gateway_verified_at) > 0 ? "Issue code from verified gateway payment" : a("Review legacy proof & verify payment")}
                         </Button>
 
                         {r.status === "PENDING_VERIFICATION" ? (

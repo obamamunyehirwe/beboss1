@@ -40,6 +40,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set up Deno for Supabase Edge Function validation
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check Supabase payment Edge Functions
+        run: |
+          deno check --no-lock supabase/functions/create-payment-checkout/index.ts
+          deno check --no-lock supabase/functions/payment-gateway-webhook/index.ts
+
+      - name: Test payment gateway primitives
+        run: deno test --allow-env supabase/functions/_shared/payment-gateway.test.ts
+
       - name: Lint changed security and authentication files
         run: >-
           npx eslint --no-warn-ignored
@@ -51,6 +64,8 @@ jobs:
           src/lib/bb2.ts
           src/lib/bb2.test.ts
           src/lib/public.functions.ts
+          src/routes/my-shop.tsx
+          src/lib/admin-queries.ts
           src/lib/server/public-client.ts
           src/integrations/supabase/auth-middleware.ts
           src/components/site/ModernHero.tsx

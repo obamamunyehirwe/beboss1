@@ -12,11 +12,11 @@ import java.io.File
 
 data class AdminPaymentConfig(
     val adminWhatsAppNumber: String = "",
-    val mtnMoMoCode: String = "054321",
-    val mtnMoMoPhone: String = "0788765432",
-    val mtnRecipientName: String = "BeBoss Pay",
-    val airtelMoneyPhone: String = "0738765432",
-    val airtelRecipientName: String = "BeBoss Pay",
+    val mtnMoMoCode: String = "",
+    val mtnMoMoPhone: String = "",
+    val mtnRecipientName: String = "",
+    val airtelMoneyPhone: String = "",
+    val airtelRecipientName: String = "",
     val perDeviceFeeRwf: Int = 2000,
     val apkDownloadUrl: String = "",
     val apkVersion: String = "2.1.0",
@@ -96,11 +96,11 @@ object OfflineSubscriptionManager {
         val envWa = normalizeBuildWhatsApp()
         cachedConfig = AdminPaymentConfig(
             adminWhatsAppNumber = prefs.getString(KEY_WHATSAPP, null)?.ifBlank { envWa } ?: envWa,
-            mtnMoMoCode = prefs.getString(KEY_MTN_CODE, "054321").orEmpty().ifBlank { "054321" },
-            mtnMoMoPhone = prefs.getString(KEY_MTN_PHONE, "0788765432").orEmpty().ifBlank { "0788765432" },
-            mtnRecipientName = prefs.getString(KEY_MTN_NAME, "BeBoss Pay").orEmpty().ifBlank { "BeBoss Pay" },
-            airtelMoneyPhone = prefs.getString(KEY_AIRTEL_PHONE, "0738765432").orEmpty().ifBlank { "0738765432" },
-            airtelRecipientName = prefs.getString(KEY_AIRTEL_NAME, "BeBoss Pay").orEmpty().ifBlank { "BeBoss Pay" },
+            mtnMoMoCode = prefs.getString(KEY_MTN_CODE, "").orEmpty(),
+            mtnMoMoPhone = prefs.getString(KEY_MTN_PHONE, "").orEmpty(),
+            mtnRecipientName = prefs.getString(KEY_MTN_NAME, "").orEmpty(),
+            airtelMoneyPhone = prefs.getString(KEY_AIRTEL_PHONE, "").orEmpty(),
+            airtelRecipientName = prefs.getString(KEY_AIRTEL_NAME, "").orEmpty(),
             perDeviceFeeRwf = PER_EXTRA_DEVICE_FEE_RWF,
             apkDownloadUrl = prefs.getString(KEY_APK_URL, "").orEmpty(),
             apkVersion = prefs.getString(KEY_APK_VERSION, "2.1.0").orEmpty().ifBlank { "2.1.0" },
@@ -113,10 +113,10 @@ object OfflineSubscriptionManager {
         val effective = config.copy(
             adminWhatsAppNumber = config.adminWhatsAppNumber.trim().ifBlank { envWa },
             mtnMoMoCode = config.mtnMoMoCode.trim(),
-            mtnMoMoPhone = config.mtnMoMoPhone.trim().ifBlank { "0788765432" },
-            mtnRecipientName = config.mtnRecipientName.trim().ifBlank { "BeBoss Pay" },
-            airtelMoneyPhone = config.airtelMoneyPhone.trim().ifBlank { "0738765432" },
-            airtelRecipientName = config.airtelRecipientName.trim().ifBlank { "BeBoss Pay" },
+            mtnMoMoPhone = config.mtnMoMoPhone.trim(),
+            mtnRecipientName = config.mtnRecipientName.trim(),
+            airtelMoneyPhone = config.airtelMoneyPhone.trim(),
+            airtelRecipientName = config.airtelRecipientName.trim(),
             perDeviceFeeRwf = PER_EXTRA_DEVICE_FEE_RWF,
             apkDownloadUrl = config.apkDownloadUrl.trim(),
             apkVersion = config.apkVersion.trim().ifBlank { "2.1.0" }
@@ -172,17 +172,17 @@ object OfflineSubscriptionManager {
 
     fun buildMtnUssdCode(amount: Int, config: AdminPaymentConfig = getCurrentPaymentConfig()): String {
         val code = config.mtnMoMoCode.trim()
-        val phone = config.mtnMoMoPhone.trim().ifBlank { "0788765432" }
-        return if (code.isNotBlank() && code != "0") {
-            "*182*8*1*$code*$amount#"
-        } else {
-            "*182*1*1*$phone*$amount#"
+        val phone = config.mtnMoMoPhone.trim()
+        return when {
+            code.isNotBlank() && code != "0" -> "*182*8*1*$code*$amount#"
+            phone.isNotBlank() -> "*182*1*1*$phone*$amount#"
+            else -> ""
         }
     }
 
     fun buildAirtelUssdCode(amount: Int, config: AdminPaymentConfig = getCurrentPaymentConfig()): String {
-        val phone = config.airtelMoneyPhone.trim().ifBlank { "0738765432" }
-        return "*500*1*1*$phone*$amount#"
+        val phone = config.airtelMoneyPhone.trim()
+        return if (phone.isNotBlank()) "*500*1*1*$phone*$amount#" else ""
     }
 
     /**
@@ -319,8 +319,11 @@ object OfflineSubscriptionManager {
     }
 
     /**
-     * Executes authentic mobile money payment verification.
+     * Legacy synchronous adapter. This client-side path cannot verify a payment with
+     * MTN, Airtel or a provider API, so it never creates a pending or successful claim.
+     * New subscription payments must use the secure hosted-checkout workflow.
      */
+    @Suppress("UNUSED_PARAMETER")
     fun processDirectMoMoPayment(
         shopProfile: ShopProfile,
         payerPhone: String,
@@ -332,65 +335,21 @@ object OfflineSubscriptionManager {
         smsTransactionReference: String? = null,
         alreadyUsedRefs: Set<String> = emptySet()
     ): PaymentProcessingResult {
-        val pricing = calculateSubscriptionPrice(branchCount, workerCount, durationMonths, deviceCount)
-        val planDays = durationMonths * 30
-        val effectivePayer = if (payerPhone.isNotBlank()) payerPhone else shopProfile.phone
+        val effectivePayer = payerPhone.trim().ifBlank { shopProfile.phone }
         val timestamp = System.currentTimeMillis()
-
-        // 1. Validate Rwanda phone number
         val (phoneValid, normalizedPhone) = MoMoPaymentGateway.validateRwandaPhoneNumber(effectivePayer, provider)
-        if (!phoneValid) {
-            return PaymentProcessingResult(
-                isSuccess = false,
-                isPending = false,
-                transactionRef = "",
-                amountPaid = 0,
-                planDays = 0,
-                provider = provider,
-                payerPhone = effectivePayer,
-                timestamp = timestamp,
-                message = normalizedPhone
-            )
-        }
-
-        // 2. If a Telco SMS Reference ID is provided, verify it authentically
-        if (!smsTransactionReference.isNullOrBlank()) {
-            val verifyRes = MoMoPaymentGateway.verifyTelcoTransactionReference(
-                rawReference = smsTransactionReference,
-                provider = provider,
-                amount = pricing.totalPayable,
-                alreadyUsedRefs = alreadyUsedRefs
-            )
-            return PaymentProcessingResult(
-                isSuccess = verifyRes.isSuccess,
-                isPending = verifyRes.isPending,
-                transactionRef = verifyRes.transactionReference,
-                financialId = verifyRes.financialId,
-                amountPaid = if (verifyRes.isSuccess) pricing.totalPayable else 0,
-                planDays = if (verifyRes.isSuccess) planDays else 0,
-                provider = provider,
-                payerPhone = normalizedPhone,
-                timestamp = timestamp,
-                message = verifyRes.message
-            )
-        }
-
-        val ussdCode = when {
-            provider.contains("AIRTEL", ignoreCase = true) -> pricing.ussdAirtelCode
-            else -> pricing.ussdMtnCode
-        }
-
         return PaymentProcessingResult(
             isSuccess = false,
-            isPending = true,
-            transactionRef = "PENDING-$provider-${timestamp.toString().takeLast(6)}",
+            isPending = false,
+            transactionRef = "",
             financialId = null,
             amountPaid = 0,
             planDays = 0,
             provider = provider,
-            payerPhone = normalizedPhone,
+            payerPhone = if (phoneValid) normalizedPhone else effectivePayer,
             timestamp = timestamp,
-            message = "USSD Prompt ready for $provider. Dial $ussdCode on $normalizedPhone, then send your username, phone & MoMo registered name on WhatsApp for Admin unlock."
+            message = if (!phoneValid) normalizedPhone
+            else "Unverified SMS references and USSD prompts cannot establish payment. Open BeBoss secure hosted checkout for a provider-verified transaction."
         )
     }
 
