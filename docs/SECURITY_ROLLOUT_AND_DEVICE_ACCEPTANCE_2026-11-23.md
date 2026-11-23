@@ -6,7 +6,7 @@
 
 ## Implemented in this workstream
 
-- Added a private rate-limit bucket table and a SECURITY DEFINER RPC. The RPC increments the counter atomically using a unique bucket key and ON CONFLICT DO UPDATE. Only service_role can execute it; only SHA-256 hashes are persisted.
+- Added a private rate-limit event table and a SECURITY DEFINER RPC. The RPC increments the counter atomically using a per-key transaction advisory locks and accepted request events. Only service_role can execute it; only SHA-256 hashes are persisted.
 - Applied the atomic limiter migration to the production Supabase project.
 - Deployed verify-legacy-bb2 Edge Function version 4. BB2 attempts now use an 8-attempt / 15-minute atomic IP-hash bucket. A database/RPC failure rejects verification closed with HTTP 503.
 - Deployed submit-public-contact Edge Function version 1. It validates and bounds the request, limits each IP hash to 5 submissions per 15 minutes, inserts with the service role, and returns 429 with Retry-After when limited.
