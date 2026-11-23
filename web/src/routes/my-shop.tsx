@@ -46,10 +46,15 @@ export const Route = createFileRoute("/my-shop")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
-  component: liveConfigured ? MyShopPage : () => <ServiceUnavailable title="navMyShop" />,
+  component: liveConfigured ? MyShopPage : MyShopUnavailable,
 });
 
 type Lookup = Awaited<ReturnType<typeof lookupMyShop>>;
+
+function MyShopUnavailable() {
+  const { t } = useI18n();
+  return <ServiceUnavailable title={t("navMyShop")} />;
+}
 
 function statusVariant(s: string) {
   if (s === "ACTIVE" || s === "APPROVED" || s === "ISSUED") return "success" as const;
@@ -460,7 +465,7 @@ function LookupPanel() {
               >
                 <div className="space-y-2">
                   <Label htmlFor="device-name">{a("Device name")}</Label>
-                  <Input id="device-name" value={deviceName} onChange={(e) => setDeviceName(e.target.value)} placeholder="e.g. Nyabugogo Counter 2" required maxLength={120} />
+                  <Input id="device-name" value={deviceName} onChange={(e) => setDeviceName(e.target.value)} placeholder={a("e.g. Nyabugogo Counter 2")} required maxLength={120} />
                 </div>
                 <div className="space-y-2">
                   <Label>{a("Assigned staff account")}</Label>
@@ -479,7 +484,7 @@ function LookupPanel() {
                 <div className="space-y-2">
                   <Label>{a("Assigned branch")}</Label>
                   <Select value={assignedBranchId || result.staff.find((u) => u.user_id === (assignedUserId || result.staff.find((x) => x.is_active && x.role !== "OWNER")?.user_id))?.assigned_branch_id || ""} onValueChange={setAssignedBranchId}>
-                    <SelectTrigger><SelectValue placeholder="Choose assigned branch" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder={a("Choose assigned branch")} /></SelectTrigger>
                     <SelectContent>
                       {result.branches.filter((b) => b.is_active && b.id === result.staff.find((u) => u.user_id === (assignedUserId || result.staff.find((x) => x.is_active && x.role !== "OWNER")?.user_id))?.assigned_branch_id).map((b) => (
                         <SelectItem key={b.id} value={b.id}>{b.name} · {b.code}</SelectItem>
@@ -490,7 +495,7 @@ function LookupPanel() {
                 <div className="flex items-end">
                   <Button type="submit" variant="hero" disabled={deviceBusy || result.staff.filter((u) => u.is_active && u.role !== "OWNER").length === 0 || result.branches.filter((b) => b.is_active).length === 0}>
                     {deviceBusy ? <Loader2 className="animate-spin" /> : <Plus />}
-                    Register device & create join code
+                    {a("Register device & create join code")}
                   </Button>
                 </div>
               </form>
@@ -503,7 +508,7 @@ function LookupPanel() {
               <div className="mt-4 rounded-xl border border-primary/30 bg-background p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold">{a("Single-use Android join code")}</p>
-                  <Badge variant="warning">Expires {formatDateTime(issuedInvite.expiresAt)}</Badge>
+                  <Badge variant="warning">{a("Expires")} {formatDateTime(issuedInvite.expiresAt)}</Badge>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <code className="rounded-lg border border-border bg-surface px-3 py-2 font-mono text-lg font-bold tracking-wider">{issuedInvite.joinCode}</code>
@@ -685,11 +690,11 @@ function BranchManager({
           notes: form.notes,
         },
       });
-      toast.success(editing ? "Branch updated. It will sync to your phone." : "Branch created. It will sync to your phone.");
+      toast.success(editing ? a("Branch updated. It will sync to your phone.") : a("Branch created. It will sync to your phone."));
       resetForm();
       onRefresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save branch.");
+      toast.error(e instanceof Error ? e.message : a("Could not save branch."));
     } finally {
       setBusy(null);
     }
@@ -702,7 +707,7 @@ function BranchManager({
       toast.success(a("Branch removed. It will sync to your phone."));
       onRefresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not delete branch.");
+      toast.error(e instanceof Error ? e.message : a("Could not delete branch."));
     } finally {
       setBusy(null);
     }
@@ -856,11 +861,11 @@ function BranchManager({
         </div>
         <div className="space-y-2">
           <Label>{a("Manager")}</Label>
-          <Input value={form.managerName} onChange={(e) => setForm({ ...form, managerName: e.target.value })} placeholder="Manager name" />
+          <Input value={form.managerName} onChange={(e) => setForm({ ...form, managerName: e.target.value })} placeholder={a("Manager name")} />
         </div>
         <div className="space-y-2 sm:col-span-2">
           <Label>{a("Address")}</Label>
-          <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Kigali, Rwanda" />
+          <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={a("Kigali, Rwanda")} />
         </div>
         <div className="space-y-2">
           <Label>{a("Operational status")}</Label>
@@ -893,7 +898,7 @@ function BranchManager({
         </div>
         <div className="space-y-2 sm:col-span-2">
           <Label>{a("Notes")}</Label>
-          <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes" />
+          <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder={a("Optional notes")} />
         </div>
         <div className="flex items-center gap-2 sm:col-span-2">
           <input
@@ -1088,7 +1093,7 @@ function ProofPanel({ initial, onDone }: { initial: z.infer<typeof searchSchema>
         <div className="space-y-2 sm:col-span-2">
           <Label>{a("MTN MoMo / Airtel Money confirmation SMS")}</Label>
           <p className="text-xs text-muted-foreground">{a("After paying, copy the successful payment SMS from your phone's Messages app and paste its full text here. No screenshot is required. Never include your mobile money PIN.")}</p>
-          <Textarea value={f.paymentNote} onChange={(e) => set("paymentNote", e.target.value)} required minLength={8} maxLength={1000} rows={4} placeholder="Paste the full successful MTN MoMo or Airtel Money confirmation SMS..." />
+          <Textarea value={f.paymentNote} onChange={(e) => set("paymentNote", e.target.value)} required minLength={8} maxLength={1000} rows={4} placeholder={a("Paste the full successful MTN MoMo or Airtel Money confirmation SMS...")} />
         </div>
         <div className="space-y-2">
           <Label>{t("calcCycle")}</Label>
