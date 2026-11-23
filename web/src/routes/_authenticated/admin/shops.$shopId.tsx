@@ -127,7 +127,7 @@ function ShopDetail() {
             <div className="mt-3 flex gap-2">
               <Input type="number" min={1} max={1000} value={custom} onChange={(e) => setCustom(Math.max(1, Number(e.target.value) || 1))} />
               <Button size="sm" variant="soft" onClick={() => extend.mutate({ shopId, days: custom, autoUnlock: false })}>
-                Extend
+                {a("Extend")}
               </Button>
             </div>
             <Button className="mt-3 w-full" size="sm" variant="success" onClick={() => extend.mutate({ shopId, days: 30, autoUnlock: true })}>
@@ -149,17 +149,17 @@ function ShopDetail() {
                     </Button>
                   }
                   title={`${a("Suspend")} ${shop.shop_name}?`}
-                  description="The app locks on its next sync until you reactivate the shop. Local data stays safe on the device."
+                  description={a("The app locks on its next sync until you reactivate the shop. Local data stays safe on the device.")}
                   confirmLabel={a("Suspend")}
                   destructive
                   onConfirm={() => status.mutate({ shopId, status: "SUSPENDED" })}
                 />
               )}
               <Button size="sm" variant="ghost" onClick={() => status.mutate({ shopId, status: "EXPIRED" })}>
-                Mark expired
+                {a("Mark expired")}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => status.mutate({ shopId, status: "ACTIVE" })}>
-                Mark active
+                {a("Mark active")}
               </Button>
             </div>
           </section>
@@ -171,7 +171,7 @@ function ShopDetail() {
             <div className="mt-4 grid grid-cols-3 gap-3">
               {(["branches", "workers", "devices"] as const).map((k) => (
                 <div key={k} className="space-y-1.5">
-                  <Label className="capitalize">{k === "workers" ? "Staff" : k}</Label>
+                  <Label className="capitalize">{a(k === "workers" ? "Shop staff" : k)}</Label>
                   <Input type="number" min={1} max={k === "workers" ? 500 : 100} value={q[k]} onChange={(e) => setQ({ ...q, [k]: Math.max(1, Number(e.target.value) || 1) })} />
                 </div>
               ))}
