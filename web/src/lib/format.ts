@@ -16,11 +16,28 @@ export function formatDate(ms: number | string | null | undefined, locale = "en-
   return d.toLocaleDateString(locale, { day: "2-digit", month: "short", year: "numeric" });
 }
 
-export function relativeTime(ms: number | string | null | undefined, now = Date.now()): string {
-  if (ms == null || ms === "" || Number(ms) === 0) return "never";
+export function relativeTime(ms: number | string | null | undefined, now = Date.now(), locale?: string): string {
+  if (ms == null || ms === "" || Number(ms) === 0) {
+    return locale ? new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(0, "second") : "never";
+  }
   const t = typeof ms === "string" && Number.isNaN(Number(ms)) ? new Date(ms).getTime() : Number(ms);
   const diff = t - now;
   const abs = Math.abs(diff);
+  if (locale) {
+    const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+    const units: [number, Intl.RelativeTimeFormatUnit][] = [
+      [86_400_000, "day"],
+      [3_600_000, "hour"],
+      [60_000, "minute"],
+    ];
+    for (const [size, unit] of units) {
+      if (abs >= size) {
+        const value = Math.floor(abs / size);
+        return formatter.format(diff < 0 ? -value : value, unit);
+      }
+    }
+    return diff < 0 ? formatter.format(0, "second") : formatter.format(1, "minute");
+  }
   const units: [number, string][] = [
     [86_400_000, "d"],
     [3_600_000, "h"],
