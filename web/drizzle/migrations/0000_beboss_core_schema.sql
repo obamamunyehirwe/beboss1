@@ -311,6 +311,21 @@ create policy "Tenant or admin update shop_devices" on public.shop_devices for u
 create policy "Tenant or admin delete shop_devices" on public.shop_devices for delete
   using (public.is_beboss_admin() or shop_sync_key = public.current_shop_sync_key());
 
+-- Keep the per-terminal license add-on fixed server-side.
+create or replace function public.enforce_shop_device_addon_fee()
+returns trigger
+language plpgsql
+set search_path = public
+as $function$
+begin
+  new.monthly_fee_addon_rwf := case when new.is_owner_primary then 0 else 2000 end;
+  return new;
+end;
+$function$;
+create trigger enforce_shop_device_addon_fee
+before insert or update of is_owner_primary, monthly_fee_addon_rwf on public.shop_devices
+for each row execute function public.enforce_shop_device_addon_fee();
+
 -- ============ PAYMENT REQUESTS ============
 create table public.payment_requests (
   id text primary key,
