@@ -61,6 +61,9 @@ jobs:
           supabase/functions/bootstrap-first-admin/index.ts
           supabase/functions/issue-bb3-unlock/index.ts
           supabase/functions/verify-legacy-bb2/index.ts
+          supabase/functions/submit-public-contact/index.ts
+          src/lib/security-concurrency.integration.test.ts
+          src/routes/contact.tsx
 
       - name: Run unit tests
         run: npm run test
