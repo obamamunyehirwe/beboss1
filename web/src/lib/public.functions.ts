@@ -381,15 +381,15 @@ const transferSchema = z.object({
   username: z.string().trim().min(2).max(80),
   phone: z.string().trim().min(9).max(30),
   id: z.string().trim().min(1).max(120),
-  transferNumber: z.string().trim().max(60).default(""),
-  productId: z.string().trim().max(120).default(""),
-  productName: z.string().trim().max(160).default(""),
-  fromBranchId: z.string().trim().max(120).default(""),
-  fromBranchName: z.string().trim().max(120).default(""),
-  toBranchId: z.string().trim().max(120).default(""),
-  toBranchName: z.string().trim().max(120).default(""),
-  quantity: z.number().positive().max(1_000_000),
-  unit: z.string().trim().max(20).default("pcs"),
+  transferNumber: z.string().trim().min(1).max(60),
+  productId: z.string().trim().min(1).max(120),
+  productName: z.string().trim().min(1).max(160),
+  fromBranchId: z.string().trim().min(1).max(120),
+  fromBranchName: z.string().trim().min(1).max(120),
+  toBranchId: z.string().trim().min(1).max(120),
+  toBranchName: z.string().trim().min(1).max(120),
+  quantity: z.number().finite().positive().max(1_000_000),
+  unit: z.string().trim().min(1).max(20).default("pcs"),
   costValueRwf: z.number().int().min(0).max(1_000_000_000).default(0),
   notes: z.string().trim().max(1000).default(""),
   transferredBy: z.string().trim().max(120).default("Shop Owner"),
@@ -398,39 +398,56 @@ const transferSchema = z.object({
 export const upsertMyShopStockTransfer = createServerFn({ method: "POST" })
   .inputValidator((d: z.infer<typeof transferSchema>) => transferSchema.parse(d))
   .handler(async ({ data }) => {
+    if (data.fromBranchId === data.toBranchId) throw new Error("Source and destination branches must differ.");
     const key = computeShopKey(data.username, data.phone);
     const sb = createPublicClient(key);
+    const { data: existing, error: readError } = await sb
+      .from("shop_stock_transfers")
+      .select("id,status")
+      .eq("id", data.id)
+      .eq("shop_sync_key", key)
+      .maybeSingle();
+    if (readError) throw new Error("Could not verify the transfer request. Please retry.");
+    if (existing) return { ok: true, id: data.id, status: existing.status, reused: true };
+
     const now = Date.now();
-    const { error } = await sb.from("shop_stock_transfers").upsert(
-      {
-        id: data.id,
-        shop_sync_key: key,
-        transfer_number: data.transferNumber,
-        product_id: data.productId,
-        product_name: data.productName,
-        from_branch_id: data.fromBranchId,
-        from_branch_name: data.fromBranchName,
-        to_branch_id: data.toBranchId,
-        to_branch_name: data.toBranchName,
-        quantity: data.quantity,
-        unit: data.unit,
-        cost_value_rwf: data.costValueRwf,
-        transfer_date: now,
-        status: "IN_TRANSIT",
-        notes: data.notes,
-        transferred_by: data.transferredBy,
-        received_by: "",
-        received_at: 0,
-        synced: false,
-        created_at: now,
-        updated_at: now,
-        hlc_timestamp: now,
-        last_modified_device_id: "WEB",
-      },
-      { onConflict: "id" },
-    );
-    if (error) throw new Error("Could not save the stock transfer. Please try again.");
-    return { ok: true, id: data.id };
+    const { error } = await sb.from("shop_stock_transfers").insert({
+      id: data.id,
+      shop_sync_key: key,
+      transfer_number: data.transferNumber,
+      product_id: data.productId,
+      product_name: data.productName,
+      from_branch_id: data.fromBranchId,
+      from_branch_name: data.fromBranchName,
+      to_branch_id: data.toBranchId,
+      to_branch_name: data.toBranchName,
+      quantity: data.quantity,
+      unit: data.unit,
+      cost_value_rwf: data.costValueRwf,
+      transfer_date: now,
+      status: "REQUESTED",
+      notes: data.notes,
+      transferred_by: data.transferredBy,
+      received_by: "",
+      received_at: 0,
+      synced: false,
+      created_at: now,
+      updated_at: now,
+      hlc_timestamp: now,
+      last_modified_device_id: "WEB",
+    });
+    if (error) {
+      // Concurrent duplicate submissions converge on the first immutable command ID.
+      const { data: winner, error: raceReadError } = await sb
+        .from("shop_stock_transfers")
+        .select("id,status")
+        .eq("id", data.id)
+        .eq("shop_sync_key", key)
+        .maybeSingle();
+      if (!raceReadError && winner) return { ok: true, id: data.id, status: winner.status, reused: true };
+      throw new Error("Could not queue the stock transfer request. Please retry.");
+    }
+    return { ok: true, id: data.id, status: "REQUESTED", requestPending: true };
   });
 
 const confirmTransferSchema = z.object({
@@ -446,11 +463,79 @@ export const confirmMyShopStockTransfer = createServerFn({ method: "POST" })
     const key = computeShopKey(data.username, data.phone);
     const sb = createPublicClient(key);
     const now = Date.now();
-    const { error } = await sb
+    const { data: updated, error } = await sb
       .from("shop_stock_transfers")
-      .update({ status: "COMPLETED", received_by: data.receivedBy, received_at: now, updated_at: now, hlc_timestamp: now, last_modified_device_id: "WEB" })
+      .update({
+        status: "RECEIPT_REQUESTED",
+        received_by: data.receivedBy,
+        received_at: 0,
+        updated_at: now,
+        hlc_timestamp: now,
+        last_modified_device_id: "WEB",
+      })
       .eq("id", data.id)
-      .eq("shop_sync_key", key);
-    if (error) throw new Error("Could not confirm the transfer. Please try again.");
-    return { ok: true };
+      .eq("shop_sync_key", key)
+      .eq("status", "IN_TRANSIT")
+      .select("id,status")
+      .maybeSingle();
+    if (error) throw new Error("Could not request transfer receipt. Please retry.");
+    if (updated) return { ok: true, id: data.id, status: updated.status, requestPending: true };
+
+    const { data: current, error: readError } = await sb
+      .from("shop_stock_transfers")
+      .select("id,status")
+      .eq("id", data.id)
+      .eq("shop_sync_key", key)
+      .maybeSingle();
+    if (readError || !current) throw new Error("The transfer could not be found.");
+    if (current.status === "RECEIPT_REQUESTED" || current.status === "COMPLETED") {
+      return { ok: true, id: data.id, status: current.status, reused: true };
+    }
+    throw new Error("Only an in-transit transfer can be sent for receipt confirmation.");
+  });
+
+const cancelTransferSchema = z.object({
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+  id: z.string().trim().min(1).max(120),
+  actorName: z.string().trim().max(120).default("Shop Owner"),
+  reason: z.string().trim().min(3).max(500),
+});
+
+export const requestMyShopStockTransferCancellation = createServerFn({ method: "POST" })
+  .inputValidator((d: z.infer<typeof cancelTransferSchema>) => cancelTransferSchema.parse(d))
+  .handler(async ({ data }) => {
+    const key = computeShopKey(data.username, data.phone);
+    const sb = createPublicClient(key);
+    const now = Date.now();
+    const { data: updated, error } = await sb
+      .from("shop_stock_transfers")
+      .update({
+        status: "CANCEL_REQUESTED",
+        received_by: data.actorName,
+        received_at: 0,
+        notes: data.reason,
+        updated_at: now,
+        hlc_timestamp: now,
+        last_modified_device_id: "WEB",
+      })
+      .eq("id", data.id)
+      .eq("shop_sync_key", key)
+      .eq("status", "IN_TRANSIT")
+      .select("id,status")
+      .maybeSingle();
+    if (error) throw new Error("Could not request transfer cancellation. Please retry.");
+    if (updated) return { ok: true, id: data.id, status: updated.status, requestPending: true };
+
+    const { data: current, error: readError } = await sb
+      .from("shop_stock_transfers")
+      .select("id,status")
+      .eq("id", data.id)
+      .eq("shop_sync_key", key)
+      .maybeSingle();
+    if (readError || !current) throw new Error("The transfer could not be found.");
+    if (current.status === "CANCEL_REQUESTED" || current.status === "CANCELLED") {
+      return { ok: true, id: data.id, status: current.status, reused: true };
+    }
+    throw new Error("Only an in-transit transfer can be cancelled.");
   });
