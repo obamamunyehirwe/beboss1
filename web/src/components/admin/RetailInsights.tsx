@@ -7,6 +7,7 @@ import { EmptyState, LoadingBlock, StatCard, downloadCsv } from "@/components/ad
 import { getShopInsights } from "@/lib/insights.functions";
 import { formatDateTime, relativeTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
+import { useI18n } from "@/lib/i18n";
 
 const tooltipStyle = { background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, color: "var(--foreground)", fontSize: 12 };
 const money = (n: number, cur: string) => `${Math.round(n).toLocaleString("en-US")} ${cur}`;
@@ -14,6 +15,8 @@ const short = (v: number) => (Math.abs(v) >= 1_000_000 ? `${(v / 1_000_000).toFi
 
 export function RetailInsights({ shopId }: { shopId: string }) {
   const a = useAdminText();
+  const { lang } = useI18n();
+  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const fetchInsights = useServerFn(getShopInsights);
   const q = useQuery({
     queryKey: ["admin", "insights", shopId],
@@ -84,7 +87,7 @@ export function RetailInsights({ shopId }: { shopId: string }) {
               <CartesianGrid stroke="var(--border)" vertical={false} />
               <XAxis dataKey="day" stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(d: string) => d.slice(5)} interval={4} />
               <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={short} width={40} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => money(v, cur)} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => money(v, cur, locale)} />
               <Area type="monotone" dataKey="revenue" stroke="var(--primary)" strokeWidth={2} fill="url(#ri-rev)" />
               <Area type="monotone" dataKey="profit" stroke="var(--success)" strokeWidth={2} fill="transparent" />
             </AreaChart>
@@ -122,7 +125,7 @@ export function RetailInsights({ shopId }: { shopId: string }) {
           ) : <Muted>{a("Every product is above its alert level.")}</Muted>}
         </Panel>
         <Panel title={a("Payment methods (30 days)")}>
-          <MiniBars rows={i.paymentMethods.map((m) => ({ name: m.method, value: m.revenue }))} cur={cur} />
+          <MiniBars rows={i.paymentMethods.map((m) => ({ name: m.method, value: m.revenue }))} cur={cur} locale={locale} />
         </Panel>
         <Panel title={a("Sales by category (30 days)")}>
           <MiniBars rows={i.categories.map((c) => ({ name: `${c.name} · ${c.sharePct.toFixed(0)}%`, value: c.revenue }))} cur={cur} />
@@ -160,7 +163,8 @@ function Muted({ children }: { children: React.ReactNode }) {
   return <p className="py-6 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
-function MiniBars({ rows, cur }: { rows: { name: string; value: number }[]; cur: string }) {
+function MiniBars({ rows, cur, locale }: { rows: { name: string; value: number }[]; cur: string; locale: string }) {
+  const a = useAdminText();
   if (!rows.length) return <Muted>{a("No data for this period.")}</Muted>;
   return (
     <div style={{ height: Math.max(120, rows.length * 34) }}>
@@ -168,7 +172,7 @@ function MiniBars({ rows, cur }: { rows: { name: string; value: number }[]; cur:
         <BarChart data={rows} layout="vertical" margin={{ left: 8, right: 16 }}>
           <XAxis type="number" hide />
           <YAxis type="category" dataKey="name" width={130} stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
-          <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--accent)" }} formatter={(v: number) => money(v, cur)} />
+          <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--accent)" }} formatter={(v: number) => money(v, cur, locale)} />
           <Bar dataKey="value" fill="var(--info)" radius={[0, 6, 6, 0]} />
         </BarChart>
       </ResponsiveContainer>
