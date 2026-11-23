@@ -27,22 +27,23 @@ export const Route = createFileRoute("/_authenticated/admin")({
 });
 
 function AdminRouteError({ error, reset }: { error: Error; reset: () => void }) {
+  const a = useAdminText();
   return (
     <div role="alert" className="grid min-h-[70vh] place-items-center bg-background px-4 py-10">
       <div className="w-full max-w-xl rounded-3xl border border-warning/40 bg-card p-8 shadow-xl">
         <div className="flex items-center gap-3 text-warning">
           <ShieldAlert className="size-7" />
-          <h1 className="text-xl font-bold">Admin page could not load</h1>
+          <h1 className="text-xl font-bold">{a("Admin page could not load")}</h1>
         </div>
         <p className="mt-3 text-sm text-muted-foreground">
-          The admin page encountered an error. Your Supabase records and shop data have not been reset.
+          {a("The admin page encountered an error. Your Supabase records and shop data have not been reset.")}
         </p>
         <pre className="mt-4 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
-          {error.message || "Unexpected admin page error"}
+          {error.message || a("Unexpected admin page error")}
         </pre>
         <div className="mt-5 flex flex-wrap gap-2">
-          <Button onClick={reset}><RefreshCw /> Retry page</Button>
-          <Button variant="outline" asChild><Link to="/admin">Admin overview</Link></Button>
+          <Button onClick={reset}><RefreshCw /> {a("Retry page")}</Button>
+          <Button variant="outline" asChild><Link to="/admin">{a("Admin overview")}</Link></Button>
         </div>
       </div>
     </div>
@@ -68,6 +69,7 @@ const NAV = [
 ] as const;
 
 function AdminQueryStatusBanner() {
+  const a = useAdminText();
   const queryClient = useQueryClient();
   const [failures, setFailures] = useState<Array<{ key: string; label: string; message: string }>>([]);
   const [retrying, setRetrying] = useState(false);
@@ -111,12 +113,12 @@ function AdminQueryStatusBanner() {
     <section role="alert" className="mx-auto mt-4 w-full max-w-[1400px] rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 sm:px-6" aria-live="polite">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="font-semibold text-destructive">Some Admin data could not be loaded</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Failed reads are shown here instead of being presented as successful empty tables or sample figures.</p>
+          <h2 className="font-semibold text-destructive">{a("Some Admin data could not be loaded")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{a("Failed reads are shown here instead of being presented as successful empty tables or sample figures.")}</p>
         </div>
         <Button variant="outline" size="sm" disabled={retrying} onClick={() => void retryFailedReads()}>
           <RefreshCw className={retrying ? "animate-spin" : ""} />
-          {retrying ? "Checking…" : "Retry failed reads"}
+          {retrying ? a("Checking…") : a("Retry failed reads")}
         </Button>
       </div>
       <ul className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -131,6 +133,7 @@ function AdminQueryStatusBanner() {
   );
 }
 function AdminLayout() {
+  const a = useAdminText();
   const ctx = useAdminCtx();
   const router = useRouter();
   const signOut = async () => {
@@ -150,16 +153,16 @@ function AdminLayout() {
       <div className="grid min-h-screen place-items-center bg-ember px-4">
         <div className="max-w-md rounded-3xl border border-border bg-card p-8 text-center">
           <ShieldAlert className="mx-auto size-10 text-warning" />
-          <h1 className="mt-4 text-xl font-bold">Could not verify admin access</h1>
+          <h1 className="mt-4 text-xl font-bold">{a("Could not verify admin access")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            BeBoss could not complete the secure role check with Supabase. Your permissions have not been changed. Retry the connection, or sign out and sign in again.
+            {a("BeBoss could not complete the secure role check with Supabase. Your permissions have not been changed. Retry the connection, or sign out and sign in again.")}
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-2">
             <Button variant="hero" onClick={() => void ctx.refetch()}>
-              <RefreshCw /> Retry
+              <RefreshCw /> {a("Retry")}
             </Button>
             <Button variant="glass" asChild>
-              <Link to="/">Back to site</Link>
+              <Link to="/">{a("Back to site")}</Link>
             </Button>
             <Button variant="secondary" onClick={signOut}>
               <LogOut /> Sign out
@@ -175,9 +178,9 @@ function AdminLayout() {
       <div className="grid min-h-screen place-items-center bg-ember px-4">
         <div className="max-w-md rounded-3xl border border-border bg-card p-8 text-center">
           <ShieldAlert className="mx-auto size-10 text-warning" />
-          <h1 className="mt-4 text-xl font-bold">Waiting for admin access</h1>
+          <h1 className="mt-4 text-xl font-bold">{a("Waiting for admin access")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            You're signed in as <span className="text-foreground">{ctx.data?.email || "this account"}</span>, but it doesn't have admin rights yet. The master admin can grant access from Admin team.
+            {a("You're signed in as")} <span className="text-foreground">{ctx.data?.email || "this account"}</span>, {a("but it doesn't have admin rights yet. The master admin can grant access from Admin team.")}
           </p>
           <div className="mt-6 flex justify-center gap-2">
             <Button variant="glass" asChild>
@@ -290,7 +293,7 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="admin-mobile-sheet w-64 bg-sidebar p-0">
-            <SheetTitle className="sr-only">Admin menu</SheetTitle>
+            <SheetTitle className="sr-only">{a("Admin menu")}</SheetTitle>
             <SidebarBody email={email} isAdmin={isAdmin} onSignOut={onSignOut} onNavigate={() => setOpen(false)} />
           </SheetContent>
         </Sheet>
