@@ -20,20 +20,6 @@ async function adminRest(path: string, init: RequestInit = {}): Promise<Response
   return fetch(`${supabaseUrl}/rest/v1/${path}`, { ...init, headers });
 }
 
-async function hmacBase64(secret: string, rawBody: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const bytes = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody)));
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-
 function constantTimeEqual(left: string, right: string): boolean {
   if (left.length !== right.length) return false;
   let difference = 0;
@@ -136,20 +122,21 @@ Deno.serve(async (request: Request) => {
   }
 
   const rawBody = await request.text();
-  const signature = request.headers.get("flutterwave-signature") ?? "";
+  const signature = request.headers.get("verif-hash") ?? "";
   if (!signature) return json(401, { message: "Missing provider signature." });
 
   try {
-    const expectedSignature = await hmacBase64(webhookSecret, rawBody);
-    if (!constantTimeEqual(signature, expectedSignature)) {
+    // Flutterwave sends the configured Secret Hash verbatim in "verif-hash".
+    // It is not an HMAC of the request body.
+    if (!constantTimeEqual(signature, webhookSecret)) {
       return json(401, { message: "Invalid provider signature." });
     }
 
     const payload = JSON.parse(rawBody);
-    const eventId = String(payload?.id ?? "").trim();
     const eventType = String(payload?.type ?? payload?.event ?? "").trim();
     const transactionId = String(payload?.data?.id ?? "").trim();
     const reference = String(payload?.data?.tx_ref ?? "").trim();
+    const eventId = String(payload?.id ?? transactionId).trim();
     if (!eventId || !transactionId || !reference || eventType !== "charge.completed") {
       return json(400, { message: "Invalid Flutterwave webhook payload." });
     }
