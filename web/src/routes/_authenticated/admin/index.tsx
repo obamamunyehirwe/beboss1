@@ -101,7 +101,7 @@ function Overview() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Overview" sub="Live health of every BeBoss shop, payment and device." actions={
+      <PageHeader title={a("Overview")} sub={a("Live health of every BeBoss shop, payment and device.")} actions={
         <Button asChild variant="hero" size="sm">
           <Link to="/admin/payments">
             Review payments ({m.pending.length}) <ArrowRight />
@@ -109,14 +109,14 @@ function Overview() {
         </Button>
       } />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Monthly recurring revenue" value={formatRwf(m.mrr)} sub={`${m.statusCounts["ACTIVE"]} paying shops`} icon={Wallet} tone="brand" />
-        <StatCard label="Collected this month" value={formatRwf(m.revThis)} sub={growth == null ? `Last month ${formatRwf(m.revLast)}` : `${growth >= 0 ? "+" : ""}${growth}% vs last month`} icon={TrendingUp} tone="success" />
-        <StatCard label="Pending verification" value={m.pending.length} sub={formatRwf(m.pending.reduce((a, x) => a + x.amount_rwf, 0)) + " waiting"} icon={CreditCard} tone="warning" />
-        <StatCard label="Shops" value={m.totalShops} sub={`${m.statusCounts["TRIAL"]} on trial • ${m.statusCounts["EXPIRED"]} expired`} icon={Store} tone="info" />
-        <StatCard label="Paired devices" value={(devices.data ?? []).length} sub={`${activeDevices} active`} icon={Smartphone} />
-        <StatCard label="Shop staff accounts" value={(users.data ?? []).length} sub={`${(users.data ?? []).filter((u) => u.is_active).length} active`} icon={Users} />
-        <StatCard label="APK downloads (30 days)" value={m.dl30} sub="from website, QR and app" icon={Download} />
-        <StatCard label="Suspended / killed" value={m.statusCounts["SUSPENDED"]! + m.statusCounts["KILLED"]!} sub="remote controls applied" icon={AlertTriangle} tone="danger" />
+        <StatCard label={a("Monthly recurring revenue")} value={formatRwf(m.mrr)} sub={`${m.statusCounts["ACTIVE"]} ${a("paying shops")}`} icon={Wallet} tone="brand" />
+        <StatCard label={a("Collected this month")} value={formatRwf(m.revThis)} sub={growth == null ? `${a("Last month")} ${formatRwf(m.revLast)}` : `${growth >= 0 ? "+" : ""}${growth}% ${a("vs last month")}`} icon={TrendingUp} tone="success" />
+        <StatCard label={a("Pending verification")} value={m.pending.length} sub={formatRwf(m.pending.reduce((a, x) => a + x.amount_rwf, 0)) + " " + a("waiting")} icon={CreditCard} tone="warning" />
+        <StatCard label={a("Shops")} value={m.totalShops} sub={`${m.statusCounts["TRIAL"]} ${a("on trial")} • ${m.statusCounts["EXPIRED"]} ${a("expired")}`} icon={Store} tone="info" />
+        <StatCard label={a("Paired devices")} value={(devices.data ?? []).length} sub={`${activeDevices} ${a("active")}`} icon={Smartphone} />
+        <StatCard label={a("Shop staff accounts")} value={(users.data ?? []).length} sub={`${(users.data ?? []).filter((u) => u.is_active).length} ${a("active")}`} icon={Users} />
+        <StatCard label={a("APK downloads (30 days)")} value={m.dl30} sub={a("from website, QR and app")} icon={Download} />
+        <StatCard label={a("Suspended / killed")} value={m.statusCounts["SUSPENDED"]! + m.statusCounts["KILLED"]!} sub={a("remote controls applied")} icon={AlertTriangle} tone="danger" />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
