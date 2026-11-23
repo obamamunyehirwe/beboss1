@@ -157,7 +157,7 @@ begin
   end if;
 
   if v_creator.role = 'MANAGER'
-     and v_assignee.assigned_branch_id not in ('', v_device.branch_id) then
+     and v_assignee.assigned_branch_id <> v_device.branch_id then
     raise exception using errcode = '42501', message = 'A branch manager may only assign staff belonging to their branch.';
   end if;
 
@@ -343,6 +343,172 @@ begin
 end;
 $$;
 
+
+create or replace function beboss_private.set_shop_device_active(
+  p_shop_sync_key text,
+  p_device_record_id text,
+  p_actor_device_id text,
+  p_actor_user_id text,
+  p_is_active boolean
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_device public.shop_devices%rowtype;
+  v_branch public.shop_branches%rowtype;
+  v_actor public.shop_users%rowtype;
+begin
+  if coalesce(public.current_shop_sync_key(), '') <> coalesce(p_shop_sync_key, '')
+     or coalesce(p_shop_sync_key, '') = '' then
+    raise exception using errcode = '42501', message = 'Shop context is invalid.';
+  end if;
+
+  select * into v_device
+  from public.shop_devices d
+  where d.id = p_device_record_id and d.shop_sync_key = p_shop_sync_key
+  for update;
+  if not found or v_device.is_owner_primary then
+    raise exception using errcode = '22023', message = 'This terminal cannot be changed.';
+  end if;
+
+  select * into v_actor
+  from public.shop_users u
+  where u.shop_sync_key = p_shop_sync_key
+    and u.user_id = p_actor_user_id
+    and u.is_active = true;
+  if not found then
+    raise exception using errcode = '42501', message = 'The signed-in shop user is not active.';
+  end if;
+
+  if not exists (
+    select 1 from public.shop_devices d
+    where d.shop_sync_key = p_shop_sync_key
+      and d.device_id = p_actor_device_id
+      and d.assigned_user_id = p_actor_user_id
+      and d.is_active = true
+  ) then
+    raise exception using errcode = '42501', message = 'The current terminal is not registered to this shop user.';
+  end if;
+
+  select * into v_branch
+  from public.shop_branches b
+  where b.id = v_device.branch_id and b.shop_sync_key = p_shop_sync_key;
+  if not found then
+    raise exception using errcode = '22023', message = 'The terminal branch does not exist.';
+  end if;
+
+  if v_actor.role <> 'OWNER' and not (
+    v_actor.role = 'MANAGER'
+    and (
+      v_actor.assigned_branch_id = v_device.branch_id
+      or v_branch.manager_user_id = p_actor_user_id
+    )
+  ) then
+    raise exception using errcode = '42501', message = 'A branch manager may only manage terminals assigned to their branch.';
+  end if;
+
+  if v_actor.role = 'MANAGER' and v_device.device_id = p_actor_device_id and not p_is_active then
+    raise exception using errcode = '42501', message = 'A branch manager cannot pause the terminal they are currently using.';
+  end if;
+
+  update public.shop_devices
+  set is_active = p_is_active,
+      updated_at = public.now_ms(),
+      join_code = ''
+  where id = p_device_record_id and shop_sync_key = p_shop_sync_key;
+
+  if not p_is_active then
+    update beboss_private.shop_device_invites
+    set revoked_at = public.now_ms()
+    where shop_sync_key = p_shop_sync_key
+      and device_record_id = p_device_record_id
+      and redeemed_at is null
+      and revoked_at is null;
+  end if;
+
+  return true;
+end;
+$;
+
+create or replace function beboss_private.delete_shop_device(
+  p_shop_sync_key text,
+  p_device_record_id text,
+  p_actor_device_id text,
+  p_actor_user_id text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_device public.shop_devices%rowtype;
+  v_branch public.shop_branches%rowtype;
+  v_actor public.shop_users%rowtype;
+begin
+  if coalesce(public.current_shop_sync_key(), '') <> coalesce(p_shop_sync_key, '')
+     or coalesce(p_shop_sync_key, '') = '' then
+    raise exception using errcode = '42501', message = 'Shop context is invalid.';
+  end if;
+
+  select * into v_device
+  from public.shop_devices d
+  where d.id = p_device_record_id and d.shop_sync_key = p_shop_sync_key
+  for update;
+  if not found or v_device.is_owner_primary then
+    raise exception using errcode = '22023', message = 'This terminal cannot be removed.';
+  end if;
+
+  select * into v_actor
+  from public.shop_users u
+  where u.shop_sync_key = p_shop_sync_key
+    and u.user_id = p_actor_user_id
+    and u.is_active = true;
+  if not found then
+    raise exception using errcode = '42501', message = 'The signed-in shop user is not active.';
+  end if;
+
+  if not exists (
+    select 1 from public.shop_devices d
+    where d.shop_sync_key = p_shop_sync_key
+      and d.device_id = p_actor_device_id
+      and d.assigned_user_id = p_actor_user_id
+      and d.is_active = true
+  ) then
+    raise exception using errcode = '42501', message = 'The current terminal is not registered to this shop user.';
+  end if;
+
+  select * into v_branch
+  from public.shop_branches b
+  where b.id = v_device.branch_id and b.shop_sync_key = p_shop_sync_key;
+  if not found then
+    raise exception using errcode = '22023', message = 'The terminal branch does not exist.';
+  end if;
+
+  if v_actor.role <> 'OWNER' and not (
+    v_actor.role = 'MANAGER'
+    and (
+      v_actor.assigned_branch_id = v_device.branch_id
+      or v_branch.manager_user_id = p_actor_user_id
+    )
+  ) then
+    raise exception using errcode = '42501', message = 'A branch manager may only remove terminals assigned to their branch.';
+  end if;
+
+  if v_device.device_id = p_actor_device_id then
+    raise exception using errcode = '42501', message = 'A user cannot remove the terminal they are currently using.';
+  end if;
+
+  delete from public.shop_devices
+  where id = p_device_record_id and shop_sync_key = p_shop_sync_key;
+
+  return true;
+end;
+$;
+
 -- Exposed RPC wrappers are invoker-rights only. The privileged implementation
 -- stays in an unexposed schema with a pinned empty search_path.
 create or replace function public.issue_shop_device_invite(
@@ -410,6 +576,49 @@ revoke all on function public.revoke_shop_device_invites(text, text, text, text)
 grant execute on function public.issue_shop_device_invite(text, text, text, text, text, text, bigint) to anon, authenticated;
 grant execute on function public.redeem_shop_device_invite(text, text, text, text) to anon, authenticated;
 grant execute on function public.revoke_shop_device_invites(text, text, text, text) to anon, authenticated;
+
+create or replace function public.set_shop_device_active(
+  p_shop_sync_key text,
+  p_device_record_id text,
+  p_actor_device_id text,
+  p_actor_user_id text,
+  p_is_active boolean
+)
+returns boolean
+language sql
+security invoker
+set search_path = ''
+as $
+  select beboss_private.set_shop_device_active(
+    p_shop_sync_key, p_device_record_id, p_actor_device_id, p_actor_user_id, p_is_active
+  );
+$;
+
+create or replace function public.delete_shop_device(
+  p_shop_sync_key text,
+  p_device_record_id text,
+  p_actor_device_id text,
+  p_actor_user_id text
+)
+returns boolean
+language sql
+security invoker
+set search_path = ''
+as $
+  select beboss_private.delete_shop_device(
+    p_shop_sync_key, p_device_record_id, p_actor_device_id, p_actor_user_id
+  );
+$;
+
+revoke all on function beboss_private.set_shop_device_active(text, text, text, text, boolean) from public;
+revoke all on function beboss_private.delete_shop_device(text, text, text, text) from public;
+grant execute on function beboss_private.set_shop_device_active(text, text, text, text, boolean) to anon, authenticated;
+grant execute on function beboss_private.delete_shop_device(text, text, text, text) to anon, authenticated;
+
+revoke all on function public.set_shop_device_active(text, text, text, text, boolean) from public;
+revoke all on function public.delete_shop_device(text, text, text, text) from public;
+grant execute on function public.set_shop_device_active(text, text, text, text, boolean) to anon, authenticated;
+grant execute on function public.delete_shop_device(text, text, text, text) to anon, authenticated;
 
 comment on table beboss_private.shop_device_invites is
   'Private hashed single-use device pairing invitations. Not exposed through the Supabase Data API.';
