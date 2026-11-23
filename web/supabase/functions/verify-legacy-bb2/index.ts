@@ -8,8 +8,8 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-function json(status: number, body: Record<string, unknown>) {
-  return new Response(JSON.stringify(body), { status, headers: corsHeaders });
+function json(status: number, body: Record<string, unknown>, extraHeaders: Record<string, string> = {}) {
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, ...extraHeaders } });
 }
 
 async function rest(path: string, init: RequestInit = {}) {
@@ -57,28 +57,37 @@ Deno.serve(async (request: Request) => {
       return json(403, { valid: false, message: "This BB2 code is bound to a different shop account." });
     }
 
-    // Hash the source IP. Never store a raw client IP or the submitted unlock code.
+    // Hash the source IP with a server-only pepper. Never persist a raw IP address.
     const sourceIp = request.headers.get("cf-connecting-ip") ??
       request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
     const ipHash = await sha256Hex(`${sourceIp}:${serviceRoleKey.slice(0, 24)}`);
-    const windowStart = new Date(Date.now() - 15 * 60_000).toISOString();
-    const attemptsQuery = new URLSearchParams({
-      select: "id",
-      ip_hash: `eq.${ipHash}`,
-      created_at: `gte.${windowStart}`,
-      limit: "9",
-    });
-    const attemptsResponse = await rest(`unlock_code_verification_attempts?${attemptsQuery.toString()}`);
-    if (!attemptsResponse.ok) return json(503, { valid: false, message: "Legacy-code verification is temporarily unavailable." });
-    const attempts = await attemptsResponse.json();
-    if (attempts.length >= 8) return json(429, { valid: false, message: "Too many code attempts. Wait 15 minutes before trying again." });
-
-    const recordAttempt = await rest("unlock_code_verification_attempts", {
+    const limitResponse = await rest("rpc/consume_rate_limit", {
       method: "POST",
-      headers: { Prefer: "return=minimal" },
-      body: JSON.stringify({ ip_hash: ipHash }),
+      body: JSON.stringify({
+        p_scope: "legacy_bb2",
+        p_key_hash: ipHash,
+        p_max_hits: 8,
+        p_window_seconds: 900,
+      }),
     });
-    if (!recordAttempt.ok) return json(503, { valid: false, message: "Legacy-code verification is temporarily unavailable." });
+    if (!limitResponse.ok) {
+      console.error("[verify-legacy-bb2] Atomic rate-limit RPC failed:", limitResponse.status);
+      return json(503, { valid: false, message: "Legacy-code verification is temporarily unavailable." });
+    }
+    const limitRows = await limitResponse.json();
+    const limit = Array.isArray(limitRows) ? limitRows[0] : limitRows;
+    if (typeof limit?.allowed !== "boolean") {
+      console.error("[verify-legacy-bb2] Atomic rate-limit RPC returned an invalid response.");
+      return json(503, { valid: false, message: "Legacy-code verification is temporarily unavailable." });
+    }
+    if (!limit.allowed) {
+      const retryAfter = Math.max(1, Number(limit.retry_after_seconds) || 900);
+      return json(
+        429,
+        { valid: false, message: "Too many code attempts. Wait before trying again." },
+        { "Retry-After": String(retryAfter) },
+      );
+    }
 
     const lookup = new URLSearchParams({
       select: "id,unlock_code,shop_username,shop_phone,tier_code,plan_days,amount_rwf,status",
