@@ -108,7 +108,13 @@ data class SupabasePaymentRequestDto(
     val verifiedByAdmin: String,
     val rejectionReason: String = "",
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val gatewayProvider: String = "",
+    val gatewayReference: String = "",
+    val gatewayTransactionId: String = "",
+    val gatewayAmountRwf: Int = 0,
+    val gatewayCurrency: String = "",
+    val gatewayVerifiedAt: Long = 0L
 )
 
 data class SupabaseSignedPaymentUnlock(
@@ -2129,7 +2135,7 @@ object SupabaseAdminClient {
     suspend fun fetchAllPaymentRequests(limit: Int = 100, offset: Int = 0): List<SupabasePaymentRequestDto> = withContext(Dispatchers.IO) {
         if (!isConfigured()) return@withContext emptyList()
         try {
-            val paymentColumns = "id,shop_name,owner_username,owner_phone,device_challenge,provider,ussd_code,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,created_at,updated_at"
+            val paymentColumns = "id,shop_name,owner_username,owner_phone,device_challenge,provider,ussd_code,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,created_at,updated_at,gateway_provider,gateway_reference,gateway_transaction_id,gateway_amount_rwf,gateway_currency,gateway_verified_at"
             val req = buildRestRequest(
                 "payment_requests?select=$paymentColumns&order=created_at.desc&limit=${limit.coerceIn(1, 500)}&offset=${offset.coerceAtLeast(0)}",
                 useAdminJwtIfAvailable = true
@@ -2277,8 +2283,19 @@ object SupabaseAdminClient {
     suspend fun approvePaymentAndIssueCode(request: SupabasePaymentRequestDto, adminName: String, verificationNote: String = ""): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val session = ensureValidAdminSession()
         if (!isConfigured() || session == null) return@withContext Pair(false, "Admin authentication expired or unavailable.")
-        if (request.status != "APPROVED" && verificationNote.trim().length < 5) {
-            return@withContext Pair(false, "Record the result of checking the official MTN MoMo / Airtel Money merchant transaction before issuing BB3.")
+        val gatewayVerified = request.gatewayVerifiedAt > 0L &&
+            request.gatewayCurrency.equals("RWF", ignoreCase = true) &&
+            request.gatewayAmountRwf == request.amountRwf &&
+            request.gatewayReference.isNotBlank() &&
+            request.gatewayTransactionId.isNotBlank() &&
+            request.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE")
+        val effectiveVerificationNote = if (gatewayVerified) {
+            "Automated ${request.gatewayProvider} settlement verified: reference ${request.gatewayReference}; transaction ${request.gatewayTransactionId}; amount ${request.gatewayAmountRwf} RWF; verified ${request.gatewayVerifiedAt}."
+        } else {
+            verificationNote.trim()
+        }
+        if (request.status != "APPROVED" && !gatewayVerified && effectiveVerificationNote.length < 5) {
+            return@withContext Pair(false, "This payment has no verified online gateway settlement. Confirm the provider transaction in the official merchant portal before issuing BB3.")
         }
         if (request.status == "APPROVED") {
             if (request.generatedUnlockCode.isBlank() || request.approvalMode != "UNLOCK_CODE") {
@@ -2292,7 +2309,7 @@ object SupabaseAdminClient {
             return@withContext Pair(false, "This payment claim is no longer awaiting approval.")
         }
 
-        val signed = requestServerSignedBB3Code(request.id, verificationNote).getOrElse { error ->
+        val signed = requestServerSignedBB3Code(request.id, effectiveVerificationNote).getOrElse { error ->
             return@withContext Pair(false, error.safeMessage("Unable to sign a secure payment-linked BB3 unlock code."))
         }
 
@@ -2385,7 +2402,7 @@ object SupabaseAdminClient {
                 put("amount_rwf", verifiedAmountRwf)
                 put("generated_unlock_code", codeToUse)
                 put("verified_by_admin", operatorLabel)
-                put("admin_verification_note", verificationNote.trim())
+                put("admin_verification_note", effectiveVerificationNote)
                 put("rejection_reason", "")
                 put("updated_at", now)
             }
@@ -2430,7 +2447,7 @@ object SupabaseAdminClient {
             logAdminAudit(
                 action = "APPROVE_PAYMENT",
                 targetId = request.ownerUsername,
-                details = "Manually confirmed in provider records: ${verificationNote.trim()}. Customer SMS: ${request.paymentNote.ifBlank { "not supplied" }}. Verified ${request.provider} payment ${verifiedAmountRwf} FRw for ${request.durationMonths} months, ${request.branchCount} branches, ${request.workerCount} staff, ${request.deviceCount} devices; unique BB3 code linked to ${request.id}."
+                details = "Provider verification evidence: ${effectiveVerificationNote}. Customer SMS: ${request.paymentNote.ifBlank { "not supplied" }}. Verified ${request.provider} payment ${verifiedAmountRwf} FRw for ${request.durationMonths} months, ${request.branchCount} branches, ${request.workerCount} staff, ${request.deviceCount} devices; unique BB3 code linked to ${request.id}."
             )
             Pair(true, codeToUse)
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -2906,7 +2923,13 @@ object SupabaseAdminClient {
             verifiedByAdmin = o.optCleanString("verified_by_admin"),
             rejectionReason = o.optCleanString("rejection_reason"),
             createdAt = o.optLong("created_at", 0L),
-            updatedAt = o.optLong("updated_at", 0L)
+            updatedAt = o.optLong("updated_at", 0L),
+            gatewayProvider = o.optCleanString("gateway_provider"),
+            gatewayReference = o.optCleanString("gateway_reference"),
+            gatewayTransactionId = o.optCleanString("gateway_transaction_id"),
+            gatewayAmountRwf = o.optInt("gateway_amount_rwf", 0),
+            gatewayCurrency = o.optCleanString("gateway_currency"),
+            gatewayVerifiedAt = o.optLong("gateway_verified_at", 0L)
         )
     }
 
