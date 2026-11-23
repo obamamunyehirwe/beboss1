@@ -58,7 +58,7 @@ export const shopsQuery = queryOptions({
 });
 export const paymentsQuery = queryOptions({
   queryKey: adminKeys.payments,
-  queryFn: () => all<PaymentRequest>((a, b) => supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,ussd_code,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,admin_verification_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at").order("created_at", { ascending: false }).range(a, b)),
+  queryFn: () => all<PaymentRequest>((a, b) => supabase.from("payment_requests").select("id,shop_name,owner_username,owner_phone,device_challenge,provider,ussd_code,payer_phone,payer_full_name,amount_rwf,duration_months,branch_count,worker_count,device_count,fee_per_device_rwf,payment_time_ms,payment_note,admin_verification_note,status,approval_mode,generated_unlock_code,verified_by_admin,rejection_reason,source,created_at,updated_at,gateway_provider,gateway_reference,gateway_transaction_id,gateway_amount_rwf,gateway_currency,gateway_verified_at").order("created_at", { ascending: false }).range(a, b)),
   staleTime: 5_000,
   refetchInterval: (query) => query.state.status === "error" ? false : 10_000,
 });
