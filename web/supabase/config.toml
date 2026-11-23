@@ -22,3 +22,6 @@ verify_jwt = true
 
 [functions.payment-gateway-webhook]
 verify_jwt = false
+
+[functions.redeem-shop-device-invite]
+verify_jwt = false
