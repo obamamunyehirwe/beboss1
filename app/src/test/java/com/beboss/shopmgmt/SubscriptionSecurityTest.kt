@@ -206,6 +206,8 @@ class SubscriptionSecurityTest {
             smsTransactionReference = "1829304756"
         )
         assertFalse(unverifiedOfflineMomo.isSuccess)
-        assertTrue(unverifiedOfflineMomo.isPending)
+        assertFalse(unverifiedOfflineMomo.isPending)
+        assertEquals("", unverifiedOfflineMomo.transactionRef)
+        assertTrue(unverifiedOfflineMomo.message.contains("hosted checkout", ignoreCase = true))
     }
 }
