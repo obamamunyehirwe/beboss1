@@ -574,10 +574,11 @@ class DatabaseMigrationTest {
                 assertEquals(0, cursor.getInt(1))
             }
             sqliteDb.query(
-                "SELECT isActive FROM users WHERE id = 'u_demo_cashier'"
+                "SELECT username, isActive FROM users WHERE id = 'u_demo_cashier'"
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(0, cursor.getInt(0))
+                assertTrue(cursor.getString(0).startsWith("legacy-demo-"))
+                assertEquals(0, cursor.getInt(1))
             }
 
             // Verify new v12 shop_devices table and DAO are operational
