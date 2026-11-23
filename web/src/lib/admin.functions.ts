@@ -952,6 +952,7 @@ const configSchema = z.object({
   per_device_fee_rwf: z.number().int().min(0).max(1_000_000),
   apk_download_url: z.string().trim().max(500),
   apk_version: z.string().trim().max(20),
+  min_app_version: z.string().trim().max(20),
   support_email: z.string().trim().max(200),
 });
 
@@ -961,7 +962,7 @@ export const saveAppConfig = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
-    const { error } = await ctx.supabase.from("app_config").upsert({ id: "global", ...data, per_device_fee_rwf: 2_000, updated_at: Date.now() });
+    const { error } = await ctx.supabase.from("app_config").upsert({ id: "global", ...data, per_device_fee_rwf: 2_000, min_app_version: data.min_app_version || "2.3.0", updated_at: Date.now() });
     if (error) throw new Error(error.message);
     await audit(ctx, admin.email, "SAVE_APP_CONFIG", "global", `MTN ${data.mtn_momo_code || data.mtn_momo_phone} • Airtel ${data.airtel_money_phone} • device 2000 FRw/month • APK ${data.apk_version}`);
     return { ok: true };
