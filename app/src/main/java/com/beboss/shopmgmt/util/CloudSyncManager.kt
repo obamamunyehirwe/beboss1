@@ -558,9 +558,8 @@ class CloudSyncManager(private val database: AppDatabase) {
                     remoteTransfers = remoteTransfers,
                     deviceId = deviceId
                 )
-                // Exclude every claimed command ID, including legacy WEB rows whose
-                // status was one of the old final-looking values (IN_TRANSIT/COMPLETED/CANCELLED).
-                val commandTransferIds = commandTransfers.map { it.id }.toSet()
+                // Exclude command IDs before factual merge. This includes WEB-authored
+                // legacy rows which older portals wrote using final-looking statuses.
                 val factualRemoteTransfers = remoteTransfers.filterNot { it.id in commandTransferIds }
                 if (remoteBranches.isNotEmpty() || factualRemoteTransfers.isNotEmpty()) {
                     try {
