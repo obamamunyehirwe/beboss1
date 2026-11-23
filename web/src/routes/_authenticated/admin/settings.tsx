@@ -64,7 +64,7 @@ function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Settings" sub="Live configuration shared by the website and every BeBoss app." />
+      <PageHeader title={a("Settings")} sub="Live configuration shared by the website and every BeBoss app." />
 
       <form
         onSubmit={(e) => {
@@ -84,11 +84,11 @@ function SettingsPage() {
             <F label="Airtel Money receiving phone" v={cfg.airtel_money_phone} on={(v) => set("airtel_money_phone", v)} inputMode="tel" hint="Used in *500*1*1*PHONE*AMOUNT#." />
             <F label="Airtel recipient name" v={cfg.airtel_recipient_name} on={(v) => set("airtel_recipient_name", v)} />
             <div className="space-y-1.5">
-              <Label>Extra POS terminal fee (FRw / month)</Label>
+              <Label>{a("Extra POS terminal fee (FRw / month)")}</Label>
               <div className="flex h-10 items-center rounded-md border border-input bg-muted px-3 text-sm font-semibold">
-                2,000 FRw per additional paired device
+                {a("2,000 FRw per additional paired device")}
               </div>
-              <p className="text-xs text-muted-foreground">The primary owner terminal is included. Every additional active POS device is billed at a fixed 2,000 FRw each month.</p>
+              <p className="text-xs text-muted-foreground">{a("The primary owner terminal is included. Every additional active POS device is billed at a fixed 2,000 FRw each month.")}</p>
             </div>
             <F label="Admin WhatsApp (with country code)" v={cfg.admin_whatsapp_number} on={(v) => set("admin_whatsapp_number", v)} inputMode="tel" hint="e.g. 250788123456" />
             <F label="Support email" v={cfg.support_email} on={(v) => set("support_email", v)} inputMode="email" />
@@ -229,7 +229,7 @@ function ConnectionPanel({ origin }: { origin: string }) {
         <Smartphone className="size-4 text-primary" /> {a("Connect the Android app")}
       </h2>
       <p className="mt-2 text-sm text-muted-foreground">
-        Put these values in the app's <span className="font-mono">.env</span> file and rebuild the APK. Existing app code works unchanged — shops, payments, codes, devices, staff and branch sync all flow into this admin center. These are public app values, not secrets.
+        {a("Put these values in the app's")} <span className="font-mono">{a(".env")}</span> file and rebuild the APK. Existing app code works unchanged — shops, payments, codes, devices, staff and branch sync all flow into this admin center. These are public app values, not secrets.
       </p>
       <div className="mt-4 space-y-2">
         {lines.map(([k, v]) => (
@@ -292,7 +292,7 @@ function DatashareKeyPanel() {
           {q.data?.configured ? <Badge variant="success">{a("Configured")}</Badge> : <Badge variant="muted">{a("Optional")}</Badge>}
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          The value built into the app as <span className="font-mono">BEBOSS_DATASHARE_HMAC_SECRET</span>. With it, every shop's Retail insights tab confirms the phone's branch data was not altered on the way. Insights still work without it.
+          {a("The value built into the app as")} <span className="font-mono">BEBOSS_DATASHARE_HMAC_SECRET</span>. With it, every shop's Retail insights tab confirms the phone's branch data was not altered on the way. Insights still work without it.
         </p>
       </div>
       <form
