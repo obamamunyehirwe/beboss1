@@ -105,22 +105,22 @@ export function ModernHero() {
                     <div className="market-analytics-kpis">
                       <article>
                         <span>{c.heroRegisteredShops}</span>
-                        <strong>{stats.shops_total.toLocaleString()}</strong>
-                        <small>{stats.shops_active.toLocaleString()} {c.heroActive}</small>
+                        <strong>{stats.shops_total.toLocaleString(locale)}</strong>
+                        <small>{stats.shops_active.toLocaleString(locale)} {c.heroActive}</small>
                       </article>
                       <article>
                         <span>{c.heroBranches}</span>
-                        <strong>{stats.branches_total.toLocaleString()}</strong>
+                        <strong>{stats.branches_total.toLocaleString(locale)}</strong>
                         <small>{c.heroCloudRegistered}</small>
                       </article>
                       <article>
                         <span>{c.heroDevicesSynced}</span>
-                        <strong>{stats.devices_synced_24h.toLocaleString()}</strong>
+                        <strong>{stats.devices_synced_24h.toLocaleString(locale)}</strong>
                         <small>{c.heroLast24Hours}</small>
                       </article>
                       <article>
                         <span>{c.heroSyncEvents}</span>
-                        <strong>{stats.sync_events_24h.toLocaleString()}</strong>
+                        <strong>{stats.sync_events_24h.toLocaleString(locale)}</strong>
                         <small>Last 24 hours</small>
                       </article>
                     </div>
@@ -139,7 +139,7 @@ export function ModernHero() {
                               <span
                                 key={item.day}
                                 style={{ height: `${height}%` }}
-                                title={`${item.day}: ${count.toLocaleString()} ${c.heroEvents}`}
+                                title={`${item.day}: ${count.toLocaleString(locale)} ${c.heroEvents}`}
                                 aria-hidden="true"
                               />
                             );
@@ -149,7 +149,7 @@ export function ModernHero() {
                         <p className="market-analytics-empty">{c.heroNoActivity}</p>
                       )}
                       <div className="market-analytics-axis">
-                        <span>{activity[0]?.day ?? "14 days ago"}</span>
+                        <span>{activity[0]?.day ?? c.hero14DaysAgo}</span>
                         <span>{activity.at(-1)?.day ?? c.heroToday}</span>
                       </div>
                     </div>
