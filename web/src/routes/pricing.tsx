@@ -5,6 +5,7 @@ import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { PricingCalculator } from "@/components/site/PricingCalculator";
 import { useI18n } from "@/lib/i18n";
+import { useAdminText } from "@/lib/admin-copy";
 import { publicSiteQuery } from "@/lib/queries";
 import { formatRwf } from "@/lib/format";
 
@@ -25,7 +26,9 @@ export const Route = createFileRoute("/pricing")({
 });
 
 function PricingPage() {
-  const { t, p } = useI18n();
+  const { t, p, lang } = useI18n();
+  const a = useAdminText();
+  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const { data } = useSuspenseQuery(publicSiteQuery);
   const rate = Number(data.config?.per_device_fee_rwf) || 2000;
   const tiers = [5000, 10000, 20000].map((price, i) => ({ price, name: p.pricing.tiers[i]?.name ?? "", note: p.pricing.tiers[i]?.note ?? "" }));
@@ -47,7 +50,7 @@ function PricingPage() {
         </div>
         <div className="mt-6 grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
           <p className="rounded-2xl border border-border px-4 py-3">{p.pricing.staffLine}</p>
-          <p className="rounded-2xl border border-border px-4 py-3">{p.pricing.devicesLine.replace("{rate}", rate.toLocaleString())}</p>
+          <p className="rounded-2xl border border-border px-4 py-3">{p.pricing.devicesLine.replace("{rate}", rate.toLocaleString(locale))}</p>
           <p className="rounded-2xl border border-border px-4 py-3">{p.pricing.discountsLine}</p>
         </div>
         <h2 className="mb-6 mt-16 text-3xl font-bold">{p.pricing.exactPrice}</h2>
@@ -71,11 +74,11 @@ function PricingPage() {
           <div className="max-w-2xl mb-8">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               <CheckCircle2 className="size-3.5" />
-              Pilot measurement guide
+              {a("{a("Pilot measure")}ment guide")}
             </span>
-            <h2 className="mt-3 text-3xl font-bold sm:text-4xl">Measure outcomes before claiming savings</h2>
+            <h2 className="mt-3 text-3xl font-bold sm:text-4xl">{a("Measure outcomes before claiming savings")}</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              BeBoss has not established a representative reconciliation baseline. Before rollout, record the merchant's current process, then compare sales, settlement records, stock counts, debt collection and reconciliation time after 4–8 weeks. Include setup and support costs.
+              {a("BeBoss has not established a representative reconciliation baseline. Before rollout, record the merchant's current process, then compare sales, settlement records, stock counts, debt collection and reconciliation time after 4–8 weeks. Include setup and support costs.")}
             </p>
           </div>
 
@@ -83,36 +86,36 @@ function PricingPage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b border-border bg-surface text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <th className="p-4">Operational Area</th>
-                  <th className="p-4">Baseline to record</th>
-                  <th className="p-4">What BeBoss records</th>
+                  <th className="p-4">{a("Operational Area")}</th>
+                  <th className="p-4">{a("Baseline to record")}</th>
+                  <th className="p-4">{a("What BeBoss records")}</th>
                   <th className="p-4">Pilot measure</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 <tr className="hover:bg-surface/50">
-                  <td className="p-4 font-semibold text-foreground">Cash & Split Payment Drift</td>
-                  <td className="p-4 text-muted-foreground text-xs">How cash and operator settlement records are currently matched to sales.</td>
-                  <td className="p-4 text-xs font-medium text-foreground">Recorded payment method, split tender, amount paid and change.</td>
-                  <td className="p-4 text-xs">Mismatch rate between BeBoss sales, cash counts and MoMo settlement records.</td>
+                  <td className="p-4 font-semibold text-foreground">{a("Cash & Split Payment Drift")}</td>
+                  <td className="p-4 text-muted-foreground text-xs">{a("How cash and operator settlement records are currently matched to sales.")}</td>
+                  <td className="p-4 text-xs font-medium text-foreground">{a("Recorded payment method, split tender, amount paid and change.")}</td>
+                  <td className="p-4 text-xs">{a("Mismatch rate between BeBoss sales, cash counts and MoMo settlement records.")}</td>
                 </tr>
                 <tr className="hover:bg-surface/50">
-                  <td className="p-4 font-semibold text-foreground">Customer Debt (Amadeni)</td>
-                  <td className="p-4 text-muted-foreground text-xs">Outstanding receivables, collection timing and staff time spent following up.</td>
-                  <td className="p-4 text-xs font-medium text-foreground">Customer balances, credit limits, payments and optional reminders.</td>
-                  <td className="p-4 text-xs">Collection rate and time spent; reminders do not guarantee repayment.</td>
+                  <td className="p-4 font-semibold text-foreground">{a("Customer Debt (Amadeni)")}</td>
+                  <td className="p-4 text-muted-foreground text-xs">{a("Outstanding receivables, collection timing and staff time spent following up.")}</td>
+                  <td className="p-4 text-xs font-medium text-foreground">{a("Customer balances, credit limits, payments and optional reminders.")}</td>
+                  <td className="p-4 text-xs">{a("Collection rate and time spent; reminders do not guarantee repayment.")}</td>
                 </tr>
                 <tr className="hover:bg-surface/50">
-                  <td className="p-4 font-semibold text-foreground">Stockout & Shelf Depletion</td>
-                  <td className="p-4 text-muted-foreground text-xs">Opening quantities, units, purchase costs, physical counts and reorder frequency.</td>
-                  <td className="p-4 text-xs font-medium text-foreground">Product catalogue, recorded purchases, sales and stock adjustments.</td>
-                  <td className="p-4 text-xs">Stock variance and reorder frequency; insights depend on accurate entries.</td>
+                  <td className="p-4 font-semibold text-foreground">{a("Stockout & Shelf Depletion")}</td>
+                  <td className="p-4 text-muted-foreground text-xs">{a("Opening quantities, units, purchase costs, physical counts and reorder frequency.")}</td>
+                  <td className="p-4 text-xs font-medium text-foreground">{a("Product catalogue, recorded purchases, sales and stock adjustments.")}</td>
+                  <td className="p-4 text-xs">{a("Stock variance and reorder frequency; insights depend on accurate entries.")}</td>
                 </tr>
                 <tr className="hover:bg-surface/50">
-                  <td className="p-4 font-semibold text-foreground">Staff Voids & Fraud Control</td>
-                  <td className="p-4 text-muted-foreground text-xs">Existing till-close, refund, void and staff-activity records.</td>
-                  <td className="p-4 text-xs font-medium text-foreground">Operator activity and recorded refund or void events.</td>
-                  <td className="p-4 text-xs">Reconciliation time and differences found; records do not prevent every loss.</td>
+                  <td className="p-4 font-semibold text-foreground">{a("Staff Voids & Fraud Control")}</td>
+                  <td className="p-4 text-muted-foreground text-xs">{a("Existing till-close, refund, void and staff-activity records.")}</td>
+                  <td className="p-4 text-xs font-medium text-foreground">{a("Operator activity and recorded refund or void events.")}</td>
+                  <td className="p-4 text-xs">{a("Reconciliation time and differences found; records do not prevent every loss.")}</td>
                 </tr>
               </tbody>
             </table>
