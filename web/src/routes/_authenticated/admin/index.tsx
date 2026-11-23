@@ -10,6 +10,7 @@ import { FLAG_LABEL, deviceHealth, licenseFlags } from "@/lib/sync-health";
 import { effectiveShopStatus } from "@/lib/pricing";
 import { daysLeft, formatRwf, relativeTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
+import { useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   component: Overview,
@@ -27,6 +28,8 @@ const tooltipStyle = { background: "var(--popover)", border: "1px solid var(--bo
 
 function Overview() {
   const a = useAdminText();
+  const { lang } = useI18n();
+  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const shops = useQuery(shopsQuery);
   const pays = useQuery(paymentsQuery);
   const devices = useQuery(devicesQuery);
@@ -173,7 +176,7 @@ function Overview() {
                     {e.detail ? ` · ${e.detail}` : ""}
                   </span>
                 </span>
-                <span className="shrink-0 text-muted-foreground">{relativeTime(e.created_at)}</span>
+                <span className="shrink-0 text-muted-foreground">{relativeTime(e.created_at, Date.now(), locale)}</span>
               </div>
             ))}
             {!events.data?.length ? <p className="py-6 text-center text-sm text-muted-foreground">{a("Waiting for the first phone to sync.")}</p> : null}
@@ -280,7 +283,7 @@ function Overview() {
               <div key={a.id} className="rounded-xl border border-border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <StatusBadge status={a.action} />
-                  <span className="text-[11px] text-muted-foreground">{relativeTime(a.created_at)}</span>
+                  <span className="text-[11px] text-muted-foreground">{relativeTime(a.created_at, Date.now(), locale)}</span>
                 </div>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
                   {a.target_id} — {a.details}
