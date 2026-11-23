@@ -83,8 +83,11 @@ object PaymentGatewayManager {
     }
 
     /**
-     * Requests payment status from an optional configured backend or returns a pending USSD payment.
+     * Legacy adapter retained for source compatibility.
+     * The Android client cannot trust an arbitrary configured endpoint to confirm
+     * provider settlement. Use the BeBoss hosted-checkout flow instead.
      */
+    @Suppress("UNUSED_PARAMETER")
     suspend fun initiateMoMoCollection(
         context: Context,
         shopProfile: ShopProfile,
@@ -93,89 +96,17 @@ object PaymentGatewayManager {
         amount: Int,
         planDays: Int
     ): PaymentProcessingResult = withContext(Dispatchers.IO) {
-        val cleanPhone = payerPhone.trim().filter { it.isDigit() || it == '+' }
-        val effectivePhone = if (cleanPhone.isNotBlank()) cleanPhone else shopProfile.phone
-        val now = System.currentTimeMillis()
-        val dateStr = SimpleDateFormat("yyMMdd-HHmmss", Locale.getDefault()).format(Date(now))
-
-        val providerPrefix = when (provider.uppercase(Locale.ROOT)) {
-            "AIRTEL MONEY", "AIRTEL" -> "AIRTEL-RW"
-            "BK QUICK", "BANK" -> "BK-RW"
-            else -> "MOMO-RW"
-        }
-        val txRef = "$providerPrefix-$dateStr-${abs(UUID.randomUUID().mostSignificantBits % 9000L + 1000L)}"
-
-        // If backend URL is configured, attempt real HTTP payment request
-        val backendUrl = shopProfile.backendServerUrl.trim().removeSuffix("/")
-        if (backendUrl.isNotBlank() && (backendUrl.startsWith("http://") || backendUrl.startsWith("https://"))) {
-            try {
-                val url = URL("$backendUrl/payments/momo-push")
-                val payload = JSONObject().apply {
-                    put("shopId", shopProfile.id)
-                    put("shopName", shopProfile.shopName)
-                    put("payerPhone", effectivePhone)
-                    put("amount", amount)
-                    put("provider", provider)
-                    put("transactionRef", txRef)
-                    put("timestamp", now)
-                }
-
-                val conn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                    setRequestProperty("X-Shop-Device", shopProfile.lastPaymentRef)
-                    doOutput = true
-                    connectTimeout = 6000
-                    readTimeout = 6000
-                }
-
-                conn.outputStream.use { os ->
-                    val bytes = payload.toString().toByteArray(Charsets.UTF_8)
-                    os.write(bytes, 0, bytes.size)
-                }
-
-                val code = conn.responseCode
-                if (code in 200..299) {
-                    val respStr = conn.inputStream.bufferedReader().use { it.readText() }
-                    val json = JSONObject(respStr)
-                    val status = json.optCleanString("status").uppercase(Locale.ROOT)
-                    val responseAmount = json.optInt("amount", amount)
-                    val confirmedRef = json.optCleanString("transactionRef", txRef)
-                    val confirmed = status in setOf("SUCCESS", "SUCCESSFUL") && responseAmount == amount
-
-                    return@withContext PaymentProcessingResult(
-                        isSuccess = confirmed,
-                        isPending = !confirmed && status !in setOf("FAILED", "REJECTED", "CANCELLED"),
-                        transactionRef = confirmedRef,
-                        amountPaid = if (confirmed) amount else 0,
-                        planDays = if (confirmed) planDays else 0,
-                        provider = provider,
-                        payerPhone = effectivePhone,
-                        timestamp = now,
-                        message = json.optCleanString(
-                            "message",
-                            if (confirmed) "Payment confirmed by the configured payment endpoint."
-                            else "Payment has not been verified. Submit your proof for admin review."
-                        )
-                    )
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "Online payment push fallback to local verification: ${e.safeMessage("Connection failed")}")
-            }
-        }
-
+        val effectivePhone = payerPhone.trim().ifBlank { shopProfile.phone }
         PaymentProcessingResult(
             isSuccess = false,
-            transactionRef = txRef,
+            transactionRef = "",
             amountPaid = 0,
             planDays = 0,
             provider = provider,
             payerPhone = effectivePhone,
-            timestamp = now,
-            isPending = true,
-            message = "Payment initiated via $provider. Complete the operator USSD flow, then submit payer details and payment date/time in BeBoss for administrator verification. The dialer does not confirm settlement."
+            timestamp = System.currentTimeMillis(),
+            isPending = false,
+            message = "Automated payment collection must be started through BeBoss secure hosted checkout. This Android compatibility adapter never trusts an unverified backend response or treats USSD as settlement confirmation."
         )
     }
 }
