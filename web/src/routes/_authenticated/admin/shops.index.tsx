@@ -9,6 +9,7 @@ import { FLAG_LABEL, licenseFlags } from "@/lib/sync-health";
 import { effectiveShopStatus, type ShopLifecycle } from "@/lib/pricing";
 import { daysLeft, formatDate, formatRwf, relativeTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
+import { useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/admin/shops/")({
   component: ShopsPage,
@@ -19,6 +20,8 @@ type SortKey = "updated" | "expiry" | "fee" | "name";
 
 function ShopsPage() {
   const a = useAdminText();
+  const { lang } = useI18n();
+  const locale = lang === "rw" ? "rw-RW" : lang === "fr" ? "fr-FR" : lang === "sw" ? "sw-TZ" : "en-GB";
   const { data, isLoading } = useQuery(shopsQuery);
   const { data: devices } = useQuery(devicesQuery);
   const { data: codes } = useQuery(codesQuery);
@@ -146,7 +149,7 @@ function ShopsPage() {
                       {s.branch_count} {a("branches")} • {s.worker_count} {a("staff")} • {s.dev}/{s.device_limit} {a("devices")}
                     </td>
                     <td className="px-4 py-3 font-mono">{formatRwf(s.monthly_fee_rwf)}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{relativeTime(s.updated_at, now)}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{relativeTime(s.updated_at, now, locale)}</td>
                     <td className="px-4 py-3 text-right">
                       <Link to="/admin/shops/$shopId" params={{ shopId: s.id }} className="inline-flex text-muted-foreground hover:text-foreground" aria-label={`${a("Open shop")} ${s.shop_name}`}>
                         <ChevronRight className="size-4" />
