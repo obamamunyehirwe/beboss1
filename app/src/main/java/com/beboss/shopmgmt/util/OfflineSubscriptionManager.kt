@@ -319,8 +319,11 @@ object OfflineSubscriptionManager {
     }
 
     /**
-     * Executes authentic mobile money payment verification.
+     * Legacy synchronous adapter. This client-side path cannot verify a payment with
+     * MTN, Airtel or a provider API, so it never creates a pending or successful claim.
+     * New subscription payments must use the secure hosted-checkout workflow.
      */
+    @Suppress("UNUSED_PARAMETER")
     fun processDirectMoMoPayment(
         shopProfile: ShopProfile,
         payerPhone: String,
@@ -332,49 +335,9 @@ object OfflineSubscriptionManager {
         smsTransactionReference: String? = null,
         alreadyUsedRefs: Set<String> = emptySet()
     ): PaymentProcessingResult {
-        val pricing = calculateSubscriptionPrice(branchCount, workerCount, durationMonths, deviceCount)
-        val planDays = durationMonths * 30
-        val effectivePayer = if (payerPhone.isNotBlank()) payerPhone else shopProfile.phone
+        val effectivePayer = payerPhone.trim().ifBlank { shopProfile.phone }
         val timestamp = System.currentTimeMillis()
-
-        // 1. Validate Rwanda phone number
         val (phoneValid, normalizedPhone) = MoMoPaymentGateway.validateRwandaPhoneNumber(effectivePayer, provider)
-        if (!phoneValid) {
-            return PaymentProcessingResult(
-                isSuccess = false,
-                isPending = false,
-                transactionRef = "",
-                amountPaid = 0,
-                planDays = 0,
-                provider = provider,
-                payerPhone = effectivePayer,
-                timestamp = timestamp,
-                message = normalizedPhone
-            )
-        }
-
-        // 2. If a Telco SMS Reference ID is provided, verify it authentically
-        if (!smsTransactionReference.isNullOrBlank()) {
-            val verifyRes = MoMoPaymentGateway.verifyTelcoTransactionReference(
-                rawReference = smsTransactionReference,
-                provider = provider,
-                amount = pricing.totalPayable,
-                alreadyUsedRefs = alreadyUsedRefs
-            )
-            return PaymentProcessingResult(
-                isSuccess = verifyRes.isSuccess,
-                isPending = verifyRes.isPending,
-                transactionRef = verifyRes.transactionReference,
-                financialId = verifyRes.financialId,
-                amountPaid = if (verifyRes.isSuccess) pricing.totalPayable else 0,
-                planDays = if (verifyRes.isSuccess) planDays else 0,
-                provider = provider,
-                payerPhone = normalizedPhone,
-                timestamp = timestamp,
-                message = verifyRes.message
-            )
-        }
-
         return PaymentProcessingResult(
             isSuccess = false,
             isPending = false,
@@ -383,9 +346,10 @@ object OfflineSubscriptionManager {
             amountPaid = 0,
             planDays = 0,
             provider = provider,
-            payerPhone = normalizedPhone,
+            payerPhone = if (phoneValid) normalizedPhone else effectivePayer,
             timestamp = timestamp,
-            message = "A USSD prompt is not a verified payment. Open BeBoss secure hosted checkout to pay with an enabled provider and receive server-verified settlement."
+            message = if (!phoneValid) normalizedPhone
+            else "Unverified SMS references and USSD prompts cannot establish payment. Open BeBoss secure hosted checkout for a provider-verified transaction."
         )
     }
 
