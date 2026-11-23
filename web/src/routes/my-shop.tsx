@@ -36,9 +36,9 @@ export const Route = createFileRoute("/my-shop")({
   head: () => ({
     meta: [
       { title: "My shop — check your BeBoss license & payments" },
-      { name: "description", content: "Shop owners: check your BeBoss plan, expiry date, payment verification status and unlock codes, or submit a MoMo payment proof." },
+      { name: "description", content: "Shop owners: securely verify their owner phone, check subscription status and pay for BeBoss through a hosted checkout." },
       { property: "og:title", content: "Check your BeBoss shop license" },
-      { property: "og:description", content: "See your plan status and unlock codes, or submit your Mobile Money payment proof." },
+      { property: "og:description", content: "Verify the registered shop owner phone to manage the BeBoss subscription securely." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -1134,6 +1134,10 @@ function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
     e.preventDefault();
     setSending(true);
     try {
+      const { data: authState } = await supabase.auth.getSession();
+      if (!authState.session?.user.phone_confirmed_at) {
+        throw new Error("First open the Check My Shop tab and verify the registered owner phone by SMS.");
+      }
       const checkout = await startCheckout({ data: f });
       window.location.assign(checkout.checkoutUrl);
     } catch (err) {
