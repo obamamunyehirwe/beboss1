@@ -1241,3 +1241,21 @@ export const revokeShopOwnerMembership = createServerFn({ method: "POST" })
     await audit(ctx, admin.email, "REVOKE_SHOP_OWNER", data.shopId, `Revoked owner user ${data.userId}; membership ${membership.id}.`);
     return { ok: true, revokedAt: now };
   });
+
+
+export const listShopOwnerMemberships = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { shopId: string }) => z.object({ shopId: z.string().trim().min(3).max(160) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    await requireAdmin(ctx);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: memberships, error } = await supabaseAdmin
+      .from("shop_owner_memberships")
+      .select("id,user_id,owner_username,owner_phone,status,created_at,last_verified_at,revoked_at")
+      .eq("shop_id", data.shopId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw new Error("Could not load shop owner membership records.");
+    return memberships ?? [];
+  });
