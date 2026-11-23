@@ -119,6 +119,42 @@ class SyncCoordinator(
         }
     }
 
+    /**
+     * Fetches the shop-scoped LAN secret after the normal cloud account sync has
+     * created/updated the shop row. It is wrapped by Android Keystore before storage.
+     */
+    private suspend fun prepareShopLanSecretFromCloud(): Boolean {
+        if (!SupabaseAdminClient.isConfigured()) return localNetworkSyncServer
+            .useCachedShopSharedSecret(
+                SupabaseAdminClient.computeShopSyncKey(
+                    allUsers.value.firstOrNull { it.role.toString().equals("OWNER", true) }?.username
+                        ?: shopProfile.value.email.substringBefore("@"),
+                    allUsers.value.firstOrNull { it.role.toString().equals("OWNER", true) }?.phone
+                        ?.ifBlank { shopProfile.value.phone }
+                        ?: shopProfile.value.phone
+                )
+            )
+
+        val profile = shopProfile.value
+        val owner = allUsers.value.firstOrNull { it.role.toString().equals("OWNER", true) }
+        val username = owner?.username?.trim()?.ifBlank { profile.email.substringBefore("@").trim() }
+            ?: profile.email.substringBefore("@").trim()
+        val phone = owner?.phone?.trim()?.ifBlank { profile.phone.trim() }
+            ?: profile.phone.trim()
+        if (username.isBlank() || phone.filter { it.isDigit() }.takeLast(9).length != 9) {
+            return false
+        }
+
+        val shopSyncKey = SupabaseAdminClient.computeShopSyncKey(username, phone)
+        val cloudSecret = SupabaseAdminClient.fetchShopLanSyncSecret(shopSyncKey)
+        if (!cloudSecret.isNullOrBlank() &&
+            localNetworkSyncServer.configureShopSharedSecret(shopSyncKey, cloudSecret)
+        ) {
+            return true
+        }
+        return localNetworkSyncServer.useCachedShopSharedSecret(shopSyncKey)
+    }
+
     private suspend fun runAutomaticCloudSync(showResult: Boolean = false) {
         if (_isSyncing.value) return
         _isSyncing.value = true
@@ -133,6 +169,15 @@ class SyncCoordinator(
                 context = application
             )
             _cloudSyncReport.value = report
+            // First cloud sync provisions the shop-scoped LAN key; every paired terminal
+            // then keeps its own Keystore-wrapped copy for offline hotspot operation.
+            if (!prepareShopLanSecretFromCloud()) {
+                repository.logSyncEvent(
+                    "LAN_SECURITY",
+                    "PENDING",
+                    "Shop LAN pairing key is not available yet. Keep cloud sync online and retry before using local terminal discovery."
+                )
+            }
             if (SupabaseAdminClient.isConfigured()) {
                 val telemetryUploaded = DeviceTelemetryUploader.upload(
                     context = application,
@@ -182,6 +227,13 @@ class SyncCoordinator(
                     mergeRemoteSummary = { summary -> repository.mergeShopDataPackageLww(summary) }
                 )
                 _cloudSyncReport.value = report
+                if (!prepareShopLanSecretFromCloud()) {
+                    repository.logSyncEvent(
+                        "LAN_SECURITY",
+                        "PENDING",
+                        "Shop LAN pairing key is not available yet; retry once the shop account has synchronized."
+                    )
+                }
                 if (SupabaseAdminClient.isConfigured()) {
                     val telemetryUploaded = DeviceTelemetryUploader.upload(
                         context = application,
@@ -212,12 +264,16 @@ class SyncCoordinator(
 
     fun toggleLocalSyncServer(enable: Boolean) {
         if (enable) {
-            val started = localNetworkSyncServer.startServer()
-            if (started) {
-                repository.logSyncEvent("P2P_SERVER", "SUCCESS", "Encrypted LAN Hub started on port ${localNetworkSyncServer.port}")
-            } else {
-                scope.launch {
-                    emitSnackbar("Unable to start encrypted LAN Hub — configure BEBOSS_LAN_SYNC_SECRET.")
+            scope.launch {
+                if (!prepareShopLanSecretFromCloud()) {
+                    emitSnackbar("Sync this shop online once to securely provision its LAN pairing key before starting the local hub.")
+                    return@launch
+                }
+                val started = localNetworkSyncServer.startServer()
+                if (started) {
+                    repository.logSyncEvent("P2P_SERVER", "SUCCESS", "Encrypted LAN Hub started on port ${localNetworkSyncServer.port}")
+                } else {
+                    emitSnackbar("Unable to start the encrypted LAN hub. Check Wi-Fi permissions, port availability and local network access.")
                 }
             }
         } else {
@@ -227,7 +283,13 @@ class SyncCoordinator(
     }
 
     fun startLanDiscovery() {
-        localNetworkSyncServer.startDiscovery()
+        scope.launch {
+            if (!prepareShopLanSecretFromCloud()) {
+                emitSnackbar("Connect this shop to the internet and run cloud sync once before discovering nearby BeBoss terminals.")
+                return@launch
+            }
+            localNetworkSyncServer.startDiscovery()
+        }
     }
 
     fun stopLanDiscovery() {
