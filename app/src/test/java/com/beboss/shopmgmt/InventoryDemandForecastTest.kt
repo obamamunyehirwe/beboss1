@@ -8,10 +8,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
 
 class InventoryDemandForecastTest {
-    private val dayMs = 86_400_000L
-    private val nowMs = (2_000L * dayMs) + (18L * 60L * 60L * 1000L)
+    private val nowMs = Calendar.getInstance().apply {
+        clear()
+        set(2025, Calendar.MAY, 25, 18, 0, 0)
+    }.timeInMillis
 
     private fun records(
         productId: String,
@@ -20,14 +23,25 @@ class InventoryDemandForecastTest {
     ): Pair<List<Sale>, List<SaleItem>> {
         val sales = mutableListOf<Sale>()
         val items = mutableListOf<SaleItem>()
-        val firstDay = Math.floorDiv(nowMs, dayMs) * dayMs - 55L * dayMs
+        val firstDay = Calendar.getInstance().apply {
+            timeInMillis = nowMs
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            add(Calendar.DAY_OF_YEAR, -55)
+        }
         for (day in 0 until 56) {
             val quantity = quantityForDay(day)
             if (quantity <= 0.0) continue
+            val saleAtNoon = (firstDay.clone() as Calendar).apply {
+                add(Calendar.DAY_OF_YEAR, day)
+                set(Calendar.HOUR_OF_DAY, 12)
+            }.timeInMillis
             val saleId = "sale-$day"
             sales += Sale(
                 id = saleId,
-                saleDate = firstDay + day * dayMs + 12L * 60L * 60L * 1000L,
+                saleDate = saleAtNoon,
                 branchId = branchId
             )
             items += SaleItem(
