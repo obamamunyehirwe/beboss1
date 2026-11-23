@@ -118,7 +118,7 @@ fun ShopDevicesDialog(
         allUsers.filter { user ->
             user.isActive &&
                 user.role.name != "OWNER" &&
-                (isShopOwner || user.assignedBranchId.isBlank() || availableBranches.any { it.id == user.assignedBranchId })
+                (isShopOwner || availableBranches.any { it.id == user.assignedBranchId })
         }
     }
     val visibleDevices = remember(shopDevices, managedBranchIds, isShopOwner) {
