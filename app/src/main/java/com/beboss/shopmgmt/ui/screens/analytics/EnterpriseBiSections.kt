@@ -52,7 +52,6 @@ import com.beboss.shopmgmt.ui.theme.ProfitGreenLight
 import com.beboss.shopmgmt.ui.theme.WarningAmber
 import com.beboss.shopmgmt.ui.theme.WarningAmberLight
 import com.beboss.shopmgmt.util.ReceiptGenerator
-import java.util.Locale
 
 @Composable
 fun BranchComparisonSection(
