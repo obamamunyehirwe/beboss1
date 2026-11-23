@@ -78,10 +78,10 @@ function SettingsPage() {
             <Wallet className="size-4 text-primary" /> {a("Mobile money & support")}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <F label="MTN MoMo merchant / pay code" v={cfg.mtn_momo_code} on={(v) => set("mtn_momo_code", v)} inputMode="numeric" hint="Used in *182*8*1*CODE*AMOUNT#. Leave empty to use the fallback phone." />
-            <F label="MTN MoMo fallback phone" v={cfg.mtn_momo_phone} on={(v) => set("mtn_momo_phone", v)} inputMode="tel" hint="Used in *182*1*1*PHONE*AMOUNT# only when the merchant code is empty." />
-            <F label="MTN recipient name" v={cfg.mtn_recipient_name} on={(v) => set("mtn_recipient_name", v)} />
-            <F label="Airtel Money receiving phone" v={cfg.airtel_money_phone} on={(v) => set("airtel_money_phone", v)} inputMode="tel" hint="Used in *500*1*1*PHONE*AMOUNT#." />
+            <F label={a("MTN MoMo merchant / pay code")} v={cfg.mtn_momo_code} on={(v) => set("mtn_momo_code", v)} inputMode="numeric" hint={a("Used in *182*8*1*CODE*AMOUNT#. Leave empty to use the fallback phone.")} />
+            <F label={a("MTN MoMo fallback phone")} v={cfg.mtn_momo_phone} on={(v) => set("mtn_momo_phone", v)} inputMode="tel" hint={a("Used in *182*1*1*PHONE*AMOUNT# only when the merchant code is empty.")} />
+            <F label={a("MTN recipient name")} v={cfg.mtn_recipient_name} on={(v) => set("mtn_recipient_name", v)} />
+            <F label={a("Airtel Money receiving phone")} v={cfg.airtel_money_phone} on={(v) => set("airtel_money_phone", v)} inputMode="tel" hint={a("Used in *500*1*1*PHONE*AMOUNT#.")} />
             <F label="Airtel recipient name" v={cfg.airtel_recipient_name} on={(v) => set("airtel_recipient_name", v)} />
             <div className="space-y-1.5">
               <Label>{a("Extra POS terminal fee (FRw / month)")}</Label>
