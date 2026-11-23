@@ -76,7 +76,7 @@ function MyShopPage() {
               <Search className="size-4" /> {t("lookup")}
             </TabsTrigger>
             <TabsTrigger value="pay">
-              <Send className="size-4" /> {t("submitProof")}
+              <Send className="size-4" /> Pay securely
             </TabsTrigger>
           </TabsList>
           <TabsContent value="check">
