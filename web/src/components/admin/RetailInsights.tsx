@@ -8,7 +8,6 @@ import { getShopInsights } from "@/lib/insights.functions";
 import { formatDateTime, relativeTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
 import { useI18n } from "@/lib/i18n";
-import { useI18n } from "@/lib/i18n";
 
 const tooltipStyle = { background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, color: "var(--foreground)", fontSize: 12 };
 const money = (n: number, cur: string, locale = "en-GB") => `${Math.round(n).toLocaleString(locale)} ${cur}`;
