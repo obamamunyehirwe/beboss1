@@ -139,6 +139,13 @@ secrets {
   ignoreList.add("SUPABASE_CERT_PINS")
   ignoreList.add("SUPABASE_PUBLISHABLE_KEY")
   ignoreList.add("SUPABASE_URL")
+  // Payment provider keys and the canonical website URL are server-only.
+  // Never generate Android BuildConfig constants or ship them in an APK.
+  ignoreList.add("BEBOSS_PUBLIC_URL")
+  ignoreList.add("FLW_SECRET_KEY")
+  ignoreList.add("FLW_WEBHOOK_SECRET_HASH")
+  ignoreList.add("STRIPE_SECRET_KEY")
+  ignoreList.add("STRIPE_WEBHOOK_SECRET")
   ignoreList.add("VITE_SUPABASE_URL")
   ignoreList.add("VITE_SUPABASE_PUBLISHABLE_KEY")
   ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
