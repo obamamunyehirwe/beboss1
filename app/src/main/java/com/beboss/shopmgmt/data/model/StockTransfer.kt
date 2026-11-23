@@ -37,5 +37,11 @@ data class StockTransfer(
     val receivedBy: String = "",
     val receivedAt: Long = 0L,
     val synced: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /** Last mutation time in epoch milliseconds; separate from the packed HLC. */
+    val updatedAt: Long = createdAt,
+    /** Packed HLC: epoch milliseconds in upper bits and a logical counter in the lower 16 bits. */
+    val hlcTimestamp: Long = 0L,
+    /** Stable writer identity used for deterministic conflict resolution. */
+    val lastModifiedDeviceId: String = ""
 )
