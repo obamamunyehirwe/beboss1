@@ -4,6 +4,7 @@ import {
   hmacSha256Hex,
   normalizePhone,
   phoneE164,
+  verifyFlutterwaveWebhookSecretHash,
 } from "./payment-gateway.ts";
 
 Deno.test("Rwanda phone normalization accepts national and E.164 values", () => {
@@ -41,4 +42,12 @@ Deno.test("constant-time text comparison rejects mismatched signatures", () => {
   if (!constantTimeTextEqual("provider-signature", "provider-signature")) throw new Error("Equal signatures were rejected.");
   if (constantTimeTextEqual("provider-signature", "provider-signaturf")) throw new Error("Mismatched signatures were accepted.");
   if (constantTimeTextEqual("short", "a much longer signature")) throw new Error("Different-length signatures were accepted.");
+});
+
+Deno.test("Flutterwave verif-hash header is compared to the configured secret hash", () => {
+  const configured = "merchant-webhook-secret-hash";
+  if (!verifyFlutterwaveWebhookSecretHash(configured, configured)) throw new Error("Valid Flutterwave verif-hash was rejected.");
+  if (verifyFlutterwaveWebhookSecretHash(configured, "wrong-secret-hash")) throw new Error("Forged Flutterwave verif-hash was accepted.");
+  if (verifyFlutterwaveWebhookSecretHash(configured, "")) throw new Error("Missing Flutterwave verif-hash was accepted.");
+  if (verifyFlutterwaveWebhookSecretHash("", configured)) throw new Error("Missing configured Flutterwave secret was accepted.");
 });
