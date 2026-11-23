@@ -1221,7 +1221,7 @@ fun BranchFormDialog(
                         onExpandedChange = { managerDropdownExpanded = !managerDropdownExpanded }
                     ) {
                         OutlinedTextField(
-                            value = managerName.ifBlank { "Select Registered Manager" },
+                            value = managerName.ifBlank { "Select Active Branch Manager" },
                             onValueChange = { managerName = it },
                             label = { Text(if (language == AppLanguage.KINYARWANDA) "Umuyobozi w'Ishami" else "Assigned Branch Manager") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = managerDropdownExpanded) },
@@ -1235,7 +1235,7 @@ fun BranchFormDialog(
                             expanded = managerDropdownExpanded,
                             onDismissRequest = { managerDropdownExpanded = false }
                         ) {
-                            allUsers.forEach { u ->
+                            allUsers.filter { it.isActive && it.role.name == "MANAGER" }.forEach { u ->
                                 DropdownMenuItem(
                                     text = { Text("${u.name} (${u.role.displayName})") },
                                     onClick = {
