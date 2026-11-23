@@ -292,7 +292,8 @@ class AnalyticsEngine(
                     creditUtilizationPercent = utilization,
                     isOverLimit = isOver,
                     oldestUnpaidDays = ageDays,
-                    agingBucket = bucket
+                    agingBucket = bucket,
+                    category = c.category
                 )
             }.sortedByDescending { it.debtBalance }
 
@@ -312,7 +313,9 @@ class AnalyticsEngine(
             saleItems: List<SaleItem> = emptyList(),
             branchIdFilter: String = "ALL"
         ): List<ReorderSuggestion> {
-            val soldQtyByProduct = saleItems.groupBy { it.productId }
+            val soldQtyByProduct = saleItems
+                .filter { matchesBranch(it.branchId, branchIdFilter) }
+                .groupBy { it.productId }
                 .mapValues { (_, list) -> list.sumOf { it.quantitySold } }
             return filterProductsByBranch(products, branchIdFilter)
                 .filter { !it.isDeleted && (it.isOutOfStock || it.isLowStock) }
