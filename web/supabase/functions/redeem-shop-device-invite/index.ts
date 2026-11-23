@@ -77,6 +77,18 @@ Deno.serve(async (request) => {
     return json(429, { error: "Too many device enrollment attempts. Wait a few minutes and try again." });
   }
 
+  const { data: inviteValid, error: inviteCheckError } = await admin.rpc("validate_shop_device_auth_invite", {
+    p_code_hash: codeHash,
+    p_device_id: deviceId,
+  });
+  if (inviteCheckError) {
+    console.error("[redeem-shop-device-invite] Invitation validation is unavailable.");
+    return json(503, { error: "Secure device enrollment is temporarily unavailable." });
+  }
+  if (inviteValid !== true) {
+    return json(403, { error: "This device code is invalid, expired, revoked, already used, or not assigned to this terminal." });
+  }
+
   const credentialEmail = `device-${crypto.randomUUID()}@devices.beboss.rw`;
   const credentialPassword = randomToken(48);
 
