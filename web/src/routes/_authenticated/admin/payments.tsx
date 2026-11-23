@@ -201,9 +201,9 @@ function PaymentsPage() {
                     <option value="Airtel Money">Airtel Money</option>
                   </select>
                 </div>
-                <ManualField label="Payer full name" value={manual.payerName} onChange={(payerName) => setManual({ ...manual, payerName })} required />
-                <ManualField label="Payer phone" value={manual.payerPhone} onChange={(payerPhone) => setManual({ ...manual, payerPhone })} required />
-                <div className="space-y-1.5"><Label>{a("Payment date and time")}</Label><Input type="datetime-local" value={new Date(manual.paymentTimeMs - new Date(manual.paymentTimeMs).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setManual({ ...manual, paymentTimeMs: event.target.value ? new Date(event.target.value).getTime() : Date.now() })} required /></div><ManualField label="Payment note (optional)" value={manual.paymentNote} onChange={(paymentNote) => setManual({ ...manual, paymentNote })} />
+                <ManualField label={a("Payer full name")} value={manual.payerName} onChange={(payerName) => setManual({ ...manual, payerName })} required />
+                <ManualField label={a("Payer phone")} value={manual.payerPhone} onChange={(payerPhone) => setManual({ ...manual, payerPhone })} required />
+                <div className="space-y-1.5"><Label>{a("Payment date and time")}</Label><Input type="datetime-local" value={new Date(manual.paymentTimeMs - new Date(manual.paymentTimeMs).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setManual({ ...manual, paymentTimeMs: event.target.value ? new Date(event.target.value).getTime() : Date.now() })} required /></div><ManualField label={a("Payment note (optional")} value={manual.paymentNote} onChange={(paymentNote) => setManual({ ...manual, paymentNote })} />
                 <div className="space-y-1.5">
                   <Label>{a("Duration")}</Label>
                   <select
@@ -303,10 +303,10 @@ function PaymentsPage() {
                   </div>
                 </div>
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
-                  <Info label="Provider" value={r.provider} />
-                  <Info label="Payer" value={r.payer_full_name || "—"} sub={r.payer_phone} />
-                  <Info label="Payment time" value={formatDateTime(r.payment_time_ms || r.created_at)} />
-                  <Info label="Registered owner phone" value={r.owner_phone} mono />
+                  <Info label={a("Provider")} value={r.provider} />
+                  <Info label={a("Payer")} value={r.payer_full_name || "—"} sub={r.payer_phone} />
+                  <Info label={a("Payment time")} value={formatDateTime(r.payment_time_ms || r.created_at)} />
+                  <Info label={a("Registered owner phone")} value={r.owner_phone} mono />
                   <Info label="Plan" value={`${r.duration_months} mo • ${r.branch_count} br • ${r.worker_count} staff • ${r.device_count} dev`} />
                 </dl>
                 <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
