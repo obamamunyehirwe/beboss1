@@ -971,17 +971,19 @@ object SupabaseAdminClient {
             // updated at or after this device's validated shop baseline. This prevents
             // an old account keyed by the same owner username/phone from extending a
             // newly registered four-day trial.
-            val preserveRemoteLicense = existingRemote != null &&
-                existingRemote.updatedAt >= shopProfile.trialStartedAt
+            val trustedRemoteLicense = existingRemote?.takeIf {
+                it.updatedAt >= shopProfile.trialStartedAt
+            }
             val effectiveStatus = when {
-                preserveRemoteLicense && existingRemote!!.autoUnlockedAt > shopProfile.lastAppliedCloudUnlockAt ->
-                    existingRemote.subscriptionStatus
-                preserveRemoteLicense && existingRemote!!.subscriptionStatus == ShopProfile.STATUS_ACTIVE &&
-                    existingRemote.subscriptionExpiresAt > shopProfile.subscriptionExpiresAt ->
-                    existingRemote.subscriptionStatus
-                preserveRemoteLicense && existingRemote!!.subscriptionStatus == ShopProfile.STATUS_SUSPENDED &&
-                    existingRemote.updatedAt >= shopProfile.updatedAt ->
-                    existingRemote.subscriptionStatus
+                trustedRemoteLicense != null &&
+                    trustedRemoteLicense.autoUnlockedAt > shopProfile.lastAppliedCloudUnlockAt ->
+                    trustedRemoteLicense.subscriptionStatus
+                trustedRemoteLicense?.subscriptionStatus == ShopProfile.STATUS_ACTIVE &&
+                    trustedRemoteLicense.subscriptionExpiresAt > shopProfile.subscriptionExpiresAt ->
+                    trustedRemoteLicense.subscriptionStatus
+                trustedRemoteLicense?.subscriptionStatus == ShopProfile.STATUS_SUSPENDED &&
+                    trustedRemoteLicense.updatedAt >= shopProfile.updatedAt ->
+                    trustedRemoteLicense.subscriptionStatus
                 shopProfile.isPaidActive -> ShopProfile.STATUS_ACTIVE
                 shopProfile.isFreeTrial -> ShopProfile.STATUS_TRIAL
                 shopProfile.isSuspended -> ShopProfile.STATUS_SUSPENDED
@@ -989,7 +991,7 @@ object SupabaseAdminClient {
             }
             val effectiveExpiry = maxOf(
                 shopProfile.subscriptionExpiresAt,
-                if (preserveRemoteLicense) existingRemote!!.subscriptionExpiresAt else 0L
+                trustedRemoteLicense?.subscriptionExpiresAt ?: 0L
             )
 
             val payload = JSONObject().apply {
