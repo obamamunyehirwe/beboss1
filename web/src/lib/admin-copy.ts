@@ -683,6 +683,9 @@ const words: Record<string, readonly [string, string, string]> = {
   "Currency": ["Ifaranga", "Devise", "Sarafu"],
   "Owner terminal": ["Igikoresho cya nyir'iduka", "Terminal du propriétaire", "Kifaa cha mmiliki"],
   "POS device": ["Igikoresho cya POS", "Appareil POS", "Kifaa cha POS"],
+  "Payments": ["Ubwishyu", "Paiements", "Malipo"],
+  "Branch sync": ["Guhuza amakuru y'amashami", "Synchronisation des agences", "Usawazishaji wa matawi"],
+  "Sync activity": ["Ibikorwa byo guhuza amakuru", "Activité de synchronisation", "Shughuli za usawazishaji"],
 };
 export function useAdminText() {
   try {
