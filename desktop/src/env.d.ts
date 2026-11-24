@@ -93,7 +93,6 @@ declare global {
       networkPing(targetHost?: string): Promise<NetworkPingResult>;
       printEscposThermal(payload: ReceiptPrintPayload): Promise<EscposPrintResult>;
       exportBackupFile(encryptedContent: string): Promise<FileExportResult>;
-      importBackupFile(filePath: string): Promise<string>;
       printReceipt(lines?: string[]): Promise<void>;
       platform: string;
       version: string;
