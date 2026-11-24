@@ -73,9 +73,9 @@ async function recordVerifiedPayment(
 
 async function verifyFlutterwave(rawBody: string, request: Request) {
   const secretHash = Deno.env.get("FLW_WEBHOOK_SECRET_HASH") ?? "";
-  const signature = request.headers.get("verif-hash") ?? "";
-  // Flutterwave currently sends the configured dashboard secret hash verbatim
-  // in verif-hash. After validating this header, the handler re-queries the provider API.
+  const signature = request.headers.get("flutterwave-signature") ?? "";
+  // Flutterwave signs the exact raw body using HMAC-SHA256 and sends a Base64
+  // digest in flutterwave-signature. The transaction is re-queried after validation.
   if (!(await verifyFlutterwaveWebhookSignature(secretHash, rawBody, signature))) {
     return jsonResponse(401, { message: "Invalid Flutterwave webhook signature." });
   }
