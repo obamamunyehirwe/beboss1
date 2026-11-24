@@ -8,5 +8,7 @@ contextBridge.exposeInMainWorld('beBossDesktop', Object.freeze({
   isDesktop: true,
   platform: process.platform,
   getVersion: () => ipcRenderer.invoke('beboss:desktop-version'),
+  getUpdateStatus: () => ipcRenderer.invoke('beboss:update-status'),
+  checkForUpdates: () => ipcRenderer.invoke('beboss:check-for-updates'),
   printCurrentPage: () => ipcRenderer.invoke('beboss:print-current-page'),
 }));
