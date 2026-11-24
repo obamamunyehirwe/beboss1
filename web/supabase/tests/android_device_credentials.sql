@@ -149,6 +149,9 @@ begin
   if has_function_privilege('anon', 'public.is_beboss_staff()', 'EXECUTE') then
     raise exception 'Anonymous callers can execute the platform staff predicate.';
   end if;
+  if has_function_privilege('anon', 'public.is_beboss_admin()', 'EXECUTE') then
+    raise exception 'Anonymous callers can execute the platform administrator predicate.';
+  end if;
   if has_function_privilege('anon', 'beboss_private.is_beboss_staff_internal()', 'EXECUTE') then
     raise exception 'Anonymous callers can execute the private staff predicate.';
   end if;
