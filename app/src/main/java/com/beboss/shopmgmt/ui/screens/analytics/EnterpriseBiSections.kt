@@ -402,10 +402,29 @@ fun SmartReorderSection(
                                     }
                                 }
                                 Text(
-                                    "Stock: ${s.currentStock.toInt()} ${s.unit} (min ${s.lowStockThreshold.toInt()}) • Sold: ${s.unitsSoldInPeriod.toInt()}",
+                                    "Stock: ${s.currentStock.toInt()} ${s.unit} (min ${s.lowStockThreshold.toInt()}) • 56d sold: ${s.unitsSoldInPeriod.toInt()}",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                Text(
+                                    if (s.hasDemandHistory) {
+                                        val cover = "${s.stockCoverDays.toInt()}d cover"
+                                        val confidence = s.forecastConfidence.lowercase().replaceFirstChar { it.uppercase() }
+                                        "Forecast: ${String.format(Locale.getDefault(), "%.2f", s.forecastDailyDemand)} ${s.unit}/day • $cover • $confidence (${s.forecastSalesDays}/56 selling days)"
+                                    } else {
+                                        "Forecast: insufficient recent sales history • low confidence"
+                                    },
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (s.hasTrendComparison) {
+                                    val trend = if (s.demandTrendPercent >= 0.0) "+" else ""
+                                    Text(
+                                        "14-day demand trend: $trend${String.format(Locale.getDefault(), "%.1f", s.demandTrendPercent)}% • Reorder point: ${s.reorderPoint.toInt()} ${s.unit}",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                                 Text(
                                     "Suggest Order: ${s.suggestedOrderQty.toInt()} ${s.unit} (~${ReceiptGenerator.formatMoney(s.estimatedOrderCost, currencySymbol)})",
                                     fontSize = 11.sp,
