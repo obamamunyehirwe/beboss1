@@ -160,7 +160,7 @@ The app follows **MVVM with Domain Managers and UI State Coordinators**:
    - Integer-cents (`Long`) arithmetic (`MoneyUtils`) prevents IEEE-754 floating-point rounding drift.
    - Multi-cart **Hold / Resume**, 5 tender modes (`Cash`, `MTN MoMo`, `Airtel Money`, `Card`, `Split`, `Credit/Debt`), and atomic Room `@Transaction` commits (sale + items + stock deduction + debt balance + sync outbox item).
    - **CameraX Scanner (`CameraBarcodeScanner`)**: Camera preview with runtime permission handling, manual barcode lookup, and catalog quick-chips.
-   - **Receipts & Exports**: Configurable `58mm` / `80mm` thermal layout preview, Android `PrintManager` print adapter, WhatsApp digital receipts, offline SHA-256 `BB-` receipt seals, PDF financial reports (`PdfReportGenerator`), and CSV/Excel exports (`ExcelCsvExporter`).
+   - **Receipts & Exports**: Configurable `58mm` / `80mm` thermal layouts, Android `PrintManager` for installed USB/print-service providers, direct paired Bluetooth Classic SPP ESC/POS output, WhatsApp digital receipts, offline SHA-256 `BB-` receipt seals, PDF financial reports (`PdfReportGenerator`), and CSV/Excel exports (`ExcelCsvExporter`).
 2. **Inventory, Branches & Multi-Terminal Fleet**:
    - Real-time cost vs. retail valuation, supplier purchase ledger, stock transfers between branches, and **14-day moving-average demand forecasting** (`AnalyticsEngine`).
    - **Shop Devices (`ShopDevicesDialog`)**: Pair extra POS tablets with generated `BB-XXXXXX` join codes, assign staff/branches, calculate `+2,000 FRw/mo` add-ons, toggle active status, or revoke access.

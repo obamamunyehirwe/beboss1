@@ -579,6 +579,14 @@ fun ReceiptDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                BluetoothThermalPrintButton(
+                    receiptText = ReceiptGenerator.generateTextReceipt(sale, items, shopProfile),
+                    paperWidthMm = shopProfile.receiptPaperWidthMm,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 OutlinedButton(
                     onClick = {
                         clipboardManager.setText(AnnotatedString(textReceipt))

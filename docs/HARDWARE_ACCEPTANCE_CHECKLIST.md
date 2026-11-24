@@ -41,11 +41,11 @@ For each device, capture local queue counts and cloud record counts before and a
 
 For each exact printer model and firmware, test both its supported connection modes.
 
-- [ ] Pairing/discovery, first permission request, permission denied then granted, reconnect after printer power cycle and reconnect after Android reboot.
+- [ ] Pair the ESC/POS printer in Android Bluetooth settings; test first BLUETOOTH_CONNECT permission request, deny then grant, device selection, reconnect after printer power cycle and reconnect after Android reboot. BeBoss lists already-paired devices only and does not scan for nearby devices.
 - [ ] 58 mm and 80 mm paper widths, logo, tax lines, currency, long names, non-ASCII/Rwandan text, barcode/QR, footer and cut command.
 - [ ] Print after a sale, automatic print setting on/off, reprint, duplicate warning and no-sale/no-cash-drawer safety.
 - [ ] Paper-out, lid-open, disconnected, Bluetooth disabled, USB unplugged mid-print, low battery and printer busy/error response.
-- [ ] Confirm the app reports real transport success/failure rather than treating generated ESC/POS bytes or a saved spool file as proof of printing.
+- [ ] Confirm the direct Bluetooth path reports connect/write errors and clearly says data was sent, not that paper physically printed. Bluetooth SPP generally has no reliable paper-status response.
 - [ ] Repeat after offline sale and reconnect. Confirm exactly one receipt can be reprinted from the original sale without creating a second sale.
 
 ## 5. Windows desktop release acceptance
