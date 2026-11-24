@@ -260,6 +260,7 @@ function BeBossDesktopWorkspace() {
   const cacheRef = useRef<DesktopCache | null>(null);
   const syncLock = useRef(false);
   const bootStarted = useRef(false);
+  const ownerPortalLoaded = useRef(false);
   const [booting, setBooting] = useState(true);
   const [storageReady, setStorageReady] = useState(false);
   const [offline, setOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
@@ -365,11 +366,14 @@ function BeBossDesktopWorkspace() {
     setShop(remoteShop);
     setDevices(Array.isArray(data.devices) ? data.devices : []);
     setStaffDirectory(Array.isArray(data.staff) ? data.staff : []);
-    try {
-      const portalData = await lookupMyShop({ data: { username: currentCache.username, phone: currentCache.phone } });
-      setOwnerPortal(portalData as Row);
-    } catch (portalError) {
-      console.warn("[BeBoss Desktop] Owner portal projection unavailable:", portalError);
+    if (!ownerPortalLoaded.current) {
+      try {
+        const portalData = await lookupMyShop({ data: { username: currentCache.username, phone: currentCache.phone } });
+        setOwnerPortal(portalData as Row);
+        ownerPortalLoaded.current = true;
+      } catch (portalError) {
+        console.warn("[BeBoss Desktop] Owner portal projection unavailable:", portalError);
+      }
     }
     const normalized = mergeServerState(data.dataset, remoteShop, currentCache.username, currentCache.phone);
     const verifiedAt = Date.now();
@@ -1212,7 +1216,7 @@ function BeBossDesktopWorkspace() {
             </section>}
 
             {section === "billing" && <section className="space-y-5">
-              <PageHeading title="Subscription & account health" subtitle="The desktop is bound to the existing shop subscription, branch count and enrolled workforce."/>
+              <PageHeading title="Subscription & account health" subtitle="The desktop is bound to the existing shop subscription, branch count and enrolled workforce." action={<button onClick={async()=>{try{const data=await lookupMyShop({data:{username:cache.username,phone:cache.phone}});setOwnerPortal(data as Row);ownerPortalLoaded.current=true;toast.success("Account history refreshed.");}catch(error){toast.error(error instanceof Error?error.message:"Account refresh failed.");}}} className={secondaryButton}><RefreshCw size={14}/> Refresh account</button>}/>
               <div className="rounded-3xl border border-white/[.08] bg-[#111c2b] p-6">
                 <div className="flex flex-wrap items-center justify-between gap-4"><div><div className="text-xs uppercase tracking-widest text-slate-500">Current subscription</div><div className="mt-2 text-3xl font-black">{asText(shop?.subscription_status,"UNKNOWN")}</div><div className="mt-2 text-sm text-slate-400">Expires {dateLabel(shop?.subscription_expires_at)}</div></div><StatusPill status={licenseExpired?"EXPIRED":asText(shop?.subscription_status,"TRIAL")}/></div>
                 <div className="mt-6 grid gap-3 sm:grid-cols-3"><MiniMetric label="Branches" value={shop?.branch_count||dataset.branches.length}/><MiniMetric label="Workers" value={shop?.worker_count||dataset.users.length}/><MiniMetric label="Devices registered" value={shop?.device_count||devices.length}/></div>
