@@ -102,6 +102,34 @@ jobs:
           test -d .vercel/output/functions
           test -d .vercel/output/static
 
+  security-integration:
+    name: Supabase device-auth security acceptance (staging)
+    if: ${{ vars.BEBOSS_DEVICE_AUTH_STAGING_PROJECT_REF != '' }}
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    env:
+      BEBOSS_RUN_SECURITY_INTEGRATION_TESTS: "1"
+      BEBOSS_TEST_DATABASE_URL: ${{ secrets.BEBOSS_DEVICE_AUTH_STAGING_DATABASE_URL }}
+      BEBOSS_TEST_PROJECT_REF: ${{ vars.BEBOSS_DEVICE_AUTH_STAGING_PROJECT_REF }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run destructive security fixtures against staging only
+        run: npx vitest run src/lib/security-concurrency.integration.test.ts
+
   android:
     name: Android JVM unit tests
     runs-on: ubuntu-24.04
