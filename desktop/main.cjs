@@ -2,7 +2,7 @@
 
 const path = require('node:path');
 const { app, BrowserWindow, Menu, Tray, nativeImage, dialog, ipcMain, session, shell } = require('electron');
-const { PRODUCTION_APP_URL, resolveAppUrl, isTrustedAppUrl, isSafeExternalUrl } = require('./security.cjs');
+const { PRODUCTION_APP_URL, resolveAppUrl, resolveWorkspaceUrl, isTrustedAppUrl, isSafeExternalUrl } = require('./security.cjs');
 
 const APP_URL = resolveAppUrl(process.env, app.isPackaged);
 const APP_ORIGIN = new URL(APP_URL).origin;
@@ -25,9 +25,7 @@ const WORKSPACE_PAGES = [
 ];
 
 function workspaceUrl(route = '/') {
-  const target = new URL(route, APP_ORIGIN);
-  if (target.origin !== APP_ORIGIN || !route.startsWith('/')) throw new Error('Invalid workspace route.');
-  return target.toString();
+  return resolveWorkspaceUrl(route, APP_ORIGIN);
 }
 
 function openWorkspaceWindow(route = '/') {
