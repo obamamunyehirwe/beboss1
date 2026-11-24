@@ -188,6 +188,12 @@ secrets {
   ignoreList.add("VITE_SUPABASE_URL")
   ignoreList.add("VITE_SUPABASE_PUBLISHABLE_KEY")
   ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
+  // Upload-keystore credentials are consumed only by Gradle signing configuration.
+  // Never generate them as Java/Kotlin BuildConfig constants or embed them in APKs.
+  ignoreList.add("KEYSTORE_PATH")
+  ignoreList.add("STORE_PASSWORD")
+  ignoreList.add("KEY_PASSWORD")
+  ignoreList.add("KEY_ALIAS")
 }
 
 // Release signing and cross-platform data-share signing are independent gates.
