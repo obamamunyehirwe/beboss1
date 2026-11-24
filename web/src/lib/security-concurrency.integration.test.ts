@@ -42,6 +42,65 @@ describe.skipIf(!enabled)("Supabase security concurrency integration", () => {
     if (database) await database.end({ timeout: 5 });
   });
 
+  it("rate-limits owner OTP requests per verified phone, not caller-controlled shop identifiers", async () => {
+    const phone = "+25078" + suffix().slice(0, 7);
+    const phoneBucket = "owner-phone:" + createHash("sha256")
+      .update("owner-phone:" + phone)
+      .digest("hex");
+    const now = Date.now();
+
+    await database.begin(async (tx) => {
+      const first = await tx.unsafe(
+        "select public.take_shop_owner_otp_slot($1, $2, 600000, 3) as attempt_id",
+        [phoneBucket, now],
+      );
+      const second = await tx.unsafe(
+        "select public.take_shop_owner_otp_slot($1, $2, 600000, 3) as attempt_id",
+        [phoneBucket, now + 1],
+      );
+      const third = await tx.unsafe(
+        "select public.take_shop_owner_otp_slot($1, $2, 600000, 3) as attempt_id",
+        [phoneBucket, now + 2],
+      );
+      const fourth = await tx.unsafe(
+        "select public.take_shop_owner_otp_slot($1, $2, 600000, 3) as attempt_id",
+        [phoneBucket, now + 3],
+      );
+
+      expect(first[0].attempt_id).not.toBeNull();
+      expect(second[0].attempt_id).not.toBeNull();
+      expect(third[0].attempt_id).not.toBeNull();
+      expect(fourth[0].attempt_id).toBeNull();
+      await tx.unsafe("delete from public.shop_owner_otp_attempts where shop_id = $1", [phoneBucket]);
+    });
+  });
+
+  it("atomically limits OTP fan-out from one source IP", async () => {
+    const sourceHash = createHash("sha256")
+      .update("owner-otp-ip:203.0.113." + (10 + Math.floor(Math.random() * 200)))
+      .digest("hex");
+    const now = Date.now();
+
+    await database.begin(async (tx) => {
+      for (let attempt = 1; attempt <= 10; attempt += 1) {
+        const rows = await tx.unsafe(
+          "select public.take_shop_device_enrollment_attempt($1, $2, 600000, 10) as allowed",
+          [sourceHash, now + attempt],
+        );
+        expect(rows[0].allowed).toBe(true);
+      }
+      const blocked = await tx.unsafe(
+        "select public.take_shop_device_enrollment_attempt($1, $2, 600000, 10) as allowed",
+        [sourceHash, now + 11],
+      );
+      expect(blocked[0].allowed).toBe(false);
+      await tx.unsafe(
+        "delete from beboss_private.shop_device_enrollment_rate_limits where bucket_hash = $1",
+        [sourceHash],
+      );
+    });
+  });
+
   it("denies anonymous PostgREST access even when a forged legacy shop header is supplied", async () => {
     const tenantA = shopFixture();
     const tenantB = shopFixture();
