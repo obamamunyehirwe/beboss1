@@ -34,13 +34,13 @@ The following additional changes were made directly on `main` after the initial 
 
 ## Findings that remain release blockers
 
-### P0 — Legacy Android tenant credential is predictable
+### P0 — Authenticated Android device migration implemented; fleet cutover pending
 
-The Android sync path still has a legacy tenant identifier derived from public owner details (normalized username plus the final nine phone digits) and sends it as `X-Shop-Sync-Key`. The database's legacy tenant RLS boundary still accepts that header. It is not a cryptographically strong credential and does not identify a specific actor, role or device.
+The deterministic username/phone-derived value remains a legacy tenant identifier and compatibility credential only for shops that have not completed migration. New Android builds support a server-issued random per-device access/refresh credential. The server stores token digests bound to shop, device record, user, role, expiry and revocation state; Android protects tokens with Android Keystore-backed encryption; access credentials rotate through a server-authenticated refresh function. When device-auth headers are present, invalid, expired or revoked credentials fail closed and cannot downgrade to the legacy header.
 
-The Nov 23 security audit and Nov 24 enterprise gateway rollout notes already describe this as an open blocker. The website/desktop owner OTP membership work does not remove the direct PostgREST legacy-header path used by existing Android clients.
+Owner enrollment requires verified SMS OTP and a registered owner membership. The owner-controlled one-way legacy retirement RPC refuses to cut over a shop until every active registered terminal has a current device credential. SQL regression tests cover dual-stack transition, forged cross-tenant context, expiry, revocation, device/role binding and safe retirement. The owner web portal no longer has an optional deterministic shop-key header path.
 
-**Required before high-assurance deployment:** server-generated random per-device credentials, hashed storage, verified owner enrollment/recovery, actor/device/role-scoped sessions, Android Keystore persistence, revocation/rotation, a dual-stack rollout, staging tests against forged headers and cross-tenant IDs, and measured retirement of the legacy RLS policy. Do not disable the legacy path before supported mobile clients and recovery are migrated; that can strand existing shops.
+**Remaining release gate:** apply the additive Supabase migrations and deploy the matching Edge Functions to staging; install the new Android release on every active physical terminal; enroll and verify each device; run cross-tenant and revoked-device tests against the deployed project; then have the registered owner retire the legacy path one shop at a time. Do not trigger production retirement while any active device is still on a legacy-only build or while its offline queue is not safely preserved.
 
 ### P1 — Production Android release evidence and DataShare key provisioning are incomplete
 
@@ -58,9 +58,9 @@ The source audit does not constitute independent penetration testing. The prior 
 
 ### P1 — Payment rails must not be overstated
 
-Hosted Flutterwave/Stripe checkout and signed provider-webhook verification are implemented in the web/Supabase flow. Manual Mobile Money proof review is not automatic MTN MoMo/Airtel settlement verification. Browser redirects, customer SMS references and uploaded screenshots are not proof of provider settlement.
+The web/Supabase checkout routes Rwanda Mobile Money through Flutterwave using the mobilemoneyrwanda checkout option. The webhook authenticates Flutterwave's documented verif-hash header, then re-queries the transaction from the provider and checks transaction ID, generated reference, successful status, exact RWF currency and amount. A read-only smoke harness now verifies separate MTN-labelled and Airtel-labelled transactions and requires payment_type=mobilemoneyrw. This is an aggregator integration, not direct MTN Open API or Airtel Collections API integration.
 
-**Required:** use only approved provider integrations and server-verified callbacks for automatic settlement; otherwise retain explicit manual-review status and clear operator evidence.
+**Remaining acceptance gate:** no provider-backed MTN/Airtel test or live settlement has been run in this session; do not claim collection or bank payout reconciliation has passed. Complete both provider test transactions, confirm webhook delivery and provider API verification, then reconcile live merchant settlement statements after approval. Browser redirects, customer SMS references and uploaded screenshots are not proof of settlement.
 
 ## Desktop/mobile feature-parity boundary
 
@@ -96,7 +96,7 @@ The follow-up branch adds an additive per-device Android credential path:
 
 The same branch adds tag-triggered signed Android APK/AAB and Authenticode-signed Windows NSIS release jobs, plus a Windows native NSIS build artifact in CI. Production artifacts are gated on keys supplied by the repository owner; no production keystore or signing certificate is embedded in source.
 
-The Flutterwave webhook was corrected to the documented flutterwave-signature Base64 HMAC-SHA256 exact-raw-body contract and the provider transaction is rechecked for exact transaction ID, reference, final successful status, RWF currency and amount. The Rwanda checkout uses Flutterwave's mobilemoneyrwanda option, which supports MTN and Airtel wallets when enabled on the merchant account. This is an aggregator route, not a completed direct MTN/Airtel API integration.
+The Flutterwave webhook now verifies the documented verif-hash header using a constant-time comparison and re-queries the provider transaction for exact ID, reference, final successful status, RWF currency and amount. The Rwanda checkout uses Flutterwave's mobilemoneyrwanda option, which supports MTN and Airtel wallets when enabled on the merchant account. This is an aggregator route, not a completed direct MTN/Airtel API integration.
 
 ### Still not independently certified
 

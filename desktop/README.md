@@ -25,7 +25,7 @@ The desktop workspace uses the PNG and JPG brand assets synchronized from `web/p
 
 The desktop application does not contain a service-role key, secret API key, payment gateway key or snapshot HMAC secret. Those values must remain in Supabase server-side secrets.
 
-1. Configure desktop/.env.local from .env.example with the project's public Supabase URL and sb_publishable_... key.
+1. Configure desktop/.env.local from desktop/.env.example with the project's public Supabase URL and sb_publishable_... key. Alternatively, the desktop build also reads SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY from the repository-root .env used by Android. Only these two public values are exposed to the renderer; server-only secrets in the root .env are not mapped into Vite.
 2. Apply the migration from the repository's existing web Supabase project:
 
    cd web
@@ -58,7 +58,7 @@ Create a token for all branches or one branch, then copy/download it and import 
    npm install
    cp .env.example .env.local
 
-Edit .env.local with the public project URL and publishable key, then run:
+Edit .env.local with the public project URL and publishable key, or provide the unprefixed SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY values in the repository-root .env. Then run:
 
    npm run dev
 

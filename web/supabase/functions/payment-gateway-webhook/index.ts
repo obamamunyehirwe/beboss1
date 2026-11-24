@@ -8,7 +8,7 @@ import {
   restRequest,
   restRows,
   verifyFlutterwaveWebhookHash,
-} from "./payment-gateway.ts";
+} from "../_shared/payment-gateway.ts";
 
 type GatewayRow = {
   payment_request_id: string;
