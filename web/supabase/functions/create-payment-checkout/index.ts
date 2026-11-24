@@ -68,6 +68,8 @@ Deno.serve(async (request: Request) => {
 
   let paymentRequestId = "";
   let txRef = "";
+  let providerRequestStarted = false;
+  let providerRejected = false;
   try {
     const input = await request.json();
     const gateway = String(input?.gateway ?? "").toLowerCase();
@@ -93,8 +95,21 @@ Deno.serve(async (request: Request) => {
       throw new Error("The selected subscription plan is invalid.");
     }
 
-    const publicUrl = String(Deno.env.get("BEBOSS_PUBLIC_URL") ?? "").replace(/\/+$/, "");
-    if (!publicUrl.startsWith("https://")) throw new Error("The public HTTPS site URL is not configured.");
+    // The production Vercel alias is a safe public fallback; deployments using a
+    // custom domain can override it server-side without making checkout depend on
+    // an otherwise optional secret.
+    const configuredPublicUrl = String(Deno.env.get("BEBOSS_PUBLIC_URL") ?? "").trim();
+    const publicUrl = (configuredPublicUrl || "https://beboss1.vercel.app").replace(/\/+$/, "");
+    let publicOrigin: URL;
+    try {
+      publicOrigin = new URL(publicUrl);
+    } catch {
+      throw new Error("The public HTTPS site URL is invalid.");
+    }
+    if (publicOrigin.protocol !== "https:" || publicOrigin.username || publicOrigin.password ||
+        publicOrigin.search || publicOrigin.hash) {
+      throw new Error("The public checkout return URL must be a trusted HTTPS origin.");
+    }
     const usernameKey = `${username}_${normalizePhone(ownerPhone)}`;
     if (!normalizePhone(ownerPhone)) throw new Error("Enter the full phone number registered to this shop.");
 
@@ -177,6 +192,7 @@ Deno.serve(async (request: Request) => {
       owner_phone: ownerPhone,
       device_challenge: shop.device_challenge ?? "",
       provider: gateway === "flutterwave" ? "Flutterwave" : "Stripe",
+      gateway_reference: txRef,
       ussd_code: "ONLINE_CHECKOUT",
       payer_phone: payerPhone,
       payer_full_name: payerName,
@@ -209,6 +225,7 @@ Deno.serve(async (request: Request) => {
     let checkoutId = "";
 
     if (gateway === "flutterwave") {
+      providerRequestStarted = true;
       const response = await fetch("https://api.flutterwave.com/v3/payments", {
         method: "POST",
         headers: {
@@ -233,6 +250,7 @@ Deno.serve(async (request: Request) => {
       });
       const body = await response.json();
       if (!response.ok || body?.status !== "success") {
+        providerRejected = true;
         throw new Error(String(body?.message ?? "Flutterwave could not create the hosted checkout."));
       }
       checkoutUrl = safeUrl(body?.data?.link, "checkout.flutterwave.com");
@@ -254,6 +272,7 @@ Deno.serve(async (request: Request) => {
       form.set("payment_intent_data[metadata][payment_request_id]", paymentRequestId);
       form.set("payment_intent_data[metadata][gateway_reference]", txRef);
 
+      providerRequestStarted = true;
       const response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
         method: "POST",
         headers: {
@@ -263,7 +282,10 @@ Deno.serve(async (request: Request) => {
         body: form,
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(String(body?.error?.message ?? "Stripe could not create the hosted checkout."));
+      if (!response.ok) {
+        providerRejected = true;
+        throw new Error(String(body?.error?.message ?? "Stripe could not create the hosted checkout."));
+      }
       checkoutId = String(body?.id ?? "");
       checkoutUrl = safeUrl(body?.url, "checkout.stripe.com");
       if (!checkoutId) throw new Error("Stripe returned no Checkout Session identifier.");
@@ -291,23 +313,35 @@ Deno.serve(async (request: Request) => {
     });
   } catch (error) {
     console.error("[create-payment-checkout]", error);
+    const uncertainProviderOutcome = providerRequestStarted && !providerRejected;
     if (paymentRequestId) {
       try {
         const params = new URLSearchParams({ payment_request_id: `eq.${paymentRequestId}` });
         await restPatch(`payment_gateway_transactions?${params.toString()}`, {
-          status: "FAILED",
+          status: uncertainProviderOutcome ? "REVIEW_REQUIRED" : "FAILED",
           failure_reason: error instanceof Error ? error.message.slice(0, 300) : "Checkout initiation failed",
           updated_at: Date.now(),
         });
-        const requestParams = new URLSearchParams({ id: `eq.${paymentRequestId}` });
-        await restPatch(`payment_requests?${requestParams.toString()}`, {
-          status: "REJECTED",
-          rejection_reason: "Online checkout could not be initiated. Start a new payment attempt.",
-          updated_at: Date.now(),
-        });
+        if (!uncertainProviderOutcome) {
+          const requestParams = new URLSearchParams({ id: `eq.${paymentRequestId}` });
+          await restPatch(`payment_requests?${requestParams.toString()}`, {
+            status: "REJECTED",
+            rejection_reason: "Online checkout was rejected by the provider. Start a new payment attempt.",
+            updated_at: Date.now(),
+          });
+        }
       } catch (cleanupError) {
         console.error("[create-payment-checkout] failed to mark interrupted attempt", cleanupError);
       }
+    }
+    if (uncertainProviderOutcome) {
+      return jsonResponse(202, {
+        ok: true,
+        pending: true,
+        paymentRequestId,
+        reference: txRef,
+        message: "The provider response or local save is uncertain. This payment is held for reconciliation; do not create another checkout until its status has been reviewed.",
+      });
     }
     return jsonResponse(400, { message: error instanceof Error ? error.message : "Payment checkout could not be created." });
   }
