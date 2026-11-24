@@ -169,7 +169,6 @@ secrets {
   defaultPropertiesFileName = ".env.example"
   ignoreList.add("BEBOSS_ADMIN_URL")
   ignoreList.add("BEBOSS_ADMIN_WHATSAPP")
-  ignoreList.add("BEBOSS_DATASHARE_HMAC_SECRET")
   ignoreList.add("BEBOSS_LAN_SYNC_SECRET")
   ignoreList.add("BEBOSS_SECURITY_PEPPER")
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
