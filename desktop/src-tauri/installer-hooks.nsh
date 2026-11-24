@@ -39,11 +39,8 @@
   CreateShortcut "$SMPROGRAMS\BeBoss\BeBoss Desktop.lnk" "$INSTDIR\BeBoss.exe" "" "$INSTDIR\BeBoss.exe" 0
   CreateShortcut "$SMPROGRAMS\BeBoss\Uninstall.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0
   
-  ; Register .bbbackup file association
-  WriteRegStr HKCR ".bbbackup" "" "BeBoss.BackupFile"
-  WriteRegStr HKCR "BeBoss.BackupFile" "" "BeBoss Backup File"
-  WriteRegStr HKCR "BeBoss.BackupFile\DefaultIcon" "" "$INSTDIR\BeBoss.exe,0"
-  WriteRegStr HKCR "BeBoss.BackupFile\shell\open\command" "" '\"$INSTDIR\BeBoss.exe\" restore \"%1\"'
+  ; Backup files are restored from the authenticated in-app Backup & Recovery
+  ; screen, where the owner explicitly selects a local file and enters its key.
   
   DetailPrint "BeBoss Desktop installed successfully."
   DetailPrint "Installation path: $INSTDIR"
@@ -61,9 +58,7 @@
   
   ; Remove registry entries
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop"
-  DeleteRegKey HKCR ".bbbackup"
-  DeleteRegKey HKCR "BeBoss.BackupFile"
-  
+
   
   DetailPrint "BeBoss Desktop has been removed."
 !macroend
