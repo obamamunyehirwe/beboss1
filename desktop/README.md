@@ -1,5 +1,9 @@
 # BeBoss Desktop
 
+**Desktop release line: 1.3.0**
+
+Version 1.3.0 adds data-driven welcome and management workspaces, encrypted persistent desktop preferences, configurable automatic sync refresh, and expanded runtime/security controls. The npm package, Rust crate, Tauri shell, first-run setup marker and installer metadata use the same release version.
+
 A standalone Windows, macOS and Linux desktop client for the BeBoss retail operating system. It uses the same BeBoss shop account, mobile business snapshot, subscription records, branch tables, staff assignments, device invitations and stock-transfer command flow as the Android application.
 
 ## Included desktop workflows

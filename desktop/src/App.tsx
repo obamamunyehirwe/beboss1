@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import {
-  Activity, AlertTriangle, BarChart3, Bell, Building2, Check, ChevronDown,
-  ClipboardList, CreditCard, Database, LayoutDashboard, LoaderCircle, LogOut, Menu,
+  Activity, AlertTriangle, BarChart3, Bell, Building2, Briefcase, Check, ChevronDown,
+  ClipboardList, CreditCard, Database, Home, LayoutDashboard, LoaderCircle, LogOut, Menu,
   Package, RefreshCw, Search, Settings, ShieldCheck, ShoppingCart, Smartphone, Truck, UserRound,
   Users, Warehouse, X, Zap
 } from "lucide-react";
 import { callDesktopApi, currentSession, signOut, type OwnerCredentials } from "./lib/cloud";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
-import type { CloudState, NavKey, ReceiptPayload, Row, Snapshot } from "./lib/types";
+import type { CloudState, DesktopPreferences, NavKey, ReceiptPayload, Row, Snapshot } from "./lib/types";
 import { AuthScreen } from "./components/AuthScreen";
 import { SetupWizard } from "./components/SetupWizard";
 import { ReceiptPreview } from "./components/ReceiptPreview";
@@ -30,11 +30,38 @@ import { SyncHubPage } from "./components/screens/SyncHubPage";
 import { OwnerAccessPage } from "./components/screens/OwnerAccessPage";
 import { BackupPage } from "./components/screens/BackupPage";
 import { SettingsPage } from "./components/screens/SettingsPage";
+import { WelcomePage } from "./components/screens/WelcomePage";
+import { ManagementPage } from "./components/screens/ManagementPage";
 import { CommandPalette } from "./components/CommandPalette";
 import { SetupWizard } from "./components/SetupWizard";
 
+const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = {
+  theme: "system", density: "comfortable", accent: "orange", defaultView: "welcome",
+  autoSync: true, refreshMinutes: 5, reducedMotion: false
+};
+
+function normalizeDesktopPreferences(value: unknown): DesktopPreferences {
+  const saved = value && typeof value === "object" ? value as Partial<DesktopPreferences> : {};
+  const themes = ["dark", "light", "system"];
+  const densities = ["comfortable", "compact"];
+  const accents = ["orange", "blue", "green"];
+  const views = ["welcome", "overview", "management"];
+  const refreshIntervals = [0, 1, 5, 15];
+  return {
+    theme: themes.includes(String(saved.theme)) ? saved.theme as DesktopPreferences["theme"] : DEFAULT_DESKTOP_PREFERENCES.theme,
+    density: densities.includes(String(saved.density)) ? saved.density as DesktopPreferences["density"] : DEFAULT_DESKTOP_PREFERENCES.density,
+    accent: accents.includes(String(saved.accent)) ? saved.accent as DesktopPreferences["accent"] : DEFAULT_DESKTOP_PREFERENCES.accent,
+    defaultView: views.includes(String(saved.defaultView)) ? saved.defaultView as DesktopPreferences["defaultView"] : DEFAULT_DESKTOP_PREFERENCES.defaultView,
+    autoSync: typeof saved.autoSync === "boolean" ? saved.autoSync : DEFAULT_DESKTOP_PREFERENCES.autoSync,
+    refreshMinutes: refreshIntervals.includes(Number(saved.refreshMinutes)) ? Number(saved.refreshMinutes) as DesktopPreferences["refreshMinutes"] : DEFAULT_DESKTOP_PREFERENCES.refreshMinutes,
+    reducedMotion: typeof saved.reducedMotion === "boolean" ? saved.reducedMotion : DEFAULT_DESKTOP_PREFERENCES.reducedMotion
+  };
+}
+
 const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: string }[] = [
+  { id: "welcome", label: "Welcome", icon: Home, group: "Workspace" },
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Workspace" },
+  { id: "management", label: "Management center", icon: Briefcase, group: "Workspace" },
   { id: "checkout", label: "Point of sale", icon: ShoppingCart, group: "Workspace" },
   { id: "products", label: "Inventory", icon: Package, group: "Operations" },
   { id: "sales", label: "Sales ledger", icon: ClipboardList, group: "Operations" },
@@ -58,7 +85,9 @@ export default function App() {
   const [setupRequired, setSetupRequired] = useState(false);
   const [owner, setOwner] = useState<OwnerCredentials | null>(null);
   const [cloud, setCloud] = useState<CloudState | null>(null);
-  const [view, setView] = useState<NavKey>("overview");
+  const [view, setView] = useState<NavKey>("welcome");
+  const [preferences, setPreferences] = useState<DesktopPreferences>(DEFAULT_DESKTOP_PREFERENCES);
+  const [preferencesReady, setPreferencesReady] = useState(false);
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -154,7 +183,26 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!startupReady || setupRequired) return;
+    let alive = true;
+    (async () => {
+      try {
+        const stored = await window.beBossDesktop.secureStore.get("desktop-preferences");
+        if (stored && alive) {
+          const next = normalizeDesktopPreferences(JSON.parse(stored));
+          setPreferences(next);
+          setView(next.defaultView);
+        }
+      } catch (e) {
+        if (alive) setError("Desktop preferences could not be loaded: " + errorText(e));
+      } finally {
+        if (alive) setPreferencesReady(true);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!startupReady || setupRequired || !preferencesReady) return;
     let alive = true;
     (async () => {
       try {
@@ -164,21 +212,29 @@ export default function App() {
         const identity = await window.beBossDesktop.secureStore.get("owner-identity");
         if (session && identity) {
           const parsed = JSON.parse(identity) as OwnerCredentials;
-          if (parsed.username && parsed.phone && alive) { setOwner(parsed); await bootstrap(parsed); }
+          if (parsed.username && parsed.phone && alive) { setOwner(parsed); setView(preferences.defaultView); await bootstrap(parsed); }
         }
       } catch (e) { if (alive) setError(errorText(e)); }
       finally { if (alive) setBusy(false); }
     })();
     return () => { alive = false; };
-  }, [startupReady, setupRequired]);
+  }, [startupReady, setupRequired, preferencesReady]);
 
   useEffect(() => {
-    if (!owner || !offline) return;
-    const retrySync = () => { if (navigator.onLine) void bootstrap(owner, false); };
+    if (!owner || !offline || !preferences.autoSync) return;
+    const retrySync = () => { if (navigator.onLine && !busy) void bootstrap(owner, false); };
     window.addEventListener("online", retrySync);
     const retryTimer = window.setInterval(retrySync, 30_000);
     return () => { window.removeEventListener("online", retrySync); window.clearInterval(retryTimer); };
-  }, [owner, offline]);
+  }, [owner, offline, preferences.autoSync, busy]);
+
+  useEffect(() => {
+    if (!owner || offline || !preferences.autoSync || preferences.refreshMinutes === 0) return;
+    const timer = window.setInterval(() => {
+      if (navigator.onLine && !busy) void bootstrap(owner, false);
+    }, preferences.refreshMinutes * 60_000);
+    return () => window.clearInterval(timer);
+  }, [owner, offline, preferences.autoSync, preferences.refreshMinutes, busy]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -191,8 +247,16 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  async function authenticated(credentials: OwnerCredentials) { await bootstrap(credentials); }
+  async function authenticated(credentials: OwnerCredentials) {
+    const ready = await bootstrap(credentials);
+    if (ready) setView(preferences.defaultView);
+  }
   async function refresh() { if (owner) await bootstrap(owner); }
+  async function saveDesktopPreferences(value: DesktopPreferences) {
+    const next = normalizeDesktopPreferences(value);
+    await window.beBossDesktop.secureStore.set("desktop-preferences", JSON.stringify(next));
+    setPreferences(next);
+  }
 
   async function commitSnapshot(mutator: (next: Snapshot) => void, operation = "SNAPSHOT_MUTATION") {
     if (!owner || !cloud) return;
@@ -291,7 +355,7 @@ export default function App() {
     });
   }
 
-  return <div className="app-shell">
+  return <div className="app-shell" data-theme={preferences.theme} data-density={preferences.density} data-accent={preferences.accent} data-motion={preferences.reducedMotion ? "reduced" : "full"}>
     <aside className={"sidebar " + (menuOpen ? "open" : "")}>
       <div className="brand-row"><span className="brand-mark brand-logo-mark"><img src="/beboss-app-icon.png" alt="BeBoss" /></span><div><strong>BeBoss</strong><small>RETAIL COMMAND</small></div><span className="desktop-tag">DESKTOP</span></div>
       <div className="shop-switcher"><span className="shop-avatar">{s(cloud.shop.shop_name).slice(0, 1).toUpperCase() || "B"}</span><div><strong>{s(cloud.shop.shop_name) || "My Shop"}</strong><small>@{owner.username}</small></div><ChevronDown size={15} /></div>
@@ -331,6 +395,8 @@ export default function App() {
         {notice && <div className="global-alert success"><Check size={16} /><span>{notice}</span><button onClick={() => setNotice("")}><X size={15} /></button></div>}
         {offline && <div className="offline-banner"><AlertTriangle size={17} /><span>Offline-first mode. Sales and stock changes are saved in an encrypted SQLite transaction queue and will sync when the connection returns.</span></div>}
         {!snapshot && <LoginHint />}
+        {view === "welcome" && <WelcomePage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} lowStock={lowStock} onNavigate={setView} onReceipt={openReceipt} />}
+        {view === "management" && <ManagementPage cloud={cloud} snapshot={snapshot} offline={offline} onNavigate={setView} />}
         {view === "overview" && <OverviewPage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} stockCost={stockCost} receivables={receivables} lowStock={lowStock} onNavigate={setView} onOpenCommand={() => setPaletteOpen(true)} />}
         {view === "checkout" && <CheckoutPage snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} />}
         {view === "products" && <ProductsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} />}
@@ -369,7 +435,7 @@ export default function App() {
             return result.snapshot as Snapshot;
           }}
         />}
-        {view === "settings" && <SettingsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} />}
+        {view === "settings" && <SettingsPage snapshot={snapshot} cloud={cloud} onCommit={commitSnapshot} offline={offline} preferences={preferences} onSavePreferences={saveDesktopPreferences} onNavigate={setView} onRefresh={refresh} version={window.beBossDesktop.version} />}
         <footer className="app-footer"><span>BeBoss Desktop · Version {window.beBossDesktop.version}</span><span>Last cloud snapshot {new Date(cloud.snapshotUpdatedAt || 0).toLocaleString()} · {cloud.verifiedChunks} verified chunks</span></footer>
       </div>
     </main>

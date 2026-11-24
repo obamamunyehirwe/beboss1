@@ -40,5 +40,5 @@ window.beBossDesktop = Object.freeze({
   exportBackupFile: (encryptedContent: string) => invoke<any>("export_backup_file", { encryptedContent }),
   printReceipt: async (_lines: string[]) => { window.print(); },
   platform: navigator.platform,
-  version: "1.2.1"
+  version: "1.3.0"
 });
