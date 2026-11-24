@@ -171,13 +171,34 @@ jobs:
       - name: Run Android unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
 
+      - name: Verify Android release signing fails closed without production credentials
+        shell: bash
+        env:
+          KEYSTORE_PATH: ""
+          STORE_PASSWORD: ""
+          KEY_PASSWORD: ""
+        run: |
+          set +e
+          output="$(gradle :app:validateReleaseSigningConfiguration 2>&1)"
+          status=$?
+          set -e
+          printf '%s\\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "Release signing incorrectly accepted missing production credentials."
+            exit 1
+          fi
+          if ! grep -Fq "Release signing is not configured." <<< "$output"; then
+            echo "The expected fail-closed release-signing error was not found."
+            exit 1
+          fi
+
       - name: Build installable Android debug APK
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Publish Android debug APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BeBoss-Android-2.3.1-debug
+          name: BeBoss-Android-2.3.2-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14

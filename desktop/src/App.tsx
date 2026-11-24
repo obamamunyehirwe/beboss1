@@ -134,8 +134,12 @@ export default function App() {
     let alive = true;
     (async () => {
       try {
-        const completed = await window.beBossDesktop.secureStore.get("installation-setup-completed-at");
-        if (alive) setSetupRequired(!completed);
+        const [completedAt, completedVersion] = await Promise.all([
+          window.beBossDesktop.secureStore.get("installation-setup-completed-at"),
+          window.beBossDesktop.secureStore.get("installation-setup-version")
+        ]);
+        const setupIsCurrent = completedVersion === window.beBossDesktop.version;
+        if (alive) setSetupRequired(!completedAt || !setupIsCurrent);
       } catch (e) {
         if (alive) {
           setSetupRequired(true);

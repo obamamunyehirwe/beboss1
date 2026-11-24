@@ -83,6 +83,10 @@ The Windows/macOS/Linux build supports keyboard-wedge USB barcode scanners and t
 - Configure the public `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` repository secrets so the packaged production desktop client connects to the actual project.
 
 
+## Windows installation and privilege model
+
+The Windows NSIS installer is configured for a per-machine installation and requests administrator approval through the standard Windows UAC prompt. The installed BeBoss application itself runs as the signed-in user, not permanently elevated; normal checkout, synchronization and backup operations do not need operating-system administrator rights. No broad inbound Windows Firewall rule is installed because the desktop client synchronizes outbound over HTTPS and does not expose a LAN listener. Uninstalling BeBoss preserves user business data and backups.
+
 ## Portable backup security
 
 Portable backup exports use AES-256-GCM with PBKDF2-HMAC-SHA-256 (310,000 iterations), a fresh 16-byte salt and 12-byte nonce. The passphrase is entered locally, is not uploaded to Supabase, and is required to restore on another desktop. Legacy plaintext JSON backups remain importable for migration; create a new encrypted export after importing one. Subscription recovery is never granted by a locally guessed or format-only code. Desktop subscription status is read from Supabase and changed only by verified billing and owner workflows.

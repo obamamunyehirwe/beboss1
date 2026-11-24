@@ -1,5 +1,4 @@
 name: BeBoss Desktop release
-name: BeBoss Desktop release
 on:
   push:
     tags: ["desktop-v*"]

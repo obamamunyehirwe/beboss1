@@ -16,28 +16,24 @@ android {
     applicationId = "com.beboss.shopmgmt"
     minSdk = 24
     targetSdk = 36
-    versionCode = 15
-    versionName = "2.3.1"
+    versionCode = 16
+    versionName = "2.3.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      val keystoreFile = file(keystorePath)
-      if (keystoreFile.exists()) {
+      // Never sign a production variant with the public Android debug certificate.
+      // Leave the config unset unless the protected CI/local release credentials exist;
+      // validateReleaseSigningConfiguration below provides the actionable failure.
+      val keystorePath = System.getenv("KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
+      val keystoreFile = keystorePath?.let { file(it) }
+      if (keystoreFile?.isFile == true) {
         storeFile = keystoreFile
         storePassword = System.getenv("STORE_PASSWORD")
-        keyAlias = "upload"
+        keyAlias = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() } ?: "upload"
         keyPassword = System.getenv("KEY_PASSWORD")
-      } else {
-        val rootKeystore = file("${rootDir}/debug.keystore")
-        val userKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
-        storeFile = if (rootKeystore.exists()) rootKeystore else userKeystore
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
       }
     }
     create("debugConfig") {
@@ -173,6 +169,39 @@ secrets {
   ignoreList.add("VITE_SUPABASE_URL")
   ignoreList.add("VITE_SUPABASE_PUBLISHABLE_KEY")
   ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
+}
+
+// Release signing is intentionally separate from debug signing. Fail before a
+// release artifact is packaged unless the real upload key and credentials exist.
+val validateReleaseSigningConfiguration = tasks.register("validateReleaseSigningConfiguration") {
+  doLast {
+    val keystorePath = System.getenv("KEYSTORE_PATH")
+    val storePassword = System.getenv("STORE_PASSWORD")
+    val keyPassword = System.getenv("KEY_PASSWORD")
+    val keystoreFile = keystorePath?.takeIf { it.isNotBlank() }?.let { file(it) }
+    if (
+      keystoreFile?.isFile != true ||
+      storePassword.isNullOrBlank() ||
+      keyPassword.isNullOrBlank()
+    ) {
+      throw GradleException(
+        "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD and KEY_PASSWORD " +
+          "to the protected production upload keystore. A debug keystore is never accepted for release builds."
+      )
+    }
+  }
+}
+
+tasks.configureEach {
+  if (
+    name.startsWith("validateSigningRelease") ||
+    name.startsWith("packageRelease") ||
+    name.startsWith("bundleRelease") ||
+    name.startsWith("assembleRelease") ||
+    name.startsWith("signRelease")
+  ) {
+    dependsOn(validateReleaseSigningConfiguration)
+  }
 }
 
 dependencies {
