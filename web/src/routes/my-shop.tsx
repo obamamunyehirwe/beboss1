@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@/lib/use-server-fn";
-import { Check, Copy, KeyRound, Loader2, Plus, Search, Send, Smartphone, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Check, Copy, KeyRound, Loader2, Plus, RefreshCw, Search, Send, Smartphone, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
@@ -100,16 +100,60 @@ function LookupPanel() {
   const enrollOwner = useServerFn(claimMyShopOwner);
   const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
+  const lookupIdentity = useRef({ username, phone });
+  // Keep the current identity available to in-flight requests. An old response
+  // must never repopulate one owner's data after the inputs have changed.
+  lookupIdentity.current = { username, phone };
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Lookup | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const refreshInFlight = useRef(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [deviceName, setDeviceName] = useState("");
   const [assignedUserId, setAssignedUserId] = useState("");
   const [assignedBranchId, setAssignedBranchId] = useState("");
   const [deviceBusy, setDeviceBusy] = useState(false);
   const [issuedInvite, setIssuedInvite] = useState<{ id: string; joinCode: string; expiresAt: number } | null>(null);
+
+  const refreshLatest = useCallback(async (silent = true) => {
+    if (refreshInFlight.current || !username.trim() || !phone.trim()) return;
+    refreshInFlight.current = true;
+    setRefreshing(true);
+    try {
+      // Re-runs the server-side owner-session and phone checks on every refresh.
+      const requestedIdentity = { username, phone };
+      const next = await lookup({ data: requestedIdentity });
+      if (
+        lookupIdentity.current.username !== requestedIdentity.username ||
+        lookupIdentity.current.phone !== requestedIdentity.phone
+      ) return;
+      setResult(next);
+      setLastCheckedAt(Date.now());
+    } catch (error) {
+      console.error("[My Shop] Could not refresh the authenticated shop snapshot", error);
+      if (!silent) toast.error(error instanceof Error ? error.message : p.myShop.lookupFailed);
+    } finally {
+      refreshInFlight.current = false;
+      setRefreshing(false);
+    }
+  }, [lookup, username, phone, p.myShop.lookupFailed]);
+
+  const hasAuthenticatedShop = result !== null;
+  useEffect(() => {
+    if (!hasAuthenticatedShop) return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshLatest(true);
+    };
+    const timer = window.setInterval(refreshWhenVisible, 30_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [hasAuthenticatedShop, refreshLatest]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,7 +168,7 @@ function LookupPanel() {
         });
         if (error) throw new Error("The one-time code is invalid or expired. Request a new code and try again.");
         await enrollOwner({ data: { username, phone } });
-        setResult(await lookup({ data: { username, phone } }));
+        await refreshLatest(false);
         toast.success("Owner phone verified. My Shop is now securely authenticated.");
       } else {
         const { data: current } = await supabase.auth.getSession();
@@ -135,7 +179,7 @@ function LookupPanel() {
           authenticatedUser.phone.replace(/\D/g, "").slice(-9) === phone.replace(/\D/g, "").slice(-9)
         ) {
           await enrollOwner({ data: { username, phone } });
-          setResult(await lookup({ data: { username, phone } }));
+          await refreshLatest(false);
           toast.success("Owner session verified.");
         } else {
           await sendOwnerOtp({ data: { username, phone } });
@@ -159,11 +203,11 @@ function LookupPanel() {
       <form onSubmit={submit} className="grid gap-4 rounded-3xl border border-border bg-card p-6 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <div className="space-y-2">
           <Label htmlFor="u">{t("username")}</Label>
-          <Input id="u" value={username} onChange={(e) => { setUsername(e.target.value); setOtpSent(false); setOtp(""); }} placeholder="mama_shop" required minLength={2} maxLength={80} autoComplete="username" />
+          <Input id="u" value={username} onChange={(e) => { setUsername(e.target.value); setOtpSent(false); setOtp(""); setResult(null); setLastCheckedAt(null); setIssuedInvite(null); }} placeholder="mama_shop" required minLength={2} maxLength={80} autoComplete="username" />
         </div>
         <div className="space-y-2">
           <Label htmlFor="p">{t("phone")}</Label>
-          <Input id="p" value={phone} onChange={(e) => { setPhone(e.target.value); setOtpSent(false); setOtp(""); }} placeholder="0788 123 456" required inputMode="tel" maxLength={30} />
+          <Input id="p" value={phone} onChange={(e) => { setPhone(e.target.value); setOtpSent(false); setOtp(""); setResult(null); setLastCheckedAt(null); setIssuedInvite(null); }} placeholder="0788 123 456" required inputMode="tel" maxLength={30} />
         </div>
         {otpSent ? (
           <div className="space-y-2">
@@ -215,10 +259,14 @@ function LookupPanel() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-display text-lg font-bold">Synced Cloud Store Records</h3>
+                <Button type="button" size="sm" variant="outline" onClick={() => void refreshLatest(false)} disabled={refreshing}>
+                  {refreshing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                  Refresh
+                </Button>
                 <Badge variant="success" className="text-xs">Live from Android</Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Relayed from mobile devices • Last sync: {relativeTime(result.snapshotUploadedAt || Date.now())} • Currency: {result.records.currency || "FRw"}
+                Relayed from mobile devices • Last mobile sync: {result.snapshotUploadedAt ? relativeTime(result.snapshotUploadedAt) : "No snapshot yet"} • {lastCheckedAt ? `Checked ${relativeTime(lastCheckedAt)}` : "Waiting for first check"} • Auto-refresh 30s • Currency: {result.records.currency || "FRw"}
               </p>
             </div>
           </div>
@@ -400,7 +448,7 @@ function LookupPanel() {
                 result={result}
                 onRefresh={async () => {
                   try {
-                    setResult(await lookup({ data: { username, phone } }));
+                    await refreshLatest(false);
                   } catch {
                     /* silent refresh */
                   }
@@ -490,7 +538,7 @@ function LookupPanel() {
                     });
                     setIssuedInvite(created);
                     toast.success("Device slot registered in BeBoss Cloud.");
-                    setResult(await lookup({ data: { username, phone } }));
+                    await refreshLatest(false);
                   } catch (err) {
                     toast.error(err instanceof Error ? err.message : "Could not register the POS device.");
                   } finally {

@@ -31,6 +31,7 @@ import { OwnerAccessPage } from "./components/screens/OwnerAccessPage";
 import { BackupPage } from "./components/screens/BackupPage";
 import { SettingsPage } from "./components/screens/SettingsPage";
 import { CommandPalette } from "./components/CommandPalette";
+import { SetupWizard } from "./components/SetupWizard";
 
 const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: string }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Workspace" },
@@ -53,6 +54,8 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
 ];
 
 export default function App() {
+  const [startupReady, setStartupReady] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
   const [owner, setOwner] = useState<OwnerCredentials | null>(null);
   const [cloud, setCloud] = useState<CloudState | null>(null);
   const [view, setView] = useState<NavKey>("overview");
@@ -132,6 +135,25 @@ export default function App() {
     let alive = true;
     (async () => {
       try {
+        const completed = await window.beBossDesktop.secureStore.get("installation-setup-completed-at");
+        if (alive) setSetupRequired(!completed);
+      } catch (e) {
+        if (alive) {
+          setSetupRequired(true);
+          setError(errorText(e));
+        }
+      } finally {
+        if (alive) setStartupReady(true);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!startupReady || setupRequired) return;
+    let alive = true;
+    (async () => {
+      try {
         const idValue = await window.beBossDesktop.getDeviceId();
         if (alive) setDeviceId(idValue);
         const session = await currentSession();
@@ -144,7 +166,7 @@ export default function App() {
       finally { if (alive) setBusy(false); }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [startupReady, setupRequired]);
 
   useEffect(() => {
     if (!owner || !offline) return;
@@ -233,6 +255,14 @@ export default function App() {
     finally { setBusy(false); }
   }
 
+  if (!startupReady) {
+    return <div className="setup-loading"><LoaderCircle className="spin" size={28} /><span>Preparing BeBoss Desktop…</span></div>;
+  }
+
+  if (setupRequired) {
+    return <SetupWizard onComplete={() => { setError(""); setSetupRequired(false); }} />;
+  }
+
   if (!owner || !cloud) {
     return <><AuthScreen onAuthenticated={authenticated} />{busy && <div className="global-loading"><LoaderCircle className="spin" size={26} /><span>Connecting to BeBoss Cloud…</span></div>}{error && <div className="login-error">{error}<button onClick={() => setError("")}><X size={15} /></button></div>}</>;
   }
@@ -297,7 +327,7 @@ export default function App() {
         {notice && <div className="global-alert success"><Check size={16} /><span>{notice}</span><button onClick={() => setNotice("")}><X size={15} /></button></div>}
         {offline && <div className="offline-banner"><AlertTriangle size={17} /><span>Offline-first mode. Sales and stock changes are saved in an encrypted SQLite transaction queue and will sync when the connection returns.</span></div>}
         {!snapshot && <LoginHint />}
-        {view === "overview" && <OverviewPage cloud={cloud} snapshot={snapshot} revenueToday={revenueToday} profitToday={profitToday} stockCost={stockCost} receivables={receivables} lowStock={lowStock} onNavigate={setView} onOpenCommand={() => setPaletteOpen(true)} />}
+        {view === "overview" && <OverviewPage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} stockCost={stockCost} receivables={receivables} lowStock={lowStock} onNavigate={setView} onOpenCommand={() => setPaletteOpen(true)} />}
         {view === "checkout" && <CheckoutPage snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} />}
         {view === "products" && <ProductsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} />}
         {view === "sales" && <SalesPage snapshot={snapshot} query={search} onReceipt={openReceipt} />}
@@ -320,7 +350,7 @@ export default function App() {
         {view === "diagnostics" && <DiagnosticsPage cloud={cloud} snapshot={snapshot} onRefresh={refresh} />}
         {view === "sync" && <SyncHubPage cloud={cloud} deviceId={deviceId} offline={offline} onRefresh={refresh} />}
         {view === "admin" && <OwnerAccessPage cloud={cloud} />}
-        {view === "backup" && <BackupPage snapshot={snapshot} cloud={cloud} onCommit={commitSnapshot} offline={offline} />}
+        {view === "backup" && <BackupPage snapshot={snapshot} cloud={cloud} onCommit={commitSnapshot} />}
         {view === "settings" && <SettingsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} />}
         <footer className="app-footer"><span>BeBoss Desktop · Version {window.beBossDesktop.version}</span><span>Last cloud snapshot {new Date(cloud.snapshotUpdatedAt || 0).toLocaleString()} · {cloud.verifiedChunks} verified chunks</span></footer>
       </div>
