@@ -32,7 +32,9 @@ export type CloudState = {
 };
 
 export type NavKey =
+  | "welcome"
   | "overview"
+  | "management"
   | "checkout"
   | "products"
   | "sales"
@@ -54,3 +56,12 @@ export type ReceiptPayload = { sale: Row; items: Row[]; profile: Row };
 
 export type CommitSnapshot = (mutator: (next: Snapshot) => void, operation?: string) => Promise<void>;
 export type CloudAction = (action: any, payload: Row) => Promise<Row>;
+export type DesktopPreferences = {
+  theme: "dark" | "light" | "system";
+  density: "comfortable" | "compact";
+  accent: "orange" | "blue" | "green";
+  defaultView: "welcome" | "overview" | "management";
+  autoSync: boolean;
+  refreshMinutes: 0 | 1 | 5 | 15;
+  reducedMotion: boolean;
+};
