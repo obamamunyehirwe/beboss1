@@ -10,6 +10,7 @@ import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
 import type { CloudState, NavKey, ReceiptPayload, Snapshot } from "./lib/types";
 import { AuthScreen } from "./components/AuthScreen";
+import { SetupWizard } from "./components/SetupWizard";
 import { ReceiptPreview } from "./components/ReceiptPreview";
 import { LoginHint } from "./components/ui";
 import { OverviewPage } from "./components/screens/OverviewPage";

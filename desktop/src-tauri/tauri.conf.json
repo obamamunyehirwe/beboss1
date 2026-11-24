@@ -28,7 +28,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "dmg", "appimage"],
-    "copyright": "Copyright (c) BeBoss",
+    "copyright": "Copyright (c) 2024 BeBoss Retail Operations",
     "homepage": "https://beboss.rw",
     "license": "LICENSE.txt",
     "icon": [
@@ -39,7 +39,8 @@
       "icons/icon.ico"
     ],
     "category": "Business",
-    "shortDescription": "BeBoss retail operations",
+    "shortDescription": "BeBoss retail operations platform",
+    "longDescription": "Offline-first retail operating system for modern businesses. Point of sale, inventory management, customer credit tracking, multi-branch operations, and analytics.",
     "windows": {
       "nsis": {
         "installMode": "currentUser",
@@ -51,7 +52,18 @@
         "uninstallerIcon": "icons/icon.ico",
         "startMenuFolder": "BeBoss",
         "installerHooks": "installer-hooks.nsh"
+      },
+      "wix": {
+        "language": "en-US"
       }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.13",
+      "entitlements": null,
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": null,
+      "signingIdentity": null
     }
   }
 }
