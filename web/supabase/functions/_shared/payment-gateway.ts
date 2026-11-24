@@ -117,9 +117,8 @@ export async function verifyFlutterwaveWebhookSignature(
   rawBody: string,
   receivedHeader: string,
 ): Promise<boolean> {
-  // Current Flutterwave webhook documentation uses the configured dashboard
-  // secret verbatim in the verif-hash header; it is not a body HMAC.
   if (!secretHash || !rawBody || !receivedHeader) return false;
-  return constantTimeTextEqual(receivedHeader.trim(), secretHash.trim());
+  const expected = await hmacSha256Base64(secretHash, rawBody);
+  return constantTimeTextEqual(receivedHeader.trim(), expected);
 }
 
