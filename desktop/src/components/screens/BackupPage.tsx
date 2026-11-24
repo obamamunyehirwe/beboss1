@@ -121,20 +121,45 @@ export function BackupPage({ snapshot, cloud, onCommit, onCreateBranchShare, onV
     anchor.href = url;
     anchor.download = "BeBoss-Branch-Share.beboss";
     anchor.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
 
   async function importBranchShare() {
     setShareBusy(true); setShareError(""); setShareMessage("");
     try {
       if (!snapshot) throw new Error("Initialize the shop snapshot before importing a branch package.");
+      if (shareFile && shareFile.size > 4 * 1024 * 1024) {
+        throw new Error("The selected branch package exceeds the 4 MB Android DataShare limit.");
+      }
       const fileToken = shareFile ? await shareFile.text() : "";
       const token = importToken.trim() || fileToken.trim();
       if (!token.startsWith("BBSHARE1:")) throw new Error("Choose a .beboss package or paste a valid BBSHARE1 token.");
       if (token.length > 4 * 1024 * 1024) throw new Error("The branch share package exceeds the 4 MB Android DataShare limit.");
       const verified = await onVerifyBranchShare(token);
+      const nonce = s(verified.metadata?.nonce);
+      if (!nonce || nonce.length < 8 || nonce.length > 128) {
+        throw new Error("The verified branch package is missing its unique replay-protection nonce.");
+      }
+      const replayKey = "branch-share-imports";
+      const storedNonces = await window.beBossDesktop.secureStore.get(replayKey);
+      let importedNonces: { nonce: string; importedAt: number }[] = [];
+      if (storedNonces) {
+        try {
+          const parsed = JSON.parse(storedNonces);
+          if (!Array.isArray(parsed)) throw new Error("Invalid replay history");
+          importedNonces = parsed.filter((item): item is { nonce: string; importedAt: number } =>
+            !!item && typeof item.nonce === "string" && typeof item.importedAt === "number");
+        } catch {
+          throw new Error("The local branch-share replay history is damaged. Do not import this token until the desktop security store has been repaired.");
+        }
+      }
+      if (importedNonces.some((item) => item.nonce === nonce)) {
+        throw new Error("This signed branch package has already been imported on this desktop installation.");
+      }
       const merged = mergeSnapshots(snapshot, verified).snapshot as Snapshot;
       await onCommit((next) => { Object.assign(next, merged); }, "DATASHARE_IMPORT");
+      importedNonces.push({ nonce, importedAt: Date.now() });
+      await window.beBossDesktop.secureStore.set(replayKey, JSON.stringify(importedNonces.slice(-1000)));
       setShareMessage("Signed branch package verified and merged. Changes are queued for cloud synchronization.");
       setImportToken("");
       setShareFile(null);
