@@ -34,6 +34,9 @@ mac:
   category: public.app-category.business
   artifactName: BeBoss-${version}-mac-${arch}.${ext}
 linux:
+  executableName: beboss
+  desktopName: BeBoss
+  icon: ../web/public/beboss-app-icon.png
   target: [AppImage, deb]
   category: Office
   artifactName: BeBoss-${version}-linux-${arch}.${ext}
