@@ -427,6 +427,43 @@ Deno.serve(async (request: Request) => {
       });
     }
 
+    if (action === "upload-chunk") {
+      const generation = text(body.syncGeneration).trim();
+      const chunkIndex = Number(body.chunkIndex);
+      const chunkCount = Number(body.chunkCount);
+      if (!/^[0-9a-f-]{36}$/i.test(generation) || !Number.isInteger(chunkIndex) || !Number.isInteger(chunkCount) || chunkCount < 1 || chunkCount > 1000 || chunkIndex < 0 || chunkIndex >= chunkCount) {
+        return json(400, { error: "Invalid desktop snapshot generation or chunk coordinates." });
+      }
+      const chunk = validateDataset(body.datasetChunk, shopId);
+      if (chunkIndex > 0 && (chunk.branches.length || chunk.users.length || chunk.customerPayments.length || chunk.purchases.length || chunk.stockTransfers.length || chunk.tombstones.length)) {
+        return json(400, { error: "Master records and tombstones may appear only in desktop snapshot chunk zero." });
+      }
+      const chunkDeviceId = chunkIndex === 0 ? desktopId : desktopId + "#c" + chunkIndex;
+      const branch = chunk.branches.find((item) => item.isMainBranch === true) ?? chunk.branches[0] ?? {};
+      const branchId = text(body.branchId) || text(branch.id);
+      const branchName = text(body.branchName) || text(branch.name) || "Main Store";
+      const now = Date.now();
+      const signedToken = await encodeDesktopShareToken({
+        ...chunk,
+        metadata: {
+          ...chunk.metadata, app: "BeBoss", version: "3.0", schemaVersion: 3,
+          format: "beboss_branch_datashare_v3", timestamp: Number(chunk.metadata.timestamp) || now,
+          issuedAt: Number(chunk.metadata.issuedAt) || now, expiresAt: now + 30 * 24 * 60 * 60 * 1000,
+        },
+      }, secret);
+      const rowToWrite = {
+        id: shopId + "::" + chunkDeviceId, shop_sync_key: shopId, device_id: chunkDeviceId,
+        sync_generation: generation, chunk_index: chunkIndex, chunk_count: chunkCount,
+        branch_id: branchId, branch_name: branchName, shop_name: text(shop.shop_name),
+        owner_username: text(shop.owner_username).trim().toLowerCase(), payload_token: signedToken,
+        records_summary: text(body.recordsSummary).slice(0, 500) || "Desktop snapshot upload (" + chunkCount + " chunks)",
+        updated_at: now + chunkIndex,
+      };
+      const { error: chunkError } = await admin.from("branch_sync_snapshots").upsert([rowToWrite], { onConflict: "id" });
+      if (chunkError) throw new Error("Could not save desktop snapshot chunk " + (chunkIndex + 1) + ": " + chunkError.message);
+      return json(200, { ok: true, chunkIndex, chunkCount, generation });
+    }
+
     if (action === "save") {
       const submitted = validateDataset(body.dataset, shopId);
       const now = Date.now();
