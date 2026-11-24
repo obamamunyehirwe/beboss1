@@ -39,10 +39,19 @@ fn is_reserved_key(key: &str) -> bool {
 /// Secure-storage keys must be a simple namespaced identifier. This prevents a
 /// compromised renderer from guessing or enumerating arbitrary vault keys.
 fn is_valid_secure_key(key: &str) -> bool {
-    !key.is_empty()
+    let has_valid_name = !key.is_empty()
         && key.len() <= 180
-        && key.bytes().all(|b| matches!(b, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-' | b'.' | b':'))
-        && !is_reserved_key(key)
+        && key.bytes().all(|b| matches!(b, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-' | b'.' | b':'));
+    if !has_valid_name {
+        return false;
+    }
+
+    // The only renderer-accessible "shop-" namespace is the encrypted per-owner
+    // cache. All other internal shop/device credential keys remain reserved.
+    let is_scoped_shop_cache = key
+        .strip_prefix("shop-cache:")
+        .is_some_and(|owner| !owner.is_empty() && owner.len() <= 120 && !owner.contains(':'));
+    is_scoped_shop_cache || !is_reserved_key(key)
 }
 
 static PROCESS_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
@@ -693,16 +702,8 @@ fn export_backup_file(app: tauri::AppHandle, encrypted_content: String) -> Resul
     })
 }
 
-#[tauri::command]
-fn import_backup_file(file_path: String) -> Result<String, String> {
-    let content = fs::read_to_string(&file_path).map_err(|e| format!("Could not read backup file: {e}"))?;
-    if content.len() > 70_000_000 { return Err("Backup exceeds the 70 MB safety limit.".into()); }
-    // Portable encrypted envelopes are decrypted in the renderer with the user's passphrase.
-    // Legacy plaintext JSON remains readable for migration.
-    Ok(content)
-}
-
-#[tauri::command]
+// Backup import is intentionally handled from a user-selected browser File in the
+// renderer. Do not expose an arbitrary-path filesystem read command to web content.
 
 fn main() {
     PROCESS_START.set(Instant::now()).ok();
@@ -713,7 +714,7 @@ fn main() {
             secure_get, secure_set, secure_remove, get_device_id,
             local_load, local_queue, local_pending, local_outbox_count, local_ack,
             system_diagnostics, network_ping, print_escpos_thermal,
-            export_backup_file, import_backup_file
+            export_backup_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running BeBoss Desktop");
@@ -781,5 +782,20 @@ mod database_encryption_tests {
         );
         let directory = path.parent().expect("test path has a parent");
         let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn allows_the_encrypted_per_owner_shop_cache() {
+        assert!(is_valid_secure_key("shop-cache:owner_01"));
+        assert!(!is_valid_secure_key("shop-cache:"));
+        assert!(!is_valid_secure_key("shop-cache:owner:secret"));
+    }
+
+    #[test]
+    fn keeps_internal_tenant_and_device_keys_reserved() {
+        assert!(!is_valid_secure_key("shop_sync_key"));
+        assert!(!is_valid_secure_key("shop-secret:primary"));
+        assert!(!is_valid_secure_key("device-refresh-token"));
+        assert!(!is_valid_secure_key("desktop-device-id"));
     }
 }

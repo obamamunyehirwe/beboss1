@@ -18,7 +18,7 @@ export function BackupPage({ snapshot, cloud, onCommit }: { snapshot: Snapshot |
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [paste, setPaste] = useState("");
-  const [filePath, setFilePath] = useState("");
+  const [backupFile, setBackupFile] = useState<File | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [confirmPassphrase, setConfirmPassphrase] = useState("");
 
@@ -61,17 +61,22 @@ export function BackupPage({ snapshot, cloud, onCommit }: { snapshot: Snapshot |
     finally { setBusy(false); }
   }
 
-  async function restoreFromPath() {
+  async function restoreFromFile() {
     setBusy(true); setError(""); setNotice("");
     try {
-      if (!filePath.trim()) throw new Error("Enter the backup file path first.");
+      if (!backupFile) throw new Error("Choose a BeBoss backup file first.");
+      if (backupFile.size > 70_000_000) throw new Error("Backup exceeds the 70 MB safety limit.");
+      if (!/\\.(bbbackup|json)$/i.test(backupFile.name)) throw new Error("Choose a .bbbackup or .json backup file.");
       if (!snapshot) throw new Error("Initialize the shop snapshot before restoring.");
-      const stored = await window.beBossDesktop.importBackupFile(filePath.trim());
+      // File.text() only reads the file explicitly selected by the local user.
+      // No native command accepts arbitrary filesystem paths from the renderer.
+      const stored = await backupFile.text();
       const parsed = JSON.parse(await decryptPortableBackup(stored, passphrase));
       const imported = (parsed.snapshot ?? parsed) as Snapshot;
       const merged = mergeSnapshots(snapshot, imported).snapshot as Snapshot;
       await onCommit((next) => { Object.assign(next, merged); }, "RESTORE");
       setNotice("Backup file merged into the shop snapshot and queued for cloud synchronization.");
+      setBackupFile(null);
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
@@ -100,9 +105,9 @@ export function BackupPage({ snapshot, cloud, onCommit }: { snapshot: Snapshot |
       <section className="panel backup-card">
         <div className="panel-heading"><div><span className="eyebrow muted">RESTORE</span><h3>Merge a BeBoss backup</h3></div><Upload size={18} className="muted-icon" /></div>
         <p className="backup-desc">Restore decrypts a portable backup and merges it using BeBoss version and tombstone rules, then queues accepted changes for Supabase synchronization.</p>
-        <label className="backup-field">Backup file path<textarea value={filePath} onChange={(e) => setFilePath(e.target.value)} placeholder="/path/to/beboss-backup.bbbackup" rows={2} /></label>
+        <label className="backup-field">Choose a backup file<input type="file" accept=".bbbackup,.json,application/json" onChange={(event) => setBackupFile(event.target.files?.[0] ?? null)} /><small>{backupFile ? `Selected: ${backupFile.name}` : "Select a .bbbackup or legacy .json file from this computer."}</small></label>
         <label className="backup-field">Or paste backup JSON<textarea value={paste} onChange={(e) => setPaste(e.target.value)} placeholder="Paste an encrypted backup or legacy JSON…" rows={4} /></label>
-        <div className="backup-actions"><button className="btn-outline" onClick={restoreFromPath} disabled={busy || !filePath.trim() || !snapshot}><Save size={15} /> Restore from file</button><button className="btn-primary" onClick={restoreFromText} disabled={busy || !paste.trim() || !snapshot}><Upload size={15} /> Merge pasted backup</button></div>
+        <div className="backup-actions"><button className="btn-outline" onClick={restoreFromFile} disabled={busy || !backupFile || !snapshot}><Save size={15} /> Restore selected file</button><button className="btn-primary" onClick={restoreFromText} disabled={busy || !paste.trim() || !snapshot}><Upload size={15} /> Merge pasted backup</button></div>
       </section>
 
 

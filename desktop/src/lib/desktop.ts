@@ -38,8 +38,7 @@ window.beBossDesktop = Object.freeze({
   networkPing: (targetHost?: string) => invoke<any>("network_ping", { targetHost }),
   printEscposThermal: (payload: any) => invoke<any>("print_escpos_thermal", { payload }),
   exportBackupFile: (encryptedContent: string) => invoke<any>("export_backup_file", { encryptedContent }),
-  importBackupFile: (filePath: string) => invoke<string>("import_backup_file", { filePath }),
   printReceipt: async (_lines: string[]) => { window.print(); },
   platform: navigator.platform,
-  version: "1.2.0"
+  version: "1.2.1"
 });
