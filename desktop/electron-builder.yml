@@ -40,3 +40,9 @@ linux:
   target: [AppImage, deb]
   category: Office
   artifactName: BeBoss-${version}-linux-${arch}.${ext}
+
+publish:
+  provider: github
+  owner: obamamunyehirwe
+  repo: beboss1
+  releaseType: release
