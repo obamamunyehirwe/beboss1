@@ -4,7 +4,7 @@ A standalone Windows, macOS and Linux desktop client for the BeBoss retail opera
 
 ## Included desktop workflows
 
-- SMS owner verification and persistent encrypted Supabase Auth sessions (Electron OS keyring / safeStorage).
+- SMS owner verification and persistent Supabase Auth sessions stored through the Tauri operating-system keyring bridge and a local SQLite state database.
 - Consolidated shop dashboard and operating KPIs sourced from the signed mobile snapshot.
 - Point of sale with product search, keyboard-wedge barcode input, cart quantities, discounts, cash/mobile-money/card/credit tender selection, customer debt, receipt numbers, and a dedicated mobile-aligned receipt preview with print / Save as PDF and sales-ledger reprints.
 - Product catalogue, stock levels, cost and selling price, stock adjustment, reorder views and soft-delete tombstones.
@@ -15,11 +15,11 @@ A standalone Windows, macOS and Linux desktop client for the BeBoss retail opera
 - Staff role, branch assignment and activation management for existing enrolled staff identities.
 - Paired terminal registry and single-use device invitation codes.
 - Cross-branch stock-transfer requests and receipt/cancellation commands that are processed by paired Android terminals.
-- Subscription and payment-claim status, announcements, cloud sync status and encrypted local read cache.
+- Subscription and payment-claim status, announcements, cloud sync status and an encrypted local snapshot/outbox.
 
 Desktop writes to the mobile POS data model are sent as full BeBoss BBSHARE1 snapshots, signed by a Supabase Edge Function using the server-only BEBOSS_DATASHARE_HMAC_SECRET. The Android client already understands this snapshot format and merges records using its existing timestamps/tombstones. Snapshot writes include an optimistic version check and a database advisory-lock trigger so a desktop save cannot silently overwrite a newer cloud snapshot.
 
-The desktop workspace uses the existing BeBoss vector brand mark locally, a GPU-composited 3D dashboard treatment, and reduced-motion fallbacks. Receipt seals use the same SHA-256 field order as the Android offline receipt seal; the desktop receipt preview exposes the saved sale values, TIN, configured tax display, payment balance, and shop footer.
+The desktop workspace uses the PNG and JPG brand assets synchronized from `web/public`, a GPU-composited 3D dashboard treatment, and reduced-motion fallbacks. SVG brand artwork is not used by the desktop renderer. Receipt seals use the same SHA-256 field order as the Android offline receipt seal; the desktop receipt preview exposes the saved sale values, TIN, configured tax display, payment balance, and shop footer.
 
 ## Supabase setup
 
@@ -63,11 +63,13 @@ Edit .env.local with the public project URL and publishable key, then run:
    npm run dist:mac
    npm run dist:linux
 
-Electron 45.4.1 is pinned to the latest stable release available on 24 November 2026. Electron runs with contextIsolation, sandbox, nodeIntegration: false, a restrictive Content Security Policy and a narrow preload bridge. Supabase Auth tokens are stored through Electron safeStorage, encrypted by the user's operating-system keyring.
+The desktop shell is Tauri 2. Its renderer has no Node.js access; privileged operations are exposed only through explicit Tauri commands. The local SQLite database stores snapshot and outbox state; credentials and owner state use platform-secure keyring storage.
+
+Windows builds require the Microsoft C++ Build Tools, WebView2 and Rust. The CI workflow provisions the native build toolchain automatically.
 
 ## Data and platform boundaries
 
-Desktop is cloud-first. It caches the last successfully verified snapshot in the OS-encrypted vault and provides read-only cached access when the network is down. Mutations require a fresh authenticated cloud connection and fail with a visible conflict message if a newer mobile or desktop snapshot exists.
+Desktop stores snapshot mutations and sync-outbox entries in a single encrypted SQLite transaction. When the cloud is reachable, it uses the existing guarded BBSHARE1 snapshot API and acknowledges local outbox entries only after the cloud accepts the write. When offline, it retains local changes and retries after reconnecting. Every queued transaction retains its original cloud version; if Android or another desktop advanced the snapshot, automatic upload stops and preserves the local queue instead of overwriting newer data. That conflict requires an explicit merge before retrying.
 
 The Windows/macOS/Linux build supports keyboard-wedge USB barcode scanners and the operating-system print dialog. Android-only APIs such as CameraX, Android Keystore/SQLCipher database access, Android biometric prompts, thermal-printer Bluetooth SDKs, nearby-Wi-Fi LAN discovery and WorkManager are not falsely represented as desktop hardware features. Those remain functional in the Android application; desktop exposes their compatible business workflows and shared cloud state. New staff credential/PIN enrollment remains an owner-device security operation; desktop manages existing staff assignments and active status without receiving or exporting PINs/passwords.
 
@@ -76,4 +78,6 @@ The Windows/macOS/Linux build supports keyboard-wedge USB barcode scanners and t
 - Never place SUPABASE_SERVICE_ROLE_KEY, Supabase secret keys, gateway secrets or the BBSHARE HMAC key in VITE_ variables.
 - Do not use username/phone-derived shop IDs as authentication. The derived key is only a tenant reference; the SMS-verified Auth user and active owner membership are the authorization boundary.
 - Snapshot tokens are verified server-side before decoding. The HMAC signing secret never reaches the renderer.
-- The local snapshot cache and Supabase Auth session use Electron safeStorage; if the OS keyring is unavailable, secure persistence fails closed rather than storing credentials in plaintext.
+- The operating-system keyring protects the generated local database identity and secure session values. SQLite storage is local to the desktop user's application-data directory and must not be treated as a replacement for server-side authorization.
+- Configure `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` repository secrets for tagged releases. The release workflow signs the NSIS installer and verifies the signature before uploading/publishing it.
+- Configure the public `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` repository secrets so the packaged production desktop client connects to the actual project.

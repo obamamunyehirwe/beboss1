@@ -96,8 +96,8 @@ jobs:
           test -d .vercel/output/static
 
   desktop:
-    name: Desktop TypeScript check and production build
-    runs-on: ubuntu-24.04
+    name: Desktop Tauri frontend and native checks
+    runs-on: windows-2022
     defaults:
       run:
         working-directory: desktop
@@ -110,11 +110,25 @@ jobs:
         with:
           node-version: 22
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Perl for bundled SQLCipher OpenSSL
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: "5.40"
+
       - name: Install desktop dependencies
-        run: npm install --no-audit --no-fund --package-lock=false
+        run: npm ci --no-audit --no-fund
 
       - name: Type-check and build desktop client
         run: npm run build
+
+      - name: Check native Tauri application
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Test native synchronization primitives
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
   android:
     name: Android JVM unit tests

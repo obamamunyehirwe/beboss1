@@ -1,0 +1,20 @@
+﻿const { contextBridge, ipcRenderer } = require("electron");
+
+contextBridge.exposeInMainWorld("beBossDesktop", Object.freeze({
+  secureStore: Object.freeze({
+    get: (key) => ipcRenderer.invoke("beboss:secure-get", key),
+    set: (key, value) => ipcRenderer.invoke("beboss:secure-set", key, value),
+    remove: (key) => ipcRenderer.invoke("beboss:secure-remove", key)
+  }),
+  getDeviceId: () => ipcRenderer.invoke("beboss:device-id"),
+  local: Object.freeze({
+    load: () => ipcRenderer.invoke("beboss:local-load"),
+    queue: (operation, payload, deviceId) => ipcRenderer.invoke("beboss:local-queue", operation, payload, deviceId),
+    outboxCount: () => ipcRenderer.invoke("beboss:local-outbox-count"),
+    pending: () => ipcRenderer.invoke("beboss:local-pending"),
+    acknowledge: (ids) => ipcRenderer.invoke("beboss:local-ack", ids)
+  }),
+  openExternal: (url) => ipcRenderer.invoke("beboss:open-external", url),
+  platform: process.platform,
+  version: process.env.npm_package_version || "1.0.0"
+}));

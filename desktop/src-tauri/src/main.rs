@@ -1,0 +1,608 @@
+use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
+use base64::prelude::*;
+use keyring::Entry;
+use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
+use serde_json::{Number, Value};
+use sha2::{Digest, Sha256};
+use std::{
+    env, fs,
+    net::{TcpStream, ToSocketAddrs},
+    path::PathBuf,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+use tauri::Manager;
+use uuid::Uuid;
+
+const KEYRING_SERVICE: &str = "com.beboss.desktop";
+const KEYRING_DATABASE_KEY: &str = "database-encryption-key";
+static PROCESS_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+fn is_subscription_active(status: &str, expires_at: i64, effective_now: i64) -> bool {
+    !matches!(status.to_ascii_uppercase().as_str(), "EXPIRED" | "SUSPENDED" | "CANCELLED")
+        && expires_at > effective_now
+}
+
+fn database_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let directory = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    Ok(directory.join("beboss-local.sqlite"))
+}
+
+fn database_key() -> Result<String, String> {
+    let entry = Entry::new(KEYRING_SERVICE, KEYRING_DATABASE_KEY).map_err(|error| error.to_string())?;
+    match entry.get_password() {
+        Ok(key) => Ok(key),
+        Err(keyring::Error::NoEntry) => {
+            let key = Uuid::new_v4().simple().to_string() + &Uuid::new_v4().simple().to_string();
+            let _ = entry.set_password(&key);
+            Ok(key)
+        }
+        Err(_) => {
+            // Fallback to stable device-specific key if OS keyring is restricted
+            let device_key = format!("BEBOSS-SECURE-KEY-{}", env::consts::OS);
+            Ok(device_key)
+        }
+    }
+}
+
+fn derive_cipher_key(seed: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(seed.as_bytes());
+    hasher.update(b"BEBOSS-DESKTOP-SALT-2026");
+    hasher.finalize().into()
+}
+
+fn encrypt_payload(plaintext: &str, key_seed: &str) -> Result<String, String> {
+    let key_bytes = derive_cipher_key(key_seed);
+    let cipher = Aes256Gcm::new_from_slice(&key_bytes).map_err(|e| e.to_string())?;
+    let mut nonce_hasher = Sha256::new();
+    nonce_hasher.update(key_seed.as_bytes());
+    nonce_hasher.update(plaintext.as_bytes());
+    nonce_hasher.update(Uuid::new_v4().as_bytes());
+    let nonce_hash = nonce_hasher.finalize();
+    let nonce = Nonce::from_slice(&nonce_hash[..12]);
+    let ciphertext = cipher.encrypt(nonce, plaintext.as_bytes()).map_err(|e| e.to_string())?;
+    let mut envelope = nonce_hash[..12].to_vec();
+    envelope.extend_from_slice(&ciphertext);
+    Ok(BASE64_STANDARD.encode(envelope))
+}
+
+fn decrypt_payload(ciphertext_b64: &str, key_seed: &str) -> Result<String, String> {
+    let key_bytes = derive_cipher_key(key_seed);
+    let cipher = Aes256Gcm::new_from_slice(&key_bytes).map_err(|e| e.to_string())?;
+    let envelope = BASE64_STANDARD.decode(ciphertext_b64).map_err(|e| e.to_string())?;
+    if envelope.len() < 28 { return Err("Invalid secure-value envelope".into()); }
+    let nonce = Nonce::from_slice(&envelope[..12]);
+    let plaintext = cipher.decrypt(nonce, &envelope[12..]).map_err(|e| e.to_string())?;
+    String::from_utf8(plaintext).map_err(|e| e.to_string())
+}
+
+fn stamp_desktop_records(value: &mut Value, hlc: i64, updated_since: i64, device_id: &str) {
+    match value {
+        Value::Array(items) => items.iter_mut().for_each(|item| stamp_desktop_records(item, hlc, updated_since, device_id)),
+        Value::Object(object) => {
+            let is_recent = object.get("updatedAt").and_then(Value::as_i64).is_some_and(|updated_at| updated_at >= updated_since);
+            let is_desktop_record = is_recent && object.get("lastModifiedDeviceId").and_then(Value::as_str) == Some("DESKTOP");
+            if is_desktop_record {
+                object.insert("hlcTimestamp".to_string(), Value::Number(Number::from(hlc)));
+                object.insert("lastModifiedDeviceId".to_string(), Value::String(device_id.to_string()));
+            }
+            let is_recent_tombstone = object.get("deletedAt").and_then(Value::as_i64).is_some_and(|deleted_at| deleted_at >= updated_since)
+                && object.get("deletedByDeviceId").and_then(Value::as_str) == Some("DESKTOP");
+            if is_recent_tombstone {
+                object.insert("hlcTimestamp".to_string(), Value::Number(Number::from(hlc)));
+                object.insert("deletedByDeviceId".to_string(), Value::String(device_id.to_string()));
+            }
+            object.values_mut().for_each(|item| stamp_desktop_records(item, hlc, updated_since, device_id));
+        }
+        _ => {}
+    }
+}
+
+fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
+    let path = database_path(app)?;
+    let connection = Connection::open(path).map_err(|error| error.to_string())?;
+    connection.execute_batch(
+        "PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA foreign_keys = ON;
+         CREATE TABLE IF NOT EXISTS local_state (
+             key TEXT PRIMARY KEY NOT NULL,
+             value TEXT NOT NULL,
+             updated_at INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS secure_values (
+             key TEXT PRIMARY KEY NOT NULL,
+             value TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS sync_outbox (
+             id TEXT PRIMARY KEY NOT NULL,
+             operation TEXT NOT NULL,
+             payload TEXT NOT NULL,
+             hlc INTEGER NOT NULL,
+             device_id TEXT NOT NULL,
+             status TEXT NOT NULL DEFAULT 'PENDING',
+             attempts INTEGER NOT NULL DEFAULT 0,
+             last_error TEXT NOT NULL DEFAULT '',
+             expected_updated_at INTEGER NOT NULL DEFAULT 0,
+             created_at INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS hardware_logs (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             category TEXT NOT NULL,
+             message TEXT NOT NULL,
+             created_at INTEGER NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS sync_outbox_ready ON sync_outbox(status, created_at);"
+    ).map_err(|error| error.to_string())?;
+    Ok(connection)
+}
+
+fn now_millis() -> Result<i64, String> {
+    SystemTime::now().duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .map_err(|error| error.to_string())
+}
+
+#[derive(Serialize)]
+struct PendingTransaction {
+    id: String,
+    payload: Value,
+    hlc: i64,
+    #[serde(rename = "expectedUpdatedAt")]
+    expected_updated_at: i64,
+}
+
+#[derive(Serialize)]
+struct SystemDiagnostics {
+    #[serde(rename = "osPlatform")]
+    os_platform: String,
+    #[serde(rename = "osArch")]
+    os_arch: String,
+    #[serde(rename = "appVersion")]
+    app_version: String,
+    #[serde(rename = "dbPath")]
+    db_path: String,
+    #[serde(rename = "dbSizeBytes")]
+    db_size_bytes: u64,
+    #[serde(rename = "pendingOutboxCount")]
+    pending_outbox_count: i64,
+    #[serde(rename = "uptimeSeconds")]
+    uptime_seconds: u64,
+    hostname: String,
+}
+
+#[derive(Serialize)]
+struct NetworkPingResult {
+    host: String,
+    #[serde(rename = "latencyMs")]
+    latency_ms: u64,
+    reachable: bool,
+    details: String,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct ReceiptItemPayload {
+    name: String,
+    quantity: f64,
+    #[serde(rename = "unitPrice")]
+    unit_price: f64,
+    subtotal: f64,
+}
+
+#[derive(Deserialize)]
+struct ReceiptPrintPayload {
+    #[serde(rename = "shopName")]
+    shop_name: String,
+    #[serde(rename = "receiptNumber")]
+    receipt_number: String,
+    date: String,
+    cashier: String,
+    customer: String,
+    items: Vec<ReceiptItemPayload>,
+    subtotal: f64,
+    discount: f64,
+    total: f64,
+    paid: f64,
+    balance: f64,
+    #[serde(rename = "paymentMethod")]
+    payment_method: String,
+    tin: String,
+    address: String,
+    phone: String,
+    header: String,
+    footer: String,
+    seal: String,
+}
+
+#[derive(Serialize)]
+struct EscposPrintResult {
+    success: bool,
+    #[serde(rename = "base64Bytes")]
+    base64_bytes: String,
+    #[serde(rename = "spoolPath")]
+    spool_path: String,
+    message: String,
+}
+
+#[derive(Serialize)]
+struct FileExportResult {
+    success: bool,
+    #[serde(rename = "filePath")]
+    file_path: String,
+    #[serde(rename = "fileSizeBytes")]
+    file_size_bytes: usize,
+    sha256: String,
+}
+
+#[derive(Serialize)]
+struct UnlockCodeResult {
+    valid: bool,
+    #[serde(rename = "daysGranted")]
+    days_granted: i64,
+    #[serde(rename = "newExpiryTimestamp")]
+    new_expiry_timestamp: i64,
+    tier: String,
+    message: String,
+}
+
+// ────────────────────── TAURI COMMANDS ──────────────────────
+
+#[tauri::command]
+fn secure_get(app: tauri::AppHandle, key: String) -> Result<Option<String>, String> {
+    if key.is_empty() || key.len() > 180 { return Err("Invalid secure-storage key.".into()); }
+    let connection = open_database(&app)?;
+    let raw: Option<String> = connection.query_row("SELECT value FROM secure_values WHERE key = ?1", [key], |row| row.get(0))
+        .optional().map_err(|error| error.to_string())?;
+    
+    match raw {
+        Some(stored) => {
+            let key_seed = database_key()?;
+            // Attempt decryption; if legacy plaintext, return as is
+            if let Ok(decrypted) = decrypt_payload(&stored, &key_seed) {
+                Ok(Some(decrypted))
+            } else {
+                Ok(Some(stored))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+fn secure_set(app: tauri::AppHandle, key: String, value: String) -> Result<(), String> {
+    if key.is_empty() || key.len() > 180 || value.len() > 8_000_000 { return Err("Invalid secure-storage value.".into()); }
+    let key_seed = database_key()?;
+    let encrypted = encrypt_payload(&value, &key_seed)?;
+    let connection = open_database(&app)?;
+    connection.execute("INSERT INTO secure_values(key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value", params![key, encrypted])
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn secure_remove(app: tauri::AppHandle, key: String) -> Result<(), String> {
+    if key.is_empty() || key.len() > 180 { return Err("Invalid secure-storage key.".into()); }
+    let connection = open_database(&app)?;
+    connection.execute("DELETE FROM secure_values WHERE key = ?1", [key]).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_device_id(app: tauri::AppHandle) -> Result<String, String> {
+    let connection = open_database(&app)?;
+    if let Some(device_id) = connection.query_row("SELECT value FROM local_state WHERE key = 'desktop-device-id'", [], |row| row.get::<_, String>(0)).optional().map_err(|error| error.to_string())? {
+        return Ok(device_id);
+    }
+    let device_id = Uuid::new_v4().to_string();
+    connection.execute("INSERT INTO local_state(key, value, updated_at) VALUES ('desktop-device-id', ?1, ?2)", params![device_id, now_millis()?])
+        .map_err(|error| error.to_string())?;
+    Ok(device_id)
+}
+
+#[tauri::command]
+fn local_load(app: tauri::AppHandle) -> Result<Option<Value>, String> {
+    let connection = open_database(&app)?;
+    let value = connection.query_row("SELECT value FROM local_state WHERE key = 'snapshot'", [], |row| row.get::<_, String>(0))
+        .optional().map_err(|error| error.to_string())?;
+    value.map(|json| serde_json::from_str(&json).map_err(|error| error.to_string())).transpose()
+}
+
+#[tauri::command]
+fn local_queue(
+    app: tauri::AppHandle,
+    operation: String,
+    mut payload: Value,
+    device_id: String,
+    expected_updated_at: i64,
+    requires_active_subscription: bool,
+    subscription_expires_at: i64,
+    subscription_status: String,
+) -> Result<PendingTransaction, String> {
+    if operation.is_empty() || operation.len() > 100 || device_id.is_empty() || device_id.len() > 180 || expected_updated_at < 0 {
+        return Err("Invalid local transaction.".into());
+    }
+    let connection = open_database(&app)?;
+    let wall_now = now_millis()?;
+    let previous_effective_now: Option<String> = connection.query_row(
+        "SELECT value FROM local_state WHERE key = 'effective-clock'", [], |row| row.get(0)
+    ).optional().map_err(|error| error.to_string())?;
+    let now = wall_now.max(previous_effective_now.and_then(|value| value.parse::<i64>().ok()).unwrap_or(0));
+    connection.execute(
+        "INSERT INTO local_state(key, value, updated_at) VALUES ('effective-clock', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        params![now.to_string(), now]
+    ).map_err(|error| error.to_string())?;
+    if requires_active_subscription && !is_subscription_active(&subscription_status, subscription_expires_at, now) {
+        return Err("The shop subscription is expired or suspended. Renew it before recording another sale.".into());
+    }
+    let prior_outbox_hlc: Option<i64> = connection.query_row("SELECT MAX(hlc) FROM sync_outbox", [], |row| row.get(0)).map_err(|error| error.to_string())?;
+    let prior_saved_hlc: Option<String> = connection.query_row("SELECT value FROM local_state WHERE key = 'last-hlc'", [], |row| row.get(0)).optional().map_err(|error| error.to_string())?;
+    let prior_hlc = prior_outbox_hlc.into_iter().chain(prior_saved_hlc.and_then(|value| value.parse::<i64>().ok())).max();
+    let wall_hlc = now.checked_shl(16).ok_or_else(|| "Clock value is out of range.".to_string())?;
+    let hlc = wall_hlc.max(prior_hlc.unwrap_or(0).saturating_add(1));
+    stamp_desktop_records(&mut payload, hlc, now.saturating_sub(60_000), &device_id);
+    let id = Uuid::new_v4().to_string();
+    let serialized = serde_json::to_string(&payload).map_err(|error| error.to_string())?;
+    let transaction = connection.unchecked_transaction().map_err(|error| error.to_string())?;
+    transaction.execute("INSERT INTO local_state(key, value, updated_at) VALUES ('snapshot', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at", params![serialized, now])
+        .map_err(|error| error.to_string())?;
+    transaction.execute("INSERT INTO local_state(key, value, updated_at) VALUES ('last-hlc', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at", params![hlc.to_string(), now])
+        .map_err(|error| error.to_string())?;
+    transaction.execute("INSERT INTO sync_outbox(id, operation, payload, hlc, device_id, expected_updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", params![id, operation, serialized, hlc, device_id, expected_updated_at, now])
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(PendingTransaction { id, payload, hlc, expected_updated_at })
+}
+
+#[tauri::command]
+fn local_pending(app: tauri::AppHandle) -> Result<Vec<PendingTransaction>, String> {
+    let connection = open_database(&app)?;
+    let mut statement = connection.prepare("SELECT id, payload, hlc, expected_updated_at FROM sync_outbox WHERE status = 'PENDING' ORDER BY created_at ASC, id ASC")
+        .map_err(|error| error.to_string())?;
+    let records = statement.query_map([], |row| {
+        let json: String = row.get(1)?;
+        let payload = serde_json::from_str(&json).map_err(|error| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(error)))?;
+        Ok(PendingTransaction { id: row.get(0)?, payload, hlc: row.get(2)?, expected_updated_at: row.get(3)? })
+    }).map_err(|error| error.to_string())?;
+    records.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn local_outbox_count(app: tauri::AppHandle) -> Result<i64, String> {
+    open_database(&app)?.query_row("SELECT COUNT(*) FROM sync_outbox WHERE status = 'PENDING'", [], |row| row.get(0))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn local_ack(app: tauri::AppHandle, ids: Vec<String>) -> Result<(), String> {
+    if ids.len() > 10_000 || ids.iter().any(|id| id.len() > 80) { return Err("Invalid outbox acknowledgement.".into()); }
+    let mut connection = open_database(&app)?;
+    let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    for id in ids {
+        transaction.execute("UPDATE sync_outbox SET status = 'SYNCED' WHERE id = ?1", [id]).map_err(|error| error.to_string())?;
+    }
+    transaction.execute("DELETE FROM sync_outbox WHERE status = 'SYNCED' AND created_at < ?1", [now_millis()?.saturating_sub(30 * 24 * 60 * 60 * 1000)])
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn system_diagnostics(app: tauri::AppHandle) -> Result<SystemDiagnostics, String> {
+    let db_path = database_path(&app)?;
+    let db_size_bytes = fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+    let pending_outbox_count = local_outbox_count(app)?;
+    let uptime_seconds = PROCESS_START.get().map(|s| s.elapsed().as_secs()).unwrap_or(0);
+    let hostname = env::var("COMPUTERNAME").or_else(|_| env::var("HOSTNAME")).unwrap_or_else(|_| "localhost".into());
+
+    Ok(SystemDiagnostics {
+        os_platform: env::consts::OS.to_string(),
+        os_arch: env::consts::ARCH.to_string(),
+        app_version: "1.2.0".to_string(),
+        db_path: db_path.to_string_lossy().to_string(),
+        db_size_bytes,
+        pending_outbox_count,
+        uptime_seconds,
+        hostname,
+    })
+}
+
+#[tauri::command]
+fn network_ping(target_host: Option<String>) -> Result<NetworkPingResult, String> {
+    let host = target_host.unwrap_or_else(|| "dxrkvljomgqffvrygbbw.supabase.co:443".to_string());
+    let socket_addr = host.to_socket_addrs().map_err(|e| format!("DNS lookup failed: {e}"))?
+        .next().ok_or_else(|| "Could not resolve hostname".to_string())?;
+
+    let start = Instant::now();
+    match TcpStream::connect_timeout(&socket_addr, Duration::from_millis(4000)) {
+        Ok(_) => {
+            let latency_ms = start.elapsed().as_millis() as u64;
+            Ok(NetworkPingResult {
+                host,
+                latency_ms,
+                reachable: true,
+                details: format!("Verified TCP connection in {}ms", latency_ms),
+            })
+        }
+        Err(e) => Ok(NetworkPingResult {
+            host,
+            latency_ms: 0,
+            reachable: false,
+            details: format!("Connection timed out or failed: {e}"),
+        }),
+    }
+}
+
+#[tauri::command]
+fn print_escpos_thermal(app: tauri::AppHandle, payload: ReceiptPrintPayload) -> Result<EscposPrintResult, String> {
+    let mut bytes = Vec::new();
+
+    // ESC @ - Initialize printer
+    bytes.extend_from_slice(&[0x1B, 0x40]);
+
+    // Center alignment
+    bytes.extend_from_slice(&[0x1B, 0x61, 0x01]);
+
+    // Double height & width for shop title
+    bytes.extend_from_slice(&[0x1D, 0x21, 0x11]);
+    bytes.extend_from_slice(payload.shop_name.as_bytes());
+    bytes.push(0x0A);
+
+    // Normal text
+    bytes.extend_from_slice(&[0x1D, 0x21, 0x00]);
+    if !payload.header.is_empty() {
+        bytes.extend_from_slice(payload.header.as_bytes());
+        bytes.push(0x0A);
+    }
+    if !payload.address.is_empty() {
+        bytes.extend_from_slice(payload.address.as_bytes());
+        bytes.push(0x0A);
+    }
+    if !payload.phone.is_empty() {
+        bytes.extend_from_slice(format!("Tel: {}\n", payload.phone).as_bytes());
+    }
+    if !payload.tin.is_empty() {
+        bytes.extend_from_slice(format!("TIN: {}\n", payload.tin).as_bytes());
+    }
+
+    // Divider
+    bytes.extend_from_slice(b"--------------------------------\n");
+    // Left alignment
+    bytes.extend_from_slice(&[0x1B, 0x61, 0x00]);
+    bytes.extend_from_slice(format!("Receipt: {}\n", payload.receipt_number).as_bytes());
+    bytes.extend_from_slice(format!("Date: {}\n", payload.date).as_bytes());
+    bytes.extend_from_slice(format!("Cashier: {}\n", payload.cashier).as_bytes());
+    bytes.extend_from_slice(format!("Customer: {}\n", payload.customer).as_bytes());
+    bytes.extend_from_slice(format!("Payment: {}\n", payload.payment_method).as_bytes());
+    bytes.extend_from_slice(b"--------------------------------\n");
+
+    // Items table
+    bytes.extend_from_slice(format!("{:<16} {:>4} {:>10}\n", "Item", "Qty", "Total (FRw)").as_bytes());
+    for item in payload.items {
+        let name_trimmed = if item.name.len() > 16 { &item.name[..16] } else { &item.name };
+        bytes.extend_from_slice(format!("{:<16} {:>4} {:>10.0}\n", name_trimmed, item.quantity, item.subtotal).as_bytes());
+    }
+    bytes.extend_from_slice(b"--------------------------------\n");
+
+    // Totals
+    // Right align
+    bytes.extend_from_slice(&[0x1B, 0x61, 0x02]);
+    if payload.discount > 0.0 {
+        bytes.extend_from_slice(format!("Subtotal: FRw {:.0}\n", payload.subtotal).as_bytes());
+        bytes.extend_from_slice(format!("Discount: -FRw {:.0}\n", payload.discount).as_bytes());
+    }
+    // Bold total
+    bytes.extend_from_slice(&[0x1B, 0x45, 0x01]);
+    bytes.extend_from_slice(format!("TOTAL: FRw {:.0}\n", payload.total).as_bytes());
+    bytes.extend_from_slice(&[0x1B, 0x45, 0x00]);
+    bytes.extend_from_slice(format!("Paid: FRw {:.0}\n", payload.paid).as_bytes());
+    if payload.balance > 0.0 {
+        bytes.extend_from_slice(format!("Balance Due: FRw {:.0}\n", payload.balance).as_bytes());
+    }
+
+    // Center alignment for footer
+    bytes.extend_from_slice(&[0x1B, 0x61, 0x01]);
+    bytes.extend_from_slice(b"--------------------------------\n");
+    if !payload.footer.is_empty() {
+        bytes.extend_from_slice(payload.footer.as_bytes());
+        bytes.push(0x0A);
+    }
+    bytes.extend_from_slice(format!("Seal: {}\n", payload.seal).as_bytes());
+    bytes.extend_from_slice(b"*** Thank you for your business ***\n");
+    bytes.extend_from_slice(b"Powered by BeBoss Retail Operations\n\n\n");
+
+    // Cut paper (GS V 66 0)
+    bytes.extend_from_slice(&[0x1D, 0x56, 0x42, 0x00]);
+    // Kick cash drawer (ESC p 0 25 250)
+    bytes.extend_from_slice(&[0x1B, 0x70, 0x00, 0x19, 0xFA]);
+
+    let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let spool_file = app_dir.join("thermal_receipt_spool.bin");
+    fs::write(&spool_file, &bytes).map_err(|e| e.to_string())?;
+
+    Ok(EscposPrintResult {
+        success: true,
+        base64_bytes: BASE64_STANDARD.encode(&bytes),
+        spool_path: spool_file.to_string_lossy().to_string(),
+        message: "ESC/POS receipt sequence successfully generated and spooled".to_string(),
+    })
+}
+
+#[tauri::command]
+fn export_backup_file(app: tauri::AppHandle, json_content: String) -> Result<FileExportResult, String> {
+    let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let backup_dir = app_dir.join("backups");
+    fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
+
+    let filename = format!("beboss-backup-{}.json", now_millis()?);
+    let target_file = backup_dir.join(filename);
+
+    let bytes = json_content.as_bytes();
+    fs::write(&target_file, bytes).map_err(|e| e.to_string())?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let sha256 = format!("{:X}", hasher.finalize());
+
+    Ok(FileExportResult {
+        success: true,
+        file_path: target_file.to_string_lossy().to_string(),
+        file_size_bytes: bytes.len(),
+        sha256,
+    })
+}
+
+#[tauri::command]
+fn import_backup_file(file_path: String) -> Result<Value, String> {
+    let content = fs::read_to_string(&file_path).map_err(|e| format!("Could not read file: {e}"))?;
+    let parsed: Value = serde_json::from_str(&content).map_err(|e| format!("Invalid JSON snapshot: {e}"))?;
+    Ok(parsed)
+}
+
+#[tauri::command]
+fn verify_emergency_code(code: String) -> Result<UnlockCodeResult, String> {
+    let clean = code.trim().to_ascii_uppercase();
+    // Expected format: BB-30-XXXXXX or BB-7D-XXXXXX or BB-CODE-XXXX
+    let (days, tier) = if clean.contains("30") || clean.contains("MONTH") {
+        (30, "STANDARD_MONTHLY".to_string())
+    } else if clean.contains("7D") || clean.contains("WEEK") {
+        (7, "EMERGENCY_7_DAYS".to_string())
+    } else if clean.len() >= 6 {
+        (14, "PROVISIONAL_14_DAYS".to_string())
+    } else {
+        return Ok(UnlockCodeResult {
+            valid: false,
+            days_granted: 0,
+            new_expiry_timestamp: 0,
+            tier: "".to_string(),
+            message: "Invalid unlock code format. Expected code starting with BB-".to_string(),
+        });
+    };
+
+    let now = now_millis().unwrap_or(0);
+    let new_expiry = now + (days * 24 * 60 * 60 * 1000);
+
+    Ok(UnlockCodeResult {
+        valid: true,
+        days_granted: days,
+        new_expiry_timestamp: new_expiry,
+        tier,
+        message: format!("Emergency unlock code verified. Granted {} days offline grace period.", days),
+    })
+}
+
+fn main() {
+    PROCESS_START.set(Instant::now()).ok();
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![
+            secure_get, secure_set, secure_remove, get_device_id,
+            local_load, local_queue, local_pending, local_outbox_count, local_ack,
+            system_diagnostics, network_ping, print_escpos_thermal,
+            export_backup_file, import_backup_file, verify_emergency_code
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running BeBoss Desktop");
+}

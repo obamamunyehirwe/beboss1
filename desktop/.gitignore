@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-installers/
+src-tauri/target/
+src-tauri/gen/
 .env
 .env.local
 .env.*.local

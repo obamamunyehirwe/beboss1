@@ -1,0 +1,179 @@
+﻿const { app, BrowserWindow, ipcMain, shell, safeStorage } = require("electron");
+const { DatabaseSync } = require("node:sqlite");
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+
+let mainWindow;
+const storageFile = () => path.join(app.getPath("userData"), "secure-vault.bin");
+let localDb;
+
+function localDatabase() {
+  if (localDb) return localDb;
+  const file = path.join(app.getPath("userData"), "beboss-local.sqlite");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  localDb = new DatabaseSync(file);
+  localDb.exec(`PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE IF NOT EXISTS local_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS sync_outbox (
+      id TEXT PRIMARY KEY, operation TEXT NOT NULL, payload TEXT NOT NULL,
+      hlc INTEGER NOT NULL, device_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING',
+      attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS sync_outbox_ready ON sync_outbox(status, created_at);`);
+  return localDb;
+}
+
+function protect(value) {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error("OS secure storage is unavailable; local database cannot be opened safely.");
+  return safeStorage.encryptString(JSON.stringify(value)).toString("base64");
+}
+function unprotect(value) {
+  return JSON.parse(safeStorage.decryptString(Buffer.from(value, "base64")));
+}
+
+function registerLocalDatabase() {
+  ipcMain.handle("beboss:local-load", () => {
+    const row = localDatabase().prepare("SELECT value FROM local_state WHERE key = 'snapshot'").get();
+    return row ? unprotect(row.value) : null;
+  });
+  ipcMain.handle("beboss:local-queue", (_event, operation, payload, deviceId) => {
+    if (typeof operation !== "string" || !payload || typeof deviceId !== "string") throw new Error("Invalid local transaction.");
+    const db = localDatabase();
+    const now = Date.now();
+    const transactionId = crypto.randomUUID();
+    const hlc = now * 65536 + Math.floor(Math.random() * 65536);
+    const tx = db.prepare("INSERT INTO sync_outbox (id, operation, payload, hlc, device_id, created_at) VALUES (?, ?, ?, ?, ?, ?)");
+    const save = db.prepare("INSERT INTO local_state (key, value, updated_at) VALUES ('snapshot', ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at");
+    db.exec("BEGIN IMMEDIATE");
+    try { save.run(protect(payload), now); tx.run(transactionId, operation, protect(payload), hlc, deviceId, now); db.exec("COMMIT"); }
+    catch (error) { db.exec("ROLLBACK"); throw error; }
+    return { id: transactionId, hlc, queued: true };
+  });
+  ipcMain.handle("beboss:local-outbox-count", () => localDatabase().prepare("SELECT COUNT(*) AS count FROM sync_outbox WHERE status = 'PENDING'").get().count);
+  ipcMain.handle("beboss:local-pending", () => localDatabase().prepare("SELECT id, payload, hlc FROM sync_outbox WHERE status = 'PENDING' ORDER BY created_at ASC").all().map((row) => ({ id: row.id, payload: unprotect(row.payload), hlc: row.hlc })));
+  ipcMain.handle("beboss:local-ack", (_event, ids) => {
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new Error("Invalid outbox acknowledgement.");
+    const db = localDatabase();
+    db.exec("BEGIN IMMEDIATE");
+    try { const statement = db.prepare("UPDATE sync_outbox SET status = 'SYNCED' WHERE id = ?"); ids.forEach((id) => statement.run(id)); db.exec("COMMIT"); }
+    catch (error) { db.exec("ROLLBACK"); throw error; }
+    return true;
+  });
+}
+
+function readVault() {
+  try {
+    const file = storageFile();
+    if (!fs.existsSync(file)) return {};
+    if (!safeStorage.isEncryptionAvailable()) throw new Error("OS secure storage is unavailable.");
+    const encrypted = fs.readFileSync(file);
+    const decoded = safeStorage.decryptString(encrypted);
+    const value = JSON.parse(decoded);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch (error) {
+    console.error("[BeBoss] Secure vault read failed", error);
+    throw new Error("The encrypted BeBoss session store could not be opened. Check the operating-system keyring.");
+  }
+}
+
+function writeVault(value) {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("Secure session storage is unavailable. Configure the operating-system keyring before signing in.");
+  }
+  const file = storageFile();
+  const temp = file + ".tmp";
+  const encrypted = safeStorage.encryptString(JSON.stringify(value));
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(temp, encrypted, { mode: 0o600 });
+  fs.renameSync(temp, file);
+}
+
+function registerSecureStorage() {
+  ipcMain.handle("beboss:secure-get", (_event, key) => {
+    if (typeof key !== "string" || key.length > 180) throw new Error("Invalid secure-storage key.");
+    const vault = readVault();
+    return typeof vault[key] === "string" ? vault[key] : null;
+  });
+  ipcMain.handle("beboss:secure-set", (_event, key, value) => {
+    if (typeof key !== "string" || key.length > 180 || typeof value !== "string" || value.length > 8_000_000) {
+      throw new Error("Invalid secure-storage value.");
+    }
+    const vault = readVault();
+    vault[key] = value;
+    writeVault(vault);
+    return true;
+  });
+  ipcMain.handle("beboss:secure-remove", (_event, key) => {
+    if (typeof key !== "string" || key.length > 180) throw new Error("Invalid secure-storage key.");
+    const vault = readVault();
+    delete vault[key];
+    writeVault(vault);
+    return true;
+  });
+  ipcMain.handle("beboss:device-id", () => {
+    const key = "desktop-device-id";
+    const vault = readVault();
+    if (typeof vault[key] === "string" && vault[key]) return vault[key];
+    const id = crypto.randomUUID();
+    vault[key] = id;
+    writeVault(vault);
+    return id;
+  });
+  ipcMain.handle("beboss:open-external", async (_event, target) => {
+    const url = new URL(String(target));
+    if (url.protocol !== "https:") throw new Error("Only HTTPS links can be opened externally.");
+    await shell.openExternal(url.toString());
+    return true;
+  });
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1540,
+    height: 980,
+    minWidth: 1120,
+    minHeight: 720,
+    backgroundColor: "#0b1220",
+    title: "BeBoss Desktop",
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false
+    }
+  });
+
+  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://")) shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  if (!app.isPackaged) {
+    mainWindow.loadURL("http://127.0.0.1:5173");
+    mainWindow.webContents.openDevTools({ mode: "detach" });
+  } else {
+    mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+  }
+
+  mainWindow.on("closed", () => { mainWindow = null; });
+}
+
+app.whenReady().then(() => {
+  registerSecureStorage();
+  registerLocalDatabase();
+  createWindow();
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});
