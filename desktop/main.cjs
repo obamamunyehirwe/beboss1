@@ -32,7 +32,7 @@ function workspaceUrl(route = '/') {
 
 function openWorkspaceWindow(route = '/') {
   const target = workspaceUrl(route);
-  const window = createWindow(target);
+  const window = createWindow(target, false);
   workspaceWindows.add(window);
   window.once('closed', () => workspaceWindows.delete(window));
   return window;
@@ -223,7 +223,7 @@ function attachNavigationPolicy(contents) {
   });
 }
 
-function createWindow(initialUrl = APP_URL) {
+function createWindow(initialUrl = APP_URL, primary = true) {
   const appSession = session.fromPartition(SESSION_PARTITION);
   configureSession(appSession);
 
@@ -231,7 +231,7 @@ function createWindow(initialUrl = APP_URL) {
     ? path.join(process.resourcesPath, 'brand', 'beboss-app-icon.png')
     : path.join(__dirname, '..', 'web', 'public', 'beboss-app-icon.png');
 
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     title: APP_NAME, width: 1500, height: 980, minWidth: 1060, minHeight: 720,
     show: false, backgroundColor: '#0b1220', autoHideMenuBar: false, icon: iconPath,
     webPreferences: {
@@ -242,11 +242,15 @@ function createWindow(initialUrl = APP_URL) {
     },
   });
 
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
-  mainWindow.on('closed', () => { mainWindow = null; });
-  void mainWindow.loadURL(initialUrl);
-  createApplicationMenu();
-  return mainWindow;
+  if (primary) mainWindow = window;
+  window.once('ready-to-show', () => { if (!window.isDestroyed()) window.show(); });
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = null;
+    workspaceWindows.delete(window);
+  });
+  void window.loadURL(initialUrl);
+  if (primary) createApplicationMenu();
+  return window;
 }
 
 function createTray() {
