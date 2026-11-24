@@ -1196,7 +1196,45 @@ function BeBossDesktopWorkspace() {
         onDetected={(value)=>{const found=dataset.products.find(p=>p.barcode===value&&p.isDeleted!==true);if(found){addToCart(found);toast.success("Scanned "+found.name);}else toast.error("No inventory item matches "+value);setShowCameraScanner(false);}}
         onClose={()=>setShowCameraScanner(false)}
       />}
-      {receipt && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 p-4 backdrop-blur-sm"><div className="mx-auto max-w-lg rounded-3xl bg-white p-7 text-slate-900 shadow-2xl"><div id="beboss-receipt" className="font-mono text-sm"><div className="text-center"><div className="text-2xl font-black">{receipt.shopName}</div><div className="mt-1 text-xs">OFFICIAL SALES RECEIPT</div><div className="mt-3 border-y border-dashed border-slate-400 py-2 text-xs">{receipt.sale.receiptNumber}<br/>{dateLabel(receipt.sale.saleDate)}</div></div><div className="my-4 space-y-2">{receipt.lines.map((line:Row)=><div key={line.id} className="flex justify-between gap-4"><span>{line.productName} × {line.quantitySold}</span><span>{money(line.subtotal,currency)}</span></div>)}</div><div className="border-t border-dashed border-slate-400 pt-3"><div className="flex justify-between"><span>Total</span><strong>{money(receipt.sale.totalAmount,currency)}</strong></div><div className="mt-1 flex justify-between"><span>Paid</span><strong>{money(receipt.sale.amountPaid,currency)}</strong></div><div className="mt-1 flex justify-between"><span>Payment</span><strong>{receipt.sale.paymentMethod}</strong></div></div><div className="mt-5 text-center text-xs">Thank you for your business.</div></div><div className="mt-6 flex justify-end gap-2"><button onClick={()=>setReceipt(null)} className={secondaryButton}>Close</button><button onClick={()=>void printReceipt()} className={primaryButton}><Printer size={15}/> Print receipt</button></div></div></div>}
+      {receipt && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 p-4 backdrop-blur-sm">
+        <div className="mx-auto max-w-xl rounded-3xl bg-white p-7 text-slate-900 shadow-2xl">
+          <div id="beboss-receipt" className="font-mono text-sm">
+            <div className="text-center">
+              <div className="text-2xl font-black">{receipt.shopName}</div>
+              {dataset.shopProfile.receiptHeader&&<div className="mt-1 text-xs">{dataset.shopProfile.receiptHeader}</div>}
+              <div className="mt-1 text-xs">OFFICIAL SALES RECEIPT</div>
+              <div className="mt-2 text-xs">{dataset.shopProfile.address||""}</div>
+              <div className="text-xs">{dataset.shopProfile.phone||""}{dataset.shopProfile.tinNumber?" · TIN "+dataset.shopProfile.tinNumber:""}</div>
+              <div className="mt-3 border-y border-dashed border-slate-400 py-2 text-xs">
+                {receipt.sale.receiptNumber}<br/>{dateLabel(receipt.sale.saleDate)}<br/>
+                {receipt.sale.customerName||"Walk-in Customer"}<br/>
+                {receipt.sale.branchName||""} · {receipt.sale.cashierName||""}
+              </div>
+            </div>
+            <div className="my-4 space-y-2">{receipt.lines.map((line:Row)=><div key={line.id} className="flex justify-between gap-4"><span>{line.productName} × {line.quantitySold}</span><span>{money(line.subtotal,currency)}</span></div>)}</div>
+            <div className="border-t border-dashed border-slate-400 pt-3">
+              <div className="flex justify-between"><span>Total</span><strong>{money(receipt.sale.totalAmount,currency)}</strong></div>
+              {asNumber(dataset.shopProfile.taxRate)>0&&dataset.shopProfile.showTaxOnReceipt!==false&&<div className="mt-1 flex justify-between"><span>Included VAT ({dataset.shopProfile.taxRate}%)</span><strong>{money(asNumber(receipt.sale.totalAmount)*asNumber(dataset.shopProfile.taxRate)/(100+asNumber(dataset.shopProfile.taxRate)),currency)}</strong></div>}
+              {asNumber(receipt.sale.discountAmount)>0&&<div className="mt-1 flex justify-between"><span>Discount</span><strong>{money(receipt.sale.discountAmount,currency)}</strong></div>}
+              <div className="mt-1 flex justify-between"><span>Paid</span><strong>{money(receipt.sale.amountPaid,currency)}</strong></div>
+              <div className="mt-1 flex justify-between"><span>Balance due</span><strong>{money(Math.max(0,asNumber(receipt.sale.totalAmount)-asNumber(receipt.sale.amountPaid)),currency)}</strong></div>
+              <div className="mt-1 flex justify-between"><span>Payment</span><strong>{receipt.sale.paymentMethod}</strong></div>
+            </div>
+            <div className="mt-5 flex flex-col items-center gap-2 border-t border-dashed border-slate-400 pt-4 text-center">
+              {receiptSeal&&<QRCodeSVG value={"BEBOSS|RCPT|"+asText(receipt.sale.receiptNumber)+"|"+receiptSeal+"|"+String(Math.trunc(asNumber(receipt.sale.totalAmount)))+"|"+currency+"|"+String(receipt.sale.saleDate)+"|"+asText(receipt.shopName).replaceAll("|"," ").trim().slice(0,28)+"|"+String(Math.max(0,Math.floor(asNumber(receipt.sale.totalAmount)*100+0.5)))} size={148} level="M"/>}
+              <div className="text-[11px] font-bold">Verify Seal: {receiptSeal||"Generating…"}</div>
+              <div className="text-xs">{dataset.shopProfile.receiptFooter||"Thank you for your business!"}</div>
+              <div className="text-[10px] text-slate-500">Powered by BeBoss</div>
+            </div>
+          </div>
+          <div className="mt-6 flex flex-wrap justify-end gap-2">
+            <button onClick={()=>setReceipt(null)} className={secondaryButton}>Close</button>
+            <button onClick={async()=>{const lines=[receipt.shopName,"Receipt "+receipt.sale.receiptNumber,...receipt.lines.map((line:Row)=>line.productName+" × "+line.quantitySold+" = "+money(line.subtotal,currency)),"TOTAL "+money(receipt.sale.totalAmount,currency),"PAID "+money(receipt.sale.amountPaid,currency),"Seal "+receiptSeal];try{await navigator.clipboard.writeText(lines.join(String.fromCharCode(10)));toast.success("Receipt copied.");}catch{toast.error("Clipboard access was blocked.");}}} className={secondaryButton}>Copy receipt</button>
+            <button onClick={()=>window.open("https://wa.me/?text="+encodeURIComponent("Receipt "+receipt.sale.receiptNumber+" · "+money(receipt.sale.totalAmount,currency)+" · Seal "+receiptSeal),"_blank","noopener,noreferrer")} className={secondaryButton}>Share WhatsApp</button>
+            <button onClick={()=>void printReceipt()} className={primaryButton}><Printer size={15}/> Print / Save PDF</button>
+          </div>
+        </div>
+      </div>}
     </div>
   );
 }
