@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, SearchInput, StatusBadge, downloadCsv, matches, useAdminAction } from "@/components/admin/ui";
-import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, directAutoUnlock, rejectPayment } from "@/lib/admin.functions";
+import { approvePaymentWithCode, createWhatsAppPaymentClaim, deletePaymentRequest, directAutoUnlock, managePaymentGatewayRefund, rejectPayment } from "@/lib/admin.functions";
 import { configQuery, paymentsQuery, shopsQuery, type PaymentRequest } from "@/lib/admin-queries";
 import { buildUnlockReplyText, buildWhatsAppUrl, calculateSubscriptionFee } from "@/lib/pricing";
 import { formatDateTime, formatRwf, relativeTime } from "@/lib/format";
@@ -45,6 +45,9 @@ function PaymentsPage() {
   const [providerVerified, setProviderVerified] = useState(false);
   const [verificationNote, setVerificationNote] = useState("");
   const [approvalMode, setApprovalMode] = useState<"CODE" | "DIRECT">("CODE");
+  const [refundTarget, setRefundTarget] = useState<PaymentRequest | null>(null);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
   const approveFn = useServerFn(approvePaymentWithCode);
   const directUnlockFn = useServerFn(directAutoUnlock);
   const approve = useAdminAction(approveFn, { invalidate: [["admin"]] });
@@ -52,6 +55,7 @@ function PaymentsPage() {
   const reject = useAdminAction(useServerFn(rejectPayment), { success: "Payment claim rejected", invalidate: [["admin", "payments"]] });
   const remove = useAdminAction(useServerFn(deletePaymentRequest), { success: "Claim removed", invalidate: [["admin", "payments"]] });
   const createManual = useAdminAction(useServerFn(createWhatsAppPaymentClaim), { success: "WhatsApp payment proof added to the review queue", invalidate: [["admin", "payments"], ["admin", "shops"]] });
+  const gatewayRefund = useAdminAction(useServerFn(managePaymentGatewayRefund), { success: "Refund action recorded", invalidate: [["admin", "payments"]] });
 
   const rows = data ?? [];
   const counts = useMemo(() => {
@@ -331,6 +335,14 @@ function PaymentsPage() {
                   </div>
                 )}
                 {r.admin_verification_note ? <p className="mt-2 text-xs text-muted-foreground">Admin verification: {r.admin_verification_note}</p> : null}
+                {Number(r.gateway_refunded_amount_rwf) > 0 || r.gateway_refund_status !== "NONE" ? (
+                  <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3 text-sm">
+                    <p className="font-semibold">Gateway refunds: {r.gateway_refund_status || "NONE"}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {formatRwf(r.gateway_refunded_amount_rwf || 0)} refunded of {formatRwf(r.gateway_amount_rwf || r.amount_rwf)}
+                    </p>
+                  </div>
+                ) : null}
                 {r.amount_rwf !== calc.total ? (
                   <p className="mt-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                     {a("Submitted plan amount")} {formatRwf(calc.total)} — {a("must match the provider statement before approval.")}
@@ -375,6 +387,25 @@ function PaymentsPage() {
                         <a href={buildWhatsAppUrl(r.payer_phone || r.owner_phone, buildUnlockReplyText(r.shop_name, r.owner_username, r.generated_unlock_code, calc.days, calc.tier))} target="_blank" rel="noreferrer">
                           <MessageCircle /> {a("Resend on WhatsApp")}
                         </a>
+                      </Button>
+                    ) : null}
+                    {Number(r.gateway_verified_at) > 0 && ["APPROVED", "REDEEMED"].includes(r.status) &&
+                     Number(r.gateway_refunded_amount_rwf || 0) < Number(r.gateway_amount_rwf || r.amount_rwf) ? (
+                      <Button size="sm" variant="outline" onClick={() => {
+                        setRefundTarget(r);
+                        setRefundAmount(String(Math.max(0, Number(r.gateway_amount_rwf || r.amount_rwf) - Number(r.gateway_refunded_amount_rwf || 0))));
+                        setRefundReason("");
+                      }}>
+                        Refund verified payment
+                      </Button>
+                    ) : null}
+                    {r.gateway_refund_status === "PENDING" ? (
+                      <Button size="sm" variant="ghost" disabled={gatewayRefund.isPending} onClick={() => gatewayRefund.mutate(
+                        { action: "RECONCILE", requestId: r.id },
+                        { onSuccess: () => toast.info("Latest provider refund status has been refreshed.") },
+                      )}>
+                        <Loader2 className={gatewayRefund.isPending ? "animate-spin" : "hidden"} />
+                        Check refund status
                       </Button>
                     ) : null}
                     <ConfirmAction
@@ -458,6 +489,93 @@ function PaymentsPage() {
             <Button variant="success" disabled={!providerVerified || verificationNote.trim().length < 5 || approve.isPending || directUnlock.isPending} onClick={() => verifyingPayment && doApprove(verifyingPayment, verificationNote.trim())}>
               {(approve.isPending || directUnlock.isPending) ? <Loader2 className="animate-spin" /> : <KeyRound />}
               {approvalMode === "DIRECT" ? "Verify payment & unlock shop" : "Confirm payment & issue BB3"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!refundTarget} onOpenChange={(open) => {
+        if (!open) {
+          setRefundTarget(null);
+          setRefundAmount("");
+          setRefundReason("");
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Refund verified gateway payment</DialogTitle>
+            <DialogDescription>
+              {refundTarget?.shop_name} — provider {refundTarget?.gateway_provider}. Only refund money confirmed as settled by the payment provider.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
+            <p>Verified payment: {formatRwf(refundTarget?.gateway_amount_rwf ?? 0)}</p>
+            <p>Previously refunded: {formatRwf(refundTarget?.gateway_refunded_amount_rwf ?? 0)}</p>
+            <p>Remaining refundable: {formatRwf(Math.max(0, Number(refundTarget?.gateway_amount_rwf ?? 0) - Number(refundTarget?.gateway_refunded_amount_rwf ?? 0)))}</p>
+            <p className="mt-1 break-all text-xs text-muted-foreground">Provider transaction: {refundTarget?.gateway_transaction_id}</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="gateway-refund-amount">Refund amount (RWF)</Label>
+            <Input
+              id="gateway-refund-amount"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={Math.max(0, Number(refundTarget?.gateway_amount_rwf ?? 0) - Number(refundTarget?.gateway_refunded_amount_rwf ?? 0))}
+              step={1}
+              value={refundAmount}
+              onChange={(event) => setRefundAmount(event.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="gateway-refund-reason">Reason for refund</Label>
+            <Textarea
+              id="gateway-refund-reason"
+              value={refundReason}
+              onChange={(event) => setRefundReason(event.target.value)}
+              rows={3}
+              minLength={5}
+              maxLength={500}
+              placeholder="Explain why this verified subscription payment is being refunded."
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Refunds are sent through the original provider. A request accepted by the provider is not shown as refunded until the provider reports terminal success. Uncertain requests remain reserved to prevent duplicate payouts.
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRefundTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={
+                !refundTarget ||
+                !Number.isSafeInteger(Number(refundAmount)) ||
+                Number(refundAmount) <= 0 ||
+                Number(refundAmount) > Number(refundTarget.gateway_amount_rwf) - Number(refundTarget.gateway_refunded_amount_rwf || 0) ||
+                refundReason.trim().length < 5 ||
+                gatewayRefund.isPending
+              }
+              onClick={() => {
+                if (!refundTarget) return;
+                gatewayRefund.mutate(
+                  {
+                    action: "REQUEST",
+                    requestId: refundTarget.id,
+                    amountRwf: Number(refundAmount),
+                    reason: refundReason.trim(),
+                    idempotencyKey: crypto.randomUUID(),
+                  },
+                  {
+                    onSuccess: (result) => {
+                      setRefundTarget(null);
+                      setRefundAmount("");
+                      setRefundReason("");
+                      if (result.pending) toast.info(result.message || "Refund remains pending reconciliation.");
+                    },
+                  },
+                );
+              }}
+            >
+              {gatewayRefund.isPending ? <Loader2 className="animate-spin" /> : null}
+              Submit refund
             </Button>
           </DialogFooter>
         </DialogContent>
