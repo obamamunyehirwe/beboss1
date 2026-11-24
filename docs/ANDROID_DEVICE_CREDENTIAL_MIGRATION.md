@@ -49,6 +49,9 @@ Put the following in the ignored repository-root .env file. Do not commit it or 
 - KEY_PASSWORD
 - KEY_ALIAS
 - BEBOSS_DATASHARE_HMAC_SECRET
+- SUPABASE_URL
+- SUPABASE_PUBLISHABLE_KEY
+- SUPABASE_CERT_PINS (optional)
 
 Use a repository-relative path or an absolute path with forward slashes for KEYSTORE_PATH.
 
@@ -61,6 +64,9 @@ For signed Android release tags configure:
 - ANDROID_UPLOAD_KEY_PASSWORD
 - ANDROID_UPLOAD_KEY_ALIAS
 - BEBOSS_DATASHARE_HMAC_SECRET
+- SUPABASE_URL
+- SUPABASE_PUBLISHABLE_KEY
+- SUPABASE_CERT_PINS (optional)
 
 The CI workflow validates the certificate and verifies the APK and AAB signatures before publishing artifacts.
 
@@ -68,6 +74,8 @@ For signed Windows NSIS installers configure:
 
 - WINDOWS_CODESIGN_PFX_BASE64
 - WINDOWS_CODESIGN_PFX_PASSWORD
+- SUPABASE_URL
+- SUPABASE_PUBLISHABLE_KEY
 
 The normal Windows CI job builds an unsigned native installer for inspection. The tag release job signs it with Authenticode and verifies the signature before publishing the signed artifact.
 

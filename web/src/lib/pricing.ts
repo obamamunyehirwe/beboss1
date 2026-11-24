@@ -99,7 +99,7 @@ export function normalizePhoneLast9(phone: string | null | undefined): string {
   return String(phone ?? "").replace(/\D/g, "").slice(-9);
 }
 
-/** Tenant key the Android app sends as X-Shop-Sync-Key: lowercase(username)_last9(phone). */
+/** Stable legacy database shop identifier derived from owner details; it is not an authentication credential. */
 export function computeShopKey(username: string, phone: string): string {
   const u = String(username ?? "").trim().toLowerCase() || "owner";
   const p = normalizePhoneLast9(phone) || "000000000";

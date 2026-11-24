@@ -25,7 +25,7 @@ The desktop workspace uses the PNG and JPG brand assets synchronized from `web/p
 
 The desktop application does not contain a service-role key, secret API key, payment gateway key or snapshot HMAC secret. Those values must remain in Supabase server-side secrets.
 
-1. Configure desktop/.env.local from .env.example with the project's public Supabase URL and sb_publishable_... key.
+1. Configure desktop/.env.local from desktop/.env.example with the project's public Supabase URL and sb_publishable_... key. Alternatively, the desktop build also reads SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY from the repository-root .env used by Android. Only these two public values are exposed to the renderer; server-only secrets in the root .env are not mapped into Vite.
 2. Apply the migration from the repository's existing web Supabase project:
 
    cd web
@@ -58,7 +58,7 @@ Create a token for all branches or one branch, then copy/download it and import 
    npm install
    cp .env.example .env.local
 
-Edit .env.local with the public project URL and publishable key, then run:
+Edit .env.local with the public project URL and publishable key, or provide the unprefixed SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY values in the repository-root .env. Then run:
 
    npm run dev
 
@@ -85,7 +85,7 @@ The Windows/macOS/Linux build supports keyboard-wedge USB barcode scanners and t
 - Do not use username/phone-derived shop IDs as authentication. The derived key is only a tenant reference; the SMS-verified Auth user and active owner membership are the authorization boundary.
 - Snapshot tokens are verified server-side before decoding. The HMAC signing secret never reaches the renderer.
 - The operating-system keyring protects the random SQLCipher database key. Secure session values are additionally encrypted with AES-256-GCM. The first-run installer verifies the keyed database, native device identity, secure-vault read/write, and configured Supabase host; a reachable TCP endpoint is not treated as an authenticated cloud session.
-- Configure `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` repository secrets for tagged releases. The release workflow signs the NSIS installer and verifies the signature before uploading/publishing it.
+- Configure `WINDOWS_CODESIGN_PFX_BASE64` and `WINDOWS_CODESIGN_PFX_PASSWORD` repository secrets for tagged releases. The release workflow signs the NSIS installer and verifies the signature before uploading/publishing it.
 - Configure the public `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` repository secrets so the packaged production desktop client connects to the actual project.
 
 

@@ -1,11 +1,10 @@
 import {
-  hmacSha256Base64,
   constantTimeTextEqual,
   expectedSubscriptionAmount,
   hmacSha256Hex,
   normalizePhone,
   phoneE164,
-  verifyFlutterwaveWebhookSignature,
+  verifyFlutterwaveWebhookHash,
 } from "./payment-gateway.ts";
 
 Deno.test("Rwanda phone normalization accepts national and E.164 values", () => {
@@ -45,23 +44,11 @@ Deno.test("constant-time text comparison rejects mismatched signatures", () => {
   if (constantTimeTextEqual("short", "a much longer signature")) throw new Error("Different-length signatures were accepted.");
 });
 
-Deno.test("Flutterwave webhook signature verifies HMAC-SHA256 over the exact raw body", async () => {
+Deno.test("Flutterwave webhook verifies the configured verif-hash header", () => {
   const configured = "merchant-webhook-secret-hash";
-  const rawBody = JSON.stringify({ id: "wbk_test_1", type: "charge.completed", data: { id: "chg_test_1" } });
-  const validSignature = await hmacSha256Base64(configured, rawBody);
-  if (!(await verifyFlutterwaveWebhookSignature(configured, rawBody, validSignature))) {
-    throw new Error("Valid Flutterwave HMAC signature was rejected.");
-  }
-  if (await verifyFlutterwaveWebhookSignature(configured, rawBody, "wrong-signature")) {
-    throw new Error("Forged Flutterwave signature was accepted.");
-  }
-  if (await verifyFlutterwaveWebhookSignature(configured, rawBody + " ", validSignature)) {
-    throw new Error("Signature for a different raw body was accepted.");
-  }
-  if (await verifyFlutterwaveWebhookSignature("", rawBody, validSignature)) {
-    throw new Error("Missing configured Flutterwave secret was accepted.");
-  }
-  if (await verifyFlutterwaveWebhookSignature(configured, rawBody, "")) {
-    throw new Error("Missing Flutterwave signature was accepted.");
-  }
+  if (!verifyFlutterwaveWebhookHash(configured, configured)) throw new Error("The configured Flutterwave verif-hash header was rejected.");
+  if (verifyFlutterwaveWebhookHash(configured, "wrong-secret-hash")) throw new Error("A forged Flutterwave verif-hash header was accepted.");
+  if (verifyFlutterwaveWebhookHash("", configured)) throw new Error("A webhook was accepted without a configured secret.");
+  if (verifyFlutterwaveWebhookHash(configured, "")) throw new Error("A webhook was accepted without the verif-hash header.");
+  if (!verifyFlutterwaveWebhookHash(configured, " " + configured + " ")) throw new Error("HTTP header whitespace should be trimmed.");
 });

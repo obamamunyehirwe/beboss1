@@ -76,20 +76,6 @@ export function expectedSubscriptionAmount(branches: number, workers: number, mo
   return gross - Math.floor(gross * discount / 100);
 }
 
-export async function hmacSha256Base64(secret: string, payload: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload)));
-  let binary = "";
-  for (const byte of signature) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-
 export async function hmacSha256Hex(secret: string, payload: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -112,13 +98,16 @@ export function constantTimeTextEqual(left: string, right: string): boolean {
   return diff === 0;
 }
 
-export async function verifyFlutterwaveWebhookSignature(
+/**
+ * Flutterwave's current webhook contract sends the configured webhook secret
+ * in the `verif-hash` header. The body is verified with the provider API after
+ * the header check; it is not an HMAC-signed raw-body payload.
+ */
+export function verifyFlutterwaveWebhookHash(
   secretHash: string,
-  rawBody: string,
   receivedHeader: string,
-): Promise<boolean> {
-  if (!secretHash || !rawBody || !receivedHeader) return false;
-  const expected = await hmacSha256Base64(secretHash, rawBody);
-  return constantTimeTextEqual(receivedHeader.trim(), expected);
+): boolean {
+  if (!secretHash || !receivedHeader) return false;
+  return constantTimeTextEqual(secretHash, receivedHeader.trim());
 }
 

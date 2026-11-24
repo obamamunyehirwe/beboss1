@@ -8,6 +8,41 @@ plugins {
   alias(libs.plugins.secrets)
 }
 
+
+// Configuration-cache-safe signing gates. These tasks receive booleans only:
+// no signing secret, password, key bytes, or Gradle script object is serialized
+// into the task action or Gradle configuration cache.
+abstract class ValidateDataShareSigningTask : org.gradle.api.DefaultTask() {
+  @get:org.gradle.api.tasks.Input
+  abstract val hasValidSecret: org.gradle.api.provider.Property<Boolean>
+
+  @org.gradle.api.tasks.TaskAction
+  fun validate() {
+    if (!hasValidSecret.get()) {
+      throw org.gradle.api.GradleException(
+        "Android DataShare signing is not configured. Set BEBOSS_DATASHARE_HMAC_SECRET to the same protected 32+ character key stored as BEBOSS_DATASHARE_HMAC_SECRET in Supabase. The public fallback key is not accepted for production releases."
+      )
+    }
+  }
+}
+
+abstract class ValidateReleaseSigningTask : org.gradle.api.DefaultTask() {
+  @get:org.gradle.api.tasks.Input
+  abstract val hasKeystore: org.gradle.api.provider.Property<Boolean>
+
+  @get:org.gradle.api.tasks.Input
+  abstract val hasCredentials: org.gradle.api.provider.Property<Boolean>
+
+  @org.gradle.api.tasks.TaskAction
+  fun validate() {
+    if (!hasKeystore.get() || !hasCredentials.get()) {
+      throw org.gradle.api.GradleException(
+        "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD, KEY_PASSWORD and KEY_ALIAS in the ignored root .env file or protected CI secrets. A debug keystore is never accepted for release builds."
+      )
+    }
+  }
+}
+
 // Real signing material is read from the developer's ignored root .env file or
 // protected CI environment. Example files never contain production key material.
 val releaseSigningEnv = Properties().apply {
@@ -210,17 +245,12 @@ val configuredDataShareHmacSecret = (
     ?: ""
   ).trim().removeSurrounding("\"")
 
-val validateDataShareSigningConfiguration = tasks.register("validateDataShareSigningConfiguration") {
-  // Capture configuration-time values so this task remains compatible with
-  // Gradle's configuration cache and never accesses Project during execution.
-  val configured = configuredDataShareHmacSecret
-  doLast {
-    if (configured.length < 32 || configured == "BeBossDefaultDataShareHmacKeyV2") {
-      throw GradleException(
-        "Android DataShare signing is not configured. Set BEBOSS_DATASHARE_HMAC_SECRET to the same protected 32+ character key stored as BEBOSS_DATASHARE_HMAC_SECRET in Supabase. The public fallback key is not accepted for production releases."
-      )
-    }
-  }
+val validateDataShareSigningConfiguration = tasks.register<ValidateDataShareSigningTask>("validateDataShareSigningConfiguration") {
+  // Pass a boolean only: never capture or serialize the HMAC key itself.
+  hasValidSecret.set(
+    configuredDataShareHmacSecret.length >= 32 &&
+      configuredDataShareHmacSecret != "BeBossDefaultDataShareHmacKeyV2"
+  )
 }
 
 // Release artifacts require both the real upload key and the same private
@@ -233,17 +263,9 @@ val releaseCredentialsConfigured =
   !releaseKeyPassword.isNullOrBlank() &&
   !releaseKeyAlias.isNullOrBlank()
 
-val validateReleaseSigningConfiguration = tasks.register("validateReleaseSigningConfiguration") {
-  val hasKeystore = releaseKeystoreConfigured
-  val hasCredentials = releaseCredentialsConfigured
-  doLast {
-    if (!hasKeystore || !hasCredentials) {
-      throw GradleException(
-        "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD, KEY_PASSWORD and KEY_ALIAS " +
-          "in the ignored root .env file or protected CI secrets. A debug keystore is never accepted for release builds."
-      )
-    }
-  }
+val validateReleaseSigningConfiguration = tasks.register<ValidateReleaseSigningTask>("validateReleaseSigningConfiguration") {
+  hasKeystore.set(releaseKeystoreConfigured)
+  hasCredentials.set(releaseCredentialsConfigured)
 }
 
 tasks.configureEach {

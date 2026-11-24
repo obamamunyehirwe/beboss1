@@ -12,7 +12,7 @@ const successful = {
   status: "successful",
   currency: "RWF",
   amount: 12500,
-  payment_type: "mobilemoneyrwanda",
+  payment_type: "mobilemoneyrw",
 };
 
 Deno.test("RWF settlement accepts an exact provider-confirmed mobile-money payment", () => {
