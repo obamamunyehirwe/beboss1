@@ -9,7 +9,20 @@ const corsHeaders = {
 const DATA_KEYS = ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users"] as const;
 type DataKey = typeof DATA_KEYS[number];
 type Row = Record<string, unknown>;
-type Snapshot = Row & Record<DataKey, Row[]>;
+type Snapshot = {
+  metadata: Row;
+  shopProfile: Row;
+  products: Row[];
+  customers: Row[];
+  sales: Row[];
+  saleItems: Row[];
+  customerPayments: Row[];
+  purchases: Row[];
+  stockTransfers: Row[];
+  branches: Row[];
+  users: Row[];
+  tombstones: Row[];
+};
 
 function json(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: corsHeaders });

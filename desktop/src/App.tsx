@@ -8,7 +8,7 @@ import {
 import { callDesktopApi, currentSession, signOut, type OwnerCredentials } from "./lib/cloud";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
-import type { CloudState, NavKey, ReceiptPayload, Snapshot } from "./lib/types";
+import type { CloudState, NavKey, ReceiptPayload, Row, Snapshot } from "./lib/types";
 import { AuthScreen } from "./components/AuthScreen";
 import { ReceiptPreview } from "./components/ReceiptPreview";
 import { LoginHint } from "./components/ui";
