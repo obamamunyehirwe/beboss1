@@ -693,8 +693,8 @@ function BeBossDesktopWorkspace() {
     const splitTotal = asNumber(splitCash) + asNumber(splitMomo);
     const amountPaid = Math.min(total, Math.max(0, paymentMethod === "SPLIT" ? splitTotal : paymentMethod === "DEBT" ? (paid.trim() ? asNumber(paid) : 0) : (paid.trim() ? asNumber(paid) : total)));
     const customer = dataset.customers.find((item) => item.id === selectedCustomer);
-    if ((paymentMethod === "DEBT" || (paymentMethod === "SPLIT" && amountPaid < total)) && !customer) throw new Error("Select a registered customer before posting an unpaid or partial sale.");
-    if (paymentMethod === "SPLIT" && splitTotal <= 0) throw new Error("Enter a cash or mobile-money amount for the split payment.");
+    if (amountPaid < total && !customer) throw new Error("Select a registered customer before posting an unpaid or partial sale.");
+    if (paymentMethod === "SPLIT" && (asNumber(splitCash) < 0 || asNumber(splitMomo) < 0 || splitTotal <= 0)) throw new Error("Enter non-negative cash and mobile-money portions for the split payment.");
     if (customer && total > amountPaid && asNumber(customer.creditLimit) > 0 && asNumber(customer.debtBalance) + total - amountPaid > asNumber(customer.creditLimit)) throw new Error("This sale would exceed the customer credit limit.");
     const at = Date.now();
     const deviceId = cache?.desktopId || "DESKTOP-LOCAL";
