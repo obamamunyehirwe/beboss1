@@ -129,6 +129,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -169,6 +170,8 @@ import com.beboss.shopmgmt.ui.theme.ProfitGreen
 import com.beboss.shopmgmt.ui.theme.WarningAmber
 import com.beboss.shopmgmt.ui.components.PermissionRequestDialog
 import com.beboss.shopmgmt.util.AdminPaymentConfig
+import com.beboss.shopmgmt.util.AndroidDeviceCredentialStore
+import com.beboss.shopmgmt.util.SupabaseAdminClient
 import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.BranchPeerSyncEvent
 import com.beboss.shopmgmt.util.CapturedLocation
@@ -205,6 +208,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -398,6 +402,92 @@ fun SettingsScreen(
     val liveWhatsApp = livePaymentConfig.adminWhatsAppNumber.trim()
         .ifBlank { shopProfile.adminWhatsAppNumber.trim() }
 
+    // Only the authenticated local OWNER can manage tenant credential migration.
+    val canManageDeviceSecurity = currentUser?.role == UserRole.OWNER
+    val registeredOwnerUsername = ownerAccount?.username?.trim().orEmpty()
+    val registeredOwnerPhone = ownerAccount?.phone?.trim().orEmpty().ifBlank { shopProfile.phone.trim() }
+    val credentialShopId = remember(registeredOwnerUsername, registeredOwnerPhone) {
+        if (registeredOwnerUsername.isNotBlank() && registeredOwnerPhone.isNotBlank()) {
+            SupabaseAdminClient.computeShopSyncKey(registeredOwnerUsername, registeredOwnerPhone)
+        } else ""
+    }
+    val coroutineScope = rememberCoroutineScope()
+    var deviceCredentialReady by remember(credentialShopId) {
+        mutableStateOf(credentialShopId.isNotBlank() && AndroidDeviceCredentialStore.hasCredentialForShop(credentialShopId))
+    }
+    var legacySyncRetired by remember(credentialShopId) { mutableStateOf(false) }
+    var showDeviceCredentialDialog by remember { mutableStateOf(false) }
+    var showLegacyRetirementConfirm by remember { mutableStateOf(false) }
+    var deviceCredentialPurpose by remember { mutableStateOf("ENROLL") }
+    var deviceCredentialOtp by remember { mutableStateOf("") }
+    var deviceCredentialBusy by remember { mutableStateOf(false) }
+    var deviceCredentialOtpSent by remember { mutableStateOf(false) }
+    var deviceCredentialMessage by remember { mutableStateOf("") }
+
+    fun requestDeviceCredentialOtp(purpose: String) {
+        if (!canManageDeviceSecurity || registeredOwnerUsername.isBlank() || registeredOwnerPhone.isBlank()) {
+            deviceCredentialMessage = "Complete the registered owner username and phone before enabling secure device sync."
+            showDeviceCredentialDialog = true
+            return
+        }
+        deviceCredentialPurpose = purpose
+        deviceCredentialOtp = ""
+        deviceCredentialOtpSent = false
+        deviceCredentialMessage = "Sending an owner verification code to the registered shop phone…"
+        showDeviceCredentialDialog = true
+        deviceCredentialBusy = true
+        coroutineScope.launch {
+            val result = SupabaseAdminClient.requestOwnerDeviceCredentialOtp(
+                registeredOwnerUsername,
+                registeredOwnerPhone
+            )
+            deviceCredentialBusy = false
+            deviceCredentialOtpSent = result.isSuccess
+            deviceCredentialMessage = result.exceptionOrNull()?.message
+                ?: "A verification code was requested. Enter the code sent to the registered owner phone."
+        }
+    }
+
+    fun submitDeviceCredentialOtp() {
+        if (deviceCredentialBusy || deviceCredentialOtp.length !in 6..8) return
+        deviceCredentialBusy = true
+        deviceCredentialMessage = "Verifying the registered owner and updating this terminal…"
+        coroutineScope.launch {
+            if (deviceCredentialPurpose == "ENROLL") {
+                val result = SupabaseAdminClient.enrollCurrentAndroidDevice(
+                    context,
+                    registeredOwnerUsername,
+                    registeredOwnerPhone,
+                    deviceCredentialOtp
+                )
+                deviceCredentialBusy = false
+                if (result.isSuccess) {
+                    deviceCredentialReady = true
+                    deviceCredentialMessage = result.getOrNull().orEmpty()
+                    showDeviceCredentialDialog = false
+                } else {
+                    deviceCredentialMessage = result.exceptionOrNull()?.message
+                        ?: "This terminal could not be enrolled. Check the owner code and device registration."
+                }
+            } else {
+                val result = SupabaseAdminClient.retireLegacyAndroidSync(
+                    registeredOwnerUsername,
+                    registeredOwnerPhone,
+                    deviceCredentialOtp
+                )
+                deviceCredentialBusy = false
+                if (result.isSuccess) {
+                    legacySyncRetired = true
+                    deviceCredentialMessage = "Legacy tenant sync has been retired for this shop. All registered active terminals must use their device credentials."
+                    showDeviceCredentialDialog = false
+                } else {
+                    deviceCredentialMessage = result.exceptionOrNull()?.message
+                        ?: "Legacy sync was not retired. Enroll every active terminal first."
+                }
+            }
+        }
+    }
+
     LaunchedEffect(settingsUnlockCodeInput) {
         val clean = normalizeUnlockCodeInput(settingsUnlockCodeInput)
         if (SubscriptionSecurityManager.isCompleteUnlockCodeFormat(clean) && clean != lastAutoSubmittedCode) {
@@ -474,6 +564,77 @@ fun SettingsScreen(
                 onSyncToCloudNow = onSyncToCloudNow,
                 onOpenSyncHub = { showSyncHubDialog = true }
             ) }
+        }
+
+        // Owner-only authenticated device credentials and safe legacy migration.
+        if (canManageDeviceSecurity && shouldShowSection("SYNC", "device security credential authenticated terminal migration legacy tenant isolation")) {
+            item {
+                SettingsSectionCard(
+                    title = "Authenticated device sync",
+                    subtitle = "Per-terminal credentials protected by Android Keystore",
+                    icon = Icons.Default.VerifiedUser,
+                    iconColor = ProfitGreen
+                ) {
+                    Text(
+                        text = if (deviceCredentialReady) {
+                            "This terminal is enrolled with a unique, revocable device credential."
+                        } else {
+                            "This terminal is still using the compatibility sync route. Enroll it before retiring the legacy shop key."
+                        },
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Active registered terminals: " + shopDevices.count { it.isActive } +
+                            ". Each active terminal must be enrolled separately.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { requestDeviceCredentialOtp("ENROLL") },
+                        enabled = !deviceCredentialBusy && isOnline && registeredOwnerUsername.isNotBlank() && registeredOwnerPhone.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
+                    ) {
+                        Icon(Icons.Default.VerifiedUser, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            if (deviceCredentialReady) "Re-enroll / rotate this device credential" else "Secure this Android terminal",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showLegacyRetirementConfirm = true },
+                        enabled = deviceCredentialReady && !legacySyncRetired && !deviceCredentialBusy && isOnline,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Retire legacy shop sync for all devices", fontSize = 11.sp)
+                    }
+                    if (legacySyncRetired) {
+                        Text(
+                            "Legacy sync is retired. Old app builds and terminals without credentials will no longer sync this shop.",
+                            fontSize = 11.sp,
+                            color = WarningAmber,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    } else {
+                        Text(
+                            "Do not retire the legacy route until every active terminal listed above has been enrolled and tested online. The server refuses the cutover when any active registered terminal is missing a valid credential.",
+                            fontSize = 10.sp,
+                            color = WarningAmber,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                }
+            }
         }
 
         // License & Subscription Section
@@ -918,6 +1079,94 @@ fun SettingsScreen(
         },
         onDismiss = { showDataTransferDialog = false }
     )
+
+    if (showLegacyRetirementConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLegacyRetirementConfirm = false },
+            title = { Text("Retire the legacy shop sync key?") },
+            text = {
+                Text(
+                    "This is a one-way security cutover for the entire shop. Every active terminal in the cloud device registry must first be enrolled with its own credential. Older app builds will stop syncing after this change. Continue to owner phone verification?"
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLegacyRetirementConfirm = false
+                        requestDeviceCredentialOtp("RETIRE_LEGACY")
+                    },
+                    enabled = !deviceCredentialBusy && isOnline
+                ) { Text("Continue to owner verification") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showLegacyRetirementConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showDeviceCredentialDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!deviceCredentialBusy) showDeviceCredentialDialog = false },
+            title = {
+                Text(if (deviceCredentialPurpose == "ENROLL") "Verify owner to secure this terminal" else "Verify owner to retire legacy sync")
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        if (deviceCredentialPurpose == "ENROLL") {
+                            "A one-time code is sent to the registered shop-owner phone. On success, this installation receives a unique device credential stored encrypted by Android Keystore."
+                        } else {
+                            "Enter the latest code sent to the registered shop-owner phone. The server will retire legacy access only when every active registered terminal has a valid device credential."
+                        },
+                        fontSize = 12.sp
+                    )
+                    OutlinedTextField(
+                        value = deviceCredentialOtp,
+                        onValueChange = { value ->
+                            deviceCredentialOtp = value.filter(Char::isDigit).take(8)
+                        },
+                        label = { Text("SMS verification code") },
+                        singleLine = true,
+                        enabled = !deviceCredentialBusy,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        deviceCredentialMessage,
+                        fontSize = 11.sp,
+                        color = if (deviceCredentialOtpSent || deviceCredentialMessage.contains("enrolled", true) || deviceCredentialMessage.contains("retired", true)) ProfitGreen else MaterialTheme.colorScheme.error
+                    )
+                    if (deviceCredentialBusy) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Secure request in progress…", fontSize = 11.sp)
+                        }
+                    }
+                    if (!deviceCredentialOtpSent && !deviceCredentialBusy) {
+                        OutlinedButton(
+                            onClick = { requestDeviceCredentialOtp(deviceCredentialPurpose) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Send verification code again") }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { submitDeviceCredentialOtp() },
+                    enabled = deviceCredentialOtp.length in 6..8 && deviceCredentialOtpSent && !deviceCredentialBusy
+                ) {
+                    Text(if (deviceCredentialPurpose == "ENROLL") "Enroll this device" else "Retire legacy sync")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showDeviceCredentialDialog = false },
+                    enabled = !deviceCredentialBusy
+                ) { Text("Cancel") }
+            }
+        )
+    }
 
     if (showPermissionsDialog) PermissionRequestDialog(
         language = language,
