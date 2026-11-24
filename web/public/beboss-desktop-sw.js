@@ -69,7 +69,9 @@ self.addEventListener("fetch", (event) => {
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(request);
     const network = fetch(request).then(async (response) => {
-      if (response.ok && response.type === "basic") await cache.put(request, response.clone());
+      if (response.ok && response.type === "basic") {
+        try { await cache.put(request, response.clone()); } catch { /* caching must never break a live online response */ }
+      }
       return response;
     });
     if (cached) {
