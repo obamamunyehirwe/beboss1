@@ -141,6 +141,11 @@ as $function$
   );
 $function$;
 
+-- Public tenant-read policies call this SECURITY DEFINER boolean predicate.
+-- It returns false to anonymous callers (auth.uid() is NULL); only authenticated
+-- admin/support identities can receive true. Keep has_role() itself private.
+grant execute on function public.is_beboss_staff() to anon, authenticated, service_role;
+
 revoke all on function public.current_shop_sync_key() from public;
 grant execute on function public.current_shop_sync_key() to anon, authenticated, service_role;
 revoke all on function public.current_shop_actor_role() from public;
