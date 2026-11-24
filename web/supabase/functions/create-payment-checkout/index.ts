@@ -7,7 +7,7 @@ import {
   restPatch,
   restRows,
   restRequest,
-} from "../_shared/payment-gateway.ts";
+} from "./payment-gateway.ts";
 
 type ShopRow = {
   id: string;
