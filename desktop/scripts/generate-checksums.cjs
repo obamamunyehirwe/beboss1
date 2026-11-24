@@ -9,8 +9,14 @@ if (!fs.existsSync(releaseDirectory) || !fs.statSync(releaseDirectory).isDirecto
   throw new Error('Desktop release directory does not exist. Build the installer first.');
 }
 
+const requestedLabel = String(process.argv[2] || '').trim();
+if (requestedLabel && !/^[a-z0-9-]{1,40}$/.test(requestedLabel)) {
+  throw new Error('Checksum label must contain only lowercase letters, numbers and hyphens.');
+}
+const manifestName = requestedLabel ? 'SHA256SUMS-' + requestedLabel + '.txt' : 'SHA256SUMS.txt';
+
 const artifacts = fs.readdirSync(releaseDirectory, { withFileTypes: true })
-  .filter((entry) => entry.isFile() && entry.name !== 'SHA256SUMS.txt')
+  .filter((entry) => entry.isFile() && !/^SHA256SUMS(?:-[a-z0-9-]+)?\\.txt$/.test(entry.name))
   .map((entry) => entry.name)
   .sort();
 
@@ -25,8 +31,8 @@ const rows = artifacts.map((filename) => {
 });
 
 fs.writeFileSync(
-  path.join(releaseDirectory, 'SHA256SUMS.txt'),
+  path.join(releaseDirectory, manifestName),
   '# BeBoss desktop release artifact SHA-256 checksums\n' + rows.join('\n') + '\n',
   'utf8'
 );
-process.stdout.write('Generated SHA256SUMS.txt for ' + artifacts.length + ' artifacts.\n');
+process.stdout.write('Generated ' + manifestName + ' for ' + artifacts.length + ' artifacts.\n');
