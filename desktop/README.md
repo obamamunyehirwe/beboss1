@@ -32,11 +32,11 @@ The desktop application does not contain a service-role key, secret API key, pay
    supabase db push
 
    The migration adds a guarded, atomic snapshot-write RPC. It does not alter Android Room tables or remove existing records.
-3. Configure the Edge Function secret using the same snapshot HMAC value used by the Android build:
+3. Confirm the existing HMAC key is shared by the server and the Android build. The desktop Edge Function reads the protected value from the service-role-only `app_secrets` table; it never returns the key to a client.
 
-   supabase secrets set BEBOSS_DATASHARE_HMAC_SECRET="YOUR_EXISTING_BEBOSS_SNAPSHOT_HMAC_SECRET"
+   The Android production build must receive that same value through the protected build environment as `BEBOSS_DATASHARE_HMAC_SECRET`. Do not use the Android source fallback `BeBossDefaultDataShareHmacKeyV2` for new production releases. The current live server-side key is not that fallback. An older APK compiled without the shared key may be unable to verify BBSHARE1 packages created by desktop. Rebuild and distribute Android with the same protected key before relying on cross-platform branch exchange. The Android Gradle release gate now rejects a missing/default key.
 
-   Do not invent a new value for an already-running Android deployment. Desktop and Android must verify/sign with the same key. If the Android app uses the documented runtime fallback, configure that exact value before enabling desktop writes, then plan a coordinated key rotation for a future release.
+   Do not retrieve or paste the production secret into source control, public build logs, VITE_ variables or the desktop renderer.
 4. Deploy both Edge Functions:
 
    supabase functions deploy request-desktop-owner-otp --no-verify-jwt
@@ -45,6 +45,12 @@ The desktop application does not contain a service-role key, secret API key, pay
 5. Configure and test a Supabase Auth SMS provider. Owner OTP issuance is limited per shop by the existing atomic take_shop_owner_otp_slot database function. The desktop app will not enroll an unverified phone or expose data until the phone and active shop_owner_memberships record are both confirmed.
 
 The request OTP function intentionally returns the same accepted response for an unknown shop and a throttled/valid shop to reduce account enumeration. The authenticated desktop API checks auth.getUser(), the verified phone number, the exact shop owner identity and an active, non-revoked owner membership on every request.
+
+## Desktop branch DataShare
+
+The Backup & Recovery page also includes a signed branch-exchange workflow. The server creates Android-format `BBSHARE1` tokens with the established shared secret; import is verified by the authenticated Edge Function before the desktop merges any records. Branch scope, shop identity, owner phone, issue time, expiry, HMAC integrity, collection size and per-installation replay history are checked. The desktop renderer never receives the signing secret.
+
+Create a token for all branches or one branch, then copy/download it and import it on the intended terminal. An Android production build must have been compiled with the same protected `BEBOSS_DATASHARE_HMAC_SECRET`; an older build using the public fallback cannot verify a token signed with the live server key.
 
 ## Run locally in Cursor
 
