@@ -608,9 +608,12 @@ function BeBossDesktopWorkspace() {
     const subtotal = lines.reduce((sum, line) => sum + line.price * line.quantity, 0);
     const discountValue = Math.min(subtotal, Math.max(0, asNumber(discount)));
     const total = Math.max(0, subtotal - discountValue);
-    const amountPaid = Math.min(total, Math.max(0, paid.trim() ? asNumber(paid) : total));
+    const splitTotal = asNumber(splitCash) + asNumber(splitMomo);
+    const amountPaid = Math.min(total, Math.max(0, paymentMethod === "SPLIT" ? splitTotal : paymentMethod === "DEBT" ? (paid.trim() ? asNumber(paid) : 0) : (paid.trim() ? asNumber(paid) : total)));
     const customer = dataset.customers.find((item) => item.id === selectedCustomer);
-    if (paymentMethod === "DEBT" && !customer) throw new Error("Select a registered customer before posting a credit sale.");
+    if ((paymentMethod === "DEBT" || (paymentMethod === "SPLIT" && amountPaid < total)) && !customer) throw new Error("Select a registered customer before posting an unpaid or partial sale.");
+    if (paymentMethod === "SPLIT" && splitTotal <= 0) throw new Error("Enter a cash or mobile-money amount for the split payment.");
+    if (customer && total > amountPaid && asNumber(customer.creditLimit) > 0 && asNumber(customer.debtBalance) + total - amountPaid > asNumber(customer.creditLimit)) throw new Error("This sale would exceed the customer credit limit.");
     const at = Date.now();
     const deviceId = cache?.desktopId || "DESKTOP-LOCAL";
     const saleId = uuid();
@@ -620,7 +623,7 @@ function BeBossDesktopWorkspace() {
       saleDate: at, totalAmount: total, totalCost: lines.reduce((sum, line) => sum + asNumber(line.product.costPrice) * line.quantity, 0),
       totalProfit: total - lines.reduce((sum, line) => sum + asNumber(line.product.costPrice) * line.quantity, 0),
       discountAmount: discountValue, paymentMethod, paymentStatus: amountPaid >= total ? "PAID" : amountPaid > 0 ? "PARTIAL" : "UNPAID",
-      amountPaid, notes: "", receiptNumber: receiptNo, branchId: branchFilter === "ALL" ? activeBranches[0]?.id || "main_branch" : branchFilter,
+      amountPaid, notes: paymentMethod === "SPLIT" ? "Split tender cash " + asNumber(splitCash) + " / MoMo " + asNumber(splitMomo) : "", receiptNumber: receiptNo, branchId: branchFilter === "ALL" ? activeBranches[0]?.id || "main_branch" : branchFilter,
       branchName: activeBranches.find((item) => item.id === (branchFilter === "ALL" ? activeBranches[0]?.id : branchFilter))?.name || "Main Branch",
       cashierId: "desktop-owner", cashierName: cache?.username || "Shop Owner",
     }, deviceId, at);
@@ -644,10 +647,24 @@ function BeBossDesktopWorkspace() {
         : current.customers,
     }));
     setReceipt({ sale, lines: saleLines, shopName: dataset.shopProfile.shopName, currency });
-    setCart([]); setDiscount("0"); setPaid(""); setSelectedCustomer("walk-in");
+    setCart([]); setDiscount("0"); setPaid(""); setSplitCash(""); setSplitMomo(""); setSelectedCustomer("walk-in");
     toast.success("Sale " + receiptNo + " posted to the local ledger.");
   };
 
+  const holdCurrentCart = async () => {
+    if (!cart.length) return;
+    const held: HeldCart = { id: uuid(), label: "Held sale " + new Date().toLocaleTimeString(), createdAt: Date.now(), items: cart, discount, paid, paymentMethod, selectedCustomer, splitCash, splitMomo };
+    const next = [held, ...heldCarts].slice(0, 50);
+    await persistHeldCarts(next);
+    setCart([]); setDiscount("0"); setPaid(""); setSplitCash(""); setSplitMomo(""); setSelectedCustomer("walk-in"); setPaymentMethod("CASH");
+    toast.success("Sale placed on hold in the encrypted desktop workspace.");
+  };
+  const resumeHeldCart = async (held: HeldCart) => {
+    setCart(held.items); setDiscount(held.discount); setPaid(held.paid); setPaymentMethod(held.paymentMethod);
+    setSelectedCustomer(held.selectedCustomer); setSplitCash(held.splitCash); setSplitMomo(held.splitMomo);
+    await persistHeldCarts(heldCarts.filter(item => item.id !== held.id)); setSection("pos");
+    toast.success("Held sale restored.");
+  };
   const addToCart = (product: Row) => {
     if (asNumber(product.quantityInStock) <= 0) { toast.error("This item is out of stock."); return; }
     setCart((current) => {
@@ -949,11 +966,14 @@ function BeBossDesktopWorkspace() {
                 <div className="mt-5 space-y-3 border-t border-white/10 pt-4">
                   <Field label="Customer"><select value={selectedCustomer} onChange={(e) => setSelectedCustomer(e.target.value)} className={inputClass}><option value="walk-in">Walk-in customer</option>{dataset.customers.filter((c) => c.isDeleted !== true).map((c) => <option key={c.id} value={c.id}>{c.name} · {c.phone}</option>)}</select></Field>
                   <div className="grid grid-cols-2 gap-3"><Field label="Discount (amount)"><input type="number" min="0" max={totalCart} value={discount} onChange={(e) => setDiscount(e.target.value)} className={inputClass} /></Field><Field label="Amount paid"><input type="number" min="0" value={paid} placeholder={String(Math.max(0, totalCart - asNumber(discount)))} onChange={(e) => setPaid(e.target.value)} className={inputClass} /></Field></div>
-                  <Field label="Payment method"><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={inputClass}><option value="CASH">Cash</option><option value="MOMO">Mobile Money</option><option value="CARD">Card / POS</option><option value="BANK">Bank transfer</option><option value="DEBT">Customer credit</option></select></Field>
+                  <Field label="Payment method"><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={inputClass}><option value="CASH">Cash</option><option value="MOMO">Mobile Money</option><option value="CARD">Card / POS</option><option value="BANK">Bank transfer</option><option value="DEBT">Customer credit</option><option value="SPLIT">Split cash + MoMo</option></select></Field>
+                  {paymentMethod === "SPLIT" && <div className="grid grid-cols-2 gap-3"><Field label="Cash portion"><input type="number" min="0" value={splitCash} onChange={e=>setSplitCash(e.target.value)} className={inputClass}/></Field><Field label="Mobile Money portion"><input type="number" min="0" value={splitMomo} onChange={e=>setSplitMomo(e.target.value)} className={inputClass}/></Field></div>}
                   <div className="flex justify-between text-sm text-slate-400"><span>Subtotal</span><span>{money(totalCart, currency)}</span></div>
                   <div className="flex justify-between text-sm text-slate-400"><span>Discount</span><span>−{money(discount, currency)}</span></div>
+                  {asNumber(dataset.shopProfile.taxRate)>0 && <div className="flex justify-between text-xs text-slate-500"><span>Included VAT ({dataset.shopProfile.taxRate}%)</span><span>{money(Math.max(0,totalCart-asNumber(discount))*asNumber(dataset.shopProfile.taxRate)/(100+asNumber(dataset.shopProfile.taxRate)),currency)}</span></div>}
                   <div className="flex justify-between border-t border-white/10 pt-3 text-xl font-black"><span>Total due</span><span className="text-orange-300">{money(Math.max(0, totalCart - asNumber(discount)), currency)}</span></div>
-                  <button disabled={!cart.length || licenseExpired} onClick={() => { try { createSale(); } catch (error) { toast.error(error instanceof Error ? error.message : "Sale could not be completed."); } }} className={primaryButton + " w-full"}><CheckCircle2 size={16} /> Complete sale</button>
+                  <div className="grid grid-cols-2 gap-2"><button disabled={!cart.length || licenseExpired} onClick={() => void holdCurrentCart()} className={secondaryButton + " w-full"}><Archive size={15}/> Hold sale</button><button disabled={!cart.length || licenseExpired} onClick={() => { try { createSale(); } catch (error) { toast.error(error instanceof Error ? error.message : "Sale could not be completed."); } }} className={primaryButton + " w-full"}><CheckCircle2 size={16} /> Complete sale</button></div>
+                  {heldCarts.length>0 && <SectionCard title={"Held sales ("+heldCarts.length+")"}><div className="space-y-2">{heldCarts.slice(0,8).map(held=><div key={held.id} className="flex items-center justify-between gap-2 rounded-xl border border-white/5 p-2"><div><div className="text-xs font-bold">{held.label}</div><div className="text-[10px] text-slate-500">{held.items.length} lines · {dateLabel(held.createdAt)}</div></div><div className="flex gap-1"><button onClick={()=>void resumeHeldCart(held)} className={smallButton}>Resume</button><button onClick={()=>void persistHeldCarts(heldCarts.filter(x=>x.id!==held.id))} className={smallButton}><Trash2 size={12}/></button></div></div>)}</div></SectionCard>}
                 </div>
               </div>
             </section>}
