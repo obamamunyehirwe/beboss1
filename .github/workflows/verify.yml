@@ -95,6 +95,27 @@ jobs:
           test -d .vercel/output/functions
           test -d .vercel/output/static
 
+  desktop:
+    name: Desktop TypeScript check and production build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install desktop dependencies
+        run: npm install --no-audit --no-fund --package-lock=false
+
+      - name: Type-check and build desktop client
+        run: npm run build
+
   android:
     name: Android JVM unit tests
     runs-on: ubuntu-24.04
