@@ -7,6 +7,7 @@ import { PageHeading, StatCard, StatusPill } from "../ui";
 type Diagnostics = {
   osPlatform: string; osArch: string; appVersion: string; dbPath: string;
   dbSizeBytes: number; pendingOutboxCount: number; uptimeSeconds: number; hostname: string;
+  databaseEncrypted: boolean; databaseCipherVersion: string;
 };
 
 type PingState = { host: string; latencyMs: number; reachable: boolean; details: string } | null;
@@ -35,10 +36,8 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
   const load = useCallback(async () => {
     setBusy(true); setError("");
     try {
-      const [system, pending] = await Promise.all([
-        window.beBossDesktop.systemDiagnostics(),
-        window.beBossDesktop.local.outboxCount()
-      ]);
+      const system = await window.beBossDesktop.systemDiagnostics();
+      const pending = await window.beBossDesktop.local.outboxCount();
       setDiag(system as Diagnostics);
       setOutbox(pending ?? (system as Diagnostics).pendingOutboxCount ?? 0);
     } catch (e) { setError(errorText(e)); }
@@ -57,13 +56,13 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
   const online = navigator.onLine;
 
   return <div className="page-stack">
-    <PageHeading eyebrow="SYSTEM HEALTH" title="Diagnostics & system health" description="Live technical health of this desktop installation: operating system, encrypted local database, sync outbox and cloud connectivity." action={<div className="heading-actions"><button className="btn-outline" onClick={runPing} disabled={busy}><Wifi size={15} /> Ping cloud</button><button className="btn-primary" onClick={() => { void load(); onRefresh(); }} disabled={busy}><RefreshCw size={15} className={busy ? "spin" : ""} /> Refresh</button></div>} />
+    <PageHeading eyebrow="SYSTEM HEALTH" title="Diagnostics & system health" description="Native diagnostics for this installation: operating system, SQLCipher database, sync outbox and tested network reachability." action={<div className="heading-actions"><button className="btn-outline" onClick={runPing} disabled={busy}><Wifi size={15} /> Ping cloud</button><button className="btn-primary" onClick={() => { void load(); onRefresh(); }} disabled={busy}><RefreshCw size={15} className={busy ? "spin" : ""} /> Refresh</button></div>} />
     {error && <div className="global-alert error"><AlertTriangle size={16} /><span>{error}</span></div>}
 
     <div className="stat-grid four">
-      <StatCard label="Cloud connection" value={online ? "Online" : "Offline"} sub={online ? "Reachable" : "Using encrypted cache"} icon={Wifi} tone={online ? "green" : "orange"} />
+      <StatCard label="Network state" value={!online ? "Offline" : ping ? (ping.reachable ? "Cloud reachable" : "Cloud unreachable") : "Network online"} sub={!online ? "Using encrypted local storage" : ping ? ping.details : "Device network is available; run Ping cloud to test the configured host"} icon={Wifi} tone={!online ? "orange" : ping && !ping.reachable ? "red" : "green"} />
       <StatCard label="Pending outbox" value={String(outbox)} sub="Queued local transactions" icon={Database} tone={outbox > 0 ? "orange" : "green"} />
-      <StatCard label="Snapshot integrity" value={snapshot ? "Verified" : "Not synced"} sub={cloud.verifiedChunks + " verified chunks"} icon={ShieldCheck} tone={snapshot ? "green" : "red"} />
+      <StatCard label="Snapshot integrity" value={cloud.verifiedChunks > 0 ? "Verified" : "Not verified"} sub={cloud.verifiedChunks + " verified chunks"} icon={ShieldCheck} tone={cloud.verifiedChunks > 0 ? "green" : "orange"} />
       <StatCard label="App uptime" value={diag ? formatUptime(diag.uptimeSeconds) : "—"} sub="This session" icon={Clock3} tone="purple" />
     </div>
 
@@ -77,10 +76,10 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
       </section>
 
       <section className="panel diag-card">
-        <div className="panel-heading"><div><span className="eyebrow muted">LOCAL DATABASE</span><h3>Encrypted SQLite</h3></div><HardDrive size={18} className="muted-icon" /></div>
+        <div className="panel-heading"><div><span className="eyebrow muted">LOCAL DATABASE</span><h3>Encrypted SQLCipher database</h3></div><HardDrive size={18} className="muted-icon" /></div>
         <div className="diag-row"><span>Database path</span><strong className="mono diag-path">{diag ? diag.dbPath : "—"}</strong></div>
         <div className="diag-row"><span>Database size</span><strong>{diag ? formatBytes(diag.dbSizeBytes) : "—"}</strong></div>
-        <div className="diag-row"><span>Encryption</span><strong>AES-256-GCM</strong></div>
+        <div className="diag-row"><span>Encryption</span><strong>{diag ? diag.databaseEncrypted ? "SQLCipher " + diag.databaseCipherVersion : "Not verified" : "Checking…"}</strong></div>
         <div className="diag-row"><span>Key protection</span><strong>OS keyring</strong></div>
       </section>
 
@@ -89,7 +88,7 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
         <div className="diag-row"><span>Queued operations</span><strong>{outbox}</strong></div>
         <div className="diag-row"><span>Last snapshot</span><strong>{dateTime(cloud.snapshotUpdatedAt)}</strong></div>
         <div className="diag-row"><span>Verified chunks</span><strong>{cloud.verifiedChunks}</strong></div>
-        <div className="diag-row"><span>Sync state</span><StatusPill value={online ? (outbox > 0 ? "PENDING" : "ACTIVE") : "OFFLINE"} /></div>
+        <div className="diag-row"><span>Sync state</span><StatusPill value={!online ? "OFFLINE" : outbox > 0 ? "PENDING" : cloud.verifiedChunks > 0 ? "VERIFIED" : "NOT_VERIFIED"} /></div>
       </section>
 
       <section className="panel diag-card">
@@ -105,7 +104,7 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
     <section className="panel">
       <div className="panel-heading"><div><span className="eyebrow muted">HARDWARE & RUNTIME</span><h3>Device capabilities</h3></div><Cpu size={18} className="muted-icon" /></div>
       <div className="cap-grid">
-        <div className="cap-item"><MemoryStick size={16} /><div><strong>Local persistence</strong><small>Encrypted SQLite + OS keyring</small></div><StatusPill value="ACTIVE" /></div>
+        <div className="cap-item"><MemoryStick size={16} /><div><strong>Local persistence</strong><small>Encrypted SQLite + OS keyring</small></div><StatusPill value={diag?.databaseEncrypted ? "ACTIVE" : "PENDING"} /></div>
         <div className="cap-item"><Cpu size={16} /><div><strong>Barcode input</strong><small>USB keyboard-wedge scanners</small></div><StatusPill value="ACTIVE" /></div>
         <div className="cap-item"><Server size={16} /><div><strong>Receipt printing</strong><small>ESC/POS thermal + system print / PDF</small></div><StatusPill value="ACTIVE" /></div>
         <div className="cap-item"><ShieldCheck size={16} /><div><strong>Owner verification</strong><small>SMS OTP + active membership</small></div><StatusPill value={s(cloud.owner?.user_id) ? "ACTIVE" : "PENDING"} /></div>

@@ -3,8 +3,8 @@ import { activeProducts, money, n, rows, s } from "../../lib/format";
 import type { CloudState, NavKey, Snapshot } from "../../lib/types";
 import { Empty, PageHeading, SalesTable, StatCard } from "../ui";
 
-export function OverviewPage({ cloud, snapshot, revenueToday, profitToday, stockCost, receivables, lowStock, onNavigate, onOpenCommand }: {
-  cloud: CloudState; snapshot: Snapshot | null; revenueToday: number; profitToday: number;
+export function OverviewPage({ cloud, snapshot, offline, revenueToday, profitToday, stockCost, receivables, lowStock, onNavigate, onOpenCommand }: {
+  cloud: CloudState; snapshot: Snapshot | null; offline: boolean; revenueToday: number; profitToday: number;
   stockCost: number; receivables: number; lowStock: number; onNavigate: (view: NavKey) => void; onOpenCommand?: () => void
 }) {
   const sales = rows(snapshot?.sales).sort((a, b) => n(b.saleDate) - n(a.saleDate));
@@ -28,9 +28,13 @@ export function OverviewPage({ cloud, snapshot, revenueToday, profitToday, stock
 
     <section className="command-hero">
       <div className="command-hero-copy">
-        <span className="hero-live"><i /> VERIFIED CLOUD WORKSPACE</span>
+        <span className={"hero-live" + (offline ? " offline" : "")}><i /> {offline ? "LOCAL WORKSPACE · OFFLINE QUEUE" : cloud.verifiedChunks > 0 ? "VERIFIED CLOUD SNAPSHOT" : "CLOUD SYNC NOT VERIFIED"}</span>
         <h2>Every sale. Every branch.<em>One clear view.</em></h2>
-        <p>Your desktop and registered phone work from the same verified BeBoss business records. Changes are saved to the shared cloud snapshot.</p>
+        <p>{offline
+          ? "This terminal is in offline-first mode. New sales and stock changes are protected in the encrypted local database and queued for upload when the connection returns."
+          : cloud.verifiedChunks > 0
+            ? "This workspace has a verified signed cloud snapshot. New changes are recorded locally first and synchronized through the protected sync queue."
+            : "The local workspace is ready, but no verified cloud snapshot is available yet. Complete owner pairing and the first successful sync to connect your phone and desktop."}</p>
         <div className="hero-facts"><span><strong>{products.length.toLocaleString()}</strong> active products</span><span><strong>{rows(cloud.devices).filter((device) => device.is_active).length}</strong> active terminals</span><span><strong>{rows(cloud.branches).filter((branch) => branch.is_active).length}</strong> active branches</span></div>
         {onOpenCommand && <button className="hero-command" onClick={onOpenCommand}><Search size={15} /><span>Quick command</span><kbd>Ctrl K</kbd></button>}
       </div>
@@ -42,7 +46,7 @@ export function OverviewPage({ cloud, snapshot, revenueToday, profitToday, stock
           <span className="hero-glass-label">TODAY'S REVENUE</span><strong className="hero-glass-value">{money(revenueToday)}</strong>
           <div className="hero-glass-foot"><span><ShieldCheck size={13} /> Snapshot verified</span><span>{cloud.verifiedChunks} chunks</span></div>
         </div>
-        <div className="hero-glass-card hero-glass-float"><span className="hero-float-icon"><Activity size={16} /></span><span><strong>Live business data</strong><small>Phone ↔ Desktop</small></span><b>SYNCED</b></div>
+        <div className="hero-glass-card hero-glass-float"><span className="hero-float-icon"><Activity size={16} /></span><span><strong>{offline ? "Local-first mode" : cloud.verifiedChunks > 0 ? "Verified cloud data" : "Cloud sync pending"}</strong><small>{offline ? "Changes wait in encrypted queue" : cloud.snapshotUpdatedAt ? "Last snapshot " + new Date(cloud.snapshotUpdatedAt).toLocaleString() : "No cloud snapshot available"}</small></span><b>{offline ? "OFFLINE" : cloud.verifiedChunks > 0 ? "VERIFIED" : "PENDING"}</b></div>
         <div className="hero-orbit-dot" />
       </div>
     </section>
