@@ -220,8 +220,11 @@ Deno.serve(async (request: Request) => {
 
     let checkoutUrl = "";
     let checkoutId = "";
+    let providerRequestStarted = false;
+    let providerRejected = false;
 
     if (gateway === "flutterwave") {
+      providerRequestStarted = true;
       const response = await fetch("https://api.flutterwave.com/v3/payments", {
         method: "POST",
         headers: {
@@ -246,6 +249,7 @@ Deno.serve(async (request: Request) => {
       });
       const body = await response.json();
       if (!response.ok || body?.status !== "success") {
+        providerRejected = true;
         throw new Error(String(body?.message ?? "Flutterwave could not create the hosted checkout."));
       }
       checkoutUrl = safeUrl(body?.data?.link, "checkout.flutterwave.com");
@@ -267,6 +271,7 @@ Deno.serve(async (request: Request) => {
       form.set("payment_intent_data[metadata][payment_request_id]", paymentRequestId);
       form.set("payment_intent_data[metadata][gateway_reference]", txRef);
 
+      providerRequestStarted = true;
       const response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
         method: "POST",
         headers: {
@@ -276,7 +281,10 @@ Deno.serve(async (request: Request) => {
         body: form,
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(String(body?.error?.message ?? "Stripe could not create the hosted checkout."));
+      if (!response.ok) {
+        providerRejected = true;
+        throw new Error(String(body?.error?.message ?? "Stripe could not create the hosted checkout."));
+      }
       checkoutId = String(body?.id ?? "");
       checkoutUrl = safeUrl(body?.url, "checkout.stripe.com");
       if (!checkoutId) throw new Error("Stripe returned no Checkout Session identifier.");
@@ -304,23 +312,35 @@ Deno.serve(async (request: Request) => {
     });
   } catch (error) {
     console.error("[create-payment-checkout]", error);
+    const uncertainProviderOutcome = providerRequestStarted && !providerRejected;
     if (paymentRequestId) {
       try {
         const params = new URLSearchParams({ payment_request_id: `eq.${paymentRequestId}` });
         await restPatch(`payment_gateway_transactions?${params.toString()}`, {
-          status: "FAILED",
+          status: uncertainProviderOutcome ? "REVIEW_REQUIRED" : "FAILED",
           failure_reason: error instanceof Error ? error.message.slice(0, 300) : "Checkout initiation failed",
           updated_at: Date.now(),
         });
-        const requestParams = new URLSearchParams({ id: `eq.${paymentRequestId}` });
-        await restPatch(`payment_requests?${requestParams.toString()}`, {
-          status: "REJECTED",
-          rejection_reason: "Online checkout could not be initiated. Start a new payment attempt.",
-          updated_at: Date.now(),
-        });
+        if (!uncertainProviderOutcome) {
+          const requestParams = new URLSearchParams({ id: `eq.${paymentRequestId}` });
+          await restPatch(`payment_requests?${requestParams.toString()}`, {
+            status: "REJECTED",
+            rejection_reason: "Online checkout was rejected by the provider. Start a new payment attempt.",
+            updated_at: Date.now(),
+          });
+        }
       } catch (cleanupError) {
         console.error("[create-payment-checkout] failed to mark interrupted attempt", cleanupError);
       }
+    }
+    if (uncertainProviderOutcome) {
+      return jsonResponse(202, {
+        ok: true,
+        pending: true,
+        paymentRequestId,
+        reference: txRef,
+        message: "The provider response or local save is uncertain. This payment is held for reconciliation; do not create another checkout until its status has been reviewed.",
+      });
     }
     return jsonResponse(400, { message: error instanceof Error ? error.message : "Payment checkout could not be created." });
   }
