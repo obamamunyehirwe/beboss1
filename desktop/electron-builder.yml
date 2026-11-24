@@ -1,0 +1,49 @@
+appId: com.beboss.desktop
+productName: BeBoss
+artifactName: BeBoss-${version}-${os}-${arch}.${ext}
+directories:
+  output: release
+files:
+  - main.cjs
+  - preload.cjs
+  - security.cjs
+  - package.json
+asar: true
+npmRebuild: false
+removePackageScripts: true
+extraResources:
+  - from: ../web/public/beboss-app-icon.png
+    to: brand/beboss-app-icon.png
+  - from: ../web/public/beboss-brand.svg
+    to: brand/beboss-brand.svg
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: BeBoss
+mac:
+  forceCodeSigning: true
+  target: [dmg, zip]
+  category: public.app-category.business
+  artifactName: BeBoss-${version}-mac-${arch}.${ext}
+linux:
+  executableName: beboss
+  syncDesktopName: true
+  maintainer: "BeBoss <obamamunyehirwe@gmail.com>"
+  target: [AppImage, deb]
+  category: Office
+  artifactName: BeBoss-${version}-linux-${arch}.${ext}
+
+publish:
+  provider: github
+  owner: obamamunyehirwe
+  repo: beboss1
+  releaseType: release

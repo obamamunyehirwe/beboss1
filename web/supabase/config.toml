@@ -25,3 +25,6 @@ verify_jwt = false
 
 [functions.manage-payment-refund]
 verify_jwt = true
+
+[functions.desktop-workspace]
+verify_jwt = true

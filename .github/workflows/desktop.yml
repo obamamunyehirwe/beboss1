@@ -1,0 +1,74 @@
+name: BeBoss Desktop
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "web/public/beboss-app-icon.png"
+      - "web/public/beboss-brand.svg"
+      - ".github/workflows/desktop.yml"
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "web/public/beboss-app-icon.png"
+      - "web/public/beboss-brand.svg"
+      - ".github/workflows/desktop.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    name: Desktop test and package (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows-x64
+            runner: windows-2022
+            args: "--win nsis --x64"
+          - label: macos-universal
+            runner: macos-15
+            args: "--mac dmg zip --universal"
+          - label: linux-x64
+            runner: ubuntu-22.04
+            args: "--linux AppImage deb --x64"
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pinned desktop dependencies
+        run: npm install --no-package-lock --no-audit --no-fund
+
+      - name: Run desktop security policy tests
+        run: npm test
+
+      - name: Build native desktop packages
+        run: npx electron-builder ${{ matrix.args }} --publish never
+
+      - name: Generate SHA-256 artifact checksums
+        run: npm run checksums
+
+      - name: Upload desktop installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeBoss-Desktop-${{ matrix.label }}
+          path: desktop/release/*
+          if-no-files-found: error
+          retention-days: 30

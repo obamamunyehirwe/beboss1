@@ -1,0 +1,6 @@
+extends: ./electron-builder.yml
+win:
+  forceCodeSigning: true
+mac:
+  forceCodeSigning: true
+  hardenedRuntime: true

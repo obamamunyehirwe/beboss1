@@ -2,6 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { brokeredPreviewStorage } from './previewAuthStorage';
+import { desktopAuthStorage } from './desktop-auth-storage';
 
 function isNewSupabaseApiKey(value: string): boolean {
   return value.startsWith('sb_publishable_') || value.startsWith('sb_secret_');
@@ -46,6 +47,17 @@ function createSupabaseFetch(supabaseUrl: string, supabaseKey: string): typeof f
 }
 
 
+function authStorage() {
+  if (typeof window !== 'undefined') {
+    const desktopStorage = (window as Window & { beBossDesktop?: { isDesktop?: boolean; secureAuthStorage?: { getItem(key: string): Promise<string | null>; setItem(key: string, value: string): Promise<void>; removeItem(key: string): Promise<void> } } })
+      .beBossDesktop;
+    if (desktopStorage?.isDesktop && desktopStorage.secureAuthStorage) {
+      return desktopStorage.secureAuthStorage;
+    }
+  }
+  return brokeredPreviewStorage();
+}
+
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
   // Fall back to process.env for SSR (server-side rendering)
@@ -67,7 +79,7 @@ function createSupabaseClient() {
       fetch: createSupabaseFetch(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY),
     },
     auth: {
-      storage: brokeredPreviewStorage(),
+      storage: authStorage(),
       persistSession: true,
       autoRefreshToken: true,
     },

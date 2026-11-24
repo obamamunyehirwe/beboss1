@@ -1,0 +1,129 @@
+name: BeBoss Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beboss-desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  signing-preflight:
+    name: Verify production signing credentials
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Require Windows, Apple and Linux signing secrets
+        shell: bash
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for key in WIN_CSC_LINK WIN_CSC_KEY_PASSWORD MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID LINUX_GPG_PRIVATE_KEY LINUX_GPG_PASSPHRASE; do
+            if [[ -z "${!key}" ]]; then missing+=("$key"); fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Release blocked. Configure these GitHub Actions secrets: %s\n' "${missing[*]}"
+            exit 1
+          fi
+
+  publish:
+    name: Build and publish signed desktop packages (${{ matrix.label }})
+    needs: signing-preflight
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - label: windows-x64
+            runner: windows-2022
+            args: "--win nsis --x64"
+          - label: macos-universal
+            runner: macos-15
+            args: "--mac dmg zip --universal"
+          - label: linux-x64
+            runner: ubuntu-22.04
+            args: "--linux AppImage deb --x64"
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify tag matches desktop version
+        shell: bash
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          actual="$(node -p "require('./package.json').version")"
+          [[ "$expected" == "$actual" ]] || { echo "Tag $expected does not match desktop package version $actual"; exit 1; }
+
+      - name: Install pinned desktop dependencies
+        run: npm install --no-package-lock --no-audit --no-fund
+
+      - name: Run desktop security policy tests
+        run: npm test
+
+      - name: Build and publish platform packages
+        run: npx electron-builder ${{ matrix.args }} --config electron-builder.release.yml --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIN_CSC_LINK: ${{ matrix.label == 'windows-x64' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ matrix.label == 'windows-x64' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          CSC_LINK: ${{ matrix.label == 'macos-universal' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.label == 'macos-universal' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Sign Linux packages with detached GPG signatures
+        if: matrix.label == 'linux-x64'
+        shell: bash
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$LINUX_GPG_PRIVATE_KEY" | gpg --batch --import
+          fingerprint="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')"
+          [[ -n "$fingerprint" ]] || { echo "No GPG signing key was imported"; exit 1; }
+          find release -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' \) -print0 |
+            while IFS= read -r -d '' package; do
+              gpg --batch --yes --pinentry-mode loopback --passphrase "$LINUX_GPG_PASSPHRASE" \
+                --local-user "$fingerprint" --armor --detach-sign --output "$package.asc" "$package"
+            done
+          gpg --batch --armor --export "$fingerprint" > release/BeBoss-Linux-signing-public-key.asc
+
+      - name: Generate versioned SHA-256 checksums
+        run: npm run checksums -- ${{ matrix.label }}
+
+      - name: Upload release checksums and Linux signatures
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          assets=("release/SHA256SUMS-${{ matrix.label }}.txt")
+          if [[ "${{ matrix.label }}" == "linux-x64" ]]; then
+            while IFS= read -r -d '' item; do assets+=("$item"); done < <(find release -maxdepth 1 -type f \( -name '*.asc' \) -print0)
+          fi
+          gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
