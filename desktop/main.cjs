@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, dialog, ipcMain, session, shell } = require('electron');
 const { PRODUCTION_APP_URL, resolveAppUrl, isTrustedAppUrl, isSafeExternalUrl } = require('./security.cjs');
 
 const APP_URL = resolveAppUrl(process.env, app.isPackaged);
@@ -9,7 +9,41 @@ const APP_ORIGIN = new URL(APP_URL).origin;
 const SESSION_PARTITION = 'persist:beboss-desktop';
 const APP_NAME = 'BeBoss';
 let mainWindow = null;
+let tray = null;
+const workspaceWindows = new Set();
 let notificationPermissionGranted = false;
+
+const WORKSPACE_PAGES = [
+  { label: 'Admin overview', path: '/admin' },
+  { label: 'Payments & refunds', path: '/admin/payments' },
+  { label: 'Shops & branches', path: '/admin/shops' },
+  { label: 'Business analytics', path: '/admin/analytics' },
+  { label: 'Device management', path: '/admin/devices' },
+  { label: 'Cloud sync monitor', path: '/admin/sync' },
+  { label: 'Audit log', path: '/admin/audit' },
+  { label: 'Admin settings', path: '/admin/settings' },
+];
+
+function workspaceUrl(route = '/') {
+  const target = new URL(route, APP_ORIGIN);
+  if (target.origin !== APP_ORIGIN || !route.startsWith('/')) throw new Error('Invalid workspace route.');
+  return target.toString();
+}
+
+function openWorkspaceWindow(route = '/') {
+  const target = workspaceUrl(route);
+  const window = createWindow(target);
+  workspaceWindows.add(window);
+  window.once('closed', () => workspaceWindows.delete(window));
+  return window;
+}
+
+function restoreMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createWindow();
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
 
 function trustedSender(event) {
   try { return isTrustedAppUrl(event.senderFrame?.url || '', APP_ORIGIN); } catch { return false; }
@@ -68,7 +102,10 @@ function createApplicationMenu() {
     {
       label: 'File',
       submenu: [
-        { label: 'Workspace home', accelerator: 'CommandOrControl+Shift+H', click: () => mainWindow?.loadURL(APP_URL) },
+        { label: 'Workspace home', accelerator: 'CommandOrControl+Shift+H', click: () => { if (mainWindow && !mainWindow.isDestroyed()) void mainWindow.loadURL(APP_URL); else restoreMainWindow(); } },
+        { label: 'Open workspace in new window', accelerator: 'CommandOrControl+Shift+N', click: () => openWorkspaceWindow('/') },
+        { type: 'separator' },
+        { label: 'Quick access', submenu: WORKSPACE_PAGES.map((page) => ({ label: page.label, click: () => openWorkspaceWindow(page.path) })) },
         { label: 'Print current page', accelerator: 'CommandOrControl+P', click: () => printPage(mainWindow?.webContents) },
         { type: 'separator' }, { role: 'close' }, { role: 'quit' },
       ],
@@ -186,7 +223,7 @@ function attachNavigationPolicy(contents) {
   });
 }
 
-function createWindow() {
+function createWindow(initialUrl = APP_URL) {
   const appSession = session.fromPartition(SESSION_PARTITION);
   configureSession(appSession);
 
@@ -207,8 +244,28 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('closed', () => { mainWindow = null; });
-  void mainWindow.loadURL(APP_URL);
+  void mainWindow.loadURL(initialUrl);
   createApplicationMenu();
+  return mainWindow;
+}
+
+function createTray() {
+  if (tray) return;
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'brand', 'beboss-app-icon.png')
+    : path.join(__dirname, '..', 'web', 'public', 'beboss-app-icon.png');
+  const icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) return;
+  tray = new Tray(icon.resize({ width: 20, height: 20 }));
+  tray.setToolTip('BeBoss — Business workspace');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show BeBoss', click: restoreMainWindow },
+    { type: 'separator' },
+    ...WORKSPACE_PAGES.slice(0, 5).map((page) => ({ label: page.label, click: () => openWorkspaceWindow(page.path) })),
+    { type: 'separator' },
+    { label: 'Quit BeBoss', click: () => app.quit() },
+  ]));
+  tray.on('double-click', restoreMainWindow);
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -233,15 +290,14 @@ if (!hasSingleInstanceLock) {
     });
 
     createWindow();
+    createTray();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
   });
 
   app.on('second-instance', () => {
-    if (!mainWindow) { createWindow(); return; }
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    restoreMainWindow();
   });
 
   app.on('window-all-closed', () => {
@@ -251,5 +307,6 @@ if (!hasSingleInstanceLock) {
   app.on('before-quit', () => {
     ipcMain.removeHandler('beboss:desktop-version');
     ipcMain.removeHandler('beboss:print-current-page');
+    if (tray) { tray.destroy(); tray = null; }
   });
 }
