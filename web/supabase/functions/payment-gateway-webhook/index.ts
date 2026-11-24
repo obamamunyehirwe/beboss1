@@ -1,3 +1,4 @@
+import { matchesVerifiedRwfSettlement } from "../_shared/payment-settlement.ts";
 import {
   constantTimeTextEqual,
   hmacSha256Hex,
@@ -106,10 +107,11 @@ async function verifyFlutterwave(rawBody: string, request: Request) {
     throw new Error("Flutterwave could not verify the webhook transaction.");
   }
 
-  if (String(transaction?.tx_ref ?? "") !== row.provider_reference ||
-      String(transaction?.status ?? "").toLowerCase() !== "successful" ||
-      String(transaction?.currency ?? "").toUpperCase() !== "RWF" ||
-      Number(transaction?.amount) !== Number(row.amount_rwf)) {
+  if (!matchesVerifiedRwfSettlement(transaction, {
+    providerReference: row.provider_reference,
+    amountRwf: Number(row.amount_rwf),
+    transactionId,
+  })) {
     return jsonResponse(409, { message: "Flutterwave transaction does not match this BeBoss payment request." });
   }
 
