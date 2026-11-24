@@ -872,7 +872,7 @@ function BeBossDesktopWorkspace() {
           </div>
           <div className="rounded-[2rem] border border-white/10 bg-[#111c2d] p-7 shadow-2xl shadow-black/30">
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-500 text-xl font-black text-black">B</div>
+              <img src="/beboss-app-icon.png" alt="BeBoss" className="h-12 w-12 rounded-2xl object-cover"/>
               <div><div className="text-xl font-bold">Owner verification</div><div className="text-xs text-slate-400">SMS one-time password • secure tenant binding</div></div>
             </div>
             {!otpStage ? (
@@ -909,7 +909,7 @@ function BeBossDesktopWorkspace() {
       <div className="flex min-h-screen">
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-[270px] flex-col border-r border-white/[.07] bg-[#0c1522] xl:flex">
           <div className="flex h-[76px] items-center gap-3 border-b border-white/[.07] px-6">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-orange-500 text-lg font-black text-[#10151b]">B</div>
+            <img src="/beboss-app-icon.png" alt="BeBoss" className="h-10 w-10 rounded-xl object-cover"/>
             <div><div className="text-lg font-black tracking-tight">BeBoss</div><div className="text-[10px] font-semibold uppercase tracking-[.22em] text-slate-500">Desktop Enterprise</div></div>
           </div>
           <div className="border-b border-white/[.07] p-4">
@@ -948,6 +948,7 @@ function BeBossDesktopWorkspace() {
               <h1 className="mt-1 text-xl font-black tracking-tight">{pageTitle}</h1>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <select aria-label="Desktop section" value={section} onChange={(e)=>setSection(e.target.value as Section)} className="max-w-44 rounded-xl border border-white/10 bg-[#111c2b] px-3 py-2 text-xs text-slate-200 outline-none xl:hidden">{navigation.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select>
               <select aria-label="Branch filter" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)} className="max-w-40 rounded-xl border border-white/10 bg-[#111c2b] px-3 py-2 text-xs text-slate-200 outline-none"><option value="ALL">All branches</option>{activeBranches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
               <div className={"flex items-center gap-2 rounded-xl border px-3 py-2 text-xs " + (dirty ? "border-amber-400/20 bg-amber-400/10 text-amber-200" : "border-emerald-400/20 bg-emerald-400/10 text-emerald-200")}>{syncing ? <RefreshCw size={14} className="animate-spin" /> : dirty ? <CloudOff size={14} /> : <Cloud size={14} />}{syncing ? "Syncing" : dirty ? "Pending sync" : "Synchronized"}</div>
               <button onClick={() => void syncNow().then(() => toast.success("Cloud sync completed.")).catch((error) => toast.error(error.message))} disabled={syncing || offline || licenseExpired} className={secondaryButton}><RefreshCw size={14} className={syncing ? "animate-spin" : ""} /> Sync now</button>
