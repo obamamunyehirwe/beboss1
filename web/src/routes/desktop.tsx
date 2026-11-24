@@ -413,6 +413,19 @@ function BeBossDesktopWorkspace() {
     const boot = async () => {
       if (bootStarted.current) return;
       bootStarted.current = true;
+      if (bridge?.isDesktop && "serviceWorker" in navigator) {
+        const hadController = Boolean(navigator.serviceWorker.controller);
+        let reloadTriggered = false;
+        const controllerChanged = () => {
+          if (!hadController && !reloadTriggered && navigator.serviceWorker.controller) {
+            reloadTriggered = true;
+            window.location.reload();
+          }
+        };
+        navigator.serviceWorker.addEventListener("controllerchange", controllerChanged);
+        void navigator.serviceWorker.register("/beboss-desktop-sw.js", { scope: "/" })
+          .catch(error => console.warn("[BeBoss Desktop] Offline shell registration unavailable:", error));
+      }
       try {
         if (!bridge?.isDesktop) {
           setSyncMessage("Open this workspace in the BeBoss Desktop application to use encrypted offline storage and native desktop services.");
