@@ -104,7 +104,7 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
     <section className="panel">
       <div className="panel-heading"><div><span className="eyebrow muted">HARDWARE & RUNTIME</span><h3>Device capabilities</h3></div><Cpu size={18} className="muted-icon" /></div>
       <div className="cap-grid">
-        <div className="cap-item"><MemoryStick size={16} /><div><strong>Local persistence</strong><small>Encrypted SQLite + OS keyring</small></div><StatusPill value={diag?.databaseEncrypted ? "ACTIVE" : "PENDING"} /></div>
+        <div className="cap-item"><MemoryStick size={16} /><div><strong>Local persistence</strong><small>SQLCipher + OS keyring</small></div><StatusPill value={diag?.databaseEncrypted ? "ACTIVE" : "PENDING"} /></div>
         <div className="cap-item"><Cpu size={16} /><div><strong>Barcode input</strong><small>USB keyboard-wedge scanners</small></div><StatusPill value="ACTIVE" /></div>
         <div className="cap-item"><Server size={16} /><div><strong>Receipt printing</strong><small>ESC/POS thermal + system print / PDF</small></div><StatusPill value="ACTIVE" /></div>
         <div className="cap-item"><ShieldCheck size={16} /><div><strong>Owner verification</strong><small>SMS OTP + active membership</small></div><StatusPill value={s(cloud.owner?.user_id) ? "ACTIVE" : "PENDING"} /></div>
