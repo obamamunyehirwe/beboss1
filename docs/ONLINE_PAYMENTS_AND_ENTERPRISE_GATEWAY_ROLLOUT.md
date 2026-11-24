@@ -22,6 +22,18 @@ This is a browser hand-off, not a native Flutterwave/Stripe Android SDK integrat
 - The webhook verifies Flutterwave's current `verif-hash` header against the configured dashboard secret hash using a constant-time comparison. Flutterwave sends this configured value verbatim; it is not an HMAC of the raw body. The handler then fetches the transaction directly from Flutterwave and verifies the provider transaction ID, BeBoss reference, successful status, exact RWF amount and currency.
 - The handler then calls Flutterwave's transaction-verification API and checks the BeBoss reference, successful status, RWF currency and exact expected amount before marking the payment verified.
 
+### Rwanda MTN and Airtel Mobile Money
+
+The current Rwanda collection route is Flutterwave's RWF checkout with payment_options set to card and mobilemoneyrwanda. Flutterwave lists both Airtel and MTN as Rwanda mobile-money networks. The customer selects the available network and approves the wallet prompt. This is a real provider-collection integration through Flutterwave; it is not a separate direct MTN Open API or Airtel Open API connector.
+
+- Enable Mobile Money for the live Flutterwave merchant account. When using per-transaction payment_options, disable the dashboard setting that overrides per-payment options.
+- Use a live Flutterwave secret only in Supabase Edge Function secrets. The checkout page and Android client must never receive the secret key.
+- Configure the webhook URL and the exact verif-hash dashboard secret. The handler verifies this header using constant-time comparison, then retrieves the transaction from Flutterwave and compares transaction ID, BeBoss reference, successful status, RWF currency and exact amount.
+- Test Airtel and MTN separately with a merchant-authorized test/live account. Record the operator, amount, provider transaction ID, provider dashboard status, webhook receipt and settlement statement for each test.
+- A provider's collection confirmation is not the same as a completed payout/settlement into the merchant's bank or wallet. Reconcile the provider's payout reports and bank statement independently.
+
+The current application does not implement direct MTN MoMo Request-to-Pay or direct Airtel Collections API credentials, OAuth, callbacks, polling and reconciliation. Those APIs have separate provider onboarding and production approval requirements. Do not point a production service at an unapproved direct-provider sandbox or guess endpoints/credentials. Flutterwave's RWF mobile-money route is the configured integration path until BeBoss completes separate provider onboarding and direct-API certification.
+
 ### Stripe
 
 - Checkout is created server-side in RWF using a live Stripe account.
