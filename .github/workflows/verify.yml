@@ -237,6 +237,12 @@ jobs:
           gradle-version: "9.6.0"
           validate-wrappers: false
 
+      - name: Inspect generated Android BuildConfig before compilation
+        run: |
+          gradle :app:generateDebugBuildConfig --stacktrace
+          echo "----- Generated app BuildConfig.java -----"
+          sed -n '1,45p' app/build/generated/source/buildConfig/debug/com/beboss/shopmgmt/BuildConfig.java
+
       - name: Run Android unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
 
