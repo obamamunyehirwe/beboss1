@@ -2,6 +2,7 @@
 
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const fs = require('node:fs/promises');
 const { app, BrowserWindow, Menu, Tray, nativeImage, dialog, ipcMain, session, shell, screen, Notification, safeStorage } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { PRODUCTION_APP_URL, resolveAppUrl, resolveWorkspaceUrl, isTrustedAppUrl, isSafeExternalUrl } = require('./security.cjs');
@@ -23,6 +24,7 @@ let manualUpdateCheck = false;
 const configuredSessions = new WeakSet();
 
 const WORKSPACE_PAGES = [
+  { label: 'Desktop operations', path: '/desktop' },
   { label: 'Desktop operations', path: '/desktop' },
   { label: 'Admin overview', path: '/admin' },
   { label: 'Payments & refunds', path: '/admin/payments' },
