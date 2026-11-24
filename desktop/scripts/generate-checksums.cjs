@@ -16,7 +16,7 @@ if (requestedLabel && !/^[a-z0-9-]{1,40}$/.test(requestedLabel)) {
 const manifestName = requestedLabel ? 'SHA256SUMS-' + requestedLabel + '.txt' : 'SHA256SUMS.txt';
 
 const artifacts = fs.readdirSync(releaseDirectory, { withFileTypes: true })
-  .filter((entry) => entry.isFile() && !/^SHA256SUMS(?:-[a-z0-9-]+)?\\.txt$/.test(entry.name))
+  .filter((entry) => entry.isFile() && !/^SHA256SUMS(?:-[a-z0-9-]+)?\.txt$/.test(entry.name))
   .map((entry) => entry.name)
   .sort();
 
