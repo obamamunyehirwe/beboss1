@@ -1,6 +1,7 @@
 package com.beboss.shopmgmt.util
 
 import android.content.Context
+import android.os.Build
 import android.util.Base64
 import android.util.Log
 import com.beboss.shopmgmt.BuildConfig
@@ -506,6 +507,211 @@ object SupabaseAdminClient {
         return created
     }
 
+    private fun normalizeOwnerPhoneE164(value: String): String {
+        val digits = value.filter { it.isDigit() }
+        val local = when {
+            digits.length == 9 -> digits
+            digits.length == 10 && digits.startsWith("0") -> digits.drop(1)
+            digits.length == 12 && digits.startsWith("250") -> digits.takeLast(9)
+            else -> ""
+        }
+        require(local.matches(Regex("7[0-9]{8}"))) {
+            "Enter the registered Rwanda shop-owner mobile number."
+        }
+        return "+250$local"
+    }
+
+    suspend fun requestOwnerDeviceCredentialOtp(ownerUsername: String, ownerPhone: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            if (!isConfigured()) return@withContext Result.failure(IllegalStateException("Supabase is not configured."))
+            val username = ownerUsername.trim().lowercase(Locale.ROOT)
+            if (!username.matches(Regex("[a-z0-9._-]{2,80}"))) {
+                return@withContext Result.failure(IllegalArgumentException("The registered owner username is invalid."))
+            }
+            try {
+                val phone = normalizeOwnerPhoneE164(ownerPhone)
+                val payload = JSONObject().put("username", username).put("phone", phone)
+                val request = Request.Builder()
+                    .url("${getSupabaseUrl()}/functions/v1/request-desktop-owner-otp")
+                    .addHeader("apikey", getSupabaseApiKey())
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody(jsonMediaType))
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    val raw = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) {
+                        val message = runCatching { JSONObject(raw).optString("message") }.getOrDefault("")
+                        throw IOException(message.ifBlank { "The owner verification SMS could not be requested (HTTP ${response.code})." })
+                    }
+                }
+                Result.success(Unit)
+            } catch (error: Exception) {
+                Result.failure(error)
+            }
+        }
+
+    private fun verifyOwnerPhoneOtp(phoneE164: String, otp: String): String {
+        require(otp.matches(Regex("[0-9]{6,8}"))) { "Enter the SMS verification code." }
+        val payload = JSONObject()
+            .put("phone", phoneE164)
+            .put("token", otp.trim())
+            .put("type", "sms")
+        val request = Request.Builder()
+            .url("${getSupabaseUrl()}/auth/v1/verify")
+            .addHeader("apikey", getSupabaseApiKey())
+            .addHeader("Content-Type", "application/json")
+            .post(payload.toString().toRequestBody(jsonMediaType))
+            .build()
+        client.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                val message = runCatching { JSONObject(raw).optString("msg").ifBlank { JSONObject(raw).optString("message") } }
+                    .getOrDefault("")
+                throw IOException(message.ifBlank { "The owner SMS code is invalid or expired." })
+            }
+            val session = JSONObject(raw)
+            val accessToken = session.optString("access_token")
+            val user = session.optJSONObject("user")
+            val confirmedAt = user?.optString("phone_confirmed_at").orEmpty()
+            if (accessToken.isBlank() || confirmedAt.isBlank()) {
+                throw SecurityException("Supabase did not confirm ownership of the registered phone number.")
+            }
+            return accessToken
+        }
+    }
+
+    suspend fun enrollCurrentAndroidDevice(
+        context: Context,
+        ownerUsername: String,
+        ownerPhone: String,
+        otp: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext Result.failure(IllegalStateException("Supabase is not configured."))
+        try {
+            val username = ownerUsername.trim().lowercase(Locale.ROOT)
+            require(username.matches(Regex("[a-z0-9._-]{2,80}"))) { "The registered owner username is invalid." }
+            val phone = normalizeOwnerPhoneE164(ownerPhone)
+            val ownerAccessToken = verifyOwnerPhoneOtp(phone, otp)
+            val deviceId = getOrCreateDeviceId(context)
+            val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(120).ifBlank { "Android terminal" }
+            val payload = JSONObject()
+                .put("action", "device_enroll")
+                .put("username", username)
+                .put("phone", phone)
+                .put("deviceId", deviceId)
+                .put("deviceName", deviceName)
+            val request = Request.Builder()
+                .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
+                .addHeader("apikey", getSupabaseApiKey())
+                .addHeader("Authorization", "Bearer $ownerAccessToken")
+                .addHeader("Content-Type", "application/json")
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    val message = runCatching { JSONObject(raw).optString("message") }.getOrDefault("")
+                    throw IOException(message.ifBlank { "The server could not provision this Android terminal (HTTP ${response.code})." })
+                }
+                val result = JSONObject(raw)
+                val returnedDeviceId = result.optString("deviceId")
+                val accessToken = result.optString("accessToken")
+                val refreshToken = result.optString("refreshToken")
+                val accessExpiresAt = result.optLong("accessExpiresAt", 0L)
+                val refreshExpiresAt = result.optLong("refreshExpiresAt", 0L)
+                require(returnedDeviceId == deviceId && accessToken.length == 64 && refreshToken.length == 64) {
+                    "The server returned an invalid device credential."
+                }
+                AndroidDeviceCredentialStore.save(
+                    AndroidDeviceCredential(
+                        shopId = computeShopSyncKey(username, phone),
+                        deviceId = deviceId,
+                        accessToken = accessToken,
+                        refreshToken = refreshToken,
+                        accessExpiresAt = accessExpiresAt,
+                        refreshExpiresAt = refreshExpiresAt
+                    )
+                )
+                Result.success("This Android terminal is now authenticated with its own revocable sync credential.")
+            }
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    suspend fun retireLegacyAndroidSync(
+        ownerUsername: String,
+        ownerPhone: String,
+        otp: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext Result.failure(IllegalStateException("Supabase is not configured."))
+        try {
+            val username = ownerUsername.trim().lowercase(Locale.ROOT)
+            require(username.matches(Regex("[a-z0-9._-]{2,80}"))) { "The registered owner username is invalid." }
+            val phone = normalizeOwnerPhoneE164(ownerPhone)
+            val ownerAccessToken = verifyOwnerPhoneOtp(phone, otp)
+            val payload = JSONObject()
+                .put("action", "device_retire_legacy")
+                .put("username", username)
+                .put("phone", phone)
+            val request = Request.Builder()
+                .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
+                .addHeader("apikey", getSupabaseApiKey())
+                .addHeader("Authorization", "Bearer $ownerAccessToken")
+                .addHeader("Content-Type", "application/json")
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                val result = runCatching { JSONObject(raw) }.getOrNull()
+                if (!response.isSuccessful || result?.optBoolean("legacySyncDisabled") != true) {
+                    val message = result?.optString("message").orEmpty()
+                    throw IOException(message.ifBlank { "The legacy sync credential could not be retired. Enroll every active device first." })
+                }
+            }
+            Result.success(Unit)
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    private fun refreshAndroidDeviceCredential(
+        credential: AndroidDeviceCredential
+    ): AndroidDeviceCredential {
+        val now = System.currentTimeMillis()
+        if (credential.accessExpiresAt > now + 120_000L) return credential
+        require(credential.refreshExpiresAt > now) {
+            "The device refresh credential expired. Re-enroll this terminal with the registered shop owner."
+        }
+
+        val payload = JSONObject()
+            .put("action", "refresh")
+            .put("shopId", credential.shopId)
+            .put("deviceId", credential.deviceId)
+            .put("refreshToken", credential.refreshToken)
+        val request = Request.Builder()
+            .url("${getSupabaseUrl()}/functions/v1/android-device-auth")
+            .addHeader("apikey", getSupabaseApiKey())
+            .addHeader("Content-Type", "application/json")
+            .post(payload.toString().toRequestBody(jsonMediaType))
+            .build()
+        client.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw IOException("The server rejected this device refresh credential (HTTP ${response.code}).")
+            }
+            val result = JSONObject(raw)
+            val next = credential.copy(
+                accessToken = result.getString("accessToken"),
+                refreshToken = result.getString("refreshToken"),
+                accessExpiresAt = result.getLong("accessExpiresAt"),
+                refreshExpiresAt = result.getLong("refreshExpiresAt")
+            )
+            AndroidDeviceCredentialStore.save(next)
+            return next
+        }
+    }
+
     private fun buildRestRequest(
         path: String,
         useAdminJwtIfAvailable: Boolean = false,
@@ -528,7 +734,27 @@ object SupabaseAdminClient {
             isLegacyJwtApiKey(key) -> builder.addHeader("Authorization", "Bearer $key")
         }
         if (!tenantSyncKey.isNullOrBlank()) {
-            builder.addHeader("X-Shop-Sync-Key", tenantSyncKey.trim())
+            val shopId = tenantSyncKey.trim()
+            if (AndroidDeviceCredentialStore.hasCredentialForShop(shopId)) {
+                // Once a device has enrolled, never silently downgrade it to the
+                // predictable legacy header—even when refresh fails or the device
+                // credential is revoked. This makes owner-approved retirement safe.
+                val storedCredential = AndroidDeviceCredentialStore.readForShop(shopId)
+                if (storedCredential != null) {
+                    val activeCredential = runCatching {
+                        refreshAndroidDeviceCredential(storedCredential)
+                    }.onFailure {
+                        Log.w(TAG, "Device credential refresh unavailable; legacy fallback is disabled.")
+                    }.getOrDefault(storedCredential)
+                    builder
+                        .addHeader("X-BeBoss-Device-ID", activeCredential.deviceId)
+                        .addHeader("X-BeBoss-Device-Token", activeCredential.accessToken)
+                }
+            } else {
+                // Compatibility path for older app builds. The server rejects this
+                // deterministic header after an owner retires legacy access for the shop.
+                builder.addHeader("X-Shop-Sync-Key", shopId)
+            }
         }
         return builder
     }
