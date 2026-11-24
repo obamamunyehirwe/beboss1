@@ -19,7 +19,7 @@ This is a browser hand-off, not a native Flutterwave/Stripe Android SDK integrat
 - Hosted checkout is initiated server-side using RWF.
 - The checkout allows `card` and `mobilemoneyrwanda`; Flutterwave must have the relevant methods enabled for the merchant account.
 - The hosted return URL is informational only. A browser redirect never marks a payment paid.
-- The webhook verifies Flutterwave's current `verif-hash` header against the configured dashboard secret hash using a constant-time comparison. Flutterwave sends this configured value verbatim; it is not an HMAC of the raw body. The handler then fetches the transaction directly from Flutterwave and verifies the provider transaction ID, BeBoss reference, successful status, exact RWF amount and currency.
+- The webhook verifies Flutterwave's `flutterwave-signature` header by comparing a Base64 HMAC-SHA256 digest of the exact raw request body against the received signature using a constant-time comparison. The handler then fetches the transaction directly from Flutterwave and verifies the provider transaction ID, BeBoss reference, successful status, exact RWF amount and currency.
 - The handler then calls Flutterwave's transaction-verification API and checks the BeBoss reference, successful status, RWF currency and exact expected amount before marking the payment verified.
 
 ### Rwanda MTN and Airtel Mobile Money
