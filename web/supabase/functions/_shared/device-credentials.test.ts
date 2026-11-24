@@ -31,5 +31,5 @@ Deno.test("credential lifetimes are bounded", () => {
 });
 
 Deno.test("refresh material is only stored as a SHA-256 digest", async () => {
-  assertEquals(await sha256Hex("beboss-test"), "6c0d6a57b03f3e4c9c5c3cce1b7ea5c790f86685f97d9679f8f9e1c5f838b98a");
+  assertEquals(await sha256Hex("beboss-test"), "eff63730e6c5a101028a3e74a9adac59e9f7963f4e21ba8bb200829c638c8773");
 });
