@@ -90,6 +90,8 @@ The follow-up branch adds an additive per-device Android credential path:
 - owner-SMS-OTP enrollment and a single-use 90-day refresh token that rotates through a dedicated Edge Function;
 - Android Keystore AES-GCM wrapping for tokens and a fail-closed no-downgrade rule when local Keystore decryption fails;
 - an owner-approved shop-wide cutover that refuses to retire the legacy header until every active registered device has a current credential;
+- separate tenant-only read/write RLS policies from authenticated staff/admin policies, with no anonymous RLS policy invoking platform role predicates;
+- public tenant-context and staff predicate RPCs changed to SECURITY INVOKER wrappers over non-exposed, tightly permissioned `beboss_private` SECURITY DEFINER helpers;
 - transactional tenant-isolation regression SQL under web/supabase/tests/android_device_credentials.sql.
 
 The same branch adds tag-triggered signed Android APK/AAB and Authenticode-signed Windows NSIS release jobs, plus a Windows native NSIS build artifact in CI. Production artifacts are gated on keys supplied by the repository owner; no production keystore or signing certificate is embedded in source.
