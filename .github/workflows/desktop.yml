@@ -62,6 +62,9 @@ jobs:
       - name: Build native desktop packages
         run: npx electron-builder ${{ matrix.args }} --publish never
 
+      - name: Generate SHA-256 artifact checksums
+        run: npm run checksums
+
       - name: Upload desktop installers
         uses: actions/upload-artifact@v4
         with:
