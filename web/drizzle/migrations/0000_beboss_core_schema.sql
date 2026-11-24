@@ -138,7 +138,7 @@ begin
   v_discount := case when v_months = 12 then 20 when v_months = 3 then 10 else 0 end;
   return v_gross - ((v_gross * v_discount) / 100);
 end;
-$;
+$$;
 
 -- Every additional POS device has a fixed 2,000 FRw monthly rate.
 -- The four-argument helper above remains for existing shop pricing screens.
@@ -149,7 +149,7 @@ create or replace function public.compute_expected_subscription_fee_with_rate(
   p_device_count integer,
   p_device_rate integer
 ) returns integer language plpgsql stable set search_path = public
-as $
+as $$
 declare
   v_branches integer := greatest(coalesce(p_branch_count, 1), 1);
   v_workers integer := greatest(coalesce(p_worker_count, 1), 1);
@@ -167,7 +167,7 @@ begin
   v_discount := case when v_months = 12 then 20 when v_months = 3 then 10 else 0 end;
   return v_gross - ((v_gross * v_discount) / 100);
 end;
-$;
+$$;
 
 -- ============ SHOP ACCOUNTS ============
 create table public.shop_accounts (
@@ -335,6 +335,7 @@ create table public.payment_requests (
   device_challenge text not null default '',
   provider text not null default 'MTN MoMo',
   ussd_code text not null default '',
+  telco_reference text not null default '',
   payer_phone text not null default '',
   payer_full_name text not null default '',
   amount_rwf integer not null default 5000,
@@ -364,7 +365,7 @@ create index idx_payment_requests_created on public.payment_requests(created_at 
 
 create or replace function public.enforce_payment_request_server_fee()
 returns trigger language plpgsql security definer set search_path = public
-as $
+as $$
 begin
   new.branch_count := greatest(coalesce(new.branch_count, 1), 1);
   new.worker_count := greatest(coalesce(new.worker_count, 1), 1);
@@ -379,7 +380,7 @@ begin
   );
   return new;
 end;
-$;
+$$;
 create trigger trg_recompute_payment_request_fee before insert on public.payment_requests
   for each row execute function public.enforce_payment_request_server_fee();
 

@@ -1,4 +1,9 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import {
+  createDeviceToken,
+  DEVICE_ACCESS_TTL_MS,
+  DEVICE_REFRESH_TTL_MS,
+} from "../_shared/device-credentials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,7 +14,20 @@ const corsHeaders = {
 const DATA_KEYS = ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users"] as const;
 type DataKey = typeof DATA_KEYS[number];
 type Row = Record<string, unknown>;
-type Snapshot = Row & Record<DataKey, Row[]>;
+type Snapshot = {
+  metadata: Row;
+  shopProfile: Row;
+  products: Row[];
+  customers: Row[];
+  sales: Row[];
+  saleItems: Row[];
+  customerPayments: Row[];
+  purchases: Row[];
+  stockTransfers: Row[];
+  branches: Row[];
+  users: Row[];
+  tombstones: Row[];
+};
 
 function json(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), { status, headers: corsHeaders });
@@ -69,6 +87,11 @@ async function hmacHex(payload: string, secret: string) {
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   return bytesToHex(new Uint8Array(signature)).toUpperCase();
 }
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function streamToBytes(stream: ReadableStream<Uint8Array>, limit: number) {
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
@@ -92,12 +115,12 @@ async function streamToBytes(stream: ReadableStream<Uint8Array>, limit: number) 
   return output;
 }
 async function verifyAndDecodeToken(token: string, secret: string): Promise<Row> {
-  const MAX_TOKEN = 7_000_000;
   let prefix = "";
   if (token.startsWith("BBSHARE2:")) prefix = "BBSHARE2:";
   else if (token.startsWith("BBSHARE1:")) prefix = "BBSHARE1:";
   else throw new Error("A snapshot token is malformed or too large.");
-  if (token.length > MAX_TOKEN) throw new Error("A snapshot token is malformed or too large.");
+  const maxTokenLength = prefix === "BBSHARE1:" ? 4 * 1024 * 1024 : 7 * 1024 * 1024;
+  if (token.length > maxTokenLength) throw new Error("A snapshot token is malformed or too large.");
   const rest = token.slice(prefix.length);
   const sep = rest.indexOf(":");
   if (sep <= 0) throw new Error("A BeBoss snapshot token is malformed.");
@@ -207,9 +230,11 @@ function getServerConfig() {
   const url = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const publishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-  const hmacSecret = Deno.env.get("BEBOSS_DATASHARE_HMAC_SECRET") ?? "";
+  const hmacSecret = (Deno.env.get("BEBOSS_DATASHARE_HMAC_SECRET") ?? "").trim();
   if (!url || !serviceKey || !publishableKey) throw new Error("The BeBoss desktop backend is not configured.");
-  if (!hmacSecret) throw new Error("BEBOSS_DATASHARE_HMAC_SECRET is missing. Desktop snapshot access is disabled until the existing Android snapshot key is configured in Supabase.");
+  // The established Android/website snapshot key is stored in the service-role-only
+  // app_secrets table. Resolve it server-side when an Edge Function environment copy
+  // has not been provisioned; never send it to desktop or mobile clients.
   return { url, serviceKey, publishableKey, hmacSecret };
 }
 
@@ -239,7 +264,7 @@ async function requireOwner(
   const shopId = ownerKey(username, phone);
   const { data: shop, error: shopError } = await admin
     .from("shop_accounts")
-    .select("id,shop_name,owner_name,owner_username,owner_phone,subscription_status,subscription_expires_at,remote_kill_switch,branch_count,worker_count,device_count,device_limit,monthly_fee_rwf,business_type,updated_at")
+    .select("id,shop_name,owner_name,owner_username,owner_phone,device_challenge,subscription_status,subscription_expires_at,remote_kill_switch,branch_count,worker_count,device_count,device_limit,monthly_fee_rwf,business_type,updated_at")
     .eq("id", shopId)
     .maybeSingle();
   if (shopError || !shop ||
@@ -445,7 +470,167 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(config.url, config.serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false }
     });
-    const owner = await requireOwner(req, admin, config.publishableKey, body, action === "bootstrap");
+    const deviceCredentialAction = action === "device_enroll" || action === "device_retire_legacy";
+    if (!config.hmacSecret && !deviceCredentialAction) {
+      const { data: snapshotSecret, error: secretError } = await admin
+        .from("app_secrets")
+        .select("value")
+        .eq("name", "BEBOSS_DATASHARE_HMAC_SECRET")
+        .maybeSingle();
+      const storedSecret = text(snapshotSecret?.value).trim();
+      if (secretError || storedSecret.length < 8) {
+        throw new Error("The existing Android snapshot HMAC key is not configured in the protected server secret store.");
+      }
+      config.hmacSecret = storedSecret;
+    }
+    const owner = await requireOwner(
+      req,
+      admin,
+      config.publishableKey,
+      body,
+      action === "bootstrap" || action === "device_enroll" || action === "device_retire_legacy"
+    );
+
+    if (action === "device_enroll") {
+      const deviceId = text(body.deviceId).trim();
+      const deviceName = text(body.deviceName).trim().slice(0, 120) || "Android terminal";
+      if (deviceId.length < 4 || deviceId.length > 120 || /[\\r\\n]/.test(deviceId)) {
+        throw new Error("This Android installation has an invalid device identifier.");
+      }
+
+      const deviceFields = "id,device_id,device_name,role,assigned_user_id,is_active,is_owner_primary";
+      let { data: deviceRecord, error: deviceLookupError } = await admin
+        .from("shop_devices")
+        .select(deviceFields)
+        .eq("shop_sync_key", owner.shopId)
+        .eq("device_id", deviceId)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (deviceLookupError) throw new Error("Could not validate this shop terminal.");
+
+      if (!deviceRecord) {
+        const { data: primary, error: primaryError } = await admin
+          .from("shop_devices")
+          .select(deviceFields)
+          .eq("shop_sync_key", owner.shopId)
+          .eq("is_owner_primary", true)
+          .eq("is_active", true)
+          .eq("device_id", "")
+          .limit(1)
+          .maybeSingle();
+        if (primaryError) throw new Error("Could not validate the owner terminal registration.");
+
+        if (primary) {
+          const { data: updatedPrimary, error: updatePrimaryError } = await admin
+            .from("shop_devices")
+            .update({ device_id: deviceId, device_name: deviceName, updated_at: Date.now() })
+            .eq("id", primary.id)
+            .eq("shop_sync_key", owner.shopId)
+            .eq("is_active", true)
+            .select(deviceFields)
+            .single();
+          if (updatePrimaryError || !updatedPrimary) {
+            throw new Error("Could not bind this installation to the existing owner terminal.");
+          }
+          deviceRecord = updatedPrimary;
+        } else {
+          const { count: activeCount, error: countError } = await admin
+            .from("shop_devices")
+            .select("id", { count: "exact", head: true })
+            .eq("shop_sync_key", owner.shopId)
+            .eq("is_active", true);
+          if (countError) throw new Error("Could not confirm the shop's active device registry.");
+          if ((activeCount ?? 0) > 0) {
+            throw new Error("This terminal is not registered in the shop device list. The owner must add or invite it before it can receive credentials.");
+          }
+
+          const { data: ownerUsers, error: ownerUserError } = await admin
+            .from("shop_users")
+            .select("user_id,username,full_name")
+            .eq("shop_sync_key", owner.shopId)
+            .eq("role", "OWNER")
+            .eq("is_active", true)
+            .limit(1);
+          if (ownerUserError) throw new Error("Could not validate the registered shop-owner profile.");
+          const ownerUser = ownerUsers?.[0];
+          const now = Date.now();
+          const newDevice = {
+            id: crypto.randomUUID(),
+            shop_sync_key: owner.shopId,
+            shop_name: text(owner.shop.shop_name),
+            device_id: deviceId,
+            device_name: deviceName,
+            join_code: "",
+            assigned_user_id: text(ownerUser?.user_id) || "OWNER",
+            assigned_username: text(ownerUser?.username) || owner.username,
+            assigned_user_name: text(ownerUser?.full_name) || text(owner.shop.owner_name) || "Shop Owner",
+            role: "OWNER",
+            branch_id: "main_branch",
+            branch_name: "Main Store",
+            is_owner_primary: true,
+            is_active: true,
+            monthly_fee_addon_rwf: 0,
+            created_at: now,
+            updated_at: now,
+          };
+          const { data: createdDevice, error: createDeviceError } = await admin
+            .from("shop_devices")
+            .insert(newDevice)
+            .select(deviceFields)
+            .single();
+          if (createDeviceError || !createdDevice) {
+            throw new Error("Could not register the first owner terminal. Check the shop device limit and retry.");
+          }
+          deviceRecord = createdDevice;
+        }
+      }
+
+      if (!deviceRecord.is_active || !deviceRecord.id) {
+        throw new Error("This terminal is inactive and cannot receive a sync credential.");
+      }
+
+      const accessToken = createDeviceToken();
+      const refreshToken = createDeviceToken();
+      const now = Date.now();
+      const accessExpiresAt = now + DEVICE_ACCESS_TTL_MS;
+      const refreshExpiresAt = now + DEVICE_REFRESH_TTL_MS;
+      const { data: issued, error: issueError } = await admin.rpc("issue_android_device_credential", {
+        p_shop_id: owner.shopId,
+        p_device_id: deviceId,
+        p_device_record_id: deviceRecord.id,
+        p_access_token_hash: await sha256Hex(accessToken),
+        p_refresh_token_hash: await sha256Hex(refreshToken),
+        p_access_expires_at: accessExpiresAt,
+        p_refresh_expires_at: refreshExpiresAt,
+      });
+      if (issueError || !issued?.issued) {
+        throw new Error("The server could not provision an authenticated credential for this terminal.");
+      }
+
+      return json(200, {
+        ok: true,
+        deviceId,
+        role: text(issued.role),
+        accessToken,
+        refreshToken,
+        accessExpiresAt,
+        refreshExpiresAt,
+      });
+    }
+
+    if (action === "device_retire_legacy") {
+      const { data: retired, error: retireError } = await admin.rpc("retire_legacy_android_sync", {
+        p_shop_id: owner.shopId,
+      });
+      if (retireError) throw new Error("Could not safely retire the legacy shop sync credential.");
+      if (retired !== true) {
+        return json(409, {
+          ok: false,
+          message: "Legacy sync is still active because one or more active shop terminals do not have a valid device credential. Enroll every active terminal first; no existing device has been locked out.",
+        });
+      }
+      return json(200, { ok: true, legacySyncDisabled: true });
+    }
 
     if (action === "bootstrap") {
       const [snapshotResult, paymentsResult, codesResult, devicesResult, branchesResult, transfersResult, staffResult, newsResult] = await Promise.all([
@@ -509,6 +694,113 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true, uploadedAt: number(savedAt), snapshot: { ...snapshot, metadata: { ...snapshot.metadata } } });
     }
 
+if (action === "create_branch_share") {
+      const snapshot = sanitizeSnapshot(body.snapshot, { username: owner.username, shop: owner.shop });
+      const requestedBranchId = text(body.branchIdFilter).trim();
+      let scopedBranch: Row | null = null;
+      if (requestedBranchId && requestedBranchId !== "ALL") {
+        scopedBranch = snapshot.branches.find((branch) => text(branch.id) === requestedBranchId) ?? null;
+        if (!scopedBranch) throw new Error("The selected branch does not belong to this shop snapshot.");
+        const allowedSales = new Set(snapshot.sales
+          .filter((row) => text(row.branchId) === requestedBranchId)
+          .map((row) => text(row.id)));
+        snapshot.branches = snapshot.branches.filter((row) => text(row.id) === requestedBranchId);
+        snapshot.products = snapshot.products.filter((row) => !text(row.branchId) || text(row.branchId) === requestedBranchId);
+        snapshot.sales = snapshot.sales.filter((row) => text(row.branchId) === requestedBranchId);
+        snapshot.saleItems = snapshot.saleItems.filter((row) => allowedSales.has(text(row.saleId)));
+        snapshot.customerPayments = snapshot.customerPayments.filter((row) => text(row.branchId) === requestedBranchId);
+        snapshot.purchases = snapshot.purchases.filter((row) => text(row.branchId) === requestedBranchId);
+        snapshot.stockTransfers = snapshot.stockTransfers.filter((row) =>
+          text(row.fromBranchId) === requestedBranchId || text(row.toBranchId) === requestedBranchId);
+      }
+      nowSnapshot(snapshot, owner.username);
+      if (scopedBranch) {
+        snapshot.metadata.branchScopeId = text(scopedBranch.id);
+        snapshot.metadata.branchScopeName = text(scopedBranch.name);
+      }
+      for (const key of DATA_KEYS) {
+        if (snapshot[key].length > 25_000) {
+          throw new Error("The " + key + " collection exceeds the 25,000-record Android DataShare limit. Export one branch or a smaller data scope.");
+        }
+      }
+      const raw = new TextEncoder().encode(JSON.stringify(snapshot));
+      if (raw.length > 5 * 1024 * 1024) {
+        throw new Error("The branch share package exceeds the 5 MB safe uncompressed limit. Export fewer records or a single branch.");
+      }
+      const compressed = await streamToBytes(
+        new Blob([raw]).stream().pipeThrough(new CompressionStream("gzip")),
+        3 * 1024 * 1024
+      );
+      const payload = bytesToBase64(compressed);
+      const signature = (await hmacHex(payload, config.hmacSecret)).slice(0, 16);
+      const token = "BBSHARE1:" + signature + ":" + payload;
+      if (token.length > 4 * 1024 * 1024) {
+        throw new Error("The signed token exceeds the 4 MB Android DataShare limit. Export one branch or fewer records.");
+      }
+      return json(200, {
+        ok: true,
+        token,
+        tokenLength: token.length,
+        expiresAt: number(snapshot.metadata.expiresAt),
+        scope: scopedBranch ? text(scopedBranch.name) : "All branches",
+        counts: {
+          branches: snapshot.branches.length,
+          users: snapshot.users.length,
+          products: snapshot.products.length,
+          customers: snapshot.customers.length,
+          sales: snapshot.sales.length,
+          saleItems: snapshot.saleItems.length,
+          customerPayments: snapshot.customerPayments.length,
+          purchases: snapshot.purchases.length,
+          stockTransfers: snapshot.stockTransfers.length
+        }
+      });
+    }
+
+    if (action === "verify_branch_share") {
+      const token = text(body.token).trim();
+      const decoded = await verifyAndDecodeToken(token, config.hmacSecret);
+      const metadata = decoded.metadata && typeof decoded.metadata === "object" ? decoded.metadata as Row : {};
+      if (text(metadata.format) !== "beboss_branch_datashare_v3") {
+        throw new Error("This is not a supported BeBoss branch data-share package.");
+      }
+      const issuedAt = number(metadata.issuedAt ?? metadata.timestamp);
+      const expiresAt = number(metadata.expiresAt);
+      const now = Date.now();
+      if (!issuedAt || issuedAt > now + 5 * 60 * 1000 || !expiresAt || expiresAt <= now || expiresAt - issuedAt > 30 * 24 * 60 * 60 * 1000) {
+        throw new Error("The branch share package is expired or has an invalid issue time.");
+      }
+      const importedProfile = decoded.shopProfile && typeof decoded.shopProfile === "object" ? decoded.shopProfile as Row : {};
+      const incomingName = text(importedProfile.shopName).trim().toLowerCase();
+      const registeredName = text(owner.shop.shop_name).trim().toLowerCase();
+      if (!incomingName || incomingName !== registeredName) {
+        throw new Error("The branch share package belongs to a different shop. Only packages from this registered shop can be merged.");
+      }
+      // shopProfile.phone is the shop's editable public contact and may differ
+      // from the registered owner phone verified by OTP. HMAC and registered shop
+      // identity checks are authoritative; do not reject legitimate renamed contacts.
+      for (const key of DATA_KEYS) {
+        if (!Array.isArray(decoded[key]) || (decoded[key] as unknown[]).length > 25_000) {
+          throw new Error("The " + key + " collection exceeds the Android DataShare record limit.");
+        }
+      }
+      const sanitized = sanitizeSnapshot(decoded, { username: owner.username, shop: owner.shop });
+      sanitized.metadata = metadata;
+      return json(200, {
+        ok: true,
+        snapshot: sanitized,
+        scope: text(metadata.branchScopeName) || "All branches",
+        counts: {
+          branches: sanitized.branches.length,
+          products: sanitized.products.length,
+          customers: sanitized.customers.length,
+          sales: sanitized.sales.length,
+          stockTransfers: sanitized.stockTransfers.length
+        },
+        expiresAt
+      });
+    }
+
     if (action === "create_checkout") {
       const gateway = text(body.gateway).toLowerCase();
       if (!["flutterwave", "stripe"].includes(gateway)) throw new Error("Choose Flutterwave or Stripe for hosted checkout.");
@@ -523,7 +815,7 @@ Deno.serve(async (req: Request) => {
       }
       const authorization = req.headers.get("Authorization") ?? "";
       if (!authorization.startsWith("Bearer ")) throw new Error("The verified owner session is missing.");
-      const checkoutResponse = await fetch(config.url.replace(/\\/+$/, "") + "/functions/v1/create-payment-checkout", {
+      const checkoutResponse = await fetch(config.url.replace(/\/+$/, "") + "/functions/v1/create-payment-checkout", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -570,6 +862,174 @@ Deno.serve(async (req: Request) => {
         amountRwf: number(checkout.amountRwf),
         currency: "RWF",
         checkoutUrl: checkoutUrl.toString()
+      });
+    }
+
+if (action === "submit_payment_proof") {
+      const requestId = text(body.requestId).trim();
+      const provider = text(body.provider).trim();
+      const payerPhone = ownerPhoneE164(text(body.payerPhone));
+      const payerName = text(body.payerName).trim();
+      const paymentNote = text(body.paymentNote).trim();
+      const months = number(body.months);
+      if (!/^DESKTOP-[0-9a-f-]{36}$/i.test(requestId)) throw new Error("A valid desktop payment request ID is required.");
+      if (!["MTN MoMo", "Airtel Money"].includes(provider)) throw new Error("Choose MTN MoMo or Airtel Money.");
+      if (payerName.length < 2 || payerName.length > 120 || paymentNote.length > 1000 ||
+          ![1, 3, 6, 12].includes(months)) {
+        throw new Error("Enter valid payer details and a supported subscription duration.");
+      }
+
+      const { data: configRow, error: configError } = await admin
+        .from("app_config")
+        .select("mtn_momo_code,mtn_momo_phone,mtn_recipient_name,airtel_money_phone,airtel_recipient_name,admin_whatsapp_number,per_device_fee_rwf")
+        .eq("id", "global")
+        .maybeSingle();
+      if (configError || !configRow) throw new Error("BeBoss payment instructions are unavailable. Contact support.");
+
+      const existingQuery = await admin.from("payment_requests")
+        .select("id,provider,payer_phone,payer_full_name,amount_rwf,duration_months,ussd_code,status,created_at")
+        .eq("id", requestId)
+        .eq("owner_username", owner.username)
+        .maybeSingle();
+      if (existingQuery.error) throw new Error("Could not check the payment request idempotency record.");
+      if (existingQuery.data) {
+        const existing = existingQuery.data;
+        if (text(existing.provider) !== provider ||
+            text(existing.payer_phone) !== payerPhone ||
+            text(existing.payer_full_name) !== payerName ||
+            number(existing.duration_months) !== months) {
+          throw new Error("This payment request ID has already been used for different payment details.");
+        }
+        const recipientName = provider === "MTN MoMo"
+          ? text(configRow.mtn_recipient_name)
+          : text(configRow.airtel_recipient_name);
+        return json(200, {
+          ok: true,
+          paymentRequestId: text(existing.id),
+          amountRwf: number(existing.amount_rwf),
+          ussdCode: text(existing.ussd_code),
+          provider,
+          recipientName,
+          supportWhatsapp: text(configRow.admin_whatsapp_number),
+          status: text(existing.status),
+          reused: true
+        });
+      }
+
+      const branches = Math.max(1, number(owner.shop.branch_count));
+      const workers = Math.max(1, number(owner.shop.worker_count));
+      const devices = Math.max(1, number(owner.shop.device_count));
+      const configuredDeviceFee = number(configRow.per_device_fee_rwf);
+      const feePerDevice = configuredDeviceFee === 0 ? 2000 : configuredDeviceFee;
+      if (!Number.isSafeInteger(feePerDevice) || feePerDevice < 0) {
+        throw new Error("The registered subscription price configuration is invalid. Contact BeBoss support.");
+      }
+      const branchFee = branches <= 1 ? 5000 : branches === 2 ? 10000 : 20000;
+      const workerFee = workers <= 1 ? 0 : workers <= 3 ? 2000 : workers <= 5 ? 4000 : 4000 + (workers - 5) * 1000;
+      const extraDeviceFee = Math.max(0, devices - 1) * feePerDevice;
+      const gross = (branchFee + workerFee + extraDeviceFee) * months;
+      const discount = months === 12 ? 20 : months === 3 ? 10 : 0;
+      const expectedAmount = gross - Math.floor(gross * discount / 100);
+      if (!Number.isSafeInteger(expectedAmount) || expectedAmount < 1) {
+        throw new Error("The registered subscription price could not be calculated.");
+      }
+
+      let ussdCode = "";
+      let recipientName = "";
+      if (provider === "MTN MoMo") {
+        const merchantCode = text(configRow.mtn_momo_code).trim();
+        const merchantPhone = text(configRow.mtn_momo_phone).trim();
+        if (merchantCode && merchantCode !== "0") ussdCode = `*182*8*1*${merchantCode}*${expectedAmount}#`;
+        else if (merchantPhone) ussdCode = `*182*1*1*${merchantPhone}*${expectedAmount}#`;
+        recipientName = text(configRow.mtn_recipient_name);
+      } else {
+        const merchantPhone = text(configRow.airtel_money_phone).trim();
+        if (merchantPhone) ussdCode = `*500*1*1*${merchantPhone}*${expectedAmount}#`;
+        recipientName = text(configRow.airtel_recipient_name);
+      }
+      if (!ussdCode) throw new Error("This Mobile Money merchant is not configured. Contact BeBoss support or use hosted checkout.");
+
+      const requestLimit = await admin.rpc("consume_rate_limit", {
+        p_scope: "desktop_payment_claim",
+        p_key_hash: await sha256Hex("desktop-payment-claim:" + owner.shopId),
+        p_max_hits: 5,
+        p_window_seconds: 900
+      });
+      if (requestLimit.error) throw new Error("Payment claim protection is unavailable. Try again later.");
+      const limitRows = requestLimit.data;
+      const limit = Array.isArray(limitRows) ? limitRows[0] : limitRows;
+      if (limit?.allowed !== true) {
+        const retrySeconds = Math.max(1, number(limit?.retry_after_seconds) || 900);
+        return json(429, { ok: false, message: "Too many payment claims were created for this shop. Try again later.", retryAfterSeconds: retrySeconds });
+      }
+
+      const now = Date.now();
+      const paymentPayload = {
+        id: requestId,
+        shop_name: text(owner.shop.shop_name),
+        owner_username: owner.username,
+        owner_phone: text(owner.shop.owner_phone),
+        device_challenge: text(owner.shop.device_challenge),
+        provider,
+        ussd_code: ussdCode,
+        payer_phone: payerPhone,
+        payer_full_name: payerName,
+        amount_rwf: expectedAmount,
+        duration_months: months,
+        branch_count: branches,
+        worker_count: workers,
+        device_count: devices,
+        fee_per_device_rwf: feePerDevice,
+        payment_time_ms: now,
+        payment_note: paymentNote,
+        status: "PENDING_VERIFICATION",
+        approval_mode: "",
+        generated_unlock_code: "",
+        source: "DESKTOP",
+        created_at: now,
+        updated_at: now
+      };
+      const { data: inserted, error: insertError } = await admin
+        .from("payment_requests")
+        .insert(paymentPayload)
+        .select("id,provider,payer_phone,payer_full_name,amount_rwf,duration_months,ussd_code,status,created_at")
+        .single();
+      if (insertError || !inserted) {
+        const raced = await admin.from("payment_requests")
+          .select("id,provider,payer_phone,payer_full_name,amount_rwf,duration_months,ussd_code,status,created_at")
+          .eq("id", requestId)
+          .eq("owner_username", owner.username)
+          .maybeSingle();
+        if (raced.error || !raced.data ||
+            text(raced.data.provider) !== provider ||
+            text(raced.data.payer_phone) !== payerPhone ||
+            text(raced.data.payer_full_name) !== payerName ||
+            number(raced.data.duration_months) !== months) {
+          throw new Error("Could not create the payment verification request.");
+        }
+        return json(200, {
+          ok: true,
+          paymentRequestId: text(raced.data.id),
+          amountRwf: number(raced.data.amount_rwf),
+          ussdCode: text(raced.data.ussd_code),
+          provider,
+          recipientName,
+          supportWhatsapp: text(configRow.admin_whatsapp_number),
+          status: text(raced.data.status),
+          reused: true
+        });
+      }
+
+      return json(200, {
+        ok: true,
+        paymentRequestId: text(inserted.id),
+        amountRwf: number(inserted.amount_rwf),
+        ussdCode: text(inserted.ussd_code),
+        provider,
+        recipientName,
+        supportWhatsapp: text(configRow.admin_whatsapp_number),
+        status: text(inserted.status),
+        reused: false
       });
     }
 

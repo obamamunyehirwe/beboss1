@@ -1,6 +1,6 @@
 import type React from "react";
 import { useState } from "react";
-import { AlertTriangle, Archive, Check, Download, Save, Upload } from "lucide-react";
+import { AlertTriangle, Archive, Check, Clipboard, Download, FileCheck2, Save, Share2, Upload } from "lucide-react";
 import { errorText, rows, s } from "../../lib/format";
 import { mergeSnapshots } from "../../lib/snapshot-merge";
 import type { CloudState, CommitSnapshot, Snapshot } from "../../lib/types";
@@ -13,14 +13,27 @@ function base64Decode(value: string): Uint8Array { const binary = atob(value); r
 async function derivePortableKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> { const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase) as BufferSource, "PBKDF2", false, ["deriveKey"]); return crypto.subtle.deriveKey({ name: "PBKDF2", salt: salt as BufferSource, iterations: PORTABLE_KDF_ITERATIONS, hash: "SHA-256" }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]); }
 async function encryptPortableBackup(cleartext: string, passphrase: string): Promise<string> { if (passphrase.length < 12) throw new Error("Choose a backup passphrase with at least 12 characters."); const salt = crypto.getRandomValues(new Uint8Array(16)); const iv = crypto.getRandomValues(new Uint8Array(12)); const key = await derivePortableKey(passphrase, salt); const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv as BufferSource }, key, new TextEncoder().encode(cleartext) as BufferSource); return PORTABLE_PREFIX + JSON.stringify({ version: 1, kdf: "PBKDF2-SHA256", iterations: PORTABLE_KDF_ITERATIONS, salt: base64Encode(salt), iv: base64Encode(iv), ciphertext: base64Encode(new Uint8Array(ciphertext)) }); }
 async function decryptPortableBackup(stored: string, passphrase: string): Promise<string> { if (!stored.startsWith(PORTABLE_PREFIX)) return stored; if (passphrase.length < 12) throw new Error("Enter the passphrase used when this backup was created."); let envelope: { version: number; kdf: string; iterations: number; salt: string; iv: string; ciphertext: string }; try { envelope = JSON.parse(stored.slice(PORTABLE_PREFIX.length)); } catch { throw new Error("The encrypted backup envelope is damaged."); } if (envelope.version !== 1 || envelope.kdf !== "PBKDF2-SHA256" || envelope.iterations !== PORTABLE_KDF_ITERATIONS) throw new Error("Unsupported backup encryption version."); const salt = base64Decode(envelope.salt), iv = base64Decode(envelope.iv), ciphertext = base64Decode(envelope.ciphertext); if (salt.length !== 16 || iv.length !== 12 || ciphertext.length < 17) throw new Error("The encrypted backup is incomplete."); const key = await derivePortableKey(passphrase, salt); try { const clear = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv as BufferSource }, key, ciphertext as BufferSource); return new TextDecoder().decode(clear); } catch { throw new Error("The backup passphrase is incorrect or the file has been modified."); } }
-export function BackupPage({ snapshot, cloud, onCommit }: { snapshot: Snapshot | null; cloud: CloudState; onCommit: CommitSnapshot }) {
+export function BackupPage({ snapshot, cloud, onCommit, onCreateBranchShare, onVerifyBranchShare }: {
+  snapshot: Snapshot | null;
+  cloud: CloudState;
+  onCommit: CommitSnapshot;
+  onCreateBranchShare: (branchIdFilter: string) => Promise<string>;
+  onVerifyBranchShare: (token: string) => Promise<Snapshot>;
+}) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [paste, setPaste] = useState("");
-  const [filePath, setFilePath] = useState("");
+  const [backupFile, setBackupFile] = useState<File | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [confirmPassphrase, setConfirmPassphrase] = useState("");
+  const [shareBranchId, setShareBranchId] = useState("ALL");
+  const [shareToken, setShareToken] = useState("");
+  const [importToken, setImportToken] = useState("");
+  const [shareFile, setShareFile] = useState<File | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareMessage, setShareMessage] = useState("");
+  const [shareError, setShareError] = useState("");
 
   async function exportSnapshot() {
     setBusy(true); setError(""); setNotice("");
@@ -61,19 +74,98 @@ export function BackupPage({ snapshot, cloud, onCommit }: { snapshot: Snapshot |
     finally { setBusy(false); }
   }
 
-  async function restoreFromPath() {
+  async function restoreFromFile() {
     setBusy(true); setError(""); setNotice("");
     try {
-      if (!filePath.trim()) throw new Error("Enter the backup file path first.");
+      if (!backupFile) throw new Error("Choose a BeBoss backup file first.");
+      if (backupFile.size > 70_000_000) throw new Error("Backup exceeds the 70 MB safety limit.");
+      if (!/\.(bbbackup|json)$/i.test(backupFile.name)) throw new Error("Choose a .bbbackup or .json backup file.");
       if (!snapshot) throw new Error("Initialize the shop snapshot before restoring.");
-      const stored = await window.beBossDesktop.importBackupFile(filePath.trim());
+      // File.text() only reads the file explicitly selected by the local user.
+      // No native command accepts arbitrary filesystem paths from the renderer.
+      const stored = await backupFile.text();
       const parsed = JSON.parse(await decryptPortableBackup(stored, passphrase));
       const imported = (parsed.snapshot ?? parsed) as Snapshot;
       const merged = mergeSnapshots(snapshot, imported).snapshot as Snapshot;
       await onCommit((next) => { Object.assign(next, merged); }, "RESTORE");
       setNotice("Backup file merged into the shop snapshot and queued for cloud synchronization.");
+      setBackupFile(null);
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
+  }
+
+  async function createBranchShare() {
+    setShareBusy(true); setShareError(""); setShareMessage("");
+    try {
+      if (!snapshot) throw new Error("Sync the shop snapshot before creating a branch share package.");
+      const token = await onCreateBranchShare(shareBranchId);
+      if (!token.startsWith("BBSHARE1:")) throw new Error("The server returned an invalid branch share token.");
+      setShareToken(token);
+      setShareMessage("A signed BBSHARE1 package was created. It expires automatically and can be imported by BeBoss mobile or desktop.");
+    } catch (e) { setShareError(errorText(e)); }
+    finally { setShareBusy(false); }
+  }
+
+  async function copyBranchShare() {
+    if (!shareToken) return;
+    try {
+      await navigator.clipboard.writeText(shareToken);
+      setShareMessage("Branch share token copied. Send it only to the intended BeBoss shop terminal.");
+    } catch { setShareError("Clipboard access is unavailable. Select the token and copy it manually."); }
+  }
+
+  function downloadBranchShare() {
+    if (!shareToken) return;
+    const url = URL.createObjectURL(new Blob([shareToken], { type: "text/plain;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "BeBoss-Branch-Share.beboss";
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  async function importBranchShare() {
+    setShareBusy(true); setShareError(""); setShareMessage("");
+    try {
+      if (!snapshot) throw new Error("Initialize the shop snapshot before importing a branch package.");
+      if (shareFile && shareFile.size > 4 * 1024 * 1024) {
+        throw new Error("The selected branch package exceeds the 4 MB Android DataShare limit.");
+      }
+      const fileToken = shareFile ? await shareFile.text() : "";
+      const token = importToken.trim() || fileToken.trim();
+      if (!token.startsWith("BBSHARE1:")) throw new Error("Choose a .beboss package or paste a valid BBSHARE1 token.");
+      if (token.length > 4 * 1024 * 1024) throw new Error("The branch share package exceeds the 4 MB Android DataShare limit.");
+      const verified = await onVerifyBranchShare(token);
+      const nonce = s(verified.metadata?.nonce);
+      if (!nonce || nonce.length < 8 || nonce.length > 128) {
+        throw new Error("The verified branch package is missing its unique replay-protection nonce.");
+      }
+      const replayKey = "branch-share-imports";
+      const storedNonces = await window.beBossDesktop.secureStore.get(replayKey);
+      let importedNonces: { nonce: string; importedAt: number }[] = [];
+      if (storedNonces) {
+        try {
+          const parsed = JSON.parse(storedNonces);
+          if (!Array.isArray(parsed)) throw new Error("Invalid replay history");
+          importedNonces = parsed.filter((item): item is { nonce: string; importedAt: number } =>
+            !!item && typeof item.nonce === "string" && typeof item.importedAt === "number");
+        } catch {
+          throw new Error("The local branch-share replay history is damaged. Do not import this token until the desktop security store has been repaired.");
+        }
+      }
+      if (importedNonces.some((item) => item.nonce === nonce)) {
+        throw new Error("This signed branch package has already been imported on this desktop installation.");
+      }
+      const merged = mergeSnapshots(snapshot, verified).snapshot as Snapshot;
+      await onCommit((next) => { Object.assign(next, merged); }, "DATASHARE_IMPORT");
+      importedNonces.push({ nonce, importedAt: Date.now() });
+      await window.beBossDesktop.secureStore.set(replayKey, JSON.stringify(importedNonces.slice(-1000)));
+      setShareMessage("Signed branch package verified and merged. Changes are queued for cloud synchronization.");
+      setImportToken("");
+      setShareFile(null);
+      setShareToken("");
+    } catch (e) { setShareError(errorText(e)); }
+    finally { setShareBusy(false); }
   }
 
   return <div className="page-stack">
@@ -100,13 +192,25 @@ export function BackupPage({ snapshot, cloud, onCommit }: { snapshot: Snapshot |
       <section className="panel backup-card">
         <div className="panel-heading"><div><span className="eyebrow muted">RESTORE</span><h3>Merge a BeBoss backup</h3></div><Upload size={18} className="muted-icon" /></div>
         <p className="backup-desc">Restore decrypts a portable backup and merges it using BeBoss version and tombstone rules, then queues accepted changes for Supabase synchronization.</p>
-        <label className="backup-field">Backup file path<textarea value={filePath} onChange={(e) => setFilePath(e.target.value)} placeholder="/path/to/beboss-backup.bbbackup" rows={2} /></label>
+        <label className="backup-field">Choose a backup file<input type="file" accept=".bbbackup,.json,application/json" onChange={(event) => setBackupFile(event.target.files?.[0] ?? null)} /><small>{backupFile ? `Selected: ${backupFile.name}` : "Select a .bbbackup or legacy .json file from this computer."}</small></label>
         <label className="backup-field">Or paste backup JSON<textarea value={paste} onChange={(e) => setPaste(e.target.value)} placeholder="Paste an encrypted backup or legacy JSON…" rows={4} /></label>
-        <div className="backup-actions"><button className="btn-outline" onClick={restoreFromPath} disabled={busy || !filePath.trim() || !snapshot}><Save size={15} /> Restore from file</button><button className="btn-primary" onClick={restoreFromText} disabled={busy || !paste.trim() || !snapshot}><Upload size={15} /> Merge pasted backup</button></div>
+        <div className="backup-actions"><button className="btn-outline" onClick={restoreFromFile} disabled={busy || !backupFile || !snapshot}><Save size={15} /> Restore selected file</button><button className="btn-primary" onClick={restoreFromText} disabled={busy || !paste.trim() || !snapshot}><Upload size={15} /> Merge pasted backup</button></div>
       </section>
 
 
     </div>
+    <section className="panel backup-card">
+      <div className="panel-heading"><div><span className="eyebrow muted">BRANCH DATASHARE</span><h3>Signed branch exchange</h3></div><Share2 size={18} className="muted-icon" /></div>
+      <p className="backup-desc">Create an Android-compatible BBSHARE1 package signed by the BeBoss server key, then import it on another terminal. Package integrity, shop identity and expiry are checked before any records are merged.</p>
+      <label className="backup-field">Export scope<select value={shareBranchId} onChange={(event) => setShareBranchId(event.target.value)}><option value="ALL">All branches</option>{rows(snapshot?.branches).map((branch) => <option key={s(branch.id)} value={s(branch.id)}>{s(branch.name) || s(branch.id)}</option>)}</select></label>
+      <div className="backup-actions"><button className="btn-primary" onClick={() => void createBranchShare()} disabled={shareBusy || !snapshot}><Share2 size={15} /> {shareBusy ? "Preparing package…" : "Create signed branch package"}</button>{shareToken && <><button className="btn-outline" onClick={() => void copyBranchShare()}><Clipboard size={15} /> Copy token</button><button className="btn-outline" onClick={downloadBranchShare}><Download size={15} /> Download .beboss</button></>}</div>
+      {shareToken && <label className="backup-field">Generated BBSHARE1 token<textarea readOnly value={shareToken} rows={4} /></label>}
+      <label className="backup-field">Choose a signed .beboss package<input type="file" accept=".beboss,.txt,text/plain" onChange={(event) => setShareFile(event.target.files?.[0] ?? null)} /><small>{shareFile ? `Selected: ${shareFile.name}` : "Select a .beboss file downloaded or received from another BeBoss terminal."}</small></label>
+      <label className="backup-field">Or paste BBSHARE1 token<textarea value={importToken} onChange={(event) => setImportToken(event.target.value)} placeholder="Paste a branch share token received from another BeBoss terminal…" rows={4} /></label>
+      <div className="backup-actions"><button className="btn-primary" onClick={() => void importBranchShare()} disabled={shareBusy || !snapshot || (!importToken.trim() && !shareFile)}><FileCheck2 size={15} /> Verify and merge package</button></div>
+      {shareError && <div className="inline-alert error"><AlertTriangle size={15} />{shareError}</div>}
+      {shareMessage && <div className="inline-alert info"><Check size={15} />{shareMessage}</div>}
+    </section>
     <p className="panel-hint">Portable backups use AES-256-GCM with a PBKDF2-SHA-256 passphrase-derived key, unique random salt and nonce. The passphrase never leaves this device.</p>
   </div>;
 }

@@ -8,7 +8,7 @@ import {
 import { callDesktopApi, currentSession, signOut, type OwnerCredentials } from "./lib/cloud";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
-import type { CloudState, NavKey, ReceiptPayload, Snapshot } from "./lib/types";
+import type { CloudState, NavKey, ReceiptPayload, Row, Snapshot } from "./lib/types";
 import { AuthScreen } from "./components/AuthScreen";
 import { SetupWizard } from "./components/SetupWizard";
 import { ReceiptPreview } from "./components/ReceiptPreview";
@@ -135,8 +135,12 @@ export default function App() {
     let alive = true;
     (async () => {
       try {
-        const completed = await window.beBossDesktop.secureStore.get("installation-setup-completed-at");
-        if (alive) setSetupRequired(!completed);
+        const [completedAt, completedVersion] = await Promise.all([
+          window.beBossDesktop.secureStore.get("installation-setup-completed-at"),
+          window.beBossDesktop.secureStore.get("installation-setup-version")
+        ]);
+        const setupIsCurrent = completedVersion === window.beBossDesktop.version;
+        if (alive) setSetupRequired(!completedAt || !setupIsCurrent);
       } catch (e) {
         if (alive) {
           setSetupRequired(true);
@@ -346,11 +350,25 @@ export default function App() {
           } else if (result.pending) {
             setNotice(s(result.message) || "The provider response is being reconciled. Review the payment queue before retrying.");
           }
+        }} onPaymentProof={async (payload) => {
+          const result = await callAction("submit_payment_proof", payload);
+          setNotice("Mobile Money claim saved as pending verification. BeBoss will not activate the subscription until an administrator independently verifies the payment.");
+          return result as Row;
         }} />}
         {view === "diagnostics" && <DiagnosticsPage cloud={cloud} snapshot={snapshot} onRefresh={refresh} />}
         {view === "sync" && <SyncHubPage cloud={cloud} deviceId={deviceId} offline={offline} onRefresh={refresh} />}
         {view === "admin" && <OwnerAccessPage cloud={cloud} />}
-        {view === "backup" && <BackupPage snapshot={snapshot} cloud={cloud} onCommit={commitSnapshot} />}
+        {view === "backup" && <BackupPage snapshot={snapshot} cloud={cloud} onCommit={commitSnapshot}
+          onCreateBranchShare={async (branchIdFilter) => {
+            const result = await callAction("create_branch_share", { snapshot, branchIdFilter });
+            return s(result.token);
+          }}
+          onVerifyBranchShare={async (token) => {
+            const result = await callAction("verify_branch_share", { token });
+            if (!result.snapshot || typeof result.snapshot !== "object") throw new Error("The server did not return a verified branch snapshot.");
+            return result.snapshot as Snapshot;
+          }}
+        />}
         {view === "settings" && <SettingsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} />}
         <footer className="app-footer"><span>BeBoss Desktop · Version {window.beBossDesktop.version}</span><span>Last cloud snapshot {new Date(cloud.snapshotUpdatedAt || 0).toLocaleString()} · {cloud.verifiedChunks} verified chunks</span></footer>
       </div>

@@ -36,7 +36,10 @@ export type DesktopAction =
   | "transfer_command"
   | "staff_update"
   | "device_create"
-  | "create_checkout";
+  | "create_checkout"
+  | "submit_payment_proof"
+  | "create_branch_share"
+  | "verify_branch_share";
 
 export async function requestOwnerOtp(credentials: OwnerCredentials) {
   const response = await fetch(url + "/functions/v1/request-desktop-owner-otp", {

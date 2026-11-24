@@ -8,6 +8,22 @@ plugins {
   alias(libs.plugins.secrets)
 }
 
+// Real signing material is read from the developer's ignored root .env file or
+// protected CI environment. Example files never contain production key material.
+val releaseSigningEnv = Properties().apply {
+  val envFile = rootProject.file(".env")
+  if (envFile.isFile) envFile.inputStream().use { load(it) }
+}
+fun signingSecret(name: String): String? =
+  providers.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }
+    ?: (findProperty(name) as? String)?.takeIf { it.isNotBlank() }
+    ?: releaseSigningEnv.getProperty(name)?.takeIf { it.isNotBlank() }?.trim()?.removeSurrounding("\"")?.removeSurrounding("'")
+val releaseKeystorePath = signingSecret("KEYSTORE_PATH")
+val releaseKeystoreFile = releaseKeystorePath?.let { rootProject.file(it) }
+val releaseStorePassword = signingSecret("STORE_PASSWORD")
+val releaseKeyPassword = signingSecret("KEY_PASSWORD")
+val releaseKeyAlias = signingSecret("KEY_ALIAS")
+
 android {
   namespace = "com.beboss.shopmgmt"
   compileSdk = 36
@@ -16,28 +32,27 @@ android {
     applicationId = "com.beboss.shopmgmt"
     minSdk = 24
     targetSdk = 36
-    versionCode = 15
-    versionName = "2.3.1"
+    versionCode = 16
+    versionName = "2.3.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      val keystoreFile = file(keystorePath)
-      if (keystoreFile.exists()) {
-        storeFile = keystoreFile
-        storePassword = System.getenv("STORE_PASSWORD")
-        keyAlias = "upload"
-        keyPassword = System.getenv("KEY_PASSWORD")
-      } else {
-        val rootKeystore = file("${rootDir}/debug.keystore")
-        val userKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
-        storeFile = if (rootKeystore.exists()) rootKeystore else userKeystore
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
+      // Never sign a production variant with the public Android debug certificate.
+      // Leave the config unset unless the protected CI/local release credentials exist;
+      // validateReleaseSigningConfiguration below provides the actionable failure.
+      if (
+        releaseKeystoreFile?.isFile == true &&
+        !releaseStorePassword.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank()
+      ) {
+        storeFile = releaseKeystoreFile
+        storePassword = releaseStorePassword
+        keyAlias = releaseKeyAlias
+        keyPassword = releaseKeyPassword
       }
     }
     create("debugConfig") {
@@ -152,9 +167,11 @@ ksp {
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
+  // This value is supplied explicitly with buildConfigField below. Exclude it from
+  // the Secrets plugin so blank .env.example entries cannot generate invalid Java.
+  ignoreList.add("BEBOSS_DATASHARE_HMAC_SECRET")
   ignoreList.add("BEBOSS_ADMIN_URL")
   ignoreList.add("BEBOSS_ADMIN_WHATSAPP")
-  ignoreList.add("BEBOSS_DATASHARE_HMAC_SECRET")
   ignoreList.add("BEBOSS_LAN_SYNC_SECRET")
   ignoreList.add("BEBOSS_SECURITY_PEPPER")
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
@@ -173,6 +190,73 @@ secrets {
   ignoreList.add("VITE_SUPABASE_URL")
   ignoreList.add("VITE_SUPABASE_PUBLISHABLE_KEY")
   ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
+  // Upload-keystore credentials are consumed only by Gradle signing configuration.
+  // Never generate them as Java/Kotlin BuildConfig constants or embed them in APKs.
+  ignoreList.add("KEYSTORE_PATH")
+  ignoreList.add("STORE_PASSWORD")
+  ignoreList.add("KEY_PASSWORD")
+  ignoreList.add("KEY_ALIAS")
+}
+
+// Release signing and cross-platform data-share signing are independent gates.
+val dataShareEnvProperties = Properties().apply {
+  val envFile = rootProject.file(".env")
+  if (envFile.isFile) envFile.inputStream().use { load(it) }
+}
+val configuredDataShareHmacSecret = (
+  dataShareEnvProperties.getProperty("BEBOSS_DATASHARE_HMAC_SECRET")?.takeIf { it.isNotBlank() }
+    ?: (findProperty("BEBOSS_DATASHARE_HMAC_SECRET") as? String)?.takeIf { it.isNotBlank() }
+    ?: providers.environmentVariable("BEBOSS_DATASHARE_HMAC_SECRET").orNull?.takeIf { it.isNotBlank() }
+    ?: ""
+  ).trim().removeSurrounding("\"")
+
+val validateDataShareSigningConfiguration = tasks.register("validateDataShareSigningConfiguration") {
+  // Capture configuration-time values so this task remains compatible with
+  // Gradle's configuration cache and never accesses Project during execution.
+  val configured = configuredDataShareHmacSecret
+  doLast {
+    if (configured.length < 32 || configured == "BeBossDefaultDataShareHmacKeyV2") {
+      throw GradleException(
+        "Android DataShare signing is not configured. Set BEBOSS_DATASHARE_HMAC_SECRET to the same protected 32+ character key stored as BEBOSS_DATASHARE_HMAC_SECRET in Supabase. The public fallback key is not accepted for production releases."
+      )
+    }
+  }
+}
+
+// Release artifacts require both the real upload key and the same private
+// BBSHARE HMAC key configured in the protected Supabase server secret store.
+// Capture only scalar configuration values here. Task execution must not reach back
+// into Project/file()/providers so configuration-cache serialization remains valid.
+val releaseKeystoreConfigured = releaseKeystoreFile?.isFile == true
+val releaseCredentialsConfigured =
+  !releaseStorePassword.isNullOrBlank() &&
+  !releaseKeyPassword.isNullOrBlank() &&
+  !releaseKeyAlias.isNullOrBlank()
+
+val validateReleaseSigningConfiguration = tasks.register("validateReleaseSigningConfiguration") {
+  val hasKeystore = releaseKeystoreConfigured
+  val hasCredentials = releaseCredentialsConfigured
+  doLast {
+    if (!hasKeystore || !hasCredentials) {
+      throw GradleException(
+        "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD, KEY_PASSWORD and KEY_ALIAS " +
+          "in the ignored root .env file or protected CI secrets. A debug keystore is never accepted for release builds."
+      )
+    }
+  }
+}
+
+tasks.configureEach {
+  if (
+    name.startsWith("validateSigningRelease") ||
+    name.startsWith("packageRelease") ||
+    name.startsWith("bundleRelease") ||
+    name.startsWith("assembleRelease") ||
+    name.startsWith("signRelease")
+  ) {
+    dependsOn(validateReleaseSigningConfiguration)
+    dependsOn(validateDataShareSigningConfiguration)
+  }
 }
 
 dependencies {

@@ -16,24 +16,29 @@
 !macro NSIS_HOOK_POSTINSTALL
   DetailPrint "Finalizing BeBoss Desktop installation..."
   
-  ; Create application data directories
-  CreateDirectory "$LOCALAPPDATA\BeBoss"
-  CreateDirectory "$LOCALAPPDATA\BeBoss\data"
-  CreateDirectory "$LOCALAPPDATA\BeBoss\backups"
-  CreateDirectory "$LOCALAPPDATA\BeBoss\logs"
+  ; Tauri stores user data under the platform app_data_dir. The installer must
+  ; not create an unrelated second data directory.
   
   ; Register application
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "DisplayName" "BeBoss Desktop"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "DisplayVersion" "1.2.0"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "DisplayVersion" "1.2.1"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "Publisher" "BeBoss Retail Operations"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "DisplayIcon" "$INSTDIR\BeBoss.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "InstallLocation" "$INSTDIR"
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "NoRepair" 1
   
-  ; Configure firewall for network sync
-  nsExec::Exec 'netsh advfirewall firewall add rule name="BeBoss Desktop Sync" dir=in action=allow program="$INSTDIR\BeBoss.exe" enable=yes'
-  nsExec::Exec 'netsh advfirewall firewall add rule name="BeBoss Desktop Sync" dir=out action=allow program="$INSTDIR\BeBoss.exe" enable=yes'
+  ; Remove legacy broad firewall exceptions and the obsolete file association
+  ; installed by earlier BeBoss desktop installers. Do not create new rules.
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop Sync"'
+  Pop $1
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop"'
+  Pop $1
+  ReadRegStr $0 HKCR ".bbbackup" ""
+  ${If} $0 == "BeBoss.BackupFile"
+    DeleteRegKey HKCR ".bbbackup"
+    DeleteRegKey HKCR "BeBoss.BackupFile"
+  ${EndIf}
   
   ; Create desktop shortcut
   CreateShortcut "$DESKTOP\BeBoss Desktop.lnk" "$INSTDIR\BeBoss.exe" "" "$INSTDIR\BeBoss.exe" 0
@@ -43,11 +48,8 @@
   CreateShortcut "$SMPROGRAMS\BeBoss\BeBoss Desktop.lnk" "$INSTDIR\BeBoss.exe" "" "$INSTDIR\BeBoss.exe" 0
   CreateShortcut "$SMPROGRAMS\BeBoss\Uninstall.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0
   
-  ; Register .bbbackup file association
-  WriteRegStr HKCR ".bbbackup" "" "BeBoss.BackupFile"
-  WriteRegStr HKCR "BeBoss.BackupFile" "" "BeBoss Backup File"
-  WriteRegStr HKCR "BeBoss.BackupFile\DefaultIcon" "" "$INSTDIR\BeBoss.exe,0"
-  WriteRegStr HKCR "BeBoss.BackupFile\shell\open\command" "" '\"$INSTDIR\BeBoss.exe\" restore \"%1\"'
+  ; Backup files are restored from the authenticated in-app Backup & Recovery
+  ; screen, where the owner explicitly selects a local file and enters its key.
   
   DetailPrint "BeBoss Desktop installed successfully."
   DetailPrint "Installation path: $INSTDIR"
@@ -57,29 +59,26 @@
 !macro NSIS_HOOK_PREUNINSTALL
   DetailPrint "Removing BeBoss Desktop..."
   
-  ; Ask user about data preservation
-  MessageBox MB_YESNO|MB_ICONQUESTION "Would you like to keep your shop data and backups?$\n$\nSelect 'Yes' to preserve your data for future reinstallation." IDYES KeepData
-  
-  ; Remove application data
-  RMDir /r "$LOCALAPPDATA\BeBoss"
-  Goto Continue
-  
-KeepData:
-  DetailPrint "Preserving user data at $LOCALAPPDATA\BeBoss"
-  
-Continue:
+  ; Preserve the business database, encrypted credentials, and backups in
+  ; Tauri's application-data directory when the program is uninstalled.
   ; Remove shortcuts
   Delete "$DESKTOP\BeBoss Desktop.lnk"
   RMDir /r "$SMPROGRAMS\BeBoss"
   
+  ; Remove installer artifacts owned by previous BeBoss releases only.
+  ReadRegStr $0 HKCR ".bbbackup" ""
+  ${If} $0 == "BeBoss.BackupFile"
+    DeleteRegKey HKCR ".bbbackup"
+    DeleteRegKey HKCR "BeBoss.BackupFile"
+  ${EndIf}
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop Sync"'
+  Pop $1
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop"'
+  Pop $1
+
   ; Remove registry entries
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop"
-  DeleteRegKey HKCR ".bbbackup"
-  DeleteRegKey HKCR "BeBoss.BackupFile"
-  
-  ; Remove firewall rules
-  nsExec::Exec 'netsh advfirewall firewall delete rule name="BeBoss Desktop Sync"'
-  
+
   DetailPrint "BeBoss Desktop has been removed."
 !macroend
 
