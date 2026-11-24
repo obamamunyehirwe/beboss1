@@ -1,0 +1,92 @@
+name: BeBoss Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beboss-desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  signing-preflight:
+    name: Verify production signing credentials
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Require Windows and Apple signing secrets
+        shell: bash
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for key in WIN_CSC_LINK WIN_CSC_KEY_PASSWORD MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!key}" ]]; then missing+=("$key"); fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Release blocked. Configure these GitHub Actions secrets: %s\\n' "${missing[*]}"
+            exit 1
+          fi
+
+  publish:
+    name: Build and publish signed desktop packages (${{ matrix.label }})
+    needs: signing-preflight
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - label: windows-x64
+            runner: windows-2022
+            args: "--win nsis --x64"
+          - label: macos-universal
+            runner: macos-15
+            args: "--mac dmg zip --universal"
+          - label: linux-x64
+            runner: ubuntu-22.04
+            args: "--linux AppImage deb --x64"
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify tag matches desktop version
+        shell: bash
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          actual="$(node -p "require('./package.json').version")"
+          [[ "$expected" == "$actual" ]] || { echo "Tag $expected does not match desktop package version $actual"; exit 1; }
+
+      - name: Install pinned desktop dependencies
+        run: npm install --no-package-lock --no-audit --no-fund
+
+      - name: Run desktop security policy tests
+        run: npm test
+
+      - name: Build, sign, notarize and publish update feed
+        run: npx electron-builder ${{ matrix.args }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ matrix.label == 'windows-x64' && secrets.WIN_CSC_LINK || matrix.label == 'macos-universal' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.label == 'windows-x64' && secrets.WIN_CSC_KEY_PASSWORD || matrix.label == 'macos-universal' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
