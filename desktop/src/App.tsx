@@ -349,6 +349,10 @@ export default function App() {
           } else if (result.pending) {
             setNotice(s(result.message) || "The provider response is being reconciled. Review the payment queue before retrying.");
           }
+        }} onPaymentProof={async (payload) => {
+          const result = await callAction("submit_payment_proof", payload);
+          setNotice("Mobile Money claim saved as pending verification. BeBoss will not activate the subscription until an administrator independently verifies the payment.");
+          return result as Row;
         }} />}
         {view === "diagnostics" && <DiagnosticsPage cloud={cloud} snapshot={snapshot} onRefresh={refresh} />}
         {view === "sync" && <SyncHubPage cloud={cloud} deviceId={deviceId} offline={offline} onRefresh={refresh} />}
