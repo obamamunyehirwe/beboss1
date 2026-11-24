@@ -80,3 +80,22 @@ It cannot literally expose Android CameraX, Android Keystore, Android BiometricP
 ## Release decision
 
 **Do not label this revision enterprise-certified or fully production-accepted.** It is suitable for continued controlled engineering and staging validation once CI passes. The P0 tenant credential migration and the P1 signing, hardware, staging, and independent-security acceptance gates remain explicit release blockers.
+
+
+## 2026-11-24 follow-up implementation — authenticated Android devices and release gates
+
+The follow-up branch adds an additive per-device Android credential path:
+
+- service-only SHA-256 credential digests bound to shop, device record, assigned user, role, expiry and revocation;
+- owner-SMS-OTP enrollment and a single-use 90-day refresh token that rotates through a dedicated Edge Function;
+- Android Keystore AES-GCM wrapping for tokens and a fail-closed no-downgrade rule when local Keystore decryption fails;
+- an owner-approved shop-wide cutover that refuses to retire the legacy header until every active registered device has a current credential;
+- transactional tenant-isolation regression SQL under web/supabase/tests/android_device_credentials.sql.
+
+The same branch adds tag-triggered signed Android APK/AAB and Authenticode-signed Windows NSIS release jobs, plus a Windows native NSIS build artifact in CI. Production artifacts are gated on keys supplied by the repository owner; no production keystore or signing certificate is embedded in source.
+
+The Flutterwave webhook was corrected to the current documented verif-hash header contract and the provider transaction is rechecked for exact transaction ID, reference, final successful status, RWF currency and amount. The Rwanda checkout uses Flutterwave's mobilemoneyrwanda option, which supports MTN and Airtel wallets when enabled on the merchant account. This is an aggregator route, not a completed direct MTN/Airtel API integration.
+
+### Still not independently certified
+
+This work is source implementation and CI preparation, not proof of full production acceptance. The migration is not safe to cut over for an individual shop until every active physical terminal has the new build and a successful enrollment. The owner must still supply signing and provider secrets, complete SMS/provider onboarding, run the signed release and hardware acceptance tests, and arrange an independent penetration test. The current shared DataShare HMAC material is compiled into Android for protocol compatibility and therefore is extractable from the client; it must not be described as a confidential signing key. Replace it with asymmetric signatures before treating a client-originated DataShare signature as high-assurance proof.
