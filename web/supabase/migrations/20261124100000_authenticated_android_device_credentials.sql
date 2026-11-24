@@ -81,17 +81,25 @@ as $function$
       nullif(trim((current_setting('request.headers', true)::json ->> 'x-beboss-device-token')), '') as device_token,
       nullif(trim((current_setting('request.headers', true)::json ->> 'x-shop-sync-key')), '') as legacy_key
   )
-  select coalesce(
-    (select d.shop_id
-     from request_context r
-     cross join lateral beboss_private.lookup_android_device_context(r.device_id, r.device_token) d
-     limit 1),
-    (select s.id
-     from request_context r
-     join public.shop_accounts s on s.id = r.legacy_key and s.legacy_sync_disabled = false
-     limit 1),
-    ''
-  );
+  select case
+    -- Presence of either device-auth header locks the request to the device
+    -- authentication path. Invalid/expired/revoked credentials resolve to no
+    -- tenant and can never downgrade to a caller-selected legacy shop key.
+    when r.device_id is not null or r.device_token is not null then coalesce(
+      (select d.shop_id
+       from beboss_private.lookup_android_device_context(r.device_id, r.device_token) d
+       limit 1),
+      ''
+    )
+    else coalesce(
+      (select s.id
+       from public.shop_accounts s
+       where s.id = r.legacy_key and s.legacy_sync_disabled = false
+       limit 1),
+      ''
+    )
+  end
+  from request_context r;
 $function$;
 
 create or replace function public.current_shop_actor_role()
@@ -107,17 +115,22 @@ as $function$
       nullif(trim((current_setting('request.headers', true)::json ->> 'x-beboss-device-token')), '') as device_token,
       nullif(trim((current_setting('request.headers', true)::json ->> 'x-shop-sync-key')), '') as legacy_key
   )
-  select coalesce(
-    (select d.actor_role
-     from request_context r
-     cross join lateral beboss_private.lookup_android_device_context(r.device_id, r.device_token) d
-     limit 1),
-    (select 'LEGACY'
-     from request_context r
-     join public.shop_accounts s on s.id = r.legacy_key and s.legacy_sync_disabled = false
-     limit 1),
-    ''
-  );
+  select case
+    when r.device_id is not null or r.device_token is not null then coalesce(
+      (select d.actor_role
+       from beboss_private.lookup_android_device_context(r.device_id, r.device_token) d
+       limit 1),
+      ''
+    )
+    else case
+      when exists (
+        select 1 from public.shop_accounts s
+        where s.id = r.legacy_key and s.legacy_sync_disabled = false
+      ) then 'LEGACY'
+      else ''
+    end
+  end
+  from request_context r;
 $function$;
 
 create or replace function public.current_shop_device_id()
