@@ -27,7 +27,7 @@ create role service_role nologin bypassrls;
 create schema auth;
 create schema extensions;
 create schema beboss_private;
-create extension plpgsql;
+create extension if not exists plpgsql;
 create extension pgcrypto with schema extensions;
 create publication supabase_realtime;
 
