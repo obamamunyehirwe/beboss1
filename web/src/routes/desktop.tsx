@@ -937,8 +937,8 @@ function BeBossDesktopWorkspace() {
             {section === "pos" && <section className="grid gap-6 2xl:grid-cols-[1.35fr_.75fr]">
               <div className="space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div><h2 className="text-2xl font-black">Fast checkout</h2><p className="mt-1 text-sm text-slate-500">Keyboard-wedge USB barcode scanners, searchable catalog and branch-aware stock.</p></div>
-                  <div className="rounded-xl border border-white/10 bg-white/[.04] px-3 py-2 text-xs text-slate-400"><Barcode size={14} className="mr-2 inline" />Scan barcode then press Enter</div>
+                  <div><h2 className="text-2xl font-black">Fast checkout</h2><p className="mt-1 text-sm text-slate-500">Camera barcode scanning, USB keyboard-wedge readers, searchable catalog and branch-aware stock.</p></div>
+                  <button onClick={()=>setShowCameraScanner(true)} className={secondaryButton}><Barcode size={15}/> Open camera scanner</button>
                 </div>
                 <div className="relative"><Barcode size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-300" /><input autoFocus value={barcode} onChange={(e) => setBarcode(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { const found = dataset.products.find((p) => p.barcode === barcode.trim() && p.isDeleted !== true); if (found) addToCart(found); else toast.error("No inventory item matches that barcode."); setBarcode(""); } }} placeholder="Scan item barcode or enter SKU…" className={inputClass + " pl-11"} /></div>
                 <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
@@ -1175,6 +1175,10 @@ function BeBossDesktopWorkspace() {
         </main>
       </div>
 
+      {showCameraScanner && <CameraBarcodeScannerModal
+        onDetected={(value)=>{const found=dataset.products.find(p=>p.barcode===value&&p.isDeleted!==true);if(found){addToCart(found);toast.success("Scanned "+found.name);}else toast.error("No inventory item matches "+value);setShowCameraScanner(false);}}
+        onClose={()=>setShowCameraScanner(false)}
+      />}
       {receipt && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 p-4 backdrop-blur-sm"><div className="mx-auto max-w-lg rounded-3xl bg-white p-7 text-slate-900 shadow-2xl"><div id="beboss-receipt" className="font-mono text-sm"><div className="text-center"><div className="text-2xl font-black">{receipt.shopName}</div><div className="mt-1 text-xs">OFFICIAL SALES RECEIPT</div><div className="mt-3 border-y border-dashed border-slate-400 py-2 text-xs">{receipt.sale.receiptNumber}<br/>{dateLabel(receipt.sale.saleDate)}</div></div><div className="my-4 space-y-2">{receipt.lines.map((line:Row)=><div key={line.id} className="flex justify-between gap-4"><span>{line.productName} × {line.quantitySold}</span><span>{money(line.subtotal,currency)}</span></div>)}</div><div className="border-t border-dashed border-slate-400 pt-3"><div className="flex justify-between"><span>Total</span><strong>{money(receipt.sale.totalAmount,currency)}</strong></div><div className="mt-1 flex justify-between"><span>Paid</span><strong>{money(receipt.sale.amountPaid,currency)}</strong></div><div className="mt-1 flex justify-between"><span>Payment</span><strong>{receipt.sale.paymentMethod}</strong></div></div><div className="mt-5 text-center text-xs">Thank you for your business.</div></div><div className="mt-6 flex justify-end gap-2"><button onClick={()=>setReceipt(null)} className={secondaryButton}>Close</button><button onClick={()=>void printReceipt()} className={primaryButton}><Printer size={15}/> Print receipt</button></div></div></div>}
     </div>
   );
@@ -1250,6 +1254,60 @@ function OverviewPanel({analytics,dataset,currency,lastSyncedAt,setSection,creat
     <div className="text-xs text-slate-600">Last verified cloud revision: {lastSyncedAt?dateLabel(lastSyncedAt):"No cloud revision verified yet"}.</div>
   </section>;
 }
+function CameraBarcodeScannerModal({onDetected,onClose}:{onDetected:(value:string)=>void;onClose:()=>void}) {
+  const videoRef = useRef<HTMLVideoElement|null>(null);
+  const detectedRef = useRef(onDetected);
+  const [status,setStatus] = useState("Requesting camera access…");
+  const [manual,setManual] = useState("");
+  useEffect(()=>{detectedRef.current=onDetected;},[onDetected]);
+  useEffect(()=>{
+    let stopped = false;
+    let stream: MediaStream|null = null;
+    let timer: number|undefined;
+    const start = async () => {
+      try {
+        const BarcodeCtor = (window as unknown as {
+          BarcodeDetector?: new(options?:{formats?:string[]}) => {detect:(source:CanvasImageSource)=>Promise<Array<{rawValue:string}>>}
+        }).BarcodeDetector;
+        stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
+        if(stopped){stream.getTracks().forEach(track=>track.stop());return;}
+        if(videoRef.current){videoRef.current.srcObject=stream;await videoRef.current.play();}
+        if(!BarcodeCtor){
+          setStatus("Camera preview is active, but this Chromium version does not provide BarcodeDetector. Use the manual barcode field or a USB keyboard-wedge scanner.");
+          return;
+        }
+        const detector = new BarcodeCtor({formats:["qr_code","ean_13","ean_8","upc_a","upc_e","code_128","code_39","codabar","itf"]});
+        setStatus("Scanning… hold a barcode inside the frame.");
+        const scan = async () => {
+          if(stopped || !videoRef.current) return;
+          try {
+            const video = videoRef.current;
+            if(video.readyState>=2){
+              const found = await detector.detect(video);
+              const raw = found.find(item=>item.rawValue)?.rawValue;
+              if(raw){stopped=true;detectedRef.current(raw);return;}
+            }
+          } catch {/* transient focus and glare errors are retried */}
+          if(!stopped) timer=window.setTimeout(()=>void scan(),180);
+        };
+        void scan();
+      } catch(error) {
+        setStatus(error instanceof Error ? error.message : "Camera permission or hardware is unavailable.");
+      }
+    };
+    void start();
+    return ()=>{stopped=true;if(timer!==undefined)window.clearTimeout(timer);stream?.getTracks().forEach(track=>track.stop());};
+  },[]);
+  return <Modal title="Camera barcode scanner" onClose={onClose}>
+    <div className="space-y-3">
+      <video ref={videoRef} muted playsInline className="aspect-video w-full rounded-2xl bg-black object-cover"/>
+      <div className="text-xs leading-5 text-slate-400">{status}</div>
+      <div className="flex gap-2"><input value={manual} onChange={e=>setManual(e.target.value)} placeholder="Manual barcode fallback" className={inputClass}/><button disabled={!manual.trim()} onClick={()=>detectedRef.current(manual.trim())} className={primaryButton}>Use code</button></div>
+      <button onClick={onClose} className={secondaryButton+" w-full"}>Close scanner</button>
+    </div>
+  </Modal>;
+}
+
 function FullScreenMessage({title,detail}:{title:string;detail:string}) {
   return <div className="grid min-h-screen place-items-center bg-[#090f1a] px-6 text-white"><div className="max-w-lg rounded-3xl border border-white/10 bg-[#111c2b] p-8"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-400/10 text-orange-300"><LockKeyhole size={22}/></div><h1 className="mt-5 text-2xl font-black">{title}</h1><p className="mt-3 text-sm leading-7 text-slate-400">{detail}</p></div></div>;
 }
