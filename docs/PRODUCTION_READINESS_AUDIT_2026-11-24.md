@@ -94,7 +94,7 @@ The follow-up branch adds an additive per-device Android credential path:
 
 The same branch adds tag-triggered signed Android APK/AAB and Authenticode-signed Windows NSIS release jobs, plus a Windows native NSIS build artifact in CI. Production artifacts are gated on keys supplied by the repository owner; no production keystore or signing certificate is embedded in source.
 
-The Flutterwave webhook was corrected to the current documented verif-hash header contract and the provider transaction is rechecked for exact transaction ID, reference, final successful status, RWF currency and amount. The Rwanda checkout uses Flutterwave's mobilemoneyrwanda option, which supports MTN and Airtel wallets when enabled on the merchant account. This is an aggregator route, not a completed direct MTN/Airtel API integration.
+The Flutterwave webhook was corrected to the documented flutterwave-signature Base64 HMAC-SHA256 exact-raw-body contract and the provider transaction is rechecked for exact transaction ID, reference, final successful status, RWF currency and amount. The Rwanda checkout uses Flutterwave's mobilemoneyrwanda option, which supports MTN and Airtel wallets when enabled on the merchant account. This is an aggregator route, not a completed direct MTN/Airtel API integration.
 
 ### Still not independently certified
 
