@@ -15,7 +15,7 @@ const workspaceWindows = new Set();
 let notificationPermissionGranted = false;
 let updateState = 'idle';
 let availableUpdateVersion = null;
-let updateMenuItem = null;
+let appMenu = null;
 let updateCheckInterval = null;
 let isQuitting = false;
 let manualUpdateCheck = false;
@@ -50,7 +50,8 @@ function showDesktopNotification(title, body) {
 }
 
 function refreshNativeMenus() {
-  if (updateMenuItem) updateMenuItem.label = updateActionLabel();
+  const updateItem = appMenu?.getMenuItemById('beboss-update-action');
+  if (updateItem) updateItem.label = updateActionLabel();
   if (tray) refreshTrayMenu();
 }
 
@@ -104,7 +105,7 @@ function configureAutoUpdates() {
   autoUpdater.on('download-progress', (progress) => {
     updateState = 'downloading';
     const percent = Number.isFinite(progress?.percent) ? Math.round(progress.percent) : null;
-    if (percent !== null && updateMenuItem) updateMenuItem.label = 'Downloading update (' + percent + '%)…';
+    if (percent !== null) console.info('BeBoss update download: ' + percent.toFixed(1) + '%');
     refreshNativeMenus();
   });
   autoUpdater.on('update-not-available', () => {
@@ -197,7 +198,7 @@ function printPage(contents) {
 }
 
 function createApplicationMenu() {
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
+  appMenu = Menu.buildFromTemplate([
     {
       label: APP_NAME,
       submenu: [
@@ -239,11 +240,12 @@ function createApplicationMenu() {
       submenu: [
         { label: 'BeBoss user guide', click: () => openExternal(PRODUCTION_APP_URL + '/guide') },
         { label: 'BeBoss support', click: () => openExternal(PRODUCTION_APP_URL + '/contact') },
-        (updateMenuItem = { label: updateActionLabel(), click: runUpdateAction }),
+        { id: 'beboss-update-action', label: updateActionLabel(), click: runUpdateAction },
         { label: 'Release notes', click: () => openExternal('https://github.com/obamamunyehirwe/beboss1/releases') },
       ],
     },
-  ]));
+  ]);
+  Menu.setApplicationMenu(appMenu);
 }
 
 function configureSession(appSession) {
