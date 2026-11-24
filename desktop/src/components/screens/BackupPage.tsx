@@ -66,7 +66,7 @@ export function BackupPage({ snapshot, cloud, onCommit }: { snapshot: Snapshot |
     try {
       if (!backupFile) throw new Error("Choose a BeBoss backup file first.");
       if (backupFile.size > 70_000_000) throw new Error("Backup exceeds the 70 MB safety limit.");
-      if (!/\\.(bbbackup|json)$/i.test(backupFile.name)) throw new Error("Choose a .bbbackup or .json backup file.");
+      if (!/\.(bbbackup|json)$/i.test(backupFile.name)) throw new Error("Choose a .bbbackup or .json backup file.");
       if (!snapshot) throw new Error("Initialize the shop snapshot before restoring.");
       // File.text() only reads the file explicitly selected by the local user.
       // No native command accepts arbitrary filesystem paths from the renderer.
