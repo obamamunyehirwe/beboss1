@@ -36,6 +36,7 @@ mac:
 linux:
   executableName: beboss
   syncDesktopName: true
+  maintainer: "BeBoss <obamamunyehirwe@gmail.com>"
   target: [AppImage, deb]
   category: Office
   artifactName: BeBoss-${version}-linux-${arch}.${ext}
