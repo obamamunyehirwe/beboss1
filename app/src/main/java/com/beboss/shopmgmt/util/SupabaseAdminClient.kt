@@ -675,9 +675,15 @@ object SupabaseAdminClient {
         }
     }
 
+    @Synchronized
     private fun refreshAndroidDeviceCredential(
-        credential: AndroidDeviceCredential
+        inputCredential: AndroidDeviceCredential
     ): AndroidDeviceCredential {
+        // Another sync request may have rotated the one-time refresh token while
+        // this caller was waiting. Re-read the encrypted store under this lock so
+        // parallel requests cannot race a valid token.
+        val credential = AndroidDeviceCredentialStore.read(inputCredential.shopId, inputCredential.deviceId)
+            ?: inputCredential
         val now = System.currentTimeMillis()
         if (credential.accessExpiresAt > now + 120_000L) return credential
         require(credential.refreshExpiresAt > now) {
