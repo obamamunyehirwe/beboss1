@@ -1,4 +1,4 @@
--- Atomically rate-limit owner OTP sends per registered shop.
+-- Atomically rate-limit owner OTP sends per hashed phone bucket, not username/shop key.
 create or replace function public.take_shop_owner_otp_slot(
   p_shop_id text,
   p_now_ms bigint,
@@ -46,4 +46,4 @@ $function$;
 revoke all on function public.take_shop_owner_otp_slot(text,bigint,bigint,integer) from public, anon, authenticated;
 grant execute on function public.take_shop_owner_otp_slot(text,bigint,bigint,integer) to service_role;
 comment on function public.take_shop_owner_otp_slot(text,bigint,bigint,integer) is
-  'Atomically limits a registered shop to three OTP delivery attempts in a rolling ten-minute window.';
+  'Atomically limits each hashed owner-phone bucket to three OTP delivery attempts in a rolling ten-minute window.';
