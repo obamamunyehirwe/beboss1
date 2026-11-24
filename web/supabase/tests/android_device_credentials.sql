@@ -37,6 +37,35 @@ on conflict (id) do update set
   role = excluded.role,
   is_active = true;
 
+-- A second active terminal deliberately has no credential at first. This proves
+-- the shop-wide legacy cutover cannot happen just because the current device enrolled.
+insert into public.shop_devices (
+  id, shop_sync_key, shop_name, device_id, device_name,
+  assigned_user_id, assigned_username, assigned_user_name,
+  role, branch_id, branch_name, is_owner_primary, is_active,
+  monthly_fee_addon_rwf
+) values (
+  '__beboss_device_test_record_b__',
+  '__beboss_device_test_shop_a__',
+  'Device Auth Test A',
+  'DEV-TEST-ANDROID-002',
+  'Unenrolled migration test terminal',
+  'device-test-manager-user',
+  'device_test_manager',
+  'Test Manager',
+  'MANAGER',
+  'main_branch',
+  'Main Store',
+  false,
+  true,
+  0
+)
+on conflict (id) do update set
+  device_id = excluded.device_id,
+  assigned_user_id = excluded.assigned_user_id,
+  role = excluded.role,
+  is_active = true;
+
 insert into beboss_private.android_device_credentials (
   shop_id, device_id, device_record_id, assigned_user_id, actor_role,
   access_token_hash, refresh_token_hash,
@@ -141,9 +170,46 @@ select public._assert_android_device_tenant_test(
 );
 
 reset role;
-update public.shop_accounts
-set legacy_sync_disabled = true
-where id = '__beboss_device_test_shop_a__';
+
+do $function$
+begin
+  if beboss_private.retire_legacy_android_sync('__beboss_device_test_shop_a__') then
+    raise exception 'Legacy cutover succeeded while an active terminal was missing a credential.';
+  end if;
+end
+$function$;
+
+insert into beboss_private.android_device_credentials (
+  shop_id, device_id, device_record_id, assigned_user_id, actor_role,
+  access_token_hash, refresh_token_hash,
+  access_expires_at, refresh_expires_at, revoked_at
+) values (
+  '__beboss_device_test_shop_a__',
+  'DEV-TEST-ANDROID-002',
+  '__beboss_device_test_record_b__',
+  'device-test-manager-user',
+  'MANAGER',
+  encode(extensions.digest(convert_to(repeat('c', 64), 'UTF8'), 'sha256'), 'hex'),
+  encode(extensions.digest(convert_to(repeat('d', 64), 'UTF8'), 'sha256'), 'hex'),
+  public.now_ms() + 3600000,
+  public.now_ms() + 86400000,
+  0
+)
+on conflict (shop_id, device_id) do update set
+  access_token_hash = excluded.access_token_hash,
+  refresh_token_hash = excluded.refresh_token_hash,
+  access_expires_at = excluded.access_expires_at,
+  refresh_expires_at = excluded.refresh_expires_at,
+  revoked_at = 0;
+
+do $function$
+begin
+  if not beboss_private.retire_legacy_android_sync('__beboss_device_test_shop_a__') then
+    raise exception 'Legacy cutover failed after all active terminals received valid credentials.';
+  end if;
+end
+$function$;
+
 set local role anon;
 
 -- After the owner cutover, the old deterministic header is no longer accepted.
