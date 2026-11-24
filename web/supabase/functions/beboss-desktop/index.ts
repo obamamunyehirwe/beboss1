@@ -541,6 +541,102 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true, uploadedAt: number(savedAt), snapshot: { ...snapshot, metadata: { ...snapshot.metadata } } });
     }
 
+if (action === "create_branch_share") {
+      const snapshot = sanitizeSnapshot(body.snapshot, { username: owner.username, shop: owner.shop });
+      const requestedBranchId = text(body.branchIdFilter).trim();
+      let scopedBranch: Row | null = null;
+      if (requestedBranchId && requestedBranchId !== "ALL") {
+        scopedBranch = snapshot.branches.find((branch) => text(branch.id) === requestedBranchId) ?? null;
+        if (!scopedBranch) throw new Error("The selected branch does not belong to this shop snapshot.");
+        const allowedSales = new Set(snapshot.sales
+          .filter((row) => text(row.branchId) === requestedBranchId)
+          .map((row) => text(row.id)));
+        snapshot.branches = snapshot.branches.filter((row) => text(row.id) === requestedBranchId);
+        snapshot.products = snapshot.products.filter((row) => !text(row.branchId) || text(row.branchId) === requestedBranchId);
+        snapshot.sales = snapshot.sales.filter((row) => text(row.branchId) === requestedBranchId);
+        snapshot.saleItems = snapshot.saleItems.filter((row) => allowedSales.has(text(row.saleId)));
+        snapshot.customerPayments = snapshot.customerPayments.filter((row) => text(row.branchId) === requestedBranchId);
+        snapshot.purchases = snapshot.purchases.filter((row) => text(row.branchId) === requestedBranchId);
+        snapshot.stockTransfers = snapshot.stockTransfers.filter((row) =>
+          text(row.fromBranchId) === requestedBranchId || text(row.toBranchId) === requestedBranchId);
+      }
+      nowSnapshot(snapshot, owner.username);
+      if (scopedBranch) {
+        snapshot.metadata.branchScopeId = text(scopedBranch.id);
+        snapshot.metadata.branchScopeName = text(scopedBranch.name);
+      }
+      const raw = new TextEncoder().encode(JSON.stringify(snapshot));
+      if (raw.length > 5 * 1024 * 1024) {
+        throw new Error("The branch share package exceeds the 5 MB safe uncompressed limit. Export fewer records or a single branch.");
+      }
+      const compressed = await streamToBytes(
+        new Blob([raw]).stream().pipeThrough(new CompressionStream("gzip")),
+        7 * 1024 * 1024
+      );
+      const payload = bytesToBase64(compressed);
+      const signature = (await hmacHex(payload, config.hmacSecret)).slice(0, 16);
+      const token = "BBSHARE1:" + signature + ":" + payload;
+      return json(200, {
+        ok: true,
+        token,
+        tokenLength: token.length,
+        expiresAt: number(snapshot.metadata.expiresAt),
+        scope: scopedBranch ? text(scopedBranch.name) : "All branches",
+        counts: {
+          branches: snapshot.branches.length,
+          users: snapshot.users.length,
+          products: snapshot.products.length,
+          customers: snapshot.customers.length,
+          sales: snapshot.sales.length,
+          saleItems: snapshot.saleItems.length,
+          customerPayments: snapshot.customerPayments.length,
+          purchases: snapshot.purchases.length,
+          stockTransfers: snapshot.stockTransfers.length
+        }
+      });
+    }
+
+    if (action === "verify_branch_share") {
+      const token = text(body.token).trim();
+      const decoded = await verifyAndDecodeToken(token, config.hmacSecret);
+      const metadata = decoded.metadata && typeof decoded.metadata === "object" ? decoded.metadata as Row : {};
+      if (text(metadata.format) !== "beboss_branch_datashare_v3") {
+        throw new Error("This is not a supported BeBoss branch data-share package.");
+      }
+      const issuedAt = number(metadata.issuedAt ?? metadata.timestamp);
+      const expiresAt = number(metadata.expiresAt);
+      const now = Date.now();
+      if (!issuedAt || issuedAt > now + 5 * 60 * 1000 || !expiresAt || expiresAt <= now || expiresAt - issuedAt > 30 * 24 * 60 * 60 * 1000) {
+        throw new Error("The branch share package is expired or has an invalid issue time.");
+      }
+      const importedProfile = decoded.shopProfile && typeof decoded.shopProfile === "object" ? decoded.shopProfile as Row : {};
+      const incomingName = text(importedProfile.shopName).trim().toLowerCase();
+      const registeredName = text(owner.shop.shop_name).trim().toLowerCase();
+      if (!incomingName || incomingName !== registeredName) {
+        throw new Error("The branch share package belongs to a different shop. Only packages from this registered shop can be merged.");
+      }
+      const incomingPhone = text(importedProfile.phone).replace(/\\D/g, "").slice(-9);
+      const registeredPhone = text(owner.shop.owner_phone).replace(/\\D/g, "").slice(-9);
+      if (incomingPhone && registeredPhone && incomingPhone !== registeredPhone) {
+        throw new Error("The branch share package owner phone does not match this shop.");
+      }
+      const sanitized = sanitizeSnapshot(decoded, { username: owner.username, shop: owner.shop });
+      sanitized.metadata = metadata;
+      return json(200, {
+        ok: true,
+        snapshot: sanitized,
+        scope: text(metadata.branchScopeName) || "All branches",
+        counts: {
+          branches: sanitized.branches.length,
+          products: sanitized.products.length,
+          customers: sanitized.customers.length,
+          sales: sanitized.sales.length,
+          stockTransfers: sanitized.stockTransfers.length
+        },
+        expiresAt
+      });
+    }
+
     if (action === "create_checkout") {
       const gateway = text(body.gateway).toLowerCase();
       if (!["flutterwave", "stripe"].includes(gateway)) throw new Error("Choose Flutterwave or Stripe for hosted checkout.");
