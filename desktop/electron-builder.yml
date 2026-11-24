@@ -35,8 +35,7 @@ mac:
   artifactName: BeBoss-${version}-mac-${arch}.${ext}
 linux:
   executableName: beboss
-  desktopName: BeBoss
-  icon: ../web/public/beboss-app-icon.png
+  syncDesktopName: true
   target: [AppImage, deb]
   category: Office
   artifactName: BeBoss-${version}-linux-${arch}.${ext}
