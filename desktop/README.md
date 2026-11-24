@@ -36,7 +36,7 @@ Linux distributions must provide a compatible Chromium/Electron runtime environm
 
 1. Install Node.js 22 or newer.
 2. Start the BeBoss web development server from the web directory.
-3. From this directory install the exact desktop dependencies using npm install --no-package-lock --no-audit --no-fund.
+3. From this directory install the exact pinned desktop dependencies using npm install --no-package-lock --no-audit --no-fund.
 4. Run the desktop shell against the local Vite server. Set BEBOSS_DESKTOP_DEV_URL to http://localhost:5173 and run npm start. In PowerShell, set the environment variable before running npm start.
 5. Run the security-policy tests with npm test.
 6. Build the current operating-system package with npm run dist.
@@ -45,14 +45,24 @@ The development URL override is accepted only for loopback HTTP and only while t
 
 ## CI packaging
 
-The GitHub Actions workflow at .github/workflows/desktop.yml runs policy tests and produces per-OS installers for pull requests and main-branch pushes. Downloadable CI artifacts are unsigned build outputs; they are intended for internal acceptance testing until the release-signing credentials are configured.
+The GitHub Actions workflow at .github/workflows/desktop.yml runs policy tests, packages all three operating-system targets, and publishes SHA-256 checksums with the CI artifacts. CI artifacts are unsigned and intended for internal acceptance testing only.
 
 ## Production distribution and signing
 
-Before broad external distribution, configure:
-- Authenticode signing certificate and protected signing password for Windows.
-- Apple Developer ID Application certificate, notarization credentials and hardened-runtime signing for macOS.
-- A controlled release/tag process and signed checksums for published installers.
+### Automatic updates
+
+Packaged Windows, macOS and Linux clients check the official public GitHub Releases feed at startup and every six hours. Updates download in the background; the app offers a native notification and a tray/menu action to restart and install. The renderer can query `window.beBossDesktop.getUpdateStatus()` or call `window.beBossDesktop.checkForUpdates()` through the narrow preload bridge. Update packages are verified against the SHA-512 values in the generated electron-updater metadata. The release feed is `https://github.com/obamamunyehirwe/beboss1/releases`.
+
+macOS automatic updates require a valid Developer ID signature. Unsigned builds must not be presented as update-capable public releases.
+
+## Production distribution and signing
+
+The tagged release workflow at `.github/workflows/desktop-release.yml` intentionally stops before publishing unless all required signing secrets are configured:
+- `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` for Windows Authenticode signing.
+- `MAC_CSC_LINK` and `MAC_CSC_KEY_PASSWORD` for a macOS Developer ID Application certificate.
+- `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` for Apple notarization.
+
+The workflow uses the repository-scoped `GITHUB_TOKEN` to publish the versioned GitHub Release and update metadata. Keep signing secrets protected by GitHub environment/repository permissions. Linux artifacts are unsigned at the OS level and are accompanied by SHA-256 checksums.
 
 The CI build does not invent or embed signing credentials. macOS Gatekeeper and Windows SmartScreen may warn for unsigned builds. The Linux packages are built without platform code signing.
 
@@ -62,4 +72,4 @@ The desktop renderer uses the live cloud application. A working internet connect
 
 ## Versioning
 
-Keep the desktop package version aligned with the BeBoss release version. The current package version is 2.3.1.
+Keep the desktop package version aligned with the BeBoss release version. The current package version is 2.3.2.
