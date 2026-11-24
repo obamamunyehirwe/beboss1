@@ -402,8 +402,38 @@ function BeBossDesktopWorkspace() {
     setSyncing(true);
     setSyncMessage("Verifying cloud revision and publishing changes…");
     try {
+      const upload = createDesktopUploadChunks(source);
+      const activeBranch = source.branches.find(item => item.isMainBranch === true) ?? source.branches[0] ?? {};
+      const recordsSummary = source.branches.length + " branches • " + source.products.length + " items • " +
+        source.sales.length + " sales • " + source.customers.length + " clients (" + upload.chunks.length + " chunk(s))";
+      for (let index = 0; index < upload.chunks.length; index += 1) {
+        setSyncMessage("Uploading verified business snapshot chunk " + (index + 1) + " of " + upload.chunks.length + "…");
+        const { data: chunkResult, error: chunkError } = await supabase.functions.invoke("desktop-workspace", {
+          body: {
+            action: "upload-chunk",
+            shopId: current.shopId,
+            desktopId: current.desktopId,
+            syncGeneration: upload.generation,
+            chunkIndex: index,
+            chunkCount: upload.chunks.length,
+            branchId: asText(activeBranch.id, "main_branch"),
+            branchName: asText(activeBranch.name, "Main Branch"),
+            recordsSummary,
+            datasetChunk: upload.chunks[index],
+          },
+        });
+        if (chunkError) throw chunkError;
+        if (!chunkResult?.ok) throw new Error(asText(chunkResult?.error, "A desktop snapshot chunk was rejected."));
+      }
+      setSyncMessage("All chunks uploaded. Verifying the complete generation and merging other terminals…");
       const { data, error } = await supabase.functions.invoke("desktop-workspace", {
-        body: { action: "save", shopId: current.shopId, desktopId: current.desktopId, dataset: source },
+        body: {
+          action: "finalize",
+          shopId: current.shopId,
+          desktopId: current.desktopId,
+          syncGeneration: upload.generation,
+          chunkCount: upload.chunks.length,
+        },
       });
       if (error) throw error;
       if (!data?.ok) throw new Error(asText(data?.error, "Cloud synchronization was rejected."));
