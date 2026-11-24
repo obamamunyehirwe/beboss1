@@ -7,7 +7,7 @@ import {
   restPatch,
   restRequest,
   restRows,
-  verifyFlutterwaveWebhookSignature,
+  verifyFlutterwaveWebhookHash,
 } from "./payment-gateway.ts";
 
 type GatewayRow = {
@@ -73,10 +73,10 @@ async function recordVerifiedPayment(
 
 async function verifyFlutterwave(rawBody: string, request: Request) {
   const secretHash = Deno.env.get("FLW_WEBHOOK_SECRET_HASH") ?? "";
-  const signature = request.headers.get("flutterwave-signature") ?? "";
-  // Flutterwave signs the exact raw body using HMAC-SHA256 and sends a Base64
-  // digest in flutterwave-signature. The transaction is re-queried after validation.
-  if (!(await verifyFlutterwaveWebhookSignature(secretHash, rawBody, signature))) {
+  const webhookHash = request.headers.get("verif-hash") ?? "";
+  // Flutterwave sends the configured secret in verif-hash. The payload is only
+  // a notification: transaction identity and value are re-queried from its API.
+  if (!verifyFlutterwaveWebhookHash(secretHash, webhookHash)) {
     return jsonResponse(401, { message: "Invalid Flutterwave webhook signature." });
   }
 
@@ -197,7 +197,7 @@ Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return jsonResponse(405, { message: "Method not allowed." });
   try {
     const rawBody = await request.text();
-    if (request.headers.has("flutterwave-signature")) return await verifyFlutterwave(rawBody, request);
+    if (request.headers.has("verif-hash")) return await verifyFlutterwave(rawBody, request);
     if (request.headers.has("stripe-signature")) return await verifyStripe(rawBody, request);
     return jsonResponse(401, { message: "Unsupported payment webhook signature." });
   } catch (error) {

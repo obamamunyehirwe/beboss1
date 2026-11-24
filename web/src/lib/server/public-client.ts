@@ -1,8 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 
-/** Server-side publishable client. Optional shop key mirrors the Android app's tenant header. */
-export function createPublicClient(shopSyncKey?: string) {
+/** Server-side public Supabase client. Tenant access must use verified user JWTs and owner membership, never a deterministic shop key header. */
+export function createPublicClient() {
   const url =
     process.env["SUPABASE_URL"] || import.meta.env["VITE_SUPABASE_URL"];
   const key =
@@ -23,7 +23,6 @@ export function createPublicClient(shopSyncKey?: string) {
         const h = new Headers(init?.headers);
         if (key.startsWith("sb_") && h.get("Authorization") === `Bearer ${key}`) h.delete("Authorization");
         h.set("apikey", key);
-        if (shopSyncKey) h.set("X-Shop-Sync-Key", shopSyncKey);
         return fetch(input, { ...init, headers: h });
       },
     },

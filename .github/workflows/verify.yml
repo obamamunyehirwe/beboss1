@@ -141,6 +141,9 @@ jobs:
   desktop:
     name: Desktop Tauri frontend and native checks
     runs-on: windows-2022
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
     defaults:
       run:
         working-directory: desktop
@@ -160,6 +163,15 @@ jobs:
         uses: shogo82148/actions-setup-perl@v1
         with:
           perl-version: "5.40"
+
+      - name: Require production Supabase client configuration for release builds
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:VITE_SUPABASE_URL) -or
+              [string]::IsNullOrWhiteSpace($env:VITE_SUPABASE_PUBLISHABLE_KEY)) {
+            throw "Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY GitHub Actions secrets before creating a Windows production release."
+          }
 
       - name: Install desktop dependencies
         run: npm ci --no-audit --no-fund
@@ -307,9 +319,12 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
           BEBOSS_DATASHARE_HMAC_SECRET: ${{ secrets.BEBOSS_DATASHARE_HMAC_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_CERT_PINS: ${{ secrets.SUPABASE_CERT_PINS }}
         run: |
           set -euo pipefail
-          for name in ANDROID_UPLOAD_KEYSTORE_B64 STORE_PASSWORD KEY_PASSWORD KEY_ALIAS BEBOSS_DATASHARE_HMAC_SECRET; do
+          for name in ANDROID_UPLOAD_KEYSTORE_B64 STORE_PASSWORD KEY_PASSWORD KEY_ALIAS BEBOSS_DATASHARE_HMAC_SECRET SUPABASE_URL SUPABASE_PUBLISHABLE_KEY; do
             if [ -z "${!name:-}" ]; then
               echo "Missing required protected Android release secret: $name"
               exit 1
@@ -321,7 +336,7 @@ jobs:
           # Google Secrets Gradle plugin reads a properties file, not shell env vars.
           # Expose only the DataShare value to BuildConfig for this one build, then
           # remove the temporary properties file and keystore even if Gradle fails.
-          printf 'BEBOSS_DATASHARE_HMAC_SECRET=%s\n' "$BEBOSS_DATASHARE_HMAC_SECRET" > "$GITHUB_WORKSPACE/.env"
+          printf 'BEBOSS_DATASHARE_HMAC_SECRET=%s\nSUPABASE_URL=%s\nSUPABASE_PUBLISHABLE_KEY=%s\nSUPABASE_CERT_PINS=%s\n' "$BEBOSS_DATASHARE_HMAC_SECRET" "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" "$SUPABASE_CERT_PINS" > "$GITHUB_WORKSPACE/.env"
           chmod 600 "$GITHUB_WORKSPACE/.env"
           trap 'rm -f "$GITHUB_WORKSPACE/.env" "$KEYSTORE_PATH"' EXIT
           keytool -list -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
