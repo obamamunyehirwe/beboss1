@@ -50,6 +50,8 @@ jobs:
           deno check --no-lock supabase/functions/create-payment-checkout/index.ts
           deno check --no-lock supabase/functions/payment-gateway-webhook/index.ts
           deno check --no-lock supabase/functions/manage-payment-refund/index.ts
+          deno check --no-lock supabase/functions/beboss-desktop/index.ts
+          deno check --no-lock supabase/functions/request-desktop-owner-otp/index.ts
 
       - name: Test payment gateway primitives
         run: deno test --allow-env supabase/functions/_shared/payment-gateway.test.ts

@@ -69,6 +69,11 @@ async function hmacHex(payload: string, secret: string) {
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   return bytesToHex(new Uint8Array(signature)).toUpperCase();
 }
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function streamToBytes(stream: ReadableStream<Uint8Array>, limit: number) {
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
@@ -207,9 +212,11 @@ function getServerConfig() {
   const url = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const publishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-  const hmacSecret = Deno.env.get("BEBOSS_DATASHARE_HMAC_SECRET") ?? "";
+  const hmacSecret = (Deno.env.get("BEBOSS_DATASHARE_HMAC_SECRET") ?? "").trim();
   if (!url || !serviceKey || !publishableKey) throw new Error("The BeBoss desktop backend is not configured.");
-  if (!hmacSecret) throw new Error("BEBOSS_DATASHARE_HMAC_SECRET is missing. Desktop snapshot access is disabled until the existing Android snapshot key is configured in Supabase.");
+  // The established Android/website snapshot key is stored in the service-role-only
+  // app_secrets table. Resolve it server-side when an Edge Function environment copy
+  // has not been provisioned; never send it to desktop or mobile clients.
   return { url, serviceKey, publishableKey, hmacSecret };
 }
 
@@ -239,7 +246,7 @@ async function requireOwner(
   const shopId = ownerKey(username, phone);
   const { data: shop, error: shopError } = await admin
     .from("shop_accounts")
-    .select("id,shop_name,owner_name,owner_username,owner_phone,subscription_status,subscription_expires_at,remote_kill_switch,branch_count,worker_count,device_count,device_limit,monthly_fee_rwf,business_type,updated_at")
+    .select("id,shop_name,owner_name,owner_username,owner_phone,device_challenge,subscription_status,subscription_expires_at,remote_kill_switch,branch_count,worker_count,device_count,device_limit,monthly_fee_rwf,business_type,updated_at")
     .eq("id", shopId)
     .maybeSingle();
   if (shopError || !shop ||
@@ -445,6 +452,18 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(config.url, config.serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false }
     });
+    if (!config.hmacSecret) {
+      const { data: snapshotSecret, error: secretError } = await admin
+        .from("app_secrets")
+        .select("value")
+        .eq("name", "BEBOSS_DATASHARE_HMAC_SECRET")
+        .maybeSingle();
+      const storedSecret = text(snapshotSecret?.value).trim();
+      if (secretError || storedSecret.length < 8) {
+        throw new Error("The existing Android snapshot HMAC key is not configured in the protected server secret store.");
+      }
+      config.hmacSecret = storedSecret;
+    }
     const owner = await requireOwner(req, admin, config.publishableKey, body, action === "bootstrap");
 
     if (action === "bootstrap") {
@@ -570,6 +589,174 @@ Deno.serve(async (req: Request) => {
         amountRwf: number(checkout.amountRwf),
         currency: "RWF",
         checkoutUrl: checkoutUrl.toString()
+      });
+    }
+
+if (action === "submit_payment_proof") {
+      const requestId = text(body.requestId).trim();
+      const provider = text(body.provider).trim();
+      const payerPhone = ownerPhoneE164(text(body.payerPhone));
+      const payerName = text(body.payerName).trim();
+      const paymentNote = text(body.paymentNote).trim();
+      const months = number(body.months);
+      if (!/^DESKTOP-[0-9a-f-]{36}$/i.test(requestId)) throw new Error("A valid desktop payment request ID is required.");
+      if (!["MTN MoMo", "Airtel Money"].includes(provider)) throw new Error("Choose MTN MoMo or Airtel Money.");
+      if (payerName.length < 2 || payerName.length > 120 || paymentNote.length > 1000 ||
+          ![1, 3, 6, 12].includes(months)) {
+        throw new Error("Enter valid payer details and a supported subscription duration.");
+      }
+
+      const { data: configRow, error: configError } = await admin
+        .from("app_config")
+        .select("mtn_momo_code,mtn_momo_phone,mtn_recipient_name,airtel_money_phone,airtel_recipient_name,admin_whatsapp_number,per_device_fee_rwf")
+        .eq("id", "global")
+        .maybeSingle();
+      if (configError || !configRow) throw new Error("BeBoss payment instructions are unavailable. Contact support.");
+
+      const existingQuery = await admin.from("payment_requests")
+        .select("id,provider,payer_phone,payer_full_name,amount_rwf,duration_months,ussd_code,status,created_at")
+        .eq("id", requestId)
+        .eq("owner_username", owner.username)
+        .maybeSingle();
+      if (existingQuery.error) throw new Error("Could not check the payment request idempotency record.");
+      if (existingQuery.data) {
+        const existing = existingQuery.data;
+        if (text(existing.provider) !== provider ||
+            text(existing.payer_phone) !== payerPhone ||
+            text(existing.payer_full_name) !== payerName ||
+            number(existing.duration_months) !== months) {
+          throw new Error("This payment request ID has already been used for different payment details.");
+        }
+        const recipientName = provider === "MTN MoMo"
+          ? text(configRow.mtn_recipient_name)
+          : text(configRow.airtel_recipient_name);
+        return json(200, {
+          ok: true,
+          paymentRequestId: text(existing.id),
+          amountRwf: number(existing.amount_rwf),
+          ussdCode: text(existing.ussd_code),
+          provider,
+          recipientName,
+          supportWhatsapp: text(configRow.admin_whatsapp_number),
+          status: text(existing.status),
+          reused: true
+        });
+      }
+
+      const branches = Math.max(1, number(owner.shop.branch_count));
+      const workers = Math.max(1, number(owner.shop.worker_count));
+      const devices = Math.max(1, number(owner.shop.device_count));
+      const configuredDeviceFee = number(configRow.per_device_fee_rwf);
+      const feePerDevice = configuredDeviceFee === 0 ? 2000 : configuredDeviceFee;
+      if (!Number.isSafeInteger(feePerDevice) || feePerDevice < 0) {
+        throw new Error("The registered subscription price configuration is invalid. Contact BeBoss support.");
+      }
+      const branchFee = branches <= 1 ? 5000 : branches === 2 ? 10000 : 20000;
+      const workerFee = workers <= 1 ? 0 : workers <= 3 ? 2000 : workers <= 5 ? 4000 : 4000 + (workers - 5) * 1000;
+      const extraDeviceFee = Math.max(0, devices - 1) * feePerDevice;
+      const gross = (branchFee + workerFee + extraDeviceFee) * months;
+      const discount = months === 12 ? 20 : months === 3 ? 10 : 0;
+      const expectedAmount = gross - Math.floor(gross * discount / 100);
+      if (!Number.isSafeInteger(expectedAmount) || expectedAmount < 1) {
+        throw new Error("The registered subscription price could not be calculated.");
+      }
+
+      let ussdCode = "";
+      let recipientName = "";
+      if (provider === "MTN MoMo") {
+        const merchantCode = text(configRow.mtn_momo_code).trim();
+        const merchantPhone = text(configRow.mtn_momo_phone).trim();
+        if (merchantCode && merchantCode !== "0") ussdCode = `*182*8*1*${merchantCode}*${expectedAmount}#`;
+        else if (merchantPhone) ussdCode = `*182*1*1*${merchantPhone}*${expectedAmount}#`;
+        recipientName = text(configRow.mtn_recipient_name);
+      } else {
+        const merchantPhone = text(configRow.airtel_money_phone).trim();
+        if (merchantPhone) ussdCode = `*500*1*1*${merchantPhone}*${expectedAmount}#`;
+        recipientName = text(configRow.airtel_recipient_name);
+      }
+      if (!ussdCode) throw new Error("This Mobile Money merchant is not configured. Contact BeBoss support or use hosted checkout.");
+
+      const requestLimit = await admin.rpc("consume_rate_limit", {
+        p_scope: "desktop_payment_claim",
+        p_key_hash: await sha256Hex("desktop-payment-claim:" + owner.shopId),
+        p_max_hits: 5,
+        p_window_seconds: 900
+      });
+      if (requestLimit.error) throw new Error("Payment claim protection is unavailable. Try again later.");
+      const limitRows = requestLimit.data;
+      const limit = Array.isArray(limitRows) ? limitRows[0] : limitRows;
+      if (limit?.allowed !== true) {
+        const retrySeconds = Math.max(1, number(limit?.retry_after_seconds) || 900);
+        return json(429, { ok: false, message: "Too many payment claims were created for this shop. Try again later.", retryAfterSeconds: retrySeconds });
+      }
+
+      const now = Date.now();
+      const paymentPayload = {
+        id: requestId,
+        shop_name: text(owner.shop.shop_name),
+        owner_username: owner.username,
+        owner_phone: text(owner.shop.owner_phone),
+        device_challenge: text(owner.shop.device_challenge),
+        provider,
+        ussd_code: ussdCode,
+        payer_phone: payerPhone,
+        payer_full_name: payerName,
+        amount_rwf: expectedAmount,
+        duration_months: months,
+        branch_count: branches,
+        worker_count: workers,
+        device_count: devices,
+        fee_per_device_rwf: feePerDevice,
+        payment_time_ms: now,
+        payment_note: paymentNote,
+        status: "PENDING_VERIFICATION",
+        approval_mode: "",
+        generated_unlock_code: "",
+        source: "DESKTOP",
+        created_at: now,
+        updated_at: now
+      };
+      const { data: inserted, error: insertError } = await admin
+        .from("payment_requests")
+        .insert(paymentPayload)
+        .select("id,provider,payer_phone,payer_full_name,amount_rwf,duration_months,ussd_code,status,created_at")
+        .single();
+      if (insertError || !inserted) {
+        const raced = await admin.from("payment_requests")
+          .select("id,provider,payer_phone,payer_full_name,amount_rwf,duration_months,ussd_code,status,created_at")
+          .eq("id", requestId)
+          .eq("owner_username", owner.username)
+          .maybeSingle();
+        if (raced.error || !raced.data ||
+            text(raced.data.provider) !== provider ||
+            text(raced.data.payer_phone) !== payerPhone ||
+            text(raced.data.payer_full_name) !== payerName ||
+            number(raced.data.duration_months) !== months) {
+          throw new Error("Could not create the payment verification request.");
+        }
+        return json(200, {
+          ok: true,
+          paymentRequestId: text(raced.data.id),
+          amountRwf: number(raced.data.amount_rwf),
+          ussdCode: text(raced.data.ussd_code),
+          provider,
+          recipientName,
+          supportWhatsapp: text(configRow.admin_whatsapp_number),
+          status: text(raced.data.status),
+          reused: true
+        });
+      }
+
+      return json(200, {
+        ok: true,
+        paymentRequestId: text(inserted.id),
+        amountRwf: number(inserted.amount_rwf),
+        ussdCode: text(inserted.ussd_code),
+        provider,
+        recipientName,
+        supportWhatsapp: text(configRow.admin_whatsapp_number),
+        status: text(inserted.status),
+        reused: false
       });
     }
 
