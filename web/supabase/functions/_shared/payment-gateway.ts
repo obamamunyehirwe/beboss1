@@ -112,9 +112,13 @@ export function constantTimeTextEqual(left: string, right: string): boolean {
   return diff === 0;
 }
 
-export function verifyFlutterwaveWebhookSecretHash(expectedSecretHash: string, receivedHeader: string): boolean {
-  return expectedSecretHash.length > 0 &&
-    receivedHeader.length > 0 &&
-    constantTimeTextEqual(receivedHeader, expectedSecretHash);
+export async function verifyFlutterwaveWebhookSignature(
+  secretHash: string,
+  rawBody: string,
+  receivedHeader: string,
+): Promise<boolean> {
+  if (!secretHash || !rawBody || !receivedHeader) return false;
+  const expected = await hmacSha256Base64(secretHash, rawBody);
+  return constantTimeTextEqual(receivedHeader.trim(), expected);
 }
 
