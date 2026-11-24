@@ -34,7 +34,7 @@ jobs:
             if [[ -z "${!key}" ]]; then missing+=("$key"); fi
           done
           if (( ${#missing[@]} > 0 )); then
-            printf 'Release blocked. Configure these GitHub Actions secrets: %s\\n' "${missing[*]}"
+            printf 'Release blocked. Configure these GitHub Actions secrets: %s\n' "${missing[*]}"
             exit 1
           fi
 
