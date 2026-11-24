@@ -103,11 +103,12 @@ Deno.serve(async (request: Request) => {
     const action = String(input?.action ?? "REQUEST").toUpperCase();
 
     if (action === "RECONCILE") {
-      const refundId = String(input?.refundId ?? "");
-      if (!/^[0-9a-f-]{36}$/i.test(refundId)) return response(400, { message: "A valid refund ID is required." });
+      const requestId = String(input?.requestId ?? "").trim();
+      if (requestId.length < 3 || requestId.length > 200) return response(400, { message: "A valid payment request ID is required." });
       const query = new URLSearchParams({
         select: "id,payment_request_id,provider,provider_refund_id,status",
-        id: "eq." + refundId,
+        payment_request_id: "eq." + requestId,
+        order: "created_at.desc",
         limit: "1",
       });
       const rows = await db("payment_gateway_refunds?" + query.toString());
@@ -121,7 +122,7 @@ Deno.serve(async (request: Request) => {
       }
       const remote = await refreshProviderRefund(row.provider, row.provider_refund_id);
       const state = refundState(row.provider, remote.status);
-      const finalized = await finalize(refundId, state, remote.id, remote.status);
+      const finalized = await finalize(row.id, state, remote.id, remote.status);
       return response(200, { ok: true, refund: finalized });
     }
 
