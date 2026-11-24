@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
+import { QRCodeSVG } from "qrcode.react";
 import { supabase } from "@/integrations/supabase/client";
 import { requestMyShopOwnerOtp, claimMyShopOwner, lookupMyShop, addMyShopDevice } from "@/lib/public.functions";
 import { computeShopKey } from "@/lib/pricing";
@@ -273,6 +274,7 @@ function BeBossDesktopWorkspace() {
   const [selectedCustomer, setSelectedCustomer] = useState("walk-in");
   const [barcode, setBarcode] = useState("");
   const [receipt, setReceipt] = useState<Row | null>(null);
+  const [receiptSeal, setReceiptSeal] = useState("");
   const [showProductForm, setShowProductForm] = useState(false);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
@@ -488,6 +490,21 @@ function BeBossDesktopWorkspace() {
     };
   }, [dirty, lastSyncedAt, syncNow]);
 
+  useEffect(() => {
+    let active = true;
+    const createSeal = async () => {
+      if (!receipt) { setReceiptSeal(""); return; }
+      const sale = receipt.sale as Row;
+      const profile = dataset?.shopProfile ?? {};
+      const cents = (value: unknown) => Math.max(0, Math.floor(asNumber(value) * 100 + 0.5));
+      const payload = [asText(sale.id), asText(sale.receiptNumber), String(cents(sale.totalAmount)), String(cents(sale.amountPaid)), String(asNumber(sale.saleDate)), asText(sale.branchId), asText(sale.cashierId), asText(profile.tinNumber).trim()].join("|");
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload)));
+      const seal = "BB-" + Array.from(digest.slice(0,5), byte => byte.toString(16).padStart(2,"0")).join("").toUpperCase();
+      if (active) setReceiptSeal(seal);
+    };
+    void createSeal();
+    return () => { active = false; };
+  }, [receipt, dataset?.shopProfile.tinNumber]);
   useEffect(() => {
     if (!dirty || !dataset || !cache || offline || syncing || licenseExpired) return;
     const timer = window.setTimeout(() => { void syncNow().catch(() => {}); }, 2200);
