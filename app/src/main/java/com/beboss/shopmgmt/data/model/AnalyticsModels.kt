@@ -160,6 +160,15 @@ data class ReorderSuggestion(
     val suggestedOrderQty: Double,
     val estimatedUnitCost: Double,
     val estimatedOrderCost: Double,
-    val urgency: String // "CRITICAL" | "LOW" | "REORDER"
+    val urgency: String, // "CRITICAL" | "LOW" | "REORDER"
+    val forecastDailyDemand: Double = 0.0,
+    val stockCoverDays: Double = -1.0,
+    val reorderPoint: Double = 0.0,
+    val leadTimeDays: Int = 7,
+    val demandTrendPercent: Double = 0.0,
+    val hasTrendComparison: Boolean = false,
+    val forecastConfidence: String = "LOW",
+    val forecastSalesDays: Int = 0,
+    val hasDemandHistory: Boolean = false
 )
 
