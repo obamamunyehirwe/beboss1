@@ -254,6 +254,94 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   </div>;
 }
 
+
+type ReceiptPayload = { sale: Row; items: Row[]; profile: Row };
+
+function ReceiptPreview({ receipt, onClose }: { receipt: ReceiptPayload; onClose: () => void }) {
+  const [seal, setSeal] = useState("");
+  const [sealError, setSealError] = useState("");
+  const profile = receipt.profile ?? {};
+  const sale = receipt.sale ?? {};
+  const items = rows(receipt.items);
+  const shopName = s(profile.shopName || profile.shop_name || "BeBoss");
+  const currency = s(profile.currencySymbol || profile.currency_symbol || "FRw");
+  const total = n(sale.totalAmount);
+  const paid = sale.amountPaid == null && ["PAID", "COMPLETED"].includes(s(sale.paymentStatus).toUpperCase()) ? total : n(sale.amountPaid);
+  const balance = Math.max(0, total - paid);
+  const discount = n(sale.discountAmount);
+  const subtotal = items.reduce((sum, item) => sum + (n(item.subtotal) || n(item.unitPriceAtSale) * n(item.quantitySold)), 0);
+  const taxRate = n(profile.taxRate);
+  const taxIncluded = taxRate > 0 ? Math.round(total * taxRate / (100 + taxRate) * 100) / 100 : 0;
+  const format = (value: unknown) => currency + " " + n(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  useEffect(() => {
+    let cancelled = false;
+    setSeal("");
+    setSealError("");
+    const cents = (value: unknown) => String(Math.round(n(value) * 100));
+    const payload = [
+      s(sale.id), s(sale.receiptNumber), cents(sale.totalAmount), cents(sale.amountPaid),
+      s(sale.saleDate), s(sale.branchId), s(sale.cashierId), s(profile.tinNumber).trim()
+    ].join("|");
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload)).then((digest) => {
+      const hex = Array.from(new Uint8Array(digest).slice(0, 5)).map((byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
+      if (!cancelled) setSeal("BB-" + hex);
+    }).catch(() => { if (!cancelled) setSealError("The receipt seal could not be calculated on this device."); });
+    return () => { cancelled = true; };
+  }, [receipt, sale, profile]);
+
+  return <div className="modal-backdrop receipt-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="modal-card receipt-modal-card" role="dialog" aria-modal="true" aria-label="Receipt preview">
+      <div className="modal-head"><div><span className="eyebrow muted">COMPLETED TRANSACTION</span><h3>Receipt {s(sale.receiptNumber)}</h3></div><button className="icon-btn" onClick={onClose} aria-label="Close receipt"><X size={18}/></button></div>
+      <div className="receipt-toolbar"><span><ShieldCheck size={15}/> Receipt details from the saved shop transaction</span><div><button className="btn-outline" onClick={() => window.print()}><Printer size={15}/> Print / Save PDF</button><button className="btn-primary" onClick={onClose}>Done</button></div></div>
+      <article className="receipt-paper receipt-print-area">
+        <header className="receipt-brand"><img src="/beboss-brand.svg" alt="BeBoss logo"/><div><strong>{shopName}</strong><span>SALES RECEIPT</span></div></header>
+        {s(profile.receiptHeader).trim() && <p className="receipt-custom-line">{s(profile.receiptHeader)}</p>}
+        <div className="receipt-shop-details">
+          {s(profile.address).trim() && <span>{s(profile.address)}</span>}
+          {s(profile.phone).trim() && <span>Tel: {s(profile.phone)}</span>}
+          {s(profile.email).trim() && <span>{s(profile.email)}</span>}
+          {s(profile.tinNumber).trim() && <span>TIN: {s(profile.tinNumber)}</span>}
+        </div>
+        <div className="receipt-rule"/>
+        <div className="receipt-identity">
+          <div><span>Receipt number</span><strong>{s(sale.receiptNumber) || s(sale.id)}</strong></div>
+          <div><span>Date and time</span><strong>{dateTime(sale.saleDate)}</strong></div>
+          <div><span>Customer</span><strong>{s(sale.customerName) || "Walk-in Customer"}</strong></div>
+          <div><span>Cashier</span><strong>{s(sale.cashierName) || "—"}</strong></div>
+          <div><span>Payment</span><strong>{s(sale.paymentMethod) || "—"} · {s(sale.paymentStatus) || "PAID"}</strong></div>
+        </div>
+        <div className="receipt-rule"/>
+        <table className="receipt-items-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>
+          {items.map((item, index) => {
+            const quantity = n(item.quantitySold);
+            const unitPrice = n(item.unitPriceAtSale);
+            const lineTotal = n(item.subtotal) || unitPrice * quantity;
+            return <tr key={s(item.id) || index}><td>{s(item.productName) || "Item"}</td><td>{quantity.toLocaleString()}</td><td>{format(unitPrice)}</td><td>{format(lineTotal)}</td></tr>;
+          })}
+          {!items.length && <tr><td colSpan={4} className="receipt-no-items">Item details are not available in this saved snapshot.</td></tr>}
+        </tbody></table>
+        <div className="receipt-rule"/>
+        <div className="receipt-totals">
+          <div><span>Subtotal</span><strong>{format(subtotal || total + discount)}</strong></div>
+          {discount > 0 && <div><span>Discount</span><strong>− {format(discount)}</strong></div>}
+          <div className="receipt-grand-total"><span>Total</span><strong>{format(total)}</strong></div>
+          {profile.showTaxOnReceipt !== false && taxRate > 0 && <div><span>Incl. Tax ({taxRate}%)</span><strong>{format(taxIncluded)}</strong></div>}
+          <div><span>Paid</span><strong>{format(paid)}</strong></div>
+          {balance > 0 && <div className="receipt-balance"><span>Balance due</span><strong>{format(balance)}</strong></div>}
+        </div>
+        <div className="receipt-rule"/>
+        <footer className="receipt-footer">
+          {s(profile.receiptFooter).trim() && <strong>{s(profile.receiptFooter)}</strong>}
+          <span>Verify seal: {seal || (sealError ? "Unavailable" : "Generating…")}</span>
+          {sealError && <small>{sealError}</small>}
+          <span>Powered by BeBoss</span>
+        </footer>
+      </article>
+      <p className="receipt-modal-note">For a paper copy choose your printer. Choose “Save as PDF” in the system print dialog to keep a digital copy.</p>
+    </section>
+  </div>;
+}
+
 function LoginHint() {
   return <div className="sync-hint"><AlertTriangle size={17} /><div><strong>Waiting for the first shop snapshot</strong><span>Open the registered BeBoss Android terminal, complete one successful cloud sync, then refresh this desktop workspace.</span></div></div>;
 }
@@ -269,6 +357,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [deviceId, setDeviceId] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [receipt, setReceipt] = useState<ReceiptPayload | null>(null);
 
   async function saveCache(credentials: OwnerCredentials, data: CloudState) {
     try {
@@ -424,9 +513,17 @@ export default function App() {
   const lowStock = products.filter((p) => n(p.quantityInStock) <= n(p.lowStockThreshold)).length;
   const allTimeRevenue = sales.reduce((sum, sale) => sum + n(sale.totalAmount), 0);
 
+  function openReceipt(sale: Row, saleItems?: Row[]) {
+    setReceipt({
+      sale,
+      items: saleItems ?? rows(snapshot?.saleItems).filter((item) => s(item.saleId) === s(sale.id)),
+      profile: snapshot?.shopProfile ?? {}
+    });
+  }
+
   return <div className="app-shell">
     <aside className={"sidebar " + (menuOpen ? "open" : "")}>
-      <div className="brand-row"><span className="brand-mark"><Store size={22} /></span><div><strong>BeBoss</strong><small>RETAIL COMMAND</small></div><span className="desktop-tag">DESKTOP</span></div>
+      <div className="brand-row"><span className="brand-mark brand-logo-mark"><img src="/beboss-brand.svg" alt="BeBoss"/></span><div><strong>BeBoss</strong><small>RETAIL COMMAND</small></div><span className="desktop-tag">DESKTOP</span></div>
       <div className="shop-switcher"><span className="shop-avatar">{s(cloud.shop.shop_name).slice(0,1).toUpperCase() || "B"}</span><div><strong>{s(cloud.shop.shop_name) || "My Shop"}</strong><small>@{owner.username}</small></div><ChevronDown size={15} /></div>
       <nav className="side-nav">
         {["Workspace","Operations","Intelligence","Organization","Administration"].map((group) => <div className="nav-group" key={group}>
@@ -466,9 +563,9 @@ export default function App() {
         {offline && <div className="offline-banner"><AlertTriangle size={17} /><span>Offline read-only mode. Your last verified shop snapshot is displayed from encrypted local storage. Reconnect and refresh before making changes.</span></div>}
         {!snapshot && <LoginHint />}
         {view === "overview" && <OverviewPage cloud={cloud} snapshot={snapshot} revenueToday={revenueToday} profitToday={profitToday} stockCost={stockCost} receivables={receivables} lowStock={lowStock} onNavigate={setView} />}
-        {view === "checkout" && <CheckoutPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} busy={busy} />}
+        {view === "checkout" && <CheckoutPage snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} />}
         {view === "products" && <ProductsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} />}
-        {view === "sales" && <SalesPage snapshot={snapshot} query={search} />}
+        {view === "sales" && <SalesPage snapshot={snapshot} query={search} onReceipt={openReceipt} />}
         {view === "customers" && <CustomersPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} />}
         {view === "purchases" && <PurchasesPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} />}
         {view === "reports" && <ReportsPage snapshot={snapshot} />}
@@ -489,6 +586,7 @@ export default function App() {
         <footer className="app-footer"><span>BeBoss Desktop · Version {window.beBossDesktop.version}</span><span>Last cloud snapshot {dateTime(cloud.snapshotUpdatedAt)} · {cloud.verifiedChunks} verified chunks</span></footer>
       </div>
     </main>
+    {receipt && <ReceiptPreview receipt={receipt} onClose={() => setReceipt(null)} />}
   </div>;
 }
 
@@ -514,6 +612,26 @@ function OverviewPage({ cloud, snapshot, revenueToday, profitToday, stockCost, r
 
   return <div className="page-stack">
     <PageHeading eyebrow="SHOP PERFORMANCE" title={"Good " + (new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening") + ", " + (s(cloud.shop.owner_name).split(" ")[0] || "Owner")} description="Your business at a glance. These figures come from the latest verified shop snapshot." action={<button className="btn-primary" onClick={() => onNavigate("checkout")}><ShoppingCart size={17} /> New sale</button>} />
+
+    <section className="command-hero">
+      <div className="command-hero-copy">
+        <span className="hero-live"><i/> VERIFIED CLOUD WORKSPACE</span>
+        <h2>Every sale. Every branch.<em>One clear view.</em></h2>
+        <p>Your desktop and registered phone work from the same verified BeBoss business records. Changes are saved to the shared cloud snapshot.</p>
+        <div className="hero-facts"><span><strong>{products.length.toLocaleString()}</strong> active products</span><span><strong>{rows(cloud.devices).filter((device) => device.is_active).length}</strong> active terminals</span><span><strong>{rows(cloud.branches).filter((branch) => branch.is_active).length}</strong> active branches</span></div>
+      </div>
+      <div className="hero-scene" aria-hidden="true">
+        <div className="hero-orbit hero-orbit-one"/><div className="hero-orbit hero-orbit-two"/>
+        <div className="hero-glass-card hero-glass-main">
+          <div className="hero-glass-brand"><img src="/beboss-brand.svg" alt=""/><span><strong>BeBoss Cloud</strong><small>RETAIL OPERATIONS</small></span><i/></div>
+          <div className="hero-glass-divider"/>
+          <span className="hero-glass-label">TODAY'S REVENUE</span><strong className="hero-glass-value">{money(revenueToday)}</strong>
+          <div className="hero-glass-foot"><span><ShieldCheck size={13}/> Snapshot verified</span><span>{cloud.verifiedChunks} chunks</span></div>
+        </div>
+        <div className="hero-glass-card hero-glass-float"><span className="hero-float-icon"><Activity size={16}/></span><span><strong>Live business data</strong><small>Phone ↔ Desktop</small></span><b>SYNCED</b></div>
+        <div className="hero-orbit-dot"/>
+      </div>
+    </section>
     <div className="stat-grid four">
       <StatCard label="Today's revenue" value={money(revenueToday)} sub="Gross sales collected today" icon={Wallet} tone="blue" />
       <StatCard label="Today's gross profit" value={money(profitToday)} sub="Based on item cost at sale" icon={ArrowUpRight} tone="green" />
@@ -545,10 +663,10 @@ function OverviewPage({ cloud, snapshot, revenueToday, profitToday, stockCost, r
   </div>;
 }
 
-function SalesTable({ sales }: { sales: Row[] }) {
+function SalesTable({ sales, onReceipt }: { sales: Row[]; onReceipt?: (sale: Row) => void }) {
   if (!sales.length) return <Empty title="No sales recorded" description="Sales made on a paired BeBoss terminal or this desktop appear here." icon={ShoppingBag} />;
-  return <div className="table-wrap"><table><thead><tr><th>Receipt</th><th>Date</th><th>Customer</th><th>Cashier</th><th>Payment</th><th className="right">Total</th><th>Status</th></tr></thead><tbody>
-    {sales.map((sale)=> <tr key={s(sale.id)}><td className="mono">{s(sale.receiptNumber)||s(sale.id).slice(0,8)}</td><td>{dateTime(sale.saleDate)}</td><td>{s(sale.customerName)||"Walk-in"}</td><td>{s(sale.cashierName)||"—"}</td><td>{s(sale.paymentMethod)||"—"}</td><td className="right strong">{money(sale.totalAmount)}</td><td><StatusPill value={s(sale.paymentStatus)||"PAID"} /></td></tr>)}
+  return <div className="table-wrap"><table><thead><tr><th>Receipt</th><th>Date</th><th>Customer</th><th>Cashier</th><th>Payment</th><th className="right">Total</th><th>Status</th>{onReceipt && <th>Receipt</th>}</tr></thead><tbody>
+    {sales.map((sale)=> <tr key={s(sale.id)}><td className="mono">{s(sale.receiptNumber)||s(sale.id).slice(0,8)}</td><td>{dateTime(sale.saleDate)}</td><td>{s(sale.customerName)||"Walk-in"}</td><td>{s(sale.cashierName)||"—"}</td><td>{s(sale.paymentMethod)||"—"}</td><td className="right strong">{money(sale.totalAmount)}</td><td><StatusPill value={s(sale.paymentStatus)||"PAID"} /></td>{onReceipt && <td><button className="icon-btn receipt-row-action" title="Preview and print receipt" aria-label={"Preview receipt " + s(sale.receiptNumber)} onClick={() => onReceipt(sale)}><Printer size={14}/></button></td>}</tr>)}
   </tbody></table></div>;
 }
 
@@ -701,8 +819,8 @@ function ProductsPage({ snapshot, onCommit, offline, query }: {
   </div>;
 }
 
-function CheckoutPage({ snapshot, onCommit, offline, busy }: {
-  snapshot:Snapshot|null; onCommit:(mutator:(next:Snapshot)=>void)=>Promise<void>; offline:boolean; busy:boolean
+function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy }: {
+  snapshot:Snapshot|null; onCommit:(mutator:(next:Snapshot)=>void)=>Promise<void>; onReceipt:(sale:Row, items:Row[])=>void; offline:boolean; busy:boolean
 }) {
   const products=activeProducts(snapshot);
   const customers=activeCustomers(snapshot);
@@ -771,6 +889,7 @@ function CheckoutPage({ snapshot, onCommit, offline, busy }: {
         }
       }
     });
+    onReceipt(sale, items);
     setDone(receiptNumber);setCart([]);setDiscount("0");setAmountPaid("");setNotes("");
   }
 
@@ -799,19 +918,19 @@ function CheckoutPage({ snapshot, onCommit, offline, busy }: {
           <label>Sale notes<input value={notes} onChange={(e)=>setNotes(e.target.value)} maxLength={500} placeholder="Optional cashier note"/></label>
           <div className="totals"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>Discount</span><strong>− {money(discountAmount)}</strong></div><div className="grand-total"><span>Total</span><strong>{money(total)}</strong></div><div><span>Received</span><strong>{money(paid)}</strong></div>{debt>0&&<div className="due-row"><span>Customer balance due</span><strong>{money(debt)}</strong></div>}</div>
           <button className="btn-primary full" disabled={offline||busy||!cart.length} onClick={()=>completeSale().catch((e)=>alert(errorText(e)))}><Check size={18}/>{busy?"Saving sale…":"Complete sale"}</button>
-          {done&&<div className="sale-complete"><Check size={17}/><span>Sale saved · receipt {done}</span><button onClick={()=>window.print()}><Printer size={15}/> Print</button></div>}
+          {done&&<div className="sale-complete"><Check size={17}/><span>Sale saved to BeBoss Cloud · receipt {done}</span></div>}
         </div>
       </section>
     </div>}
   </div>;
 }
 
-function SalesPage({ snapshot, query }: { snapshot:Snapshot|null; query:string }) {
+function SalesPage({ snapshot, query, onReceipt }: { snapshot:Snapshot|null; query:string; onReceipt:(sale:Row)=>void }) {
   const list=rows(snapshot?.sales).sort((a,b)=>n(b.saleDate)-n(a.saleDate)).filter((sale)=>[sale.receiptNumber,sale.customerName,sale.cashierName,sale.paymentMethod].some((v)=>s(v).toLowerCase().includes(query.toLowerCase())));
   const total=list.reduce((sum,sale)=>sum+n(sale.totalAmount),0);
   return <div className="page-stack"><PageHeading title="Sales ledger" description="A complete, searchable register of sales synchronized from all shop terminals." action={<div className="heading-actions"><button className="btn-outline" onClick={()=>downloadCsv("beboss-sales-"+Date.now()+".csv",["receiptNumber","saleDate","customerName","cashierName","paymentMethod","paymentStatus","amountPaid","totalAmount","totalCost","totalProfit","discountAmount","branchId"],list)}><Download size={15}/> Export CSV</button><button className="btn-outline" onClick={()=>window.print()}><Printer size={16}/> Print ledger</button></div>}/>
     <div className="stat-grid three"><StatCard label="Transactions" value={list.length.toLocaleString()} icon={ShoppingBag}/><StatCard label="Gross sales" value={money(total)} icon={CircleDollarSign} tone="green"/><StatCard label="Average order" value={money(list.length?total/list.length:0)} icon={Activity} tone="purple"/></div>
-    <div className="panel table-panel"><SalesTable sales={list}/></div>
+    <div className="panel table-panel"><SalesTable sales={list} onReceipt={onReceipt}/></div>
   </div>;
 }
 

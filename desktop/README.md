@@ -6,7 +6,7 @@ A standalone Windows, macOS and Linux desktop client for the BeBoss retail opera
 
 - SMS owner verification and persistent encrypted Supabase Auth sessions (Electron OS keyring / safeStorage).
 - Consolidated shop dashboard and operating KPIs sourced from the signed mobile snapshot.
-- Point of sale with product search, keyboard-wedge barcode input, cart quantities, discounts, cash/mobile-money/card/credit tender selection, customer debt and receipt numbers.
+- Point of sale with product search, keyboard-wedge barcode input, cart quantities, discounts, cash/mobile-money/card/credit tender selection, customer debt, receipt numbers, and a dedicated mobile-aligned receipt preview with print / Save as PDF and sales-ledger reprints.
 - Product catalogue, stock levels, cost and selling price, stock adjustment, reorder views and soft-delete tombstones.
 - Customer records, credit limits, debt balances and payment collection history.
 - Supplier purchases and stock inflow, linked to the product catalogue.
@@ -18,6 +18,8 @@ A standalone Windows, macOS and Linux desktop client for the BeBoss retail opera
 - Subscription and payment-claim status, announcements, cloud sync status and encrypted local read cache.
 
 Desktop writes to the mobile POS data model are sent as full BeBoss BBSHARE1 snapshots, signed by a Supabase Edge Function using the server-only BEBOSS_DATASHARE_HMAC_SECRET. The Android client already understands this snapshot format and merges records using its existing timestamps/tombstones. Snapshot writes include an optimistic version check and a database advisory-lock trigger so a desktop save cannot silently overwrite a newer cloud snapshot.
+
+The desktop workspace uses the existing BeBoss vector brand mark locally, a GPU-composited 3D dashboard treatment, and reduced-motion fallbacks. Receipt seals use the same SHA-256 field order as the Android offline receipt seal; the desktop receipt preview exposes the saved sale values, TIN, configured tax display, payment balance, and shop footer.
 
 ## Supabase setup
 
