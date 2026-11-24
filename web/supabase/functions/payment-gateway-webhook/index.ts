@@ -6,7 +6,7 @@ import {
   restPatch,
   restRequest,
   restRows,
-  verifyFlutterwaveWebhookSecretHash,
+  verifyFlutterwaveWebhookSignature,
 } from "../_shared/payment-gateway.ts";
 
 type GatewayRow = {
@@ -46,7 +46,6 @@ async function recordVerifiedPayment(
 
   const requestFilter = new URLSearchParams({ id: `eq.${row.payment_request_id}` });
   await restPatch(`payment_requests?${requestFilter.toString()}`, {
-    gateway_provider: row.provider,
     gateway_reference: row.provider_reference,
     gateway_transaction_id: transactionId,
     gateway_amount_rwf: row.amount_rwf,
@@ -73,10 +72,10 @@ async function recordVerifiedPayment(
 
 async function verifyFlutterwave(rawBody: string, request: Request) {
   const secretHash = Deno.env.get("FLW_WEBHOOK_SECRET_HASH") ?? "";
-  const signature = request.headers.get("verif-hash") ?? "";
-  // Flutterwave's current webhook contract sends the configured secret hash
-  // verbatim in the verif-hash header; it is not a body HMAC.
-  if (!verifyFlutterwaveWebhookSecretHash(secretHash, signature)) {
+  const signature = request.headers.get("flutterwave-signature") ?? "";
+  // Current Flutterwave webhooks sign the exact raw request body with HMAC-SHA256
+  // and send the Base64 signature in the flutterwave-signature header.
+  if (!(await verifyFlutterwaveWebhookSignature(secretHash, rawBody, signature))) {
     return jsonResponse(401, { message: "Invalid Flutterwave webhook signature." });
   }
 
@@ -196,7 +195,7 @@ Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return jsonResponse(405, { message: "Method not allowed." });
   try {
     const rawBody = await request.text();
-    if (request.headers.has("verif-hash")) return await verifyFlutterwave(rawBody, request);
+    if (request.headers.has("flutterwave-signature")) return await verifyFlutterwave(rawBody, request);
     if (request.headers.has("stripe-signature")) return await verifyStripe(rawBody, request);
     return jsonResponse(401, { message: "Unsupported payment webhook signature." });
   } catch (error) {
