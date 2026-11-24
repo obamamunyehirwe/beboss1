@@ -45,6 +45,8 @@ export type NavKey =
   | "transfers"
   | "billing"
   | "diagnostics"
+  | "sync"
+  | "admin"
   | "backup"
   | "settings";
 

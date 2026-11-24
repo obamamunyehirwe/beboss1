@@ -99,15 +99,15 @@ export function currentSession(): Promise<Session | null> {
 }
 
 export function toOwnerPhoneE164(value: string) {
-  const digits = value.replace(/\\D/g, "");
+  const digits = value.replace(/\D/g, "");
   const local =
     digits.length === 9 ? digits :
     digits.startsWith("250") && digits.length === 12 ? digits.slice(3) :
     digits.startsWith("0") && digits.length === 10 ? digits.slice(1) : "";
-  if (!/^7\\d{8}$/.test(local)) throw new Error("Enter the Rwanda mobile number registered to the BeBoss shop.");
+  if (!/^7\d{8}$/.test(local)) throw new Error("Enter the Rwanda mobile number registered to the BeBoss shop.");
   return "+250" + local;
 }
 
 export function ownerTenantKey(username: string, phone: string) {
-  return username.trim().toLowerCase() + "_" + phone.replace(/\\D/g, "").slice(-9);
+  return username.trim().toLowerCase() + "_" + phone.replace(/\D/g, "").slice(-9);
 }

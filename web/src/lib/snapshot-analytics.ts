@@ -1,11 +1,20 @@
 /**
- * Decodes the Android app's branch snapshots (BBSHARE1 tokens) and computes retail insights.
- * Token format (ShopDataTransferManager.kt): "BBSHARE1:<16 hex HMAC>:<base64(gzip(utf-8 JSON))>".
+ * Decodes the Android app's branch snapshots (BBSHARE1/BBSHARE2 tokens) and computes retail insights.
+ * Token format (ShopDataTransferManager.kt): "BBSHARE1:<16 hex HMAC-SHA256>:<base64(gzip(utf-8 JSON))>"
+ *                                "BBSHARE2:<64 hex HMAC-SHA256>:<base64(gzip(utf-8 JSON))>"
  * The payload is signed and compressed, not encrypted. Formulas mirror AnalyticsEngine.kt.
+ * V1 (BBSHARE1) is the legacy 64-bit truncated tag, accepted during the migration window.
+ * V2 (BBSHARE2) is the full 256-bit SHA-256 HMAC tag with constant-time comparison.
+ * Never ship the signing secret to the browser: verification happens server-side.
  */
 
-export const SHARE_PREFIX = "BBSHARE1:";
+export const SHARE_PREFIX_V1 = "BBSHARE1:";
+export const SHARE_PREFIX_V2 = "BBSHARE2:";
+export const SHARE_PREFIX = SHARE_PREFIX_V1;
 const DAY = 86_400_000;
+
+const V1_TAG_LEN = 16;
+const V2_TAG_LEN = 64;
 
 type Row = Record<string, unknown>;
 
@@ -24,13 +33,23 @@ export interface ShareDataset {
   users: Row[];
 }
 
-export function parseShareToken(token: string): { sig: string; payload: string } {
+export interface ParsedShareToken {
+  version: 1 | 2;
+  prefix: string;
+  sig: string;
+  payload: string;
+}
+
+export function parseShareToken(token: string): ParsedShareToken {
   const t = token.trim();
-  if (!t.startsWith(SHARE_PREFIX)) throw new Error("Not a BeBoss share token");
-  const rest = t.slice(SHARE_PREFIX.length);
+  let prefix: string;
+  if (t.startsWith(SHARE_PREFIX_V2)) prefix = SHARE_PREFIX_V2;
+  else if (t.startsWith(SHARE_PREFIX_V1)) prefix = SHARE_PREFIX_V1;
+  else throw new Error("Not a BeBoss share token");
+  const rest = t.slice(prefix.length);
   const i = rest.indexOf(":");
   if (i <= 0) throw new Error("Malformed BeBoss share token");
-  return { sig: rest.slice(0, i).toUpperCase(), payload: rest.slice(i + 1) };
+  return { version: prefix === SHARE_PREFIX_V2 ? 2 : 1, prefix, sig: rest.slice(0, i).toUpperCase(), payload: rest.slice(i + 1) };
 }
 
 function b64ToBytes(b64: string): Uint8Array {
@@ -45,19 +64,57 @@ export async function gunzipBase64(b64: string): Promise<string> {
   return await new Response(stream).text();
 }
 
-/** First 16 upper-case hex chars of HMAC-SHA256(payload), as the phone signs it. */
+async function decodePayload(payload: string): Promise<Row> {
+  const json = JSON.parse(await gunzipBase64(payload)) as unknown;
+  if (!json || typeof json !== "object") throw new Error("Snapshot payload is not an object");
+  return json as Row;
+}
+
+/** Full HMAC-SHA256 tag (64 upper-case hex chars, 256-bit) over the payload. */
 export async function shareSignature(payload: string, secret: string): Promise<string> {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(payload)));
-  return Array.from(mac, (b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16).toUpperCase();
+  return Array.from(mac, (b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
 }
 
-export async function decodeShareToken(token: string): Promise<Row> {
+/** Legacy V1 truncated tag (first 16 upper-case hex chars, 64-bit), as older phones sign it. */
+export async function shareSignatureV1(payload: string, secret: string): Promise<string> {
+  return (await shareSignature(payload, secret)).slice(0, V1_TAG_LEN);
+}
+
+/** Constant-time string comparison to avoid timing oracle on snapshot signatures. */
+function constantTimeEq(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return result === 0;
+}
+
+/**
+ * Verifies the snapshot HMAC using the server-only secret, then decompresses and parses the payload.
+ * Rejects missing, short, malformed or tampered signatures. This is the single verifier shared by
+ * web server functions and the desktop Edge Function. Fail-closed: any integrity failure throws.
+ */
+export async function verifyAndDecodeToken(token: string, secret: string): Promise<Row> {
+  const { version, sig, payload } = parseShareToken(token);
+  const expected = await shareSignature(payload, secret);
+  const expectedSig = version === 1 ? expected.slice(0, V1_TAG_LEN) : expected;
+  const validLen = version === 1 ? sig.length === V1_TAG_LEN : sig.length === V2_TAG_LEN;
+  if (!validLen || !/^[A-F0-9]+$/.test(sig)) throw new Error("A snapshot signature has an invalid format.");
+  if (!constantTimeEq(sig, expectedSig)) throw new Error("A BeBoss snapshot failed its HMAC integrity check.");
+  return decodePayload(payload);
+}
+
+/**
+ * Decodes a share token. When a server-only secret is supplied, verifies the HMAC before
+ * decompression (F-03). Without a secret it performs legacy unverified decode for backwards
+ * compatibility with callers that cannot access the server secret.
+ */
+export async function decodeShareToken(token: string, secret?: string): Promise<Row> {
+  if (secret) return verifyAndDecodeToken(token, secret);
   const { payload } = parseShareToken(token);
-  const json = JSON.parse(await gunzipBase64(payload)) as unknown;
-  if (!json || typeof json !== "object") throw new Error("Snapshot payload is not an object");
-  return json as Row;
+  return decodePayload(payload);
 }
 
 const num = (v: unknown) => {

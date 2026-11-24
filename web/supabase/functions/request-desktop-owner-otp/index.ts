@@ -12,16 +12,16 @@ function json(status: number, body: Record<string, unknown>) {
 }
 
 function ownerPhoneE164(value: string) {
-  const digits = String(value ?? "").replace(/\\D/g, "");
+  const digits = String(value ?? "").replace(/\D/g, "");
   const local = digits.length === 9 ? digits :
     digits.startsWith("250") && digits.length === 12 ? digits.slice(3) :
     digits.startsWith("0") && digits.length === 10 ? digits.slice(1) : "";
-  if (!/^7\\d{8}$/.test(local)) throw new Error("Enter the registered Rwanda shop-owner phone number.");
+  if (!/^7\d{8}$/.test(local)) throw new Error("Enter the registered Rwanda shop-owner phone number.");
   return "+250" + local;
 }
 
 function normalizeLast9(value: string) {
-  return String(value ?? "").replace(/\\D/g, "").slice(-9);
+  return String(value ?? "").replace(/\D/g, "").slice(-9);
 }
 
 Deno.serve(async (req: Request) => {

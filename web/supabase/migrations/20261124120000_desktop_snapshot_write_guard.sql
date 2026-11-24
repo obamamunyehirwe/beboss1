@@ -53,8 +53,8 @@ begin
   if p_shop_sync_key is null or length(p_shop_sync_key) < 3 or length(p_shop_sync_key) > 200
      or p_device_id is null or p_device_id !~ '^DESKTOP:[a-f0-9-]{36}$'
      or p_sync_generation is null or length(p_sync_generation) > 80
-     or p_payload_token is null or length(p_payload_token) > 7000000
-     or left(p_payload_token, 9) <> 'BBSHARE1:' then
+      or p_payload_token is null or length(p_payload_token) > 7000000
+      or (left(p_payload_token, 9) <> 'BBSHARE1:' and left(p_payload_token, 9) <> 'BBSHARE2:') then
     raise exception 'Invalid desktop snapshot parameters.';
   end if;
 
@@ -119,6 +119,6 @@ grant execute on function public.write_beboss_desktop_snapshot(text,text,text,te
   to service_role;
 
 comment on function public.write_beboss_desktop_snapshot(text,text,text,text,text,text,text,text,text,bigint)
-  is 'Atomically writes one server-signed desktop BBSHARE1 snapshot only when the shop snapshot version has not changed. Service-role Edge Function only.';
+  is 'Atomically writes one server-signed desktop BBSHARE1/BBSHARE2 snapshot only when the shop snapshot version has not changed. Service-role Edge Function only.';
 
 commit;

@@ -19,13 +19,13 @@ function number(value: unknown) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
 }
-function normalizePhone(value: string) { return String(value ?? "").replace(/\\D/g, "").slice(-9); }
+function normalizePhone(value: string) { return String(value ?? "").replace(/\D/g, "").slice(-9); }
 function ownerPhoneE164(value: string) {
-  const digits = String(value ?? "").replace(/\\D/g, "");
+  const digits = String(value ?? "").replace(/\D/g, "");
   const local = digits.length === 9 ? digits :
     digits.startsWith("250") && digits.length === 12 ? digits.slice(3) :
     digits.startsWith("0") && digits.length === 10 ? digits.slice(1) : "";
-  if (!/^7\\d{8}$/.test(local)) throw new Error("Enter the Rwanda mobile number registered to this BeBoss shop.");
+  if (!/^7\d{8}$/.test(local)) throw new Error("Enter the Rwanda mobile number registered to this BeBoss shop.");
   return "+250" + local;
 }
 function ownerKey(username: string, phone: string) {
@@ -50,6 +50,13 @@ function base64ToBytes(value: string) {
 }
 function bytesToHex(bytes: Uint8Array) {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+/** Constant-time comparison to avoid a timing oracle on snapshot signatures. */
+function constantTimeEq(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return result === 0;
 }
 async function hmacHex(payload: string, secret: string) {
   const key = await crypto.subtle.importKey(
@@ -85,15 +92,22 @@ async function streamToBytes(stream: ReadableStream<Uint8Array>, limit: number) 
   return output;
 }
 async function verifyAndDecodeToken(token: string, secret: string): Promise<Row> {
-  if (!token.startsWith("BBSHARE1:") || token.length > 7_000_000) throw new Error("A snapshot token is malformed or too large.");
-  const rest = token.slice(9);
+  const MAX_TOKEN = 7_000_000;
+  let prefix = "";
+  if (token.startsWith("BBSHARE2:")) prefix = "BBSHARE2:";
+  else if (token.startsWith("BBSHARE1:")) prefix = "BBSHARE1:";
+  else throw new Error("A snapshot token is malformed or too large.");
+  if (token.length > MAX_TOKEN) throw new Error("A snapshot token is malformed or too large.");
+  const rest = token.slice(prefix.length);
   const sep = rest.indexOf(":");
   if (sep <= 0) throw new Error("A BeBoss snapshot token is malformed.");
   const signature = rest.slice(0, sep).toUpperCase();
   const payload = rest.slice(sep + 1);
-  if (signature.length !== 16 || !/^[A-F0-9]{16}$/.test(signature)) throw new Error("A snapshot signature has an invalid format.");
-  const expected = (await hmacHex(payload, secret)).slice(0, 16);
-  if (signature !== expected) throw new Error("A BeBoss snapshot failed its HMAC integrity check.");
+  const expected = await hmacHex(payload, secret);
+  const expectedSig = prefix === "BBSHARE1:" ? expected.slice(0, 16) : expected;
+  const validSig = prefix === "BBSHARE1:" ? signature.length === 16 : signature.length === 64;
+  if (!validSig || !/^[A-F0-9]+$/.test(signature)) throw new Error("A snapshot signature has an invalid format.");
+  if (!constantTimeEq(signature, expectedSig)) throw new Error("A BeBoss snapshot failed its HMAC integrity check.");
   const compressed = base64ToBytes(payload);
   const decompressed = await streamToBytes(
     new Blob([compressed]).stream().pipeThrough(new DecompressionStream("gzip")),
@@ -116,8 +130,8 @@ async function encodeToken(snapshot: Row, secret: string) {
     7 * 1024 * 1024
   );
   const payload = bytesToBase64(compressed);
-  const signature = (await hmacHex(payload, secret)).slice(0, 16);
-  return "BBSHARE1:" + signature + ":" + payload;
+  const signature = await hmacHex(payload, secret);
+  return "BBSHARE2:" + signature + ":" + payload;
 }
 function arrayRows(value: unknown): Row[] {
   if (!Array.isArray(value)) return [];
@@ -503,7 +517,7 @@ Deno.serve(async (req: Request) => {
       const payerEmail = text(body.payerEmail).trim().toLowerCase();
       const months = number(body.months);
       if (payerName.length < 2 || payerName.length > 120 ||
-          !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(payerEmail) || payerEmail.length > 254 ||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail) || payerEmail.length > 254 ||
           ![1, 3, 6, 12].includes(months)) {
         throw new Error("Enter valid payer details and choose a supported billing cycle.");
       }

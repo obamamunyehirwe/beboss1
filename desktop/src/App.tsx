@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Activity, AlertTriangle, BarChart3, Bell, Building2, Check, ChevronDown,
   ClipboardList, CreditCard, Database, LayoutDashboard, LoaderCircle, LogOut, Menu,
-  Package, RefreshCw, Search, Settings, ShoppingCart, Smartphone, Truck, UserRound,
+  Package, RefreshCw, Search, Settings, ShieldCheck, ShoppingCart, Smartphone, Truck, UserRound,
   Users, Warehouse, X, Zap
 } from "lucide-react";
 import { callDesktopApi, currentSession, signOut, type OwnerCredentials } from "./lib/cloud";
@@ -25,9 +25,11 @@ import { DevicesPage } from "./components/screens/DevicesPage";
 import { TransfersPage } from "./components/screens/TransfersPage";
 import { BillingPage } from "./components/screens/BillingPage";
 import { DiagnosticsPage } from "./components/screens/DiagnosticsPage";
+import { SyncHubPage } from "./components/screens/SyncHubPage";
+import { OwnerAccessPage } from "./components/screens/OwnerAccessPage";
 import { BackupPage } from "./components/screens/BackupPage";
 import { SettingsPage } from "./components/screens/SettingsPage";
-import { SetupWizard } from "./components/SetupWizard";
+import { CommandPalette } from "./components/CommandPalette";
 
 const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: string }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Workspace" },
@@ -43,6 +45,8 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
   { id: "transfers", label: "Stock transfers", icon: Warehouse, group: "Organization" },
   { id: "billing", label: "Subscription", icon: CreditCard, group: "Administration" },
   { id: "diagnostics", label: "System diagnostics", icon: Activity, group: "Administration" },
+  { id: "sync", label: "Sync hub", icon: RefreshCw, group: "Administration" },
+  { id: "admin", label: "Owner access", icon: ShieldCheck, group: "Administration" },
   { id: "backup", label: "Backup & recovery", icon: Database, group: "Administration" },
   { id: "settings", label: "Shop settings", icon: Settings, group: "Administration" }
 ];
@@ -50,7 +54,6 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
 export default function App() {
   const [owner, setOwner] = useState<OwnerCredentials | null>(null);
   const [cloud, setCloud] = useState<CloudState | null>(null);
-  const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
   const [view, setView] = useState<NavKey>("overview");
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,6 +62,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [deviceId, setDeviceId] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptPayload | null>(null);
 
   async function saveCache(credentials: OwnerCredentials, data: CloudState) {
@@ -129,8 +133,6 @@ export default function App() {
       try {
         const idValue = await window.beBossDesktop.getDeviceId();
         if (alive) setDeviceId(idValue);
-        const setupValue = await window.beBossDesktop.secureStore.get("desktop-setup-complete");
-        if (alive) setSetupComplete(setupValue === "true");
         const session = await currentSession();
         const identity = await window.beBossDesktop.secureStore.get("owner-identity");
         if (session && identity) {
@@ -150,6 +152,17 @@ export default function App() {
     const retryTimer = window.setInterval(retrySync, 30_000);
     return () => { window.removeEventListener("online", retrySync); window.clearInterval(retryTimer); };
   }, [owner, offline]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   async function authenticated(credentials: OwnerCredentials) { await bootstrap(credentials); }
   async function refresh() { if (owner) await bootstrap(owner); }
@@ -219,12 +232,6 @@ export default function App() {
     finally { setBusy(false); }
   }
 
-  if (setupComplete === null) {
-    return <div className="setup-loading"><LoaderCircle className="spin" size={28} /><span>Preparing BeBoss Desktop…</span></div>;
-  }
-  if (!setupComplete) {
-    return <SetupWizard onComplete={() => setSetupComplete(true)} />;
-  }
   if (!owner || !cloud) {
     return <><AuthScreen onAuthenticated={authenticated} />{busy && <div className="global-loading"><LoaderCircle className="spin" size={26} /><span>Connecting to BeBoss Cloud…</span></div>}{error && <div className="login-error">{error}<button onClick={() => setError("")}><X size={15} /></button></div>}</>;
   }
@@ -276,6 +283,7 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-left"><button className="mobile-menu icon-btn" onClick={() => setMenuOpen((v) => !v)}><Menu size={20} /></button><div className="breadcrumb"><span>BeBoss</span><b>/</b><strong>{pageTitle}</strong></div></div>
         <div className="topbar-right">
+          <button className="command-btn" onClick={() => setPaletteOpen(true)} title="Command menu (Ctrl+K)"><Search size={15} /><span>Command</span><kbd>Ctrl K</kbd></button>
           <label className="global-search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products, sales, customers…" /></label>
           <button className={"connection-chip " + (offline ? "offline" : "online")} onClick={refresh} title="Refresh cloud data"><span className="connection-dot" />{offline ? "Offline cache" : "Cloud synced"}</button>
           <button className="icon-btn" onClick={refresh} title="Refresh"><RefreshCw size={17} className={busy ? "spin" : ""} /></button>
@@ -288,7 +296,7 @@ export default function App() {
         {notice && <div className="global-alert success"><Check size={16} /><span>{notice}</span><button onClick={() => setNotice("")}><X size={15} /></button></div>}
         {offline && <div className="offline-banner"><AlertTriangle size={17} /><span>Offline-first mode. Sales and stock changes are saved in an encrypted SQLite transaction queue and will sync when the connection returns.</span></div>}
         {!snapshot && <LoginHint />}
-        {view === "overview" && <OverviewPage cloud={cloud} snapshot={snapshot} revenueToday={revenueToday} profitToday={profitToday} stockCost={stockCost} receivables={receivables} lowStock={lowStock} onNavigate={setView} />}
+        {view === "overview" && <OverviewPage cloud={cloud} snapshot={snapshot} revenueToday={revenueToday} profitToday={profitToday} stockCost={stockCost} receivables={receivables} lowStock={lowStock} onNavigate={setView} onOpenCommand={() => setPaletteOpen(true)} />}
         {view === "checkout" && <CheckoutPage snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} />}
         {view === "products" && <ProductsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} />}
         {view === "sales" && <SalesPage snapshot={snapshot} query={search} onReceipt={openReceipt} />}
@@ -309,11 +317,22 @@ export default function App() {
           }
         }} />}
         {view === "diagnostics" && <DiagnosticsPage cloud={cloud} snapshot={snapshot} onRefresh={refresh} />}
+        {view === "sync" && <SyncHubPage cloud={cloud} deviceId={deviceId} offline={offline} onRefresh={refresh} />}
+        {view === "admin" && <OwnerAccessPage cloud={cloud} />}
         {view === "backup" && <BackupPage snapshot={snapshot} cloud={cloud} onCommit={commitSnapshot} offline={offline} />}
         {view === "settings" && <SettingsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} />}
         <footer className="app-footer"><span>BeBoss Desktop · Version {window.beBossDesktop.version}</span><span>Last cloud snapshot {new Date(cloud.snapshotUpdatedAt || 0).toLocaleString()} · {cloud.verifiedChunks} verified chunks</span></footer>
       </div>
     </main>
     {receipt && <ReceiptPreview receipt={receipt} onClose={() => setReceipt(null)} />}
+    {paletteOpen && <CommandPalette
+      cloud={cloud}
+      snapshot={snapshot}
+      nav={NAV}
+      onClose={() => setPaletteOpen(false)}
+      onNavigate={(nextView) => { setSearch(""); setView(nextView); }}
+      onQuickSearch={(nextView, term) => { setSearch(term); setView(nextView); }}
+      onRefresh={() => { void refresh(); }}
+    />}
   </div>;
 }

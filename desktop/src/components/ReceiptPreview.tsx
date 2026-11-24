@@ -1,12 +1,17 @@
 import type React from "react";
 import { useEffect, useState } from "react";
-import { Printer, ShieldCheck, X } from "lucide-react";
+import { LoaderCircle, Printer, Share2, ShieldCheck, X } from "lucide-react";
+import { toDataURL } from "qrcode";
 import { dateTime, n, rows, s } from "../lib/format";
 import type { ReceiptPayload } from "../lib/types";
+import { buildShareCardData, renderShareCard, triggerDownload } from "../lib/share-card";
 
 export function ReceiptPreview({ receipt, onClose }: { receipt: ReceiptPayload; onClose: () => void }) {
   const [seal, setSeal] = useState("");
   const [sealError, setSealError] = useState("");
+  const [qr, setQr] = useState("");
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState("");
   const profile = receipt.profile ?? {};
   const sale = receipt.sale ?? {};
   const items = rows(receipt.items);
@@ -36,10 +41,32 @@ export function ReceiptPreview({ receipt, onClose }: { receipt: ReceiptPayload; 
     return () => { cancelled = true; };
   }, [receipt, sale, profile]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setQr("");
+    const cents = (value: unknown) => String(Math.round(n(value) * 100));
+    const payload = ["BEBOSS", shopName, s(sale.receiptNumber), cents(total), s(seal)].join("|");
+    toDataURL(payload, { margin: 1, width: 168, errorCorrectionLevel: "M", color: { dark: "#0d1728", light: "#ffffff" } })
+      .then((url) => { if (!cancelled) setQr(url); })
+      .catch(() => { /* QR is optional; receipt still prints without it */ });
+    return () => { cancelled = true; };
+  }, [receipt, sale, profile, seal, shopName, total]);
+
+  async function handleShare() {
+    setShareBusy(true); setShareError("");
+    try {
+      const blob = await renderShareCard(buildShareCardData(receipt, seal));
+      triggerDownload(blob, "beboss-receipt-" + (s(sale.receiptNumber) || "card").replace(/[^\w.-]/g, "_") + ".png");
+    } catch (e) {
+      setShareError(e instanceof Error ? e.message : "Could not create the share card on this device.");
+    } finally { setShareBusy(false); }
+  }
+
   return <div className="modal-backdrop receipt-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="modal-card receipt-modal-card" role="dialog" aria-modal="true" aria-label="Receipt preview">
       <div className="modal-head"><div><span className="eyebrow muted">COMPLETED TRANSACTION</span><h3>Receipt {s(sale.receiptNumber)}</h3></div><button className="icon-btn" onClick={onClose} aria-label="Close receipt"><X size={18} /></button></div>
-      <div className="receipt-toolbar"><span><ShieldCheck size={15} /> Receipt details from the saved shop transaction</span><div><button className="btn-outline" onClick={() => window.print()}><Printer size={15} /> Print / Save PDF</button><button className="btn-primary" onClick={onClose}>Done</button></div></div>
+      <div className="receipt-toolbar"><span><ShieldCheck size={15} /> Receipt details from the saved shop transaction</span><div><button className="btn-outline" disabled={shareBusy} onClick={handleShare}>{shareBusy ? <LoaderCircle className="spin" size={15} /> : <Share2 size={15} />}{shareBusy ? "Creating…" : "Share card"}</button><button className="btn-outline" onClick={() => window.print()}><Printer size={15} /> Print / Save PDF</button><button className="btn-primary" onClick={onClose}>Done</button></div></div>
+      {shareError && <div className="inline-alert error"><Share2 size={14} />{shareError}</div>}
       <article className="receipt-paper receipt-print-area">
         <header className="receipt-brand"><img src="/beboss-app-logo.png" alt="BeBoss logo" /><div><strong>{shopName}</strong><span>SALES RECEIPT</span></div></header>
         {s(profile.receiptHeader).trim() && <p className="receipt-custom-line">{s(profile.receiptHeader)}</p>}
@@ -80,6 +107,7 @@ export function ReceiptPreview({ receipt, onClose }: { receipt: ReceiptPayload; 
         <div className="receipt-rule" />
         <footer className="receipt-footer">
           {s(profile.receiptFooter).trim() && <strong>{s(profile.receiptFooter)}</strong>}
+          {qr && <img className="receipt-qr" src={qr} alt="Receipt verification QR code" width="112" height="112" />}
           <span>Verify seal: {seal || (sealError ? "Unavailable" : "Generating…")}</span>
           {sealError && <small>{sealError}</small>}
           <span>Powered by BeBoss</span>

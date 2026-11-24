@@ -1,11 +1,11 @@
-import { Activity, ArrowRight, ArrowUpRight, Boxes, CreditCard, ShieldCheck, ShoppingCart, Tags, Wallet } from "lucide-react";
+import { Activity, ArrowRight, ArrowUpRight, Boxes, CreditCard, Search, ShieldCheck, ShoppingCart, Tags, Wallet } from "lucide-react";
 import { activeProducts, money, n, rows, s } from "../../lib/format";
 import type { CloudState, NavKey, Snapshot } from "../../lib/types";
 import { Empty, PageHeading, SalesTable, StatCard } from "../ui";
 
-export function OverviewPage({ cloud, snapshot, revenueToday, profitToday, stockCost, receivables, lowStock, onNavigate }: {
+export function OverviewPage({ cloud, snapshot, revenueToday, profitToday, stockCost, receivables, lowStock, onNavigate, onOpenCommand }: {
   cloud: CloudState; snapshot: Snapshot | null; revenueToday: number; profitToday: number;
-  stockCost: number; receivables: number; lowStock: number; onNavigate: (view: NavKey) => void
+  stockCost: number; receivables: number; lowStock: number; onNavigate: (view: NavKey) => void; onOpenCommand?: () => void
 }) {
   const sales = rows(snapshot?.sales).sort((a, b) => n(b.saleDate) - n(a.saleDate));
   const products = activeProducts(snapshot);
@@ -32,6 +32,7 @@ export function OverviewPage({ cloud, snapshot, revenueToday, profitToday, stock
         <h2>Every sale. Every branch.<em>One clear view.</em></h2>
         <p>Your desktop and registered phone work from the same verified BeBoss business records. Changes are saved to the shared cloud snapshot.</p>
         <div className="hero-facts"><span><strong>{products.length.toLocaleString()}</strong> active products</span><span><strong>{rows(cloud.devices).filter((device) => device.is_active).length}</strong> active terminals</span><span><strong>{rows(cloud.branches).filter((branch) => branch.is_active).length}</strong> active branches</span></div>
+        {onOpenCommand && <button className="hero-command" onClick={onOpenCommand}><Search size={15} /><span>Quick command</span><kbd>Ctrl K</kbd></button>}
       </div>
       <div className="hero-scene" aria-hidden="true">
         <div className="hero-orbit hero-orbit-one" /><div className="hero-orbit hero-orbit-two" />

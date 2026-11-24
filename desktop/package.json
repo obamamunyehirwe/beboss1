@@ -22,15 +22,17 @@
     "@tauri-apps/api": "^2.5.0",
     "@tauri-apps/plugin-opener": "^2.2.7",
     "lucide-react": "^0.575.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0",
     "@types/node": "^22.16.5",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.2.0",
-    "@tauri-apps/cli": "^2.5.0",
     "typescript": "^5.8.3",
     "vite": "^8.3.0"
   }

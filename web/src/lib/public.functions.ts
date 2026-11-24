@@ -3,7 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { createPublicClient } from "./server/public-client";
 import { calculateSubscriptionFee, computeShopKey, normalizePhoneLast9 } from "./pricing";
-import { decodeShareToken, extractShopRecords, mergeShareJson, pickLatestDeviceChunkSet, type ShopRecords } from "./snapshot-analytics";
+import { decodeShareToken, extractShopRecords, mergeShareJson, pickLatestDeviceChunkSet, type ShopRecords, verifyAndDecodeToken } from "./snapshot-analytics";
 
 type OwnerAuthContext = {
   supabase: any;
@@ -242,16 +242,21 @@ export const lookupMyShop = createServerFn({ method: "POST" })
     let decodedRecords: ShopRecords | null = null;
     let snapshotUploadedAt = 0;
     const snapRows = snaps.data ?? [];
+    const shareSecret = process.env["BEBOSS_DATASHARE_HMAC_SECRET"];
     if (snapRows.length > 0) {
       try {
         const set = pickLatestDeviceChunkSet(snapRows);
         if (set.length > 0) {
           snapshotUploadedAt = Math.max(...set.map((r) => Number(r.updated_at)));
-          const parts = await Promise.all(set.map((r) => decodeShareToken(r.payload_token)));
-          decodedRecords = extractShopRecords(mergeShareJson(parts));
+          if (!shareSecret) {
+            console.warn("BEBOSS_DATASHARE_HMAC_SECRET is not configured; skipping unverified snapshot decode for shop", key);
+          } else {
+            const parts = await Promise.all(set.map((r) => verifyAndDecodeToken(r.payload_token, shareSecret)));
+            decodedRecords = extractShopRecords(mergeShareJson(parts));
+          }
         }
       } catch (err) {
-        console.warn("Could not decode public snapshot for shop", key, err);
+        console.warn("Could not decode verified snapshot for shop", key, err);
       }
     }
 

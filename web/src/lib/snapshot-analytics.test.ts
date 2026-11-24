@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { computeRetailInsights, decodeShareToken, mergeShareJson, periodTotals, pickLatestChunkSet, pickLatestDeviceChunkSet, shareSignature, SHARE_PREFIX, extractShopRecords } from "./snapshot-analytics";
+import {
+  computeRetailInsights,
+  decodeShareToken,
+  mergeShareJson,
+  periodTotals,
+  pickLatestChunkSet,
+  pickLatestDeviceChunkSet,
+  shareSignature,
+  shareSignatureV1,
+  SHARE_PREFIX,
+  SHARE_PREFIX_V1,
+  SHARE_PREFIX_V2,
+  parseShareToken,
+  verifyAndDecodeToken,
+  extractShopRecords,
+} from "./snapshot-analytics";
 
 async function gzipB64(text: string) {
   const stream = new Response(text).body!.pipeThrough(new CompressionStream("gzip"));
@@ -13,16 +28,75 @@ const NOW = new Date("2026-11-20T12:00:00").getTime();
 const DAY = 86_400_000;
 
 describe("snapshot tokens", () => {
-  it("decodes a BBSHARE1 token (base64 + gzip JSON)", async () => {
+  it("decodes a legacy BBSHARE1 token without a secret (backwards-compatible decode)", async () => {
     const b64 = await gzipB64(JSON.stringify({ shopProfile: { shopName: "Mama Shop" } }));
     const json = await decodeShareToken(`${SHARE_PREFIX}ABCDEF0123456789:${b64}`);
     expect((json["shopProfile"] as { shopName: string }).shopName).toBe("Mama Shop");
   });
 
-  it("signs like the phone: first 16 upper-case hex chars of HMAC-SHA256", async () => {
+  it("signs with the full 256-bit HMAC-SHA256 tag (64 upper-case hex chars)", async () => {
     const sig = await shareSignature("payload", "secret");
-    expect(sig).toBe("B82FCB791ACEC57859B989B430A826488CE2E479FDF92326BD0A2E8375A42BA4".slice(0, 16));
+    expect(sig).toBe("B82FCB791ACEC57859B989B430A826488CE2E479FDF92326BD0A2E8375A42BA4");
+    expect(sig.length).toBe(64);
   });
+
+  it("derives the legacy V1 64-bit tag from the full HMAC", async () => {
+    const sig = await shareSignatureV1("payload", "secret");
+    expect(sig).toBe("B82FCB791ACEC578");
+    expect(sig.length).toBe(16);
+  });
+
+  it("parses V1 and BBSHARE2 token prefixes and versions", () => {
+    const v1 = parseShareToken(`${SHARE_PREFIX_V1}ABCD:payload`);
+    expect(v1.version).toBe(1);
+    expect(v1.prefix).toBe(SHARE_PREFIX_V1);
+    expect(v1.sig).toBe("ABCD");
+    expect(v1.payload).toBe("payload");
+    const v2 = parseShareToken(`${SHARE_PREFIX_V2}ABCDEF0123456789012345678901234567890123456789012345678901234567890123:payload`);
+    expect(v2.version).toBe(2);
+    expect(v2.prefix).toBe(SHARE_PREFIX_V2);
+    expect(v2.payload).toBe("payload");
+  });
+
+  it("verifies and decodes a valid BBSHARE2 token with the server secret", async () => {
+    const b64 = await gzipB64(JSON.stringify({ shopProfile: { shopName: "Mama Shop" } }));
+    const sig = await shareSignature(b64, "server-secret");
+    const token = `${SHARE_PREFIX_V2}${sig}:${b64}`;
+    const json = await verifyAndDecodeToken(token, "server-secret");
+    expect((json["shopProfile"] as { shopName: string }).shopName).toBe("Mama Shop");
+  });
+
+  it("verifies and decodes a valid legacy BBSHARE1 token during migration", async () => {
+    const b64 = await gzipB64(JSON.stringify({ shopProfile: { shopName: "Mama Shop" } }));
+    const sig = await shareSignatureV1(b64, "server-secret");
+    const token = `${SHARE_PREFIX_V1}${sig}:${b64}`;
+    const json = await verifyAndDecodeToken(token, "server-secret");
+    expect((json["shopProfile"] as { shopName: string }).shopName).toBe("Mama Shop");
+  });
+
+  it("rejects a tampered BBSHARE2 signature fail-closed", async () => {
+    const b64 = await gzipB64(JSON.stringify({ shopProfile: { shopName: "Mama Shop" } }));
+    const sig = await shareSignature(b64, "server-secret");
+    const tamperedSig = "0000000000000000000000000000000000000000000000000000000000000000";
+    await expect(verifyAndDecodeToken(`${SHARE_PREFIX_V2}${tamperedSig}:${b64}`, "server-secret")).rejects.toThrow(/HMAC integrity check/);
+  });
+
+  it("rejects a wrong secret fail-closed", async () => {
+    const b64 = await gzipB64(JSON.stringify({ shopProfile: { shopName: "Mama Shop" } }));
+    const sig = await shareSignature(b64, "server-secret");
+    const token = `${SHARE_PREFIX_V2}${sig}:${b64}`;
+    await expect(verifyAndDecodeToken(token, "wrong-secret")).rejects.toThrow(/HMAC integrity check/);
+  });
+
+  it("rejects a malformed signature length", async () => {
+    const b64 = await gzipB64(JSON.stringify({ shopProfile: { shopName: "Mama Shop" } }));
+    await expect(verifyAndDecodeToken(`${SHARE_PREFIX_V2}short:${b64}`, "server-secret")).rejects.toThrow(/invalid format/);
+  });
+
+  it("rejects an unknown token prefix", async () => {
+    await expect(verifyAndDecodeToken("BBSHARE9:deadbeef:payload", "server-secret")).rejects.toThrow(/Not a BeBoss share token/);
+  });
+});
 
   it("uses the latest complete generation from every device", () => {
     const rows = [

@@ -1,0 +1,13 @@
+BeBoss Desktop License
+
+BeBoss Desktop provides retail operations, point-of-sale, inventory, customer-credit,
+purchase, reporting, branch, staff, terminal, transfer, subscription and local recovery tools.
+
+Use of BeBoss Desktop is subject to the BeBoss account terms and shop-owner authorization
+rules. You are responsible for maintaining device security and protecting shop data.
+
+This application uses Supabase cloud services and stores local synchronization data on the
+computer. Do not install or run this software on a device you do not own or manage.
+
+No warranty is provided for interruption, data loss or misuse outside the documented setup
+and operating procedures.
