@@ -1259,3 +1259,30 @@ export const listShopOwnerMemberships = createServerFn({ method: "GET" })
     if (error) throw new Error("Could not load shop owner membership records.");
     return memberships ?? [];
   });
+
+const gatewayRefundSchema = z.object({
+  action: z.enum(["REQUEST", "RECONCILE"]),
+  requestId: z.string().trim().min(3).max(200),
+  amountRwf: z.number().int().positive().max(1_000_000_000).optional(),
+  reason: z.string().trim().min(5).max(500).optional(),
+  idempotencyKey: z.string().trim().min(16).max(200).optional(),
+});
+
+export const managePaymentGatewayRefund = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: z.infer<typeof gatewayRefundSchema>) => gatewayRefundSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    await requireAdmin(ctx);
+    if (data.action === "REQUEST" && (!data.amountRwf || !data.reason || !data.idempotencyKey)) {
+      throw new Error("A refund amount, reason and idempotency key are required.");
+    }
+    return invokeSupabaseEdgeFunction<{
+      ok?: boolean;
+      pending?: boolean;
+      message?: string;
+      refundId?: string;
+      refund?: { refund_id?: string; refund_status?: string; status?: string; total_refunded_rwf?: number };
+    }>(ctx, "manage-payment-refund", data);
+  });
+

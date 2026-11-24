@@ -514,6 +514,8 @@ export type Database = {
           gateway_reference: string
           gateway_transaction_id: string
           gateway_verified_at: number
+          gateway_refunded_amount_rwf: number
+          gateway_refund_status: string
           id: string
           owner_phone: string
           owner_username: string
@@ -548,6 +550,8 @@ export type Database = {
           gateway_reference?: string
           gateway_transaction_id?: string
           gateway_verified_at?: number
+          gateway_refunded_amount_rwf?: number
+          gateway_refund_status?: string
           id: string
           owner_phone: string
           owner_username: string
@@ -582,6 +586,8 @@ export type Database = {
           gateway_reference?: string
           gateway_transaction_id?: string
           gateway_verified_at?: number
+          gateway_refunded_amount_rwf?: number
+          gateway_refund_status?: string
           id?: string
           owner_phone?: string
           owner_username?: string

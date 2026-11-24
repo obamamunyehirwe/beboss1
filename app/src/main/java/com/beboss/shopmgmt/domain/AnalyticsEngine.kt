@@ -311,45 +311,99 @@ class AnalyticsEngine(
         fun computeReorderSuggestions(
             products: List<Product>,
             saleItems: List<SaleItem> = emptyList(),
-            branchIdFilter: String = "ALL"
+            branchIdFilter: String = "ALL",
+            sales: List<Sale> = emptyList(),
+            nowMs: Long = System.currentTimeMillis(),
+            leadTimeDays: Int = DemandForecastEngine.DEFAULT_LEAD_TIME_DAYS,
+            reviewPeriodDays: Int = DemandForecastEngine.DEFAULT_REVIEW_PERIOD_DAYS
         ): List<ReorderSuggestion> {
-            val soldQtyByProduct = saleItems
-                .filter { matchesBranch(it.branchId, branchIdFilter) }
-                .groupBy { it.productId }
-                .mapValues { (_, list) -> list.sumOf { it.quantitySold } }
+            val scopedSales = filterSalesByBranch(sales, branchIdFilter)
+            val safeLeadTime = leadTimeDays.coerceIn(1, DemandForecastEngine.MAX_PLANNING_DAYS)
+            val safeReviewPeriod = reviewPeriodDays.coerceIn(1, DemandForecastEngine.MAX_PLANNING_DAYS)
+
             return filterProductsByBranch(products, branchIdFilter)
-                .filter { !it.isDeleted && (it.isOutOfStock || it.isLowStock) }
-                .map { p ->
-                    val soldQty = soldQtyByProduct[p.id] ?: 0.0
-                    val targetBuffer = maxOf(p.lowStockThreshold * 2.0, soldQty * 0.5, 10.0)
-                    val orderQty = ceil((targetBuffer - p.quantityInStock).coerceAtLeast(1.0))
+                .asSequence()
+                .filter { !it.isDeleted }
+                .mapNotNull { product ->
+                    val forecast = DemandForecastEngine.forecastProduct(
+                        productId = product.id,
+                        saleItems = saleItems,
+                        sales = scopedSales,
+                        branchIdFilter = branchIdFilter,
+                        nowMs = nowMs,
+                        leadTimeDays = safeLeadTime,
+                        reviewPeriodDays = safeReviewPeriod
+                    )
+                    val minimumTarget = (product.lowStockThreshold.coerceAtLeast(0.0) * 2.0).coerceAtLeast(1.0)
+                    val reorderPoint = if (forecast.hasDemandHistory) {
+                        maxOf(forecast.leadTimeDemand + forecast.safetyStock, product.lowStockThreshold.coerceAtLeast(0.0))
+                    } else {
+                        product.lowStockThreshold.coerceAtLeast(0.0)
+                    }
+                    val targetStock = if (forecast.hasDemandHistory) {
+                        maxOf(
+                            forecast.leadTimeDemand + forecast.reviewPeriodDemand + forecast.safetyStock,
+                            minimumTarget
+                        )
+                    } else {
+                        minimumTarget
+                    }
+
+                    if (product.quantityInStock > maxOf(reorderPoint, product.lowStockThreshold)) {
+                        return@mapNotNull null
+                    }
+
+                    // At or below the reorder threshold, always suggest at least one
+                    // unit; low sales must not hide a product that has hit its stock floor.
+                    val orderQty = ceil((targetStock - product.quantityInStock).coerceAtLeast(1.0))
+                    val stockCoverDays = if (forecast.forecastDailyDemand > 0.0) {
+                        product.quantityInStock.coerceAtLeast(0.0) / forecast.forecastDailyDemand
+                    } else {
+                        -1.0
+                    }
                     val urgency = when {
-                        p.quantityInStock <= 0.0 -> "CRITICAL"
-                        p.quantityInStock <= (p.lowStockThreshold * 0.5) -> "LOW"
+                        product.quantityInStock <= 0.0 -> "CRITICAL"
+                        forecast.forecastDailyDemand > 0.0 && stockCoverDays <= safeLeadTime -> "CRITICAL"
+                        product.quantityInStock <= product.lowStockThreshold -> "LOW"
+                        forecast.forecastDailyDemand > 0.0 && stockCoverDays <= safeLeadTime + safeReviewPeriod -> "LOW"
                         else -> "REORDER"
                     }
+
                     ReorderSuggestion(
-                        productId = p.id,
-                        productName = p.name,
-                        category = p.category,
-                        branchId = p.branchId.ifBlank { "main_branch" },
-                        unit = p.unit,
-                        currentStock = p.quantityInStock,
-                        lowStockThreshold = p.lowStockThreshold,
-                        unitsSoldInPeriod = soldQty,
+                        productId = product.id,
+                        productName = product.name,
+                        category = product.category,
+                        branchId = product.branchId.ifBlank { "main_branch" },
+                        unit = product.unit,
+                        currentStock = product.quantityInStock,
+                        lowStockThreshold = product.lowStockThreshold,
+                        unitsSoldInPeriod = forecast.unitsSoldInHistory,
                         suggestedOrderQty = orderQty,
-                        estimatedUnitCost = p.costPrice,
-                        estimatedOrderCost = orderQty * p.costPrice,
-                        urgency = urgency
+                        estimatedUnitCost = product.costPrice,
+                        estimatedOrderCost = orderQty * product.costPrice,
+                        urgency = urgency,
+                        forecastDailyDemand = forecast.forecastDailyDemand,
+                        stockCoverDays = stockCoverDays,
+                        reorderPoint = reorderPoint,
+                        leadTimeDays = safeLeadTime,
+                        demandTrendPercent = forecast.trendPercent,
+                        hasTrendComparison = forecast.hasTrendComparison,
+                        forecastConfidence = forecast.confidence,
+                        forecastSalesDays = forecast.salesDays,
+                        hasDemandHistory = forecast.hasDemandHistory
                     )
                 }
-                .sortedWith(compareBy<ReorderSuggestion> {
-                    when (it.urgency) {
-                        "CRITICAL" -> 0
-                        "LOW" -> 1
-                        else -> 2
-                    }
-                }.thenBy { it.currentStock })
+                .sortedWith(
+                    compareBy<ReorderSuggestion> {
+                        when (it.urgency) {
+                            "CRITICAL" -> 0
+                            "LOW" -> 1
+                            else -> 2
+                        }
+                    }.thenBy { if (it.stockCoverDays < 0.0) Double.MAX_VALUE else it.stockCoverDays }
+                        .thenBy { it.currentStock }
+                )
+                .toList()
         }
     }
 }
