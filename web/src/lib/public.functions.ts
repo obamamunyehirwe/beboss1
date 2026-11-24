@@ -24,6 +24,13 @@ function samePhone(left: string, right: string): boolean {
     normalizePhoneLast9(left) === normalizePhoneLast9(right);
 }
 
+async function ownerPhoneOtpBucketKey(phone: string): Promise<string> {
+  const normalizedPhone = ownerPhoneE164(phone);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("owner-phone:" + normalizedPhone));
+  const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return "owner-phone:" + hash;
+}
+
 async function requireOwnerSession(context: OwnerAuthContext, username: string, phone: string): Promise<string> {
   const key = computeShopKey(username, phone);
   const { data: authData, error: authError } = await context.supabase.auth.getUser(context.accessToken);
@@ -75,8 +82,9 @@ export const requestMyShopOwnerOtp = createServerFn({ method: "POST" })
     }
 
     const now = Date.now();
+    const phoneBucket = await ownerPhoneOtpBucketKey(phone);
     const { data: attemptId, error: attemptError } = await supabaseAdmin.rpc("take_shop_owner_otp_slot", {
-      p_shop_id: shop.id,
+      p_shop_id: phoneBucket,
       p_now_ms: now,
       p_window_ms: 10 * 60 * 1000,
       p_max_attempts: 3,
