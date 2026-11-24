@@ -475,7 +475,7 @@ Deno.serve(async (request: Request) => {
         .select("id,device_id,sync_generation,chunk_index,chunk_count,branch_id,branch_name,shop_name,owner_username,payload_token,records_summary,updated_at")
         .eq("shop_sync_key", shopId).order("updated_at", { ascending: false }).limit(10000);
       if (snapshotError) throw new Error("Could not read cloud revisions during desktop finalization.");
-      const desktopChunks = (snapshotRows ?? []).filter((row) => text(row.device_id).replace(/#c\\d+$/, "") === desktopId && text(row.sync_generation) === generation);
+      const desktopChunks = (snapshotRows ?? []).filter((row) => text(row.device_id).replace(/#c\d+$/, "") === desktopId && text(row.sync_generation) === generation);
       const indexes = desktopChunks.map((row) => Number(row.chunk_index)).sort((a,b)=>a-b);
       if (desktopChunks.length !== expectedCount || desktopChunks.some((row) => Number(row.chunk_count) !== expectedCount) || indexes.some((index,position)=>index!==position)) {
         throw new Response("Desktop upload is incomplete. No partial snapshot has been published to other terminals.", { status: 409 });
