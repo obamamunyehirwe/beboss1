@@ -61,6 +61,9 @@ jobs:
       - name: Test Android device credential primitives
         run: deno test --no-lock supabase/functions/_shared/device-credentials.test.ts
 
+      - name: Test provider settlement identity, amount and currency checks
+        run: deno test --no-lock supabase/functions/_shared/payment-settlement.test.ts
+
       - name: Lint changed security and authentication files
         run: >-
           npx eslint --no-warn-ignored
