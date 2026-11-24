@@ -226,7 +226,12 @@ object CryptoKeyManager {
             alias = DEVICE_CREDENTIAL_KEY_ALIAS,
             requireUserAuth = false
         )
-        return wrapWithKeyStoreKey(key, value.toByteArray(StandardCharsets.UTF_8))
+        val plain = value.toByteArray(StandardCharsets.UTF_8)
+        return try {
+            wrapWithKeyStoreKey(key, plain)
+        } finally {
+            plain.fill(0)
+        }
     }
 
     fun decryptDeviceCredential(envelope: String): String {
@@ -234,10 +239,13 @@ object CryptoKeyManager {
         val key = keyStore.getKey(DEVICE_CREDENTIAL_KEY_ALIAS, null) as? SecretKey
             ?: throw SecurityException("This terminal has not provisioned its device credential key.")
         val plain = unwrapWithKeyStoreKey(key, envelope)
-        val value = String(plain, StandardCharsets.UTF_8)
-        require(value.length in 16..4096) { "The stored device credential is invalid." }
-        plain.fill(0)
-        return value
+        return try {
+            val value = String(plain, StandardCharsets.UTF_8)
+            require(value.length in 16..4096) { "The stored device credential is invalid." }
+            value
+        } finally {
+            plain.fill(0)
+        }
     }
 
     /**
