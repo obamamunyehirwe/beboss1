@@ -30,6 +30,7 @@ export function BackupPage({ snapshot, cloud, onCommit, onCreateBranchShare, onV
   const [shareBranchId, setShareBranchId] = useState("ALL");
   const [shareToken, setShareToken] = useState("");
   const [importToken, setImportToken] = useState("");
+  const [shareFile, setShareFile] = useState<File | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareMessage, setShareMessage] = useState("");
   const [shareError, setShareError] = useState("");
@@ -127,14 +128,16 @@ export function BackupPage({ snapshot, cloud, onCommit, onCreateBranchShare, onV
     setShareBusy(true); setShareError(""); setShareMessage("");
     try {
       if (!snapshot) throw new Error("Initialize the shop snapshot before importing a branch package.");
-      const token = importToken.trim();
-      if (!token.startsWith("BBSHARE1:")) throw new Error("Paste a valid BBSHARE1 branch share token.");
+      const fileToken = shareFile ? await shareFile.text() : "";
+      const token = importToken.trim() || fileToken.trim();
+      if (!token.startsWith("BBSHARE1:")) throw new Error("Choose a .beboss package or paste a valid BBSHARE1 token.");
       if (token.length > 4 * 1024 * 1024) throw new Error("The branch share package exceeds the 4 MB Android DataShare limit.");
       const verified = await onVerifyBranchShare(token);
       const merged = mergeSnapshots(snapshot, verified).snapshot as Snapshot;
       await onCommit((next) => { Object.assign(next, merged); }, "DATASHARE_IMPORT");
       setShareMessage("Signed branch package verified and merged. Changes are queued for cloud synchronization.");
       setImportToken("");
+      setShareFile(null);
       setShareToken("");
     } catch (e) { setShareError(errorText(e)); }
     finally { setShareBusy(false); }
@@ -177,8 +180,9 @@ export function BackupPage({ snapshot, cloud, onCommit, onCreateBranchShare, onV
       <label className="backup-field">Export scope<select value={shareBranchId} onChange={(event) => setShareBranchId(event.target.value)}><option value="ALL">All branches</option>{rows(snapshot?.branches).map((branch) => <option key={s(branch.id)} value={s(branch.id)}>{s(branch.name) || s(branch.id)}</option>)}</select></label>
       <div className="backup-actions"><button className="btn-primary" onClick={() => void createBranchShare()} disabled={shareBusy || !snapshot}><Share2 size={15} /> {shareBusy ? "Preparing package…" : "Create signed branch package"}</button>{shareToken && <><button className="btn-outline" onClick={() => void copyBranchShare()}><Clipboard size={15} /> Copy token</button><button className="btn-outline" onClick={downloadBranchShare}><Download size={15} /> Download .beboss</button></>}</div>
       {shareToken && <label className="backup-field">Generated BBSHARE1 token<textarea readOnly value={shareToken} rows={4} /></label>}
-      <label className="backup-field">Import BBSHARE1 token<textarea value={importToken} onChange={(event) => setImportToken(event.target.value)} placeholder="Paste a branch share token received from another BeBoss terminal…" rows={4} /></label>
-      <div className="backup-actions"><button className="btn-primary" onClick={() => void importBranchShare()} disabled={shareBusy || !snapshot || !importToken.trim()}><FileCheck2 size={15} /> Verify and merge package</button></div>
+      <label className="backup-field">Choose a signed .beboss package<input type="file" accept=".beboss,.txt,text/plain" onChange={(event) => setShareFile(event.target.files?.[0] ?? null)} /><small>{shareFile ? `Selected: ${shareFile.name}` : "Select a .beboss file downloaded or received from another BeBoss terminal."}</small></label>
+      <label className="backup-field">Or paste BBSHARE1 token<textarea value={importToken} onChange={(event) => setImportToken(event.target.value)} placeholder="Paste a branch share token received from another BeBoss terminal…" rows={4} /></label>
+      <div className="backup-actions"><button className="btn-primary" onClick={() => void importBranchShare()} disabled={shareBusy || !snapshot || (!importToken.trim() && !shareFile)}><FileCheck2 size={15} /> Verify and merge package</button></div>
       {shareError && <div className="inline-alert error"><AlertTriangle size={15} />{shareError}</div>}
       {shareMessage && <div className="inline-alert info"><Check size={15} />{shareMessage}</div>}
     </section>
