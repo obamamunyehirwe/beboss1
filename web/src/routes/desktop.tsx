@@ -169,6 +169,36 @@ const emptyAnalytics = (dataset: Dataset) => {
     daily,
   };
 };
+function forecastProduct(dataset: Dataset, productId: string, branchId = "ALL", now = Date.now()) {
+  const horizon = 56;
+  const today = new Date(now); today.setHours(0,0,0,0);
+  const starts = Array.from({length:horizon},(_,i)=>{const d=new Date(today);d.setDate(d.getDate()+i-(horizon-1));return d.getTime();});
+  const demand = new Array<number>(horizon).fill(0);
+  const sales = new Map(dataset.sales.filter(s=>s.saleDate>=starts[0]&&s.saleDate<=now).filter(s=>branchId==="ALL"||s.branchId===branchId).map(s=>[s.id,s]));
+  for (const item of dataset.saleItems) {
+    if(item.productId!==productId||asNumber(item.quantitySold)<=0) continue;
+    const sale=sales.get(item.saleId); if(!sale) continue;
+    if(branchId!=="ALL"&&asText(item.branchId,sale.branchId)!==branchId) continue;
+    let lo=0,hi=starts.length-1,index=-1;
+    while(lo<=hi){const mid=(lo+hi)>>>1;if(starts[mid]<=sale.saleDate){index=mid;lo=mid+1;}else hi=mid-1;}
+    if(index>=0)demand[index]+=asNumber(item.quantitySold);
+  }
+  const units=demand.reduce((a,b)=>a+b,0), salesDays=demand.filter(x=>x>0).length;
+  if(!units)return {unitsSold:0,dailyDemand:0,leadTimeDemand:0,reviewDemand:0,safetyStock:0,trendPercent:0,confidence:"LOW",salesDays:0};
+  let weighted=0,weights=0;
+  demand.forEach((q,i)=>{const age=horizon-1-i,w=Math.exp(-Math.LN2*age/28);weighted+=q*w;weights+=w;});
+  const baseline=weighted/weights,recent=demand.slice(-14).reduce((a,b)=>a+b,0)/14,previous=demand.slice(28,42).reduce((a,b)=>a+b,0)/14;
+  const hasTrend=previous>0,trend=hasTrend?Math.max(-100,Math.min(300,(recent-previous)/previous*100)):0;
+  const ratio=hasTrend?Math.max(.7,Math.min(1.4,recent/previous)):1;
+  const daily=(baseline*.7+recent*.3)*(.85+.15*ratio),mean=units/horizon;
+  const variance=demand.reduce((a,q)=>a+(q-mean)**2,0)/horizon,sd=Math.sqrt(variance);
+  const totals=new Array<number>(8).fill(0),counts=new Array<number>(8).fill(0);
+  demand.forEach((q,i)=>{const day=new Date(starts[i]).getDay()||7;totals[day]+=q;counts[day]++;});
+  const factor=(day:number)=>{if(counts[day]<4||mean<=0)return 1;return Math.max(.6,Math.min(1.5,(totals[day]/counts[day]*.65+mean*.35)/mean));};
+  const next=new Date(today);next.setDate(next.getDate()+1);
+  const forecast=(days:number)=>{let total=0;const d=new Date(next);for(let i=0;i<days;i++){if(i)d.setDate(d.getDate()+1);total+=daily*factor(d.getDay()||7);}return total;};
+  return {unitsSold:units,dailyDemand:daily,leadTimeDemand:forecast(7),reviewDemand:forecast(7),safetyStock:1.28*sd*Math.sqrt(7),trendPercent:trend,confidence:salesDays>=21?"HIGH":salesDays>=8?"MEDIUM":"LOW",salesDays};
+}
 const csv = (rows: Row[], columns: string[]) => [
   columns.join(","),
   ...rows.map((row) => columns.map((key) => {
@@ -1063,7 +1093,7 @@ function BeBossDesktopWorkspace() {
               <PageHeading title="Business analytics & demand forecast" subtitle="Live calculations from the shared sales, stock, purchasing and customer ledgers." action={<button onClick={()=>openExport("sales")} className={secondaryButton}><Download size={15}/> Export sales data</button>}/>
               <div className="grid gap-3 md:grid-cols-4"><Metric label="Revenue · 30 days" value={money(analytics.revenue30,currency)}/><Metric label="Gross profit · 30 days" value={money(analytics.profit30,currency)} tone="positive"/><Metric label="Average ticket" value={money(analytics.orders30?analytics.revenue30/analytics.orders30:0,currency)}/><Metric label="Stock at cost" value={money(analytics.stockValue,currency)}/></div>
               <SectionCard title="Daily revenue · last 7 days"><div className="flex h-52 items-end gap-3 px-2 pt-4">{analytics.daily.map((d)=>{const max=Math.max(1,...analytics.daily.map(x=>x.revenue));return <div key={d.label} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div title={money(d.revenue,currency)} className="w-full max-w-16 rounded-t-lg bg-gradient-to-t from-orange-600 to-orange-300" style={{height:Math.max(3,d.revenue/max*100)+"%"}}/><div className="text-[10px] text-slate-500">{d.label}</div></div>;})}</div></SectionCard>
-              <div className="grid gap-5 xl:grid-cols-2"><SectionCard title="Top-selling items"><div className="space-y-4">{analytics.topProducts.map((p,i)=><div key={p.name} className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-lg bg-white/5 text-xs font-bold text-slate-400">{i+1}</span><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold">{p.name}</div><div className="text-xs text-slate-500">{p.quantity} units sold</div></div><div className="text-sm font-bold">{money(p.revenue,currency)}</div></div>)}</div></SectionCard><SectionCard title="Inventory reorder forecast"><div className="space-y-3">{dataset.products.filter(p=>p.isDeleted!==true).map(p=>{const saleDates=new Map(dataset.sales.map(sale=>[sale.id,asNumber(sale.saleDate)]));const sold=dataset.saleItems.filter(i=>i.productId===p.id&&(saleDates.get(i.saleId)||0)>=nowMs()-30*86400000).reduce((s,i)=>s+asNumber(i.quantitySold),0);const demand=sold/30;const cover=demand>0?asNumber(p.quantityInStock)/demand:Infinity;const suggested=Math.max(0,Math.ceil(demand*14-asNumber(p.quantityInStock)));return {p,demand,cover,suggested};}).filter(x=>x.suggested>0||x.p.quantityInStock<=x.p.lowStockThreshold).sort((a,b)=>a.cover-b.cover).slice(0,12).map(x=><div key={x.p.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3"><div><div className="text-sm font-bold">{x.p.name}</div><div className="text-xs text-slate-500">Stock {x.p.quantityInStock} · {x.demand.toFixed(1)} sold/day</div></div><div className="text-right"><div className="font-black text-amber-300">{x.suggested} units</div><div className="text-[10px] text-slate-500">{Number.isFinite(x.cover)?x.cover.toFixed(1)+" days cover":"No recent demand"}</div></div></div>)}{analytics.lowStock.length===0&&<p className="text-sm text-slate-500">No items are currently below their reorder threshold.</p>}</div></SectionCard></div>
+              <div className="grid gap-5 xl:grid-cols-2"><SectionCard title="Top-selling items"><div className="space-y-4">{analytics.topProducts.map((p,i)=><div key={p.name} className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-lg bg-white/5 text-xs font-bold text-slate-400">{i+1}</span><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold">{p.name}</div><div className="text-xs text-slate-500">{p.quantity} units sold</div></div><div className="text-sm font-bold">{money(p.revenue,currency)}</div></div>)}</div></SectionCard><SectionCard title="Inventory reorder forecast"><div className="space-y-3">{dataset.products.filter(p=>p.isDeleted!==true).map(p=>{const saleDates=new Map(dataset.sales.map(sale=>[sale.id,asNumber(sale.saleDate)]));const result=forecastProduct(dataset,p.id,branchFilter);const demand=result.dailyDemand;const cover=demand>0?asNumber(p.quantityInStock)/demand:Infinity;const target=result.leadTimeDemand+result.safetyStock;const suggested=Math.max(0,Math.ceil(target-asNumber(p.quantityInStock)));return {p,demand,cover,suggested,result};}).filter(x=>x.suggested>0||x.p.quantityInStock<=x.p.lowStockThreshold).sort((a,b)=>a.cover-b.cover).slice(0,12).map(x=><div key={x.p.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3"><div><div className="text-sm font-bold">{x.p.name}</div><div className="text-xs text-slate-500">Stock {x.p.quantityInStock} · {x.demand.toFixed(2)} forecast/day · {x.result.salesDays}/56 days</div></div><div className="text-right"><div className="font-black text-amber-300">{x.suggested} units</div><div className="text-[10px] text-slate-500">{Number.isFinite(x.cover)?x.cover.toFixed(1)+" days cover":"No demand history"} · {x.result.confidence} confidence · {Math.ceil(x.result.safetyStock)} safety units</div></div></div>)}{analytics.lowStock.length===0&&<p className="text-sm text-slate-500">No items are currently below their reorder threshold.</p>}</div></SectionCard></div>
             </section>}
 
             {section === "reports" && <section className="space-y-5">
