@@ -9,6 +9,8 @@ export interface SystemDiagnostics {
   pendingOutboxCount: number;
   uptimeSeconds: number;
   hostname: string;
+  databaseEncrypted: boolean;
+  databaseCipherVersion: string;
 }
 
 export interface NetworkPingResult {

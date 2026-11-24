@@ -30,6 +30,7 @@ import { OwnerAccessPage } from "./components/screens/OwnerAccessPage";
 import { BackupPage } from "./components/screens/BackupPage";
 import { SettingsPage } from "./components/screens/SettingsPage";
 import { CommandPalette } from "./components/CommandPalette";
+import { SetupWizard } from "./components/SetupWizard";
 
 const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: string }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Workspace" },
@@ -52,6 +53,8 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
 ];
 
 export default function App() {
+  const [startupReady, setStartupReady] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
   const [owner, setOwner] = useState<OwnerCredentials | null>(null);
   const [cloud, setCloud] = useState<CloudState | null>(null);
   const [view, setView] = useState<NavKey>("overview");
@@ -131,6 +134,25 @@ export default function App() {
     let alive = true;
     (async () => {
       try {
+        const completed = await window.beBossDesktop.secureStore.get("installation-setup-completed-at");
+        if (alive) setSetupRequired(!completed);
+      } catch (e) {
+        if (alive) {
+          setSetupRequired(true);
+          setError(errorText(e));
+        }
+      } finally {
+        if (alive) setStartupReady(true);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!startupReady || setupRequired) return;
+    let alive = true;
+    (async () => {
+      try {
         const idValue = await window.beBossDesktop.getDeviceId();
         if (alive) setDeviceId(idValue);
         const session = await currentSession();
@@ -143,7 +165,7 @@ export default function App() {
       finally { if (alive) setBusy(false); }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [startupReady, setupRequired]);
 
   useEffect(() => {
     if (!owner || !offline) return;
@@ -230,6 +252,14 @@ export default function App() {
       setOwner(null); setCloud(null); setOffline(false); setView("overview"); setError(""); setNotice("");
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
+  }
+
+  if (!startupReady) {
+    return <div className="setup-loading"><LoaderCircle className="spin" size={28} /><span>Preparing BeBoss Desktop…</span></div>;
+  }
+
+  if (setupRequired) {
+    return <SetupWizard onComplete={() => { setError(""); setSetupRequired(false); }} />;
   }
 
   if (!owner || !cloud) {

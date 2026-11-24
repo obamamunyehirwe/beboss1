@@ -59,20 +59,97 @@ fn database_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 }
 
 fn database_key() -> Result<String, String> {
-    let entry = Entry::new(KEYRING_SERVICE, KEYRING_DATABASE_KEY).map_err(|error| error.to_string())?;
+    let entry = Entry::new(KEYRING_SERVICE, KEYRING_DATABASE_KEY)
+        .map_err(|error| format!("Could not open the operating-system credential vault: {error}"))?;
     match entry.get_password() {
         Ok(key) => Ok(key),
         Err(keyring::Error::NoEntry) => {
             let key = Uuid::new_v4().simple().to_string() + &Uuid::new_v4().simple().to_string();
-            let _ = entry.set_password(&key);
+            entry.set_password(&key)
+                .map_err(|error| format!("Could not persist the database key in the operating-system credential vault: {error}"))?;
             Ok(key)
         }
-        Err(_) => {
-            // Fallback to stable device-specific key if OS keyring is restricted
-            let device_key = format!("BEBOSS-SECURE-KEY-{}", env::consts::OS);
-            Ok(device_key)
-        }
+        Err(error) => Err(format!("The operating-system credential vault is unavailable; the local database was not opened: {error}")),
     }
+}
+
+fn key_hex(key_seed: &str) -> String {
+    derive_cipher_key(key_seed)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn apply_sqlcipher_key(connection: &Connection, key_seed: &str) -> Result<String, String> {
+    let hex = key_hex(key_seed);
+    connection.execute_batch(&format!("PRAGMA key = \"x'{hex}'\";"))
+        .map_err(|error| format!("Could not apply the local database key: {error}"))?;
+    let version = connection.query_row("PRAGMA cipher_version", [], |row| row.get::<_, String>(0))
+        .map_err(|error| format!("SQLCipher is unavailable or could not be initialized: {error}"))?;
+    if version.trim().is_empty() {
+        return Err("SQLCipher did not report an active cipher version.".into());
+    }
+    Ok(version)
+}
+
+fn open_keyed_database(path: &std::path::Path, key_seed: &str) -> Result<Connection, String> {
+    let connection = Connection::open(path).map_err(|error| error.to_string())?;
+    apply_sqlcipher_key(&connection, key_seed)?;
+    connection.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0))
+        .map_err(|error| format!("The local database could not be authenticated: {error}"))?;
+    Ok(connection)
+}
+
+/// Upgrade the earlier plaintext SQLite file in place. The original database is only
+/// replaced after SQLCipher exports it and a keyed reopen succeeds; an unsuccessful
+/// migration leaves the original file untouched for recovery.
+fn migrate_plaintext_database(path: &std::path::Path, key_seed: &str) -> Result<(), String> {
+    let temporary = path.with_extension("sqlite.sqlcipher-migration");
+    if temporary.exists() {
+        fs::remove_file(&temporary).map_err(|error| format!("Could not clear an earlier migration file: {error}"))?;
+    }
+
+    let migration = (|| -> Result<(), String> {
+        let source = Connection::open(path).map_err(|error| error.to_string())?;
+        source.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;")
+            .map_err(|error| format!("Could not safely checkpoint the existing database: {error}"))?;
+        source.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0))
+            .map_err(|error| format!("The existing database is not a readable legacy SQLite file: {error}"))?;
+
+        let escaped_path = temporary.to_string_lossy().replace('\'', "''");
+        let attach = format!(
+            "ATTACH DATABASE '{escaped_path}' AS encrypted KEY \"x'{}'\";",
+            key_hex(key_seed)
+        );
+        source.execute_batch(&attach)
+            .map_err(|error| format!("Could not create the encrypted migration database: {error}"))?;
+        source.execute_batch("SELECT sqlcipher_export('encrypted');")
+            .map_err(|error| format!("SQLCipher could not export the existing shop data: {error}"))?;
+        source.execute_batch("DETACH DATABASE encrypted;")
+            .map_err(|error| format!("Could not finalize the encrypted database export: {error}"))?;
+        drop(source);
+
+        let verified = open_keyed_database(&temporary, key_seed)?;
+        verified.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0))
+            .map_err(|error| format!("The encrypted database failed its integrity check: {error}"))?;
+        drop(verified);
+
+        let backup = path.with_extension(format!("sqlite.plaintext-{}", Uuid::new_v4().simple()));
+        fs::rename(path, &backup)
+            .map_err(|error| format!("Could not preserve the original database during migration: {error}"))?;
+        if let Err(error) = fs::rename(&temporary, path) {
+            let _ = fs::rename(&backup, path);
+            return Err(format!("Could not install the encrypted database; the original file was restored: {error}"));
+        }
+        fs::remove_file(&backup)
+            .map_err(|error| format!("The encrypted database is ready, but the old plaintext backup could not be removed: {} ({error})", backup.display()))?;
+        Ok(())
+    })();
+
+    if migration.is_err() && temporary.exists() {
+        let _ = fs::remove_file(&temporary);
+    }
+    migration
 }
 
 fn derive_cipher_key(seed: &str) -> [u8; 32] {
@@ -131,7 +208,32 @@ fn stamp_desktop_records(value: &mut Value, hlc: i64, updated_since: i64, device
 
 fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
     let path = database_path(app)?;
-    let connection = Connection::open(path).map_err(|error| error.to_string())?;
+    let key_seed = database_key()?;
+    let has_existing_file = path.metadata().map(|metadata| metadata.len() > 0).unwrap_or(false);
+
+    let connection = if has_existing_file {
+        match open_keyed_database(&path, &key_seed) {
+            Ok(connection) => connection,
+            Err(encrypted_error) => {
+                // Old desktop versions used ordinary SQLite. Only migrate when the
+                // existing file can be read without a key; never overwrite an
+                // encrypted/corrupt database after a failed key check.
+                let is_legacy_plaintext = Connection::open(&path)
+                    .and_then(|legacy| legacy.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0)))
+                    .is_ok();
+                if !is_legacy_plaintext {
+                    return Err(format!(
+                        "BeBoss could not unlock its local SQLCipher database. The original data has not been changed. Check the operating-system credential vault or restore a trusted backup. ({encrypted_error})"
+                    ));
+                }
+                migrate_plaintext_database(&path, &key_seed)?;
+                open_keyed_database(&path, &key_seed)?
+            }
+        }
+    } else {
+        open_keyed_database(&path, &key_seed)?
+    };
+
     connection.execute_batch(
         "PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;
@@ -200,6 +302,10 @@ struct SystemDiagnostics {
     #[serde(rename = "uptimeSeconds")]
     uptime_seconds: u64,
     hostname: String,
+    #[serde(rename = "databaseEncrypted")]
+    database_encrypted: bool,
+    #[serde(rename = "databaseCipherVersion")]
+    database_cipher_version: String,
 }
 
 #[derive(Serialize)]
@@ -411,19 +517,31 @@ fn local_ack(app: tauri::AppHandle, ids: Vec<String>) -> Result<(), String> {
 fn system_diagnostics(app: tauri::AppHandle) -> Result<SystemDiagnostics, String> {
     let db_path = database_path(&app)?;
     let db_size_bytes = fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
-    let pending_outbox_count = local_outbox_count(app)?;
+    let connection = open_database(&app)?;
+    let pending_outbox_count = connection.query_row(
+        "SELECT COUNT(*) FROM sync_outbox WHERE status = 'PENDING'",
+        [],
+        |row| row.get(0)
+    ).map_err(|error| error.to_string())?;
+    let database_cipher_version = connection.query_row(
+        "PRAGMA cipher_version",
+        [],
+        |row| row.get::<_, String>(0)
+    ).map_err(|error| format!("SQLCipher verification failed: {error}"))?;
     let uptime_seconds = PROCESS_START.get().map(|s| s.elapsed().as_secs()).unwrap_or(0);
     let hostname = env::var("COMPUTERNAME").or_else(|_| env::var("HOSTNAME")).unwrap_or_else(|_| "localhost".into());
 
     Ok(SystemDiagnostics {
         os_platform: env::consts::OS.to_string(),
         os_arch: env::consts::ARCH.to_string(),
-        app_version: "1.2.0".to_string(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
         db_path: db_path.to_string_lossy().to_string(),
         db_size_bytes,
         pending_outbox_count,
         uptime_seconds,
         hostname,
+        database_encrypted: !database_cipher_version.trim().is_empty(),
+        database_cipher_version,
     })
 }
 
@@ -599,4 +717,69 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running BeBoss Desktop");
+}
+
+
+#[cfg(test)]
+mod database_encryption_tests {
+    use super::*;
+
+    fn test_path(label: &str) -> PathBuf {
+        let directory = env::temp_dir().join(format!(
+            "beboss-sqlcipher-{}-{}",
+            label,
+            Uuid::new_v4().simple()
+        ));
+        fs::create_dir_all(&directory).expect("test directory should be created");
+        directory.join("beboss-local.sqlite")
+    }
+
+    #[test]
+    fn migrates_legacy_database_without_losing_records() {
+        let path = test_path("migration");
+        let legacy = Connection::open(&path).expect("legacy database should open");
+        legacy.execute_batch(
+            "CREATE TABLE retained_records (id INTEGER PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO retained_records(value) VALUES ('shop-snapshot'), ('pending-outbox');"
+        ).expect("legacy records should be written");
+        drop(legacy);
+
+        migrate_plaintext_database(&path, "test-database-key")
+            .expect("legacy database should migrate");
+
+        let encrypted = open_keyed_database(&path, "test-database-key")
+            .expect("migrated SQLCipher database should open with its key");
+        let count: i64 = encrypted.query_row(
+            "SELECT COUNT(*) FROM retained_records",
+            [],
+            |row| row.get(0)
+        ).expect("migrated rows should remain readable");
+        assert_eq!(count, 2);
+        drop(encrypted);
+
+        let without_key = Connection::open(&path).expect("SQLCipher file handle should open");
+        assert!(
+            without_key.query_row("SELECT COUNT(*) FROM retained_records", [], |row| row.get::<_, i64>(0)).is_err(),
+            "the migrated database must not be readable without its encryption key"
+        );
+        let directory = path.parent().expect("test path has a parent");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn rejects_a_wrong_database_key() {
+        let path = test_path("wrong-key");
+        let keyed = open_keyed_database(&path, "correct-key")
+            .expect("new SQLCipher database should initialize");
+        keyed.execute_batch("CREATE TABLE private_records (value TEXT NOT NULL);")
+            .expect("test table should be created");
+        drop(keyed);
+
+        assert!(
+            open_keyed_database(&path, "incorrect-key").is_err(),
+            "a wrong key must not open the database"
+        );
+        let directory = path.parent().expect("test path has a parent");
+        let _ = fs::remove_dir_all(directory);
+    }
 }
