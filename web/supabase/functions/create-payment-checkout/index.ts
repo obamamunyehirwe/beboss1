@@ -68,6 +68,8 @@ Deno.serve(async (request: Request) => {
 
   let paymentRequestId = "";
   let txRef = "";
+  let providerRequestStarted = false;
+  let providerRejected = false;
   try {
     const input = await request.json();
     const gateway = String(input?.gateway ?? "").toLowerCase();
@@ -220,8 +222,6 @@ Deno.serve(async (request: Request) => {
 
     let checkoutUrl = "";
     let checkoutId = "";
-    let providerRequestStarted = false;
-    let providerRejected = false;
 
     if (gateway === "flutterwave") {
       providerRequestStarted = true;
