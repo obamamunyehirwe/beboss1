@@ -330,8 +330,20 @@ function PaymentsPage() {
                   </div>
                 ) : (
                   <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
-                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Legacy customer payment proof</p>
-                    <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{r.payment_note?.trim() || "No provider webhook has verified this payment. Independently confirm legacy MTN/Airtel claims in the merchant portal before approval."}</pre>
+                    {r.gateway_reference ? (
+                      <>
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Hosted checkout • awaiting provider verification</p>
+                        <p className="break-all font-mono text-sm font-semibold">{r.gateway_reference}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          This reference was created by BeBoss. Confirm its settlement in the {r.provider} merchant dashboard before approval or refund.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Legacy customer payment proof</p>
+                        <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">{r.payment_note?.trim() || "No provider webhook has verified this payment. Independently confirm legacy MTN/Airtel claims in the merchant portal before approval."}</pre>
+                      </>
+                    )}
                   </div>
                 )}
                 {r.admin_verification_note ? <p className="mt-2 text-xs text-muted-foreground">Admin verification: {r.admin_verification_note}</p> : null}
