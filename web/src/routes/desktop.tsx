@@ -1093,7 +1093,7 @@ function BeBossDesktopWorkspace() {
                 <select value={u.role||"CASHIER"} onChange={(e)=>updateRecord("users",u.id,{role:e.target.value,updatedAt:Date.now()})} className="rounded-lg border border-white/10 bg-[#162437] px-2 py-1 text-xs"><option value="OWNER">Owner</option><option value="MANAGER">Manager</option><option value="CASHIER">Cashier</option></select>,
                 <select value={u.assignedBranchId||""} onChange={(e)=>{const b=activeBranches.find(x=>x.id===e.target.value);updateRecord("users",u.id,{assignedBranchId:e.target.value,assignedBranchName:b?.name||"All Branches"});}} className="max-w-40 rounded-lg border border-white/10 bg-[#162437] px-2 py-1 text-xs"><option value="">All branches</option>{activeBranches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select>,
                 <button onClick={()=>updateRecord("users",u.id,{isActive:u.isActive===false})} className={u.isActive===false?"text-rose-300":"text-emerald-300"}>{u.isActive===false?"Inactive":"Active"}</button>,
-                <div className="flex flex-wrap gap-1">{["canSellPOS","canManageInventory","canViewAnalytics","canCollectDebt","canExportReports"].map((perm)=>{const label=perm.replace("can","").replace(/([A-Z])/g," $1");return <button key={perm} onClick={()=>updateRecord("users",u.id,{[perm]:u[perm]===false})} title={label} className={"rounded-md px-2 py-1 text-[10px] "+(u[perm]===false?"bg-white/5 text-slate-600":"bg-emerald-400/10 text-emerald-200")}>{label}</button>;})}</div>,
+                <span className="text-xs text-slate-400">{u.role==="OWNER"?"Full shop control":u.role==="MANAGER"?"Operations, inventory and analytics access":"POS checkout and assigned-branch access"}</span>,
               ])}/>
             </section>}
 
