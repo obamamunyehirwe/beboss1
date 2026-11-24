@@ -68,6 +68,15 @@ async function authorizeOwner(admin: ReturnType<typeof createClient>, accessToke
     .maybeSingle();
   if (shopError || !shop) throw new Response("The registered BeBoss shop could not be found.", { status: 404 });
   if (shop.remote_kill_switch === true) throw new Response("This shop has been disabled by BeBoss support.", { status: 403 });
+  const subscriptionStatus = text(shop.subscription_status).toUpperCase();
+  const rawExpiry = shop.subscription_expires_at;
+  const expiry = Number.isFinite(Number(rawExpiry)) ? Number(rawExpiry) :
+    (typeof rawExpiry === "string" ? Date.parse(rawExpiry) : 0);
+  if (subscriptionStatus === "SUSPENDED" || subscriptionStatus === "EXPIRED" ||
+      (subscriptionStatus && !["ACTIVE", "TRIAL"].includes(subscriptionStatus)) ||
+      (expiry > 0 && expiry <= Date.now())) {
+    throw new Response("The BeBoss subscription is expired or suspended. Renew the shop account before desktop business operations.", { status: 402 });
+  }
   return { user, shop };
 }
 
@@ -82,12 +91,7 @@ function mergeIncomingSnapshot(
       const id = text(row.id);
       if (!id) continue;
       const previous = merged.get(id);
-      const incomingVersion = Math.max(Number(row.hlcTimestamp) || 0, Number(row.updatedAt) || 0);
-      const previousVersion = previous ? Math.max(Number(previous.hlcTimestamp) || 0, Number(previous.updatedAt) || 0) : -1;
-      const incomingDevice = text(row.lastModifiedDeviceId);
-      const previousDevice = text(previous?.lastModifiedDeviceId);
-      if (!previous || incomingVersion > previousVersion ||
-        (incomingVersion === previousVersion && incomingDevice.localeCompare(previousDevice) > 0)) {
+      if (!previous || compareSnapshotVersions(previous as SnapshotRow, row as SnapshotRow) > 0) {
         merged.set(id, row);
       }
     }
@@ -179,7 +183,7 @@ async function syncNormalizedProjection(admin: ReturnType<typeof createClient>, 
     email: text(branch.email), notes: text(branch.notes),
     created_at: Number(branch.createdAt) || Date.now(), updated_at: Number(branch.updatedAt) || Date.now(),
     sync_version: Number(branch.syncVersion) || 1, hlc_timestamp: Number(branch.hlcTimestamp) || Number(branch.updatedAt) || Date.now(),
-    last_modified_device_id: "WEB",
+    last_modified_device_id: text(branch.lastModifiedDeviceId) || "DESKTOP",
   }));
   if (branches.length) {
     const { error } = await admin.from("shop_branches").upsert(branches, { onConflict: "id" });
@@ -199,7 +203,7 @@ async function syncNormalizedProjection(admin: ReturnType<typeof createClient>, 
     synced: false, created_at: Number(transfer.createdAt) || Date.now(),
     updated_at: Number(transfer.updatedAt) || Date.now(),
     hlc_timestamp: Number(transfer.hlcTimestamp) || Number(transfer.updatedAt) || Date.now(),
-    last_modified_device_id: "WEB",
+    last_modified_device_id: text(transfer.lastModifiedDeviceId) || "DESKTOP",
   }));
   if (transfers.length) {
     const { error } = await admin.from("shop_stock_transfers").upsert(transfers, { onConflict: "id" });
@@ -293,7 +297,8 @@ Deno.serve(async (request: Request) => {
           openingCashFloat: row.opening_cash_float, stockValueRwf: row.stock_value_rwf,
           productCount: row.product_count, operationalStatus: row.operational_status,
           email: row.email, notes: row.notes, createdAt: row.created_at, updatedAt: row.updated_at,
-          syncVersion: row.sync_version, hlcTimestamp: row.hlc_timestamp,
+          syncVersion: row.sync_version,
+          hlcTimestamp: dataset.branches.find((item) => text(item.id) === text(row.id))?.hlcTimestamp ?? String(row.hlc_timestamp ?? "0"),
           lastModifiedDeviceId: row.last_modified_device_id,
         }));
       }
@@ -306,16 +311,29 @@ Deno.serve(async (request: Request) => {
           costValueRwf: row.cost_value_rwf, transferDate: row.transfer_date, status: row.status,
           notes: row.notes, transferredBy: row.transferred_by, receivedBy: row.received_by,
           receivedAt: row.received_at, createdAt: row.created_at, updatedAt: row.updated_at,
-          hlcTimestamp: row.hlc_timestamp, lastModifiedDeviceId: row.last_modified_device_id,
+          hlcTimestamp: dataset.stockTransfers.find((item) => text(item.id) === text(row.id))?.hlcTimestamp ?? String(row.hlc_timestamp ?? "0"),
+          lastModifiedDeviceId: row.last_modified_device_id,
         }));
       }
       if (userResult.data?.length) {
-        dataset.users = userResult.data.map((row) => ({
-          id: row.user_id, name: row.full_name, username: row.username, phone: row.phone ?? "",
-          role: row.role, assignedBranchId: row.assigned_branch_id,
-          assignedBranchName: row.assigned_branch_name, isActive: row.is_active,
-          updatedAt: row.updated_at, hlcTimestamp: row.updated_at, lastModifiedDeviceId: "CLOUD",
-        }));
+        const snapshotUsers = dataset.users;
+        dataset.users = userResult.data.map((row) => {
+          const previous = snapshotUsers.find((item) => text(item.id ?? item.user_id) === text(row.user_id));
+          return {
+            ...(previous ?? {}),
+            id: row.user_id,
+            name: row.full_name || previous?.name || "",
+            username: row.username || previous?.username || "",
+            phone: row.phone ?? previous?.phone ?? "",
+            role: row.role || previous?.role || "CASHIER",
+            assignedBranchId: row.assigned_branch_id || previous?.assignedBranchId || "",
+            assignedBranchName: row.assigned_branch_name || previous?.assignedBranchName || "All Branches",
+            isActive: row.is_active,
+            updatedAt: Math.max(Number(row.updated_at) || 0, Number(previous?.updatedAt) || 0),
+            hlcTimestamp: previous?.hlcTimestamp ?? "0",
+            lastModifiedDeviceId: previous?.lastModifiedDeviceId ?? "CLOUD",
+          };
+        });
       }
       return json(200, {
         ok: true, shop, owner: { id: user.id, phone: user.phone, fullName: user.user_metadata?.full_name ?? "" },
