@@ -311,6 +311,12 @@ jobs:
           export KEYSTORE_PATH="$RUNNER_TEMP/beboss-upload-keystore.jks"
           printf '%s' "$ANDROID_UPLOAD_KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
           chmod 600 "$KEYSTORE_PATH"
+          # Google Secrets Gradle plugin reads a properties file, not shell env vars.
+          # Expose only the DataShare value to BuildConfig for this one build, then
+          # remove the temporary properties file and keystore even if Gradle fails.
+          printf 'BEBOSS_DATASHARE_HMAC_SECRET=%s\n' "$BEBOSS_DATASHARE_HMAC_SECRET" > "$GITHUB_WORKSPACE/.env"
+          chmod 600 "$GITHUB_WORKSPACE/.env"
+          trap 'rm -f "$GITHUB_WORKSPACE/.env" "$KEYSTORE_PATH"' EXIT
           keytool -list -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
           gradle :app:bundleRelease :app:assembleRelease --stacktrace
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
