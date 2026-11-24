@@ -15,7 +15,7 @@
         "title": "BeBoss Desktop",
         "width": 1540,
         "height": 980,
-        "minWidth": 1120,
+        "minWidth": 760,
         "minHeight": 720,
         "center": true,
         "theme": "Light"

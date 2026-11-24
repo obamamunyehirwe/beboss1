@@ -3,8 +3,8 @@ import { activeProducts, money, n, rows, s } from "../../lib/format";
 import type { CloudState, NavKey, Snapshot } from "../../lib/types";
 import { Empty, PageHeading, SalesTable, StatCard } from "../ui";
 
-export function OverviewPage({ cloud, snapshot, revenueToday, profitToday, stockCost, receivables, lowStock, onNavigate, onOpenCommand }: {
-  cloud: CloudState; snapshot: Snapshot | null; revenueToday: number; profitToday: number;
+export function OverviewPage({ cloud, snapshot, offline, revenueToday, profitToday, stockCost, receivables, lowStock, onNavigate, onOpenCommand }: {
+  cloud: CloudState; snapshot: Snapshot | null; offline: boolean; revenueToday: number; profitToday: number;
   stockCost: number; receivables: number; lowStock: number; onNavigate: (view: NavKey) => void; onOpenCommand?: () => void
 }) {
   const sales = rows(snapshot?.sales).sort((a, b) => n(b.saleDate) - n(a.saleDate));
@@ -24,25 +24,29 @@ export function OverviewPage({ cloud, snapshot, revenueToday, profitToday, stock
   const top = [...bestProducts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   return <div className="page-stack">
-    <PageHeading eyebrow="SHOP PERFORMANCE" title={"Good " + (new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening") + ", " + (s(cloud.shop.owner_name).split(" ")[0] || "Owner")} description="Your business at a glance. These figures come from the latest verified shop snapshot." action={<button className="btn-primary" onClick={() => onNavigate("checkout")}><ShoppingCart size={17} /> New sale</button>} />
+    <PageHeading eyebrow="SHOP PERFORMANCE" title={"Good " + (new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening") + ", " + (s(cloud.shop.owner_name).split(" ")[0] || "Owner")} description={offline ? "Showing protected local business data. New changes will upload when the connection returns." : cloud.verifiedChunks > 0 ? "Showing the latest signed cloud snapshot. The local sync queue reports any changes still awaiting upload." : "Showing the local workspace. The first signed cloud snapshot is not yet verified."} action={<button className="btn-primary" onClick={() => onNavigate("checkout")}><ShoppingCart size={17} /> New sale</button>} />
 
     <section className="command-hero">
       <div className="command-hero-copy">
-        <span className="hero-live"><i /> VERIFIED CLOUD WORKSPACE</span>
+        <span className={"hero-live" + (offline ? " offline" : cloud.verifiedChunks > 0 ? "" : " pending")}><i /> {offline ? "LOCAL WORKSPACE · OFFLINE QUEUE" : cloud.verifiedChunks > 0 ? "VERIFIED CLOUD SNAPSHOT" : "CLOUD SYNC NOT VERIFIED"}</span>
         <h2>Every sale. Every branch.<em>One clear view.</em></h2>
-        <p>Your desktop and registered phone work from the same verified BeBoss business records. Changes are saved to the shared cloud snapshot.</p>
+        <p>{offline
+          ? "This terminal is in offline-first mode. New sales and stock changes are protected in the encrypted local database and queued for upload when the connection returns."
+          : cloud.verifiedChunks > 0
+            ? "This workspace has a verified signed cloud snapshot. New changes are recorded locally first and synchronized through the protected sync queue."
+            : "The local workspace is ready, but no verified cloud snapshot is available yet. Complete owner pairing and the first successful sync to connect your phone and desktop."}</p>
         <div className="hero-facts"><span><strong>{products.length.toLocaleString()}</strong> active products</span><span><strong>{rows(cloud.devices).filter((device) => device.is_active).length}</strong> active terminals</span><span><strong>{rows(cloud.branches).filter((branch) => branch.is_active).length}</strong> active branches</span></div>
         {onOpenCommand && <button className="hero-command" onClick={onOpenCommand}><Search size={15} /><span>Quick command</span><kbd>Ctrl K</kbd></button>}
       </div>
       <div className="hero-scene" aria-hidden="true">
         <div className="hero-orbit hero-orbit-one" /><div className="hero-orbit hero-orbit-two" />
         <div className="hero-glass-card hero-glass-main">
-          <div className="hero-glass-brand"><img src="/beboss-app-icon.png" alt="" /><span><strong>BeBoss Cloud</strong><small>RETAIL OPERATIONS</small></span><i /></div>
+          <div className="hero-glass-brand"><img src="/beboss-app-icon.png" alt="" /><span><strong>BeBoss Workspace</strong><small>RETAIL OPERATIONS</small></span><i className={offline ? "offline" : cloud.verifiedChunks > 0 ? "verified" : "pending"} /></div>
           <div className="hero-glass-divider" />
           <span className="hero-glass-label">TODAY'S REVENUE</span><strong className="hero-glass-value">{money(revenueToday)}</strong>
-          <div className="hero-glass-foot"><span><ShieldCheck size={13} /> Snapshot verified</span><span>{cloud.verifiedChunks} chunks</span></div>
+          <div className="hero-glass-foot"><span><ShieldCheck size={13} /> {cloud.verifiedChunks > 0 ? "Last snapshot verified" : "No verified snapshot"}</span><span>{cloud.verifiedChunks} chunks</span></div>
         </div>
-        <div className="hero-glass-card hero-glass-float"><span className="hero-float-icon"><Activity size={16} /></span><span><strong>Live business data</strong><small>Phone ↔ Desktop</small></span><b>SYNCED</b></div>
+        <div className="hero-glass-card hero-glass-float"><span className="hero-float-icon"><Activity size={16} /></span><span><strong>{offline ? "Local-first mode" : cloud.verifiedChunks > 0 ? "Verified cloud data" : "Cloud sync pending"}</strong><small>{offline ? "Changes wait in encrypted queue" : cloud.snapshotUpdatedAt ? "Last snapshot " + new Date(cloud.snapshotUpdatedAt).toLocaleString() : "No cloud snapshot available"}</small></span><b>{offline ? "OFFLINE" : cloud.verifiedChunks > 0 ? "VERIFIED" : "PENDING"}</b></div>
         <div className="hero-orbit-dot" />
       </div>
     </section>
