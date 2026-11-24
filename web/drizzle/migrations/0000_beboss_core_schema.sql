@@ -335,6 +335,7 @@ create table public.payment_requests (
   device_challenge text not null default '',
   provider text not null default 'MTN MoMo',
   ussd_code text not null default '',
+  telco_reference text not null default '',
   payer_phone text not null default '',
   payer_full_name text not null default '',
   amount_rwf integer not null default 5000,
