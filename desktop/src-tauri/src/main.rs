@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
 use base64::prelude::*;
 use keyring::Entry;
@@ -16,6 +18,33 @@ use uuid::Uuid;
 
 const KEYRING_SERVICE: &str = "com.beboss.desktop";
 const KEYRING_DATABASE_KEY: &str = "database-encryption-key";
+
+/// Internal keys that the renderer bridge must never read or write directly.
+/// These are managed by the desktop host (device identity, sync clock, snapshots).
+const RESERVED_SECURE_KEYS: &[&str] = &[
+    "desktop-device-id",
+    "snapshot",
+    "effective-clock",
+    "last-hlc",
+    "shop_sync_key",
+    "shop-",
+    "device-",
+    "beBoss-",
+];
+
+fn is_reserved_key(key: &str) -> bool {
+    RESERVED_SECURE_KEYS.iter().any(|prefix| key == *prefix || key.starts_with(prefix))
+}
+
+/// Secure-storage keys must be a simple namespaced identifier. This prevents a
+/// compromised renderer from guessing or enumerating arbitrary vault keys.
+fn is_valid_secure_key(key: &str) -> bool {
+    !key.is_empty()
+        && key.len() <= 180
+        && key.bytes().all(|b| matches!(b, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-' | b'.' | b':'))
+        && !is_reserved_key(key)
+}
+
 static PROCESS_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 
 fn is_subscription_active(status: &str, expires_at: i64, effective_now: i64) -> bool {
@@ -252,7 +281,7 @@ struct UnlockCodeResult {
 
 #[tauri::command]
 fn secure_get(app: tauri::AppHandle, key: String) -> Result<Option<String>, String> {
-    if key.is_empty() || key.len() > 180 { return Err("Invalid secure-storage key.".into()); }
+    if !is_valid_secure_key(&key) { return Err("Invalid secure-storage key.".into()); }
     let connection = open_database(&app)?;
     let raw: Option<String> = connection.query_row("SELECT value FROM secure_values WHERE key = ?1", [key], |row| row.get(0))
         .optional().map_err(|error| error.to_string())?;
@@ -273,7 +302,7 @@ fn secure_get(app: tauri::AppHandle, key: String) -> Result<Option<String>, Stri
 
 #[tauri::command]
 fn secure_set(app: tauri::AppHandle, key: String, value: String) -> Result<(), String> {
-    if key.is_empty() || key.len() > 180 || value.len() > 8_000_000 { return Err("Invalid secure-storage value.".into()); }
+    if !is_valid_secure_key(&key) || value.len() > 8_000_000 { return Err("Invalid secure-storage value.".into()); }
     let key_seed = database_key()?;
     let encrypted = encrypt_payload(&value, &key_seed)?;
     let connection = open_database(&app)?;
@@ -284,7 +313,7 @@ fn secure_set(app: tauri::AppHandle, key: String, value: String) -> Result<(), S
 
 #[tauri::command]
 fn secure_remove(app: tauri::AppHandle, key: String) -> Result<(), String> {
-    if key.is_empty() || key.len() > 180 { return Err("Invalid secure-storage key.".into()); }
+    if !is_valid_secure_key(&key) { return Err("Invalid secure-storage key.".into()); }
     let connection = open_database(&app)?;
     connection.execute("DELETE FROM secure_values WHERE key = ?1", [key]).map_err(|error| error.to_string())?;
     Ok(())

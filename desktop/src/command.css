@@ -33,6 +33,30 @@
 .hero-command kbd { padding: 1px 6px; border: 1px solid rgba(255, 142, 85, .35); border-radius: 5px; color: #ffc4a0; background: rgba(0, 0, 0, .25); font-size: 9.5px; font-weight: 700; }
 .receipt-qr { display: block; margin: 12px auto 6px; border: 1px solid rgba(13, 23, 40, .12); border-radius: 10px; padding: 6px; background: #fff; image-rendering: pixelated; }
 
+/* Light-theme command surfaces */
+.command-backdrop { background: rgba(29, 44, 67, .28); }
+.command-palette { border-color: #dde6f1; background: #fff; box-shadow: 0 30px 80px rgba(36, 57, 84, .24), 0 0 0 1px rgba(255, 142, 85, .05); }
+.command-search { color: #718399; border-bottom-color: #edf1f6; }
+.command-search input { color: #26354a; }
+.command-search input::placeholder { color: #99a7b7; }
+.command-esc { color: #7d8da1; border-color: #e1e7ef; background: #f7f9fc; }
+.command-empty { color: #7d8da1; }
+.command-group-label { color: #8a99aa; }
+.command-item { color: #53667f; }
+.command-item.active { border-color: #f1d1bb; background: #fff5ee; }
+.command-item-icon { color: #7d91aa; background: #f1f5fa; }
+.command-item.active .command-item-icon { color: #d56f3a; background: #ffe7d7; }
+.command-item-copy strong { color: #26354a; }
+.command-item-copy small { color: #8291a4; }
+.command-foot { color: #8493a5; border-top-color: #edf1f6; }
+.command-foot kbd { color: #657890; border-color: #e2e8f0; background: #f7f9fc; }
+.command-btn { color: #657890; border-color: #e2e8f0; background: #fff; }
+.command-btn:hover { color: #26354a; border-color: #efd0bb; }
+.command-btn kbd { color: #8291a4; border-color: #e4eaf2; background: #f7f9fc; }
+.hero-command { color: #9d572f; border-color: #f1d1bb; background: #fff5ee; }
+.hero-command:hover { color: #743f22; border-color: #e9b991; background: #fff0e5; }
+.hero-command kbd { color: #9d572f; border-color: #edcbb1; background: #fff; }
+
 /* Phase 4 - Sync hub & owner access */
 .empty-state.compact { padding: 22px 16px; }
 .empty-state.compact span { width: 44px; height: 44px; margin-bottom: 10px; }

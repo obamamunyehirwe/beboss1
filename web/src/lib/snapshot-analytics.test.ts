@@ -96,7 +96,6 @@ describe("snapshot tokens", () => {
   it("rejects an unknown token prefix", async () => {
     await expect(verifyAndDecodeToken("BBSHARE9:deadbeef:payload", "server-secret")).rejects.toThrow(/Not a BeBoss share token/);
   });
-});
 
   it("uses the latest complete generation from every device", () => {
     const rows = [
