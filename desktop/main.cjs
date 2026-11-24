@@ -15,6 +15,7 @@ let mainWindow = null;
 let tray = null;
 const workspaceWindows = new Set();
 let notificationPermissionGranted = false;
+let mediaPermissionGranted = false;
 let updateState = 'idle';
 let availableUpdateVersion = null;
 let appMenu = null;
@@ -305,24 +306,41 @@ function configureSession(appSession) {
     try { requestingOrigin = new URL(details.requestingUrl || webContents.getURL()).origin; }
     catch { callback(false); return; }
 
-    if (requestingOrigin !== APP_ORIGIN || permission !== 'notifications') {
+    if (requestingOrigin !== APP_ORIGIN) {
       callback(false);
       return;
     }
-    if (notificationPermissionGranted) { callback(true); return; }
-
-    const ownerWindow = BrowserWindow.fromWebContents(webContents) || mainWindow;
-    const answer = await dialog.showMessageBox(ownerWindow, {
-      type: 'question', title: 'Allow BeBoss notifications?',
-      message: 'Allow BeBoss to show business and account notifications on this computer?',
-      buttons: ['Allow', 'Block'], defaultId: 0, cancelId: 1, noLink: true,
-    });
-    notificationPermissionGranted = answer.response === 0;
-    callback(notificationPermissionGranted);
+    if (permission === 'notifications') {
+      if (notificationPermissionGranted) { callback(true); return; }
+      const ownerWindow = BrowserWindow.fromWebContents(webContents) || mainWindow;
+      const answer = await dialog.showMessageBox(ownerWindow, {
+        type: 'question', title: 'Allow BeBoss notifications?',
+        message: 'Allow BeBoss to show business and account notifications on this computer?',
+        buttons: ['Allow', 'Block'], defaultId: 0, cancelId: 1, noLink: true,
+      });
+      notificationPermissionGranted = answer.response === 0;
+      callback(notificationPermissionGranted);
+      return;
+    }
+    if (permission === 'media' && Array.isArray(details.mediaTypes) && details.mediaTypes.includes('video')) {
+      if (mediaPermissionGranted) { callback(true); return; }
+      const ownerWindow = BrowserWindow.fromWebContents(webContents) || mainWindow;
+      const answer = await dialog.showMessageBox(ownerWindow, {
+        type: 'question', title: 'Allow BeBoss camera access?',
+        message: 'Allow camera access for barcode scanning? Camera frames are processed locally and are not uploaded by the scanner.',
+        buttons: ['Allow camera', 'Block'], defaultId: 0, cancelId: 1, noLink: true,
+      });
+      mediaPermissionGranted = answer.response === 0;
+      callback(mediaPermissionGranted);
+      return;
+    }
+    callback(false);
   });
 
   appSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => (
-    permission === 'notifications' && requestingOrigin === APP_ORIGIN && notificationPermissionGranted
+    requestingOrigin === APP_ORIGIN &&
+    ((permission === 'notifications' && notificationPermissionGranted) ||
+      (permission === 'media' && mediaPermissionGranted))
   ));
 
   appSession.on('will-download', async (event, item, webContents) => {
