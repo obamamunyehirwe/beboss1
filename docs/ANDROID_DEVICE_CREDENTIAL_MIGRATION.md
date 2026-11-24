@@ -14,7 +14,7 @@ This document describes the staged replacement for the predictable X-Shop-Sync-K
 
 ## Deployment sequence
 
-1. Apply migration 20261124100000_authenticated_android_device_credentials.sql.
+1. Apply migration 20261124210000_authenticated_android_device_credentials.sql.
 2. Deploy the updated beboss-desktop Edge Function and the new android-device-auth Edge Function.
 3. Configure the Supabase Auth SMS provider and verify that owner OTP delivery works.
 4. Build and distribute an Android release containing the device credential changes.
