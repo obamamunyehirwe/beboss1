@@ -27,9 +27,33 @@ create role service_role nologin bypassrls;
 create schema auth;
 create schema extensions;
 create schema beboss_private;
+create schema storage;
 create extension if not exists plpgsql;
 create extension pgcrypto with schema extensions;
 create publication supabase_realtime;
+
+-- Minimal Supabase Storage surface used by the repository's real migrations.
+create table storage.buckets (
+  id text primary key,
+  name text not null,
+  public boolean not null default false,
+  file_size_limit bigint,
+  allowed_mime_types text[]
+);
+create table storage.objects (
+  id uuid primary key default gen_random_uuid(),
+  bucket_id text not null references storage.buckets(id),
+  name text not null,
+  owner_id text,
+  owner text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  metadata jsonb not null default '{}'::jsonb
+);
+alter table storage.objects enable row level security;
+grant usage on schema storage to anon, authenticated, service_role;
+grant select, insert, update, delete on storage.objects to anon, authenticated;
+grant all on storage.objects, storage.buckets to service_role;
 
 create table auth.users (
   id uuid primary key default gen_random_uuid(),
@@ -65,6 +89,12 @@ SQL
 
 echo "Applying the repository's canonical Drizzle base schema."
 psql -X -v ON_ERROR_STOP=1 -f web/drizzle/migrations/0000_beboss_core_schema.sql
+
+echo "Applying the additive Drizzle migrations in lexical version order."
+for migration in web/drizzle/migrations/000[1-9]_*.sql; do
+  echo "Applying $migration"
+  psql -X -v ON_ERROR_STOP=1 -f "$migration"
+done
 
 echo "Applying all additive Supabase migrations in chronological order."
 for migration in web/supabase/migrations/*.sql; do
