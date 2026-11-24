@@ -31,6 +31,7 @@ object CryptoKeyManager {
     private const val DB_MASTER_KEY_ALIAS = "BeBoss_SQLCipher_Master_AES256"
     private const val BIOMETRIC_KEY_ALIAS = "BeBoss_Biometric_Strong_AES256"
     private const val LAN_SHARED_SECRET_KEY_ALIAS = "BeBoss_LAN_Shop_Secret_AES256"
+    private const val DEVICE_CREDENTIAL_KEY_ALIAS = "BeBoss_Device_Auth_AES256"
     private const val CRYPTO_PREFS = "beboss_hardware_crypto_prefs"
     private const val PREF_WRAPPED_DB_KEY = "wrapped_db_passphrase_v1"
 
@@ -212,6 +213,39 @@ object CryptoKeyManager {
         val cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, iv))
         return cipher.doFinal(ciphertext)
+    }
+
+    /**
+     * Protect opaque server-issued device access/refresh credentials with a dedicated
+     * AndroidKeyStore AES-GCM key. The wrapped envelopes are safe to persist in private
+     * app preferences; plaintext token values are never written to disk.
+     */
+    fun encryptDeviceCredential(value: String): String {
+        require(value.length in 16..4096) { "Invalid device credential value." }
+        val key = getOrCreateAndroidKeyStoreAesKey(
+            alias = DEVICE_CREDENTIAL_KEY_ALIAS,
+            requireUserAuth = false
+        )
+        val plain = value.toByteArray(StandardCharsets.UTF_8)
+        return try {
+            wrapWithKeyStoreKey(key, plain)
+        } finally {
+            plain.fill(0)
+        }
+    }
+
+    fun decryptDeviceCredential(envelope: String): String {
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val key = keyStore.getKey(DEVICE_CREDENTIAL_KEY_ALIAS, null) as? SecretKey
+            ?: throw SecurityException("This terminal has not provisioned its device credential key.")
+        val plain = unwrapWithKeyStoreKey(key, envelope)
+        return try {
+            val value = String(plain, StandardCharsets.UTF_8)
+            require(value.length in 16..4096) { "The stored device credential is invalid." }
+            value
+        } finally {
+            plain.fill(0)
+        }
     }
 
     /**

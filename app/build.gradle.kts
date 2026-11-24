@@ -8,6 +8,22 @@ plugins {
   alias(libs.plugins.secrets)
 }
 
+// Real signing material is read from the developer's ignored root .env file or
+// protected CI environment. Example files never contain production key material.
+val releaseSigningEnv = Properties().apply {
+  val envFile = rootProject.file(".env")
+  if (envFile.isFile) envFile.inputStream().use { load(it) }
+}
+fun signingSecret(name: String): String? =
+  providers.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }
+    ?: (findProperty(name) as? String)?.takeIf { it.isNotBlank() }
+    ?: releaseSigningEnv.getProperty(name)?.takeIf { it.isNotBlank() }?.trim()?.removeSurrounding("\"")?.removeSurrounding("'")
+val releaseKeystorePath = signingSecret("KEYSTORE_PATH")
+val releaseKeystoreFile = releaseKeystorePath?.let { rootProject.file(it) }
+val releaseStorePassword = signingSecret("STORE_PASSWORD")
+val releaseKeyPassword = signingSecret("KEY_PASSWORD")
+val releaseKeyAlias = signingSecret("KEY_ALIAS")
+
 android {
   namespace = "com.beboss.shopmgmt"
   compileSdk = 36
@@ -27,13 +43,16 @@ android {
       // Never sign a production variant with the public Android debug certificate.
       // Leave the config unset unless the protected CI/local release credentials exist;
       // validateReleaseSigningConfiguration below provides the actionable failure.
-      val keystorePath = System.getenv("KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
-      val keystoreFile = keystorePath?.let { file(it) }
-      if (keystoreFile?.isFile == true) {
-        storeFile = keystoreFile
-        storePassword = System.getenv("STORE_PASSWORD")
-        keyAlias = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() } ?: "upload"
-        keyPassword = System.getenv("KEY_PASSWORD")
+      if (
+        releaseKeystoreFile?.isFile == true &&
+        !releaseStorePassword.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank()
+      ) {
+        storeFile = releaseKeystoreFile
+        storePassword = releaseStorePassword
+        keyAlias = releaseKeyAlias
+        keyPassword = releaseKeyPassword
       }
     }
     create("debugConfig") {
@@ -198,21 +217,22 @@ val validateDataShareSigningConfiguration = tasks.register("validateDataShareSig
 
 // Release artifacts require both the real upload key and the same private
 // BBSHARE HMAC key configured in the protected Supabase server secret store.
+// Capture only scalar configuration values here. Task execution must not reach back
+// into Project/file()/providers so configuration-cache serialization remains valid.
+val releaseKeystoreConfigured = releaseKeystoreFile?.isFile == true
+val releaseCredentialsConfigured =
+  !releaseStorePassword.isNullOrBlank() &&
+  !releaseKeyPassword.isNullOrBlank() &&
+  !releaseKeyAlias.isNullOrBlank()
+
 val validateReleaseSigningConfiguration = tasks.register("validateReleaseSigningConfiguration") {
-  dependsOn(validateDataShareSigningConfiguration)
+  val hasKeystore = releaseKeystoreConfigured
+  val hasCredentials = releaseCredentialsConfigured
   doLast {
-    val keystorePath = System.getenv("KEYSTORE_PATH")
-    val storePassword = System.getenv("STORE_PASSWORD")
-    val keyPassword = System.getenv("KEY_PASSWORD")
-    val keystoreFile = keystorePath?.takeIf { it.isNotBlank() }?.let { file(it) }
-    if (
-      keystoreFile?.isFile != true ||
-      storePassword.isNullOrBlank() ||
-      keyPassword.isNullOrBlank()
-    ) {
+    if (!hasKeystore || !hasCredentials) {
       throw GradleException(
-        "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD and KEY_PASSWORD " +
-          "to the protected production upload keystore. A debug keystore is never accepted for release builds."
+        "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD, KEY_PASSWORD and KEY_ALIAS " +
+          "in the ignored root .env file or protected CI secrets. A debug keystore is never accepted for release builds."
       )
     }
   }
@@ -227,6 +247,7 @@ tasks.configureEach {
     name.startsWith("signRelease")
   ) {
     dependsOn(validateReleaseSigningConfiguration)
+    dependsOn(validateDataShareSigningConfiguration)
   }
 }
 

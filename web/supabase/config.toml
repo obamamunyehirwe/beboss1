@@ -25,3 +25,11 @@ verify_jwt = false
 
 [functions.manage-payment-refund]
 verify_jwt = true
+
+[functions.request-desktop-owner-otp]
+verify_jwt = false
+
+# The refresh route accepts only high-entropy, single-use per-device refresh
+# credentials and performs its own database verification; it does not trust JWT headers.
+[functions.android-device-auth]
+verify_jwt = false

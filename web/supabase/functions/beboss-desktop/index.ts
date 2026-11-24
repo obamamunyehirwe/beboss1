@@ -1,4 +1,9 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import {
+  createDeviceToken,
+  DEVICE_ACCESS_TTL_MS,
+  DEVICE_REFRESH_TTL_MS,
+} from "../_shared/device-credentials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -465,7 +470,8 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(config.url, config.serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false }
     });
-    if (!config.hmacSecret) {
+    const deviceCredentialAction = action === "device_enroll" || action === "device_retire_legacy";
+    if (!config.hmacSecret && !deviceCredentialAction) {
       const { data: snapshotSecret, error: secretError } = await admin
         .from("app_secrets")
         .select("value")
@@ -477,7 +483,154 @@ Deno.serve(async (req: Request) => {
       }
       config.hmacSecret = storedSecret;
     }
-    const owner = await requireOwner(req, admin, config.publishableKey, body, action === "bootstrap");
+    const owner = await requireOwner(
+      req,
+      admin,
+      config.publishableKey,
+      body,
+      action === "bootstrap" || action === "device_enroll" || action === "device_retire_legacy"
+    );
+
+    if (action === "device_enroll") {
+      const deviceId = text(body.deviceId).trim();
+      const deviceName = text(body.deviceName).trim().slice(0, 120) || "Android terminal";
+      if (deviceId.length < 4 || deviceId.length > 120 || /[\\r\\n]/.test(deviceId)) {
+        throw new Error("This Android installation has an invalid device identifier.");
+      }
+
+      const deviceFields = "id,device_id,device_name,role,assigned_user_id,is_active,is_owner_primary";
+      let { data: deviceRecord, error: deviceLookupError } = await admin
+        .from("shop_devices")
+        .select(deviceFields)
+        .eq("shop_sync_key", owner.shopId)
+        .eq("device_id", deviceId)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (deviceLookupError) throw new Error("Could not validate this shop terminal.");
+
+      if (!deviceRecord) {
+        const { data: primary, error: primaryError } = await admin
+          .from("shop_devices")
+          .select(deviceFields)
+          .eq("shop_sync_key", owner.shopId)
+          .eq("is_owner_primary", true)
+          .eq("is_active", true)
+          .eq("device_id", "")
+          .limit(1)
+          .maybeSingle();
+        if (primaryError) throw new Error("Could not validate the owner terminal registration.");
+
+        if (primary) {
+          const { data: updatedPrimary, error: updatePrimaryError } = await admin
+            .from("shop_devices")
+            .update({ device_id: deviceId, device_name: deviceName, updated_at: Date.now() })
+            .eq("id", primary.id)
+            .eq("shop_sync_key", owner.shopId)
+            .eq("is_active", true)
+            .select(deviceFields)
+            .single();
+          if (updatePrimaryError || !updatedPrimary) {
+            throw new Error("Could not bind this installation to the existing owner terminal.");
+          }
+          deviceRecord = updatedPrimary;
+        } else {
+          const { count: activeCount, error: countError } = await admin
+            .from("shop_devices")
+            .select("id", { count: "exact", head: true })
+            .eq("shop_sync_key", owner.shopId)
+            .eq("is_active", true);
+          if (countError) throw new Error("Could not confirm the shop's active device registry.");
+          if ((activeCount ?? 0) > 0) {
+            throw new Error("This terminal is not registered in the shop device list. The owner must add or invite it before it can receive credentials.");
+          }
+
+          const { data: ownerUsers, error: ownerUserError } = await admin
+            .from("shop_users")
+            .select("user_id,username,full_name")
+            .eq("shop_sync_key", owner.shopId)
+            .eq("role", "OWNER")
+            .eq("is_active", true)
+            .limit(1);
+          if (ownerUserError) throw new Error("Could not validate the registered shop-owner profile.");
+          const ownerUser = ownerUsers?.[0];
+          const now = Date.now();
+          const newDevice = {
+            id: crypto.randomUUID(),
+            shop_sync_key: owner.shopId,
+            shop_name: text(owner.shop.shop_name),
+            device_id: deviceId,
+            device_name: deviceName,
+            join_code: "",
+            assigned_user_id: text(ownerUser?.user_id) || "OWNER",
+            assigned_username: text(ownerUser?.username) || owner.username,
+            assigned_user_name: text(ownerUser?.full_name) || text(owner.shop.owner_name) || "Shop Owner",
+            role: "OWNER",
+            branch_id: "main_branch",
+            branch_name: "Main Store",
+            is_owner_primary: true,
+            is_active: true,
+            monthly_fee_addon_rwf: 0,
+            created_at: now,
+            updated_at: now,
+          };
+          const { data: createdDevice, error: createDeviceError } = await admin
+            .from("shop_devices")
+            .insert(newDevice)
+            .select(deviceFields)
+            .single();
+          if (createDeviceError || !createdDevice) {
+            throw new Error("Could not register the first owner terminal. Check the shop device limit and retry.");
+          }
+          deviceRecord = createdDevice;
+        }
+      }
+
+      if (!deviceRecord.is_active || !deviceRecord.id) {
+        throw new Error("This terminal is inactive and cannot receive a sync credential.");
+      }
+
+      const accessToken = createDeviceToken();
+      const refreshToken = createDeviceToken();
+      const now = Date.now();
+      const accessExpiresAt = now + DEVICE_ACCESS_TTL_MS;
+      const refreshExpiresAt = now + DEVICE_REFRESH_TTL_MS;
+      const { data: issued, error: issueError } = await admin.rpc("issue_android_device_credential", {
+        p_shop_id: owner.shopId,
+        p_device_id: deviceId,
+        p_device_record_id: deviceRecord.id,
+        p_access_token_hash: await sha256Hex(accessToken),
+        p_refresh_token_hash: await sha256Hex(refreshToken),
+        p_access_expires_at: accessExpiresAt,
+        p_refresh_expires_at: refreshExpiresAt,
+      });
+      if (issueError || !issued?.issued) {
+        throw new Error("The server could not provision an authenticated credential for this terminal.");
+      }
+
+      return json(200, {
+        ok: true,
+        deviceId,
+        role: text(issued.role),
+        accessToken,
+        refreshToken,
+        accessExpiresAt,
+        refreshExpiresAt,
+      });
+    }
+
+    if (action === "device_retire_legacy") {
+      const { data: retired, error: retireError } = await admin.rpc("retire_legacy_android_sync", {
+        p_shop_id: owner.shopId,
+      });
+      if (retireError) throw new Error("Could not safely retire the legacy shop sync credential.");
+      if (retired !== true) {
+        return json(409, {
+          ok: false,
+          message: "Legacy sync is still active because one or more active shop terminals do not have a valid device credential. Enroll every active terminal first; no existing device has been locked out.",
+        });
+      }
+      return json(200, { ok: true, legacySyncDisabled: true });
+    }
 
     if (action === "bootstrap") {
       const [snapshotResult, paymentsResult, codesResult, devicesResult, branchesResult, transfersResult, staffResult, newsResult] = await Promise.all([

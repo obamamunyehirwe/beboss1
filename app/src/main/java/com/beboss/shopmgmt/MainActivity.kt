@@ -90,6 +90,7 @@ import com.beboss.shopmgmt.ui.viewmodel.AppScreen
 import com.beboss.shopmgmt.ui.viewmodel.BeBossViewModel
 import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.BiometricAuthManager
+import com.beboss.shopmgmt.util.AndroidDeviceCredentialStore
 import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.ConnectivityStatus
 import com.beboss.shopmgmt.util.Localization
@@ -104,6 +105,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AndroidDeviceCredentialStore.initialize(applicationContext)
         ClockGuard.init(this)
         if (!BuildConfig.DEBUG) {
             window.setFlags(
