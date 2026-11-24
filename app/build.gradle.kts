@@ -167,6 +167,9 @@ ksp {
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
+  // This value is supplied explicitly with buildConfigField below. Exclude it from
+  // the Secrets plugin so blank .env.example entries cannot generate invalid Java.
+  ignoreList.add("BEBOSS_DATASHARE_HMAC_SECRET")
   ignoreList.add("BEBOSS_ADMIN_URL")
   ignoreList.add("BEBOSS_ADMIN_WHATSAPP")
   ignoreList.add("BEBOSS_LAN_SYNC_SECRET")
