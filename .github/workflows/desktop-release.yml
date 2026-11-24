@@ -82,11 +82,13 @@ jobs:
         run: npm test
 
       - name: Build, sign, notarize and publish update feed
-        run: npx electron-builder ${{ matrix.args }} --publish always
+        run: npx electron-builder ${{ matrix.args }} --config electron-builder.release.yml --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ matrix.label == 'windows-x64' && secrets.WIN_CSC_LINK || matrix.label == 'macos-universal' && secrets.MAC_CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ matrix.label == 'windows-x64' && secrets.WIN_CSC_KEY_PASSWORD || matrix.label == 'macos-universal' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          WIN_CSC_LINK: ${{ matrix.label == 'windows-x64' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ matrix.label == 'windows-x64' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          CSC_LINK: ${{ matrix.label == 'macos-universal' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.label == 'macos-universal' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
