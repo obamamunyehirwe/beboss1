@@ -72,10 +72,8 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       active = "database";
       setActiveStep(active);
       updateStep(active, "running", "Opening SQLCipher and inspecting local data…");
-      const [database, pending] = await Promise.all([
-        window.beBossDesktop.systemDiagnostics(),
-        window.beBossDesktop.local.outboxCount()
-      ]);
+      const database = await window.beBossDesktop.systemDiagnostics();
+      const pending = await window.beBossDesktop.local.outboxCount();
       if (!database.databaseEncrypted || !database.databaseCipherVersion) {
         throw new Error("SQLCipher could not confirm that the local database is encrypted.");
       }
@@ -126,8 +124,10 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         }
       }
 
-      await window.beBossDesktop.secureStore.set("installation-setup-completed-at", new Date().toISOString());
+      // Save the version first; the completion timestamp is the final commit marker
+      // App.tsx checks before allowing the owner sign-in screen to open.
       await window.beBossDesktop.secureStore.set("installation-setup-version", window.beBossDesktop.version);
+      await window.beBossDesktop.secureStore.set("installation-setup-completed-at", new Date().toISOString());
       setCompleted(true);
       setActiveStep(null);
       log("Required local setup checks passed. BeBoss is ready for owner sign-in.");
