@@ -17,7 +17,6 @@ let updateState = 'idle';
 let availableUpdateVersion = null;
 let appMenu = null;
 let updateCheckInterval = null;
-let isQuitting = false;
 let manualUpdateCheck = false;
 const configuredSessions = new WeakSet();
 
@@ -57,7 +56,6 @@ function refreshNativeMenus() {
 
 function runUpdateAction() {
   if (updateState === 'ready') {
-    isQuitting = true;
     autoUpdater.quitAndInstall();
     return;
   }
@@ -448,7 +446,6 @@ if (!hasSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
-    isQuitting = true;
     if (updateCheckInterval) { clearInterval(updateCheckInterval); updateCheckInterval = null; }
     ipcMain.removeHandler('beboss:desktop-version');
     ipcMain.removeHandler('beboss:update-status');
