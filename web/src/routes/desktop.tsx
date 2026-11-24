@@ -170,6 +170,24 @@ const emptyAnalytics = (dataset: Dataset) => {
     daily,
   };
 };
+function createDesktopUploadChunks(source: Dataset) {
+  const split = <T,>(items:T[], size:number):T[][] => items.length ? Array.from({length:Math.ceil(items.length/size)},(_,i)=>items.slice(i*size,(i+1)*size)) : [[]];
+  const productParts=split(source.products,250), customerParts=split(source.customers,250), saleParts=split(source.sales,250);
+  const count=Math.max(productParts.length,customerParts.length,saleParts.length);
+  const generation=uuid(), timestamp=Date.now(), nonce=uuid().replaceAll("-","");
+  return { generation, chunks: Array.from({length:count},(_,index)=>{
+    const sales=saleParts[index]||[]; const saleIds=new Set(sales.map(sale=>asText(sale.id)));
+    return {
+      metadata:{...source.metadata,app:"BeBoss",version:"3.0",schemaVersion:3,format:"beboss_branch_datashare_v3",timestamp,issuedAt:timestamp,expiresAt:timestamp+30*86400000,nonce:nonce+"-"+index,sinceUpdatedAt:0,exportedBy:"Desktop Owner",exportedByRole:"OWNER"},
+      shopProfile:source.shopProfile,
+      branches:index===0?source.branches:[],users:index===0?source.users:[],
+      products:productParts[index]||[],customers:customerParts[index]||[],sales,
+      saleItems:source.saleItems.filter(item=>saleIds.has(asText(item.saleId))),
+      customerPayments:index===0?source.customerPayments:[],purchases:index===0?source.purchases:[],
+      stockTransfers:index===0?source.stockTransfers:[],tombstones:index===0?source.tombstones:[]
+    };
+  })};
+}
 function forecastProduct(dataset: Dataset, productId: string, branchId = "ALL", now = Date.now()) {
   const horizon = 56;
   const today = new Date(now); today.setHours(0,0,0,0);
