@@ -122,7 +122,7 @@ Pricing logic is synchronized **1:1** across Android (`OfflineSubscriptionManage
 │    ├── Local LAN P2P Sync (LocalNetworkSyncServer / BBSHARE1)        │
 │    └── Background & On-Demand Sync (WorkManager + OkHttp Pinning)    │
 └───────────────────────────────┬──────────────────────────────────────┘
-                                │ HTTPS (X-Shop-Sync-Key + TLS Pinning)
+                                │ HTTPS (per-device bearer token + TLS pinning; legacy header only during migration)
                                 ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │                   SUPABASE POSTGRESQL & AUTH CLOUD                   │

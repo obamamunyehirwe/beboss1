@@ -19,7 +19,7 @@ This is a browser hand-off, not a native Flutterwave/Stripe Android SDK integrat
 - Hosted checkout is initiated server-side using RWF.
 - The checkout allows `card` and `mobilemoneyrwanda`; Flutterwave must have the relevant methods enabled for the merchant account.
 - The hosted return URL is informational only. A browser redirect never marks a payment paid.
-- The webhook verifies Flutterwave's `flutterwave-signature` header by comparing a Base64 HMAC-SHA256 digest of the exact raw request body against the received signature using a constant-time comparison. The handler then fetches the transaction directly from Flutterwave and verifies the provider transaction ID, BeBoss reference, successful status, exact RWF amount and currency.
+- The webhook checks Flutterwave's documented `verif-hash` header with a constant-time comparison. Because the header authenticates the sending account rather than signing the body, the handler then fetches the transaction directly from Flutterwave and verifies the provider transaction ID, BeBoss reference, successful status, exact RWF amount and currency.
 - The handler then calls Flutterwave's transaction-verification API and checks the BeBoss reference, successful status, RWF currency and exact expected amount before marking the payment verified.
 
 ### Rwanda MTN and Airtel Mobile Money
@@ -48,7 +48,7 @@ Set these as Supabase Edge Function secrets. Never put them in Vite variables, A
 | Secret | Purpose |
 | --- | --- |
 | `FLW_SECRET_KEY` | Flutterwave server API key |
-| `FLW_WEBHOOK_SECRET_HASH` | Flutterwave webhook HMAC secret hash |
+| `FLW_WEBHOOK_SECRET_HASH` | Exact shared secret configured in Flutterwave's webhook `verif-hash` setting |
 | `STRIPE_SECRET_KEY` | Stripe live secret key |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
 | `BEBOSS_PUBLIC_URL` | Canonical HTTPS URL for the BeBoss website |
@@ -59,6 +59,16 @@ Configure provider webhook endpoints after deployment:
 - Stripe: `https://<project-ref>.supabase.co/functions/v1/payment-gateway-webhook`
 
 Enable payment and asynchronous success/failure events in the provider dashboards. Use separate live and staging provider keys and webhook endpoints. Do not use test-mode payments as production acceptance evidence.
+
+
+
+## Live Mobile Money settlement smoke test
+
+After creating and completing one successful Rwanda Mobile Money transaction with an MTN wallet and one with an Airtel wallet in the provider test environment, run the read-only verification harness from the repository root:
+
+    deno run --env-file=.env --allow-env --allow-net web/scripts/verify-flutterwave-rwanda-mobile-money.ts
+
+Set `FLW_SECRET_KEY` to the matching Flutterwave test-mode secret, plus `FLW_TEST_MTN_TRANSACTION_ID`, `FLW_TEST_MTN_REFERENCE`, `FLW_TEST_MTN_AMOUNT_RWF`, and the equivalent `FLW_TEST_AIRTEL_*` values. The harness independently fetches each transaction from Flutterwave and requires successful status, the exact reference, RWF, amount, and `payment_type=mobilemoneyrw`. It does not create a payment, mutate BeBoss records or print provider credentials. Use test-mode credentials first; repeat with live merchant credentials only after approval and with a low-value controlled payment.
 
 ## Operational rules
 
