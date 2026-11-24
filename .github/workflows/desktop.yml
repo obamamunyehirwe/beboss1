@@ -1,6 +1,7 @@
 name: BeBoss Desktop
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
     paths:
@@ -21,7 +22,7 @@ permissions:
 
 concurrency:
   group: desktop-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   desktop:
