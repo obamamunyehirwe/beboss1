@@ -129,7 +129,7 @@ export function BackupPage({ snapshot, cloud, onCommit, onCreateBranchShare, onV
       if (!snapshot) throw new Error("Initialize the shop snapshot before importing a branch package.");
       const token = importToken.trim();
       if (!token.startsWith("BBSHARE1:")) throw new Error("Paste a valid BBSHARE1 branch share token.");
-      if (token.length > 7_000_000) throw new Error("The branch share package exceeds the 7 MB safety limit.");
+      if (token.length > 4 * 1024 * 1024) throw new Error("The branch share package exceeds the 4 MB Android DataShare limit.");
       const verified = await onVerifyBranchShare(token);
       const merged = mergeSnapshots(snapshot, verified).snapshot as Snapshot;
       await onCommit((next) => { Object.assign(next, merged); }, "DATASHARE_IMPORT");

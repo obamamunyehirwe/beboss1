@@ -110,12 +110,12 @@ async function streamToBytes(stream: ReadableStream<Uint8Array>, limit: number) 
   return output;
 }
 async function verifyAndDecodeToken(token: string, secret: string): Promise<Row> {
-  const MAX_TOKEN = 7_000_000;
   let prefix = "";
   if (token.startsWith("BBSHARE2:")) prefix = "BBSHARE2:";
   else if (token.startsWith("BBSHARE1:")) prefix = "BBSHARE1:";
   else throw new Error("A snapshot token is malformed or too large.");
-  if (token.length > MAX_TOKEN) throw new Error("A snapshot token is malformed or too large.");
+  const maxTokenLength = prefix === "BBSHARE1:" ? 4 * 1024 * 1024 : 7 * 1024 * 1024;
+  if (token.length > maxTokenLength) throw new Error("A snapshot token is malformed or too large.");
   const rest = token.slice(prefix.length);
   const sep = rest.indexOf(":");
   if (sep <= 0) throw new Error("A BeBoss snapshot token is malformed.");
@@ -565,17 +565,25 @@ if (action === "create_branch_share") {
         snapshot.metadata.branchScopeId = text(scopedBranch.id);
         snapshot.metadata.branchScopeName = text(scopedBranch.name);
       }
+      for (const key of DATA_KEYS) {
+        if (snapshot[key].length > 25_000) {
+          throw new Error("The " + key + " collection exceeds the 25,000-record Android DataShare limit. Export one branch or a smaller data scope.");
+        }
+      }
       const raw = new TextEncoder().encode(JSON.stringify(snapshot));
       if (raw.length > 5 * 1024 * 1024) {
         throw new Error("The branch share package exceeds the 5 MB safe uncompressed limit. Export fewer records or a single branch.");
       }
       const compressed = await streamToBytes(
         new Blob([raw]).stream().pipeThrough(new CompressionStream("gzip")),
-        7 * 1024 * 1024
+        3 * 1024 * 1024
       );
       const payload = bytesToBase64(compressed);
       const signature = (await hmacHex(payload, config.hmacSecret)).slice(0, 16);
       const token = "BBSHARE1:" + signature + ":" + payload;
+      if (token.length > 4 * 1024 * 1024) {
+        throw new Error("The signed token exceeds the 4 MB Android DataShare limit. Export one branch or fewer records.");
+      }
       return json(200, {
         ok: true,
         token,
@@ -619,6 +627,11 @@ if (action === "create_branch_share") {
       const registeredPhone = text(owner.shop.owner_phone).replace(/\\D/g, "").slice(-9);
       if (incomingPhone && registeredPhone && incomingPhone !== registeredPhone) {
         throw new Error("The branch share package owner phone does not match this shop.");
+      }
+      for (const key of DATA_KEYS) {
+        if (!Array.isArray(decoded[key]) || (decoded[key] as unknown[]).length > 25_000) {
+          throw new Error("The " + key + " collection exceeds the Android DataShare record limit.");
+        }
       }
       const sanitized = sanitizeSnapshot(decoded, { username: owner.username, shop: owner.shop });
       sanitized.metadata = metadata;
