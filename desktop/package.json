@@ -1,11 +1,13 @@
 {
-  "name": "@beboss/desktop",
+  "name": "beboss-desktop",
   "version": "2.3.1",
   "private": true,
   "description": "BeBoss cross-platform desktop workspace",
   "main": "main.cjs",
   "license": "UNLICENSED",
-  "engines": { "node": ">=22.0.0" },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "start": "electron .",
     "test": "node --check main.cjs && node --check preload.cjs && node --test test/*.test.cjs",
@@ -17,5 +19,7 @@
   "devDependencies": {
     "electron": "45.4.1",
     "electron-builder": "26.18.0"
-  }
+  },
+  "productName": "BeBoss",
+  "author": "BeBoss"
 }
