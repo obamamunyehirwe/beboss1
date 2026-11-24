@@ -623,11 +623,9 @@ if (action === "create_branch_share") {
       if (!incomingName || incomingName !== registeredName) {
         throw new Error("The branch share package belongs to a different shop. Only packages from this registered shop can be merged.");
       }
-      const incomingPhone = text(importedProfile.phone).replace(/\D/g, "").slice(-9);
-      const registeredPhone = text(owner.shop.owner_phone).replace(/\D/g, "").slice(-9);
-      if (incomingPhone && registeredPhone && incomingPhone !== registeredPhone) {
-        throw new Error("The branch share package owner phone does not match this shop.");
-      }
+      // shopProfile.phone is the shop's editable public contact and may differ
+      // from the registered owner phone verified by OTP. HMAC and registered shop
+      // identity checks are authoritative; do not reject legitimate renamed contacts.
       for (const key of DATA_KEYS) {
         if (!Array.isArray(decoded[key]) || (decoded[key] as unknown[]).length > 25_000) {
           throw new Error("The " + key + " collection exceeds the Android DataShare record limit.");
