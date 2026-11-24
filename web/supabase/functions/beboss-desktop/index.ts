@@ -623,8 +623,8 @@ if (action === "create_branch_share") {
       if (!incomingName || incomingName !== registeredName) {
         throw new Error("The branch share package belongs to a different shop. Only packages from this registered shop can be merged.");
       }
-      const incomingPhone = text(importedProfile.phone).replace(/\\D/g, "").slice(-9);
-      const registeredPhone = text(owner.shop.owner_phone).replace(/\\D/g, "").slice(-9);
+      const incomingPhone = text(importedProfile.phone).replace(/\D/g, "").slice(-9);
+      const registeredPhone = text(owner.shop.owner_phone).replace(/\D/g, "").slice(-9);
       if (incomingPhone && registeredPhone && incomingPhone !== registeredPhone) {
         throw new Error("The branch share package owner phone does not match this shop.");
       }

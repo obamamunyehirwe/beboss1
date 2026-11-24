@@ -95,7 +95,7 @@ export function BillingPage({ cloud, onNavigate, onCheckout, onPaymentProof }: {
   }
 
   async function openSupportWhatsApp() {
-    const digits = s(proofResult?.supportWhatsapp).replace(/\\D/g, "");
+    const digits = s(proofResult?.supportWhatsapp).replace(/\D/g, "");
     const waNumber = digits.length === 9 ? "250" + digits : digits.startsWith("0") ? "25" + digits : digits;
     if (!waNumber) return;
     const message = `Hello BeBoss Support. I submitted payment claim ${s(proofResult?.paymentRequestId)} for ${s(shop.shop_name)}. Please review the pending verification.`;
