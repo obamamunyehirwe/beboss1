@@ -252,7 +252,7 @@ jobs:
           BEBOSS_DATASHARE_HMAC_SECRET: ""
         run: |
           set +e
-          output="$(gradle :app:validateDataShareSigningConfiguration 2>&1)"
+          output="$(gradle --configuration-cache :app:validateDataShareSigningConfiguration 2>&1)"
           status=$?
           set -e
           printf '%s\\n' "$output"
@@ -271,9 +271,10 @@ jobs:
           KEYSTORE_PATH: ""
           STORE_PASSWORD: ""
           KEY_PASSWORD: ""
+          KEY_ALIAS: ""
         run: |
           set +e
-          output="$(gradle :app:validateReleaseSigningConfiguration 2>&1)"
+          output="$(gradle --configuration-cache :app:validateReleaseSigningConfiguration 2>&1)"
           status=$?
           set -e
           printf '%s\\n' "$output"
