@@ -403,7 +403,8 @@ fun SettingsScreen(
         .ifBlank { shopProfile.adminWhatsAppNumber.trim() }
 
     // Only the authenticated local OWNER can manage tenant credential migration.
-    val canManageDeviceSecurity = currentUser?.role == UserRole.OWNER
+    val canEnrollDeviceCredential = currentUser != null
+    val canRetireLegacySync = currentUser?.role == UserRole.OWNER
     val registeredOwnerUsername = ownerAccount?.username?.trim().orEmpty()
     val registeredOwnerPhone = ownerAccount?.phone?.trim().orEmpty().ifBlank { shopProfile.phone.trim() }
     val credentialShopId = remember(registeredOwnerUsername, registeredOwnerPhone) {
@@ -425,7 +426,7 @@ fun SettingsScreen(
     var deviceCredentialMessage by remember { mutableStateOf("") }
 
     fun requestDeviceCredentialOtp(purpose: String) {
-        if (!canManageDeviceSecurity || registeredOwnerUsername.isBlank() || registeredOwnerPhone.isBlank()) {
+        if (!canEnrollDeviceCredential || registeredOwnerUsername.isBlank() || registeredOwnerPhone.isBlank()) {
             deviceCredentialMessage = "Complete the registered owner username and phone before enabling secure device sync."
             showDeviceCredentialDialog = true
             return
@@ -567,7 +568,7 @@ fun SettingsScreen(
         }
 
         // Owner-only authenticated device credentials and safe legacy migration.
-        if (canManageDeviceSecurity && shouldShowSection("SYNC", "device security credential authenticated terminal migration legacy tenant isolation")) {
+        if (canEnrollDeviceCredential && shouldShowSection("SYNC", "device security credential authenticated terminal migration legacy tenant isolation")) {
             item {
                 SettingsSectionCard(
                     title = "Authenticated device sync",
@@ -610,13 +611,16 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = { showLegacyRetirementConfirm = true },
-                        enabled = deviceCredentialReady && !legacySyncRetired && !deviceCredentialBusy && isOnline,
+                        enabled = canRetireLegacySync && deviceCredentialReady && !legacySyncRetired && !deviceCredentialBusy && isOnline,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(17.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Retire legacy shop sync for all devices", fontSize = 11.sp)
+                        Text(
+                            if (canRetireLegacySync) "Retire legacy shop sync for all devices" else "Only the shop owner can retire legacy sync",
+                            fontSize = 11.sp
+                        )
                     }
                     if (legacySyncRetired) {
                         Text(
