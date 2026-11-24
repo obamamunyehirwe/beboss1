@@ -35,6 +35,21 @@ object AndroidDeviceCredentialStore {
             !prefs.getString(KEY_REFRESH, null).isNullOrBlank()
     }
 
+    fun readForShop(shopId: String): AndroidDeviceCredential? {
+        val context = appContext ?: return null
+        val deviceId = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_DEVICE_ID, null) ?: return null
+        return read(shopId, deviceId)
+    }
+
+    fun hasCredentialForShop(shopId: String): Boolean {
+        val context = appContext ?: return false
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_SHOP_ID, null) == shopId &&
+            !prefs.getString(KEY_ACCESS, null).isNullOrBlank() &&
+            !prefs.getString(KEY_REFRESH, null).isNullOrBlank()
+    }
+
     fun read(shopId: String, deviceId: String): AndroidDeviceCredential? {
         val context = appContext ?: return null
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
