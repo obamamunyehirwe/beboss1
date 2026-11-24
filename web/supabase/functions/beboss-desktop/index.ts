@@ -3,7 +3,6 @@ import {
   createDeviceToken,
   DEVICE_ACCESS_TTL_MS,
   DEVICE_REFRESH_TTL_MS,
-  sha256Hex,
 } from "../_shared/device-credentials.ts";
 
 const corsHeaders = {
