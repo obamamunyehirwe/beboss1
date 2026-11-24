@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.119.2";
+import { ownerOtpIpBucketHash, ownerOtpPhoneBucketKey } from "../_shared/owner-otp-rate-limit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -74,18 +75,46 @@ Deno.serve(async (request) => {
   });
 
   if (action === "start") {
+    // Rate-limit by the verified destination phone, not the caller-controlled
+    // username-derived shop key. Otherwise an attacker could rotate usernames
+    // to bypass the three-SMS-per-ten-minute limit for one victim phone.
+    const now = Date.now();
+    const phoneBucket = await ownerOtpPhoneBucketKey(phone);
     const { data: attemptId, error: throttleError } = await admin.rpc("take_shop_owner_otp_slot", {
-      p_shop_id: id,
-      p_now_ms: Date.now(),
+      p_shop_id: phoneBucket,
+      p_now_ms: now,
       p_window_ms: 10 * 60 * 1000,
       p_max_attempts: 3,
     });
     if (throttleError) {
-      console.error("[bootstrap-shop-owner] Owner OTP throttle failed.");
+      console.error("[bootstrap-shop-owner] Owner OTP phone throttle failed.");
       return json(503, { error: "Secure shop registration is temporarily unavailable." });
     }
     if (!attemptId) {
       return json(429, { error: "Too many SMS verification requests. Wait ten minutes before trying again." });
+    }
+
+    // Add an independent source-IP limit to curb bulk OTP sending across many
+    // destination phones. The phone bucket above remains authoritative when
+    // the edge provider does not supply a trustworthy client-IP header.
+    const clientIp = request.headers.get("cf-connecting-ip")?.trim() ?? "";
+    const ipBucket = await ownerOtpIpBucketHash(clientIp);
+    if (ipBucket) {
+      const { data: ipAllowed, error: ipThrottleError } = await admin.rpc("take_shop_device_enrollment_attempt", {
+        p_bucket_hash: ipBucket,
+        p_now_ms: now,
+        p_window_ms: 10 * 60 * 1000,
+        p_max_attempts: 10,
+      });
+      if (ipThrottleError) {
+        await admin.from("shop_owner_otp_attempts").update({ status: "FAILED" }).eq("id", attemptId);
+        console.error("[bootstrap-shop-owner] Owner OTP source throttle failed.");
+        return json(503, { error: "Secure shop registration is temporarily unavailable." });
+      }
+      if (ipAllowed !== true) {
+        await admin.from("shop_owner_otp_attempts").update({ status: "THROTTLED" }).eq("id", attemptId);
+        return json(429, { error: "Too many verification requests from this network. Wait ten minutes before trying again." });
+      }
     }
 
     const { data: existingUserId, error: lookupError } = await admin.rpc("find_auth_user_by_phone", {
