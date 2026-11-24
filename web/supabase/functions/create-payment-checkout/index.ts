@@ -192,6 +192,7 @@ Deno.serve(async (request: Request) => {
       owner_phone: ownerPhone,
       device_challenge: shop.device_challenge ?? "",
       provider: gateway === "flutterwave" ? "Flutterwave" : "Stripe",
+      gateway_reference: txRef,
       ussd_code: "ONLINE_CHECKOUT",
       payer_phone: payerPhone,
       payer_full_name: payerName,
