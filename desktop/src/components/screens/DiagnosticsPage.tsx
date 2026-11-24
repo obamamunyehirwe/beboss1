@@ -62,7 +62,7 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
     <div className="stat-grid four">
       <StatCard label="Network state" value={!online ? "Offline" : ping ? (ping.reachable ? "Cloud reachable" : "Cloud unreachable") : "Network online"} sub={!online ? "Using encrypted local storage" : ping ? ping.details : "Device network is available; run Ping cloud to test the configured host"} icon={Wifi} tone={!online ? "orange" : ping && !ping.reachable ? "red" : "green"} />
       <StatCard label="Pending outbox" value={String(outbox)} sub="Queued local transactions" icon={Database} tone={outbox > 0 ? "orange" : "green"} />
-      <StatCard label="Snapshot integrity" value={cloud.verifiedChunks > 0 ? "Verified" : "Not verified"} sub={cloud.verifiedChunks + " verified chunks"} icon={ShieldCheck} tone={cloud.verifiedChunks > 0 ? "green" : "orange"} />
+      <StatCard label="Snapshot integrity" value={cloud.verifiedChunks > 0 ? "Verified" : snapshot ? "Local only" : "No snapshot"} sub={cloud.verifiedChunks + " verified cloud chunks"} icon={ShieldCheck} tone={cloud.verifiedChunks > 0 ? "green" : snapshot ? "orange" : "red"} />
       <StatCard label="App uptime" value={diag ? formatUptime(diag.uptimeSeconds) : "—"} sub="This session" icon={Clock3} tone="purple" />
     </div>
 

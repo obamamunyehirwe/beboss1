@@ -100,6 +100,10 @@ function LookupPanel() {
   const enrollOwner = useServerFn(claimMyShopOwner);
   const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
+  const lookupIdentity = useRef({ username, phone });
+  // Keep the current identity available to in-flight requests. An old response
+  // must never repopulate one owner's data after the inputs have changed.
+  lookupIdentity.current = { username, phone };
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -120,7 +124,12 @@ function LookupPanel() {
     setRefreshing(true);
     try {
       // Re-runs the server-side owner-session and phone checks on every refresh.
-      const next = await lookup({ data: { username, phone } });
+      const requestedIdentity = { username, phone };
+      const next = await lookup({ data: requestedIdentity });
+      if (
+        lookupIdentity.current.username !== requestedIdentity.username ||
+        lookupIdentity.current.phone !== requestedIdentity.phone
+      ) return;
       setResult(next);
       setLastCheckedAt(Date.now());
     } catch (error) {
