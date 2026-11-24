@@ -464,6 +464,71 @@ Deno.serve(async (request: Request) => {
       return json(200, { ok: true, chunkIndex, chunkCount, generation });
     }
 
+    if (action === "finalize") {
+      const generation = text(body.syncGeneration).trim();
+      const expectedCount = Number(body.chunkCount);
+      if (!/^[0-9a-f-]{36}$/i.test(generation) || !Number.isInteger(expectedCount) || expectedCount < 1 || expectedCount > 1000) {
+        return json(400, { error: "Invalid desktop snapshot finalize request." });
+      }
+      const { data: snapshotRows, error: snapshotError } = await admin
+        .from("branch_sync_snapshots")
+        .select("id,device_id,sync_generation,chunk_index,chunk_count,branch_id,branch_name,shop_name,owner_username,payload_token,records_summary,updated_at")
+        .eq("shop_sync_key", shopId).order("updated_at", { ascending: false }).limit(10000);
+      if (snapshotError) throw new Error("Could not read cloud revisions during desktop finalization.");
+      const desktopChunks = (snapshotRows ?? []).filter((row) => text(row.device_id).replace(/#c\\d+$/, "") === desktopId && text(row.sync_generation) === generation);
+      const indexes = desktopChunks.map((row) => Number(row.chunk_index)).sort((a,b)=>a-b);
+      if (desktopChunks.length !== expectedCount || desktopChunks.some((row) => Number(row.chunk_count) !== expectedCount) || indexes.some((index,position)=>index!==position)) {
+        throw new Response("Desktop upload is incomplete. No partial snapshot has been published to other terminals.", { status: 409 });
+      }
+      const sets = completeSnapshotRows((snapshotRows ?? []) as Record<string, unknown>[]);
+      if (!sets.some((set) => set.length === expectedCount && set.every((row) => text(row.sync_generation) === generation))) {
+        throw new Response("The latest desktop chunk generation is incomplete or superseded. Retry synchronization.", { status: 409 });
+      }
+      const parts: Record<string, unknown>[] = [];
+      const integrityFailures: string[] = [];
+      for (const set of sets) {
+        for (const row of set) {
+          try { parts.push(await decodeDesktopShareToken(text(row.payload_token), secret)); }
+          catch (error) { integrityFailures.push(text(row.device_id) + ": " + (error instanceof Error ? error.message : "Invalid snapshot")); }
+        }
+      }
+      if (integrityFailures.length) throw new Response("Snapshot integrity verification failed: " + integrityFailures.slice(0,3).join("; "), { status: 409 });
+      const dataset = mergeDesktopSnapshotParts(parts);
+      if (!text(dataset.shopProfile.shopName).trim()) throw new Response("The desktop snapshot does not contain the registered business profile.", { status: 409 });
+      const now = Date.now();
+      const normalizedChunks = createDesktopSnapshotChunks(dataset, now, desktopId, text(user.user_metadata?.full_name) || "Shop Owner");
+      const count = normalizedChunks.length;
+      const recordsSummary = dataset.branches.length + " branches • " + dataset.products.length + " items • " + dataset.sales.length + " sales • " + dataset.customers.length + " clients (" + count + " chunk(s))";
+      const activeBranch = dataset.branches.find((item) => item.isMainBranch === true) ?? dataset.branches[0] ?? {};
+      const rowsToWrite: Record<string, unknown>[] = [];
+      for (let index = 0; index < normalizedChunks.length; index += 1) {
+        const chunk = normalizedChunks[index]!;
+        const token = await encodeDesktopShareToken(chunk, secret);
+        const chunkDeviceId = index === 0 ? desktopId : desktopId + "#c" + index;
+        const info = chunk._desktopMeta as Record<string, unknown>;
+        rowsToWrite.push({
+          id: shopId + "::" + chunkDeviceId, shop_sync_key: shopId, device_id: chunkDeviceId,
+          sync_generation: text(info.syncGeneration), chunk_index: index, chunk_count: count,
+          branch_id: text(activeBranch.id), branch_name: text(activeBranch.name) || "Main Store",
+          shop_name: text(shop.shop_name), owner_username: text(shop.owner_username).trim().toLowerCase(),
+          payload_token: token, records_summary: recordsSummary, updated_at: now + index,
+        });
+      }
+      const { error: writeError } = await admin.from("branch_sync_snapshots").upsert(rowsToWrite, { onConflict: "id" });
+      if (writeError) throw new Error("The merged desktop snapshot could not be published: " + writeError.message);
+      const keep = new Set(rowsToWrite.map((row) => text(row.device_id)));
+      const { data: existing, error: existingError } = await admin.from("branch_sync_snapshots")
+        .select("id,device_id").eq("shop_sync_key", shopId).like("device_id", desktopId + "%");
+      if (existingError) throw new Error("Snapshot publish succeeded but desktop chunk cleanup could not be verified.");
+      const staleIds = (existing ?? []).filter((row) => !keep.has(text(row.device_id))).map((row) => text(row.id));
+      if (staleIds.length) {
+        const { error: deleteError } = await admin.from("branch_sync_snapshots").delete().eq("shop_sync_key", shopId).in("id", staleIds);
+        if (deleteError) throw new Error("Snapshot publish succeeded but stale desktop chunk cleanup failed.");
+      }
+      await syncNormalizedProjection(admin, shop, dataset);
+      return json(200, { ok: true, deviceId: desktopId, chunks: count, records: recordsSummary, uploadedAt: now, snapshotDevices: sets.length });
+    }
+
     if (action === "save") {
       const submitted = validateDataset(body.dataset, shopId);
       const now = Date.now();
