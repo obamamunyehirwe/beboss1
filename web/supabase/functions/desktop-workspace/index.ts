@@ -106,11 +106,10 @@ function mergeIncomingSnapshot(
       tombstones.set(id, row);
     }
   }
-  const deleted = new Map([...tombstones.values()].map((row) => [text(row.recordId), Number(row.deletedAt) || 0]));
-  const live = (key: keyof SnapshotDataset) => mergeCollection(key).filter((row) => {
-    const deletedAt = deleted.get(text(row.id));
-    return deletedAt === undefined || Math.max(Number(row.hlcTimestamp) || 0, Number(row.updatedAt) || 0) > deletedAt;
-  });
+  const deletedIds = new Set([...tombstones.values()].map((row) => text(row.recordId)));
+  const live = (key: keyof SnapshotDataset) => mergeCollection(key).filter((row) =>
+    row.isDeleted !== true && !deletedIds.has(text(row.id))
+  );
   const submittedTime = Number(submitted.metadata?.timestamp) || 0;
   const remoteTime = Number(remote.metadata?.timestamp) || 0;
   return {
