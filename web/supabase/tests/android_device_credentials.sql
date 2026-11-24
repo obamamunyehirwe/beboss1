@@ -149,6 +149,18 @@ begin
   if has_function_privilege('anon', 'public.is_beboss_staff()', 'EXECUTE') then
     raise exception 'Anonymous callers can execute the platform staff predicate.';
   end if;
+  if has_function_privilege('anon', 'beboss_private.is_beboss_staff_internal()', 'EXECUTE') then
+    raise exception 'Anonymous callers can execute the private staff predicate.';
+  end if;
+  if (select prosecdef from pg_proc where oid = 'public.current_shop_sync_key()'::regprocedure) then
+    raise exception 'The public tenant resolver must be SECURITY INVOKER.';
+  end if;
+  if (select prosecdef from pg_proc where oid = 'public.current_shop_actor_role()'::regprocedure) then
+    raise exception 'The public actor-role resolver must be SECURITY INVOKER.';
+  end if;
+  if (select prosecdef from pg_proc where oid = 'public.current_shop_device_id()'::regprocedure) then
+    raise exception 'The public device-id resolver must be SECURITY INVOKER.';
+  end if;
   if not exists (
     select 1 from pg_policies
     where schemaname = 'public'
