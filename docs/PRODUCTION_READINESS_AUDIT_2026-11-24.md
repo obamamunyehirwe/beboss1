@@ -17,6 +17,7 @@ This source review does **not** support an unqualified “enterprise production-
 3. **Setup upgrade detection:** startup now checks the recorded setup version as well as the completion marker. A changed desktop setup version therefore re-runs the real first-run diagnostics instead of ignoring the stored version.
 4. **Windows installation:** the NSIS bundle now uses a per-machine install mode, invoking Windows UAC for installation. The installed app itself remains a standard-user process. The installer no longer opens broad inbound firewall exceptions, and uninstall no longer deletes an unrelated data directory.
 5. **Desktop version coherence:** the desktop package, package lock, Rust crate, Tauri bundle, renderer bridge and installer registry version are aligned at **1.2.1**.
+6. **Android release signing safety:** Android is advanced to version **2.3.2** (versionCode 16). Release variants no longer fall back to the public debug keystore; release signing tasks now fail with an actionable error unless the protected production upload keystore and its passwords are configured. CI continues to build the debug variant without requiring production signing secrets.
 
 ## Findings that remain release blockers
 
@@ -30,9 +31,9 @@ The Nov 23 security audit and Nov 24 enterprise gateway rollout notes already de
 
 ### P1 — Production Android release evidence is incomplete
 
-The repository's Android verification workflow builds a debug APK and runs JVM/Robolectric tests. No production upload keystore is included (correctly), and this session has no signing secret or Play Console certificate to produce and verify a production-signed APK/AAB. Physical Android device, OS upgrade, offline recovery, backup/restore, and Bluetooth/USB printer acceptance also require hardware.
+The repository's Android verification workflow builds a debug APK and runs JVM/Robolectric tests. The release build now refuses to use a debug keystore and requires `KEYSTORE_PATH`, `STORE_PASSWORD` and `KEY_PASSWORD`, but no protected production upload keystore or Play Console certificate was available in this session to produce and verify a production-signed APK/AAB. Physical Android device, OS upgrade, offline recovery, backup/restore, and Bluetooth/USB printer acceptance also require hardware.
 
-**Required:** protected CI signing credentials, certificate fingerprint validation, signed artifact verification, staged rollout, and a recorded device/printer matrix.
+**Required:** configure protected CI signing credentials, validate the certificate fingerprint, sign and verify an APK/AAB, complete a staged rollout, and record a device/printer matrix.
 
 ### P1 — External security and identity assurance are incomplete
 
