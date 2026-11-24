@@ -143,6 +143,33 @@ grant execute on function public._assert_android_device_tenant_test(text,text,te
 
 set local role anon;
 
+-- The staff SECURITY DEFINER helper is never exposed to anonymous callers.
+do $function$
+begin
+  if has_function_privilege('anon', 'public.is_beboss_staff()', 'EXECUTE') then
+    raise exception 'Anonymous callers can execute the platform staff predicate.';
+  end if;
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'shop_accounts'
+      and policyname = 'Tenant read shop_accounts'
+      and 'anon' = any(roles)
+  ) then
+    raise exception 'The anonymous tenant-only shop account read policy is missing.';
+  end if;
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'shop_accounts'
+      and policyname = 'Staff read shop_accounts'
+      and 'authenticated' = any(roles)
+  ) then
+    raise exception 'The authenticated staff shop account read policy is missing.';
+  end if;
+end
+$function$;
+
 -- Valid device bearer: resolves the server-registered shop, role and device.
 select set_config(
   'request.headers',
