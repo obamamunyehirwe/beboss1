@@ -171,9 +171,31 @@ secrets {
   ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
 }
 
-// Release signing is intentionally separate from debug signing. Fail before a
-// release artifact is packaged unless the real upload key and credentials exist.
+// Release signing and cross-platform data-share signing are independent gates.
+val validateDataShareSigningConfiguration = tasks.register("validateDataShareSigningConfiguration") {
+  doLast {
+    val fileProps = Properties().apply {
+      val envFile = rootProject.file(".env")
+      if (envFile.isFile) envFile.inputStream().use { load(it) }
+    }
+    val configured = (
+      fileProps.getProperty("BEBOSS_DATASHARE_HMAC_SECRET")?.takeIf { it.isNotBlank() }
+        ?: (project.findProperty("BEBOSS_DATASHARE_HMAC_SECRET") as? String)?.takeIf { it.isNotBlank() }
+        ?: System.getenv("BEBOSS_DATASHARE_HMAC_SECRET")?.takeIf { it.isNotBlank() }
+        ?: ""
+      ).trim().removeSurrounding("\"")
+    if (configured.length < 32 || configured == "BeBossDefaultDataShareHmacKeyV2") {
+      throw GradleException(
+        "Android DataShare signing is not configured. Set BEBOSS_DATASHARE_HMAC_SECRET to the same protected 32+ character key stored as BEBOSS_DATASHARE_HMAC_SECRET in Supabase. The public fallback key is not accepted for production releases."
+      )
+    }
+  }
+}
+
+// Release artifacts require both the real upload key and the same private
+// BBSHARE HMAC key configured in the protected Supabase server secret store.
 val validateReleaseSigningConfiguration = tasks.register("validateReleaseSigningConfiguration") {
+  dependsOn(validateDataShareSigningConfiguration)
   doLast {
     val keystorePath = System.getenv("KEYSTORE_PATH")
     val storePassword = System.getenv("STORE_PASSWORD")

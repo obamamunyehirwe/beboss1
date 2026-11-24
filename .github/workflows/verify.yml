@@ -135,6 +135,8 @@ jobs:
   android:
     name: Android JVM unit tests
     runs-on: ubuntu-24.04
+    env:
+      BEBOSS_DATASHARE_HMAC_SECRET: ${{ secrets.BEBOSS_DATASHARE_HMAC_SECRET }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -172,6 +174,25 @@ jobs:
 
       - name: Run Android unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
+
+      - name: Verify Android DataShare signing fails closed without the shared secret
+        shell: bash
+        env:
+          BEBOSS_DATASHARE_HMAC_SECRET: ""
+        run: |
+          set +e
+          output="$(gradle :app:validateDataShareSigningConfiguration 2>&1)"
+          status=$?
+          set -e
+          printf '%s\\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "Android DataShare signing incorrectly accepted a missing shared HMAC key."
+            exit 1
+          fi
+          if ! grep -Fq "Android DataShare signing is not configured." <<< "$output"; then
+            echo "The expected fail-closed DataShare signing error was not found."
+            exit 1
+          fi
 
       - name: Verify Android release signing fails closed without production credentials
         shell: bash
