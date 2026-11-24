@@ -22,7 +22,9 @@ The desktop client never contains a Supabase service-role key, payment provider 
 - Native save dialog for reports and other files downloaded by the web application.
 - Native print dialog for invoices, receipts, reports and other printable web views.
 - Responsive desktop workspace with the exact web application's existing BeBoss logos, colors, typography, routes and feature set.
-- Friendly connection-recovery screen when the cloud workspace is unavailable.
+- First-launch online application-shell caching for the /desktop route and static JS/CSS/image/font resources; sensitive auth, Supabase REST, Edge Function and business data responses are excluded from the service-worker cache.
+- Encrypted local business workspace snapshot and held POS carts through Electron safeStorage; pending edits are retained until authenticated cloud sync can be retried.
+- Offline workspace reopening after the first successful online launch, provided the service worker and cached assets remain available in the persistent Electron session.
 
 Barcode scanners that operate as keyboard input and printers exposed through the operating system work through the shared web client and native print dialog. Vendor-specific USB/serial hardware integrations still require a supported web driver or a separately reviewed native integration.
 
@@ -67,9 +69,19 @@ The workflow uses the repository-scoped `GITHUB_TOKEN` to publish the versioned 
 
 The CI build does not invent or embed signing credentials. macOS Gatekeeper and Windows SmartScreen may warn for unsigned builds. The Linux packages are built without platform code signing.
 
-## Online operation
+## Online and offline operation
 
-The desktop renderer uses the live cloud application. A working internet connection is required for authentication, live data, synchronization, payments, updates and cloud administration. It does not claim to provide offline POS transaction capture. Use the Android client's existing offline-first functionality for the workflows it supports while disconnected.
+The first application launch must be online so the desktop can fetch the BeBoss web application, sign in the registered owner and install the desktop-scoped service worker. Once that installation succeeds, the /desktop document and its static JavaScript, CSS, image and font assets are cached by the service worker. The service worker does not cache Supabase Auth, REST, Edge Function, payment or business data responses.
+
+The encrypted local business snapshot is stored separately by Electron safeStorage and the operating-system credential store. While the workspace is running, POS sales, held carts, inventory, customer credit, purchases, branches and receipts can continue against that encrypted local snapshot when the network drops. When connectivity returns, the desktop publishes a version-aware snapshot through the owner-authenticated desktop-workspace Edge Function and reloads the merged cloud state.
+
+An offline reopen is supported only after the first successful online launch has installed the service worker and cached the current application assets. Clearing Electron site data, removing the service-worker cache, deleting the encrypted vault or changing the application origin requires an online launch again. Auth OTP, payment checkout, owner-portal lookups, device invitations, live updates and cloud synchronization require internet access.
+
+## Mobile parity boundaries
+
+The desktop now covers the main shop-owner POS and management flows, including camera and USB barcode scanning, held baskets, split cash/MoMo tender, sales ledger, inventory, customer credit, purchasing, branch commands, staff roles and branch assignments, subscription portal, device invitations, analytics and forecasting, QR-sealed receipts, CSV exports and backups.
+
+The following Android-specific capabilities are not yet fully ported to desktop and must not be represented as completed: Android Keystore-backed staff PIN/biometric login, the LAN mDNS/UDP master-hub server and encrypted direct peer-sync protocol, Android-specific background workers and sync dead-letter queue semantics, OEM USB/serial printer/scanner drivers, and Android lifecycle/device-integrity attestation checks. Desktop cloud sync uses the shared Supabase snapshot protocol rather than impersonating an Android device's hardware-bound local secrets.
 
 ## Versioning
 
