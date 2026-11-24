@@ -97,7 +97,7 @@ export function SetupWizard({ onComplete, onSkip }: SetupWizardProps) {
 
       // Check network
       addLog('Checking network connectivity...');
-      const networkResult = await window.beBossDesktop.network.ping('supabase.co:443');
+      const networkResult = await window.beBossDesktop.networkPing('supabase.co:443');
       if (networkResult.reachable) {
         addLog(`✓ Network connected (latency: ${networkResult.latencyMs}ms)`);
       } else {
@@ -172,7 +172,7 @@ export function SetupWizard({ onComplete, onSkip }: SetupWizardProps) {
     try {
       // Test connectivity
       addLog('Testing cloud connection...');
-      const networkResult = await window.beBossDesktop.network.ping('supabase.co:443');
+      const networkResult = await window.beBossDesktop.networkPing('supabase.co:443');
       
       if (networkResult.reachable) {
         addLog(`✓ Cloud reachable (${networkResult.latencyMs}ms latency)`);
