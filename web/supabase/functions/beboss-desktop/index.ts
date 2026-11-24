@@ -542,7 +542,7 @@ Deno.serve(async (req: Request) => {
       }
       const authorization = req.headers.get("Authorization") ?? "";
       if (!authorization.startsWith("Bearer ")) throw new Error("The verified owner session is missing.");
-      const checkoutResponse = await fetch(config.url.replace(/\\/+$/, "") + "/functions/v1/create-payment-checkout", {
+      const checkoutResponse = await fetch(config.url.replace(/\/+$/, "") + "/functions/v1/create-payment-checkout", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
