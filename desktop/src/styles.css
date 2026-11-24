@@ -27,7 +27,7 @@
 }
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; min-width: 100%; min-height: 100%; }
-body { min-width: 1120px; background: var(--bg); }
+body { min-width: 760px; background: var(--bg); }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .48; }
@@ -801,3 +801,16 @@ input::placeholder, textarea::placeholder { color: #a1adbc; }
   .setup-language-grid { grid-template-columns: 1fr; }
   .setup-feature-grid { margin-top: 20px; }
 }
+
+/* Product-led welcome surface; no fabricated live analytics are shown before sign-in. */
+.auth-showcase { padding: 18px 20px 16px; }
+.showcase-desktop-label { display: inline-flex; align-items: center; gap: 7px; color: #b7c5d9; font-size: 9px; letter-spacing: .11em; }
+.showcase-desktop-label .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #ff995d; box-shadow: 0 0 12px #ff995d88; }
+.showcase-product { min-height: 126px; display: grid; grid-template-columns: 72px minmax(0,1fr) auto; align-items: center; gap: 18px; margin: 15px 0; padding: 18px 20px; border: 1px solid rgba(255,255,255,.15); border-radius: 18px; background: linear-gradient(120deg,rgba(14,26,44,.84),rgba(38,52,74,.52)); box-shadow: 0 18px 42px rgba(4,10,20,.2), inset 0 1px rgba(255,255,255,.12); backdrop-filter: blur(14px); }
+.showcase-product > img:first-child { width: 68px; height: 68px; object-fit: contain; border-radius: 16px; filter: drop-shadow(0 10px 20px rgba(0,0,0,.24)); }
+.showcase-product-copy strong, .showcase-product-copy span { display: block; }
+.showcase-product-copy strong { color: #fff; font: 800 clamp(15px,1.6vw,21px)/1.2 Manrope,sans-serif; letter-spacing: -.4px; }
+.showcase-product-copy span { margin-top: 8px; color: #aebdd2; font-size: 10px; line-height: 1.5; }
+.showcase-product .showcase-wordmark { width: 106px; max-height: 34px; object-fit: contain; opacity: .9; }
+@media (max-width: 900px) { body { min-width: 0; } .auth-shell { grid-template-columns: minmax(0,1fr); } .auth-art { min-height: 560px; } .auth-panel { min-height: 620px; } }
+@media (max-width: 560px) { .showcase-product { grid-template-columns: 54px minmax(0,1fr); gap: 12px; padding: 14px; } .showcase-product > img:first-child { width: 52px; height: 52px; } .showcase-product .showcase-wordmark { display: none; } }

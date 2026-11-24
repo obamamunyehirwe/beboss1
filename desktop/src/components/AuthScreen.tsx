@@ -170,16 +170,13 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (owner: Owner
       </div>
 
       <div className="auth-showcase">
-        <div className="showcase-top">
-          <span>{t.showcaseTitle}</span>
-          <span><span className="live-dot" style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#45d69c", boxShadow: "0 0 10px #45d69c88", marginRight: 5 }} />{t.cloudConnected}</span>
+        <div className="showcase-top"><span>{t.showcaseTitle}</span><span className="showcase-desktop-label"><span className="live-dot" />DESKTOP WORKSPACE</span></div>
+        <div className="showcase-product">
+          <img src="/beboss-app-logo.png" alt="BeBoss product logo" />
+          <div className="showcase-product-copy"><strong>One command centre</strong><span>Sales · Inventory · Teams · Branches</span></div>
+          <img className="showcase-wordmark" src="/beboss-wordmark-light.png" alt="BeBoss" />
         </div>
-        <div className="showcase-chart">
-          {[26, 42, 34, 61, 49, 75, 62, 88, 72, 96, 81, 100].map((v, i) => <span key={i} style={{ height: v + "%" }} />)}
-        </div>
-        <div className="showcase-bottom">
-          {t.showcaseFoot.map((label) => <span key={label}>{label}</span>)}
-        </div>
+        <div className="showcase-bottom">{t.showcaseFoot.map((label) => <span key={label}>{label}</span>)}</div>
       </div>
 
       <div className="auth-feature-pills">

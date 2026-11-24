@@ -37,9 +37,8 @@ window.beBossDesktop = Object.freeze({
   systemDiagnostics: () => invoke<any>("system_diagnostics"),
   networkPing: (targetHost?: string) => invoke<any>("network_ping", { targetHost }),
   printEscposThermal: (payload: any) => invoke<any>("print_escpos_thermal", { payload }),
-  exportBackupFile: (jsonContent: string) => invoke<any>("export_backup_file", { jsonContent }),
-  importBackupFile: (filePath: string) => invoke<any>("import_backup_file", { filePath }),
-  verifyEmergencyCode: (code: string) => invoke<any>("verify_emergency_code", { code }),
+  exportBackupFile: (encryptedContent: string) => invoke<any>("export_backup_file", { encryptedContent }),
+  importBackupFile: (filePath: string) => invoke<string>("import_backup_file", { filePath }),
   printReceipt: async (_lines: string[]) => { window.print(); },
   platform: navigator.platform,
   version: "1.2.0"

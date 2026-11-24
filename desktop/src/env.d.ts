@@ -60,13 +60,6 @@ export interface FileExportResult {
   sha256: string;
 }
 
-export interface UnlockCodeResult {
-  valid: boolean;
-  daysGranted: number;
-  newExpiryTimestamp: number;
-  tier: string;
-  message: string;
-}
 
 declare global {
   interface Window {
@@ -97,9 +90,8 @@ declare global {
       systemDiagnostics(): Promise<SystemDiagnostics>;
       networkPing(targetHost?: string): Promise<NetworkPingResult>;
       printEscposThermal(payload: ReceiptPrintPayload): Promise<EscposPrintResult>;
-      exportBackupFile(jsonContent: string): Promise<FileExportResult>;
-      importBackupFile(filePath: string): Promise<any>;
-      verifyEmergencyCode(code: string): Promise<UnlockCodeResult>;
+      exportBackupFile(encryptedContent: string): Promise<FileExportResult>;
+      importBackupFile(filePath: string): Promise<string>;
       printReceipt(lines?: string[]): Promise<void>;
       platform: string;
       version: string;

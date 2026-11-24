@@ -81,3 +81,8 @@ The Windows/macOS/Linux build supports keyboard-wedge USB barcode scanners and t
 - The operating-system keyring protects the generated local database identity and secure session values. SQLite storage is local to the desktop user's application-data directory and must not be treated as a replacement for server-side authorization.
 - Configure `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` repository secrets for tagged releases. The release workflow signs the NSIS installer and verifies the signature before uploading/publishing it.
 - Configure the public `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` repository secrets so the packaged production desktop client connects to the actual project.
+
+
+## Portable backup security
+
+Portable backup exports use AES-256-GCM with PBKDF2-HMAC-SHA-256 (310,000 iterations), a fresh 16-byte salt and 12-byte nonce. The passphrase is entered locally, is not uploaded to Supabase, and is required to restore on another desktop. Legacy plaintext JSON backups remain importable for migration; create a new encrypted export after importing one. Subscription recovery is never granted by a locally guessed or format-only code. Desktop subscription status is read from Supabase and changed only by verified billing and owner workflows.

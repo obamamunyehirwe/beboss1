@@ -319,7 +319,7 @@ export default function App() {
         {view === "diagnostics" && <DiagnosticsPage cloud={cloud} snapshot={snapshot} onRefresh={refresh} />}
         {view === "sync" && <SyncHubPage cloud={cloud} deviceId={deviceId} offline={offline} onRefresh={refresh} />}
         {view === "admin" && <OwnerAccessPage cloud={cloud} />}
-        {view === "backup" && <BackupPage snapshot={snapshot} cloud={cloud} onCommit={commitSnapshot} offline={offline} />}
+        {view === "backup" && <BackupPage snapshot={snapshot} cloud={cloud} onCommit={commitSnapshot} />}
         {view === "settings" && <SettingsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} />}
         <footer className="app-footer"><span>BeBoss Desktop · Version {window.beBossDesktop.version}</span><span>Last cloud snapshot {new Date(cloud.snapshotUpdatedAt || 0).toLocaleString()} · {cloud.verifiedChunks} verified chunks</span></footer>
       </div>

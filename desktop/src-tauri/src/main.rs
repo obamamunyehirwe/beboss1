@@ -266,16 +266,6 @@ struct FileExportResult {
     sha256: String,
 }
 
-#[derive(Serialize)]
-struct UnlockCodeResult {
-    valid: bool,
-    #[serde(rename = "daysGranted")]
-    days_granted: i64,
-    #[serde(rename = "newExpiryTimestamp")]
-    new_expiry_timestamp: i64,
-    tier: String,
-    message: String,
-}
 
 // ────────────────────── TAURI COMMANDS ──────────────────────
 
@@ -559,15 +549,18 @@ fn print_escpos_thermal(app: tauri::AppHandle, payload: ReceiptPrintPayload) -> 
 }
 
 #[tauri::command]
-fn export_backup_file(app: tauri::AppHandle, json_content: String) -> Result<FileExportResult, String> {
+fn export_backup_file(app: tauri::AppHandle, encrypted_content: String) -> Result<FileExportResult, String> {
     let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let backup_dir = app_dir.join("backups");
     fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
 
-    let filename = format!("beboss-backup-{}.json", now_millis()?);
+    if encrypted_content.len() > 70_000_000 { return Err("Encrypted backup exceeds the 70 MB safety limit.".into()); }
+    let envelope = encrypted_content.strip_prefix("BBPORTABLE1:").ok_or_else(|| "Backup must use the portable encrypted format.".to_string())?;
+    serde_json::from_str::<Value>(envelope).map_err(|error| format!("Invalid encrypted backup envelope: {error}"))?;
+    let filename = format!("beboss-backup-{}.bbbackup", now_millis()?);
     let target_file = backup_dir.join(filename);
 
-    let bytes = json_content.as_bytes();
+    let bytes = encrypted_content.as_bytes();
     fs::write(&target_file, bytes).map_err(|e| e.to_string())?;
 
     let mut hasher = Sha256::new();
@@ -583,43 +576,15 @@ fn export_backup_file(app: tauri::AppHandle, json_content: String) -> Result<Fil
 }
 
 #[tauri::command]
-fn import_backup_file(file_path: String) -> Result<Value, String> {
-    let content = fs::read_to_string(&file_path).map_err(|e| format!("Could not read file: {e}"))?;
-    let parsed: Value = serde_json::from_str(&content).map_err(|e| format!("Invalid JSON snapshot: {e}"))?;
-    Ok(parsed)
+fn import_backup_file(file_path: String) -> Result<String, String> {
+    let content = fs::read_to_string(&file_path).map_err(|e| format!("Could not read backup file: {e}"))?;
+    if content.len() > 70_000_000 { return Err("Backup exceeds the 70 MB safety limit.".into()); }
+    // Portable encrypted envelopes are decrypted in the renderer with the user's passphrase.
+    // Legacy plaintext JSON remains readable for migration.
+    Ok(content)
 }
 
 #[tauri::command]
-fn verify_emergency_code(code: String) -> Result<UnlockCodeResult, String> {
-    let clean = code.trim().to_ascii_uppercase();
-    // Expected format: BB-30-XXXXXX or BB-7D-XXXXXX or BB-CODE-XXXX
-    let (days, tier) = if clean.contains("30") || clean.contains("MONTH") {
-        (30, "STANDARD_MONTHLY".to_string())
-    } else if clean.contains("7D") || clean.contains("WEEK") {
-        (7, "EMERGENCY_7_DAYS".to_string())
-    } else if clean.len() >= 6 {
-        (14, "PROVISIONAL_14_DAYS".to_string())
-    } else {
-        return Ok(UnlockCodeResult {
-            valid: false,
-            days_granted: 0,
-            new_expiry_timestamp: 0,
-            tier: "".to_string(),
-            message: "Invalid unlock code format. Expected code starting with BB-".to_string(),
-        });
-    };
-
-    let now = now_millis().unwrap_or(0);
-    let new_expiry = now + (days * 24 * 60 * 60 * 1000);
-
-    Ok(UnlockCodeResult {
-        valid: true,
-        days_granted: days,
-        new_expiry_timestamp: new_expiry,
-        tier,
-        message: format!("Emergency unlock code verified. Granted {} days offline grace period.", days),
-    })
-}
 
 fn main() {
     PROCESS_START.set(Instant::now()).ok();
@@ -630,7 +595,7 @@ fn main() {
             secure_get, secure_set, secure_remove, get_device_id,
             local_load, local_queue, local_pending, local_outbox_count, local_ack,
             system_diagnostics, network_ping, print_escpos_thermal,
-            export_backup_file, import_backup_file, verify_emergency_code
+            export_backup_file, import_backup_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running BeBoss Desktop");
