@@ -26,7 +26,7 @@ const rows = artifacts.map((filename) => {
 
 fs.writeFileSync(
   path.join(releaseDirectory, 'SHA256SUMS.txt'),
-  '# BeBoss desktop release artifact SHA-256 checksums\\n' + rows.join('\\n') + '\\n',
+  '# BeBoss desktop release artifact SHA-256 checksums\n' + rows.join('\n') + '\n',
   'utf8'
 );
-process.stdout.write('Generated SHA256SUMS.txt for ' + artifacts.length + ' artifacts.\\n');
+process.stdout.write('Generated SHA256SUMS.txt for ' + artifacts.length + ' artifacts.\n');
