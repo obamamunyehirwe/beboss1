@@ -99,8 +99,8 @@ export async function decodeDesktopShareToken(token: string, secret: string): Pr
   // JavaScript's safe integer range. Quote only these known fields before parsing;
   // Android JSONObject.optLong accepts the decimal-string representation.
   const rawJson = new TextDecoder().decode(raw).replace(
-    /("hlcTimestamp"\\s*:\\s*)(-?\\d{16,})/g,
-    (_match, prefix: string, value: string) => prefix + "\\"" + value + "\\"",
+    /("hlcTimestamp"\s*:\s*)(-?\d{16,})/g,
+    (_match, prefix: string, value: string) => prefix + '"' + value + '"',
   );
   const parsed = JSON.parse(rawJson) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Snapshot payload is not an object.");
@@ -225,7 +225,7 @@ function longValue(value: unknown): bigint {
   try {
     if (typeof value === "bigint") return value;
     if (typeof value === "number" && Number.isFinite(value)) return BigInt(Math.trunc(value));
-    if (typeof value === "string" && /^-?\\d+$/.test(value.trim())) return BigInt(value.trim());
+    if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return BigInt(value.trim());
   } catch {
     // Invalid or out-of-range client values are treated as absent.
   }
@@ -287,9 +287,9 @@ export function mergeDesktopSnapshotParts(parts: SnapshotRow[]): SnapshotDataset
   }
 
   const allTombstones = [...tombstones.values()];
-  const deleted = new Map(allTombstones.map((row) => [stringValue(row.recordId), numberValue(row.deletedAt)]));
+  const deletedIds = new Set(allTombstones.map((row) => stringValue(row.recordId)));
   const live = (key: (typeof COLLECTIONS)[number]) => [...maps[key].values()].filter((row) =>
-    row.isDeleted !== true && !deleted.has(stringValue(row.id))
+    row.isDeleted !== true && !deletedIds.has(stringValue(row.id))
   );
 
   return {
