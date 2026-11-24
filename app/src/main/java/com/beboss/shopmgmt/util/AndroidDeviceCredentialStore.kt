@@ -68,9 +68,10 @@ object AndroidDeviceCredentialStore {
                 refreshExpiresAt = prefs.getLong(KEY_REFRESH_EXPIRY, 0L)
             )
         } catch (error: Exception) {
-            // Do not silently fall back to the deterministic tenant key when the
-            // keystore-wrapped credential cannot be opened. The caller can re-enroll.
-            clear()
+            // Keep the enrollment marker and wrapped ciphertext. buildRestRequest()
+            // must not downgrade to X-Shop-Sync-Key when the Android Keystore is
+            // unavailable (for example, after a device lock-screen reset).
+            // The owner can explicitly re-enroll this terminal after recovery.
             null
         }
     }
