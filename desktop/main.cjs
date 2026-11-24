@@ -1,12 +1,14 @@
 'use strict';
 
 const path = require('node:path');
-const { app, BrowserWindow, Menu, Tray, nativeImage, dialog, ipcMain, session, shell, screen, Notification } = require('electron');
+const fs = require('node:fs/promises');
+const { app, BrowserWindow, Menu, Tray, nativeImage, dialog, ipcMain, session, shell, screen, Notification, safeStorage } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { PRODUCTION_APP_URL, resolveAppUrl, resolveWorkspaceUrl, isTrustedAppUrl, isSafeExternalUrl } = require('./security.cjs');
 
-const APP_URL = resolveAppUrl(process.env, app.isPackaged);
-const APP_ORIGIN = new URL(APP_URL).origin;
+const APP_BASE_URL = resolveAppUrl(process.env, app.isPackaged);
+const APP_ORIGIN = new URL(APP_BASE_URL).origin;
+const APP_URL = resolveWorkspaceUrl('/desktop', APP_ORIGIN);
 const SESSION_PARTITION = 'persist:beboss-desktop';
 const APP_NAME = 'BeBoss';
 let mainWindow = null;
@@ -21,6 +23,7 @@ let manualUpdateCheck = false;
 const configuredSessions = new WeakSet();
 
 const WORKSPACE_PAGES = [
+  { label: 'Desktop operations', path: '/desktop' },
   { label: 'Admin overview', path: '/admin' },
   { label: 'Payments & refunds', path: '/admin/payments' },
   { label: 'Shops & branches', path: '/admin/shops' },
@@ -133,6 +136,52 @@ function configureAutoUpdates() {
   updateCheckInterval.unref?.();
 }
 
+function assertSecureStorageAvailable() {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('Encrypted local storage is unavailable on this computer. Configure the operating-system keychain before enabling offline data.');
+  }
+}
+
+function workspaceCachePath() {
+  return path.join(app.getPath('userData'), 'workspace-cache.enc');
+}
+
+function authStoragePath(key) {
+  if (typeof key !== 'string' || !/^sb-[a-z0-9-]{8,80}-auth-token$/.test(key)) {
+    throw new Error('Invalid BeBoss secure-auth storage key.');
+  }
+  return path.join(app.getPath('userData'), 'secure-auth', key + '.enc');
+}
+
+async function readEncryptedValue(filePath) {
+  assertSecureStorageAvailable();
+  try {
+    const encrypted = await fs.readFile(filePath);
+    if (!encrypted.length || encrypted.length > 24 * 1024 * 1024) throw new Error('Encrypted BeBoss data file is outside the safe size limit.');
+    return safeStorage.decryptString(encrypted);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function writeEncryptedValue(filePath, value, maxChars) {
+  assertSecureStorageAvailable();
+  if (typeof value !== 'string' || value.length > maxChars) throw new Error('BeBoss encrypted data exceeds the safe size limit.');
+  JSON.parse(value);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const encrypted = safeStorage.encryptString(value);
+  const tempPath = filePath + '.' + process.pid + '.tmp';
+  await fs.writeFile(tempPath, encrypted, { mode: 0o600 });
+  await fs.rename(tempPath, filePath);
+  return true;
+}
+
+async function removeEncryptedValue(filePath) {
+  try { await fs.unlink(filePath); }
+  catch (error) { if (!error || error.code !== 'ENOENT') throw error; }
+  return true;
+}
 function workspaceUrl(route = '/') {
   return resolveWorkspaceUrl(route, APP_ORIGIN);
 }
@@ -429,6 +478,35 @@ if (!hasSingleInstanceLock) {
       });
     });
 
+    ipcMain.handle('beboss:secure-storage-available', (event) => {
+      if (!trustedSender(event)) throw new Error('Untrusted BeBoss renderer.');
+      return safeStorage.isEncryptionAvailable();
+    });
+    ipcMain.handle('beboss:workspace-cache-read', async (event) => {
+      if (!trustedSender(event)) throw new Error('Untrusted BeBoss renderer.');
+      return readEncryptedValue(workspaceCachePath());
+    });
+    ipcMain.handle('beboss:workspace-cache-write', async (event, value) => {
+      if (!trustedSender(event)) throw new Error('Untrusted BeBoss renderer.');
+      return writeEncryptedValue(workspaceCachePath(), value, 20 * 1024 * 1024);
+    });
+    ipcMain.handle('beboss:workspace-cache-clear', async (event) => {
+      if (!trustedSender(event)) throw new Error('Untrusted BeBoss renderer.');
+      return removeEncryptedValue(workspaceCachePath());
+    });
+    ipcMain.handle('beboss:secure-auth-get', async (event, key) => {
+      if (!trustedSender(event)) throw new Error('Untrusted BeBoss renderer.');
+      return readEncryptedValue(authStoragePath(key));
+    });
+    ipcMain.handle('beboss:secure-auth-set', async (event, key, value) => {
+      if (!trustedSender(event)) throw new Error('Untrusted BeBoss renderer.');
+      return writeEncryptedValue(authStoragePath(key), value, 1024 * 1024);
+    });
+    ipcMain.handle('beboss:secure-auth-remove', async (event, key) => {
+      if (!trustedSender(event)) throw new Error('Untrusted BeBoss renderer.');
+      return removeEncryptedValue(authStoragePath(key));
+    });
+
     createWindow();
     createTray();
     configureAutoUpdates();
@@ -451,6 +529,13 @@ if (!hasSingleInstanceLock) {
     ipcMain.removeHandler('beboss:update-status');
     ipcMain.removeHandler('beboss:check-for-updates');
     ipcMain.removeHandler('beboss:print-current-page');
+    ipcMain.removeHandler('beboss:secure-storage-available');
+    ipcMain.removeHandler('beboss:workspace-cache-read');
+    ipcMain.removeHandler('beboss:workspace-cache-write');
+    ipcMain.removeHandler('beboss:workspace-cache-clear');
+    ipcMain.removeHandler('beboss:secure-auth-get');
+    ipcMain.removeHandler('beboss:secure-auth-set');
+    ipcMain.removeHandler('beboss:secure-auth-remove');
     if (tray) { tray.destroy(); tray = null; }
   });
 }
