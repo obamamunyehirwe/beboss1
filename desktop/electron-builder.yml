@@ -17,6 +17,7 @@ extraResources:
   - from: ../web/public/beboss-brand.svg
     to: brand/beboss-brand.svg
 win:
+  forceCodeSigning: true
   target:
     - target: nsis
       arch: [x64]
@@ -30,6 +31,8 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: BeBoss
 mac:
+  forceCodeSigning: true
+  hardenedRuntime: true
   target: [dmg, zip]
   category: public.app-category.business
   artifactName: BeBoss-${version}-mac-${arch}.${ext}
