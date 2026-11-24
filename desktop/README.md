@@ -13,6 +13,9 @@ The desktop client never contains a Supabase service-role key, payment provider 
 ## Desktop capabilities
 
 - Native application window, operating-system menu and keyboard shortcuts.
+- Multi-window business workspace: open separate authenticated windows for overview, payments/refunds, shops, analytics, devices, cloud sync, audit and settings without signing in again.
+- System-tray quick launcher with restore, commonly used workspace pages and safe quit controls.
+- Shared authenticated session between desktop workspace windows, isolated from the normal browser profile.
 - Persistent, isolated application session so a user can sign in once and reopen BeBoss without sharing cookies with their normal browser.
 - Secure navigation policy: only the canonical BeBoss origin may load inside the app; external HTTPS destinations open in the system browser.
 - Context isolation, sandboxed renderer, disabled Node integration, blocked webviews and restricted notification permissions.
@@ -33,7 +36,7 @@ Linux distributions must provide a compatible Chromium/Electron runtime environm
 
 1. Install Node.js 22 or newer.
 2. Start the BeBoss web development server from the web directory.
-3. From this directory install the pinned desktop dependencies using npm install with the no-package-lock flag.
+3. From this directory install the exact desktop dependencies using npm install --no-package-lock --no-audit --no-fund.
 4. Run the desktop shell against the local Vite server. Set BEBOSS_DESKTOP_DEV_URL to http://localhost:5173 and run npm start. In PowerShell, set the environment variable before running npm start.
 5. Run the security-policy tests with npm test.
 6. Build the current operating-system package with npm run dist.
