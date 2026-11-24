@@ -28,10 +28,21 @@ function isTrustedAppUrl(candidate, appOrigin = new URL(PRODUCTION_APP_URL).orig
   return parsed.protocol === 'http:' && isLoopback(parsed.hostname);
 }
 
+function resolveWorkspaceUrl(route, appOrigin = new URL(PRODUCTION_APP_URL).origin) {
+  if (typeof route !== 'string' || !route.startsWith('/') || route.startsWith('//')) {
+    throw new Error('Workspace route must be an absolute same-origin path.');
+  }
+  const target = new URL(route, appOrigin);
+  if (target.origin !== appOrigin || target.username || target.password) {
+    throw new Error('Workspace route must remain on the trusted BeBoss origin.');
+  }
+  return target.toString();
+}
+
 function isSafeExternalUrl(candidate) {
   const parsed = parseUrl(candidate);
   return Boolean(parsed && parsed.protocol === 'https:' && !parsed.username &&
     !parsed.password && parsed.hostname.length > 0);
 }
 
-module.exports = { PRODUCTION_APP_URL, resolveAppUrl, isTrustedAppUrl, isSafeExternalUrl };
+module.exports = { PRODUCTION_APP_URL, resolveAppUrl, resolveWorkspaceUrl, isTrustedAppUrl, isSafeExternalUrl };
