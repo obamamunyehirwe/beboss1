@@ -61,8 +61,9 @@ The tagged release workflow at `.github/workflows/desktop-release.yml` intention
 - `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` for Windows Authenticode signing.
 - `MAC_CSC_LINK` and `MAC_CSC_KEY_PASSWORD` for a macOS Developer ID Application certificate.
 - `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` for Apple notarization.
+- `LINUX_GPG_PRIVATE_KEY` and `LINUX_GPG_PASSPHRASE` for detached signatures of Linux AppImage/DEB installers. The workflow publishes the matching public key.
 
-The workflow uses the repository-scoped `GITHUB_TOKEN` to publish the versioned GitHub Release and update metadata. Keep signing secrets protected by GitHub environment/repository permissions. Linux artifacts are unsigned at the OS level and are accompanied by SHA-256 checksums.
+The workflow uses the repository-scoped `GITHUB_TOKEN` to publish the versioned GitHub Release and update metadata. Keep signing secrets protected by GitHub environment/repository permissions. Linux AppImage/DEB artifacts receive detached GPG signatures and the release includes the public verification key plus per-platform SHA-256 checksum manifests.
 
 The CI build does not invent or embed signing credentials. macOS Gatekeeper and Windows SmartScreen may warn for unsigned builds. The Linux packages are built without platform code signing.
 
