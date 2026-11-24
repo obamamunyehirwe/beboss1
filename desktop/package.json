@@ -1,0 +1,21 @@
+{
+  "name": "@beboss/desktop",
+  "version": "2.3.1",
+  "private": true,
+  "description": "BeBoss cross-platform desktop workspace",
+  "main": "main.cjs",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22.0.0" },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "dist": "electron-builder --publish never",
+    "dist:windows": "electron-builder --win nsis --x64 --publish never",
+    "dist:mac": "electron-builder --mac dmg zip --universal --publish never",
+    "dist:linux": "electron-builder --linux AppImage deb --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0"
+  }
+}
