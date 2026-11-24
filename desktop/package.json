@@ -21,5 +21,6 @@
     "electron-builder": "26.18.0"
   },
   "productName": "BeBoss",
-  "author": "BeBoss"
+  "author": "BeBoss",
+  "desktopName": "com.beboss.desktop"
 }
