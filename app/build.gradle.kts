@@ -17,7 +17,7 @@ val releaseSigningEnv = Properties().apply {
 fun signingSecret(name: String): String? =
   providers.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }
     ?: (findProperty(name) as? String)?.takeIf { it.isNotBlank() }
-    ?: releaseSigningEnv.getProperty(name)?.takeIf { it.isNotBlank() }?.trim()?.removeSurrounding("\\\"")?.removeSurrounding("'")
+    ?: releaseSigningEnv.getProperty(name)?.takeIf { it.isNotBlank() }?.trim()?.removeSurrounding("\"")?.removeSurrounding("'")
 val releaseKeystorePath = signingSecret("KEYSTORE_PATH")
 val releaseKeystoreFile = releaseKeystorePath?.let { rootProject.file(it) }
 val releaseStorePassword = signingSecret("STORE_PASSWORD")
