@@ -105,6 +105,31 @@ jobs:
           test -d .vercel/output/functions
           test -d .vercel/output/static
 
+  tenant-security-database:
+    name: Supabase tenant-isolation database tests
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase database
+        run: supabase start --ignore-health-check
+
+      - name: Run migration and tenant-isolation regression tests
+        run: supabase test db
+
+      - name: Stop local Supabase services
+        if: always()
+        run: supabase stop --no-backup
+
   desktop:
     name: Desktop Tauri frontend and native checks
     runs-on: windows-2022
