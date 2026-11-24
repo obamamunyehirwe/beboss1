@@ -85,7 +85,7 @@ The Windows/macOS/Linux build supports keyboard-wedge USB barcode scanners and t
 - Do not use username/phone-derived shop IDs as authentication. The derived key is only a tenant reference; the SMS-verified Auth user and active owner membership are the authorization boundary.
 - Snapshot tokens are verified server-side before decoding. The HMAC signing secret never reaches the renderer.
 - The operating-system keyring protects the random SQLCipher database key. Secure session values are additionally encrypted with AES-256-GCM. The first-run installer verifies the keyed database, native device identity, secure-vault read/write, and configured Supabase host; a reachable TCP endpoint is not treated as an authenticated cloud session.
-- Configure `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` repository secrets for tagged releases. The release workflow signs the NSIS installer and verifies the signature before uploading/publishing it.
+- Configure `WINDOWS_CODESIGN_PFX_BASE64` and `WINDOWS_CODESIGN_PFX_PASSWORD` repository secrets for tagged releases. The release workflow signs the NSIS installer and verifies the signature before uploading/publishing it.
 - Configure the public `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` repository secrets so the packaged production desktop client connects to the actual project.
 
 

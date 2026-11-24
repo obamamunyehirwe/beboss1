@@ -44,7 +44,7 @@ Owner enrollment requires verified SMS OTP and a registered owner membership. Th
 
 ### P1 — Production Android release evidence and DataShare key provisioning are incomplete
 
-The repository's Android verification workflow builds a debug APK and runs JVM/Robolectric tests. The release build now refuses to use a debug keystore and requires `KEYSTORE_PATH`, `STORE_PASSWORD`, `KEY_PASSWORD`, and a non-default `BEBOSS_DATASHARE_HMAC_SECRET` matching the protected server-side snapshot key. No protected production upload keystore or Play Console certificate was available in this session to produce and verify a production-signed APK/AAB.
+The repository's Android verification workflow builds a debug APK and runs JVM/Robolectric tests. The release build now refuses to use a debug keystore and requires `KEYSTORE_PATH`, `STORE_PASSWORD`, `KEY_PASSWORD`, `KEY_ALIAS`, the production Supabase URL/publishable key and a non-default `BEBOSS_DATASHARE_HMAC_SECRET` matching the protected server-side snapshot key. No protected production upload keystore or Play Console certificate was available in this session to produce and verify a production-signed APK/AAB.
 
 The current live server-side `BEBOSS_DATASHARE_HMAC_SECRET` is not equal to the Android source's legacy fallback string. Existing APKs built without the shared secret may therefore reject desktop-generated BBSHARE1 tokens. The next production Android build must be compiled with the same protected secret; do not replace the live server key with the fallback or publish an APK without the key. Physical Android device, OS upgrade, offline recovery, backup/restore, and Bluetooth/USB printer acceptance also require hardware.
 
@@ -70,8 +70,8 @@ It cannot literally expose Android CameraX, Android Keystore, Android BiometricP
 
 ## Verification status
 
-- The latest reviewed source commit at audit update time is `df0e9095cbc5122a90b371bdc42c2590946e4ba8`.
-- On the latest GitHub Actions run for that commit (`45486130947`), the Android JVM/unit-test, web production-build and Windows Tauri native checks were still running at the time of this audit update. Earlier workflow runs were cancelled when subsequent commits were pushed; a cancelled native job is not a pass.
+- The initial audit's reviewed source commit was `df0e9095cbc5122a90b371bdc42c2590946e4ba8`; follow-on implementation now continues on `main` beyond that baseline.
+- The initial run (`45486130947`) is historical only. Later runs have been restarted as commits were added to `main`; cancelled runs are not passes. Refer to the latest Actions run before tagging a release.
 - The last completed run before the Android HMAC release-gate change had Android unit tests and APK assembly successful and the web production build successful. Its Windows native check was cancelled while `cargo check` was running.
 - The live Supabase project has the desktop OTP and desktop API functions deployed, and the desktop API is JWT protected. The live database has the desktop payment-claim rate-limit scope installed. The updated desktop API function is deployed at v2.
 - The desktop release workflow has not produced a verified signed Windows installer in this session. Signing requires the configured Windows certificate and Supabase publishable-key repository secrets.
@@ -94,7 +94,7 @@ The follow-up branch adds an additive per-device Android credential path:
 - public tenant-context and staff predicate RPCs changed to SECURITY INVOKER wrappers over non-exposed, tightly permissioned `beboss_private` SECURITY DEFINER helpers;
 - transactional tenant-isolation regression SQL under web/supabase/tests/android_device_credentials.sql.
 
-The same branch adds tag-triggered signed Android APK/AAB and Authenticode-signed Windows NSIS release jobs, plus a Windows native NSIS build artifact in CI. Production artifacts are gated on keys supplied by the repository owner; no production keystore or signing certificate is embedded in source.
+The same branch adds tag-triggered signed Android APK/AAB and Authenticode-signed Windows NSIS release jobs, plus a Windows native NSIS build artifact in CI. Production artifacts are gated on keys supplied by the repository owner; no production keystore or signing certificate is embedded in source. Both Windows tag workflows use the same `WINDOWS_CODESIGN_PFX_BASE64` and `WINDOWS_CODESIGN_PFX_PASSWORD` secrets.
 
 The Flutterwave webhook now verifies the documented verif-hash header using a constant-time comparison and re-queries the provider transaction for exact ID, reference, final successful status, RWF currency and amount. The Rwanda checkout uses Flutterwave's mobilemoneyrwanda option, which supports MTN and Airtel wallets when enabled on the merchant account. This is an aggregator route, not a completed direct MTN/Airtel API integration.
 
