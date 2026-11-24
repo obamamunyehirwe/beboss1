@@ -70,13 +70,63 @@ async function authorizeOwner(admin: ReturnType<typeof createClient>, accessToke
   return { user, shop };
 }
 
+function mergeIncomingSnapshot(
+  remote: SnapshotDataset,
+  submitted: SnapshotDataset,
+): SnapshotDataset {
+  const mergeCollection = (key: keyof SnapshotDataset): Record<string, unknown>[] => {
+    const merged = new Map<string, Record<string, unknown>>();
+    for (const row of rows(remote[key])) merged.set(text(row.id), row);
+    for (const row of rows(submitted[key])) {
+      const id = text(row.id);
+      if (!id) continue;
+      const previous = merged.get(id);
+      const incomingVersion = Math.max(Number(row.hlcTimestamp) || 0, Number(row.updatedAt) || 0);
+      const previousVersion = previous ? Math.max(Number(previous.hlcTimestamp) || 0, Number(previous.updatedAt) || 0) : -1;
+      const incomingDevice = text(row.lastModifiedDeviceId);
+      const previousDevice = text(previous?.lastModifiedDeviceId);
+      if (!previous || incomingVersion > previousVersion ||
+        (incomingVersion === previousVersion && incomingDevice.localeCompare(previousDevice) > 0)) {
+        merged.set(id, row);
+      }
+    }
+    return [...merged.values()];
+  };
+
+  const tombstones = new Map<string, Record<string, unknown>>();
+  for (const row of [...rows(remote.tombstones), ...rows(submitted.tombstones)]) {
+    const id = text(row.recordId);
+    const previous = tombstones.get(id);
+    if (id && (!previous || (Number(row.deletedAt) || 0) >= (Number(previous.deletedAt) || 0))) {
+      tombstones.set(id, row);
+    }
+  }
+  const deleted = new Map([...tombstones.values()].map((row) => [text(row.recordId), Number(row.deletedAt) || 0]));
+  const live = (key: keyof SnapshotDataset) => mergeCollection(key).filter((row) => {
+    const deletedAt = deleted.get(text(row.id));
+    return deletedAt === undefined || Math.max(Number(row.hlcTimestamp) || 0, Number(row.updatedAt) || 0) > deletedAt;
+  });
+  const submittedTime = Number(submitted.metadata?.timestamp) || 0;
+  const remoteTime = Number(remote.metadata?.timestamp) || 0;
+  return {
+    metadata: submittedTime >= remoteTime ? submitted.metadata : remote.metadata,
+    shopProfile: submittedTime >= remoteTime ? submitted.shopProfile : remote.shopProfile,
+    products: live("products"), customers: live("customers"), sales: live("sales"),
+    saleItems: live("saleItems"), customerPayments: live("customerPayments"),
+    purchases: live("purchases"), stockTransfers: live("stockTransfers"),
+    branches: live("branches"), users: live("users"), tombstones: [...tombstones.values()],
+  };
+}
+
 function validateDataset(input: unknown, shopId: string): SnapshotDataset {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Response("Invalid desktop snapshot.", { status: 400 });
   const source = input as Record<string, unknown>;
   const profile = source.shopProfile && typeof source.shopProfile === "object"
     ? source.shopProfile as Record<string, unknown> : {};
-  if (text(profile.id) !== shopId || !text(profile.shopName).trim()) {
-    throw new Response("Desktop snapshot tenant identity does not match the authenticated owner.", { status: 403 });
+  // Android's Room ShopProfile uses a local numeric primary key (normally 1).
+  // The authenticated shop ID is bound by owner membership and the snapshot row.
+  if (!text(profile.shopName).trim()) {
+    throw new Response("The desktop snapshot is missing its registered shop profile.", { status: 400 });
   }
   const result = {
     metadata: source.metadata && typeof source.metadata === "object" ? source.metadata as Record<string, unknown> : {},
@@ -154,6 +204,25 @@ async function syncNormalizedProjection(admin: ReturnType<typeof createClient>, 
     const { error } = await admin.from("shop_stock_transfers").upsert(transfers, { onConflict: "id" });
     if (error) throw new Error("Snapshot was signed but the transfer projection failed: " + error.message);
   }
+
+  const staff = dataset.users.map((user) => ({
+    id: shopId + "::" + text(user.id),
+    shop_sync_key: shopId,
+    shop_name: text(shop.shop_name),
+    user_id: text(user.id),
+    full_name: text(user.name),
+    username: text(user.username).trim().toLowerCase(),
+    phone: text(user.phone),
+    role: text(user.role),
+    assigned_branch_id: text(user.assignedBranchId),
+    assigned_branch_name: text(user.assignedBranchName),
+    is_active: user.isActive !== false,
+    updated_at: Number(user.updatedAt) || Date.now(),
+  }));
+  if (staff.length) {
+    const { error } = await admin.from("shop_users").upsert(staff, { onConflict: "id" });
+    if (error) throw new Error("Snapshot was signed but the staff projection failed: " + error.message);
+  }
 }
 
 Deno.serve(async (request: Request) => {
@@ -214,6 +283,39 @@ Deno.serve(async (request: Request) => {
       if (branchResult.error || transferResult.error || deviceResult.error || userResult.error) {
         throw new Error("Could not load one of the normalized shop workspaces.");
       }
+      if (branchResult.data?.length) {
+        dataset.branches = branchResult.data.map((row) => ({
+          id: row.id, name: row.name, code: row.code, address: row.address, phone: row.phone,
+          managerUserId: row.manager_user_id, managerName: row.manager_name,
+          isMainBranch: row.is_main_branch, isActive: row.is_active, colorHex: row.color_hex,
+          dailySalesTargetRwf: row.daily_sales_target_rwf, monthlyTargetRwf: row.monthly_target_rwf,
+          openingCashFloat: row.opening_cash_float, stockValueRwf: row.stock_value_rwf,
+          productCount: row.product_count, operationalStatus: row.operational_status,
+          email: row.email, notes: row.notes, createdAt: row.created_at, updatedAt: row.updated_at,
+          syncVersion: row.sync_version, hlcTimestamp: row.hlc_timestamp,
+          lastModifiedDeviceId: row.last_modified_device_id,
+        }));
+      }
+      if (transferResult.data?.length) {
+        dataset.stockTransfers = transferResult.data.map((row) => ({
+          id: row.id, transferNumber: row.transfer_number, productId: row.product_id,
+          productName: row.product_name, fromBranchId: row.from_branch_id,
+          fromBranchName: row.from_branch_name, toBranchId: row.to_branch_id,
+          toBranchName: row.to_branch_name, quantity: row.quantity, unit: row.unit,
+          costValueRwf: row.cost_value_rwf, transferDate: row.transfer_date, status: row.status,
+          notes: row.notes, transferredBy: row.transferred_by, receivedBy: row.received_by,
+          receivedAt: row.received_at, createdAt: row.created_at, updatedAt: row.updated_at,
+          hlcTimestamp: row.hlc_timestamp, lastModifiedDeviceId: row.last_modified_device_id,
+        }));
+      }
+      if (userResult.data?.length) {
+        dataset.users = userResult.data.map((row) => ({
+          id: row.user_id, name: row.full_name, username: row.username, phone: row.phone ?? "",
+          role: row.role, assignedBranchId: row.assigned_branch_id,
+          assignedBranchName: row.assigned_branch_name, isActive: row.is_active,
+          updatedAt: row.updated_at, hlcTimestamp: row.updated_at, lastModifiedDeviceId: "CLOUD",
+        }));
+      }
       return json(200, {
         ok: true, shop, owner: { id: user.id, phone: user.phone, fullName: user.user_metadata?.full_name ?? "" },
         dataset, snapshots: { deviceCount: sets.length, lastUpdatedAt: Math.max(0, ...(snapshots ?? []).map((row) => Number(row.updated_at) || 0)) },
@@ -223,8 +325,22 @@ Deno.serve(async (request: Request) => {
     }
 
     if (action === "save") {
-      const dataset = validateDataset(body.dataset, shopId);
+      const submitted = validateDataset(body.dataset, shopId);
       const now = Date.now();
+      const { data: currentRows, error: currentError } = await admin
+        .from("branch_sync_snapshots")
+        .select("id,device_id,sync_generation,chunk_index,chunk_count,payload_token,updated_at")
+        .eq("shop_sync_key", shopId)
+        .order("updated_at", { ascending: false })
+        .limit(10000);
+      if (currentError) throw new Error("Could not verify the latest cloud revision before saving.");
+      const currentSets = completeSnapshotRows((currentRows ?? []) as Record<string, unknown>[]);
+      const currentParts: Record<string, unknown>[] = [];
+      for (const set of currentSets) {
+        for (const row of set) currentParts.push(await decodeDesktopShareToken(text(row.payload_token), secret));
+      }
+      const remote = mergeDesktopSnapshotParts(currentParts);
+      const dataset = mergeIncomingSnapshot(remote, submitted);
       const normalizedChunks = createDesktopSnapshotChunks(dataset, now, desktopId, text(user.user_metadata?.full_name) || "Shop Owner");
       const count = normalizedChunks.length;
       const recordsSummary = dataset.branches.length + " branches • " + dataset.products.length + " items • " +
