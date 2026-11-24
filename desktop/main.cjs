@@ -1,7 +1,8 @@
 'use strict';
 
 const path = require('node:path');
-const { app, BrowserWindow, Menu, Tray, nativeImage, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, dialog, ipcMain, session, shell, screen, Notification } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const { PRODUCTION_APP_URL, resolveAppUrl, resolveWorkspaceUrl, isTrustedAppUrl, isSafeExternalUrl } = require('./security.cjs');
 
 const APP_URL = resolveAppUrl(process.env, app.isPackaged);
@@ -12,6 +13,13 @@ let mainWindow = null;
 let tray = null;
 const workspaceWindows = new Set();
 let notificationPermissionGranted = false;
+let updateState = 'idle';
+let availableUpdateVersion = null;
+let updateMenuItem = null;
+let updateCheckInterval = null;
+let isQuitting = false;
+let manualUpdateCheck = false;
+const configuredSessions = new WeakSet();
 
 const WORKSPACE_PAGES = [
   { label: 'Admin overview', path: '/admin' },
@@ -23,6 +31,108 @@ const WORKSPACE_PAGES = [
   { label: 'Audit log', path: '/admin/audit' },
   { label: 'Admin settings', path: '/admin/settings' },
 ];
+
+function updateActionLabel() {
+  if (updateState === 'ready') return 'Restart to install update';
+  if (updateState === 'downloading') return 'Downloading update…';
+  if (updateState === 'checking') return 'Checking for updates…';
+  return 'Check for updates';
+}
+
+function updateStatusSnapshot() {
+  return Object.freeze({ state: updateState, version: availableUpdateVersion });
+}
+
+function showDesktopNotification(title, body) {
+  if (!Notification.isSupported()) return;
+  try { new Notification({ title, body, silent: false }).show(); }
+  catch (error) { console.warn('BeBoss notification unavailable:', error?.message || error); }
+}
+
+function refreshNativeMenus() {
+  if (updateMenuItem) updateMenuItem.label = updateActionLabel();
+  if (tray) refreshTrayMenu();
+}
+
+function runUpdateAction() {
+  if (updateState === 'ready') {
+    isQuitting = true;
+    autoUpdater.quitAndInstall();
+    return;
+  }
+  void checkForUpdates(false);
+}
+
+async function checkForUpdates(silent = false) {
+  if (!app.isPackaged) return { state: 'disabled' };
+  if (updateState === 'checking' || updateState === 'downloading' || updateState === 'ready') {
+    return updateStatusSnapshot();
+  }
+  manualUpdateCheck = !silent;
+  updateState = 'checking';
+  refreshNativeMenus();
+  try {
+    await autoUpdater.checkForUpdates();
+    return updateStatusSnapshot();
+  } catch (error) {
+    updateState = 'error';
+    console.warn('BeBoss update check failed:', error?.message || error);
+    if (manualUpdateCheck) showDesktopNotification('BeBoss update check failed', 'Check your internet connection and try again.');
+    manualUpdateCheck = false;
+    refreshNativeMenus();
+    return updateStatusSnapshot();
+  }
+}
+
+function configureAutoUpdates() {
+  if (!app.isPackaged || process.env.BEBOSS_DISABLE_AUTO_UPDATES === '1') return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
+
+  autoUpdater.on('checking-for-update', () => {
+    updateState = 'checking';
+    refreshNativeMenus();
+  });
+  autoUpdater.on('update-available', (info) => {
+    availableUpdateVersion = String(info?.version || '') || null;
+    updateState = 'downloading';
+    showDesktopNotification('BeBoss update available', 'Version ' + (availableUpdateVersion || 'new') + ' is downloading in the background.');
+    refreshNativeMenus();
+  });
+  autoUpdater.on('download-progress', (progress) => {
+    updateState = 'downloading';
+    const percent = Number.isFinite(progress?.percent) ? Math.round(progress.percent) : null;
+    if (percent !== null && updateMenuItem) updateMenuItem.label = 'Downloading update (' + percent + '%)…';
+    refreshNativeMenus();
+  });
+  autoUpdater.on('update-not-available', () => {
+    updateState = 'current';
+    if (manualUpdateCheck) showDesktopNotification('BeBoss is up to date', 'You are running the latest available version.');
+    manualUpdateCheck = false;
+    refreshNativeMenus();
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    availableUpdateVersion = String(info?.version || availableUpdateVersion || '') || null;
+    updateState = 'ready';
+    manualUpdateCheck = false;
+    showDesktopNotification('BeBoss update ready', 'Restart BeBoss to install ' + (availableUpdateVersion || 'the update') + '.');
+    refreshNativeMenus();
+  });
+  autoUpdater.on('error', (error) => {
+    updateState = 'error';
+    console.warn('BeBoss auto-update error:', error?.message || error);
+    if (manualUpdateCheck) showDesktopNotification('BeBoss update failed', 'The update could not be completed. You can try again later.');
+    manualUpdateCheck = false;
+    refreshNativeMenus();
+  });
+
+  const initialCheck = setTimeout(() => { void checkForUpdates(true); }, 20_000);
+  initialCheck.unref?.();
+  updateCheckInterval = setInterval(() => { void checkForUpdates(true); }, 6 * 60 * 60 * 1000);
+  updateCheckInterval.unref?.();
+}
 
 function workspaceUrl(route = '/') {
   return resolveWorkspaceUrl(route, APP_ORIGIN);
@@ -129,13 +239,17 @@ function createApplicationMenu() {
       submenu: [
         { label: 'BeBoss user guide', click: () => openExternal(PRODUCTION_APP_URL + '/guide') },
         { label: 'BeBoss support', click: () => openExternal(PRODUCTION_APP_URL + '/contact') },
-        { label: 'Download desktop updates', click: () => openExternal('https://github.com/obamamunyehirwe/beboss1/releases') },
+        (updateMenuItem = { label: updateActionLabel(), click: runUpdateAction }),
+        { label: 'Release notes', click: () => openExternal('https://github.com/obamamunyehirwe/beboss1/releases') },
       ],
     },
   ]));
 }
 
 function configureSession(appSession) {
+  if (configuredSessions.has(appSession)) return;
+  configuredSessions.add(appSession);
+
   appSession.setPermissionRequestHandler(async (webContents, permission, callback, details) => {
     let requestingOrigin = '';
     try { requestingOrigin = new URL(details.requestingUrl || webContents.getURL()).origin; }
@@ -147,7 +261,8 @@ function configureSession(appSession) {
     }
     if (notificationPermissionGranted) { callback(true); return; }
 
-    const answer = await dialog.showMessageBox(mainWindow, {
+    const ownerWindow = BrowserWindow.fromWebContents(webContents) || mainWindow;
+    const answer = await dialog.showMessageBox(ownerWindow, {
       type: 'question', title: 'Allow BeBoss notifications?',
       message: 'Allow BeBoss to show business and account notifications on this computer?',
       buttons: ['Allow', 'Block'], defaultId: 0, cancelId: 1, noLink: true,
@@ -160,10 +275,11 @@ function configureSession(appSession) {
     permission === 'notifications' && requestingOrigin === APP_ORIGIN && notificationPermissionGranted
   ));
 
-  appSession.on('will-download', async (_event, item) => {
-    if (!mainWindow || mainWindow.isDestroyed()) { item.cancel(); return; }
+  appSession.on('will-download', async (event, item, webContents) => {
+    const ownerWindow = BrowserWindow.fromWebContents(webContents) || mainWindow;
+    if (!ownerWindow || ownerWindow.isDestroyed()) { item.cancel(); return; }
     const suggestedName = path.basename(item.getFilename() || 'beboss-download');
-    const result = await dialog.showSaveDialog(mainWindow, {
+    const result = await dialog.showSaveDialog(ownerWindow, {
       title: 'Save BeBoss file',
       defaultPath: path.join(app.getPath('downloads'), suggestedName),
       buttonLabel: 'Save file',
@@ -199,9 +315,10 @@ function attachNavigationPolicy(contents) {
 
   contents.on('page-title-updated', (event, title) => {
     event.preventDefault();
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    const ownerWindow = BrowserWindow.fromWebContents(contents);
+    if (ownerWindow && !ownerWindow.isDestroyed()) {
       const cleanTitle = String(title || '').replace(/[\\r\\n]+/g, ' ').slice(0, 100);
-      mainWindow.setTitle(cleanTitle ? APP_NAME + ' — ' + cleanTitle : APP_NAME);
+      ownerWindow.setTitle(cleanTitle ? APP_NAME + ' — ' + cleanTitle : APP_NAME);
     }
   });
 
@@ -213,7 +330,7 @@ function attachNavigationPolicy(contents) {
       menuItems.push({ role: 'copy' }, { type: 'separator' });
     }
     menuItems.push({ role: 'selectAll' });
-    Menu.buildFromTemplate(menuItems).popup({ window: mainWindow || undefined });
+    Menu.buildFromTemplate(menuItems).popup({ window: BrowserWindow.fromWebContents(contents) || undefined });
   });
 
   contents.on('did-fail-load', (_event, errorCode, _description, _validatedUrl, isMainFrame) => {
@@ -229,8 +346,11 @@ function createWindow(initialUrl = APP_URL, primary = true) {
     ? path.join(process.resourcesPath, 'brand', 'beboss-app-icon.png')
     : path.join(__dirname, '..', 'web', 'public', 'beboss-app-icon.png');
 
+  const { workAreaSize } = screen.getPrimaryDisplay();
+  const width = Math.max(320, Math.min(1600, Math.round(workAreaSize.width * 0.92)));
+  const height = Math.max(420, Math.min(1080, Math.round(workAreaSize.height * 0.90)));
   const window = new BrowserWindow({
-    title: APP_NAME, width: 1500, height: 980, minWidth: 1060, minHeight: 720,
+    title: APP_NAME, width, height, minWidth: Math.min(760, width), minHeight: Math.min(620, height),
     show: false, backgroundColor: '#0b1220', autoHideMenuBar: false, icon: iconPath,
     webPreferences: {
       partition: SESSION_PARTITION,
@@ -251,6 +371,20 @@ function createWindow(initialUrl = APP_URL, primary = true) {
   return window;
 }
 
+function refreshTrayMenu() {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show BeBoss', click: restoreMainWindow },
+    { type: 'separator' },
+    { label: updateActionLabel(), click: runUpdateAction, enabled: updateState !== 'checking' && updateState !== 'downloading' },
+    { label: 'Current version: ' + app.getVersion(), enabled: false },
+    { type: 'separator' },
+    ...WORKSPACE_PAGES.slice(0, 5).map((page) => ({ label: page.label, click: () => openWorkspaceWindow(page.path) })),
+    { type: 'separator' },
+    { label: 'Quit BeBoss', click: () => app.quit() },
+  ]));
+}
+
 function createTray() {
   if (tray) return;
   const iconPath = app.isPackaged
@@ -260,13 +394,7 @@ function createTray() {
   if (icon.isEmpty()) return;
   tray = new Tray(icon.resize({ width: 20, height: 20 }));
   tray.setToolTip('BeBoss — Business workspace');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Show BeBoss', click: restoreMainWindow },
-    { type: 'separator' },
-    ...WORKSPACE_PAGES.slice(0, 5).map((page) => ({ label: page.label, click: () => openWorkspaceWindow(page.path) })),
-    { type: 'separator' },
-    { label: 'Quit BeBoss', click: () => app.quit() },
-  ]));
+  refreshTrayMenu();
   tray.on('double-click', restoreMainWindow);
 }
 
@@ -282,6 +410,16 @@ if (!hasSingleInstanceLock) {
       return app.getVersion();
     });
 
+    ipcMain.handle('beboss:update-status', (event) => {
+      if (!trustedSender(event)) throw new Error('Untrusted BeBoss renderer.');
+      return updateStatusSnapshot();
+    });
+
+    ipcMain.handle('beboss:check-for-updates', (event) => {
+      if (!trustedSender(event)) throw new Error('Untrusted BeBoss renderer.');
+      return checkForUpdates(false);
+    });
+
     ipcMain.handle('beboss:print-current-page', (event) => {
       if (!trustedSender(event)) throw new Error('Untrusted BeBoss renderer.');
       return new Promise((resolve) => {
@@ -293,6 +431,7 @@ if (!hasSingleInstanceLock) {
 
     createWindow();
     createTray();
+    configureAutoUpdates();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
@@ -307,7 +446,11 @@ if (!hasSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
+    isQuitting = true;
+    if (updateCheckInterval) { clearInterval(updateCheckInterval); updateCheckInterval = null; }
     ipcMain.removeHandler('beboss:desktop-version');
+    ipcMain.removeHandler('beboss:update-status');
+    ipcMain.removeHandler('beboss:check-for-updates');
     ipcMain.removeHandler('beboss:print-current-page');
     if (tray) { tray.destroy(); tray = null; }
   });
