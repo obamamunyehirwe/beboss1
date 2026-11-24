@@ -10,7 +10,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { requestMyShopOwnerOtp, claimMyShopOwner } from "@/lib/public.functions";
+import { requestMyShopOwnerOtp, claimMyShopOwner, lookupMyShop, addMyShopDevice } from "@/lib/public.functions";
 import { computeShopKey } from "@/lib/pricing";
 
 export const Route = createFileRoute("/desktop")({
@@ -49,9 +49,15 @@ type DesktopCache = {
   verifiedAt: number;
   subscriptionExpiresAt: number;
   dirty: boolean;
+  heldCarts?: HeldCart[];
 };
 
 type CartLine = { productId: string; quantity: number; customPrice: number | null };
+type HeldCart = {
+  id: string; label: string; createdAt: number; items: CartLine[];
+  discount: string; paid: string; paymentMethod: string; selectedCustomer: string;
+  splitCash: string; splitMomo: string;
+};
 
 const money = (amount: unknown, currency = "FRw") =>
   currency + " " + new Intl.NumberFormat("en-RW", { maximumFractionDigits: 0 }).format(Number(amount) || 0);
@@ -223,6 +229,14 @@ function BeBossDesktopWorkspace() {
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("ALL");
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [heldCarts, setHeldCarts] = useState<HeldCart[]>([]);
+  const [splitCash, setSplitCash] = useState("");
+  const [splitMomo, setSplitMomo] = useState("");
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
+  const [ownerPortal, setOwnerPortal] = useState<Row | null>(null);
+  const [showDeviceForm, setShowDeviceForm] = useState(false);
+  const [deviceForm, setDeviceForm] = useState<Row>({});
+  const [deviceInvite, setDeviceInvite] = useState<Row | null>(null);
   const [discount, setDiscount] = useState("0");
   const [paid, setPaid] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("CASH");
@@ -274,6 +288,16 @@ function BeBossDesktopWorkspace() {
     }
   }, [bridge]);
 
+  const persistHeldCarts = useCallback(async (next: HeldCart[]) => {
+    setHeldCarts(next);
+    const current = cacheRef.current;
+    if (!current || !bridge?.isDesktop) return;
+    const updated = { ...current, heldCarts: next, cachedAt: Date.now() };
+    cacheRef.current = updated;
+    setCache(updated);
+    await bridge.writeWorkspaceCache(JSON.stringify(updated));
+  }, [bridge]);
+
   const mergeServerState = useCallback((remote: Row, currentShop: Row, ownerName: string, ownerPhone: string) => {
     const normalized = normaliseDataset(remote, currentShop, ownerName, ownerPhone);
     datasetRef.current = normalized;
@@ -291,6 +315,12 @@ function BeBossDesktopWorkspace() {
     setShop(remoteShop);
     setDevices(Array.isArray(data.devices) ? data.devices : []);
     setStaffDirectory(Array.isArray(data.staff) ? data.staff : []);
+    try {
+      const portalData = await lookupMyShop({ data: { username: currentCache.username, phone: currentCache.phone } });
+      setOwnerPortal(portalData as Row);
+    } catch (portalError) {
+      console.warn("[BeBoss Desktop] Owner portal projection unavailable:", portalError);
+    }
     const normalized = mergeServerState(data.dataset, remoteShop, currentCache.username, currentCache.phone);
     const verifiedAt = Date.now();
     const refreshed: DesktopCache = {
@@ -375,6 +405,7 @@ function BeBossDesktopWorkspace() {
           }
         }
         if (saved) {
+          setHeldCarts(Array.isArray(saved.heldCarts) ? saved.heldCarts : []);
           cacheRef.current = saved;
           setCache(saved);
           datasetRef.current = saved.dataset;
@@ -503,7 +534,7 @@ function BeBossDesktopWorkspace() {
       const initialCache: DesktopCache = {
         version: 1, desktopId: existingId, shopId, username: username.trim(),
         phone: e164, dataset: defaultDataset({}, username, e164), cachedAt: Date.now(),
-        verifiedAt: 0, subscriptionExpiresAt: 0, dirty: false,
+        verifiedAt: 0, subscriptionExpiresAt: 0, dirty: false, heldCarts: [],
       };
       cacheRef.current = initialCache;
       setCache(initialCache);
@@ -530,7 +561,7 @@ function BeBossDesktopWorkspace() {
     cacheRef.current = null;
     datasetRef.current = null;
     setCache(null); setDataset(null); setShop(null); setDevices([]);
-    setDirty(false); setOtpStage(false); setOtp("");
+    setDirty(false); setHeldCarts([]); setOtpStage(false); setOtp("");
     setSyncMessage("Signed out. Your next session must verify the registered shop owner phone again.");
   };
 
