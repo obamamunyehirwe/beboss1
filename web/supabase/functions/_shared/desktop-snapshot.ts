@@ -95,7 +95,14 @@ export async function decodeDesktopShareToken(token: string, secret: string): Pr
   const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream("gzip"));
   const raw = await new Response(stream).arrayBuffer();
   if (raw.byteLength > MAX_TOKEN_BYTES) throw new Error("Decompressed snapshot exceeds the 5 MB safety limit.");
-  const parsed = JSON.parse(new TextDecoder().decode(raw)) as unknown;
+  // JSON.parse rounds Android's packed 64-bit HLC values because they exceed
+  // JavaScript's safe integer range. Quote only these known fields before parsing;
+  // Android JSONObject.optLong accepts the decimal-string representation.
+  const rawJson = new TextDecoder().decode(raw).replace(
+    /("hlcTimestamp"\\s*:\\s*)(-?\\d{16,})/g,
+    (_match, prefix: string, value: string) => prefix + "\\"" + value + "\\"",
+  );
+  const parsed = JSON.parse(rawJson) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Snapshot payload is not an object.");
   return parsed as SnapshotRow;
 }
@@ -106,20 +113,27 @@ export function createDesktopSnapshotChunks(
   desktopId: string,
   exportedBy: string,
 ): SnapshotRow[] {
-  const products = asRows(source.products);
-  const customers = asRows(source.customers);
-  const sales = asRows(source.sales);
-  const productChunks = chunks(products, MAX_CHUNK_RECORDS);
-  const customerChunks = chunks(customers, MAX_CHUNK_RECORDS);
-  const saleChunks = chunks(sales, MAX_CHUNK_RECORDS);
-  const count = Math.max(productChunks.length, customerChunks.length, saleChunks.length);
+  const collections = {
+    products: asRows(source.products),
+    customers: asRows(source.customers),
+    sales: asRows(source.sales),
+    customerPayments: asRows(source.customerPayments),
+    purchases: asRows(source.purchases),
+    stockTransfers: asRows(source.stockTransfers),
+    branches: asRows(source.branches),
+    users: asRows(source.users),
+    tombstones: asRows(source.tombstones),
+  };
+  const collectionChunks = Object.fromEntries(
+    Object.entries(collections).map(([key, value]) => [key, chunks(value, MAX_CHUNK_RECORDS)]),
+  ) as Record<keyof typeof collections, SnapshotRow[][]>;
+  const count = Math.max(1, ...Object.values(collectionChunks).map((value) => value.length));
   const generation = crypto.randomUUID();
   const nonce = crypto.randomUUID().replaceAll("-", "");
-  const total = source.branches.length + source.users.length + products.length +
-    customers.length + sales.length + source.customerPayments.length;
+  const total = Object.values(collections).reduce((sum, value) => sum + value.length, 0);
 
   return Array.from({ length: count }, (_, index) => {
-    const salePart = saleChunks[index] ?? [];
+    const salePart = collectionChunks.sales[index] ?? [];
     const saleIds = new Set(salePart.map((sale) => stringValue(sale.id)));
     const metadata = {
       ...(source.metadata ?? {}),
@@ -139,16 +153,16 @@ export function createDesktopSnapshotChunks(
     return {
       metadata,
       shopProfile: source.shopProfile,
-      branches: index === 0 ? source.branches : [],
-      users: index === 0 ? source.users : [],
-      products: productChunks[index] ?? [],
-      customers: customerChunks[index] ?? [],
+      products: collectionChunks.products[index] ?? [],
+      customers: collectionChunks.customers[index] ?? [],
       sales: salePart,
-      saleItems: source.saleItems.filter((item) => saleIds.has(stringValue(item.saleId))),
-      customerPayments: index === 0 ? source.customerPayments : [],
-      purchases: index === 0 ? source.purchases : [],
-      stockTransfers: index === 0 ? source.stockTransfers : [],
-      tombstones: index === 0 ? source.tombstones : [],
+      saleItems: asRows(source.saleItems).filter((item) => saleIds.has(stringValue(item.saleId))),
+      customerPayments: collectionChunks.customerPayments[index] ?? [],
+      purchases: collectionChunks.purchases[index] ?? [],
+      stockTransfers: collectionChunks.stockTransfers[index] ?? [],
+      branches: collectionChunks.branches[index] ?? [],
+      users: collectionChunks.users[index] ?? [],
+      tombstones: collectionChunks.tombstones[index] ?? [],
       _desktopMeta: { syncGeneration: generation, chunkIndex: index, chunkCount: count, totalRecords: total },
     } as SnapshotRow;
   });
@@ -207,6 +221,39 @@ export function completeSnapshotRows(rows: SnapshotRow[]): SnapshotRow[][] {
   return complete;
 }
 
+function longValue(value: unknown): bigint {
+  try {
+    if (typeof value === "bigint") return value;
+    if (typeof value === "number" && Number.isFinite(value)) return BigInt(Math.trunc(value));
+    if (typeof value === "string" && /^-?\\d+$/.test(value.trim())) return BigInt(value.trim());
+  } catch {
+    // Invalid or out-of-range client values are treated as absent.
+  }
+  return 0n;
+}
+
+/** Match Android HlcClock.compareVersions for stable cross-platform LWW ordering. */
+export function compareSnapshotVersions(local: SnapshotRow, remote: SnapshotRow): number {
+  const localHlc = longValue(local.hlcTimestamp);
+  const remoteHlc = longValue(remote.hlcTimestamp);
+  const localVersion = numberValue(local.syncVersion);
+  const remoteVersion = numberValue(remote.syncVersion);
+  const localUpdated = numberValue(local.updatedAt);
+  const remoteUpdated = numberValue(remote.updatedAt);
+
+  if (localHlc > 0n && remoteHlc > 0n && localHlc !== remoteHlc) {
+    return remoteHlc > localHlc ? 1 : -1;
+  }
+  if (remoteVersion !== localVersion && (localHlc === 0n || remoteHlc === 0n)) {
+    if (remoteUpdated >= localUpdated || remoteVersion > localVersion + 1) {
+      return remoteVersion > localVersion ? 1 : -1;
+    }
+  }
+  if (remoteUpdated !== localUpdated) return remoteUpdated > localUpdated ? 1 : -1;
+  if (remoteVersion !== localVersion) return remoteVersion > localVersion ? 1 : -1;
+  return stringValue(remote.lastModifiedDeviceId).localeCompare(stringValue(local.lastModifiedDeviceId));
+}
+
 export function mergeDesktopSnapshotParts(parts: SnapshotRow[]): SnapshotDataset {
   const maps = Object.fromEntries(COLLECTIONS.map((key) => [key, new Map<string, SnapshotRow>()])) as Record<
     (typeof COLLECTIONS)[number], Map<string, SnapshotRow>
@@ -229,15 +276,7 @@ export function mergeDesktopSnapshotParts(parts: SnapshotRow[]): SnapshotDataset
         const id = stringValue(row.id);
         if (!id) continue;
         const previous = maps[key].get(id);
-        const rowVersion = Math.max(numberValue(row.hlcTimestamp), numberValue(row.updatedAt));
-        const previousVersion = previous ? Math.max(numberValue(previous.hlcTimestamp), numberValue(previous.updatedAt)) : -1;
-        const rowDevice = stringValue(row.lastModifiedDeviceId);
-        const previousDevice = stringValue(previous?.lastModifiedDeviceId);
-        if (
-          !previous ||
-          rowVersion > previousVersion ||
-          (rowVersion === previousVersion && rowDevice.localeCompare(previousDevice) > 0)
-        ) maps[key].set(id, row);
+        if (!previous || compareSnapshotVersions(previous, row) >= 0) maps[key].set(id, row);
       }
     }
     for (const row of asRows(part.tombstones)) {
@@ -249,10 +288,9 @@ export function mergeDesktopSnapshotParts(parts: SnapshotRow[]): SnapshotDataset
 
   const allTombstones = [...tombstones.values()];
   const deleted = new Map(allTombstones.map((row) => [stringValue(row.recordId), numberValue(row.deletedAt)]));
-  const live = (key: (typeof COLLECTIONS)[number]) => [...maps[key].values()].filter((row) => {
-    const deletionTime = deleted.get(stringValue(row.id));
-    return deletionTime === undefined || Math.max(numberValue(row.hlcTimestamp), numberValue(row.updatedAt)) > deletionTime;
-  });
+  const live = (key: (typeof COLLECTIONS)[number]) => [...maps[key].values()].filter((row) =>
+    row.isDeleted !== true && !deleted.has(stringValue(row.id))
+  );
 
   return {
     metadata,
