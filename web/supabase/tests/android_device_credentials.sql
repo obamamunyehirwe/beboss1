@@ -129,7 +129,8 @@ begin
   from public.shop_accounts
   where id = p_other_shop;
 
-  if v_expected_count <> case when p_expected_shop = '' then 0 else 1 end then
+  if (p_expected_shop = '' and v_expected_count <> 0)
+     or (p_expected_shop <> '' and v_expected_count <> 1) then
     raise exception 'Tenant RLS did not return the expected shop row.';
   end if;
   if v_other_count <> 0 then
