@@ -1,0 +1,762 @@
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Content-Type": "application/json"
+};
+const DATA_KEYS = ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users"] as const;
+type DataKey = typeof DATA_KEYS[number];
+type Row = Record<string, unknown>;
+type Snapshot = Row & Record<DataKey, Row[]>;
+
+function json(status: number, body: Record<string, unknown>) {
+  return new Response(JSON.stringify(body), { status, headers: corsHeaders });
+}
+function text(value: unknown) { return value == null ? "" : String(value); }
+function number(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+function normalizePhone(value: string) { return String(value ?? "").replace(/\\D/g, "").slice(-9); }
+function ownerPhoneE164(value: string) {
+  const digits = String(value ?? "").replace(/\\D/g, "");
+  const local = digits.length === 9 ? digits :
+    digits.startsWith("250") && digits.length === 12 ? digits.slice(3) :
+    digits.startsWith("0") && digits.length === 10 ? digits.slice(1) : "";
+  if (!/^7\\d{8}$/.test(local)) throw new Error("Enter the Rwanda mobile number registered to this BeBoss shop.");
+  return "+250" + local;
+}
+function ownerKey(username: string, phone: string) {
+  const u = username.trim().toLowerCase();
+  const p = normalizePhone(phone);
+  if (!/^[a-z0-9._-]{2,80}$/.test(u) || p.length !== 9) throw new Error("The registered shop identity is invalid.");
+  return u + "_" + p;
+}
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  const stride = 0x8000;
+  for (let i = 0; i < bytes.length; i += stride) {
+    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + stride, bytes.length)));
+  }
+  return btoa(binary);
+}
+function base64ToBytes(value: string) {
+  const binary = atob(value);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+function bytesToHex(bytes: Uint8Array) {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function hmacHex(payload: string, secret: string) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return bytesToHex(new Uint8Array(signature)).toUpperCase();
+}
+async function streamToBytes(stream: ReadableStream<Uint8Array>, limit: number) {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const part = await reader.read();
+    if (part.done) break;
+    total += part.value.length;
+    if (total > limit) {
+      await reader.cancel();
+      throw new Error("The BeBoss snapshot exceeds the configured safe size limit.");
+    }
+    chunks.push(part.value);
+  }
+  const output = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return output;
+}
+async function verifyAndDecodeToken(token: string, secret: string): Promise<Row> {
+  if (!token.startsWith("BBSHARE1:") || token.length > 7_000_000) throw new Error("A snapshot token is malformed or too large.");
+  const rest = token.slice(9);
+  const sep = rest.indexOf(":");
+  if (sep <= 0) throw new Error("A BeBoss snapshot token is malformed.");
+  const signature = rest.slice(0, sep).toUpperCase();
+  const payload = rest.slice(sep + 1);
+  if (signature.length !== 16 || !/^[A-F0-9]{16}$/.test(signature)) throw new Error("A snapshot signature has an invalid format.");
+  const expected = (await hmacHex(payload, secret)).slice(0, 16);
+  if (signature !== expected) throw new Error("A BeBoss snapshot failed its HMAC integrity check.");
+  const compressed = base64ToBytes(payload);
+  const decompressed = await streamToBytes(
+    new Blob([compressed]).stream().pipeThrough(new DecompressionStream("gzip")),
+    5 * 1024 * 1024
+  );
+  const parsed = JSON.parse(new TextDecoder().decode(decompressed));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("A snapshot payload is not a JSON object.");
+  const root = parsed as Row;
+  const meta = root.metadata as Row | undefined;
+  if (number(meta?.schemaVersion) < 1 || number(meta?.schemaVersion) > 3) {
+    throw new Error("This BeBoss snapshot version is not supported by the desktop client.");
+  }
+  return root;
+}
+async function encodeToken(snapshot: Row, secret: string) {
+  const raw = new TextEncoder().encode(JSON.stringify(snapshot));
+  if (raw.length > 5 * 1024 * 1024) throw new Error("The desktop snapshot exceeds the 5 MB safe uncompressed limit.");
+  const compressed = await streamToBytes(
+    new Blob([raw]).stream().pipeThrough(new CompressionStream("gzip")),
+    7 * 1024 * 1024
+  );
+  const payload = bytesToBase64(compressed);
+  const signature = (await hmacHex(payload, secret)).slice(0, 16);
+  return "BBSHARE1:" + signature + ":" + payload;
+}
+function arrayRows(value: unknown): Row[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((row): row is Row => !!row && typeof row === "object" && !Array.isArray(row));
+}
+function getVersion(row: Row, fallback: number) {
+  // Android uses packed HLC values (epoch milliseconds << 16 | logical counter).
+  // Compare those consistently with tombstone HLCs before falling back to old
+  // snapshots that predate causal metadata.
+  return number(row.hlcTimestamp) || number(row.updatedAt ?? row.saleDate ?? row.paymentDate ?? row.purchaseDate ?? row.timestamp ?? fallback);
+}
+function mergeParts(parts: Row[]): Snapshot {
+  const maps = Object.fromEntries(DATA_KEYS.map((key) => [key, new Map<string, Row>()])) as Record<DataKey, Map<string, Row>>;
+  const tombstones = new Map<string, Row>();
+  let shopProfile: Row = {};
+  let metadata: Row = {};
+  let exportedAt = 0;
+
+  for (const part of parts) {
+    const meta = (part.metadata && typeof part.metadata === "object" ? part.metadata : {}) as Row;
+    const fallback = number(meta.timestamp);
+    exportedAt = Math.max(exportedAt, fallback);
+    if (Object.keys(shopProfile).length === 0 && part.shopProfile && typeof part.shopProfile === "object") {
+      shopProfile = part.shopProfile as Row;
+    }
+    if (fallback >= number(metadata.timestamp)) metadata = meta;
+
+    for (const t of arrayRows(part.tombstones)) {
+      const key = text(t.tableName) + ":" + text(t.recordId);
+      if (key !== ":") {
+        const previous = tombstones.get(key);
+        if (!previous || number(t.hlcTimestamp ?? t.deletedAt) >= number(previous.hlcTimestamp ?? previous.deletedAt)) {
+          tombstones.set(key, t);
+        }
+      }
+    }
+
+    const alias: Partial<Record<DataKey, string>> = { customerPayments: "customerPayments" };
+    for (const key of DATA_KEYS) {
+      const rows = arrayRows(part[alias[key] ?? key]);
+      for (const row of rows) {
+        const id = text(row.id);
+        if (!id) continue;
+        const previous = maps[key].get(id);
+        if (!previous || getVersion(row, fallback) >= getVersion(previous, fallback)) maps[key].set(id, row);
+      }
+    }
+  }
+
+  const live = (key: DataKey) => [...maps[key].values()].filter((row) => {
+    if (row.isDeleted === true) return false;
+    const tombstone = tombstones.get(key + ":" + text(row.id));
+    return !tombstone || getVersion(row, exportedAt) > (number(tombstone.hlcTimestamp) || number(tombstone.deletedAt));
+  });
+
+  return {
+    metadata: { ...metadata, timestamp: exportedAt, schemaVersion: 3 },
+    shopProfile,
+    products: live("products"),
+    customers: live("customers"),
+    sales: live("sales"),
+    saleItems: live("saleItems"),
+    customerPayments: live("customerPayments"),
+    purchases: live("purchases"),
+    stockTransfers: live("stockTransfers"),
+    branches: live("branches"),
+    users: live("users"),
+    tombstones: [...tombstones.values()]
+  };
+}
+
+function getServerConfig() {
+  const url = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const publishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+  const hmacSecret = Deno.env.get("BEBOSS_DATASHARE_HMAC_SECRET") ?? "";
+  if (!url || !serviceKey || !publishableKey) throw new Error("The BeBoss desktop backend is not configured.");
+  if (!hmacSecret) throw new Error("BEBOSS_DATASHARE_HMAC_SECRET is missing. Desktop snapshot access is disabled until the existing Android snapshot key is configured in Supabase.");
+  return { url, serviceKey, publishableKey, hmacSecret };
+}
+
+async function requireOwner(
+  req: Request,
+  admin: SupabaseClient,
+  publishableKey: string,
+  input: Row,
+  allowEnrollment: boolean
+) {
+  const header = req.headers.get("Authorization") ?? "";
+  if (!header.startsWith("Bearer ")) throw new Error("Sign in with the registered shop-owner phone first.");
+  const token = header.slice(7);
+  const userClient = createClient(Deno.env.get("SUPABASE_URL")!, publishableKey, {
+    global: { headers: { Authorization: "Bearer " + token } },
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+  const { data: authData, error: authError } = await userClient.auth.getUser(token);
+  const user = authData?.user;
+  const username = text(input.username).trim().toLowerCase();
+  const phone = ownerPhoneE164(text(input.phone));
+  if (authError || !user?.id || !user.phone_confirmed_at ||
+      normalizePhone(text(user.phone)) !== normalizePhone(phone)) {
+    throw new Error("The SMS-verified account does not match the registered shop-owner phone.");
+  }
+
+  const shopId = ownerKey(username, phone);
+  const { data: shop, error: shopError } = await admin
+    .from("shop_accounts")
+    .select("id,shop_name,owner_name,owner_username,owner_phone,subscription_status,subscription_expires_at,remote_kill_switch,branch_count,worker_count,device_count,device_limit,monthly_fee_rwf,business_type,updated_at")
+    .eq("id", shopId)
+    .maybeSingle();
+  if (shopError || !shop ||
+      text(shop.owner_username).trim().toLowerCase() !== username ||
+      normalizePhone(text(shop.owner_phone)) !== normalizePhone(phone)) {
+    throw new Error("The verified phone and username do not match a registered BeBoss shop owner.");
+  }
+  if (shop.remote_kill_switch) throw new Error("This shop has been disabled by BeBoss support.");
+
+  const { data: existing, error: membershipError } = await admin
+    .from("shop_owner_memberships")
+    .select("id,status,revoked_at")
+    .eq("shop_id", shopId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (membershipError) throw new Error("Could not validate the shop-owner access membership.");
+  if (existing && (existing.status !== "ACTIVE" || number(existing.revoked_at) > 0)) {
+    throw new Error("Owner access to this shop was revoked. Contact BeBoss support for a reviewed restoration.");
+  }
+  if (!existing) {
+    if (!allowEnrollment) throw new Error("This verified account has not been enrolled as the owner of the shop.");
+    const { error: insertError } = await admin.from("shop_owner_memberships").insert({
+      user_id: user.id,
+      shop_id: shopId,
+      owner_username: username,
+      owner_phone: text(shop.owner_phone),
+      status: "ACTIVE",
+      last_verified_at: Date.now(),
+      revoked_at: 0
+    });
+    if (insertError) {
+      const { data: raced, error: raceError } = await admin
+        .from("shop_owner_memberships")
+        .select("id,status,revoked_at")
+        .eq("shop_id", shopId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (raceError || !raced || raced.status !== "ACTIVE" || number(raced.revoked_at) > 0) {
+        throw new Error("Could not finish secure shop-owner enrollment.");
+      }
+    }
+  } else {
+    await admin.from("shop_owner_memberships")
+      .update({ last_verified_at: Date.now() })
+      .eq("shop_id", shopId).eq("user_id", user.id).eq("status", "ACTIVE").eq("revoked_at", 0);
+  }
+  return { user, shop, shopId, username, phone };
+}
+
+async function latestVerifiedSnapshot(admin: SupabaseClient, shopId: string, secret: string) {
+  const { data: rows, error } = await admin
+    .from("branch_sync_snapshots")
+    .select("id,device_id,branch_name,payload_token,updated_at,sync_generation,chunk_index,chunk_count,records_summary")
+    .eq("shop_sync_key", shopId)
+    .order("updated_at", { ascending: false })
+    .limit(2000);
+  if (error) throw new Error("Could not read the shop's synchronized business data: " + error.message);
+
+  const allRows = rows ?? [];
+  const latest = allRows.reduce((max, row) => Math.max(max, number(row.updated_at)), 0);
+  const grouped = new Map<string, Row[]>();
+  for (const row of allRows) {
+    const device = text(row.device_id).replace(/#c\\d+$/, "");
+    const generation = text(row.sync_generation) || "legacy";
+    const key = device + "::" + generation;
+    const list = grouped.get(key) ?? [];
+    list.push(row as Row);
+    grouped.set(key, list);
+  }
+
+  const newestByDevice = new Map<string, { updated: number; rows: Row[] }>();
+  for (const list of grouped.values()) {
+    const head = list[0]!;
+    const baseDevice = text(head.device_id).replace(/#c\\d+$/, "");
+    const expectedCount = Math.max(1, number(head.chunk_count) || 1);
+    const indexes = new Set(list.map((row) => number(row.chunk_index)));
+    const complete = indexes.size >= expectedCount && Array.from({ length: expectedCount }, (_, i) => indexes.has(i)).every(Boolean);
+    if (!complete) continue;
+    const candidate = { updated: Math.max(...list.map((row) => number(row.updated_at))), rows: list };
+    const previous = newestByDevice.get(baseDevice);
+    if (!previous || candidate.updated > previous.updated) newestByDevice.set(baseDevice, candidate);
+  }
+
+  const parts: Row[] = [];
+  let verifiedChunks = 0;
+  for (const value of newestByDevice.values()) {
+    const ordered = [...value.rows].sort((a, b) => number(a.chunk_index) - number(b.chunk_index));
+    for (const row of ordered) {
+      parts.push(await verifyAndDecodeToken(text(row.payload_token), secret));
+      verifiedChunks++;
+    }
+  }
+  if (allRows.length > 0 && verifiedChunks === 0) {
+    throw new Error("The latest mobile snapshot set is incomplete. Wait for the phone's automatic sync retry.");
+  }
+  return {
+    snapshot: parts.length ? mergeParts(parts) : null,
+    uploadedAt: latest,
+    rows: allRows,
+    verifiedChunks
+  };
+}
+
+function safeRows(value: unknown, max: number, label: string) {
+  const rows = arrayRows(value);
+  if (rows.length > max) throw new Error("The " + label + " count exceeds the desktop import limit.");
+  return rows;
+}
+function sanitizeSnapshot(input: unknown, owner: { username: string; shop: Row }): Snapshot {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("A complete BeBoss snapshot is required.");
+  const value = input as Row;
+  for (const key of DATA_KEYS) {
+    if (!Array.isArray(value[key])) throw new Error("The snapshot is missing the " + key + " collection. Refresh the shop data and retry.");
+  }
+  const shopProfile = value.shopProfile && typeof value.shopProfile === "object" ? value.shopProfile as Row : null;
+  if (!shopProfile) throw new Error("The registered shop profile is missing from the snapshot.");
+  const shopName = text(shopProfile.shopName).trim();
+  if (!shopName || shopName.length > 160) throw new Error("The shop profile name is invalid.");
+  const result: Row = {
+    metadata: {},
+    shopProfile: { ...shopProfile, shopName },
+    tombstones: safeRows(value.tombstones, 250000, "tombstone"),
+  };
+  const limits: Record<DataKey, number> = {
+    products: 100000,
+    customers: 100000,
+    sales: 500000,
+    saleItems: 1000000,
+    customerPayments: 500000,
+    purchases: 500000,
+    stockTransfers: 100000,
+    branches: 5000,
+    users: 5000
+  };
+  for (const key of DATA_KEYS) {
+    const rows = safeRows(value[key], limits[key], key);
+    result[key] = key === "users"
+      ? rows.map((row) => ({ ...row, pinHash: "", password: "" }))
+      : rows;
+  }
+  return result as Snapshot;
+}
+
+function nowSnapshot(snapshot: Snapshot, username: string) {
+  const now = Date.now();
+  snapshot.metadata = {
+    app: "BeBoss",
+    version: "desktop-1.0",
+    schemaVersion: 3,
+    format: "beboss_branch_datashare_v3",
+    timestamp: now,
+    issuedAt: now,
+    expiresAt: now + 30 * 24 * 60 * 60 * 1000,
+    nonce: crypto.randomUUID().replaceAll("-", ""),
+    exportedBy: username,
+    exportedByRole: "OWNER"
+  };
+  return snapshot;
+}
+
+function isUuid(value: string) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
+function branchPayload(data: Row, shopId: string) {
+  const name = text(data.name).trim();
+  if (name.length < 2 || name.length > 120) throw new Error("Branch name must contain 2–120 characters.");
+  const status = text(data.operationalStatus || "OPEN").toUpperCase();
+  if (!["OPEN", "CLOSED", "SUSPENDED"].includes(status)) throw new Error("Invalid branch operating status.");
+  return {
+    id: text(data.id) || crypto.randomUUID(),
+    shop_sync_key: shopId,
+    name,
+    code: text(data.code).trim().slice(0, 40),
+    address: text(data.address).trim().slice(0, 240),
+    phone: text(data.phone).trim().slice(0, 40),
+    manager_user_id: text(data.managerUserId).slice(0, 120),
+    manager_name: text(data.managerName).trim().slice(0, 120),
+    is_main_branch: data.isMainBranch === true,
+    is_active: true,
+    color_hex: /^#[0-9a-f]{6}$/i.test(text(data.colorHex)) ? text(data.colorHex) : "#FF6B1A",
+    daily_sales_target_rwf: Math.max(0, Math.min(1000000000, Math.floor(number(data.dailySalesTargetRwf)))),
+    monthly_target_rwf: Math.max(0, Math.min(1000000000, Math.floor(number(data.monthlyTargetRwf)))),
+    opening_cash_float: Math.max(0, Math.min(1000000000, Math.floor(number(data.openingCashFloat)))),
+    stock_value_rwf: Math.max(0, Math.floor(number(data.stockValueRwf))),
+    product_count: Math.max(0, Math.floor(number(data.productCount))),
+    operational_status: status,
+    email: text(data.email).trim().slice(0, 120),
+    notes: text(data.notes).trim().slice(0, 1000),
+    created_at: number(data.createdAt) || Date.now(),
+    updated_at: Date.now(),
+    sync_version: Math.max(1, number(data.syncVersion) + 1),
+    hlc_timestamp: Date.now(),
+    last_modified_device_id: "DESKTOP"
+  };
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return json(405, { ok: false, message: "Method not allowed." });
+
+  try {
+    const config = getServerConfig();
+    const body = await req.json() as Row;
+    const action = text(body.action);
+    const admin = createClient(config.url, config.serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+    const owner = await requireOwner(req, admin, config.publishableKey, body, action === "bootstrap");
+
+    if (action === "bootstrap") {
+      const [snapshotResult, paymentsResult, codesResult, devicesResult, branchesResult, transfersResult, staffResult, newsResult] = await Promise.all([
+        latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret),
+        admin.from("payment_requests").select("id,provider,amount_rwf,duration_months,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,rejection_reason,created_at,updated_at,gateway_provider,gateway_reference,gateway_verified_at").eq("owner_username", owner.username).order("created_at", { ascending: false }).limit(100),
+        admin.from("unlock_codes").select("unlock_code,tier_code,plan_days,status,issued_at,redeemed_at").eq("shop_username", owner.username).order("issued_at", { ascending: false }).limit(100),
+        admin.from("shop_devices").select("id,device_name,device_id,role,branch_name,branch_id,is_active,is_owner_primary,assigned_user_id,assigned_user_name,last_synced_at,created_at,monthly_fee_addon_rwf").eq("shop_sync_key", owner.shopId).order("updated_at", { ascending: false }).limit(500),
+        admin.from("shop_branches").select("*").eq("shop_sync_key", owner.shopId).order("is_main_branch", { ascending: false }).limit(500),
+        admin.from("shop_stock_transfers").select("*").eq("shop_sync_key", owner.shopId).order("updated_at", { ascending: false }).limit(1000),
+        admin.from("shop_users").select("user_id,full_name,username,phone,role,assigned_branch_id,assigned_branch_name,is_active,updated_at").eq("shop_sync_key", owner.shopId).order("full_name", { ascending: true }).limit(1000),
+        admin.from("announcements").select("id,title,body,severity,audience,cta_label,cta_url,starts_at,ends_at,is_active,translations").in("audience", ["ALL","APP"]).eq("is_active", true).order("starts_at", { ascending: false }).limit(30)
+      ]);
+      for (const result of [paymentsResult, codesResult, devicesResult, branchesResult, transfersResult, staffResult, newsResult]) {
+        if (result.error) throw new Error("Could not load a BeBoss management record: " + result.error.message);
+      }
+      return json(200, {
+        ok: true,
+        shop: owner.shop,
+        owner: { id: owner.user.id, phone: owner.user.phone, username: owner.username },
+        snapshot: snapshotResult.snapshot,
+        snapshotUpdatedAt: snapshotResult.uploadedAt,
+        verifiedChunks: snapshotResult.verifiedChunks,
+        payments: paymentsResult.data ?? [],
+        codes: codesResult.data ?? [],
+        devices: devicesResult.data ?? [],
+        branches: branchesResult.data ?? [],
+        transfers: transfersResult.data ?? [],
+        staff: staffResult.data ?? [],
+        announcements: newsResult.data ?? [],
+        serverTime: Date.now()
+      });
+    }
+
+    if (action === "save_snapshot") {
+      const snapshot = sanitizeSnapshot(body.snapshot, { username: owner.username, shop: owner.shop });
+      nowSnapshot(snapshot, owner.username);
+      const encoded = await encodeToken(snapshot, config.hmacSecret);
+      const mainBranch = snapshot.branches.find((branch) => branch.isMainBranch === true) ?? snapshot.branches[0] ?? {};
+      const deviceId = text(body.deviceId);
+      if (!isUuid(deviceId)) throw new Error("The desktop installation identifier is invalid.");
+      const summary = snapshot.branches.length + " branches • " + snapshot.products.length + " products • " +
+        snapshot.sales.length + " sales • " + snapshot.customers.length + " customers";
+      const { data: savedAt, error } = await admin.rpc("write_beboss_desktop_snapshot", {
+        p_shop_sync_key: owner.shopId,
+        p_device_id: "DESKTOP:" + deviceId,
+        p_sync_generation: crypto.randomUUID(),
+        p_branch_id: text(mainBranch.id) || "main_branch",
+        p_branch_name: text(mainBranch.name) || "Main Store",
+        p_shop_name: text(snapshot.shopProfile.shopName) || text(owner.shop.shop_name),
+        p_owner_username: owner.username,
+        p_payload_token: encoded,
+        p_records_summary: summary,
+        p_expected_updated_at: Math.max(0, Math.floor(number(body.expectedUpdatedAt)))
+      });
+      if (error) throw new Error("The cloud rejected the desktop snapshot write: " + error.message);
+      if (!savedAt) return json(409, {
+        ok: false,
+        conflict: true,
+        message: "A phone or another desktop saved newer shop data. Refresh the cloud snapshot before saving again."
+      });
+      return json(200, { ok: true, uploadedAt: number(savedAt), snapshot: { ...snapshot, metadata: { ...snapshot.metadata } } });
+    }
+
+    if (action === "create_checkout") {
+      const gateway = text(body.gateway).toLowerCase();
+      if (!["flutterwave", "stripe"].includes(gateway)) throw new Error("Choose Flutterwave or Stripe for hosted checkout.");
+      const payerPhone = ownerPhoneE164(text(body.payerPhone));
+      const payerName = text(body.payerName).trim();
+      const payerEmail = text(body.payerEmail).trim().toLowerCase();
+      const months = number(body.months);
+      if (payerName.length < 2 || payerName.length > 120 ||
+          !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(payerEmail) || payerEmail.length > 254 ||
+          ![1, 3, 6, 12].includes(months)) {
+        throw new Error("Enter valid payer details and choose a supported billing cycle.");
+      }
+      const authorization = req.headers.get("Authorization") ?? "";
+      if (!authorization.startsWith("Bearer ")) throw new Error("The verified owner session is missing.");
+      const checkoutResponse = await fetch(config.url.replace(/\\/+$/, "") + "/functions/v1/create-payment-checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: config.publishableKey,
+          Authorization: authorization
+        },
+        body: JSON.stringify({
+          gateway,
+          shopName: text(owner.shop.shop_name),
+          username: owner.username,
+          phone: text(owner.shop.owner_phone),
+          payerPhone,
+          payerName,
+          payerEmail,
+          months,
+          branches: Math.max(1, number(owner.shop.branch_count)),
+          workers: Math.max(1, number(owner.shop.worker_count)),
+          devices: Math.max(1, number(owner.shop.device_count))
+        })
+      });
+      const checkout = await checkoutResponse.json().catch(() => ({}));
+      if (checkout?.pending === true) {
+        return json(200, {
+          ok: true,
+          pending: true,
+          paymentRequestId: text(checkout.paymentRequestId),
+          reference: text(checkout.reference),
+          message: text(checkout.message) || "The gateway response is being reconciled. Check the payment queue before creating another payment."
+        });
+      }
+      if (!checkoutResponse.ok || checkout?.ok !== true || typeof checkout?.checkoutUrl !== "string") {
+        throw new Error(text(checkout?.message) || "The hosted payment provider could not create a checkout.");
+      }
+      const checkoutUrl = new URL(checkout.checkoutUrl);
+      if (checkoutUrl.protocol !== "https:" ||
+          !["checkout.flutterwave.com", "checkout.stripe.com"].includes(checkoutUrl.hostname)) {
+        throw new Error("The payment provider returned an untrusted checkout destination.");
+      }
+      return json(200, {
+        ok: true,
+        paymentRequestId: text(checkout.paymentRequestId),
+        provider: text(checkout.provider),
+        reference: text(checkout.reference),
+        amountRwf: number(checkout.amountRwf),
+        currency: "RWF",
+        checkoutUrl: checkoutUrl.toString()
+      });
+    }
+
+    if (action === "branch_upsert") {
+      const row = branchPayload((body.branch ?? {}) as Row, owner.shopId);
+      if (row.is_main_branch) {
+        await admin.from("shop_branches").update({
+          is_main_branch: false, updated_at: Date.now(), hlc_timestamp: Date.now(), last_modified_device_id: "DESKTOP"
+        }).eq("shop_sync_key", owner.shopId).eq("is_main_branch", true).neq("id", row.id);
+      }
+      const { data: old, error: readError } = await admin.from("shop_branches").select("id,shop_sync_key,created_at").eq("id", row.id).maybeSingle();
+      if (readError) throw new Error("Could not validate the branch record.");
+      if (old && old.shop_sync_key !== owner.shopId) throw new Error("The branch belongs to another shop.");
+      row.created_at = number(old?.created_at) || row.created_at;
+      const { error } = await admin.from("shop_branches").upsert(row, { onConflict: "id" });
+      if (error) throw new Error("Could not save the branch: " + error.message);
+      return json(200, { ok: true, id: row.id });
+    }
+
+    if (action === "branch_delete") {
+      const id = text(body.id);
+      if (!id) throw new Error("A branch ID is required.");
+      const { data: branch, error: readError } = await admin.from("shop_branches").select("id,is_main_branch").eq("id", id).eq("shop_sync_key", owner.shopId).maybeSingle();
+      if (readError || !branch) throw new Error("The branch could not be found in this shop.");
+      if (branch.is_main_branch) throw new Error("The main shop branch cannot be deactivated.");
+      const { error } = await admin.from("shop_branches").update({
+        is_active: false, operational_status: "CLOSED", updated_at: Date.now(), hlc_timestamp: Date.now(), last_modified_device_id: "DESKTOP"
+      }).eq("id", id).eq("shop_sync_key", owner.shopId);
+      if (error) throw new Error("Could not deactivate the branch: " + error.message);
+      return json(200, { ok: true });
+    }
+
+    if (action === "staff_update") {
+      const userId = text(body.userId);
+      const role = text(body.role).toUpperCase();
+      const isActive = body.isActive === true;
+      const branchId = text(body.branchId);
+      if (!userId || !["OWNER","MANAGER","CASHIER"].includes(role)) throw new Error("The staff update is invalid.");
+      const { data: staff, error: staffError } = await admin.from("shop_users")
+        .select("user_id,role,full_name").eq("shop_sync_key", owner.shopId).eq("user_id", userId).maybeSingle();
+      if (staffError || !staff) throw new Error("The staff account was not found in this shop.");
+      if (staff.role === "OWNER" || role === "OWNER") throw new Error("Owner access and owner role changes must be handled through the reviewed owner-security process.");
+      if (branchId) {
+        const branch = await admin.from("shop_branches").select("id").eq("id", branchId).eq("shop_sync_key", owner.shopId).eq("is_active", true).maybeSingle();
+        if (branch.error || !branch.data) throw new Error("Choose an active branch from this shop.");
+      }
+      const { data: branchRow } = branchId
+        ? await admin.from("shop_branches").select("name").eq("id", branchId).eq("shop_sync_key", owner.shopId).maybeSingle()
+        : { data: null };
+      const { error } = await admin.from("shop_users").update({
+        role,
+        assigned_branch_id: branchId,
+        assigned_branch_name: text(branchRow?.name) || "All Branches",
+        is_active: isActive,
+        updated_at: Date.now()
+      }).eq("shop_sync_key", owner.shopId).eq("user_id", userId);
+      if (error) throw new Error("Could not update staff access: " + error.message);
+      return json(200, { ok: true });
+    }
+
+    if (action === "transfer_create") {
+      const id = text(body.id) || crypto.randomUUID();
+      const productId = text(body.productId);
+      const fromId = text(body.fromBranchId);
+      const toId = text(body.toBranchId);
+      const quantity = number(body.quantity);
+      if (!productId || !fromId || !toId || fromId === toId || !Number.isFinite(quantity) || quantity <= 0 || quantity > 1000000) {
+        throw new Error("Choose a product, two different branches and a positive quantity.");
+      }
+      const { data: branches, error: branchError } = await admin.from("shop_branches")
+        .select("id,name,is_active").eq("shop_sync_key", owner.shopId).in("id", [fromId,toId]);
+      if (branchError || !branches || branches.length !== 2 || branches.some((b) => !b.is_active)) {
+        throw new Error("Both source and destination branches must be active in this shop.");
+      }
+      const merged = (await latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret)).snapshot;
+      const product = merged?.products.find((p) => text(p.id) === productId && p.isDeleted !== true);
+      if (!product) throw new Error("The selected product is not present in the latest verified shop inventory.");
+      if (text(product.branchId) && text(product.branchId) !== fromId && text(product.branchId) !== "main_branch") {
+        throw new Error("The product is not assigned to the selected source branch.");
+      }
+      if (quantity > number(product.quantityInStock)) {
+        throw new Error("Requested transfer quantity exceeds the latest source stock.");
+      }
+      const from = branches.find((b) => b.id === fromId)!;
+      const to = branches.find((b) => b.id === toId)!;
+      const transferNumber = "TRF-" + Date.now().toString().slice(-9);
+      const { data: existing, error: existingError } = await admin.from("shop_stock_transfers")
+        .select("id,status").eq("id", id).eq("shop_sync_key", owner.shopId).maybeSingle();
+      if (existingError) throw new Error("Could not validate the transfer command.");
+      if (existing) return json(200, { ok: true, id, status: existing.status, reused: true });
+      const now = Date.now();
+      const { error } = await admin.from("shop_stock_transfers").insert({
+        id, shop_sync_key: owner.shopId, shop_name: owner.shop.shop_name,
+        transfer_number: transferNumber, product_id: productId, product_name: text(product.name),
+        from_branch_id: fromId, from_branch_name: from.name,
+        to_branch_id: toId, to_branch_name: to.name,
+        quantity, unit: text(product.unit) || "pcs",
+        cost_value_rwf: Math.max(0, Math.round(quantity * number(product.costPrice))),
+        transfer_date: now, status: "REQUESTED",
+        notes: text(body.notes).slice(0, 1000), transferred_by: owner.username,
+        received_by: "", received_at: 0, synced: false,
+        created_at: now, updated_at: now, hlc_timestamp: now, last_modified_device_id: "WEB"
+      });
+      if (error) throw new Error("Could not create the stock-transfer command: " + error.message);
+      return json(200, { ok: true, id, transferNumber, status: "REQUESTED" });
+    }
+
+    if (action === "transfer_command") {
+      const id = text(body.id);
+      const command = text(body.command).toUpperCase();
+      if (!id || !["RECEIPT","CANCEL"].includes(command)) throw new Error("A valid stock-transfer command is required.");
+      const { data: current, error: readError } = await admin.from("shop_stock_transfers")
+        .select("id,status,shop_sync_key").eq("id", id).eq("shop_sync_key", owner.shopId).maybeSingle();
+      if (readError || !current) throw new Error("The stock transfer was not found in this shop.");
+      if (current.status !== "IN_TRANSIT") throw new Error("A receipt or cancellation can only be requested while stock is in transit.");
+      const now = Date.now();
+      const next = command === "RECEIPT" ? "RECEIPT_REQUESTED" : "CANCEL_REQUESTED";
+      const { error } = await admin.from("shop_stock_transfers").update({
+        status: next, updated_at: now, hlc_timestamp: now, last_modified_device_id: "WEB"
+      }).eq("id", id).eq("shop_sync_key", owner.shopId).eq("status", "IN_TRANSIT");
+      if (error) throw new Error("Could not submit the transfer command: " + error.message);
+      return json(200, { ok: true, status: next });
+    }
+
+    if (action === "device_create") {
+      const deviceName = text(body.deviceName).trim();
+      const assignedUserId = text(body.assignedUserId);
+      const branchId = text(body.branchId);
+      if (deviceName.length < 2 || deviceName.length > 120 || !assignedUserId || !branchId) {
+        throw new Error("Enter a device name and select an active staff member and branch.");
+      }
+      const { data: shop, error: shopError } = await admin.from("shop_accounts")
+        .select("shop_name,device_count,device_limit,branch_count,worker_count,remote_kill_switch")
+        .eq("id", owner.shopId).maybeSingle();
+      if (shopError || !shop || shop.remote_kill_switch) throw new Error("This shop is not available for new device registration.");
+      const [ownerUserRes, primaryRes, staffRes, branchRes, deviceCountRes, workerCountRes, branchCountRes, cfgRes] = await Promise.all([
+        admin.from("shop_users").select("user_id").eq("shop_sync_key", owner.shopId).eq("role", "OWNER").eq("is_active", true).maybeSingle(),
+        admin.from("shop_devices").select("device_id,assigned_user_id").eq("shop_sync_key", owner.shopId).eq("is_owner_primary", true).eq("is_active", true).maybeSingle(),
+        admin.from("shop_users").select("user_id,username,full_name,role,assigned_branch_id,is_active").eq("shop_sync_key", owner.shopId).eq("user_id", assignedUserId).eq("is_active", true).maybeSingle(),
+        admin.from("shop_branches").select("id,name,is_active").eq("shop_sync_key", owner.shopId).eq("id", branchId).eq("is_active", true).maybeSingle(),
+        admin.from("shop_devices").select("id", { count: "exact", head: true }).eq("shop_sync_key", owner.shopId).eq("is_active", true),
+        admin.from("shop_users").select("user_id", { count: "exact", head: true }).eq("shop_sync_key", owner.shopId).eq("is_active", true),
+        admin.from("shop_branches").select("id", { count: "exact", head: true }).eq("shop_sync_key", owner.shopId).eq("is_active", true),
+        admin.from("app_config").select("per_device_fee_rwf").eq("id", "global").maybeSingle()
+      ]);
+      const ownerUser = ownerUserRes.data;
+      const primary = primaryRes.data;
+      const staff = staffRes.data;
+      const branch = branchRes.data;
+      if (ownerUserRes.error || !ownerUser || primaryRes.error || !primary?.device_id || primary.assigned_user_id !== ownerUser.user_id) {
+        throw new Error("Sync the registered owner device to the cloud before inviting another terminal.");
+      }
+      if (staffRes.error || !staff || staff.role === "OWNER" || staff.assigned_branch_id !== branchId) {
+        throw new Error("Choose an active Manager or Cashier already assigned to the selected branch.");
+      }
+      if (branchRes.error || !branch) throw new Error("Choose an active branch in this shop.");
+
+      const newId = crypto.randomUUID();
+      const now = Date.now();
+      const random = crypto.getRandomValues(new Uint8Array(16));
+      const joinCode = "BB-" + Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
+      const hashBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(joinCode));
+      const codeHash = bytesToHex(new Uint8Array(hashBytes));
+      const { error: slotError } = await admin.from("shop_devices").insert({
+        id: newId, shop_sync_key: owner.shopId, shop_name: shop.shop_name,
+        device_id: "", device_name: deviceName, join_code: "",
+        assigned_user_id: staff.user_id, assigned_username: staff.username,
+        assigned_user_name: staff.full_name, role: staff.role,
+        branch_id: branch.id, branch_name: branch.name, is_owner_primary: false,
+        is_active: true, monthly_fee_addon_rwf: 2000, last_synced_at: 0,
+        created_at: now, updated_at: now
+      });
+      if (slotError) throw new Error("Could not create the secure device slot: " + slotError.message);
+
+      // The private invitation RPC validates current_shop_sync_key() even when
+      // invoked by the trusted server role. Bind the verified tenant context.
+      const tenantAdmin = createClient(config.url, config.serviceKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { "X-Shop-Sync-Key": owner.shopId } }
+      });
+      const { error: inviteError } = await tenantAdmin.rpc("issue_shop_device_invite", {
+        p_shop_sync_key: owner.shopId,
+        p_device_record_id: newId,
+        p_code_hash: codeHash,
+        p_created_by_device_id: primary.device_id,
+        p_created_by_user_id: ownerUser.user_id,
+        p_branch_id: branch.id,
+        p_expires_at: now + 60 * 60 * 1000
+      });
+      if (inviteError) {
+        await admin.from("shop_devices").delete().eq("id", newId).eq("shop_sync_key", owner.shopId);
+        throw new Error("Supabase rejected the secure device invitation: " + inviteError.message);
+      }
+      return json(200, { ok: true, id: newId, joinCode, expiresAt: now + 60 * 60 * 1000, monthlyAddonRwf: 2000 });
+    }
+
+    return json(400, { ok: false, message: "Unknown BeBoss desktop operation." });
+  } catch (error) {
+    console.error("[BeBoss desktop API]", error);
+    const message = error instanceof Error ? error.message : "The BeBoss desktop request failed.";
+    const status = message.includes("snapshot") && message.includes("newer") ? 409 : 400;
+    return json(status, { ok: false, message });
+  }
+});
