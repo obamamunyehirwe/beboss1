@@ -93,8 +93,21 @@ Deno.serve(async (request: Request) => {
       throw new Error("The selected subscription plan is invalid.");
     }
 
-    const publicUrl = String(Deno.env.get("BEBOSS_PUBLIC_URL") ?? "").replace(/\/+$/, "");
-    if (!publicUrl.startsWith("https://")) throw new Error("The public HTTPS site URL is not configured.");
+    // The production Vercel alias is a safe public fallback; deployments using a
+    // custom domain can override it server-side without making checkout depend on
+    // an otherwise optional secret.
+    const configuredPublicUrl = String(Deno.env.get("BEBOSS_PUBLIC_URL") ?? "").trim();
+    const publicUrl = (configuredPublicUrl || "https://beboss1.vercel.app").replace(/\/+$/, "");
+    let publicOrigin: URL;
+    try {
+      publicOrigin = new URL(publicUrl);
+    } catch {
+      throw new Error("The public HTTPS site URL is invalid.");
+    }
+    if (publicOrigin.protocol !== "https:" || publicOrigin.username || publicOrigin.password ||
+        publicOrigin.search || publicOrigin.hash) {
+      throw new Error("The public checkout return URL must be a trusted HTTPS origin.");
+    }
     const usernameKey = `${username}_${normalizePhone(ownerPhone)}`;
     if (!normalizePhone(ownerPhone)) throw new Error("Enter the full phone number registered to this shop.");
 
