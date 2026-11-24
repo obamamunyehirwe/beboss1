@@ -158,7 +158,7 @@ export function completeSnapshotRows(rows: SnapshotRow[]): SnapshotRow[][] {
   const byDevice = new Map<string, SnapshotRow[]>();
   for (const row of rows) {
     const id = stringValue(row.device_id);
-    const base = id.replace(/#c\\d+$/, "");
+    const base = id.replace(/#c\d+$/, "");
     const current = byDevice.get(base) ?? [];
     current.push(row);
     byDevice.set(base, current);
@@ -220,7 +220,13 @@ export function mergeDesktopSnapshotParts(parts: SnapshotRow[]): SnapshotDataset
         const previous = maps[key].get(id);
         const rowVersion = Math.max(numberValue(row.hlcTimestamp), numberValue(row.updatedAt));
         const previousVersion = previous ? Math.max(numberValue(previous.hlcTimestamp), numberValue(previous.updatedAt)) : -1;
-        if (!previous || rowVersion >= previousVersion) maps[key].set(id, row);
+        const rowDevice = stringValue(row.lastModifiedDeviceId);
+        const previousDevice = stringValue(previous?.lastModifiedDeviceId);
+        if (
+          !previous ||
+          rowVersion > previousVersion ||
+          (rowVersion === previousVersion && rowDevice.localeCompare(previousDevice) > 0)
+        ) maps[key].set(id, row);
       }
     }
     for (const row of asRows(part.tombstones)) {
