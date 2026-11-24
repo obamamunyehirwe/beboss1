@@ -204,9 +204,10 @@ function BeBossDesktopWorkspace() {
   const datasetRef = useRef<Dataset | null>(null);
   const cacheRef = useRef<DesktopCache | null>(null);
   const syncLock = useRef(false);
+  const bootStarted = useRef(false);
   const [booting, setBooting] = useState(true);
   const [storageReady, setStorageReady] = useState(false);
-  const [offline, setOffline] = useState(!navigator.onLine);
+  const [offline, setOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
   const [dirty, setDirty] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(0);
@@ -348,6 +349,8 @@ function BeBossDesktopWorkspace() {
   useEffect(() => {
     let active = true;
     const boot = async () => {
+      if (bootStarted.current) return;
+      bootStarted.current = true;
       try {
         if (!bridge?.isDesktop) {
           setSyncMessage("Open this workspace in the BeBoss Desktop application to use encrypted offline storage and native desktop services.");
@@ -504,6 +507,8 @@ function BeBossDesktopWorkspace() {
       };
       cacheRef.current = initialCache;
       setCache(initialCache);
+      datasetRef.current = initialCache.dataset;
+      setDataset(initialCache.dataset);
       await bridge?.writeWorkspaceCache(JSON.stringify(initialCache));
       const loaded = await loadFromCloud(initialCache);
       if (!loaded.products.length && !loaded.customers.length && !loaded.sales.length) {
@@ -674,12 +679,6 @@ function BeBossDesktopWorkspace() {
   const changeTransfer = (transfer: Row, action: "receive" | "cancel") => {
     const at = Date.now();
     const status = action === "receive" ? "COMPLETED" : "CANCELLED";
-    updateRecord("stockTransfers", transfer.id, {
-      status, receivedBy: cache?.username || "Shop Owner",
-      receivedAt: action === "receive" ? at : asNumber(transfer.receivedAt),
-      lastModifiedDeviceId: "WEB",
-      hlcTimestamp: newHlc(transfer.hlcTimestamp, at),
-    });
     updateData((current) => ({
       ...current,
       stockTransfers: current.stockTransfers.map((row) => row.id === transfer.id ? { ...row, status, receivedBy: cache?.username || "Shop Owner", receivedAt: action === "receive" ? at : asNumber(row.receivedAt), lastModifiedDeviceId: "WEB", updatedAt: at, hlcTimestamp: newHlc(row.hlcTimestamp, at) } : row),
@@ -901,7 +900,7 @@ function BeBossDesktopWorkspace() {
             {section === "inventory" && <section className="space-y-5">
               <PageHeading title="Inventory intelligence" subtitle="Catalog, pricing, barcode, branch stock, stock valuation and reorder control." action={<button onClick={() => { setForm({ name: "", category: "General", costPrice: "", sellingPrice: "", quantityInStock: "0", lowStockThreshold: "5", unit: "pcs", barcode: "", branchId: activeBranches[0]?.id || "main_branch" }); setShowProductForm(true); }} className={primaryButton}><Plus size={15} /> Add product</button>} />
               <SearchBar value={search} onChange={setSearch} placeholder="Search product, category or barcode…" />
-              {showProductForm && <ProductForm form={form} setForm={setForm} branches={activeBranches} onCancel={() => setShowProductForm(false)} onSubmit={() => {
+              {showProductForm && !form.id && <ProductForm form={form} setForm={setForm} branches={activeBranches} onCancel={() => setShowProductForm(false)} onSubmit={() => {
                 if (!asText(form.name).trim()) { toast.error("Product name is required."); return; }
                 const made = record({ ...form, name: asText(form.name).trim(), costPrice: asNumber(form.costPrice), sellingPrice: asNumber(form.sellingPrice), quantityInStock: asNumber(form.quantityInStock), lowStockThreshold: asNumber(form.lowStockThreshold), branchId: asText(form.branchId), isDeleted: false }, cache.desktopId);
                 updateData((current) => ({ ...current, products: [...current.products, made] }));
@@ -1033,7 +1032,7 @@ function BeBossDesktopWorkspace() {
               <PageHeading title="Business analytics & demand forecast" subtitle="Live calculations from the shared sales, stock, purchasing and customer ledgers." action={<button onClick={()=>openExport("sales")} className={secondaryButton}><Download size={15}/> Export sales data</button>}/>
               <div className="grid gap-3 md:grid-cols-4"><Metric label="Revenue · 30 days" value={money(analytics.revenue30,currency)}/><Metric label="Gross profit · 30 days" value={money(analytics.profit30,currency)} tone="positive"/><Metric label="Average ticket" value={money(analytics.orders30?analytics.revenue30/analytics.orders30:0,currency)}/><Metric label="Stock at cost" value={money(analytics.stockValue,currency)}/></div>
               <SectionCard title="Daily revenue · last 7 days"><div className="flex h-52 items-end gap-3 px-2 pt-4">{analytics.daily.map((d)=>{const max=Math.max(1,...analytics.daily.map(x=>x.revenue));return <div key={d.label} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div title={money(d.revenue,currency)} className="w-full max-w-16 rounded-t-lg bg-gradient-to-t from-orange-600 to-orange-300" style={{height:Math.max(3,d.revenue/max*100)+"%"}}/><div className="text-[10px] text-slate-500">{d.label}</div></div>;})}</div></SectionCard>
-              <div className="grid gap-5 xl:grid-cols-2"><SectionCard title="Top-selling items"><div className="space-y-4">{analytics.topProducts.map((p,i)=><div key={p.name} className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-lg bg-white/5 text-xs font-bold text-slate-400">{i+1}</span><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold">{p.name}</div><div className="text-xs text-slate-500">{p.quantity} units sold</div></div><div className="text-sm font-bold">{money(p.revenue,currency)}</div></div>)}</div></SectionCard><SectionCard title="Inventory reorder forecast"><div className="space-y-3">{dataset.products.filter(p=>p.isDeleted!==true).map(p=>{const sold=dataset.saleItems.filter(i=>i.productId===p.id&&asNumber(i.saleDate,nowMs()-30*86400000)>=nowMs()-30*86400000).reduce((s,i)=>s+asNumber(i.quantitySold),0);const demand=sold/30;const cover=demand>0?asNumber(p.quantityInStock)/demand:Infinity;const suggested=Math.max(0,Math.ceil(demand*14-asNumber(p.quantityInStock)));return {p,demand,cover,suggested};}).filter(x=>x.suggested>0||x.p.quantityInStock<=x.p.lowStockThreshold).sort((a,b)=>a.cover-b.cover).slice(0,12).map(x=><div key={x.p.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3"><div><div className="text-sm font-bold">{x.p.name}</div><div className="text-xs text-slate-500">Stock {x.p.quantityInStock} · {x.demand.toFixed(1)} sold/day</div></div><div className="text-right"><div className="font-black text-amber-300">{x.suggested} units</div><div className="text-[10px] text-slate-500">{Number.isFinite(x.cover)?x.cover.toFixed(1)+" days cover":"No recent demand"}</div></div></div>)}{analytics.lowStock.length===0&&<p className="text-sm text-slate-500">No items are currently below their reorder threshold.</p>}</div></SectionCard></div>
+              <div className="grid gap-5 xl:grid-cols-2"><SectionCard title="Top-selling items"><div className="space-y-4">{analytics.topProducts.map((p,i)=><div key={p.name} className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-lg bg-white/5 text-xs font-bold text-slate-400">{i+1}</span><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold">{p.name}</div><div className="text-xs text-slate-500">{p.quantity} units sold</div></div><div className="text-sm font-bold">{money(p.revenue,currency)}</div></div>)}</div></SectionCard><SectionCard title="Inventory reorder forecast"><div className="space-y-3">{dataset.products.filter(p=>p.isDeleted!==true).map(p=>{const saleDates=new Map(dataset.sales.map(sale=>[sale.id,asNumber(sale.saleDate)]));const sold=dataset.saleItems.filter(i=>i.productId===p.id&&(saleDates.get(i.saleId)||0)>=nowMs()-30*86400000).reduce((s,i)=>s+asNumber(i.quantitySold),0);const demand=sold/30;const cover=demand>0?asNumber(p.quantityInStock)/demand:Infinity;const suggested=Math.max(0,Math.ceil(demand*14-asNumber(p.quantityInStock)));return {p,demand,cover,suggested};}).filter(x=>x.suggested>0||x.p.quantityInStock<=x.p.lowStockThreshold).sort((a,b)=>a.cover-b.cover).slice(0,12).map(x=><div key={x.p.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[.06] bg-white/[.025] p-3"><div><div className="text-sm font-bold">{x.p.name}</div><div className="text-xs text-slate-500">Stock {x.p.quantityInStock} · {x.demand.toFixed(1)} sold/day</div></div><div className="text-right"><div className="font-black text-amber-300">{x.suggested} units</div><div className="text-[10px] text-slate-500">{Number.isFinite(x.cover)?x.cover.toFixed(1)+" days cover":"No recent demand"}</div></div></div>)}{analytics.lowStock.length===0&&<p className="text-sm text-slate-500">No items are currently below their reorder threshold.</p>}</div></SectionCard></div>
             </section>}
 
             {section === "reports" && <section className="space-y-5">
