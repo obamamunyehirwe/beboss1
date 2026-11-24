@@ -18,6 +18,8 @@ This source review does **not** support an unqualified “enterprise production-
 4. **Windows installation:** the NSIS bundle now uses a per-machine install mode, invoking Windows UAC for installation. The installed app itself remains a standard-user process. The installer no longer opens broad inbound firewall exceptions, and uninstall no longer deletes an unrelated data directory.
 5. **Desktop version coherence:** the desktop package, package lock, Rust crate, Tauri bundle, renderer bridge and installer registry version are aligned at **1.2.1**.
 6. **Android release signing safety:** Android is advanced to version **2.3.2** (versionCode 16). Release variants no longer fall back to the public debug keystore; release signing tasks now fail with an actionable error unless the protected production upload keystore and its passwords are configured. CI continues to build the debug variant without requiring production signing secrets.
+7. **Installer migration cleanup:** the supported installer removes only BeBoss-owned legacy inbound firewall rules and the obsolete `.bbbackup` association left by prior versions, while preserving all user shop data. Unused standalone NSIS templates that contained divergent and unsafe installer logic have been removed; the Tauri-generated NSIS installer is the single supported Windows path.
+8. **Release-signing regression check:** Android CI now proves that the release-signing validation task rejects missing production credentials, independently of the debug APK build.
 
 ## Findings that remain release blockers
 

@@ -28,8 +28,17 @@
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "NoRepair" 1
   
-  ; BeBoss desktop uses outbound HTTPS and does not host LAN sync. No inbound
-  ; Windows Firewall exception is required or installed.
+  ; Remove legacy broad firewall exceptions and the obsolete file association
+  ; installed by earlier BeBoss desktop installers. Do not create new rules.
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop Sync"'
+  Pop $1
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop"'
+  Pop $1
+  ReadRegStr $0 HKCR ".bbbackup" ""
+  ${If} $0 == "BeBoss.BackupFile"
+    DeleteRegKey HKCR ".bbbackup"
+    DeleteRegKey HKCR "BeBoss.BackupFile"
+  ${EndIf}
   
   ; Create desktop shortcut
   CreateShortcut "$DESKTOP\BeBoss Desktop.lnk" "$INSTDIR\BeBoss.exe" "" "$INSTDIR\BeBoss.exe" 0
@@ -56,10 +65,20 @@
   Delete "$DESKTOP\BeBoss Desktop.lnk"
   RMDir /r "$SMPROGRAMS\BeBoss"
   
+  ; Remove installer artifacts owned by previous BeBoss releases only.
+  ReadRegStr $0 HKCR ".bbbackup" ""
+  ${If} $0 == "BeBoss.BackupFile"
+    DeleteRegKey HKCR ".bbbackup"
+    DeleteRegKey HKCR "BeBoss.BackupFile"
+  ${EndIf}
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop Sync"'
+  Pop $1
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop"'
+  Pop $1
+
   ; Remove registry entries
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop"
 
-  
   DetailPrint "BeBoss Desktop has been removed."
 !macroend
 
