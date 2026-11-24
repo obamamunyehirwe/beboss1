@@ -158,14 +158,14 @@ export function completeSnapshotRows(rows: SnapshotRow[]): SnapshotRow[][] {
   const byDevice = new Map<string, SnapshotRow[]>();
   for (const row of rows) {
     const id = stringValue(row.device_id);
-    const base = id.replace(/#c\d+$/, "");
+    const base = id.replace(/#c\\d+$/, "");
     const current = byDevice.get(base) ?? [];
     current.push(row);
     byDevice.set(base, current);
   }
 
   const complete: SnapshotRow[][] = [];
-  for (const [deviceId, deviceRows] of byDevice) {
+  for (const deviceRows of byDevice.values()) {
     const generations = new Map<string, SnapshotRow[]>();
     for (const row of deviceRows) {
       const generation = stringValue(row.sync_generation);
@@ -178,20 +178,31 @@ export function completeSnapshotRows(rows: SnapshotRow[]): SnapshotRow[][] {
     );
     const valid = candidates.find((group) => {
       if (!group.length) return false;
-      const count = numberValue(group[0]!.chunk_count) || 1;
-      const indexes = group.map((r) => numberValue(r.chunk_index)).sort((a, b) => a - b);
-      return group.every((r) => stringValue(r.sync_generation) === stringValue(group[0]!.sync_generation) &&
-        numberValue(r.chunk_count) === count) &&
-        indexes.length === count &&
-        indexes.every((value, index) => value === index);
+      const generation = stringValue(group[0]!.sync_generation);
+      const count = numberValue(group[0]!.chunk_count);
+      const indexFor = (row: SnapshotRow) => {
+        const suffix = /#c(\\d+)$/.exec(stringValue(row.device_id));
+        return suffix ? Number(suffix[1]) : numberValue(row.chunk_index);
+      };
+      const indexes = group.map(indexFor).sort((a, b) => a - b);
+      if (!generation) {
+        const summaryCount = /(\\d+) chunk\\(s\\)/i.exec(stringValue(group[0]!.records_summary));
+        const expected = count > 0 ? count : Number(summaryCount?.[1] || 1);
+        return indexes.length === expected && indexes.every((value, index) => value === index);
+      }
+      const expected = count || 1;
+      return group.every((row) => stringValue(row.sync_generation) === generation && numberValue(row.chunk_count) === expected) &&
+        indexes.length === expected && indexes.every((value, index) => value === index);
     });
-    if (valid) complete.push(valid.slice().sort((a, b) => numberValue(a.chunk_index) - numberValue(b.chunk_index)));
-    else if (candidates.length === 1 && !stringValue(candidates[0]![0]?.sync_generation)) {
-      const legacy = candidates[0]!;
-      const expected = numberValue(legacy[0]?.chunk_count) || legacy.length;
-      if (legacy.length === expected) complete.push(legacy.slice().sort((a, b) => numberValue(a.chunk_index) - numberValue(b.chunk_index)));
+    if (valid) {
+      complete.push(valid.slice().sort((a, b) => {
+        const getIndex = (row: SnapshotRow) => {
+          const suffix = /#c(\\d+)$/.exec(stringValue(row.device_id));
+          return suffix ? Number(suffix[1]) : numberValue(row.chunk_index);
+        };
+        return getIndex(a) - getIndex(b);
+      }));
     }
-    void deviceId;
   }
   return complete;
 }
