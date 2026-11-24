@@ -21,6 +21,7 @@
     "electron-builder": "26.18.0"
   },
   "productName": "BeBoss",
-  "author": "BeBoss",
-  "desktopName": "com.beboss.desktop"
+  "author": "BeBoss <obamamunyehirwe@gmail.com>",
+  "desktopName": "com.beboss.desktop",
+  "homepage": "https://github.com/obamamunyehirwe/beboss1"
 }
