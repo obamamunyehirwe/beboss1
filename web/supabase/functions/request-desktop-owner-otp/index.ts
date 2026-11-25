@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { ownerOtpPhoneBucketKey } from "../_shared/owner-otp-rate-limit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -64,8 +65,11 @@ Deno.serve(async (req: Request) => {
       return json(200, { accepted: true });
     }
 
+    // Limit this phone destination across all usernames. The stored bucket is
+    // a SHA-256 digest, not a raw phone number or username-derived shop key.
+    const phoneBucket = await ownerOtpPhoneBucketKey(phone);
     const { data: attemptId, error: throttleError } = await admin.rpc("take_shop_owner_otp_slot", {
-      p_shop_id: shop.id,
+      p_shop_id: phoneBucket,
       p_now_ms: Date.now(),
       p_window_ms: 600000,
       p_max_attempts: 3
