@@ -138,7 +138,7 @@ export function LandingPage({
           <button className="landing-theme" onClick={() => onThemeChange(isDark ? "light" : "dark")} aria-label={t.theme} title={t.theme}>
             {isDark ? <Sun size={17} /> : <Moon size={17} />}
           </button>
-          <button className="landing-login landing-login-small" onClick={onSignIn}>{t.signIn}<ArrowRight size={15} /></button>
+          <button className="landing-login landing-login-small" onClick={onSignIn}>{t.signIn}<ArrowRight size={15} /></button>\n          <button className="landing-admin-entry" type="button" onClick={onOpenAdmin}><ShieldCheck size={14} />Master Admin</button>
         </div>
       </header>
 
