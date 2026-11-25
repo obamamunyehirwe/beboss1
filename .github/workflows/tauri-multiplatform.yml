@@ -1,0 +1,111 @@
+name: BeBoss Tauri multi-platform packages
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/tauri-multiplatform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/tauri-multiplatform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tauri-packages-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Tauri package (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows-x64-nsis
+            runner: windows-2022
+            script: dist:win
+            bundle: nsis
+          - label: macos-dmg
+            runner: macos-15
+            script: dist:mac
+            bundle: dmg
+          - label: linux-x64-appimage
+            runner: ubuntu-22.04
+            script: dist:linux
+            bundle: appimage
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Linux Tauri prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Set up Perl for Windows SQLCipher build
+        if: runner.os == 'Windows'
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: "5.40"
+
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Install pinned desktop dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build desktop frontend
+        run: bun run build
+
+      - name: Check native Rust application
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Test native Rust synchronization primitives
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Build native desktop package
+        run: bun run ${{ matrix.script }}
+
+      - name: Generate SHA-256 package manifest
+        run: node scripts/generate-bundle-checksums.mjs "src-tauri/target/release/bundle/${{ matrix.bundle }}"
+
+      - name: Publish unsigned package and SHA-256 manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeBoss-Tauri-${{ matrix.label }}-${{ github.sha }}
+          path: desktop/src-tauri/target/release/bundle/${{ matrix.bundle }}/*
+          if-no-files-found: error
+          retention-days: 14

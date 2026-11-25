@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { createPublicClient } from "./server/public-client";
+import { ownerOtpPhoneBucketKey } from "./owner-otp-rate-limit";
 import { calculateSubscriptionFee, computeShopKey, normalizePhoneLast9 } from "./pricing";
 import { decodeShareToken, extractShopRecords, mergeShareJson, pickLatestDeviceChunkSet, type ShopRecords, verifyAndDecodeToken } from "./snapshot-analytics";
 
@@ -74,9 +75,12 @@ export const requestMyShopOwnerOtp = createServerFn({ method: "POST" })
       return accepted;
     }
 
+    // Rate-limit the verified destination across all shop usernames. The
+    // storage key is a one-way digest, never the raw phone number or username.
     const now = Date.now();
+    const phoneBucket = await ownerOtpPhoneBucketKey(phone);
     const { data: attemptId, error: attemptError } = await supabaseAdmin.rpc("take_shop_owner_otp_slot", {
-      p_shop_id: shop.id,
+      p_shop_id: phoneBucket,
       p_now_ms: now,
       p_window_ms: 10 * 60 * 1000,
       p_max_attempts: 3,
