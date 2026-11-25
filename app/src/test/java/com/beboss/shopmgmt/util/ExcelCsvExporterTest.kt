@@ -24,6 +24,19 @@ class ExcelCsvExporterTest {
     }
 
     @Test
+    fun `recognizes currency suffixes in exported cost and selling price headings`() {
+        val csv = """Product Name,Category,Quantity,Cost Price (RWF),Selling Price (RWF)
+Rice,Grains,24,1800,2300
+"""
+
+        val product = ExcelCsvExporter.parseProductsCsv(csv).single()
+
+        assertEquals(24.0, product.quantityInStock, 0.0001)
+        assertEquals(1800.0, product.costPrice, 0.0001)
+        assertEquals(2300.0, product.sellingPrice, 0.0001)
+    }
+
+    @Test
     fun `parses the documented legacy seven column format`() {
         val csv = """Name,Category,CostPrice,SellingPrice,Quantity,Unit,Barcode
 Flour,Grains,1100,1400,30,kg,SKU-1
