@@ -160,7 +160,7 @@ export const getAdminContext = createServerFn({ method: "POST" })
     const [adminResult, staffResult, permissionResult, profileResult] = await Promise.all([
       ctx.supabase.rpc("is_beboss_admin"),
       ctx.supabase.rpc("is_beboss_staff"),
-      ctx.supabase.rpc("current_admin_permissions"),
+      (ctx.supabase as any).rpc("current_admin_permissions"),
       ctx.supabase.from("admin_profiles").select("role").eq("user_id", ctx.userId).maybeSingle(),
     ]);
     if (adminResult.error || staffResult.error || permissionResult.error) {
@@ -1231,7 +1231,7 @@ export const listTeam = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: roles, error }, { data: grants, error: grantError }, { data: profiles, error: profileError }] = await Promise.all([
       supabaseAdmin.from("user_roles").select("user_id, role, created_at"),
-      supabaseAdmin.from("admin_role_grants").select("user_id, role_key, permissions, is_active, expires_at, granted_at"),
+      (supabaseAdmin as any).from("admin_role_grants").select("user_id, role_key, permissions, is_active, expires_at, granted_at"),
       supabaseAdmin.from("admin_profiles").select("user_id, role, is_active"),
     ]);
     if (error || grantError || profileError) throw new Error(error?.message ?? grantError?.message ?? profileError?.message ?? "Could not load the admin team.");
