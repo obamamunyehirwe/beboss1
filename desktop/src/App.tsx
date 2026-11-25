@@ -542,7 +542,8 @@ export default function App() {
   }
 
   return <div className="app-shell" data-theme={preferences.theme} data-density={preferences.density} data-accent={preferences.accent} data-motion={preferences.reducedMotion ? "reduced" : "full"} data-language={preferences.language}>
-    <aside className={"sidebar " + (menuOpen ? "open" : "")}>
+    {menuOpen && <button type="button" className="sidebar-backdrop" aria-label="Close navigation menu" onClick={() => setMenuOpen(false)} />}
+    <aside className={"sidebar " + (menuOpen ? "open" : "")} id="desktop-navigation">
       <div className="brand-row"><span className="brand-mark brand-logo-mark"><img src="/beboss-app-icon.png" alt="BeBoss" /></span><div><strong>BeBoss</strong><small>RETAIL COMMAND</small></div><span className="desktop-tag">DESKTOP</span></div>
       <div className="shop-switcher"><span className="shop-avatar">{s(cloud.shop.shop_name).slice(0, 1).toUpperCase() || "B"}</span><div><strong>{s(cloud.shop.shop_name) || "My Shop"}</strong><small>@{owner.username}</small></div><ChevronDown size={15} /></div>
       <nav className="side-nav">
@@ -566,7 +567,7 @@ export default function App() {
 
     <main className="main-area">
       <header className="topbar">
-        <div className="topbar-left"><button className="mobile-menu icon-btn" onClick={() => setMenuOpen((v) => !v)}><Menu size={20} /></button><div className="breadcrumb"><span>BeBoss</span><b>/</b><strong>{pageTitle}</strong></div></div>
+        <div className="topbar-left"><button type="button" className="mobile-menu icon-btn" aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"} aria-expanded={menuOpen} aria-controls="desktop-navigation" onClick={() => setMenuOpen((v) => !v)}><Menu size={20} /></button><div className="breadcrumb"><span>BeBoss</span><b>/</b><strong>{pageTitle}</strong></div></div>
         <div className="topbar-right">
           <button className="command-btn" onClick={() => setPaletteOpen(true)} title="Command menu (Ctrl+K)"><Search size={15} /><span>Command</span><kbd>Ctrl K</kbd></button>
           <label className="desktop-language-control"><Languages size={15} /><select aria-label="Interface language" value={preferences.language} onChange={(event) => void saveDesktopPreferences({ ...preferences, language: event.target.value as DesktopPreferences["language"] })}>{DESKTOP_LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.short}</option>)}</select></label>
