@@ -28,6 +28,7 @@ import { BillingPage } from "./components/screens/BillingPage";
 import { DiagnosticsPage } from "./components/screens/DiagnosticsPage";
 import { SyncHubPage } from "./components/screens/SyncHubPage";
 import { OwnerAccessPage } from "./components/screens/OwnerAccessPage";
+import { AdminConsolePage } from "./components/screens/AdminConsolePage";
 import { BackupPage } from "./components/screens/BackupPage";
 import { SettingsPage } from "./components/screens/SettingsPage";
 import { WelcomePage } from "./components/screens/WelcomePage";
@@ -86,6 +87,7 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
   { id: "diagnostics", label: "System diagnostics", icon: Activity, group: "Administration" },
   { id: "sync", label: "Sync hub", icon: RefreshCw, group: "Administration" },
   { id: "admin", label: "Owner access", icon: ShieldCheck, group: "Administration" },
+  { id: "masterAdmin", label: "Master Admin Console", icon: ShieldAlert, group: "Administration" },
   { id: "backup", label: "Backup & recovery", icon: Database, group: "Administration" },
   { id: "settings", label: "Shop settings", icon: Settings, group: "Administration" }
 ];
@@ -738,6 +740,7 @@ function NativeDesktopApp() {
         {view === "diagnostics" && <DiagnosticsPage cloud={cloud} snapshot={snapshot} onRefresh={refresh} />}
         {view === "sync" && <SyncHubPage cloud={cloud} deviceId={deviceId} offline={offline} onRefresh={refresh} />}
         {view === "admin" && <OwnerAccessPage cloud={cloud} />}
+        {view === "masterAdmin" && <AdminConsolePage />}
         {view === "backup" && <BackupPage snapshot={snapshot} cloud={cloud} onCommit={commitSnapshot}
           onCreateBranchShare={async (branchIdFilter) => {
             const result = await callAction("create_branch_share", { snapshot, branchIdFilter });
