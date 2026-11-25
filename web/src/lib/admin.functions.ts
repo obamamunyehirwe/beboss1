@@ -1308,12 +1308,14 @@ export const grantTeamRole = createServerFn({ method: "POST" })
     }
 
     if (data.role === "SUPER_ADMIN") {
-      const { count } = await supabaseAdmin.from("user_roles").select("*", { count: "exact", head: true }).eq("role", "admin");
       const { error: roleError } = await supabaseAdmin.from("user_roles").upsert({ user_id: found.id, role: "admin" }, { onConflict: "user_id,role" });
       if (roleError) throw new Error(`Could not grant master admin access: ${roleError.message}`);
-      await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "support");
-      await supabaseAdmin.from("admin_role_grants").delete().eq("user_id", found.id);
-      await supabaseAdmin.from("admin_profiles").upsert({ user_id: found.id, email: target, full_name: target, role: "SUPER_ADMIN", is_active: true }, { onConflict: "user_id" });
+      const { error: supportDeleteError } = await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "support");
+      if (supportDeleteError) throw new Error(supportDeleteError.message);
+      const { error: grantDeleteError } = await (supabaseAdmin as any).from("admin_role_grants").delete().eq("user_id", found.id);
+      if (grantDeleteError) throw new Error(grantDeleteError.message);
+      const { error: profileError } = await supabaseAdmin.from("admin_profiles").upsert({ user_id: found.id, email: target, full_name: target, role: "SUPER_ADMIN", is_active: true }, { onConflict: "user_id" });
+      if (profileError) throw new Error(profileError.message);
       await audit(ctx, admin.email, invited ? "INVITE_SUPER_ADMIN" : "GRANT_SUPER_ADMIN", target, "Full Master Admin access granted.");
       return { ok: true, invited, email: target, role: data.role, permissions: ["*"] };
     }
@@ -1325,7 +1327,8 @@ export const grantTeamRole = createServerFn({ method: "POST" })
     if (currentMaster && (masterCount ?? 0) <= 1) throw new Error("You cannot downgrade the last Master Admin. Promote another Master Admin first.");
     const { error: roleError } = await supabaseAdmin.from("user_roles").upsert({ user_id: found.id, role: "support" }, { onConflict: "user_id,role" });
     if (roleError) throw new Error(`Could not authorize the invited account: ${roleError.message}`);
-    await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "admin");
+    const { error: demoteError } = await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "admin");
+    if (demoteError) throw new Error(demoteError.message);
     const { error: profileError } = await supabaseAdmin.from("admin_profiles").upsert({
       user_id: found.id, email: target, full_name: target, role: data.role, is_active: true,
     }, { onConflict: "user_id" });
@@ -1352,8 +1355,10 @@ export const revokeTeamRole = createServerFn({ method: "POST" })
     if (targetRoles?.some((r) => r.role === "admin") && (count ?? 0) <= 1) throw new Error("You can't remove the last master admin.");
     const { error } = await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId);
     if (error) throw new Error(error.message);
-    await supabaseAdmin.from("admin_role_grants").delete().eq("user_id", data.userId);
-    await supabaseAdmin.from("admin_profiles").update({ is_active: false }).eq("user_id", data.userId);
+    const { error: grantsError } = await (supabaseAdmin as any).from("admin_role_grants").delete().eq("user_id", data.userId);
+    if (grantsError) throw new Error(grantsError.message);
+    const { error: profileError } = await supabaseAdmin.from("admin_profiles").update({ is_active: false }).eq("user_id", data.userId);
+    if (profileError) throw new Error(profileError.message);
     await audit(ctx, admin.email, "REVOKE_TEAM_ACCESS", data.userId, "Removed all BeBoss admin-team roles and permissions.");
     return { ok: true };
   });
