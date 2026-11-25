@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, BarChart3, Bell, Building2, Briefcase, Check, ChevronDown,
   ClipboardList, CreditCard, Database, Home, LayoutDashboard, LoaderCircle, LogOut, Menu,
   Package, RefreshCw, Search, Settings, ShieldCheck, ShoppingCart, Smartphone, Truck, UserRound,
-  Users, Warehouse, X, Zap, Languages
+  Users, Warehouse, X, Zap, Languages, ShieldAlert
 } from "lucide-react";
 import { callDesktopApi, currentSession, signOut, OwnerAuthorizationError, type OwnerCredentials } from "./lib/cloud";
 import { BrowserRuntimeNotice } from "./components/BrowserRuntimeNotice";
