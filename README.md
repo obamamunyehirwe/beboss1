@@ -98,11 +98,11 @@ A Super Admin can assign a role to an existing account or invite a teammate by e
 | **Super Admin** | Full platform administration, team assignment and security-sensitive controls |
 | **Release Manager** | Upload and publish app releases, select the current build and control public visibility |
 | **Announcement Manager** | Create, translate, schedule and target platform announcements |
-| **Device Auditor** | Review device security posture and synchronization health |
+| **Device Auditor** | Review device security posture, consented device location and synchronization health |
 | **Support** | Work the support inbox and view permitted shop information |
-| **Finance Reviewer** | Access finance and payment-review workflows assigned by the platform |
-| **Analyst** | Access business and platform analytics |
-| **Operations Manager** | Review operational shops, devices, staff and synchronization workflows |
+| **Finance Reviewer** | Read payment claims and reconciliation details; payment approval and BB3 issuance remain Super Admin-only |
+| **Analyst** | Read-only platform analytics across shops, payment status, downloads and device health |
+| **Operations Manager** | Review operational shops, devices and synchronization workflows |\n| **Staff Manager** | Activate, suspend, assign and remove shop staff accounts; cannot modify shop-owner accounts |
 
 The permission catalogue is defined on the server and stored in a protected grant table. The browser cannot submit an arbitrary permission list, modify its own grant, or elevate an account by editing user metadata. Super Admin access remains a separate role, and the last Super Admin cannot be removed or downgraded accidentally.
 
