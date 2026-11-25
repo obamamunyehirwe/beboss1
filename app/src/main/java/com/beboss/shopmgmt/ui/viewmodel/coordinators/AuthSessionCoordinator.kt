@@ -304,7 +304,13 @@ class AuthSessionCoordinator(
 
         scope.launch {
             try {
-                val user = repository.getUserByPin(pin.trim())
+                val foundUser = repository.getUserByPin(pin.trim())
+                val user = foundUser?.let { existing ->
+                    if (SecurityUtils.needsUpgrade(existing.pinHash)) {
+                        existing.copy(pinHash = SecurityUtils.hashPin(pin.trim()))
+                            .also { repository.saveUser(it) }
+                    } else existing
+                }
                 if (user != null) {
                     AuthRateLimiter.recordSuccess(rateKey, application)
                     AuthRateLimiter.recordSuccess("pin:${user.id}", application)
@@ -381,25 +387,32 @@ class AuthSessionCoordinator(
                     return@launch
                 }
                 val secret = pinOrPass.trim()
-                val isValid = user != null && user.isActive && (
-                    SecurityUtils.verifyPin(secret, user.pinHash) ||
-                        SecurityUtils.verifyPassword(secret, user.password)
+                val matchedPin = user != null && user.isActive && SecurityUtils.verifyPin(secret, user.pinHash)
+                val matchedPassword = user != null && user.isActive && SecurityUtils.verifyPassword(secret, user.password)
+                val isValid = matchedPin || matchedPassword
+                val authenticatedUser = if (user != null && isValid) {
+                    val upgraded = user.copy(
+                        pinHash = if (matchedPin && SecurityUtils.needsUpgrade(user.pinHash)) SecurityUtils.hashPin(secret) else user.pinHash,
+                        password = if (matchedPassword && SecurityUtils.needsUpgrade(user.password)) SecurityUtils.hashPassword(secret) else user.password
                     )
-                if (user != null && isValid) {
+                    if (upgraded.pinHash != user.pinHash || upgraded.password != user.password) repository.saveUser(upgraded)
+                    upgraded
+                } else user
+                if (authenticatedUser != null && isValid) {
                     AuthRateLimiter.recordSuccess(rateKey, application)
-                    _currentUser.value = user
+                    _currentUser.value = authenticatedUser
                     _isLocked.value = false
                     _authError.value = null
                     prefs.edit().putString("active_user_id", user.id).apply()
                     repository.updateLastLogin(user.id)
                     repository.recordLocalAudit(
-                        actorName = user.name,
-                        actorRole = user.role.name,
+                        actorName = authenticatedUser.name,
+                        actorRole = authenticatedUser.role.name,
                         action = "LOGIN_CREDENTIALS_SUCCESS",
-                        targetId = user.username,
-                        details = "Authenticated with PBKDF2 password/PIN"
+                        targetId = authenticatedUser.username,
+                        details = "Authenticated with PBKDF2; legacy credential parameters were upgraded when required"
                     )
-                    val welcome = "${Localization.get("logged_in_as_prefix", language.value)} ${user.name} (${user.role.displayName})"
+                    val welcome = "${Localization.get("logged_in_as_prefix", language.value)} ${authenticatedUser.name} (${authenticatedUser.role.displayName})"
                     emitSnackbar(welcome)
                 } else {
                     val failResult = AuthRateLimiter.recordFailure(rateKey, application)
@@ -440,8 +453,12 @@ class AuthSessionCoordinator(
             _isLocked.value = false
             _authError.value = null
             prefs.edit().putString("active_user_id", active.id).apply()
+            val sessionUser = if (SecurityUtils.needsUpgrade(active.pinHash)) {
+                active.copy(pinHash = SecurityUtils.hashPin(cleanPin)).also { _currentUser.value = it }
+            } else active
             scope.launch {
                 try {
+                    if (sessionUser.pinHash != active.pinHash) repository.saveUser(sessionUser)
                     repository.updateLastLogin(active.id)
                     repository.recordLocalAudit(
                         actorName = active.name,

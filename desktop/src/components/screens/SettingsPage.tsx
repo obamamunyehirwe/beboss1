@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { errorText, n, s } from "../../lib/format";
 import type { CloudState, CommitSnapshot, DesktopPreferences, NavKey, Snapshot } from "../../lib/types";
+import { DESKTOP_LANGUAGES } from "../../lib/i18n";
 import { PageHeading, StatusPill } from "../ui";
 
 type RuntimeDiagnostics = {
@@ -17,7 +18,7 @@ type RuntimeDiagnostics = {
 
 const DEFAULT_PREFERENCES: DesktopPreferences = {
   theme: "system", density: "comfortable", accent: "orange", defaultView: "welcome",
-  autoSync: true, refreshMinutes: 5, reducedMotion: false
+  language: "en", autoSync: true, refreshMinutes: 5, reducedMotion: false
 };
 
 function Toggle({ label, description, checked, onChange }: {
@@ -169,6 +170,12 @@ export function SettingsPage({ snapshot, cloud, onCommit, offline, preferences, 
             </section>
             <section className="settings-preference-card"><div className="settings-preference-heading"><span><Activity size={17} /></span><div><strong>Startup workspace</strong><small>First page after owner verification.</small></div></div>
               <select value={preferenceDraft.defaultView} onChange={(event) => setPreferenceDraft({ ...preferenceDraft, defaultView: event.target.value as DesktopPreferences["defaultView"] })}><option value="welcome">Welcome page</option><option value="overview">Business overview</option><option value="management">Management center</option></select>
+            </section>
+            <section className="settings-preference-card settings-language-card"><div className="settings-preference-heading"><span><Store size={17} /></span><div><strong>Interface language</strong><small>English, Kinyarwanda, French or Kiswahili.</small></div></div>
+              <select aria-label="Desktop interface language" value={preferenceDraft.language} onChange={(event) => setPreferenceDraft({ ...preferenceDraft, language: event.target.value as DesktopPreferences["language"] })}>
+                {DESKTOP_LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}
+              </select>
+              <p className="settings-language-note">Uses BeBoss's bundled mobile localization catalog, with desktop-specific terms included. Any unmatched copy stays in its source language.</p>
             </section>
           </div>
           <div className="panel-subhead"><strong>Synchronization behavior</strong><small>Business transactions still save immediately; this controls recovery retries and periodic refresh.</small></div>

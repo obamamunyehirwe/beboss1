@@ -26,6 +26,20 @@ abstract class ValidateDataShareSigningTask : org.gradle.api.DefaultTask() {
   }
 }
 
+abstract class ValidateCredentialPepperTask : org.gradle.api.DefaultTask() {
+  @get:org.gradle.api.tasks.Input
+  abstract val hasValidPepper: org.gradle.api.provider.Property<Boolean>
+
+  @org.gradle.api.tasks.TaskAction
+  fun validate() {
+    if (!hasValidPepper.get()) {
+      throw org.gradle.api.GradleException(
+        "Android release credentials require BEBOSS_SECURITY_PEPPER to be a protected, unique value of at least 32 characters. Do not use the legacy runtime fallback."
+      )
+    }
+  }
+}
+
 abstract class ValidateReleaseSigningTask : org.gradle.api.DefaultTask() {
   @get:org.gradle.api.tasks.Input
   abstract val hasKeystore: org.gradle.api.provider.Property<Boolean>
@@ -252,6 +266,17 @@ val validateDataShareSigningConfiguration = tasks.register<ValidateDataShareSign
       configuredDataShareHmacSecret != "BeBossDefaultDataShareHmacKeyV2"
   )
 }
+val configuredSecurityPepper = signingSecret("BEBOSS_SECURITY_PEPPER").orEmpty()
+val validateCredentialPepperConfiguration = tasks.register<ValidateCredentialPepperTask>("validateCredentialPepperConfiguration") {
+  // Only a boolean enters the task; never serialize the pepper into Gradle cache.
+  hasValidPepper.set(
+    configuredSecurityPepper.length >= 32 &&
+      configuredSecurityPepper != "BeBossRuntimeHardwarePepperV2" &&
+      configuredSecurityPepper != "DEFAULT_PEPPER_PLACEHOLDER"
+  )
+}
+
+
 
 // Release artifacts require both the real upload key and the same private
 // BBSHARE HMAC key configured in the protected Supabase server secret store.
@@ -278,6 +303,7 @@ tasks.configureEach {
   ) {
     dependsOn(validateReleaseSigningConfiguration)
     dependsOn(validateDataShareSigningConfiguration)
+    dependsOn(validateCredentialPepperConfiguration)
   }
 }
 

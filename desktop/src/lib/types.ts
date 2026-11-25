@@ -61,6 +61,7 @@ export type DesktopPreferences = {
   density: "comfortable" | "compact";
   accent: "orange" | "blue" | "green";
   defaultView: "welcome" | "overview" | "management";
+  language: "en" | "rw" | "fr" | "sw";
   autoSync: boolean;
   refreshMinutes: 0 | 1 | 5 | 15;
   reducedMotion: boolean;

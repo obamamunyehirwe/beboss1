@@ -3749,3 +3749,17 @@ a:hover .brand-mark {
     background: linear-gradient(145deg, rgba(23, 36, 26, .58), rgba(11, 19, 14, .5));
   }
 }
+
+
+/* Layered 3D dashboard presentation over the actual BeBoss live platform widget */
+.market-showcase{perspective:1500px;transform-style:preserve-3d}
+.market-ops-board{transform:rotateY(-5deg) rotateX(2deg) translateZ(0);transform-style:preserve-3d;transition:transform .75s cubic-bezier(.2,.72,.18,1),box-shadow .75s ease;box-shadow:0 35px 95px rgba(0,0,0,.36),0 0 0 1px rgba(255,191,148,.08)}
+.market-showcase:hover .market-ops-board{transform:rotateY(-1deg) rotateX(0) translateY(-5px) translateZ(14px);box-shadow:0 45px 110px rgba(0,0,0,.42),0 0 0 1px rgba(255,191,148,.15)}
+.market-ops-orbit{transform-style:preserve-3d;animation:market-orbit-drift 16s ease-in-out infinite}
+.market-ops-orbit-two{animation-delay:-8s}
+@keyframes market-orbit-drift{0%,100%{transform:translate3d(0,0,0) rotate(0deg)}50%{transform:translate3d(-8px,12px,22px) rotate(4deg)}}
+.market-live-analytics{transform:translateZ(12px)}
+.market-analytics-kpis article{transition:transform .28s ease,background .28s ease}
+.market-analytics-kpis article:hover{transform:translateY(-3px) translateZ(12px);background:rgba(255,255,255,.07)}
+@media(prefers-reduced-motion:reduce){.market-showcase .market-ops-board,.market-ops-orbit,.market-analytics-kpis article{animation:none!important;transition:none!important;transform:none!important}}
+@media(max-width:900px){.market-ops-board{transform:none}.market-showcase:hover .market-ops-board{transform:translateY(-2px)}}

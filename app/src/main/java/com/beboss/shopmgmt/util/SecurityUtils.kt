@@ -14,19 +14,24 @@ import javax.crypto.spec.PBEKeySpec
 object SecurityUtils {
 
     private const val PBKDF2_ALGORITHM = "PBKDF2WithHmacSHA256"
-    private const val ITERATIONS = 60000
+    private const val ITERATIONS = 210000
+    private const val LEGACY_RUNTIME_PEPPER = "BeBossRuntimeHardwarePepperV2"
     private const val KEY_LENGTH = 256 // in bits
     private const val SALT_BYTES = 16
 
-    private fun getAppPepper(): String {
-        val p = try {
-            BuildConfig.BEBOSS_SECURITY_PEPPER.trim()
-        } catch (_: Throwable) {
-            ""
-        }
-        if (p.isNotEmpty() && p != "DEFAULT_PEPPER_PLACEHOLDER") return p
-        return "BeBossRuntimeHardwarePepperV2"
+    private fun configuredPepper(): String? {
+        val value = try { BuildConfig.BEBOSS_SECURITY_PEPPER.trim() } catch (_: Throwable) { "" }
+        return value.takeIf { it.length >= 32 && it != "DEFAULT_PEPPER_PLACEHOLDER" && it != LEGACY_RUNTIME_PEPPER }
     }
+
+    /**
+     * New credentials always use the protected installation pepper. The legacy value is
+     * available only in debug builds for local JVM/Robolectric tests; signed release
+     * builds are stopped by validateCredentialPepperConfiguration in Gradle.
+     */
+    private fun pepperForNewCredentials(): String =
+        configuredPepper() ?: if (BuildConfig.DEBUG) LEGACY_RUNTIME_PEPPER
+        else throw SecurityException("BEBOSS_SECURITY_PEPPER is missing or invalid. Reinstall a correctly provisioned BeBoss release.");
 
     /**
      * Generates a cryptographically random salt.
@@ -60,7 +65,7 @@ object SecurityUtils {
 
     private fun hashWithPbkdf2(input: String): String {
         val salt = generateSalt()
-        val pepperedInput = "$input:${getAppPepper()}"
+        val pepperedInput = "$input:${pepperForNewCredentials()}"
         val hash = pbkdf2(pepperedInput.toCharArray(), salt, ITERATIONS, KEY_LENGTH)
         return "pbkdf2:$ITERATIONS:${bytesToHex(salt)}:${bytesToHex(hash)}"
     }
@@ -111,9 +116,18 @@ object SecurityUtils {
         return try {
             val salt = hexToBytes(saltHex)
             val expectedHash = hexToBytes(hashHex)
-            val peppered = "$enteredSecret:${getAppPepper()}"
-            val actualHash = pbkdf2(peppered.toCharArray(), salt, iterations, expectedHash.size * 8)
-            java.security.MessageDigest.isEqual(expectedHash, actualHash)
+            val peppers = buildList {
+                configuredPepper()?.let(::add)
+                // Migration compatibility is read-only: only older hashes may be
+                // checked against the historical public fallback pepper. On successful
+                // sign-in the coordinator transparently re-hashes them with the
+                // protected pepper and the new 210,000-iteration work factor.
+                if (iterations < ITERATIONS || BuildConfig.DEBUG) add(LEGACY_RUNTIME_PEPPER)
+            }.distinct()
+            peppers.any { pepper ->
+                val actualHash = pbkdf2("$enteredSecret:$pepper".toCharArray(), salt, iterations, expectedHash.size * 8)
+                java.security.MessageDigest.isEqual(expectedHash, actualHash)
+            }
         } catch (_: Throwable) {
             false
         }

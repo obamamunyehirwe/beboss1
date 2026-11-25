@@ -222,6 +222,62 @@ describe.skipIf(!enabled)("Supabase security concurrency integration", () => {
     }
   });
 
+  it("returns the same payment-linked unlock when redemption wins the approval-response race", async () => {
+    const requestId = "SEC-REDEEM-RACE-" + suffix();
+    const unlockId = "SEC-REDEEM-CODE-" + suffix();
+    const unlockCode = "BB3-TEST-" + suffix();
+    const planDigest = createHash("sha256").update(randomUUID()).digest("hex");
+
+    await database.unsafe(
+      "insert into public.payment_requests (id, shop_name, owner_username, owner_phone, status, ussd_code) values ($1, 'Redemption race fixture', 'security-test-owner', '+250781234567', 'PENDING_VERIFICATION', $2)",
+      [requestId, "SEC-REDEEM-REF-" + suffix()],
+    );
+    try {
+      await database.unsafe(
+        "insert into public.unlock_codes (id, unlock_code, payment_request_id, shop_username, shop_phone, plan_digest, status) values ($1, $2, $3, 'security-test-owner', '+250781234567', $4, 'ISSUED')",
+        [unlockId, unlockCode, requestId, planDigest],
+      );
+      await database.unsafe(
+        "update public.payment_requests set status = 'APPROVED', approval_mode = 'UNLOCK_CODE', generated_unlock_code = $2, verified_by_admin = 'security-test-admin', admin_verification_note = 'Provider statement independently verified', updated_at = (extract(epoch from now()) * 1000)::bigint where id = $1 and status = 'PENDING_VERIFICATION'",
+        [requestId, unlockCode],
+      );
+
+      // The mobile redemption path can complete before the admin response returns.
+      await database.unsafe(
+        "update public.unlock_codes set status = 'REDEEMED', redeemed_at = (extract(epoch from now()) * 1000)::bigint where id = $1 and status = 'ISSUED'",
+        [unlockId],
+      );
+      await database.unsafe(
+        "update public.payment_requests set status = 'REDEEMED', updated_at = (extract(epoch from now()) * 1000)::bigint where id = $1 and status = 'APPROVED' and generated_unlock_code = $2",
+        [requestId, unlockCode],
+      );
+
+      // A delayed approval compare-and-set now loses, then reads back the original code.
+      const delayedApproval = await database.unsafe(
+        "update public.payment_requests set status = 'APPROVED' where id = $1 and status = 'PENDING_VERIFICATION' returning id",
+        [requestId],
+      );
+      expect(delayedApproval).toHaveLength(0);
+      const latest = await database.unsafe(
+        "select status, generated_unlock_code from public.payment_requests where id = $1",
+        [requestId],
+      );
+      const linked = await database.unsafe(
+        "select unlock_code, plan_digest, status from public.unlock_codes where payment_request_id = $1 and status in ('ISSUED','REDEEMED')",
+        [requestId],
+      );
+      expect(latest[0].status).toBe("REDEEMED");
+      expect(latest[0].generated_unlock_code).toBe(unlockCode);
+      expect(linked).toHaveLength(1);
+      expect(linked[0].unlock_code).toBe(unlockCode);
+      expect(linked[0].plan_digest).toBe(planDigest);
+      expect(linked[0].status).toBe("REDEEMED");
+    } finally {
+      await database.unsafe("delete from public.unlock_codes where id = $1", [unlockId]);
+      await database.unsafe("delete from public.payment_requests where id = $1", [requestId]);
+    }
+  });
+
   it("caps simultaneous BB2 and contact calls at their configured allowances", async () => {
     for (const scope of ["legacy_bb2", "public_contact"] as const) {
       const keyHash = createHash("sha256").update(randomUUID()).digest("hex");

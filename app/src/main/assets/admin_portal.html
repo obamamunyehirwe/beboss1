@@ -2277,6 +2277,30 @@ create table if not exists public.payment_requests (
 
     const handleApproveWithCode = async (req, verificationNote) => {
       const verifiedNote = String(verificationNote || '').trim();
+      if (['APPROVED', 'REDEEMED'].includes(String(req.status))) {
+        if (req.approval_mode === 'UNLOCK_CODE' && String(req.generated_unlock_code || '').trim()) {
+          const linkedRows = await sbFetch(
+            `unlock_codes?payment_request_id=eq.${encodeURIComponent(req.id)}&status=in.(ISSUED,REDEEMED)&select=id,unlock_code,plan_digest,status&limit=1`
+          ).catch(() => []);
+          const existing = Array.isArray(linkedRows)
+            ? linkedRows.find((item) => item.unlock_code === req.generated_unlock_code)
+            : null;
+          if (existing) {
+            const calc = calculateSubscriptionFee(req.branch_count, req.worker_count, req.duration_months, req.device_count || 1, Number(payConfig.per_device_fee_rwf) || 2000);
+            setLatestGenerated({ mode: 'CODE', code: String(existing.unlock_code), shopName: req.shop_name,
+              username: req.owner_username, phone: req.payer_phone || req.owner_phone,
+              days: calc.days, tier: `${calc.tier} (${calc.total.toLocaleString()} FRw)` });
+            await refreshAll(false);
+            notify(req.status === 'REDEEMED' ? 'This payment is already redeemed. Showing its original payment-linked code.' : 'This payment is already approved. Showing its original code.');
+            return;
+          }
+        }
+        notify(req.approval_mode === 'DIRECT_AUTO_UNLOCK'
+          ? 'This payment was already activated directly in BeBoss Cloud. Refresh the shop; no unlock code is required.'
+          : 'This payment is already redeemed or approved. No replacement code will be issued.');
+        await refreshAll(false);
+        return;
+      }
       if (verifiedNote.length < 5) { notify('Record the provider transaction check before issuing BB3.'); return; }
       if (!['PENDING_VERIFICATION', 'REJECTED'].includes(String(req.status))) {
         notify('Only a pending or rejected payment claim can receive its unlock code.'); return;
@@ -2335,16 +2359,32 @@ create table if not exists public.payment_requests (
           }
         );
         if (!Array.isArray(updated) || updated.length === 0) {
-          const latest = await sbFetch(`payment_requests?id=eq.${encodeURIComponent(req.id)}&select=status,generated_unlock_code&limit=1`).catch(() => []);
-          if (latest?.[0]?.status === 'APPROVED' && latest[0].generated_unlock_code === code) {
-            notify('This payment was already approved with its existing code.'); await refreshAll(false); return;
+          const latest = await sbFetch(`payment_requests?id=eq.${encodeURIComponent(req.id)}&select=status,approval_mode,generated_unlock_code&limit=1`).catch(() => []);
+          const latestPayment = latest?.[0];
+          if (latestPayment && ['APPROVED', 'REDEEMED'].includes(String(latestPayment.status)) && latestPayment.generated_unlock_code === code) {
+            const winner = await sbFetch(lookup).catch(() => []);
+            const linked = Array.isArray(winner) ? winner.find(item => item.unlock_code === code && item.plan_digest === signed.planDigest) : null;
+            if (linked) {
+              setLatestGenerated({ mode: 'CODE', code, shopName: req.shop_name, username: req.owner_username,
+                phone: req.payer_phone || req.owner_phone, days: calc.days, tier: `${calc.tier} (${calc.total.toLocaleString()} FRw)` });
+              notify(latestPayment.status === 'REDEEMED' ? 'Payment already redeemed; returning its original code record.' : 'Payment already approved; returning its original code.');
+              await refreshAll(false); return;
+            }
+          }
+          if (latestPayment?.status === 'APPROVED' && latestPayment.approval_mode === 'DIRECT_AUTO_UNLOCK' && !latestPayment.generated_unlock_code) {
+            notify('This payment was already activated directly in BeBoss Cloud. Refresh the shop; no unlock code is required.');
+            await refreshAll(false); return;
+          }
+          if (latestPayment?.status === 'REDEEMED') {
+            notify('This payment has already been redeemed. No replacement unlock code was issued.');
+            await refreshAll(false); return;
           }
           if (insertedNewCode && codeId) {
             await sbFetch(`unlock_codes?id=eq.${encodeURIComponent(codeId)}&status=eq.ISSUED`, {
               method: 'PATCH', body: JSON.stringify({ status: 'REVOKED' })
             }).catch(() => null);
           }
-          throw new Error('Another administrator processed this payment first. Refresh the queue.');
+          throw new Error('The payment changed while approval was being saved. Refresh the queue and inspect the latest status; no replacement code was issued.');
         }
         await extendOrActivateShop(computeShopKey(req.owner_username, req.owner_phone), {
           addDays: calc.days, branches: req.branch_count, workers: req.worker_count,
