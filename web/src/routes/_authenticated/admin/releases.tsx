@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ConfirmAction, EmptyState, LoadingBlock, PageHeader, StatCard, useAdminAction } from "@/components/admin/ui";
 import { supabase } from "@/integrations/supabase/client";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
-import { deleteRelease, getAdminReleaseDownload, publishRelease, setCurrentRelease, setReleaseVisibility } from "@/lib/admin.functions";
+import { deleteRelease, getAdminReleaseDownload, publishRelease, setArchivedReleaseVisibility, setCurrentRelease, setReleaseVisibility } from "@/lib/admin.functions";
 import { downloadsQuery, releasesQuery } from "@/lib/admin-queries";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
@@ -44,6 +44,7 @@ function ReleasesPage() {
   const setCurrent = useAdminAction(useServerFn(setCurrentRelease), { success: "Now the current download", invalidate: [["admin", "releases"], ["public-site"]] });
   const del = useAdminAction(useServerFn(deleteRelease), { success: "Release deleted", invalidate: [["admin", "releases"]] });
   const visibility = useAdminAction(useServerFn(setReleaseVisibility), { success: "Public release visibility updated", invalidate: [["admin", "releases"], ["public-site"]] });
+  const bulkVisibility = useAdminAction(useServerFn(setArchivedReleaseVisibility), { success: "Archived release visibility updated", invalidate: [["admin", "releases"], ["public-site"]] });
 
   const [file, setFile] = useState<File | null>(null);
   const [form, setForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "", make_current: true });
@@ -123,11 +124,41 @@ function ReleasesPage() {
 
   type ReleaseWithVisibility = (NonNullable<typeof releases.data>[number]) & { is_public?: boolean };
   const rows = (releases.data ?? []) as ReleaseWithVisibility[];
+  const archived = rows.filter((release) => !release.is_current);
+  const visibleArchivedCount = archived.filter((release) => release.is_public !== false).length;
+  const hiddenArchivedCount = archived.length - visibleArchivedCount;
+  const archivedCount = archived.length;
   const total = rows.reduce((acc, r) => acc + r.download_count, 0);
 
   return (
     <div className="space-y-6">
-      <PageHeader title="App releases" sub="Publish new Android APKs. The website, QR codes and the app's update check all point to the current release." />
+      <PageHeader
+        title="App releases"
+        sub="Publish new Android APKs. The website, QR codes and the app's update check all point to the current release."
+        actions={canManageReleases && archivedCount > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {visibleArchivedCount > 0 ? (
+              <ConfirmAction
+                trigger={<Button size="sm" variant="outline">Hide all archived ({visibleArchivedCount})</Button>}
+                title="Hide every archived release?"
+                description="Older versions stay stored in the admin archive, but disappear from public listings and public download links."
+                destructive
+                confirmLabel="Hide archived releases"
+                onConfirm={() => bulkVisibility.mutate({ isPublic: false })}
+              />
+            ) : null}
+            {hiddenArchivedCount > 0 ? (
+              <ConfirmAction
+                trigger={<Button size="sm" variant="outline">Show archived ({hiddenArchivedCount})</Button>}
+                title="Show archived releases publicly?"
+                description="Every archived version will become visible in the public release listing and eligible for a public download link."
+                confirmLabel="Show archived releases"
+                onConfirm={() => bulkVisibility.mutate({ isPublic: true })}
+              />
+            ) : null}
+          </div>
+        ) : null}
+      />
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard label="All-time downloads" value={total} icon={Download} tone="brand" />
         <StatCard label="Last 30 days" value={daily.reduce((acc, d) => acc + d.n, 0)} sub={Object.entries(byChannel).map(([k, v]) => `${k} ${v}`).join(" • ") || "—"} />
