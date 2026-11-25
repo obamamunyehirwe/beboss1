@@ -719,9 +719,9 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
       {teamNotice && <div className="global-alert success" role="status"><Check size={15}/><span>{teamNotice}</span><button onClick={() => setTeamNotice("")}><X size={14}/></button></div>}
 
       <div className="admin-team-metrics">
-        <div><strong>{teamLoading && !teamMembers.length ? "…" : teamMembers.length}</strong><span>Team members</span></div>
-        <div><strong>{teamMembers.filter((member) => member.active).length}</strong><span>Active access</span></div>
-        <div><strong>{teamMembers.filter((member) => !member.active).length}</strong><span>Suspended access</span></div>
+        <div><strong>{teamError && !teamMembers.length ? "—" : teamLoading && !teamMembers.length ? "…" : teamMembers.length}</strong><span>Team members</span></div>
+        <div><strong>{teamError && !teamMembers.length ? "—" : teamMembers.filter((member) => member.active).length}</strong><span>Active access</span></div>
+        <div><strong>{teamError && !teamMembers.length ? "—" : teamMembers.filter((member) => !member.active).length}</strong><span>Suspended access</span></div>
       </div>
 
       <form className="admin-team-form" onSubmit={(event) => void grantDesktopTeamRole(event)}>
@@ -752,6 +752,7 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
       </div>
 
       {teamLoading && !teamMembers.length ? <Empty title="Loading administrator team" description="Verifying the current Master Admin session and loading Auth users, grants and profiles from Supabase."/> :
+       teamError && !teamMembers.length ? <div className="global-alert error" role="alert"><ShieldAlert size={15}/><span>Administrator team could not be loaded: {teamError}</span><button className="btn-outline" onClick={() => void refreshTeam()} disabled={teamLoading}><RefreshCw size={14}/> Retry</button></div> :
        teamMembers.filter((member) => {
          const term = teamQuery.trim().toLowerCase();
          return !term || [member.email, member.userId, member.roleKey, ...(member.permissions ?? [])].some((value) => String(value ?? "").toLowerCase().includes(term));
