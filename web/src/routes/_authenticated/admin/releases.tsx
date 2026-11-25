@@ -16,7 +16,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { deleteRelease, getAdminReleaseDownload, publishRelease, setCurrentRelease, setReleaseVisibility } from "@/lib/admin.functions";
 import { downloadsQuery, releasesQuery } from "@/lib/admin-queries";
-import { DOWNLOAD_PATH } from "@/lib/queries";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
 
