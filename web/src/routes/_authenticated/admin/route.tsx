@@ -81,7 +81,7 @@ const NAV_PERMISSION: Record<string, string> = {
   "/admin/inbox": "inbox.manage",
   "/admin/announcements": "announcements.manage",
 };
-const NAV_SUPER_ADMIN_ONLY = new Set(["/admin/audit", "/admin/team", "/admin/settings"]);
+const NAV_SUPER_ADMIN_ONLY = new Set(["/admin", "/admin/audit", "/admin/team", "/admin/settings"]);
 function hasPermission(permissions: string[], permission?: string) {
   return !permission || permissions.includes("*") || permissions.includes(permission);
 }
@@ -255,9 +255,9 @@ function useBadges(permissions: string[], isAdmin: boolean) {
   const sync = useQuery({ ...syncEventsQuery, enabled: isAdmin || hasPermission(permissions, "sync.view") });
   const now = useNow(30_000);
   return {
-    sync: (sync.data ?? []).filter((e) => now - new Date(e.created_at).getTime() < 15 * 60_000).length,
-    payments: (pay.data ?? []).filter((p) => p.status === "PENDING_VERIFICATION").length,
-    inbox: (inbox.data ?? []).filter((m) => m.status === "NEW").length,
+    sync: isAdmin || hasPermission(permissions, "sync.view") ? (sync.data ?? []).filter((e) => now - new Date(e.created_at).getTime() < 15 * 60_000).length : 0,
+    payments: isAdmin || hasPermission(permissions, "payments.review") ? (pay.data ?? []).filter((p) => p.status === "PENDING_VERIFICATION").length : 0,
+    inbox: isAdmin || hasPermission(permissions, "inbox.manage") ? (inbox.data ?? []).filter((m) => m.status === "NEW").length : 0,
   };
 }
 
@@ -265,10 +265,11 @@ function SidebarBody({ email, isAdmin, permissions, onSignOut, onNavigate }: { e
   const a=useAdminText();
   const badges = useBadges(permissions, isAdmin);
   const visibleNav = NAV.filter((item) => isAdmin || (!NAV_SUPER_ADMIN_ONLY.has(item.to) && hasPermission(permissions, NAV_PERMISSION[item.to])));
+  const homeTarget = isAdmin ? "/admin" : visibleNav[0]?.to ?? "/";
   return (
     <div className="flex h-full flex-col">
       <div className="admin-sidebar-brand px-5 py-5">
-        <Logo to="/admin" suffix="Admin" />
+        <Logo to={homeTarget} suffix="Admin" />
       </div>
       <nav className="admin-side-nav flex-1 space-y-0.5 overflow-y-auto px-3">
         {visibleNav.map((n,i) => {
