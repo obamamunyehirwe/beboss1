@@ -5,7 +5,7 @@ create table if not exists public.admin_role_grants (
   user_id uuid primary key references auth.users(id) on delete cascade,
   role_key text not null check (role_key in (
     'RELEASE_MANAGER','ANNOUNCEMENT_MANAGER','DEVICE_AUDITOR','SUPPORT',
-    'FINANCE_REVIEWER','ANALYST','OPERATIONS_MANAGER'
+    'FINANCE_REVIEWER','ANALYST','OPERATIONS_MANAGER','STAFF_MANAGER'
   )),
   permissions text[] not null default '{}',
   is_active boolean not null default true,
