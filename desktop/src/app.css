@@ -6,7 +6,7 @@
   text-rendering: optimizeLegibility;
 }
 * { box-sizing: border-box; }
-html, body, #root { width: 100%; min-width: 360px; min-height: 100%; margin: 0; }
+html, body, #root { width: 100%; min-width: 0; max-width: 100%; min-height: 100%; margin: 0; }
 body { background: #0a1120; color: #e8eef8; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -584,3 +584,91 @@ select option { background: var(--panel-bg); color: var(--text); }
 /* Public entry to the separately authenticated Master Admin workspace */
 .landing-admin-entry{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:0 10px;border:1px solid rgba(82,153,226,.3);border-radius:8px;background:rgba(50,126,205,.09);color:#89bdf2;font-size:9px;font-weight:850;white-space:nowrap}
 .landing-admin-entry:hover{border-color:rgba(90,167,241,.55);background:rgba(50,126,205,.16);color:#acd3ff}
+
+
+/* Enterprise admin and operations layouts must shrink before content wraps or clips.
+   Data tables remain scrollable so every column/action stays reachable on small screens. */
+.app-shell,
+.main-area,
+.page-content,
+.page-stack,
+.page-stack > *,
+.panel,
+.panel-heading,
+.page-heading,
+.heading-actions,
+.table-wrap,
+.admin-login-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+.app-shell { width: 100%; overflow-x: clip; }
+.main-area { width: 0; flex: 1 1 0%; }
+.page-content { width: 100%; overflow-wrap: anywhere; }
+.page-stack > *,
+.panel > *,
+.panel-heading > *,
+.heading-actions > * { min-width: 0; }
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.table-wrap table { width: 100%; max-width: 100%; }
+.admin-workspace-tabs {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  gap: 6px;
+  padding: 2px 2px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.admin-workspace-tab { flex: 0 0 auto; white-space: nowrap; }
+.admin-list-heading,
+.panel-heading,
+.page-heading { flex-wrap: wrap; }
+.admin-list-heading > div,
+.page-heading > div,
+.panel-heading > div { min-width: 0; max-width: 100%; }
+.panel-heading .heading-actions,
+.admin-list-heading .heading-actions { max-width: 100%; flex-wrap: wrap; }
+
+@media(max-width:1250px) {
+  .app-shell { grid-template-columns: minmax(205px,226px) minmax(0,1fr); }
+  .main-area { min-width: 0; width: 0; }
+}
+@media(max-width:980px) {
+  .page-content { min-width: 0; padding-inline: clamp(12px,2.5vw,20px); }
+  .admin-workspace-tabs { gap: 5px; }
+  .admin-workspace-tab { min-height: 36px; padding-inline: 10px; }
+}
+@media(max-width:760px) {
+  html, body, #root { min-width: 0; width: 100%; max-width: 100%; }
+  body { overflow-x: hidden; }
+  .app-shell { display: block; width: 100%; min-width: 0; overflow-x: clip; }
+  .main-area { display: flex; width: 100%; min-width: 0; max-width: 100%; }
+  .page-content { width: 100%; min-width: 0; max-width: 100%; padding-inline: 12px; }
+  .page-stack { width: 100%; min-width: 0; }
+  .page-heading, .panel-heading { align-items: stretch; }
+  .page-heading > *, .panel-heading > * { max-width: 100%; }
+  .heading-actions { justify-content: flex-start; width: 100%; }
+  .admin-workspace-tabs { margin-inline: -2px; width: calc(100% + 4px); }
+  .admin-workspace-tab { min-height: 40px; padding-inline: 11px; }
+  .table-wrap { width: 100%; max-width: 100%; }
+  .form-grid > *, .field-pair > *, .checkout-fields > * { min-width: 0; max-width: 100%; }
+}
+@media(max-width:460px) {
+  .page-content { padding-inline: 9px; }
+  .page-heading h1 { overflow-wrap: anywhere; }
+  .heading-actions > button,
+  .heading-actions > a { flex: 1 1 auto; }
+  .admin-workspace-tabs { gap: 4px; }
+  .admin-workspace-tab { padding-inline: 9px; font-size: 8px; }
+  .panel { max-width: 100%; }
+}
