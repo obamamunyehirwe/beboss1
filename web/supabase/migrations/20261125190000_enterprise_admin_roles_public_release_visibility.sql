@@ -235,3 +235,44 @@ create policy "Authorized release managers update"
 on storage.objects for update to authenticated
 using (bucket_id = 'releases' and public.has_admin_permission('releases.manage'))
 with check (bucket_id = 'releases' and public.has_admin_permission('releases.manage'));
+
+-- Switch the current Android release and public download pointer atomically.
+create or replace function public.admin_set_current_app_release(
+  p_release_id uuid,
+  p_download_url text
+)
+returns void
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+declare
+  v_version_name text;
+begin
+  if not public.has_admin_permission('releases.manage') then
+    raise exception 'Forbidden: releases.manage permission is required.' using errcode = '42501';
+  end if;
+  if coalesce(p_download_url, '') !~ '^https://' then
+    raise exception 'A secure HTTPS public download URL is required.' using errcode = '22023';
+  end if;
+  select version_name into v_version_name
+  from public.app_releases
+  where id = p_release_id
+  for update;
+  if v_version_name is null then
+    raise exception 'Release not found.' using errcode = 'P0002';
+  end if;
+  update public.app_releases
+  set is_current = false
+  where is_current = true and id <> p_release_id;
+  update public.app_releases
+  set is_current = true, is_public = true, file_url = p_download_url
+  where id = p_release_id;
+  update public.app_config
+  set apk_download_url = p_download_url, apk_version = v_version_name, updated_at = ((extract(epoch from now()) * 1000)::bigint)
+  where id = 'global';
+end;
+$$;
+revoke execute on function public.admin_set_current_app_release(uuid, text) from public, anon;
+grant execute on function public.admin_set_current_app_release(uuid, text) to authenticated, service_role;
+alter function public.admin_set_current_app_release(uuid, text) set search_path = pg_catalog;
