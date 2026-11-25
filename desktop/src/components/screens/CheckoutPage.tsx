@@ -79,7 +79,7 @@ const TENDER_LABELS: Record<TenderKey, string> = { cash: "Cash", momo: "MTN MoMo
 
 export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, storageKey, cashierName }: {
   snapshot: Snapshot | null; onCommit: CommitSnapshot; onReceipt: (sale: Row, items: Row[]) => void;
-  offline: boolean; busy: boolean; storageKey: string; cashierName: string;
+  offline: boolean; busy: boolean; storageKey: string; cashierName: string; cashierName: string;
 }) {
   const products = activeProducts(snapshot);
   const customers = activeCustomers(snapshot);
