@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  Activity, Check, CreditCard, Download, KeyRound, LogOut, Power, RefreshCw,
+  Activity, Check, Download, KeyRound, LogOut, RefreshCw,
   Search, Settings, ShieldAlert, ShieldCheck, Smartphone, Store, Trash2, Users, Wallet, X
 } from "lucide-react";
 import { masterAdminAuthClient } from "../../lib/cloud";
@@ -55,8 +55,8 @@ function feePlan(request: Row) {
   const branches = n(request.branch_count);
   const workers = n(request.worker_count);
   const devices = Math.max(1, n(request.device_count) || 1);
-  if (![1, 3, 6, 12].includes(months) || branches < 1 || branches > 100 ||
-      workers < 1 || workers > 500 || devices > 100) {
+  if (![1, 3, 6, 12].includes(months) || !Number.isInteger(branches) || branches < 1 || branches > 100 ||
+      !Number.isInteger(workers) || workers < 1 || workers > 500 || !Number.isInteger(devices) || devices < 1 || devices > 100) {
     throw new Error("Saved subscription plan parameters are invalid; this payment cannot be approved.");
   }
   const branchFee = branches === 1 ? 5000 : branches === 2 ? 10000 : 20000;
@@ -403,11 +403,12 @@ export function AdminConsolePage() {
         await auditAction("APPROVE_PAYMENT", "@" + s(request.owner_username), "Verified payment " + s(request.id) + "; signed BB3 code issued; code " + code);
         setNotice("Payment approved and signed BB3 code issued: " + code);
       } else {
-        const { error: updateError } = await masterAdminAuthClient.from("payment_requests").update({
+        const { data: rejected, error: updateError } = await masterAdminAuthClient.from("payment_requests").update({
           status: "REJECTED", rejection_reason: note, verified_by_admin: "BeBoss Admin (" + adminEmail + ")",
           admin_verification_note: note, updated_at: Date.now()
-        }).eq("id", s(request.id)).eq("status", "PENDING_VERIFICATION");
+        }).eq("id", s(request.id)).in("status", ["PENDING_VERIFICATION", "REJECTED"]).select("id").maybeSingle();
         if (updateError) throw new Error(updateError.message);
+        if (!rejected) throw new Error("This payment changed while the rejection was being saved. Refresh the payment queue and review its current status.");
         await auditAction("REJECT_PAYMENT", "@" + s(request.owner_username), "Rejected payment " + s(request.id) + ": " + note);
         setNotice("Payment claim rejected and recorded.");
       }
@@ -420,10 +421,6 @@ export function AdminConsolePage() {
   }
 
   async function auditAction(action: string, target: string, details: string) {
-    await auditActionImpl(action, target, details);
-  }
-
-  async function auditActionImpl(action: string, target: string, details: string) {
     const { error: auditError } = await masterAdminAuthClient.from("admin_audit_logs").insert({
       id: id(), admin_email: adminEmail || "BeBoss Master Admin", action,
       target_id: target, details: details.slice(0, 1000), created_at: Date.now()
@@ -445,7 +442,7 @@ export function AdminConsolePage() {
     if (!shopDraft) return;
     const d = shopDraft;
     if (!/^\d+(\.\d+){0,3}$/.test(d.minimumVersion.trim())) { setError("Minimum app version must look like 2.3.0."); return; }
-    if (d.branches < 1 || d.branches > 100 || d.workers < 1 || d.workers > 500 || d.devices < 1 || d.devices > 100) {
+    if (!Number.isInteger(d.branches) || d.branches < 1 || d.branches > 100 || !Number.isInteger(d.workers) || d.workers < 1 || d.workers > 500 || !Number.isInteger(d.devices) || d.devices < 1 || d.devices > 100) {
       setError("Branch, staff or device limits are outside the allowed range."); return;
     }
     const monthly = (d.branches === 1 ? 5000 : d.branches === 2 ? 10000 : 20000) +
