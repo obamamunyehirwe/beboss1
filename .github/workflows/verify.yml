@@ -55,6 +55,7 @@ jobs:
           deno check --no-lock supabase/functions/request-desktop-owner-otp/index.ts
           deno check --no-lock supabase/functions/android-device-auth/index.ts
           deno check --no-lock supabase/functions/send-auth-sms/index.ts
+          deno check --no-lock supabase/functions/public-apk-download/index.ts
 
       - name: Test payment gateway primitives
         run: deno test --allow-env supabase/functions/_shared/payment-gateway.test.ts
@@ -76,6 +77,11 @@ jobs:
           --rule 'prettier/prettier: off'
           --rule '@typescript-eslint/no-explicit-any: off'
           src/lib/admin.functions.ts
+          src/lib/admin-guard.server.ts
+          src/lib/announcements.functions.ts
+          src/routes/_authenticated/admin/route.tsx
+          src/routes/_authenticated/admin/team.tsx
+          src/routes/_authenticated/admin/releases.tsx
           src/lib/pricing.ts
           src/routes/_authenticated/admin/payments.tsx
           src/lib/bb2.ts
