@@ -106,6 +106,8 @@ echo "Running Android device credential and cross-tenant isolation regression te
 psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/android_device_credentials.sql
 echo "Running admin device-credential rollout regression tests."
 psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/android_device_credential_rollout_admin.sql
+echo "Running role-separated RLS policy regression tests."
+psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/rls_role_policy_consolidation.sql
 echo "Running payment gateway state-transition regression tests."
 psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/payment_gateway_state_transitions.sql
 echo "Tenant-isolation database regression tests passed."
