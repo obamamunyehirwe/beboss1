@@ -153,10 +153,16 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
   // Keep the displayed basket aligned with the latest synchronized catalogue.
   useEffect(() => {
     const latest = new Map(products.map((product) => [s(product.id), product]));
-    setCart((current) => current.map((line) => ({ ...line, product: latest.get(s(line.product.id)) ?? line.product })));
+    setCart((current) => current.map((line) => {
+      const currentProduct = latest.get(s(line.product.id));
+      return { ...line, product: currentProduct ?? { ...line.product, restoreUnavailable: true } };
+    }));
     setHeld((current) => current.map((order) => ({
       ...order,
-      cart: order.cart.map((line) => ({ ...line, product: latest.get(s(line.product.id)) ?? line.product }))
+      cart: order.cart.map((line) => {
+        const currentProduct = latest.get(s(line.product.id));
+        return { ...line, product: currentProduct ?? { ...line.product, restoreUnavailable: true } };
+      })
     })));
   }, [snapshot]);
 
