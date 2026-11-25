@@ -1257,9 +1257,13 @@ export const deleteContactMessage = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    await requireAdmin(ctx);
-    const { error } = await ctx.supabase.from("contact_messages").delete().eq("id", data.id);
+    const admin = await requirePermission(ctx, "inbox.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: message, error: readError } = await supabaseAdmin.from("contact_messages").select("name,email,status").eq("id", data.id).maybeSingle();
+    if (readError || !message) throw new Error(readError?.message ?? "Inbox message not found.");
+    const { error } = await supabaseAdmin.from("contact_messages").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
+    await audit(ctx, admin.email, "DELETE_INBOX_MESSAGE", data.id, String(message.status ?? "unknown"));
     return { ok: true };
   });
 
