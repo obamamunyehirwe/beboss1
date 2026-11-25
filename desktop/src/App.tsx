@@ -39,6 +39,9 @@ import { applyDesktopLanguage, DESKTOP_LANGUAGES } from "./lib/i18n";
 import type { StaffUpdate } from "./components/screens/StaffPage";
 
 function isDesktopInstallId(value: string) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
+function desktopStorageScope(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, "-").slice(0, 100) || "default";
+}
 
 const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = {
   theme: "system", density: "comfortable", accent: "orange", defaultView: "welcome",
@@ -644,6 +647,7 @@ function NativeDesktopApp() {
   }
 
   const snapshot = ensureSnapshot(cloud.snapshot);
+  const checkoutStorageKey = "checkout:" + desktopStorageScope(s(cloud.shop.id) || owner.username);
   const pageTitle = NAV.find((item) => item.id === view)?.label ?? "Overview";
   const products = rows(snapshot?.products).filter((p) => p.isDeleted !== true);
   const sales = rows(snapshot?.sales).sort((a, b) => n(b.saleDate) - n(a.saleDate));
@@ -708,7 +712,7 @@ function NativeDesktopApp() {
         {view === "welcome" && <WelcomePage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} lowStock={lowStock} onNavigate={setView} onReceipt={openReceipt} onAnnouncementAction={openAnnouncementAction} language={preferences.language} />}
         {view === "management" && <ManagementPage cloud={cloud} snapshot={snapshot} offline={offline} onNavigate={setView} onAnnouncementAction={openAnnouncementAction} language={preferences.language} />}
         {view === "overview" && <OverviewPage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} stockCost={stockCost} receivables={receivables} lowStock={lowStock} onNavigate={setView} onOpenCommand={() => setPaletteOpen(true)} />}
-        {view === "checkout" && <CheckoutPage snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} />}
+        {view === "checkout" && <CheckoutPage key={checkoutStorageKey} storageKey={checkoutStorageKey} snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} />}
         {view === "products" && <ProductsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} />}
         {view === "sales" && <SalesPage snapshot={snapshot} query={search} onReceipt={openReceipt} />}
         {view === "customers" && <CustomersPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} onReceipt={openReceipt} />}

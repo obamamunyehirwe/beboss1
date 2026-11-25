@@ -181,14 +181,11 @@ jobs:
             throw "Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY GitHub Actions secrets before creating a Windows production release."
           }
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Install desktop dependencies from the committed npm lockfile
+        run: npm ci --no-audit --no-fund
 
-      - name: Install desktop dependencies from the committed Bun lockfile
-        run: bun install
-
-      - name: Type-check and build desktop client
-        run: bun run build
+      - name: Build desktop client
+        run: npm run build
 
       - name: Check native Tauri application
         run: cargo check --manifest-path src-tauri/Cargo.toml
