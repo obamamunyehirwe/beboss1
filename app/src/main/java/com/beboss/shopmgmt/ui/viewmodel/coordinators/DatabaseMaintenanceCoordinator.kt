@@ -212,16 +212,4 @@ class DatabaseMaintenanceCoordinator(
         }
     }
 
-    fun seedSampleData() {
-        scope.launch {
-            try {
-                repository.seedSampleShopData()
-                emitSnackbar("Sample demo data loaded successfully!")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                emitSnackbar("Failed to load sample data: ${e.safeMessage()}")
-            }
-        }
-    }
 }

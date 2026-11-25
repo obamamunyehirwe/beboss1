@@ -266,7 +266,6 @@ fun SettingsScreen(
     onClearAllProducts: () -> Unit = {},
     onClearAllCustomers: () -> Unit = {},
     onResetWholeApp: () -> Unit = {},
-    onSeedSampleData: () -> Unit = {},
     onLockApp: () -> Unit = {},
     onLogout: () -> Unit = {},
     onSwitchUser: (User) -> Unit = {},

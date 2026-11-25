@@ -225,47 +225,109 @@ object ExcelCsvExporter {
      * Parses CSV lines to import products in bulk.
      */
     fun parseProductsCsv(csvContent: String): List<Product> {
-        val lines = csvContent.lines().filter { it.isNotBlank() }
+        val lines = csvContent
+            .removePrefix("\uFEFF")
+            .lineSequence()
+            .map { it.trimEnd('\r') }
+            .filter { it.isNotBlank() }
+            .toList()
         if (lines.isEmpty()) return emptyList()
 
+        val header = splitCsvLine(lines.first()).map(::normalizeCsvHeader)
+        fun headerIndex(vararg aliases: String): Int =
+            header.indexOfFirst { candidate -> aliases.any { it == candidate } }
+
+        val nameIndex = headerIndex("productname", "name", "itemname", "item")
+        val categoryIndex = headerIndex("category", "productcategory")
+        val barcodeIndex = headerIndex("barcodesku", "barcode", "sku", "productcode")
+        val quantityIndex = headerIndex("quantityinstock", "quantity", "qty", "stockquantity", "stockqty")
+        val unitIndex = headerIndex("unit", "measurementunit")
+        val costIndex = headerIndex("costprice", "unitcost", "purchaseprice", "cost")
+        val sellingIndex = headerIndex("sellingprice", "unitprice", "retailprice", "price")
+
+        val hasHeader = nameIndex >= 0 &&
+            listOf(categoryIndex, quantityIndex, costIndex, sellingIndex).any { it >= 0 }
+        val dataLines = if (hasHeader) lines.drop(1) else lines
         val parsedProducts = mutableListOf<Product>()
-        val dataLines = if (lines.first().contains("Product Name", ignoreCase = true) || lines.first().contains("Name", ignoreCase = true)) {
-            lines.drop(1)
-        } else {
-            lines
-        }
 
         for (line in dataLines) {
             val tokens = splitCsvLine(line)
-            if (tokens.size >= 2) {
-                // Determine format: name, category, costPrice, sellingPrice, qty, unit, barcode
-                val name = tokens.getOrNull(1)?.takeIf { it.isNotBlank() } ?: tokens.getOrNull(0) ?: continue
-                if (name.equals("Product Name", ignoreCase = true) || name.equals("ID", ignoreCase = true)) continue
+            if (tokens.isEmpty()) continue
 
-                val barcode = tokens.getOrNull(2) ?: ""
-                val category = tokens.getOrNull(3)?.ifBlank { "General" } ?: "General"
-                val qty = tokens.getOrNull(4)?.toDoubleOrNull() ?: 10.0
-                val unit = tokens.getOrNull(5)?.ifBlank { "pcs" } ?: "pcs"
-                val costPrice = tokens.getOrNull(6)?.toDoubleOrNull() ?: (tokens.getOrNull(2)?.toDoubleOrNull() ?: 0.0)
-                val sellingPrice = tokens.getOrNull(7)?.toDoubleOrNull() ?: (tokens.getOrNull(3)?.toDoubleOrNull() ?: (costPrice * 1.25))
+            val name: String
+            val barcode: String
+            val category: String
+            val quantityText: String
+            val unit: String
+            val costText: String
+            val sellingText: String
 
-                parsedProducts.add(
-                    Product(
-                        id = "prod_${System.currentTimeMillis()}_${parsedProducts.size}",
-                        name = name.trim(),
-                        barcode = barcode.trim(),
-                        category = category.trim(),
-                        quantityInStock = qty,
-                        unit = unit.trim(),
-                        costPrice = costPrice,
-                        sellingPrice = sellingPrice,
-                        lowStockThreshold = 5.0
-                    )
-                )
+            if (hasHeader) {
+                fun field(index: Int): String = tokens.getOrNull(index)?.trim().orEmpty()
+                name = field(nameIndex)
+                barcode = field(barcodeIndex)
+                category = field(categoryIndex).ifBlank { "General" }
+                quantityText = field(quantityIndex)
+                unit = field(unitIndex).ifBlank { "pcs" }
+                costText = field(costIndex)
+                sellingText = field(sellingIndex)
+            } else {
+                // Headerless supported formats:
+                // 8+ columns: exported BeBoss order (id, name, barcode, category, qty, unit, cost, sell).
+                // 7 columns: legacy order (name, category, cost, sell, qty, unit, barcode).
+                when {
+                    tokens.size >= 8 -> {
+                        name = tokens.getOrNull(1).orEmpty()
+                        barcode = tokens.getOrNull(2).orEmpty()
+                        category = tokens.getOrNull(3).orEmpty().ifBlank { "General" }
+                        quantityText = tokens.getOrNull(4).orEmpty()
+                        unit = tokens.getOrNull(5).orEmpty().ifBlank { "pcs" }
+                        costText = tokens.getOrNull(6).orEmpty()
+                        sellingText = tokens.getOrNull(7).orEmpty()
+                    }
+                    tokens.size == 7 -> {
+                        name = tokens[0]
+                        category = tokens[1].ifBlank { "General" }
+                        costText = tokens[2]
+                        sellingText = tokens[3]
+                        quantityText = tokens[4]
+                        unit = tokens[5].ifBlank { "pcs" }
+                        barcode = tokens[6]
+                    }
+                    else -> continue
+                }
             }
+
+            val cleanName = name.trim()
+            if (cleanName.isBlank() || cleanName.equals("Product Name", ignoreCase = true)) continue
+
+            // Never invent stock quantities or prices. A row without valid explicit
+            // financial/stock values is rejected instead of being imported with defaults.
+            val quantity = parseCsvNumber(quantityText) ?: continue
+            val costPrice = parseCsvNumber(costText) ?: continue
+            val sellingPrice = parseCsvNumber(sellingText) ?: continue
+
+            parsedProducts.add(
+                Product(
+                    name = cleanName,
+                    barcode = barcode.trim(),
+                    category = category.trim().ifBlank { "General" },
+                    quantityInStock = quantity,
+                    unit = unit.trim().ifBlank { "pcs" },
+                    costPrice = costPrice,
+                    sellingPrice = sellingPrice,
+                    lowStockThreshold = 5.0
+                )
+            )
         }
         return parsedProducts
     }
+
+    private fun normalizeCsvHeader(value: String): String =
+        value.removePrefix("\uFEFF").trim().lowercase(Locale.ROOT).filter(Char::isLetterOrDigit)
+
+    private fun parseCsvNumber(value: String): Double? =
+        value.trim().replace(",", "").toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 }
 
     fun shareCsvFile(context: Context, file: File, title: String = "Share Spreadsheet CSV") {
         val uri: Uri = FileProvider.getUriForFile(
@@ -291,20 +353,28 @@ object ExcelCsvExporter {
 
     private fun splitCsvLine(line: String): List<String> {
         val result = mutableListOf<String>()
-        var curVal = StringBuilder()
+        val value = StringBuilder()
         var inQuotes = false
+        var index = 0
 
-        for (c in line) {
-            if (c == '\"') {
-                inQuotes = !inQuotes
-            } else if (c == ',' && !inQuotes) {
-                result.add(curVal.toString().trim())
-                curVal = StringBuilder()
-            } else {
-                curVal.append(c)
+        while (index < line.length) {
+            val character = line[index]
+            when {
+                character == '"' && inQuotes && index + 1 < line.length && line[index + 1] == '"' -> {
+                    value.append('"')
+                    index++
+                }
+                character == '"' -> inQuotes = !inQuotes
+                character == ',' && !inQuotes -> {
+                    result.add(value.toString().trim())
+                    value.setLength(0)
+                }
+                else -> value.append(character)
             }
+            index++
         }
-        result.add(curVal.toString().trim())
+
+        result.add(value.toString().trim())
         return result
     }
 }

@@ -709,7 +709,6 @@ private fun BeBossMainContent(
                                 onClearAllProducts = { viewModel.clearAllProducts() },
                                 onClearAllCustomers = { viewModel.clearAllCustomers() },
                                 onResetWholeApp = { viewModel.resetWholeApp() },
-                                onSeedSampleData = { viewModel.seedSampleCatalog() },
                                 onSaveBranch = { b -> viewModel.saveBranch(b) },
                                 onDeleteBranch = { bId -> viewModel.deleteBranch(bId) },
                                 onAddShopDevice = { deviceName, assignedUser, branch, onCreated ->
