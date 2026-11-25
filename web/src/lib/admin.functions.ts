@@ -1125,9 +1125,6 @@ export const publishRelease = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    if (data.make_current) {
-      await supabaseAdmin.from("app_releases").update({ is_current: false }).eq("is_current", true);
-    }
     const { data: row, error } = await supabaseAdmin
       .from("app_releases")
       .insert({
@@ -1140,14 +1137,22 @@ export const publishRelease = createServerFn({ method: "POST" })
         sha256: data.sha256.toLowerCase(),
         min_android: data.min_android,
         release_notes: data.release_notes,
-        is_current: data.make_current,
+        is_current: false,
         created_by: admin.email,
       })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
     if (data.make_current) {
-      await supabaseAdmin.from("app_config").update({ apk_download_url: data.public_download_url, apk_version: data.version_name, updated_at: Date.now() }).eq("id", "global");
+      const { error: currentError } = await ctx.supabase.rpc("admin_set_current_app_release", {
+        p_release_id: row.id,
+        p_download_url: data.public_download_url,
+      });
+      if (currentError) {
+        await supabaseAdmin.storage.from("releases").remove([data.file_path]);
+        await supabaseAdmin.from("app_releases").delete().eq("id", row.id);
+        throw new Error(currentError.message);
+      }
     }
     await audit(ctx, admin.email, "PUBLISH_RELEASE", data.version_name, `${data.file_name} (${data.size_bytes} bytes)${data.make_current ? " — now current" : ""}`);
     return { id: row.id as string };
@@ -1160,12 +1165,13 @@ export const setCurrentRelease = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: rel } = await supabaseAdmin.from("app_releases").select("version_name").eq("id", data.id).maybeSingle();
-    if (!rel) throw new Error("Release not found.");
-    await supabaseAdmin.from("app_releases").update({ is_current: false }).eq("is_current", true);
-    const { error } = await supabaseAdmin.from("app_releases").update({ is_current: true, is_public: true, file_url: data.public_download_url } as never).eq("id", data.id);
+    const { data: rel, error: readError } = await supabaseAdmin.from("app_releases").select("version_name").eq("id", data.id).maybeSingle();
+    if (readError || !rel) throw new Error(readError?.message ?? "Release not found.");
+    const { error } = await ctx.supabase.rpc("admin_set_current_app_release", {
+      p_release_id: data.id,
+      p_download_url: data.public_download_url,
+    });
     if (error) throw new Error(error.message);
-    await supabaseAdmin.from("app_config").update({ apk_download_url: data.public_download_url, apk_version: rel.version_name, updated_at: Date.now() }).eq("id", "global");
     await audit(ctx, admin.email, "SET_CURRENT_RELEASE", rel.version_name, "Marked as current download");
     return { ok: true };
   });
