@@ -294,7 +294,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
     }));
     const totalCost = items.reduce((sum, item) => sum + item.costPriceAtSale * item.quantitySold, 0);
     const sale = {
-      id: saleId, customerId: customerId || null, customerName: saleCustomer ? s(saleCustomer.name) : "Walk-in Customer",
+      id: saleId, customerId: saleCustomer ? s(saleCustomer.id) : null, customerName: saleCustomer ? s(saleCustomer.name) : "Walk-in Customer",
       saleDate: now, totalAmount: saleTotal, totalCost, totalProfit: saleTotal - totalCost, discountAmount: saleDiscount,
       paymentMethod: effectiveMethod, paymentStatus: saleDebt <= 0.01 ? "PAID" : salePaid > 0 ? "PARTIAL" : "UNPAID",
       amountPaid: Math.min(saleTotal, salePaid), tenders: split ? tenderRows : [], notes: notes.trim(), receiptNumber,
