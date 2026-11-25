@@ -53,6 +53,7 @@ export type DesktopAction =
   | "device_reinvite"
   | "device_remove"
   | "management_refresh"
+  | "management_probe"
   | "create_checkout"
   | "submit_payment_proof"
   | "create_branch_share"
