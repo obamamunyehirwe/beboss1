@@ -376,6 +376,8 @@ private fun BeBossMainContent(
     LaunchedEffect(Unit) {
         if (!com.beboss.shopmgmt.util.PermissionManager.hasAllCrucialPermissions(context)) {
             showPermissionOnboardingDialog = true
+        } else {
+            viewModel.onPermissionsUpdated()
         }
     }
 

@@ -1,5 +1,6 @@
 package com.beboss.shopmgmt.util
 
+import android.R
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -364,6 +365,28 @@ object BeBossNotificationManager {
 
         try {
             NotificationManagerCompat.from(context).notify(4099, notification)
+        } catch (_: SecurityException) {}
+    }
+
+    fun sendDeviceSyncedNotification(context: Context, shopName: String, deviceName: String = "") {
+        if (!PermissionManager.hasNotificationPermission(context)) return
+
+        val title = "⚡ Device Synced with Admin Console"
+        val text = "${shopName.ifBlank { "Your BeBoss Shop" }} ${if (deviceName.isNotBlank()) "($deviceName)" else ""} is live & synced with Admin Management Console."
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_SYNC_ID)
+            .setSmallIcon(R.drawable.stat_notify_sync)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setColor(0xFF0284C7.toInt())
+            .setContentIntent(getLaunchPendingIntent(context))
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(4098, notification)
         } catch (_: SecurityException) {}
     }
 }

@@ -2,6 +2,7 @@ package com.beboss.shopmgmt.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.beboss.shopmgmt.data.db.AppDatabase
@@ -1749,9 +1750,42 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                 val branchName = activeBranch?.name ?: shop.shopName.ifBlank { "Headquarters" }
                 BeBossNotificationManager.sendBranchSyncNotification(app, branchName, scopedProducts.value.size)
             }
+            "SYNC_DEVICE" -> {
+                val shopName = shop.shopName.ifBlank { "BeBoss Store" }
+                val devName = Build.MODEL ?: "Mobile Terminal"
+                BeBossNotificationManager.sendDeviceSyncedNotification(app, shopName, devName)
+            }
         }
         viewModelScope.launch {
             _snackbarMessage.emit("Dispatched live $channelType notification alert.")
+        }
+    }
+
+    fun onPermissionsUpdated() {
+        val app = getApplication<Application>()
+        // 1. Ensure modern channels exist
+        BeBossNotificationManager.createNotificationChannels(app)
+
+        // 2. Schedule periodic & immediate cloud sync
+        CloudSyncScheduler.schedulePeriodicSync(app)
+        CloudSyncScheduler.enqueueImmediateSync(app)
+
+        // 3. Trigger immediate cloud sync & telemetry upload
+        syncToCloudNow()
+
+        // 4. Re-inspect security posture & upload device telemetry
+        reInspectSecurityPosture(syncTrustedTime = true)
+
+        // 5. Send notification confirmation if notification permission granted
+        val shopName = shopProfile.value.shopName
+        val activeDevName = Build.MODEL ?: "Mobile Device"
+        BeBossNotificationManager.sendDeviceSyncedNotification(app, shopName, activeDevName)
+
+        viewModelScope.launch {
+            val msg = if (_currentLanguage.value == AppLanguage.KINYARWANDA)
+                "Uburyo bw'imenyesha n'ibya Admin Sync byatangiye gukora!"
+            else "Notification shield & real-time Admin Management Sync activated!"
+            _snackbarMessage.emit(msg)
         }
     }
 
