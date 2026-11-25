@@ -227,7 +227,7 @@ function AdminLayout() {
       </aside>
       <div className="admin-main-column flex min-w-0 flex-1 flex-col">
         <TopBar email={ctx.data.email} isAdmin={ctx.data.isAdmin} permissions={permissions} onSignOut={signOut} />
-        <LiveFeed />
+        <LiveFeed isAdmin={!!ctx.data.isAdmin} permissions={permissions} />
         <AdminQueryStatusBanner />
         <main className="admin-main-content mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
           {!ctx.data.signingKeyConfigured && ctx.data.isAdmin ? (
@@ -338,11 +338,11 @@ function TopBar({ email, isAdmin, permissions, onSignOut }: { email: string; isA
           <Logo to={homeTarget} suffix="Admin" />
         </div>
         <div className="hidden sm:block">
-          <LivePulse enabled={isAdmin || permissions.includes("sync.view")} />
+          {(isAdmin || permissions.includes("sync.view")) ? <LivePulse /> : null}
         </div>
       </div>
       <div className="flex items-center gap-2">
-      <LanguageSwitcher /><ThemeToggle /><CommandPalette nav={NAV.filter((item) => isAdmin || (!NAV_SUPER_ADMIN_ONLY.has(item.to) && hasPermission(permissions, NAV_PERMISSION[item.to]))).map(n=>({...n,label:a(n.label)}))} />
+      <LanguageSwitcher /><ThemeToggle /><CommandPalette isAdmin={isAdmin} permissions={permissions} nav={NAV.filter((item) => isAdmin || (!NAV_SUPER_ADMIN_ONLY.has(item.to) && hasPermission(permissions, NAV_PERMISSION[item.to]))).map(n=>({...n,label:a(n.label)}))} />
       <Button
         size="sm"
         variant="glass"
@@ -363,7 +363,7 @@ function TopBar({ email, isAdmin, permissions, onSignOut }: { email: string; isA
 function LivePulse({ enabled = true }: { enabled?: boolean }) {
   const { data, isLoading, isError } = useQuery({ ...syncEventsQuery, enabled });
   const now = useNow(10_000);
-  const last = data?.[0];
+  const last = enabled ? data?.[0] : undefined;
   const lastAt = last ? Date.parse(last.created_at) : Number.NaN;
   const isRecent = enabled && Number.isFinite(lastAt) && lastAt <= now && now - lastAt < 15 * 60_000;
   const label = !enabled
@@ -395,42 +395,58 @@ function LivePulse({ enabled = true }: { enabled?: boolean }) {
 }
 
 /** Realtime: new payment claims, shop changes and inbox messages refresh the admin instantly. */
-function LiveFeed() {
+function LiveFeed({ isAdmin, permissions }: { isAdmin: boolean; permissions: string[] }) {
   const qc = useQueryClient();
+  const canViewPayments = isAdmin || permissions.includes("payments.review") || permissions.includes("analytics.view");
+  const canViewShops = isAdmin || permissions.includes("shops.view");
+  const canViewSync = isAdmin || permissions.includes("sync.view");
+  const canViewDevices = isAdmin || permissions.includes("devices.audit") || permissions.includes("analytics.view");
+  const canViewUsers = isAdmin || permissions.includes("users.manage") || permissions.includes("shops.view");
+  const canViewCodes = isAdmin || permissions.includes("payments.review");
+  const canViewInbox = isAdmin || permissions.includes("inbox.manage");
   useEffect(() => {
-    const channel = supabase
-      .channel(`admin-live-${Math.random().toString(36).slice(2)}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "payment_requests" }, (payload) => {
+    let channel = supabase.channel(`admin-live-${Math.random().toString(36).slice(2)}`);
+    if (canViewPayments) {
+      channel = channel.on("postgres_changes", { event: "*", schema: "public", table: "payment_requests" }, (payload) => {
         qc.invalidateQueries({ queryKey: ["admin", "payments"] });
         if (payload.eventType === "INSERT") {
           const row = payload.new as { shop_name?: string; amount_rwf?: number; provider?: string };
           toast.info(`New payment claim: ${row.shop_name ?? "shop"} — ${Number(row.amount_rwf ?? 0).toLocaleString()} FRw via ${row.provider ?? "MoMo"}`);
         }
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "shop_accounts" }, () => qc.invalidateQueries({ queryKey: ["admin", "shops"] }))
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "cloud_sync_events" }, (payload) => {
+      });
+    }
+    if (canViewShops) {
+      channel = channel.on("postgres_changes", { event: "*", schema: "public", table: "shop_accounts" }, () => qc.invalidateQueries({ queryKey: ["admin", "shops"] }));
+    }
+    if (canViewSync) {
+      channel = channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "cloud_sync_events" }, (payload) => {
         qc.invalidateQueries({ queryKey: ["admin", "sync-events"] });
-        const e = payload.new as { entity?: string; action?: string; shop_name?: string };
-        if (e.entity === "SHOP" && e.action === "REGISTERED") toast.success(`New shop registered: ${e.shop_name ?? ""}`);
-        if (e.entity === "UNLOCK_CODE" && e.action === "REDEEMED") toast.success(`${e.shop_name || "A shop"} redeemed an unlock code`);
-        if (e.entity === "DEVICE" && e.action === "PAIRED") toast.info(`New device paired at ${e.shop_name ?? "a shop"}`);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "shop_devices" }, () => qc.invalidateQueries({ queryKey: ["admin", "devices"] }))
-      .on("postgres_changes", { event: "*", schema: "public", table: "shop_users" }, () => qc.invalidateQueries({ queryKey: ["admin", "users"] }))
-      .on("postgres_changes", { event: "*", schema: "public", table: "branch_sync_snapshots" }, () => {
+        const event = payload.new as { entity?: string; action?: string; shop_name?: string };
+        if (event.entity === "SHOP" && event.action === "REGISTERED") toast.success(`New shop registered: ${event.shop_name ?? ""}`);
+        if (event.entity === "UNLOCK_CODE" && event.action === "REDEEMED") toast.success(`${event.shop_name || "A shop"} redeemed an unlock code`);
+        if (event.entity === "DEVICE" && event.action === "PAIRED") toast.info(`New device paired at ${event.shop_name ?? "a shop"}`);
+      });
+    }
+    if (canViewDevices) channel = channel.on("postgres_changes", { event: "*", schema: "public", table: "shop_devices" }, () => qc.invalidateQueries({ queryKey: ["admin", "devices"] }));
+    if (canViewUsers) channel = channel.on("postgres_changes", { event: "*", schema: "public", table: "shop_users" }, () => qc.invalidateQueries({ queryKey: ["admin", "users"] }));
+    if (canViewSync) {
+      channel = channel.on("postgres_changes", { event: "*", schema: "public", table: "branch_sync_snapshots" }, () => {
         qc.invalidateQueries({ queryKey: ["admin", "snapshots"] });
         qc.invalidateQueries({ queryKey: ["admin", "records"] });
         qc.invalidateQueries({ queryKey: ["admin", "insights"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "unlock_codes" }, () => qc.invalidateQueries({ queryKey: ["admin", "codes"] }))
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "contact_messages" }, () => {
+      });
+    }
+    if (canViewCodes) channel = channel.on("postgres_changes", { event: "*", schema: "public", table: "unlock_codes" }, () => qc.invalidateQueries({ queryKey: ["admin", "codes"] }));
+    if (canViewInbox) {
+      channel = channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "contact_messages" }, () => {
         qc.invalidateQueries({ queryKey: ["admin", "inbox"] });
         toast.info("New message in the inbox");
-      })
-      .subscribe();
+      });
+    }
+    channel.subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [qc]);
+  }, [qc, isAdmin, permissions.join("|")]);
   return null;
 }

@@ -82,6 +82,9 @@ jobs:
           src/routes/_authenticated/admin/route.tsx
           src/routes/_authenticated/admin/team.tsx
           src/routes/_authenticated/admin/releases.tsx
+          src/routes/_authenticated/admin/announcements.tsx
+          src/routes/_authenticated/admin/shops.index.tsx
+          'src/routes/_authenticated/admin/shops.$shopId.tsx'
           src/lib/pricing.ts
           src/routes/_authenticated/admin/payments.tsx
           src/lib/bb2.ts

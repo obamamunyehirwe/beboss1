@@ -32,13 +32,14 @@ function ShopDetail() {
   const canViewDevices = isAdmin || permissions.includes("devices.audit") || permissions.includes("analytics.view");
   const canViewUsers = isAdmin || permissions.includes("users.manage") || permissions.includes("shops.view");
   const canViewPayments = isAdmin || permissions.includes("payments.review") || permissions.includes("analytics.view");
+  const canViewCodes = isAdmin || permissions.includes("payments.review");
   const canViewSync = isAdmin || permissions.includes("sync.view");
   const canViewInsights = isAdmin;
   const shops = useQuery(shopsQuery);
   const devices = useQuery({ ...devicesQuery, enabled: canViewDevices });
   const users = useQuery({ ...usersQuery, enabled: canViewUsers });
   const pays = useQuery({ ...paymentsQuery, enabled: canViewPayments });
-  const codes = useQuery({ ...codesQuery, enabled: canViewPayments });
+  const codes = useQuery({ ...codesQuery, enabled: canViewCodes });
   const snaps = useQuery({ ...snapshotsQuery, enabled: canViewSync });
   const { data: cfg } = useQuery({ ...configQuery, enabled: isAdmin });
   const events = useQuery({ ...syncEventsQuery, enabled: canViewSync });
@@ -79,7 +80,7 @@ function ShopDetail() {
   const calc = calculateSubscriptionFee(q.branches, q.workers, 1, q.devices, Number(cfg?.per_device_fee_rwf) || 2000);
   const shopDevices = (devices.data ?? []).filter((d) => d.shop_sync_key === shopId);
   const shopEvents = (events.data ?? []).filter((e) => e.shop_sync_key === shopId);
-  const flags = canViewPayments ? licenseFlags(shop, codes.data ?? [], pays.data ?? []) : [];
+  const flags = canViewPayments && canViewCodes ? licenseFlags(shop, codes.data ?? [], pays.data ?? []) : [];
   const shopUsers = (users.data ?? []).filter((u) => u.shop_sync_key === shopId);
   const shopPays = (pays.data ?? []).filter((p) => computeShopKey(p.owner_username, p.owner_phone) === shopId);
   const shopCodes = (codes.data ?? []).filter((x) => computeShopKey(x.shop_username, x.shop_phone) === shopId);
@@ -283,39 +284,35 @@ function ShopDetail() {
 
       <Tabs defaultValue={isAdmin ? "insights" : canViewUsers ? "users" : canViewPayments ? "payments" : canViewSync ? "sync" : "devices"}>
         <TabsList className="flex-wrap">
-          {canViewInsights && <TabsTrigger value="insights">Retail insights</TabsTrigger>
-          {isAdmin && <TabsTrigger value="records">Shop records</TabsTrigger>
-          {canViewDevices && <TabsTrigger value="devices">Devices ({shopDevices.length})</TabsTrigger>
-          {canViewUsers && <TabsTrigger value="users">Staff ({shopUsers.length})</TabsTrigger>
-          {canViewPayments && <TabsTrigger value="payments">Payments ({shopPays.length})</TabsTrigger>
-          {canViewPayments && <TabsTrigger value="codes">Codes ({shopCodes.length})</TabsTrigger>
-          {canViewSync && <TabsTrigger value="sync">Branch sync ({shopSnaps.length})</TabsTrigger>
-          {canViewSync && <TabsTrigger value="activity">Sync activity ({shopEvents.length})</TabsTrigger>
+          {canViewInsights && <TabsTrigger value="insights">Retail insights</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="records">Shop records</TabsTrigger>}
+          {canViewDevices && <TabsTrigger value="devices">Devices ({shopDevices.length})</TabsTrigger>}
+          {canViewUsers && <TabsTrigger value="users">Staff ({shopUsers.length})</TabsTrigger>}
+          {canViewPayments && <TabsTrigger value="payments">Payments ({shopPays.length})</TabsTrigger>}
+          {canViewCodes && <TabsTrigger value="codes">Codes ({shopCodes.length})</TabsTrigger>}
+          {canViewSync && <TabsTrigger value="sync">Branch sync ({shopSnaps.length})</TabsTrigger>}
+          {canViewSync && <TabsTrigger value="activity">Sync activity ({shopEvents.length})</TabsTrigger>}
         </TabsList>
-        <TabsContent value="insights">
-          <RetailInsights shopId={shopId} />}}}}}}}}
-        </TabsContent>
-        <TabsContent value="records">
-          <ShopRecords shopId={shopId} shopName={shop.shop_name} />
-        </TabsContent>
-        <TabsContent value="devices">
+        {canViewInsights && <TabsContent value="insights"><RetailInsights shopId={shopId} /></TabsContent>}
+        {isAdmin && <TabsContent value="records"><ShopRecords shopId={shopId} shopName={shop.shop_name} /></TabsContent>}
+        {canViewDevices && <TabsContent value="devices">
           <MiniList empty="No paired devices" rows={shopDevices.map((d) => ({ k: d.id, a: `${d.device_name || d.device_id}${d.is_owner_primary ? " • owner" : ""}${d.is_active ? "" : " • deactivated"}`, b: `${d.assigned_user_name || d.assigned_username} • ${d.role} • ${d.branch_name}`, c: deviceHealth(d.last_synced_at), d: `synced ${relativeTime(d.last_synced_at)}` }))} />
-        </TabsContent>
-        <TabsContent value="users">
+        </TabsContent>}
+        {canViewUsers && <TabsContent value="users">
           <MiniList empty="No staff synced" rows={shopUsers.map((u) => ({ k: u.id, a: `${u.full_name} (@${u.username})`, b: `${u.role} • ${u.assigned_branch_name} • ${u.phone}`, c: u.is_active ? "ACTIVE" : "SUSPENDED", d: relativeTime(u.updated_at) }))} />
-        </TabsContent>
-        <TabsContent value="payments">
+        </TabsContent>}
+        {canViewPayments && <TabsContent value="payments">
           <MiniList empty="No payments" rows={shopPays.map((p) => ({ k: p.id, a: `${formatRwf(p.amount_rwf)} • ${p.provider}`, b: `${p.duration_months} mo • ${p.branch_count} branches • ${p.device_count} devices`, c: p.status, d: formatDateTime(p.created_at) }))} />
-        </TabsContent>
-        <TabsContent value="codes">
+        </TabsContent>}
+        {canViewCodes && <TabsContent value="codes">
           <MiniList empty="No codes" rows={shopCodes.map((x) => ({ k: x.id, a: x.unlock_code, b: `${x.tier_code} • +${x.plan_days}d • ${formatRwf(x.amount_rwf)}`, c: x.status, d: formatDateTime(x.issued_at), mono: true }))} />
-        </TabsContent>
-        <TabsContent value="activity">
+        </TabsContent>}
+        {canViewSync && <TabsContent value="activity">
           <MiniList empty="No sync activity recorded yet" rows={shopEvents.map((e) => ({ k: String(e.id), a: `${e.entity.replace("_", " ").toLowerCase()} · ${e.action.replaceAll("_", " ").toLowerCase()}`, b: [e.device_id, e.detail].filter(Boolean).join(" · ") || "—", c: e.actor, d: relativeTime(e.created_at) }))} />
-        </TabsContent>
-        <TabsContent value="sync">
+        </TabsContent>}
+        {canViewSync && <TabsContent value="sync">
           <MiniList empty="No branch snapshots" rows={shopSnaps.map((s) => ({ k: s.id, a: s.branch_name, b: s.records_summary || s.device_id, c: "ACTIVE", d: relativeTime(s.updated_at) }))} />
-        </TabsContent>
+        </TabsContent>}
       </Tabs>
 
       {isAdmin ? (

@@ -1125,9 +1125,6 @@ export const publishRelease = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    if (data.make_current) {
-      await supabaseAdmin.from("app_releases").update({ is_current: false }).eq("is_current", true);
-    }
     const { data: row, error } = await supabaseAdmin
       .from("app_releases")
       .insert({
@@ -1140,14 +1137,22 @@ export const publishRelease = createServerFn({ method: "POST" })
         sha256: data.sha256.toLowerCase(),
         min_android: data.min_android,
         release_notes: data.release_notes,
-        is_current: data.make_current,
+        is_current: false,
         created_by: admin.email,
       })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
     if (data.make_current) {
-      await supabaseAdmin.from("app_config").update({ apk_download_url: data.public_download_url, apk_version: data.version_name, updated_at: Date.now() }).eq("id", "global");
+      const { error: currentError } = await ctx.supabase.rpc("admin_set_current_app_release", {
+        p_release_id: row.id,
+        p_download_url: data.public_download_url,
+      });
+      if (currentError) {
+        await supabaseAdmin.storage.from("releases").remove([data.file_path]);
+        await supabaseAdmin.from("app_releases").delete().eq("id", row.id);
+        throw new Error(currentError.message);
+      }
     }
     await audit(ctx, admin.email, "PUBLISH_RELEASE", data.version_name, `${data.file_name} (${data.size_bytes} bytes)${data.make_current ? " — now current" : ""}`);
     return { id: row.id as string };
@@ -1160,12 +1165,13 @@ export const setCurrentRelease = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: rel } = await supabaseAdmin.from("app_releases").select("version_name").eq("id", data.id).maybeSingle();
-    if (!rel) throw new Error("Release not found.");
-    await supabaseAdmin.from("app_releases").update({ is_current: false }).eq("is_current", true);
-    const { error } = await supabaseAdmin.from("app_releases").update({ is_current: true, is_public: true, file_url: data.public_download_url } as never).eq("id", data.id);
+    const { data: rel, error: readError } = await supabaseAdmin.from("app_releases").select("version_name").eq("id", data.id).maybeSingle();
+    if (readError || !rel) throw new Error(readError?.message ?? "Release not found.");
+    const { error } = await ctx.supabase.rpc("admin_set_current_app_release", {
+      p_release_id: data.id,
+      p_download_url: data.public_download_url,
+    });
     if (error) throw new Error(error.message);
-    await supabaseAdmin.from("app_config").update({ apk_download_url: data.public_download_url, apk_version: rel.version_name, updated_at: Date.now() }).eq("id", "global");
     await audit(ctx, admin.email, "SET_CURRENT_RELEASE", rel.version_name, "Marked as current download");
     return { ok: true };
   });
@@ -1200,6 +1206,19 @@ export const getAdminReleaseDownload = createServerFn({ method: "POST" })
     const { data: signed, error } = await supabaseAdmin.storage.from("releases").createSignedUrl(release.file_path, 10 * 60, { download: release.file_name });
     if (error || !signed?.signedUrl) throw new Error(error?.message ?? "Could not create a private admin download link.");
     return { url: signed.signedUrl, expiresInSeconds: 600, fileName: release.file_name };
+  });
+
+export const setArchivedReleaseVisibility = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { isPublic: boolean }) => z.object({ isPublic: z.boolean() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requirePermission(ctx, "releases.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("app_releases").update({ is_public: data.isPublic } as never).eq("is_current", false);
+    if (error) throw new Error(error.message);
+    await audit(ctx, admin.email, data.isPublic ? "SHOW_ALL_ARCHIVED_RELEASES" : "HIDE_ALL_ARCHIVED_RELEASES", "app_releases", "Updated public visibility for every non-current archived release.");
+    return { ok: true };
   });
 
 export const setReleaseVisibility = createServerFn({ method: "POST" })
@@ -1238,9 +1257,13 @@ export const deleteContactMessage = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    await requireAdmin(ctx);
-    const { error } = await ctx.supabase.from("contact_messages").delete().eq("id", data.id);
+    const admin = await requirePermission(ctx, "inbox.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: message, error: readError } = await supabaseAdmin.from("contact_messages").select("name,email,status").eq("id", data.id).maybeSingle();
+    if (readError || !message) throw new Error(readError?.message ?? "Inbox message not found.");
+    const { error } = await supabaseAdmin.from("contact_messages").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
+    await audit(ctx, admin.email, "DELETE_INBOX_MESSAGE", data.id, String(message.status ?? "unknown"));
     return { ok: true };
   });
 
@@ -1308,12 +1331,14 @@ export const grantTeamRole = createServerFn({ method: "POST" })
     }
 
     if (data.role === "SUPER_ADMIN") {
-      const { count } = await supabaseAdmin.from("user_roles").select("*", { count: "exact", head: true }).eq("role", "admin");
       const { error: roleError } = await supabaseAdmin.from("user_roles").upsert({ user_id: found.id, role: "admin" }, { onConflict: "user_id,role" });
       if (roleError) throw new Error(`Could not grant master admin access: ${roleError.message}`);
-      await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "support");
-      await supabaseAdmin.from("admin_role_grants").delete().eq("user_id", found.id);
-      await supabaseAdmin.from("admin_profiles").upsert({ user_id: found.id, email: target, full_name: target, role: "SUPER_ADMIN", is_active: true }, { onConflict: "user_id" });
+      const { error: supportDeleteError } = await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "support");
+      if (supportDeleteError) throw new Error(supportDeleteError.message);
+      const { error: grantDeleteError } = await (supabaseAdmin as any).from("admin_role_grants").delete().eq("user_id", found.id);
+      if (grantDeleteError) throw new Error(grantDeleteError.message);
+      const { error: profileError } = await supabaseAdmin.from("admin_profiles").upsert({ user_id: found.id, email: target, full_name: target, role: "SUPER_ADMIN", is_active: true }, { onConflict: "user_id" });
+      if (profileError) throw new Error(profileError.message);
       await audit(ctx, admin.email, invited ? "INVITE_SUPER_ADMIN" : "GRANT_SUPER_ADMIN", target, "Full Master Admin access granted.");
       return { ok: true, invited, email: target, role: data.role, permissions: ["*"] };
     }
@@ -1325,7 +1350,8 @@ export const grantTeamRole = createServerFn({ method: "POST" })
     if (currentMaster && (masterCount ?? 0) <= 1) throw new Error("You cannot downgrade the last Master Admin. Promote another Master Admin first.");
     const { error: roleError } = await supabaseAdmin.from("user_roles").upsert({ user_id: found.id, role: "support" }, { onConflict: "user_id,role" });
     if (roleError) throw new Error(`Could not authorize the invited account: ${roleError.message}`);
-    await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "admin");
+    const { error: demoteError } = await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "admin");
+    if (demoteError) throw new Error(demoteError.message);
     const { error: profileError } = await supabaseAdmin.from("admin_profiles").upsert({
       user_id: found.id, email: target, full_name: target, role: data.role, is_active: true,
     }, { onConflict: "user_id" });
@@ -1352,8 +1378,10 @@ export const revokeTeamRole = createServerFn({ method: "POST" })
     if (targetRoles?.some((r) => r.role === "admin") && (count ?? 0) <= 1) throw new Error("You can't remove the last master admin.");
     const { error } = await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId);
     if (error) throw new Error(error.message);
-    await supabaseAdmin.from("admin_role_grants").delete().eq("user_id", data.userId);
-    await supabaseAdmin.from("admin_profiles").update({ is_active: false }).eq("user_id", data.userId);
+    const { error: grantsError } = await (supabaseAdmin as any).from("admin_role_grants").delete().eq("user_id", data.userId);
+    if (grantsError) throw new Error(grantsError.message);
+    const { error: profileError } = await supabaseAdmin.from("admin_profiles").update({ is_active: false }).eq("user_id", data.userId);
+    if (profileError) throw new Error(profileError.message);
     await audit(ctx, admin.email, "REVOKE_TEAM_ACCESS", data.userId, "Removed all BeBoss admin-team roles and permissions.");
     return { ok: true };
   });
