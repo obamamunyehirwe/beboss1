@@ -152,6 +152,7 @@ function AdminQueryStatusBanner() {
 function AdminLayout() {
   const ctx = useAdminCtx();
   const router = useRouter();
+  const currentPath = useRouterState({ select: (state) => state.location.pathname });
   const signOut = async () => {
     await supabase.auth.signOut();
     router.navigate({ to: "/auth" });
@@ -211,13 +212,18 @@ function AdminLayout() {
     );
   }
 
+  const permissions = ctx.data.permissions ?? [];
+  const activeNav = NAV.find((item) => currentPath === item.to || (item.to !== "/admin" && currentPath.startsWith(item.to + "/")));
+  const isSuperAdminPage = NAV_SUPER_ADMIN_ONLY.has(activeNav?.to ?? "");
+  const pageAllowed = !!ctx.data.isAdmin || (!isSuperAdminPage && hasPermission(permissions, activeNav ? NAV_PERMISSION[activeNav.to] : undefined));
+
   return (
     <div className="admin-workspace flex min-h-screen">
       <aside className="admin-sidebar sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
-        <SidebarBody email={ctx.data.email} isAdmin={ctx.data.isAdmin} onSignOut={signOut} />
+        <SidebarBody email={ctx.data.email} isAdmin={ctx.data.isAdmin} permissions={permissions} onSignOut={signOut} />
       </aside>
       <div className="admin-main-column flex min-w-0 flex-1 flex-col">
-        <TopBar email={ctx.data.email} isAdmin={ctx.data.isAdmin} onSignOut={signOut} />
+        <TopBar email={ctx.data.email} isAdmin={ctx.data.isAdmin} permissions={permissions} onSignOut={signOut} />
         <LiveFeed />
         <AdminQueryStatusBanner />
         <main className="admin-main-content mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
@@ -229,17 +235,24 @@ function AdminLayout() {
               </Button>
             </div>
           ) : null}
-          <Outlet />
+          {pageAllowed ? <Outlet /> : (
+            <section className="mx-auto mt-10 max-w-xl rounded-3xl border border-border bg-card p-7 text-center">
+              <ShieldAlert className="mx-auto size-9 text-warning" />
+              <h1 className="mt-3 text-lg font-bold">This area is not assigned to your role</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Your account can use only the administration tools granted by a Super Admin. Ask your platform owner to update the role when access is required.</p>
+              <Button asChild className="mt-5" variant="outline"><Link to="/admin">Return to your workspace</Link></Button>
+            </section>
+          )}
         </main>
       </div>
     </div>
   );
 }
 
-function useBadges() {
-  const pay = useQuery(paymentsQuery);
-  const inbox = useQuery(inboxQuery);
-  const sync = useQuery(syncEventsQuery);
+function useBadges(permissions: string[], isAdmin: boolean) {
+  const pay = useQuery({ ...paymentsQuery, enabled: isAdmin || hasPermission(permissions, "payments.review") });
+  const inbox = useQuery({ ...inboxQuery, enabled: isAdmin || hasPermission(permissions, "inbox.manage") });
+  const sync = useQuery({ ...syncEventsQuery, enabled: isAdmin || hasPermission(permissions, "sync.view") });
   const now = useNow(30_000);
   return {
     sync: (sync.data ?? []).filter((e) => now - new Date(e.created_at).getTime() < 15 * 60_000).length,
@@ -248,16 +261,17 @@ function useBadges() {
   };
 }
 
-function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string; isAdmin: boolean; onSignOut: () => void; onNavigate?: () => void }) {
+function SidebarBody({ email, isAdmin, permissions, onSignOut, onNavigate }: { email: string; isAdmin: boolean; permissions: string[]; onSignOut: () => void; onNavigate?: () => void }) {
   const a=useAdminText();
-  const badges = useBadges();
+  const badges = useBadges(permissions, isAdmin);
+  const visibleNav = NAV.filter((item) => isAdmin || (!NAV_SUPER_ADMIN_ONLY.has(item.to) && hasPermission(permissions, NAV_PERMISSION[item.to])));
   return (
     <div className="flex h-full flex-col">
       <div className="admin-sidebar-brand px-5 py-5">
         <Logo to="/admin" suffix="Admin" />
       </div>
       <nav className="admin-side-nav flex-1 space-y-0.5 overflow-y-auto px-3">
-        {NAV.map((n,i) => {
+        {visibleNav.map((n,i) => {
           const count = "badge" in n ? badges[n.badge] : 0;
           return (
             <div key={n.to}>
@@ -294,7 +308,7 @@ function SidebarBody({ email, isAdmin, onSignOut, onNavigate }: { email: string;
   );
 }
 
-function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean; onSignOut: () => void }) {
+function TopBar({ email, isAdmin, permissions, onSignOut }: { email: string; isAdmin: boolean; permissions: string[]; onSignOut: () => void }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const a=useAdminText();
@@ -310,7 +324,7 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
           </SheetTrigger>
           <SheetContent side="left" className="admin-mobile-sheet w-64 bg-sidebar p-0">
             <SheetTitle className="sr-only">Admin menu</SheetTitle>
-            <SidebarBody email={email} isAdmin={isAdmin} onSignOut={onSignOut} onNavigate={() => setOpen(false)} />
+            <SidebarBody email={email} isAdmin={isAdmin} permissions={permissions} onSignOut={onSignOut} onNavigate={() => setOpen(false)} />
           </SheetContent>
         </Sheet>
         <div className="admin-topbar-mobile-brand lg:hidden">
@@ -321,7 +335,7 @@ function TopBar({ email, isAdmin, onSignOut }: { email: string; isAdmin: boolean
         </div>
       </div>
       <div className="flex items-center gap-2">
-      <LanguageSwitcher /><ThemeToggle /><CommandPalette nav={NAV.map(n=>({...n,label:a(n.label)}))} />
+      <LanguageSwitcher /><ThemeToggle /><CommandPalette nav={NAV.filter((item) => isAdmin || (!NAV_SUPER_ADMIN_ONLY.has(item.to) && hasPermission(permissions, NAV_PERMISSION[item.to]))).map(n=>({...n,label:a(n.label)}))} />
       <Button
         size="sm"
         variant="glass"
