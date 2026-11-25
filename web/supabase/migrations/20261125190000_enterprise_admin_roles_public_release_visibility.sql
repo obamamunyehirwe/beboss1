@@ -147,7 +147,7 @@ for select to authenticated using (
 );
 
 drop policy if exists "Staff read shop_accounts" on public.shop_accounts;
-create policy "Shop viewers read shop_accounts" on public.shop_accounts
+create policy "Staff read shop_accounts" on public.shop_accounts
 for select to authenticated using (
   public.has_admin_permission('shops.view')
   or id = public.current_shop_sync_key()
