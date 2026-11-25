@@ -259,8 +259,8 @@ export function CustomersPage({ snapshot, onCommit, offline, query, onReceipt }:
           </tbody></table></div>{!details.customerSales.length && <p className="crm-empty">No purchase transactions have synchronized for this customer.</p>}
         </section>
         <section className="crm-history-section"><h4><Wallet size={15}/> Credit collection history</h4>
-          <div className="table-wrap"><table><thead><tr><th>Payment receipt</th><th>Date</th><th>Method</th><th>Previous debt</th><th>Received</th><th>Remaining</th></tr></thead><tbody>
-            {details.customerPayments.slice().sort((a,b)=>n(b.paymentDate)-n(a.paymentDate)).slice(0,50).map((row) => <tr key={s(row.id)}><td>{s(row.receiptNumber)}</td><td>{dateOnly(row.paymentDate)}</td><td>{s(row.paymentMethod)}</td><td>{money(row.previousDebt)}</td><td className="strong">{money(row.amount)}</td><td>{money(row.remainingDebt)}</td></tr>)}
+          <div className="table-wrap"><table><thead><tr><th>Payment receipt</th><th>Date</th><th>Method</th><th>Previous debt</th><th>Received</th><th>Remaining</th><th>Receipt</th></tr></thead><tbody>
+            {details.customerPayments.slice().sort((a,b)=>n(b.paymentDate)-n(a.paymentDate)).slice(0,50).map((row) => <tr key={s(row.id)}><td>{s(row.receiptNumber)}</td><td>{dateOnly(row.paymentDate)}</td><td>{s(row.paymentMethod)}</td><td>{money(row.previousDebt)}</td><td className="strong">{money(row.amount)}</td><td>{money(row.remainingDebt)}</td><td><button className="btn-outline small" onClick={() => { setDetailsId(""); setReceiptData({ payment: row, customer: details.customer, profile: snapshot?.shopProfile ?? {} }); }}><ReceiptText size={13}/> Receipt</button></td></tr>)}
           </tbody></table></div>{!details.customerPayments.length && <p className="crm-empty">No credit collection records yet.</p>}
         </section>
       </div>
