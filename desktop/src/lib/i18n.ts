@@ -1927,6 +1927,167 @@ const DICTIONARY: Record<DesktopLanguage, Record<string, string>> = {
     "Green": "Kijani"
   }
 };
+
+const DESKTOP_CORE_TRANSLATIONS: Record<DesktopLanguage, Record<string, string>> = {
+  en: {
+    "Workspace":"Workspace","Operations":"Operations","Intelligence":"Intelligence","Organization":"Organization","Administration":"Administration",
+    "Retail Command":"Retail Command","Shop owner":"Shop owner","Cloud synced":"Cloud synced","Offline cache":"Offline cache",
+    "Verified shop data":"Verified shop data","Refresh cloud data":"Refresh cloud data","Management center":"Management center",
+    "Point of sale":"Point of sale","Inventory":"Inventory","Sales ledger":"Sales ledger","Customers & credit":"Customers & credit",
+    "Purchasing":"Purchasing","Reports & insights":"Reports & insights","Branches":"Branches","Staff access":"Staff access",
+    "POS terminals":"POS terminals","Stock transfers":"Stock transfers","Subscription":"Subscription","System diagnostics":"System diagnostics",
+    "Sync hub":"Sync hub","Owner access":"Owner access","Backup & recovery":"Backup & recovery","Shop settings":"Shop settings",
+    "Sales and purchasing":"Sales and purchasing","Business identity & finance":"Business identity & finance",
+    "Appearance & theme":"Appearance & theme","Interface language":"Interface language","Desktop preferences":"Desktop preferences",
+    "Automatic cloud synchronization":"Automatic cloud synchronization","Cloud refresh interval":"Cloud refresh interval",
+    "Reduce interface motion":"Reduce interface motion","Start page after sign-in":"Start page after sign-in",
+    "No signed snapshot uploaded yet":"No signed snapshot uploaded yet","Snapshot integrity verified":"Snapshot integrity verified",
+    "Saved securely on this device. It will sync automatically when the connection returns.":"Saved securely on this device. It will sync automatically when the connection returns.",
+    "Changes saved to the shared BeBoss shop snapshot.":"Changes saved to the shared BeBoss shop snapshot.",
+    "Secure owner access":"Secure owner access","Encrypted local database":"Encrypted local database",
+    "Cloud synchronization":"Cloud synchronization","System compatibility":"System compatibility","Device identity":"Device identity",
+    "Encrypted database":"Encrypted database","Credential vault":"Credential vault","Cloud connectivity":"Cloud connectivity",
+    "Ready":"Ready","Continue":"Continue","Finish setup":"Finish setup","Back to welcome":"Back to welcome",
+    "Sign in to your shop":"Sign in to your shop",
+    "Owner access protected by registered-phone verification":"Owner access protected by registered-phone verification"
+  },
+  rw: {
+    "Workspace":"Aho ukorera","Operations":"Ibikorwa","Intelligence":"Isesengura","Organization":"Imiterere y'ubucuruzi","Administration":"Ubuyobozi",
+    "Retail Command":"Ikigo cy'ubucuruzi","Shop owner":"Nyir'iduka","Cloud synced":"Byahujwe na Cloud","Offline cache":"Amakuru abitswe offline",
+    "Verified shop data":"Amakuru y'iduka yemejwe","Refresh cloud data":"Ongera usome amakuru yo kuri Cloud","Management center":"Kituo cy'ubuyobozi",
+    "Point of sale":"Ahagurishirizwa","Inventory":"Ububiko","Sales ledger":"Ibarura ry'ibicuruzwa byagurishijwe","Customers & credit":"Abakiriya n'imyenda",
+    "Purchasing":"Kugura ibicuruzwa","Reports & insights":"Raporo n'isesengura","Branches":"Amashami","Staff access":"Uburenganzira bw'abakozi",
+    "POS terminals":"Ibikoresho bya POS","Stock transfers":"Kohereza ibicuruzwa","Subscription":"Ifatabuguzi","System diagnostics":"Igenzura rya sisitemu",
+    "Sync hub":"Ikigo cyo guhuza amakuru","Owner access":"Uburenganzira bwa nyir'iduka","Backup & recovery":"Kubika no kugarura amakuru","Shop settings":"Igenamiterere ry'iduka",
+    "Sales and purchasing":"Kugurisha no kugura","Business identity & finance":"Umwirondoro n'imari by'ubucuruzi",
+    "Appearance & theme":"Imigaragarire n'insanganyamatsiko","Interface language":"Ururimi rwa porogaramu","Desktop preferences":"Ibyo ukunda kuri mudasobwa",
+    "Automatic cloud synchronization":"Guhuza amakuru na Cloud byikora","Cloud refresh interval":"Igihe cyo kuvugurura amakuru ya Cloud",
+    "Reduce interface motion":"Gabanya imigendere y'amashusho","Start page after sign-in":"Ipaji ibanza nyuma yo kwinjira",
+    "No signed snapshot uploaded yet":"Nta makuru yemejwe yoherejwe","Snapshot integrity verified":"Ubuziranenge bw'amakuru bwemejwe",
+    "Saved securely on this device. It will sync automatically when the connection returns.":"Byabitswe neza kuri iki gikoresho. Bizahuzwa internet igarutse.",
+    "Changes saved to the shared BeBoss shop snapshot.":"Impinduka zabitswe mu makuru asangirwa na BeBoss.",
+    "Secure owner access":"Kwinjira k'ubuyobozi birinzwe","Encrypted local database":"Ububiko bw'ibanga bwa mudasobwa",
+    "Cloud synchronization":"Guhuza amakuru na Cloud","System compatibility":"Imikorere ya sisitemu","Device identity":"Indangamuntu y'igikoresho",
+    "Encrypted database":"Ububiko burinzwe n'ibanga","Credential vault":"Ububiko bw'ibanga","Cloud connectivity":"Guhuza na Cloud",
+    "Ready":"Byiteguye","Continue":"Komeza","Finish setup":"Rangiza gutegura","Back to welcome":"Subira ku rupapuro rw'ibanze",
+    "Sign in to your shop":"Injira mu iduka ryawe",
+    "Owner access protected by registered-phone verification":"Kwinjira k'umuyobozi birindwa no kwemeza telefone yanditse"
+  },
+  fr: {
+    "Workspace":"Espace de travail","Operations":"Opérations","Intelligence":"Analyse","Organization":"Organisation","Administration":"Administration",
+    "Retail Command":"Centre de gestion commerciale","Shop owner":"Propriétaire de la boutique","Cloud synced":"Synchronisé au cloud","Offline cache":"Cache hors ligne",
+    "Verified shop data":"Données de boutique vérifiées","Refresh cloud data":"Actualiser les données cloud","Management center":"Centre de gestion",
+    "Point of sale":"Point de vente","Inventory":"Stock","Sales ledger":"Registre des ventes","Customers & credit":"Clients et crédit",
+    "Purchasing":"Achats","Reports & insights":"Rapports et analyses","Branches":"Succursales","Staff access":"Accès du personnel",
+    "POS terminals":"Terminaux POS","Stock transfers":"Transferts de stock","Subscription":"Abonnement","System diagnostics":"Diagnostic système",
+    "Sync hub":"Centre de synchronisation","Owner access":"Accès propriétaire","Backup & recovery":"Sauvegarde et récupération","Shop settings":"Paramètres de la boutique",
+    "Sales and purchasing":"Ventes et achats","Business identity & finance":"Identité commerciale et finances",
+    "Appearance & theme":"Apparence et thème","Interface language":"Langue de l'interface","Desktop preferences":"Préférences du bureau",
+    "Automatic cloud synchronization":"Synchronisation cloud automatique","Cloud refresh interval":"Intervalle d'actualisation cloud",
+    "Reduce interface motion":"Réduire les animations","Start page after sign-in":"Page d'accueil après connexion",
+    "No signed snapshot uploaded yet":"Aucun instantané signé envoyé","Snapshot integrity verified":"Intégrité de l'instantané vérifiée",
+    "Saved securely on this device. It will sync automatically when the connection returns.":"Enregistré en sécurité sur cet appareil. La synchronisation reprendra au retour du réseau.",
+    "Changes saved to the shared BeBoss shop snapshot.":"Modifications enregistrées dans l'instantané partagé BeBoss.",
+    "Secure owner access":"Accès propriétaire sécurisé","Encrypted local database":"Base locale chiffrée",
+    "Cloud synchronization":"Synchronisation cloud","System compatibility":"Compatibilité du système","Device identity":"Identité de l'appareil",
+    "Encrypted database":"Base de données chiffrée","Credential vault":"Coffre d'identifiants","Cloud connectivity":"Connectivité cloud",
+    "Ready":"Prêt","Continue":"Continuer","Finish setup":"Terminer la configuration","Back to welcome":"Retour à l'accueil",
+    "Sign in to your shop":"Se connecter à votre boutique",
+    "Owner access protected by registered-phone verification":"Accès propriétaire protégé par la vérification du téléphone enregistré"
+  },
+  sw: {
+    "Workspace":"Sehemu ya kazi","Operations":"Shughuli","Intelligence":"Uchambuzi","Organization":"Shirika","Administration":"Usimamizi",
+    "Retail Command":"Kituo cha biashara","Shop owner":"Mmiliki wa duka","Cloud synced":"Imesawazishwa kwenye mtandao","Offline cache":"Data iliyohifadhiwa offline",
+    "Verified shop data":"Data ya duka iliyothibitishwa","Refresh cloud data":"Sasisha data ya mtandao","Management center":"Kituo cha usimamizi",
+    "Point of sale":"Sehemu ya mauzo","Inventory":"Bidhaa","Sales ledger":"Daftari la mauzo","Customers & credit":"Wateja na mikopo",
+    "Purchasing":"Manunuzi","Reports & insights":"Ripoti na uchambuzi","Branches":"Matawi","Staff access":"Ufikiaji wa wafanyakazi",
+    "POS terminals":"Vifaa vya POS","Stock transfers":"Uhamisho wa bidhaa","Subscription":"Usajili","System diagnostics":"Ukaguzi wa mfumo",
+    "Sync hub":"Kituo cha usawazishaji","Owner access":"Ufikiaji wa mmiliki","Backup & recovery":"Nakala rudufu na urejeshaji","Shop settings":"Mipangilio ya duka",
+    "Sales and purchasing":"Mauzo na manunuzi","Business identity & finance":"Utambulisho na fedha za biashara",
+    "Appearance & theme":"Mwonekano na mandhari","Interface language":"Lugha ya kiolesura","Desktop preferences":"Mapendeleo ya kompyuta",
+    "Automatic cloud synchronization":"Usawazishaji wa mtandao kiotomatiki","Cloud refresh interval":"Muda wa kusasisha mtandao",
+    "Reduce interface motion":"Punguza uhuishaji","Start page after sign-in":"Ukurasa wa kuanza baada ya kuingia",
+    "No signed snapshot uploaded yet":"Hakuna snapshot iliyosainiwa iliyopakiwa","Snapshot integrity verified":"Uadilifu wa snapshot umethibitishwa",
+    "Saved securely on this device. It will sync automatically when the connection returns.":"Imehifadhiwa salama kwenye kifaa hiki. Itasawazishwa intaneti itakaporudi.",
+    "Changes saved to the shared BeBoss shop snapshot.":"Mabadiliko yamehifadhiwa kwenye snapshot ya BeBoss inayoshirikiwa.",
+    "Secure owner access":"Ufikiaji salama wa mmiliki","Encrypted local database":"Hifadhidata fiche ya ndani",
+    "Cloud synchronization":"Usawazishaji wa mtandao","System compatibility":"Ulinganifu wa mfumo","Device identity":"Utambulisho wa kifaa",
+    "Encrypted database":"Hifadhidata fiche","Credential vault":"Hifadhi ya siri","Cloud connectivity":"Muunganisho wa mtandao",
+    "Ready":"Tayari","Continue":"Endelea","Finish setup":"Maliza usanidi","Back to welcome":"Rudi kwenye ukurasa wa mwanzo",
+    "Sign in to your shop":"Ingia kwenye duka lako",
+    "Owner access protected by registered-phone verification":"Ufikiaji wa mmiliki unalindwa kwa uthibitisho wa simu iliyosajiliwa"
+  }
+};
+
+const DESKTOP_OPERATIONAL_TRANSLATIONS: Record<DesktopLanguage, Record<string, string>> = {
+  en: {
+    "Installation log":"Installation log","Choose the desktop page opened after sign-in.":"Choose the desktop page opened after sign-in.",
+    "Manual":"Manual","1 minute":"1 minute","5 minutes":"5 minutes","15 minutes":"15 minutes",
+    "Supabase host is reachable":"Supabase host is reachable","TCP reachability verified":"TCP reachability verified",
+    "Authentication will be tested at owner sign-in.":"Authentication will be tested at owner sign-in.",
+    "Cloud host is not configured; online sign-in and synchronization require build configuration.":"Cloud host is not configured; online sign-in and synchronization require build configuration.",
+    "Cloud is currently unreachable; offline local setup remains available.":"Cloud is currently unreachable; offline local setup remains available.",
+    "All required local checks passed.":"All required local checks passed.",
+    "Local checks passed with a cloud connectivity warning.":"Local checks passed with a cloud connectivity warning.",
+    "The latest mobile snapshot set is incomplete. Wait for the phone's automatic sync retry.":"The latest mobile snapshot set is incomplete. Wait for the phone's automatic sync retry.",
+    "Owner access is no longer authorized.":"Owner access is no longer authorized.",
+    "Business data remains protected until owner verification succeeds.":"Business data remains protected until owner verification succeeds."
+  },
+  rw: {
+    "Installation log":"Amakuru y'igenzura ry'iyinjiza","Choose the desktop page opened after sign-in.":"Hitamo ipaji izafunguka nyuma yo kwinjira.",
+    "Manual":"Ukoresheje intoki","1 minute":"Umunota 1","5 minutes":"Iminota 5","15 minutes":"Iminota 15",
+    "Supabase host is reachable":"Seriveri ya Supabase iragerwaho","TCP reachability verified":"Kugera kuri TCP byemejwe",
+    "Authentication will be tested at owner sign-in.":"Uburenganzira buzagenzurwa igihe nyir'iduka yinjira.",
+    "Cloud host is not configured; online sign-in and synchronization require build configuration.":"Aderesi ya Cloud ntiyashyizweho; kwinjira no guhuza amakuru bisaba kubanza gutegura porogaramu.",
+    "Cloud is currently unreachable; offline local setup remains available.":"Cloud ntigerwaho ubu; ushobora gukomeza gutegura mudasobwa nta internet.",
+    "All required local checks passed.":"Igenzura ryose rya mudasobwa ryatsinze.",
+    "Local checks passed with a cloud connectivity warning.":"Igenzura rya mudasobwa ryatsinze ariko hari ikibazo cya Cloud.",
+    "The latest mobile snapshot set is incomplete. Wait for the phone's automatic sync retry.":"Amakuru aheruka kuva kuri telefone ntiyuzuye. Tegereza ko ihuza ryikora ryongera kugerageza.",
+    "Owner access is no longer authorized.":"Uburenganzira bwa nyir'iduka ntibukiriho.",
+    "Business data remains protected until owner verification succeeds.":"Amakuru y'ubucuruzi akomeza kurindwa kugeza nyir'iduka yemejwe."
+  },
+  fr: {
+    "Installation log":"Journal d'installation","Choose the desktop page opened after sign-in.":"Choisissez la page affichée après la connexion.",
+    "Manual":"Manuel","1 minute":"1 minute","5 minutes":"5 minutes","15 minutes":"15 minutes",
+    "Supabase host is reachable":"L'hôte Supabase est accessible","TCP reachability verified":"Connectivité TCP vérifiée",
+    "Authentication will be tested at owner sign-in.":"L'authentification sera vérifiée à la connexion du propriétaire.",
+    "Cloud host is not configured; online sign-in and synchronization require build configuration.":"L'hôte cloud n'est pas configuré ; la connexion et la synchronisation nécessitent la configuration du build.",
+    "Cloud is currently unreachable; offline local setup remains available.":"Le cloud est actuellement inaccessible ; la configuration locale hors ligne reste disponible.",
+    "All required local checks passed.":"Tous les contrôles locaux requis ont réussi.",
+    "Local checks passed with a cloud connectivity warning.":"Les contrôles locaux ont réussi, avec un avertissement de connectivité cloud.",
+    "The latest mobile snapshot set is incomplete. Wait for the phone's automatic sync retry.":"Le dernier ensemble d'instantanés mobiles est incomplet. Attendez la nouvelle tentative de synchronisation du téléphone.",
+    "Owner access is no longer authorized.":"L'accès propriétaire n'est plus autorisé.",
+    "Business data remains protected until owner verification succeeds.":"Les données commerciales restent protégées jusqu'à la validation du propriétaire."
+  },
+  sw: {
+    "Installation log":"Kumbukumbu ya usanidi","Choose the desktop page opened after sign-in.":"Chagua ukurasa wa kompyuta utakaofunguka baada ya kuingia.",
+    "Manual":"Kwa mkono","1 minute":"Dakika 1","5 minutes":"Dakika 5","15 minutes":"Dakika 15",
+    "Supabase host is reachable":"Seva ya Supabase inafikika","TCP reachability verified":"Muunganisho wa TCP umethibitishwa",
+    "Authentication will be tested at owner sign-in.":"Uthibitisho wa kuingia utakaguliwa mmiliki anapoingia.",
+    "Cloud host is not configured; online sign-in and synchronization require build configuration.":"Seva ya mtandao haijawekwa; usanidi wa programu unahitajika kwa kuingia na kusawazisha data.",
+    "Cloud is currently unreachable; offline local setup remains available.":"Mtandao haupatikani kwa sasa; usanidi wa ndani bila intaneti bado unawezekana.",
+    "All required local checks passed.":"Ukaguzi wote wa ndani unaohitajika umefaulu.",
+    "Local checks passed with a cloud connectivity warning.":"Ukaguzi wa ndani umefaulu lakini kuna tahadhari ya muunganisho wa mtandao.",
+    "The latest mobile snapshot set is incomplete. Wait for the phone's automatic sync retry.":"Seti ya mwisho ya snapshot ya simu haijakamilika. Subiri simu ijaribu kusawazisha tena kiotomatiki.",
+    "Owner access is no longer authorized.":"Ufikiaji wa mmiliki hauna idhini tena.",
+    "Business data remains protected until owner verification succeeds.":"Data ya biashara itaendelea kulindwa hadi uthibitisho wa mmiliki ufanikiwe."
+  }
+};
+for (const language of ["en", "rw", "fr", "sw"] as DesktopLanguage[]) {
+  const missing = Object.keys(DESKTOP_OPERATIONAL_TRANSLATIONS.en).filter((key) => typeof DESKTOP_OPERATIONAL_TRANSLATIONS[language][key] !== "string");
+  if (missing.length) throw new Error("Missing operational translation for " + language + ": " + missing.join(", "));
+  Object.assign(DICTIONARY[language], DESKTOP_OPERATIONAL_TRANSLATIONS[language]);
+}
+
+const DESKTOP_CORE_KEYS = Object.keys(DESKTOP_CORE_TRANSLATIONS.en);
+for (const language of ["en", "rw", "fr", "sw"] as DesktopLanguage[]) {
+  for (const key of DESKTOP_CORE_KEYS) {
+    if (typeof DESKTOP_CORE_TRANSLATIONS[language][key] !== "string") {
+      throw new Error("Missing desktop translation for " + language + ": " + key);
+    }
+  }
+  Object.assign(DICTIONARY[language], DESKTOP_CORE_TRANSLATIONS[language]);
+}
 const normalize = (value: string) => value.trim().replace(/\s+/g, " ");
 const nodeOriginals = new WeakMap<Text, { original: string; rendered: string }>();
 const attributeOriginals = new WeakMap<Element, Map<string, { original: string; rendered: string }>>();

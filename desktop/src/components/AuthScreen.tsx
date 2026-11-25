@@ -1,7 +1,8 @@
 import type React from "react";
 import { useEffect, useState } from "react";
-import { AlertTriangle, LoaderCircle, ShieldCheck, Smartphone, Sparkles, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, LoaderCircle, ShieldCheck, Smartphone, Sparkles, Zap } from "lucide-react";
 import { type OwnerCredentials, requestOwnerOtp, toOwnerPhoneE164, verifyOwnerOtp } from "../lib/cloud";
+import type { DesktopPreferences } from "../lib/types";
 import { errorText } from "../lib/format";
 
 type AuthLang = "EN" | "RW" | "FR" | "SW";
@@ -14,7 +15,7 @@ const AUTH_COPY: Record<AuthLang, {
   usernameLabel: string; phoneLabel: string; codeLabel: string;
   usernamePlaceholder: string; phonePlaceholder: string; codePlaceholder: string;
   sendBtn: string; verifyBtn: string; busy: string; changeOwner: string;
-  secureNote: string; sentNotice: string; language: string;
+  secureNote: string; sentNotice: string; language: string; backToHome: string;
 }> = {
   EN: {
     marketing: "RETAIL OPERATIONS PLATFORM", headline: "Run your business.",
@@ -31,7 +32,7 @@ const AUTH_COPY: Record<AuthLang, {
     sendBtn: "Send secure verification code", verifyBtn: "Verify owner and open desktop", busy: "Please wait…",
     changeOwner: "Change owner details", secureNote: "Your session is encrypted by the operating-system keyring.",
     sentNotice: "If the details match a registered shop owner, an SMS verification code has been sent to the registered phone.",
-    language: "Language"
+    language: "Language", backToHome: "Back to welcome"
   },
   RW: {
     marketing: "URUBURO RWUBUTUNGA", headline: "Kora ubucuruzi bwawe.",
@@ -48,7 +49,7 @@ const AUTH_COPY: Record<AuthLang, {
     sendBtn: "Ohereza kode yo kwemeza", verifyBtn: "Emeza umukuru ufungure mudasobwa", busy: "Tegereza…",
     changeOwner: "Hindura amakuru y'umukuru", secureNote: "Igihe cyawe kirinzwe n'ububiko bw'umutekano wa sisitemu.",
     sentNotice: "Niba amakuru ahuza n'umukuru w'iduka wanditse, kode yo kwemeza yohererejwe kuri telefone yanditse.",
-    language: "Ururimi"
+    language: "Ururimi", backToHome: "Subira ku rupapuro rw’ibanze"
   },
   FR: {
     marketing: "PLATEFORME D'EXPLOITATION COMMERCIALE", headline: "Gérez votre commerce.",
@@ -65,7 +66,7 @@ const AUTH_COPY: Record<AuthLang, {
     sendBtn: "Envoyer le code de vérification", verifyBtn: "Vérifier et ouvrir le bureau", busy: "Veuillez patienter…",
     changeOwner: "Modifier les coordonnées", secureNote: "Votre session est chiffrée par le coffre-fort du système.",
     sentNotice: "Si les informations correspondent à un propriétaire enregistré, un code de vérification a été envoyé par SMS au numéro enregistré.",
-    language: "Langue"
+    language: "Langue", backToHome: "Retour à l’accueil"
   },
   SW: {
     marketing: "JUKWAA LA UENDESHAJI WA BIASHARA", headline: "Endesha biashara yako.",
@@ -82,11 +83,11 @@ const AUTH_COPY: Record<AuthLang, {
     sendBtn: "Tuma namba ya uthibitisho", verifyBtn: "Thibitisha na ufungue kompyuta", busy: "Tafadhali subiri…",
     changeOwner: "Badilisha maelezo ya mmiliki", secureNote: "Kikao chako kimehifadhiwa kwa usalama na hifadhi ya mfumo.",
     sentNotice: "Ikiwa maelezo yanalingana na mmiliki aliyesajiliwa, namba ya uthibitisho imetumwa kwa namba iliyosajiliwa.",
-    language: "Lugha"
+    language: "Lugha", backToHome: "Rudi kwenye ukurasa wa mwanzo"
   }
 };
 
-export function AuthScreen({ onAuthenticated }: { onAuthenticated: (owner: OwnerCredentials) => Promise<void> }) {
+export function AuthScreen({ onAuthenticated, onBack, theme }: { onAuthenticated: (owner: OwnerCredentials) => Promise<void>; onBack: () => void; theme: DesktopPreferences["theme"] }) {
   const [lang, setLang] = useState<AuthLang>("EN");
   const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
@@ -143,7 +144,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (owner: Owner
     finally { setBusy(false); }
   }
 
-  return <div className="auth-shell">
+  return <div className="auth-shell" data-theme={theme}>
     <div className="auth-art">
       <div className="auth-art-photo">
         <img src="/Friendly Modern Store Checkout.png" alt="BeBoss store" />
@@ -193,6 +194,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (owner: Owner
         <div className="auth-form-brand">
           <img src="/beboss-wordmark-light.png" alt="BeBoss" className="auth-wordmark" />
         </div>
+        <button type="button" className="auth-back-home" onClick={onBack}><ArrowLeft size={14} />{t.backToHome}</button>
         <div className="auth-form-icon"><ShieldCheck size={23} /></div>
         <span className="eyebrow muted">{t.formEyebrow}</span>
         <h2>{t.formTitle}</h2>

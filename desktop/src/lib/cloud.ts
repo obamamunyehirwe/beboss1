@@ -27,6 +27,18 @@ export const authClient = createClient(url, publishableKey, {
 });
 
 export type OwnerCredentials = { username: string; phone: string };
+
+export class OwnerAuthorizationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OwnerAuthorizationError";
+  }
+}
+
+function isOwnerAuthorizationMessage(value: unknown) {
+  const message = typeof value === "string" ? value.toLowerCase() : "";
+  return /sign in with the registered shop-owner phone|sms-verified account|registered beboss shop owner|shop has been disabled|owner access .*revoked|not been enrolled as the owner|secure shop-owner enrollment|owner session has expired|unauthorized|forbidden|not authorized/.test(message);
+}
 export type DesktopAction =
   | "bootstrap"
   | "save_snapshot"
@@ -73,7 +85,7 @@ export async function callDesktopApi<T = Record<string, unknown>>(
 ): Promise<T> {
   const { data: sessionData } = await authClient.auth.getSession();
   const session = sessionData.session;
-  if (!session?.access_token) throw new Error("Your owner session has expired. Verify your phone again.");
+  if (!session?.access_token) throw new OwnerAuthorizationError("Your owner session has expired. Verify your phone again.");
 
   const { data, error } = await authClient.functions.invoke("beboss-desktop", {
     body: { action, ...credentials, ...payload }
@@ -82,12 +94,19 @@ export async function callDesktopApi<T = Record<string, unknown>>(
     const context = (error as { context?: Response }).context;
     if (context) {
       const details = await context.clone().json().catch(() => null);
-      if (typeof details?.message === "string") throw new Error(details.message);
+      const responseMessage = typeof details?.message === "string" ? details.message : "";
+      if (context.status === 401 || context.status === 403 || isOwnerAuthorizationMessage(responseMessage)) {
+        throw new OwnerAuthorizationError(responseMessage || "The owner session is no longer authorized.");
+      }
+      if (responseMessage) throw new Error(responseMessage);
     }
+    if (isOwnerAuthorizationMessage(error.message)) throw new OwnerAuthorizationError(error.message);
     throw new Error(error.message || "The BeBoss cloud request failed.");
   }
   if (!data || data.ok !== true) {
-    throw new Error(typeof data?.message === "string" ? data.message : "The BeBoss cloud request was rejected.");
+    const message = typeof data?.message === "string" ? data.message : "The BeBoss cloud request was rejected.";
+    if (isOwnerAuthorizationMessage(message)) throw new OwnerAuthorizationError(message);
+    throw new Error(message);
   }
   return data as T;
 }
