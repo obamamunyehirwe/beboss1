@@ -81,6 +81,8 @@ jobs:
           src/lib/bb2.ts
           src/lib/bb2.test.ts
           src/lib/public.functions.ts
+          src/lib/owner-otp-rate-limit.ts
+          src/lib/owner-otp-rate-limit.test.ts
           src/routes/my-shop.tsx
           src/lib/admin-queries.ts
           src/lib/admin-copy.ts

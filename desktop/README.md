@@ -36,13 +36,13 @@ Build the frontend only for UI preview/testing (native operating-system checks w
 bun run dev:ui
 ```
 
-Build a Windows installer:
+Build a native installer for the current operating system:
 
 ```powershell
 bun run dist:win
 ```
 
-The output is created under `src-tauri/target/release/bundle/nsis`.
+Use `bun run dist:mac` on macOS and `bun run dist:linux` on Linux. The corresponding outputs are created under `src-tauri/target/release/bundle/nsis`, `dmg`, and `appimage`. GitHub Actions also builds unsigned packages for all three platforms and publishes SHA-256 manifests for integrity verification.
 
 ## Data and credentials
 
