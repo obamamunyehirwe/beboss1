@@ -556,7 +556,7 @@ fn system_diagnostics(app: tauri::AppHandle) -> Result<SystemDiagnostics, String
 
 #[tauri::command]
 fn network_ping(target_host: Option<String>) -> Result<NetworkPingResult, String> {
-    let host = target_host.unwrap_or_else(|| "dxrkvljomgqffvrygbbw.supabase.co:443".to_string());
+    let host = target_host.unwrap_or_else(|| "ahlpvlhmpfiyeoercxol.supabase.co:443".to_string());
     let socket_addr = host.to_socket_addrs().map_err(|e| format!("DNS lookup failed: {e}"))?
         .next().ok_or_else(|| "Could not resolve hostname".to_string())?;
 

@@ -5,12 +5,11 @@ import {
   Package, RefreshCw, Search, Settings, ShieldCheck, ShoppingCart, Smartphone, Truck, UserRound,
   Users, Warehouse, X, Zap, Languages
 } from "lucide-react";
-import { callDesktopApi, currentSession, signOut, type OwnerCredentials } from "./lib/cloud";
+import { callDesktopApi, currentSession, signOut, OwnerAuthorizationError, type OwnerCredentials } from "./lib/cloud";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
 import type { CloudState, DesktopPreferences, NavKey, ReceiptPayload, Row, Snapshot } from "./lib/types";
 import { AuthScreen } from "./components/AuthScreen";
-import { SetupWizard } from "./components/SetupWizard";
 import { ReceiptPreview } from "./components/ReceiptPreview";
 import { LoginHint } from "./components/ui";
 import { OverviewPage } from "./components/screens/OverviewPage";
@@ -87,6 +86,7 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
 export default function App() {
   const [startupReady, setStartupReady] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
   const [owner, setOwner] = useState<OwnerCredentials | null>(null);
   const [cloud, setCloud] = useState<CloudState | null>(null);
   const [view, setView] = useState<NavKey>("welcome");
@@ -111,6 +111,13 @@ export default function App() {
         transfers: data.transfers, staff: data.staff, announcements: data.announcements, serverTime: data.serverTime
       }));
     } catch (e) { console.warn("Encrypted cache could not be updated", e); }
+  }
+
+  async function invalidateOwnerAuthorization() {
+    await signOut().catch(() => undefined);
+    await window.beBossDesktop.secureStore.remove("owner-identity").catch(() => false);
+    setOwner(null); setCloud(null); setOffline(false); setShowAuth(true);
+    setError("Owner authorization is no longer valid. Verify the registered owner phone again before opening cached shop data.");
   }
 
   async function bootstrap(credentials: OwnerCredentials, showBusy = true) {
@@ -139,6 +146,10 @@ export default function App() {
       return true;
     } catch (e) {
       const message = errorText(e);
+      if (e instanceof OwnerAuthorizationError) {
+        await invalidateOwnerAuthorization();
+        return false;
+      }
       const cached = await window.beBossDesktop.secureStore.get("shop-cache:" + credentials.username).catch(() => null);
       if (cached) {
         try {
@@ -218,14 +229,9 @@ export default function App() {
       try {
         const idValue = await window.beBossDesktop.getDeviceId();
         if (alive) setDeviceId(idValue);
-        const session = await currentSession();
-        const identity = await window.beBossDesktop.secureStore.get("owner-identity");
-        if (session && identity) {
-          const parsed = JSON.parse(identity) as OwnerCredentials;
-          if (parsed.username && parsed.phone && alive) { setOwner(parsed); setView(preferences.defaultView); await bootstrap(parsed); }
-        }
-      } catch (e) { if (alive) setError(errorText(e)); }
-      finally { if (alive) setBusy(false); }
+      } catch (e) {
+        if (alive) setError("Desktop device initialization failed: " + errorText(e));
+      }
     })();
     return () => { alive = false; };
   }, [startupReady, setupRequired, preferencesReady]);
@@ -259,12 +265,42 @@ export default function App() {
 
   async function authenticated(credentials: OwnerCredentials) {
     const ready = await bootstrap(credentials);
-    if (ready) setView(preferences.defaultView);
+    if (ready) {
+      setShowAuth(false);
+      setView(preferences.defaultView);
+    } else {
+      setShowAuth(true);
+    }
+  }
+  async function enterSignIn() {
+    setBusy(true); setError("");
+    try {
+      const [session, identity] = await Promise.all([
+        currentSession(),
+        window.beBossDesktop.secureStore.get("owner-identity")
+      ]);
+      if (session && identity) {
+        const parsed = JSON.parse(identity) as OwnerCredentials;
+        if (parsed.username && parsed.phone) {
+          const restored = await bootstrap(parsed, false);
+          if (restored) {
+            setShowAuth(false);
+            setView(preferences.defaultView);
+            return;
+          }
+        }
+      }
+      setShowAuth(true);
+    } catch (e) {
+      setError(errorText(e));
+      setShowAuth(true);
+    } finally { setBusy(false); }
   }
   async function refresh() { if (owner) await bootstrap(owner); }
   async function saveDesktopPreferences(value: DesktopPreferences) {
     const next = normalizeDesktopPreferences(value);
     await window.beBossDesktop.secureStore.set("desktop-preferences", JSON.stringify(next));
+    await window.beBossDesktop.secureStore.set("ui-language", next.language.toUpperCase());
     setPreferences(next);
   }
 
@@ -296,6 +332,10 @@ export default function App() {
       setTimeout(() => setNotice(""), 4500);
     } catch (e) {
       const message = errorText(e);
+      if (e instanceof OwnerAuthorizationError) {
+        await invalidateOwnerAuthorization();
+        throw e;
+      }
       if (!navigator.onLine || /failed to fetch|network|timeout|connection|offline/i.test(message)) {
         setCloud({ ...cloud, snapshot: ensureSnapshot(localTransaction.payload as Snapshot) }); setOffline(true); setError("");
         setNotice("Saved securely on this device. It will sync automatically when the connection returns."); return;
@@ -319,7 +359,11 @@ export default function App() {
       const result = await callDesktopApi(action, owner, payload);
       await bootstrap(owner, false);
       return result as Record<string, any>;
-    } catch (e) { setError(errorText(e)); throw e; }
+    } catch (e) {
+      if (e instanceof OwnerAuthorizationError) await invalidateOwnerAuthorization();
+      else setError(errorText(e));
+      throw e;
+    }
     finally { setBusy(false); }
   }
 
@@ -423,7 +467,8 @@ export default function App() {
       await bootstrap(owner, false);
       setNotice("Staff role, branch, operating state and available mobile permissions were synchronized.");
     } catch (e) {
-      setError(errorText(e));
+      if (e instanceof OwnerAuthorizationError) await invalidateOwnerAuthorization();
+      else setError(errorText(e));
       throw e;
     } finally { setBusy(false); }
   }
@@ -433,21 +478,46 @@ export default function App() {
     try {
       await signOut();
       await window.beBossDesktop.secureStore.remove("owner-identity");
-      setOwner(null); setCloud(null); setOffline(false); setView("overview"); setError(""); setNotice("");
+      setOwner(null); setCloud(null); setOffline(false); setView("welcome"); setShowAuth(false); setError(""); setNotice("");
     } catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
 
-  if (!startupReady) {
+  if (!startupReady || !preferencesReady) {
     return <div className="setup-loading"><LoaderCircle className="spin" size={28} /><span>Preparing BeBoss Desktop…</span></div>;
   }
 
   if (setupRequired) {
-    return <SetupWizard onComplete={() => { setError(""); setSetupRequired(false); }} />;
+    return <SetupWizard
+      initialPreferences={preferences}
+      onComplete={async (nextPreferences) => {
+        await saveDesktopPreferences(nextPreferences);
+        await window.beBossDesktop.secureStore.set("installation-setup-version", window.beBossDesktop.version);
+        await window.beBossDesktop.secureStore.set("installation-setup-completed-at", new Date().toISOString());
+        setError(""); setSetupRequired(false); setShowAuth(false);
+      }}
+    />;
   }
 
   if (!owner || !cloud) {
-    return <><AuthScreen onAuthenticated={authenticated} />{busy && <div className="global-loading"><LoaderCircle className="spin" size={26} /><span>Connecting to BeBoss Cloud…</span></div>}{error && <div className="login-error">{error}<button onClick={() => setError("")}><X size={15} /></button></div>}</>;
+    if (!showAuth) {
+      return <>
+        <LandingPage
+          language={preferences.language}
+          theme={preferences.theme}
+          onLanguageChange={(language) => void saveDesktopPreferences({ ...preferences, language })}
+          onThemeChange={(theme) => void saveDesktopPreferences({ ...preferences, theme })}
+          onSignIn={() => void enterSignIn()}
+        />
+        {busy && <div className="global-loading"><LoaderCircle className="spin" size={26} /><span>Verifying your owner session…</span></div>}
+        {error && <div className="login-error">{error}<button onClick={() => setError("")}><X size={15} /></button></div>}
+      </>;
+    }
+    return <>
+      <AuthScreen onAuthenticated={authenticated} onBack={() => { setShowAuth(false); setError(""); }} theme={preferences.theme} />
+      {busy && <div className="global-loading"><LoaderCircle className="spin" size={26} /><span>Connecting to BeBoss Cloud…</span></div>}
+      {error && <div className="login-error">{error}<button onClick={() => setError("")}><X size={15} /></button></div>}
+    </>;
   }
 
   const snapshot = ensureSnapshot(cloud.snapshot);
@@ -471,7 +541,8 @@ export default function App() {
   }
 
   return <div className="app-shell" data-theme={preferences.theme} data-density={preferences.density} data-accent={preferences.accent} data-motion={preferences.reducedMotion ? "reduced" : "full"} data-language={preferences.language}>
-    <aside className={"sidebar " + (menuOpen ? "open" : "")}>
+    {menuOpen && <button type="button" className="sidebar-backdrop" aria-label="Close navigation menu" onClick={() => setMenuOpen(false)} />}
+    <aside className={"sidebar " + (menuOpen ? "open" : "")} id="desktop-navigation">
       <div className="brand-row"><span className="brand-mark brand-logo-mark"><img src="/beboss-app-icon.png" alt="BeBoss" /></span><div><strong>BeBoss</strong><small>RETAIL COMMAND</small></div><span className="desktop-tag">DESKTOP</span></div>
       <div className="shop-switcher"><span className="shop-avatar">{s(cloud.shop.shop_name).slice(0, 1).toUpperCase() || "B"}</span><div><strong>{s(cloud.shop.shop_name) || "My Shop"}</strong><small>@{owner.username}</small></div><ChevronDown size={15} /></div>
       <nav className="side-nav">
@@ -495,7 +566,7 @@ export default function App() {
 
     <main className="main-area">
       <header className="topbar">
-        <div className="topbar-left"><button className="mobile-menu icon-btn" onClick={() => setMenuOpen((v) => !v)}><Menu size={20} /></button><div className="breadcrumb"><span>BeBoss</span><b>/</b><strong>{pageTitle}</strong></div></div>
+        <div className="topbar-left"><button type="button" className="mobile-menu icon-btn" aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"} aria-expanded={menuOpen} aria-controls="desktop-navigation" onClick={() => setMenuOpen((v) => !v)}><Menu size={20} /></button><div className="breadcrumb"><span>BeBoss</span><b>/</b><strong>{pageTitle}</strong></div></div>
         <div className="topbar-right">
           <button className="command-btn" onClick={() => setPaletteOpen(true)} title="Command menu (Ctrl+K)"><Search size={15} /><span>Command</span><kbd>Ctrl K</kbd></button>
           <label className="desktop-language-control"><Languages size={15} /><select aria-label="Interface language" value={preferences.language} onChange={(event) => void saveDesktopPreferences({ ...preferences, language: event.target.value as DesktopPreferences["language"] })}>{DESKTOP_LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.short}</option>)}</select></label>

@@ -85,3 +85,17 @@
 !macro NSIS_HOOK_POSTUNINSTALL
   DetailPrint "Uninstall complete. Thank you for using BeBoss."
 !macroend
+
+; Tauri's NSIS finish page includes a preselected "Run BeBoss" action.
+; The generated installer uses nsis_tauri_utils::RunAsUser, so clicking Finish
+; launches the desktop app in the signed-in user's context, not as the elevated
+; per-machine installer. Keep the action enabled and use a clear label.
+!macro NSIS_HOOK_PREFINISHPAGE
+  !ifdef MUI_FINISHPAGE_RUN_NOTCHECKED
+    !undef MUI_FINISHPAGE_RUN_NOTCHECKED
+  !endif
+  !ifdef MUI_FINISHPAGE_RUN_TEXT
+    !undef MUI_FINISHPAGE_RUN_TEXT
+  !endif
+  !define MUI_FINISHPAGE_RUN_TEXT "Launch BeBoss Desktop"
+!macroend
