@@ -201,8 +201,11 @@ create index if not exists app_releases_public_published_idx
 
 drop policy if exists "Anyone reads releases" on public.app_releases;
 drop policy if exists "Anyone reads public releases" on public.app_releases;
-create policy "Anyone reads public releases"
-on public.app_releases for select to anon, authenticated
+create policy "Public reads listed releases"
+on public.app_releases for select to anon
+using (is_public);
+create policy "Admins read release archive"
+on public.app_releases for select to authenticated
 using (
   is_public
   or public.is_beboss_admin()
