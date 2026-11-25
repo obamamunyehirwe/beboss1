@@ -1,3 +1,4 @@
+import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import {
   Activity, Check, Download, KeyRound, LogOut, RefreshCw,
@@ -260,8 +261,9 @@ export function AdminConsolePage() {
       setNotice("Saved: " + details);
       await refreshData();
     } catch (e) {
-      setError(errorText(e));
+      const message = errorText(e);
       await refreshData();
+      setError(message);
     } finally {
       setBusyKey("");
     }
@@ -415,17 +417,10 @@ export function AdminConsolePage() {
       setDecision(null); setDecisionNote("");
       await refreshData();
     } catch (e) {
-      setError(errorText(e));
+      const message = errorText(e);
       await refreshData();
+      setError(message);
     } finally { setBusyKey(""); }
-  }
-
-  async function auditAction(action: string, target: string, details: string) {
-    const { error: auditError } = await masterAdminAuthClient.from("admin_audit_logs").insert({
-      id: id(), admin_email: adminEmail || "BeBoss Master Admin", action,
-      target_id: target, details: details.slice(0, 1000), created_at: Date.now()
-    });
-    if (auditError) throw new Error("The change was saved, but its audit record failed: " + auditError.message);
   }
 
   function openShopControls(shop: Row) {
