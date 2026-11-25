@@ -19,7 +19,7 @@
   ; Tauri stores user data under the platform app_data_dir. The installer must
   ; not create an unrelated second data directory.
   
-  ; Register application
+  ; Register application for the installing Windows user (no administrator elevation required).
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "DisplayName" "BeBoss Desktop"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "DisplayVersion" "1.3.0"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "Publisher" "BeBoss Retail Operations"
@@ -76,7 +76,7 @@
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop"'
   Pop $1
 
-  ; Remove registry entries
+  ; Remove the per-user registry entries.
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop"
 
   DetailPrint "BeBoss Desktop has been removed."

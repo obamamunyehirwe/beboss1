@@ -853,6 +853,35 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true, ...records });
     }
 
+    if (action === "management_probe") {
+      // A small authenticated version probe keeps multiple desktop/mobile terminals
+      // responsive without repeatedly downloading the full shop snapshot.
+      const [shop, devices, branches, transfers, staff, snapshots] = await Promise.all([
+        admin.from("shop_accounts").select("updated_at").eq("id", owner.shopId).maybeSingle(),
+        admin.from("shop_devices").select("updated_at").eq("shop_sync_key", owner.shopId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+        admin.from("shop_branches").select("updated_at").eq("shop_sync_key", owner.shopId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+        admin.from("shop_stock_transfers").select("updated_at").eq("shop_sync_key", owner.shopId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+        admin.from("shop_users").select("updated_at").eq("shop_sync_key", owner.shopId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+        admin.from("branch_sync_snapshots").select("updated_at").eq("shop_sync_key", owner.shopId).order("updated_at", { ascending: false }).limit(1).maybeSingle()
+      ]);
+      for (const result of [shop, devices, branches, transfers, staff, snapshots]) {
+        if (result.error) throw new Error("Could not check the latest shop sync version: " + result.error.message);
+      }
+      const versionParts = [
+        number(shop.data?.updated_at),
+        number(devices.data?.updated_at),
+        number(branches.data?.updated_at),
+        number(transfers.data?.updated_at),
+        number(staff.data?.updated_at)
+      ];
+      return json(200, {
+        ok: true,
+        managementVersion: versionParts.join(":"),
+        latestSnapshotUpdatedAt: number(snapshots.data?.updated_at),
+        serverTime: Date.now()
+      });
+    }
+
     if (action === "save_snapshot") {
       const installationId = text(body.deviceId).trim();
       if (!isUuid(installationId)) throw new Error("The desktop installation identifier is invalid.");

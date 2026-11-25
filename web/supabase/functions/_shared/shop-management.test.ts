@@ -8,5 +8,6 @@ Deno.test("each additional active desktop/mobile device costs FRw 2,000 per mont
 });
 Deno.test("branch and staff pricing remains consistent with shop plan",()=>{
  assertEquals(monthlyShopFeeRwf(2,3,2),14000);
- assertEquals(monthlyShopFeeRwf(3,6,3),28000);
+ // Match the Android subscription calculator: a sixth worker adds FRw 1,000.
+ assertEquals(monthlyShopFeeRwf(3,6,3),29000);
 });

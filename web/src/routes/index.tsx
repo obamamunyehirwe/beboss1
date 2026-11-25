@@ -11,6 +11,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { ModernHero, ToolkitHeader } from "@/components/site/ModernHero";
+import { AnnouncementBanner } from "@/components/site/AnnouncementBanner";
 import { useI18n } from "@/lib/i18n";
 import { platformStatsQuery } from "@/lib/queries";
 import { liveConfigured } from "@/lib/live-config";
@@ -42,6 +43,7 @@ function Home() {
   return (
     <SiteLayout>
       <ModernHero />
+      {liveConfigured && <AnnouncementBanner />}
       <section className="retail-section">
         <ToolkitHeader />
         <div className="tool-grid">

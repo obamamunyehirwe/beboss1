@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, BarChart3, Bell, Building2, Briefcase, Check, ChevronDown,
   ClipboardList, CreditCard, Database, Home, LayoutDashboard, LoaderCircle, LogOut, Menu,
@@ -6,6 +6,7 @@ import {
   Users, Warehouse, X, Zap, Languages
 } from "lucide-react";
 import { callDesktopApi, currentSession, signOut, OwnerAuthorizationError, type OwnerCredentials } from "./lib/cloud";
+import { BrowserRuntimeNotice } from "./components/BrowserRuntimeNotice";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
 import type { CloudState, DesktopPreferences, NavKey, ReceiptPayload, Row, Snapshot } from "./lib/types";
@@ -86,7 +87,7 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
   { id: "settings", label: "Shop settings", icon: Settings, group: "Administration" }
 ];
 
-export default function App() {
+function NativeDesktopApp() {
   const [startupReady, setStartupReady] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
@@ -104,6 +105,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptPayload | null>(null);
+  const syncProbeRef = useRef({ ownerKey: "", managementVersion: "", snapshotUpdatedAt: 0, inFlight: false });
 
   async function saveCache(credentials: OwnerCredentials, data: CloudState) {
     try {
@@ -262,6 +264,59 @@ export default function App() {
   }, [owner, offline, preferences.autoSync, busy]);
 
   useEffect(() => {
+    if (!owner || offline || !preferences.autoSync) return;
+    const ownerKey = owner.username.trim().toLowerCase() + ":" + owner.phone.replace(/\\D/g, "");
+    if (syncProbeRef.current.ownerKey !== ownerKey) {
+      syncProbeRef.current = {
+        ownerKey,
+        managementVersion: "",
+        snapshotUpdatedAt: n(cloud?.snapshotUpdatedAt),
+        inFlight: false
+      };
+    }
+    let disposed = false;
+    const probeAndSync = async () => {
+      const current = syncProbeRef.current;
+      if (disposed || current.inFlight || busy || !navigator.onLine || document.visibilityState === "hidden") return;
+      current.inFlight = true;
+      try {
+        const probe = await callDesktopApi<{
+          ok: true; managementVersion: string; latestSnapshotUpdatedAt: number; serverTime: number;
+        }>("management_probe", owner);
+        if (disposed) return;
+        const latestSnapshotAt = n(probe.latestSnapshotUpdatedAt);
+        const snapshotChanged = latestSnapshotAt > Math.max(current.snapshotUpdatedAt, n(cloud?.snapshotUpdatedAt));
+        const managementChanged = current.managementVersion === "" || probe.managementVersion !== current.managementVersion;
+        if (snapshotChanged) {
+          const refreshed = await bootstrap(owner, false);
+          if (refreshed) current.snapshotUpdatedAt = latestSnapshotAt;
+        } else if (managementChanged) {
+          await refreshManagement();
+        }
+        current.managementVersion = probe.managementVersion;
+      } catch (e) {
+        // Probe failures are non-destructive: local work stays in the encrypted outbox
+        // and the next connectivity/focus/interval probe retries without spamming alerts.
+        console.warn("BeBoss change probe failed; the next sync cycle will retry.", e);
+      } finally {
+        current.inFlight = false;
+      }
+    };
+    const handleFocus = () => { void probeAndSync(); };
+    const handleOnline = () => { void probeAndSync(); };
+    void probeAndSync();
+    const timer = window.setInterval(() => { void probeAndSync(); }, 30_000);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [owner, offline, preferences.autoSync, busy, cloud?.snapshotUpdatedAt]);
+
+  useEffect(() => {
     if (!owner || offline || !preferences.autoSync || preferences.refreshMinutes === 0) return;
     const timer = window.setInterval(() => {
       if (navigator.onLine && !busy) void bootstrap(owner, false);
@@ -369,6 +424,30 @@ export default function App() {
     } finally { setBusy(false); }
   }
 
+  async function refreshManagement() {
+    if (!owner || offline) throw new Error("Reconnect the owner account before refreshing cloud management records.");
+    const management = await callDesktopApi<{
+      ok: true; shop: Row; devices: Row[]; branches: Row[]; transfers: Row[];
+      staff: Row[]; announcements: Row[]; payments: Row[]; codes: Row[]; serverTime: number;
+    }>("management_refresh", owner);
+    if (!cloud) return;
+    const updated: CloudState = {
+      ...cloud,
+      shop: management.shop,
+      devices: rows(management.devices),
+      branches: rows(management.branches),
+      transfers: rows(management.transfers),
+      staff: rows(management.staff),
+      announcements: rows(management.announcements),
+      payments: rows(management.payments),
+      codes: rows(management.codes),
+      serverTime: management.serverTime
+    };
+    setCloud(updated);
+    setOffline(false);
+    await saveCache(owner, updated);
+  }
+
   async function callAction(action: Parameters<typeof callDesktopApi>[0], payload: Record<string, unknown>) {
     if (!owner || offline) throw new Error("Reconnect and verify the shop owner before changing cloud management records.");
     setBusy(true); setError(""); setNotice("");
@@ -379,29 +458,7 @@ export default function App() {
         actorDeviceId: currentActorDeviceId,
         currentDeviceId: currentActorDeviceId
       });
-      // Management writes refresh only the compact organization projection.
-      // The multi-megabyte signed sales/inventory snapshot is left untouched.
-      const management = await callDesktopApi<{
-        ok: true; shop: Row; devices: Row[]; branches: Row[]; transfers: Row[];
-        staff: Row[]; announcements: Row[]; payments: Row[]; codes: Row[]; serverTime: number;
-      }>("management_refresh", owner);
-      if (cloud) {
-        const updated: CloudState = {
-          ...cloud,
-          shop: management.shop,
-          devices: rows(management.devices),
-          branches: rows(management.branches),
-          transfers: rows(management.transfers),
-          staff: rows(management.staff),
-          announcements: rows(management.announcements),
-          payments: rows(management.payments),
-          codes: rows(management.codes),
-          serverTime: management.serverTime
-        };
-        setCloud(updated);
-        setOffline(false);
-        await saveCache(owner, updated);
-      }
+      await refreshManagement();
       setNotice("Shop management changes are saved to BeBoss Cloud.");
       window.setTimeout(() => setNotice(""), 4500);
       return result as Record<string, any>;
@@ -657,9 +714,9 @@ export default function App() {
         {view === "customers" && <CustomersPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} onReceipt={openReceipt} />}
         {view === "purchases" && <PurchasesPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} />}
         {view === "reports" && <ReportsPage snapshot={snapshot} />}
-        {view === "branches" && <BranchesPage cloud={cloud} onAction={callAction} offline={offline} />}
+        {view === "branches" && <BranchesPage cloud={cloud} snapshot={snapshot} onAction={callAction} onRefresh={refreshManagement} offline={offline} />}
         {view === "staff" && <StaffPage cloud={cloud} snapshot={snapshot} onSaveStaff={saveStaffAccess} offline={offline} />}
-        {view === "devices" && <DevicesPage cloud={cloud} onAction={callAction} offline={offline} currentDeviceId={"DESKTOP:" + deviceId} />}
+        {view === "devices" && <DevicesPage cloud={cloud} onAction={callAction} onRefresh={refreshManagement} offline={offline} currentDeviceId={"DESKTOP:" + deviceId} />}
         {view === "transfers" && <TransfersPage cloud={cloud} snapshot={snapshot} onAction={callAction} offline={offline} />}
         {view === "billing" && <BillingPage cloud={cloud} onNavigate={setView} onCheckout={async (payload) => {
           const result = await callAction("create_checkout", payload);
@@ -703,4 +760,10 @@ export default function App() {
       onRefresh={() => { void refresh(); }}
     />}
   </div>;
+}
+
+/** Keep native-only setup, storage and device services out of ordinary browser previews. */
+export default function App() {
+  if (!window.beBossDesktop?.isNative) return <BrowserRuntimeNotice />;
+  return <NativeDesktopApp />;
 }

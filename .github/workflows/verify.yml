@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, 'feature/**', 'feat/**', 'security/**']
     tags: ['v*']
 
 permissions:
@@ -201,6 +201,13 @@ jobs:
       - name: Install the native Tauri CLI
         run: cargo install tauri-cli --locked
 
+      - name: Verify NSIS artwork is present
+        shell: pwsh
+        run: |
+          foreach ($asset in @("src-tauri/installer/header.bmp", "src-tauri/installer/sidebar.bmp")) {
+            if (-not (Test-Path $asset -PathType Leaf)) { throw "Missing NSIS installer artwork: $asset" }
+          }
+
       - name: Build the native Windows NSIS installer
         run: cargo tauri build --bundles nsis
 
@@ -266,6 +273,162 @@ jobs:
           gradle :app:generateDebugBuildConfig --stacktrace
           echo "----- Generated app BuildConfig.java -----"
           sed -n '1,45p' app/build/generated/source/buildConfig/debug/com/beboss/shopmgmt/BuildConfig.java
+
+      - name: Verify server-only credentials are not embedded in Android
+        shell: bash
+        run: |
+          config="app/build/generated/source/buildConfig/debug/com/beboss/shopmgmt/BuildConfig.java"
+          if grep -Eq 'AFRICASTALKING_|AIRTEL_MONEY_|MTN_MOMO_|SEND_SMS_HOOK_SECRET|FLW_SECRET_KEY|STRIPE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY' "$config"; then
+            echo "A server-only credential was exposed in Android BuildConfig."
+            exit 1
+          fi
+          if grep -Eq ' = ;
+      - name: Verify Android DataShare signing fails closed without the shared secret
+        shell: bash
+        env:
+          BEBOSS_DATASHARE_HMAC_SECRET: ""
+        run: |
+          set +e
+          output="$(gradle --configuration-cache :app:validateDataShareSigningConfiguration 2>&1)"
+          status=$?
+          set -e
+          printf '%s\\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "Android DataShare signing incorrectly accepted a missing shared HMAC key."
+            exit 1
+          fi
+          if ! grep -Fq "Android DataShare signing is not configured." <<< "$output"; then
+            echo "The expected fail-closed DataShare signing error was not found."
+            exit 1
+          fi
+
+      - name: Verify Android release signing fails closed without production credentials
+        shell: bash
+        env:
+          KEYSTORE_PATH: ""
+          STORE_PASSWORD: ""
+          KEY_PASSWORD: ""
+          KEY_ALIAS: ""
+        run: |
+          set +e
+          output="$(gradle --configuration-cache :app:validateReleaseSigningConfiguration 2>&1)"
+          status=$?
+          set -e
+          printf '%s\\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "Release signing incorrectly accepted missing production credentials."
+            exit 1
+          fi
+          if ! grep -Fq "Release signing is not configured." <<< "$output"; then
+            echo "The expected fail-closed release-signing error was not found."
+            exit 1
+          fi
+
+      - name: Build installable Android debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Publish Android debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeBoss-Android-2.3.2-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build and verify signed Android production APK and AAB
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          BEBOSS_DATASHARE_HMAC_SECRET: ${{ secrets.BEBOSS_DATASHARE_HMAC_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_CERT_PINS: ${{ secrets.SUPABASE_CERT_PINS }}
+        run: |
+          set -euo pipefail
+          for name in ANDROID_UPLOAD_KEYSTORE_B64 STORE_PASSWORD KEY_PASSWORD KEY_ALIAS BEBOSS_DATASHARE_HMAC_SECRET SUPABASE_URL SUPABASE_PUBLISHABLE_KEY; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required protected Android release secret: $name"
+              exit 1
+            fi
+          done
+          export KEYSTORE_PATH="$RUNNER_TEMP/beboss-upload-keystore.jks"
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          # Google Secrets Gradle plugin reads a properties file, not shell env vars.
+          # Expose only the DataShare value to BuildConfig for this one build, then
+          # remove the temporary properties file and keystore even if Gradle fails.
+          printf 'BEBOSS_DATASHARE_HMAC_SECRET=%s\nSUPABASE_URL=%s\nSUPABASE_PUBLISHABLE_KEY=%s\nSUPABASE_CERT_PINS=%s\n' "$BEBOSS_DATASHARE_HMAC_SECRET" "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" "$SUPABASE_CERT_PINS" > "$GITHUB_WORKSPACE/.env"
+          chmod 600 "$GITHUB_WORKSPACE/.env"
+          trap 'rm -f "$GITHUB_WORKSPACE/.env" "$KEYSTORE_PATH"' EXIT
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          gradle :app:bundleRelease :app:assembleRelease --stacktrace
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          jarsigner -verify -verbose -certs app/build/outputs/bundle/release/app-release.aab
+
+      - name: Publish signed Android production artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeBoss-Android-2.3.2-production-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
+
+  sign-windows-installer:
+    name: Authenticode sign and verify the Windows installer
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: desktop
+    runs-on: windows-2022
+    steps:
+      - name: Download the native NSIS installer
+        uses: actions/download-artifact@v4
+        with:
+          name: BeBoss-Windows-NSIS-${{ github.sha }}
+          path: installers
+
+      - name: Sign and verify the installer with the production certificate
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+          WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_PFX_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_PFX_PASSWORD)) {
+            throw "Set WINDOWS_CODESIGN_PFX_BASE64 and WINDOWS_CODESIGN_PFX_PASSWORD before creating a signed Windows release."
+          }
+          $certificate = Join-Path $env:RUNNER_TEMP "beboss-code-signing.pfx"
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_PFX_BASE64))
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter "signtool.exe" -Recurse -ErrorAction Stop |
+            Where-Object { $_.FullName -match "\\x64\\signtool\.exe$" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) { throw "Windows SDK SignTool was not found on the runner." }
+          $installers = Get-ChildItem "installers" -Filter "*.exe" -File
+          if (-not $installers -or $installers.Count -eq 0) { throw "No native NSIS installer was downloaded." }
+          foreach ($installer in $installers) {
+            & $signTool.FullName sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $certificate /p $env:WINDOWS_CODESIGN_PFX_PASSWORD $installer.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($installer.Name)." }
+            & $signTool.FullName verify /pa /v $installer.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $($installer.Name)." }
+          }
+
+      - name: Publish signed Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeBoss-Windows-signed-${{ github.ref_name }}
+          path: installers/*.exe
+          if-no-files-found: error
+          retention-days: 30
+ "$config"; then
+            echo "Android BuildConfig contains an invalid empty Java constant."
+            exit 1
+          fi
 
       - name: Run Android unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
