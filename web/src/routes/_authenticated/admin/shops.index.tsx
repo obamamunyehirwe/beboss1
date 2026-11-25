@@ -23,9 +23,11 @@ function ShopsPage() {
   const permissions = adminCtx.data?.permissions ?? [];
   const canViewDevices = isAdmin || permissions.includes("devices.audit") || permissions.includes("analytics.view");
   const canViewPayments = isAdmin || permissions.includes("payments.review") || permissions.includes("analytics.view");
+  const canViewCodes = isAdmin || permissions.includes("payments.review");
+  const canViewFinancialFlags = canViewPayments && canViewCodes;
   const { data, isLoading } = useQuery(shopsQuery);
   const { data: devices } = useQuery({ ...devicesQuery, enabled: canViewDevices });
-  const { data: codes } = useQuery({ ...codesQuery, enabled: canViewPayments });
+  const { data: codes } = useQuery({ ...codesQuery, enabled: canViewCodes });
   const { data: pays } = useQuery({ ...paymentsQuery, enabled: canViewPayments });
   const [q, setQ] = useState("");
   const [f, setF] = useState<F>("ALL");
@@ -38,9 +40,9 @@ function ShopsPage() {
         ...s,
         eff: effectiveShopStatus(s, now),
         dev: canViewDevices ? (devices ?? []).filter((d) => d.shop_sync_key === s.id).length : null,
-        flags: canViewPayments ? licenseFlags(s, codes ?? [], pays ?? [], now) : [],
+        flags: canViewFinancialFlags ? licenseFlags(s, codes ?? [], pays ?? [], now) : [],
       })),
-    [data, devices, codes, pays, now, canViewDevices, canViewPayments],
+    [data, devices, codes, pays, now, canViewDevices, canViewPayments, canViewFinancialFlags],
   );
   const counts = useMemo(() => {
     const c: Record<string, number> = { ALL: enriched.length, EXPIRING: 0 };
@@ -99,7 +101,7 @@ function ShopsPage() {
             { value: "EXPIRED", label: "Expired", count: counts["EXPIRED"] ?? 0 },
             { value: "SUSPENDED", label: "Suspended", count: counts["SUSPENDED"] ?? 0 },
             { value: "KILLED", label: "Kill switch", count: counts["KILLED"] ?? 0 },
-            ...(canViewPayments ? [{ value: "FLAGGED" as const, label: "Needs review", count: counts["FLAGGED"] ?? 0 }] : []),
+            ...(canViewFinancialFlags ? [{ value: "FLAGGED" as const, label: "Needs review", count: counts["FLAGGED"] ?? 0 }] : []),
           ]}
         />
       </div>
