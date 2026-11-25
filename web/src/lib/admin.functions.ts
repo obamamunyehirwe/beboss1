@@ -30,11 +30,13 @@ const TEAM_ROLE_PERMISSIONS: Record<string, string[]> = {
   SUPPORT: ["inbox.manage", "shops.view"],
   FINANCE_REVIEWER: ["payments.review", "billing.view"],
   ANALYST: ["analytics.view", "shops.view", "sync.view"],
-  OPERATIONS_MANAGER: ["shops.view", "devices.audit", "users.manage", "sync.view"],
+  OPERATIONS_MANAGER: ["shops.view", "devices.audit", "sync.view"],
+  STAFF_MANAGER: ["users.manage", "shops.view"],
 };
 
 async function audit(context: Ctx, email: string, action: string, target: string, details: string) {
-  await context.supabase.from("admin_audit_logs").insert({
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  await supabaseAdmin.from("admin_audit_logs").insert({
     id: crypto.randomUUID(),
     admin_email: email,
     action,
@@ -988,14 +990,17 @@ export const updateShopUser = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    const admin = await requireAdmin(ctx);
+    const admin = await requirePermission(ctx, "users.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: user, error: readError } = await supabaseAdmin.from("shop_users").select("username,full_name,role,shop_name").eq("id", data.id).maybeSingle();
+    if (readError || !user) throw new Error(readError?.message ?? "Staff account not found.");
+    if (user.role === "OWNER") throw new Error("Platform staff managers cannot change an owner account. Ask a Super Admin.");
     const patch: Record<string, unknown> = { updated_at: Date.now() };
     if (data.role) patch["role"] = data.role;
     if (data.isActive != null) patch["is_active"] = data.isActive;
-    const { data: u } = await ctx.supabase.from("shop_users").select("username, full_name").eq("id", data.id).maybeSingle();
-    const { error } = await ctx.supabase.from("shop_users").update(patch).eq("id", data.id);
+    const { error } = await supabaseAdmin.from("shop_users").update(patch).eq("id", data.id);
     if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, data.role ? "UPDATE_USER_ROLE" : "TOGGLE_USER", `@${u?.username ?? data.id}`, JSON.stringify({ role: data.role, active: data.isActive }));
+    await audit(ctx, admin.email, data.role ? "UPDATE_USER_ROLE" : "TOGGLE_USER", "@" + user.username, JSON.stringify({ role: data.role, active: data.isActive, shop: user.shop_name }));
     return { ok: true };
   });
 
@@ -1004,14 +1009,16 @@ export const deleteShopUser = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    const admin = await requireAdmin(ctx);
-    const { data: u } = await ctx.supabase.from("shop_users").select("username, shop_name").eq("id", data.id).maybeSingle();
-    const { error } = await ctx.supabase.from("shop_users").delete().eq("id", data.id);
+    const admin = await requirePermission(ctx, "users.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: user, error: readError } = await supabaseAdmin.from("shop_users").select("username,role,shop_name").eq("id", data.id).maybeSingle();
+    if (readError || !user) throw new Error(readError?.message ?? "Staff account not found.");
+    if (user.role === "OWNER") throw new Error("Platform staff managers cannot remove an owner account. Ask a Super Admin.");
+    const { error } = await supabaseAdmin.from("shop_users").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, "DELETE_USER", `@${u?.username ?? data.id}`, `Removed from ${u?.shop_name ?? ""}`);
+    await audit(ctx, admin.email, "DELETE_USER", "@" + user.username, "Removed from " + user.shop_name);
     return { ok: true };
   });
-
 export const deleteSnapshot = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().min(1).max(300) }).parse(d))
@@ -1168,7 +1175,7 @@ export const deleteRelease = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    const admin = await requirePermission(ctx, "releases.manage");
+    const admin = await requireAdmin(ctx);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: rel } = await supabaseAdmin.from("app_releases").select("*").eq("id", data.id).maybeSingle();
     if (!rel) throw new Error("Release not found.");
@@ -1258,7 +1265,7 @@ export const grantTeamRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email: string; role: string }) => z.object({
     email: z.string().trim().email().max(200),
-    role: z.enum(["SUPER_ADMIN", "RELEASE_MANAGER", "ANNOUNCEMENT_MANAGER", "DEVICE_AUDITOR", "SUPPORT", "FINANCE_REVIEWER", "ANALYST", "OPERATIONS_MANAGER"]),
+    role: z.enum(["SUPER_ADMIN", "RELEASE_MANAGER", "ANNOUNCEMENT_MANAGER", "DEVICE_AUDITOR", "SUPPORT", "FINANCE_REVIEWER", "ANALYST", "OPERATIONS_MANAGER", "STAFF_MANAGER"]),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
