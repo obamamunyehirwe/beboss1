@@ -97,3 +97,20 @@ using (
 
 comment on column public.app_releases.is_public is
   'Controls whether this archived build is listed/downloadable publicly. Hidden releases remain retained for admin history.';
+
+
+-- Release managers may upload/read private APK objects through the existing
+-- authenticated Admin UI. Deletion remains a Super Admin-only destructive action.
+drop policy if exists "Admins upload releases" on storage.objects;
+drop policy if exists "Admins read releases" on storage.objects;
+drop policy if exists "Admins update releases" on storage.objects;
+create policy "Authorized release managers upload"
+on storage.objects for insert to authenticated
+with check (bucket_id = 'releases' and public.has_admin_permission('releases.manage'));
+create policy "Authorized release managers read"
+on storage.objects for select to authenticated
+using (bucket_id = 'releases' and public.has_admin_permission('releases.manage'));
+create policy "Authorized release managers update"
+on storage.objects for update to authenticated
+using (bucket_id = 'releases' and public.has_admin_permission('releases.manage'))
+with check (bucket_id = 'releases' and public.has_admin_permission('releases.manage'));
