@@ -1121,7 +1121,7 @@ export const publishRelease = createServerFn({ method: "POST" })
     if (data.make_current) {
       await supabaseAdmin.from("app_releases").update({ is_current: false }).eq("is_current", true);
     }
-    const { data: row, error } = await ctx.supabase
+    const { data: row, error } = await supabaseAdmin
       .from("app_releases")
       .insert({
         version_name: data.version_name,
@@ -1156,7 +1156,7 @@ export const setCurrentRelease = createServerFn({ method: "POST" })
     const { data: rel } = await supabaseAdmin.from("app_releases").select("version_name").eq("id", data.id).maybeSingle();
     if (!rel) throw new Error("Release not found.");
     await supabaseAdmin.from("app_releases").update({ is_current: false }).eq("is_current", true);
-    const { error } = await supabaseAdmin.from("app_releases").update({ is_current: true, file_url: data.public_download_url }).eq("id", data.id);
+    const { error } = await supabaseAdmin.from("app_releases").update({ is_current: true, is_public: true, file_url: data.public_download_url } as never).eq("id", data.id);
     if (error) throw new Error(error.message);
     await supabaseAdmin.from("app_config").update({ apk_download_url: data.public_download_url, apk_version: rel.version_name, updated_at: Date.now() }).eq("id", "global");
     await audit(ctx, admin.email, "SET_CURRENT_RELEASE", rel.version_name, "Marked as current download");
@@ -1298,6 +1298,9 @@ export const grantTeamRole = createServerFn({ method: "POST" })
 
     const permissions = TEAM_ROLE_PERMISSIONS[data.role];
     if (!permissions?.length) throw new Error("The requested team role has no configured permissions.");
+    const { count: masterCount } = await supabaseAdmin.from("user_roles").select("*", { count: "exact", head: true }).eq("role", "admin");
+    const { data: currentMaster } = await supabaseAdmin.from("user_roles").select("user_id").eq("user_id", found.id).eq("role", "admin").maybeSingle();
+    if (currentMaster && (masterCount ?? 0) <= 1) throw new Error("You cannot downgrade the last Master Admin. Promote another Master Admin first.");
     const { error: roleError } = await supabaseAdmin.from("user_roles").upsert({ user_id: found.id, role: "support" }, { onConflict: "user_id,role" });
     if (roleError) throw new Error(`Could not authorize the invited account: ${roleError.message}`);
     await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "admin");
