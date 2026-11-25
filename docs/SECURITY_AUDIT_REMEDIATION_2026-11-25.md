@@ -19,7 +19,9 @@ This document tracks the remediation work based on the 22 findings in the suppli
 - Added accessible descriptions to the dashboard announcement and branch-selector icons and to the Admin Console refresh/web-portal/copy actions.
 - Replaced the nested customer filter `LazyRow` inside the parent `LazyColumn` with a horizontally scrollable `Row`.
 - Replaced the Admin Console payment-configuration Toast and main customer-screen action Toasts with persistent, dismissible UI feedback.
-- Expanded ESLint coverage from a hand-picked file list to all of `web/src` and `web/supabase/functions`, with core unsafe-evaluation rules.
+- Expanded ESLint coverage from a hand-picked file list to all of `web/src` and `web/supabase/functions`, with core unsafe-evaluation rules. The first expanded run found two pre-existing errors in the desktop Edge Function and Auth SMS hook; both were corrected.
+- Added a static check for authentication and role/permission guards across all 40 centralized admin server functions.
+- Added an Android emulator instrumentation test step to CI, invoking the repository's existing instrumentation smoke test using `connectedDebugAndroidTest`.
 - Standardized web dependency installation on the committed npm lockfile used by CI: removed `web/bun.lock`; CI continues to use `npm ci`.
 - Aligned the checked-in migration file prefixes with the exact migration versions recorded in the live Supabase project.
 

@@ -84,6 +84,9 @@ jobs:
           src
           supabase/functions
 
+      - name: Verify every admin server function has authentication and role/permission guards
+        run: node scripts/check-admin-rbac.mjs
+
       - name: Run unit tests
         run: npm run test
 
@@ -276,6 +279,15 @@ jobs:
 
       - name: Run Android unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
+
+      - name: Run Android instrumentation smoke tests on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: gradle :app:connectedDebugAndroidTest --stacktrace
 
       - name: Verify Android DataShare signing fails closed without the shared secret
         shell: bash
