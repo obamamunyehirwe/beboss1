@@ -26,9 +26,9 @@ async function requirePermission(context: Ctx, permission: string) {
 const TEAM_ROLE_PERMISSIONS: Record<string, string[]> = {
   RELEASE_MANAGER: ["releases.manage"],
   ANNOUNCEMENT_MANAGER: ["announcements.manage"],
-  DEVICE_AUDITOR: ["devices.audit", "sync.view"],
+  DEVICE_AUDITOR: ["devices.audit", "sync.view", "shops.view"],
   SUPPORT: ["inbox.manage", "shops.view"],
-  FINANCE_REVIEWER: ["payments.review", "billing.view"],
+  FINANCE_REVIEWER: ["payments.review", "billing.view", "shops.view"],
   ANALYST: ["analytics.view", "shops.view", "sync.view"],
   OPERATIONS_MANAGER: ["shops.view", "devices.audit", "sync.view"],
   STAFF_MANAGER: ["users.manage", "shops.view"],
@@ -998,7 +998,7 @@ export const updateShopUser = createServerFn({ method: "POST" })
     const patch: Record<string, unknown> = { updated_at: Date.now() };
     if (data.role) patch["role"] = data.role;
     if (data.isActive != null) patch["is_active"] = data.isActive;
-    const { error } = await supabaseAdmin.from("shop_users").update(patch).eq("id", data.id);
+    const { error } = await supabaseAdmin.from("shop_users").update(patch as never).eq("id", data.id);
     if (error) throw new Error(error.message);
     await audit(ctx, admin.email, data.role ? "UPDATE_USER_ROLE" : "TOGGLE_USER", "@" + user.username, JSON.stringify({ role: data.role, active: data.isActive, shop: user.shop_name }));
     return { ok: true };
