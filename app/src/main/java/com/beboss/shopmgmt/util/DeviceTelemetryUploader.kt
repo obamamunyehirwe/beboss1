@@ -14,6 +14,19 @@ object DeviceTelemetryUploader {
 
     private const val TAG = "DeviceTelemetryUploader"
     private const val MAX_LOCATION_AGE_MS = 24L * 60L * 60L * 1000L
+    private const val PRIVACY_PREFS = "beboss_device_privacy"
+    private const val KEY_LOCATION_SHARING = "foreground_location_sharing_enabled"
+
+    /** Location reporting stays disabled until the device user explicitly enables it. */
+    fun isLocationSharingEnabled(context: Context): Boolean =
+        context.applicationContext.getSharedPreferences(PRIVACY_PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LOCATION_SHARING, false)
+
+    fun setLocationSharingEnabled(context: Context, enabled: Boolean) {
+        context.applicationContext.getSharedPreferences(PRIVACY_PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_LOCATION_SHARING, enabled).apply()
+        if (!enabled) LocationHelper.clearCachedLocation(context)
+    }
 
     suspend fun upload(
         context: Context,
@@ -38,9 +51,9 @@ object DeviceTelemetryUploader {
             val clockTamper = ClockGuard.reInspectNow(appContext)
             val now = ClockGuard.effectiveNowMs(appContext)
 
-            // Location is optional and foreground-only. Never re-upload the last cached GPS fix
-            // after the user has revoked location permission or when the fix is stale.
-            val location = if (PermissionManager.hasLocationPermission(appContext)) {
+            // GPS is uploaded only after explicit in-app opt-in and with foreground permission.
+            val locationSharingEnabled = isLocationSharingEnabled(appContext)
+            val location = if (locationSharingEnabled && PermissionManager.hasLocationPermission(appContext)) {
                 LocationHelper.loadCachedLocation(appContext).takeIf { candidate ->
                     val age = now - candidate.capturedAtMs
                     candidate.isAvailable && age in 0L..MAX_LOCATION_AGE_MS
@@ -59,7 +72,7 @@ object DeviceTelemetryUploader {
                 clockTamper = clockTamper,
                 location = location,
                 unsyncedMessagesCount = pendingRecords.size,
-                permissionsSummary = PermissionManager.summarizePermissionsStatus(appContext),
+                permissionsSummary = PermissionManager.summarizePermissionsStatus(appContext) + ";location_sharing=" + if (locationSharingEnabled) "enabled" else "disabled",
                 messageSummaryJson = MessageAuditManager.buildCloudSummaryJson(appContext)
             )
 
