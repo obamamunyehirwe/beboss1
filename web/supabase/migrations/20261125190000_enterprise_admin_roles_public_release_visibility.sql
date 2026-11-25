@@ -78,6 +78,120 @@ grant execute on function public.has_admin_permission(text) to authenticated, se
 alter function public.current_admin_permissions() set search_path = pg_catalog;
 alter function public.has_admin_permission(text) set search_path = pg_catalog;
 
+-- Replace broad "any staff" reads with least-privilege permission checks.
+-- Tenant/anon policies are separate and remain in force.
+drop policy if exists "Staff read audit logs" on public.admin_audit_logs;
+create policy "Authorized staff read audit logs" on public.admin_audit_logs
+for select to authenticated using (public.has_admin_permission('audit.view'));
+
+drop policy if exists "Staff read announcements" on public.announcements;
+create policy "Authorized staff read announcements" on public.announcements
+for select to authenticated using (
+  public.is_beboss_admin()
+  or public.has_admin_permission('announcements.manage')
+  or (
+    is_active and starts_at <= now() and (ends_at is null or ends_at > now())
+    and (target_shop_key = '' or target_shop_key = public.current_shop_sync_key())
+    and (
+      (public.current_shop_sync_key() = '' and audience = any (array['ALL','WEBSITE']))
+      or (public.current_shop_sync_key() <> '' and audience = any (array['ALL','APP']))
+    )
+  )
+);
+drop policy if exists "Admin insert announcements" on public.announcements;
+drop policy if exists "Admin update announcements" on public.announcements;
+drop policy if exists "Admin delete announcements" on public.announcements;
+create policy "Announcement managers insert" on public.announcements
+for insert to authenticated with check (public.has_admin_permission('announcements.manage'));
+create policy "Announcement managers update" on public.announcements
+for update to authenticated using (public.has_admin_permission('announcements.manage'))
+with check (public.has_admin_permission('announcements.manage'));
+create policy "Announcement managers delete" on public.announcements
+for delete to authenticated using (public.has_admin_permission('announcements.manage'));
+
+drop policy if exists "Staff read downloads" on public.apk_downloads;
+create policy "Release managers read downloads" on public.apk_downloads
+for select to authenticated using (public.has_admin_permission('releases.manage'));
+
+drop policy if exists "Staff read snapshots" on public.branch_sync_snapshots;
+create policy "Sync viewers read snapshots" on public.branch_sync_snapshots
+for select to authenticated using (
+  public.has_admin_permission('sync.view')
+  or shop_sync_key = public.current_shop_sync_key()
+);
+
+drop policy if exists "Staff read sync events" on public.cloud_sync_events;
+create policy "Sync viewers read sync events" on public.cloud_sync_events
+for select to authenticated using (public.has_admin_permission('sync.view'));
+
+drop policy if exists "Staff read contact messages" on public.contact_messages;
+create policy "Inbox managers read contact messages" on public.contact_messages
+for select to authenticated using (public.has_admin_permission('inbox.manage'));
+drop policy if exists "Staff update contact messages" on public.contact_messages;
+create policy "Inbox managers update contact messages" on public.contact_messages
+for update to authenticated using (public.has_admin_permission('inbox.manage'))
+with check (public.has_admin_permission('inbox.manage'));
+
+drop policy if exists "Staff read device security telemetry" on public.device_security_telemetry;
+create policy "Device auditors read device security telemetry" on public.device_security_telemetry
+for select to authenticated using (
+  public.has_admin_permission('devices.audit')
+  or shop_sync_key = public.current_shop_sync_key()
+);
+
+drop policy if exists "Staff read payment_requests" on public.payment_requests;
+create policy "Finance reviewers read payment_requests" on public.payment_requests
+for select to authenticated using (
+  public.has_admin_permission('payments.review')
+  or public.computed_shop_sync_key(owner_username, owner_phone) = public.current_shop_sync_key()
+);
+
+drop policy if exists "Staff read shop_accounts" on public.shop_accounts;
+create policy "Shop viewers read shop_accounts" on public.shop_accounts
+for select to authenticated using (
+  public.has_admin_permission('shops.view')
+  or id = public.current_shop_sync_key()
+);
+
+drop policy if exists "Staff read shop_branches" on public.shop_branches;
+create policy "Shop viewers read shop_branches" on public.shop_branches
+for select to authenticated using (
+  public.has_admin_permission('shops.view')
+  or (shop_sync_key = public.current_shop_sync_key() and shop_sync_key <> '')
+);
+
+drop policy if exists "Staff read shop_devices" on public.shop_devices;
+create policy "Device auditors read shop_devices" on public.shop_devices
+for select to authenticated using (
+  public.has_admin_permission('devices.audit')
+  or shop_sync_key = public.current_shop_sync_key()
+);
+
+drop policy if exists "Staff read shop_stock_transfers" on public.shop_stock_transfers;
+create policy "Shop viewers read shop_stock_transfers" on public.shop_stock_transfers
+for select to authenticated using (
+  public.has_admin_permission('shops.view')
+  or (shop_sync_key = public.current_shop_sync_key() and shop_sync_key <> '')
+);
+
+drop policy if exists "Staff read shop_users" on public.shop_users;
+create policy "Operations viewers read shop_users" on public.shop_users
+for select to authenticated using (
+  public.has_admin_permission('users.manage')
+  or public.has_admin_permission('shops.view')
+  or shop_sync_key = public.current_shop_sync_key()
+);
+
+drop policy if exists "Staff read unlock_codes" on public.unlock_codes;
+create policy "Finance reviewers read unlock_codes" on public.unlock_codes
+for select to authenticated using (
+  public.has_admin_permission('payments.review')
+  or public.computed_shop_sync_key(shop_username, shop_phone) = public.current_shop_sync_key()
+);
+
+-- Super Admins retain full access independent of the role-specific permission array.
+
+
 -- A release can remain in the admin archive while being hidden from every public
 -- release chooser and public download endpoint. Existing releases stay visible by default.
 alter table public.app_releases
