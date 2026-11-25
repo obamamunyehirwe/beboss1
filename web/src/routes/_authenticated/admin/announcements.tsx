@@ -35,7 +35,9 @@ function liveState(a: Announcement, now = Date.now()) {
 
 function AnnouncementsPage() {
   const a = useAdminText();
-  const isAdmin = !!useAdminCtx().data?.isAdmin;
+  const adminCtx = useAdminCtx();
+  const isAdmin = !!adminCtx.data?.isAdmin;
+  const canManageAnnouncements = isAdmin || !!adminCtx.data?.permissions?.includes("announcements.manage");
   const { data, isLoading } = useQuery(announcementsAdminQuery);
   const [editing, setEditing] = useState<Announcement | "new" | null>(null);
   const del = useAdminAction(useServerFn(deleteAnnouncement), { success: "Announcement removed", invalidate: [["admin", "announcements"], ["announcements"]] });
@@ -46,7 +48,7 @@ function AnnouncementsPage() {
         title="Announcements"
         sub="Broadcast news, promotions and outage notices to the website, the Android app, or a single shop."
         actions={
-          isAdmin ? (
+          canManageAnnouncements ? (
             <Button variant="hero" size="sm" onClick={() => setEditing("new")}>
               <Plus /> New announcement
             </Button>
@@ -75,7 +77,7 @@ function AnnouncementsPage() {
                   <span>
                     {formatDateTime(item.starts_at)} → {item.ends_at ? formatDateTime(item.ends_at) : a("no end")} · {a("by")} {item.created_by || "admin"}
                   </span>
-                  {isAdmin ? (
+                  {canManageAnnouncements ? (
                     <span className="flex gap-1">
                       <Button size="sm" variant="ghost" onClick={() => setEditing(item)}>
                         <Pencil /> {a("Edit")}
