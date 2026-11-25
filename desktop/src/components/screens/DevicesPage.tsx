@@ -83,10 +83,10 @@ export function DevicesPage({ cloud, onAction, onRefresh, offline, currentDevice
     } finally { setSaving(false); }
   }
 
-  async function runAction(action: string, payload: Row) {
+  async function runAction(action: string, payload: Row): Promise<Row | null> {
     setPageError("");
-    try { await onAction(action, payload); }
-    catch (error) { setPageError(errorText(error)); }
+    try { return await onAction(action, payload); }
+    catch (error) { setPageError(errorText(error)); return null; }
   }
 
   async function copyCode() {
@@ -173,7 +173,7 @@ export function DevicesPage({ cloud, onAction, onRefresh, offline, currentDevice
             <button className="btn-outline small" disabled={offline || self} onClick={() => void runAction("device_set_active", { id: s(device.id), isActive: !device.is_active })}>
               {device.is_active ? <><Pause size={14} /> Pause</> : <><Play size={14} /> Resume</>}
             </button>
-            {unpaired && device.is_active && <button className="btn-outline small" disabled={offline} onClick={() => void runAction("device_reinvite", { id: s(device.id) }).then(() => refresh())}><RefreshCw size={14} /> Rotate code</button>}
+            {unpaired && device.is_active && <button className="btn-outline small" disabled={offline} onClick={() => void runAction("device_reinvite", { id: s(device.id) }).then((result) => { if (result?.joinCode) setInvite(result); })}><RefreshCw size={14} /> Rotate code</button>}
             {!device.is_active && <button className="btn-outline small danger" disabled={offline || self} onClick={() => {
               if (confirm("Permanently remove this paused device record? The server retains its security and billing audit history.")) {
                 void runAction("device_remove", { id: s(device.id) });

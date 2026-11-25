@@ -16,7 +16,7 @@ const STYLE: Record<string, { Icon: typeof Info; label: string; tone: string; ma
 export function AnnouncementCard({ a, onDismiss }: { a: Announcement; onDismiss?: () => void }) {
   const { p, lang } = useI18n();
   const [expanded, setExpanded] = useState(false);
-  const style = STYLE[a.severity] ?? STYLE.INFO;
+  const style = STYLE[a.severity] ?? STYLE.INFO!;
   const Icon = style.Icon;
   const tr = lang === "en" ? null : (a.translations as Record<string, { title?: string; body?: string; cta_label?: string }> | null)?.[lang];
   const title = tr?.title || a.title;
