@@ -229,6 +229,28 @@ secrets {
   ignoreList.add("SUPABASE_CERT_PINS")
   ignoreList.add("SUPABASE_PUBLISHABLE_KEY")
   ignoreList.add("SUPABASE_URL")
+  // Provider API credentials and Auth SMS hook material are server-only.
+  // Prevent blank .env.example entries from generating invalid Java and ensure
+  // merchant credentials can never be embedded in an Android APK.
+  ignoreList.add("SEND_SMS_HOOK_SECRET")
+  ignoreList.add("AFRICASTALKING_ENV")
+  ignoreList.add("AFRICASTALKING_USERNAME")
+  ignoreList.add("AFRICASTALKING_API_KEY")
+  ignoreList.add("AFRICASTALKING_FROM")
+  ignoreList.add("MTN_MOMO_ENV")
+  ignoreList.add("MTN_MOMO_BASE_URL")
+  ignoreList.add("MTN_MOMO_TARGET_ENVIRONMENT")
+  ignoreList.add("MTN_MOMO_COLLECTIONS_SUBSCRIPTION_KEY")
+  ignoreList.add("MTN_MOMO_API_USER")
+  ignoreList.add("MTN_MOMO_API_KEY")
+  ignoreList.add("MTN_MOMO_CALLBACK_URL")
+  ignoreList.add("AIRTEL_MONEY_ENV")
+  ignoreList.add("AIRTEL_MONEY_BASE_URL")
+  ignoreList.add("AIRTEL_MONEY_CLIENT_ID")
+  ignoreList.add("AIRTEL_MONEY_CLIENT_SECRET")
+  ignoreList.add("AIRTEL_MONEY_COUNTRY")
+  ignoreList.add("AIRTEL_MONEY_CURRENCY")
+  ignoreList.add("AIRTEL_MONEY_CALLBACK_URL")
   // Payment provider keys and the canonical website URL are server-only.
   // Never generate Android BuildConfig constants or ship them in an APK.
   ignoreList.add("BEBOSS_PUBLIC_URL")
