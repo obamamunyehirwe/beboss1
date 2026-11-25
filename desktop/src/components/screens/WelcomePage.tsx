@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, ArrowUpRight, BarChart3, Building2, CreditCard, Package, RefreshCw, ShieldCheck, ShoppingCart, Smartphone, Truck, Users, Wallet, Zap } from "lucide-react";
+import { Activity, ArrowRight, ArrowUpRight, BarChart3, Building2, CreditCard, Megaphone, Package, RefreshCw, ShieldCheck, ShoppingCart, Smartphone, Truck, Users, Wallet, Zap } from "lucide-react";
 import { money, n, rows, s } from "../../lib/format";
 import type { CloudState, NavKey, Row, Snapshot } from "../../lib/types";
 import { PageHeading, SalesTable, StatCard, StatusPill } from "../ui";
@@ -18,6 +18,14 @@ export function WelcomePage({ cloud, snapshot, offline, revenueToday, profitToda
   const activeDevices = rows(cloud.devices).filter((item) => item.is_active === true);
   const pendingTransfers = rows(cloud.transfers).filter((item) => ["REQUESTED", "IN_TRANSIT", "RECEIPT_REQUESTED"].includes(s(item.status).toUpperCase()));
   const receivables = customers.reduce((sum, item) => sum + n(item.debtBalance), 0);
+  const now = Date.now();
+  const announcements = rows(cloud.announcements).filter((item) =>
+    item.is_active === true &&
+    ["ALL", "APP"].includes(s(item.audience).toUpperCase()) &&
+    (!s(item.target_shop_key) || s(item.target_shop_key) === s(cloud.shop.id)) &&
+    (!s(item.starts_at) || Date.parse(s(item.starts_at)) <= now) &&
+    (!s(item.ends_at) || Date.parse(s(item.ends_at)) > now)
+  ).slice(0, 3);
   const shortcuts: { title: string; description: string; view: NavKey; icon: typeof ShoppingCart; tone: string }[] = [
     { title: "Start a sale", description: "Open checkout and issue a receipt", view: "checkout", icon: ShoppingCart, tone: "orange" },
     { title: "Manage inventory", description: "Products, stock adjustments and reorder levels", view: "products", icon: Package, tone: "blue" },
