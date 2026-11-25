@@ -1202,6 +1202,19 @@ export const getAdminReleaseDownload = createServerFn({ method: "POST" })
     return { url: signed.signedUrl, expiresInSeconds: 600, fileName: release.file_name };
   });
 
+export const setArchivedReleaseVisibility = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { isPublic: boolean }) => z.object({ isPublic: z.boolean() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requirePermission(ctx, "releases.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("app_releases").update({ is_public: data.isPublic } as never).eq("is_current", false);
+    if (error) throw new Error(error.message);
+    await audit(ctx, admin.email, data.isPublic ? "SHOW_ALL_ARCHIVED_RELEASES" : "HIDE_ALL_ARCHIVED_RELEASES", "app_releases", "Updated public visibility for every non-current archived release.");
+    return { ok: true };
+  });
+
 export const setReleaseVisibility = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string; isPublic: boolean }) => z.object({ id: z.string().uuid(), isPublic: z.boolean() }).parse(d))
