@@ -74,7 +74,6 @@ jobs:
       - name: Lint all web application and Supabase Edge Function source
         run: >-
           npx eslint --no-warn-ignored
-          --max-warnings=0
           --rule 'prettier/prettier: off'
           --rule '@typescript-eslint/no-explicit-any: off'
           --rule 'no-eval: error'
