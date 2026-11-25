@@ -5,7 +5,6 @@ plugins {
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
-  alias(libs.plugins.secrets)
 }
 
 
@@ -211,63 +210,6 @@ ksp {
   arg("room.incremental", "true")
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
-secrets {
-  propertiesFileName = ".env"
-  defaultPropertiesFileName = ".env.example"
-  // This value is supplied explicitly with buildConfigField below. Exclude it from
-  // the Secrets plugin so blank .env.example entries cannot generate invalid Java.
-  ignoreList.add("BEBOSS_DATASHARE_HMAC_SECRET")
-  ignoreList.add("BEBOSS_ADMIN_URL")
-  ignoreList.add("BEBOSS_ADMIN_WHATSAPP")
-  ignoreList.add("BEBOSS_LAN_SYNC_SECRET")
-  ignoreList.add("BEBOSS_SECURITY_PEPPER")
-  ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
-  ignoreList.add("SENTRY_DSN")
-  ignoreList.add("SUPABASE_ANON_KEY")
-  ignoreList.add("SUPABASE_CERT_PINS")
-  ignoreList.add("SUPABASE_PUBLISHABLE_KEY")
-  ignoreList.add("SUPABASE_URL")
-  // Provider API credentials and Auth SMS hook material are server-only.
-  // Prevent blank .env.example entries from generating invalid Java and ensure
-  // merchant credentials can never be embedded in an Android APK.
-  ignoreList.add("SEND_SMS_HOOK_SECRET")
-  ignoreList.add("AFRICASTALKING_ENV")
-  ignoreList.add("AFRICASTALKING_USERNAME")
-  ignoreList.add("AFRICASTALKING_API_KEY")
-  ignoreList.add("AFRICASTALKING_FROM")
-  ignoreList.add("MTN_MOMO_ENV")
-  ignoreList.add("MTN_MOMO_BASE_URL")
-  ignoreList.add("MTN_MOMO_TARGET_ENVIRONMENT")
-  ignoreList.add("MTN_MOMO_COLLECTIONS_SUBSCRIPTION_KEY")
-  ignoreList.add("MTN_MOMO_API_USER")
-  ignoreList.add("MTN_MOMO_API_KEY")
-  ignoreList.add("MTN_MOMO_CALLBACK_URL")
-  ignoreList.add("AIRTEL_MONEY_ENV")
-  ignoreList.add("AIRTEL_MONEY_BASE_URL")
-  ignoreList.add("AIRTEL_MONEY_CLIENT_ID")
-  ignoreList.add("AIRTEL_MONEY_CLIENT_SECRET")
-  ignoreList.add("AIRTEL_MONEY_COUNTRY")
-  ignoreList.add("AIRTEL_MONEY_CURRENCY")
-  ignoreList.add("AIRTEL_MONEY_CALLBACK_URL")
-  // Payment provider keys and the canonical website URL are server-only.
-  // Never generate Android BuildConfig constants or ship them in an APK.
-  ignoreList.add("BEBOSS_PUBLIC_URL")
-  ignoreList.add("FLW_SECRET_KEY")
-  ignoreList.add("FLW_WEBHOOK_SECRET_HASH")
-  ignoreList.add("STRIPE_SECRET_KEY")
-  ignoreList.add("STRIPE_WEBHOOK_SECRET")
-  ignoreList.add("VITE_SUPABASE_URL")
-  ignoreList.add("VITE_SUPABASE_PUBLISHABLE_KEY")
-  ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
-  // Upload-keystore credentials are consumed only by Gradle signing configuration.
-  // Never generate them as Java/Kotlin BuildConfig constants or embed them in APKs.
-  ignoreList.add("KEYSTORE_PATH")
-  ignoreList.add("STORE_PASSWORD")
-  ignoreList.add("KEY_PASSWORD")
-  ignoreList.add("KEY_ALIAS")
-}
 
 // Release signing and cross-platform data-share signing are independent gates.
 val dataShareEnvProperties = Properties().apply {
