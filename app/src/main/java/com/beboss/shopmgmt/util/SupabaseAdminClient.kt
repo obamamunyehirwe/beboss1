@@ -35,6 +35,19 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.HttpsURLConnection
 
+private fun parseAnnouncementTimestamp(value: String): Long? {
+    val normalized = value.trim().replace(Regex("(\\.\\d{3})\\d+(?=(Z|[+-]\\d{2}:\\d{2})$)"), "$1")
+    val formats = listOf("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "yyyy-MM-dd'T'HH:mm:ssXXX")
+    return formats.firstNotNullOfOrNull { pattern ->
+        runCatching {
+            java.text.SimpleDateFormat(pattern, Locale.US).apply {
+                isLenient = false
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }.parse(normalized)?.time
+        }.getOrNull()
+    }
+}
+
 data class SupabaseShopAnnouncementDto(
     val id: String,
     val title: String,
@@ -1902,8 +1915,8 @@ object SupabaseAdminClient {
                     if (!row.optBoolean("is_active", false)) return@mapNotNull null
                     val starts = row.optString("starts_at", "")
                     val ends = row.optString("ends_at", "").takeIf { it.isNotBlank() && it != "null" }
-                    val startsAt = runCatching { java.time.Instant.parse(starts).toEpochMilli() }.getOrDefault(Long.MAX_VALUE)
-                    val endsAt = ends?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrDefault(0L) }
+                    val startsAt = parseAnnouncementTimestamp(starts) ?: Long.MAX_VALUE
+                    val endsAt = ends?.let { parseAnnouncementTimestamp(it) ?: 0L }
                     if (startsAt > now || (endsAt != null && endsAt <= now)) return@mapNotNull null
                     val translations = row.optJSONObject("translations") ?: JSONObject()
                     val languageKey = when (language) {

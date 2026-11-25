@@ -55,6 +55,7 @@ function TeamPage() {
             <SelectItem value="FINANCE_REVIEWER">Finance reviewer</SelectItem>
             <SelectItem value="ANALYST">Business analyst</SelectItem>
             <SelectItem value="OPERATIONS_MANAGER">Operations manager</SelectItem>
+            <SelectItem value="STAFF_MANAGER">Staff manager</SelectItem>
             <SelectItem value="SUPER_ADMIN">Master admin · full access</SelectItem>
           </SelectContent>
         </Select>
@@ -76,12 +77,19 @@ function TeamPage() {
                 <p className="text-xs text-muted-foreground">
                   {a("Since")} {formatDateTime(m.since)} • {a("last sign-in")} {m.lastSignIn ? formatDateTime(m.lastSignIn) : a("never")}
                 </p>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <Badge variant={m.active ? "success" : "secondary"}>{m.active ? "Active" : "Suspended"}</Badge>
+                  {(m.permissions ?? []).map((permission) => (
+                    <Badge key={permission} variant="outline" className="font-mono text-[10px]">{permission}</Badge>
+                  ))}
+                  {m.roleKey === "SUPER_ADMIN" ? <Badge variant="outline">Full access</Badge> : null}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant={m.roleKey === "SUPER_ADMIN" ? "brand" : "info"}>{a(m.roleKey.replaceAll("_", " "))}</Badge>
                 <ConfirmAction
                   trigger={
-                    <Button size="icon" variant="ghost" aria-label={a("Remove access")}>
+                    <Button size="icon" variant="ghost" aria-label={a("Remove access")} disabled={m.userId === team.data?.me}>
                       <UserX />
                     </Button>
                   }

@@ -206,7 +206,7 @@ export const getPublicSite = createServerFn({ method: "GET" }).handler(async () 
   }
 
   const releases = rel.data ?? [];
-  const { data: currentRow, error: currentError } = await sb
+  const { data: currentRow, error: currentError } = await (sb as any)
     .from("app_releases")
     .select("id")
     .eq("is_current", true)

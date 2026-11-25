@@ -14,9 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ConfirmAction, EmptyState, LoadingBlock, PageHeader, StatCard, useAdminAction } from "@/components/admin/ui";
 import { supabase } from "@/integrations/supabase/client";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
-import { deleteRelease, publishRelease, setCurrentRelease, setReleaseVisibility } from "@/lib/admin.functions";
+import { deleteRelease, getAdminReleaseDownload, publishRelease, setCurrentRelease, setReleaseVisibility } from "@/lib/admin.functions";
 import { downloadsQuery, releasesQuery } from "@/lib/admin-queries";
-import { DOWNLOAD_PATH } from "@/lib/queries";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
 
@@ -41,6 +40,7 @@ function ReleasesPage() {
   const downloads = useQuery(downloadsQuery);
   const qc = useQueryClient();
   const publish = useServerFn(publishRelease);
+  const getPrivateDownload = useServerFn(getAdminReleaseDownload);
   const setCurrent = useAdminAction(useServerFn(setCurrentRelease), { success: "Now the current download", invalidate: [["admin", "releases"], ["public-site"]] });
   const del = useAdminAction(useServerFn(deleteRelease), { success: "Release deleted", invalidate: [["admin", "releases"]] });
   const visibility = useAdminAction(useServerFn(setReleaseVisibility), { success: "Public release visibility updated", invalidate: [["admin", "releases"], ["public-site"]] });
@@ -221,11 +221,18 @@ function ReleasesPage() {
                 <span className="mr-2 text-sm">
                   <span className="font-display text-xl font-bold">{r.download_count}</span> <span className="text-muted-foreground">{a("downloads")}</span>
                 </span>
-                <Button size="sm" variant="glass" asChild>
-                  <a href={`${DOWNLOAD_PATH}?release=${r.id}&ch=admin`}>
-                    <Download /> {a("APK")}
-                  </a>
-                </Button>
+                {canManageReleases ? (
+                  <Button size="sm" variant="glass" onClick={async () => {
+                    try {
+                      const signed = await getPrivateDownload({ data: { id: r.id } });
+                      window.location.assign(signed.url);
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Private release download failed");
+                    }
+                  }}>
+                    <Download /> Admin APK
+                  </Button>
+                ) : null}
                 {canManageReleases ? (
                   <>
                     {!r.is_current ? (

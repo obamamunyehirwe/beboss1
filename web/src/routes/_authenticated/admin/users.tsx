@@ -22,7 +22,8 @@ type F = "ALL" | "OWNER" | "MANAGER" | "CASHIER" | "SUSPENDED";
 function UsersPage() {
   const a = useAdminText();
   const { data, isLoading } = useQuery(usersQuery);
-  const isAdmin = !!useAdminCtx().data?.isAdmin;
+  const adminCtx = useAdminCtx();
+  const canManageUsers = !!adminCtx.data?.isAdmin || !!adminCtx.data?.permissions?.includes("users.manage");
   const [q, setQ] = useState("");
   const [f, setF] = useState<F>("ALL");
   const update = useAdminAction(useServerFn(updateShopUser), { success: "Staff account updated", invalidate: [["admin", "users"]] });
@@ -70,7 +71,7 @@ function UsersPage() {
                 <th className="px-4 py-3">{a("Role")}</th>
                 <th className="px-4 py-3">{a("Active")}</th>
                 <th className="px-4 py-3">{a("Updated")}</th>
-                {isAdmin ? <th className="px-4 py-3" /> : null}
+                {canManageUsers ? <th className="px-4 py-3" /> : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -89,7 +90,7 @@ function UsersPage() {
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">{u.assigned_branch_name}</td>
                   <td className="px-4 py-3">
-                    {isAdmin ? (
+                    {canManageUsers ? (
                       <Select value={u.role} onValueChange={(v) => update.mutate({ id: u.id, role: v })}>
                         <SelectTrigger className="h-8 w-32">
                           <SelectValue />
@@ -104,9 +105,9 @@ function UsersPage() {
                       u.role
                     )}
                   </td>
-                  <td className="px-4 py-3">{isAdmin ? <Switch checked={u.is_active} onCheckedChange={(v) => update.mutate({ id: u.id, isActive: v })} /> : <StatusBadge status={u.is_active ? "ACTIVE" : "SUSPENDED"} />}</td>
+                  <td className="px-4 py-3">{canManageUsers ? <Switch checked={u.is_active} onCheckedChange={(v) => update.mutate({ id: u.id, isActive: v })} /> : <StatusBadge status={u.is_active ? "ACTIVE" : "SUSPENDED"} />}</td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">{relativeTime(u.updated_at)}</td>
-                  {isAdmin ? (
+                  {canManageUsers ? (
                     <td className="px-4 py-3 text-right">
                       <ConfirmAction
                         trigger={

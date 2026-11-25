@@ -51,6 +51,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -94,6 +96,7 @@ import com.beboss.shopmgmt.util.ReceiptGenerator
 
 @Composable
 private fun DashboardAnnouncementCard(notice: SupabaseShopAnnouncementDto) {
+    val uriHandler = LocalUriHandler.current
     val accent = when (notice.severity.uppercase()) {
         "CRITICAL", "WARNING" -> WarningAmber
         "SUCCESS" -> ProfitGreen
@@ -118,8 +121,20 @@ private fun DashboardAnnouncementCard(notice: SupabaseShopAnnouncementDto) {
                 if (notice.body.isNotBlank()) {
                     Text(notice.body, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 16.sp)
                 }
-                if (notice.ctaLabel.isNotBlank()) {
-                    Text(notice.ctaLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = accent)
+                if (notice.ctaLabel.isNotBlank() && notice.ctaUrl.isNotBlank()) {
+                    TextButton(
+                        onClick = {
+                            val destination = when {
+                                notice.ctaUrl.startsWith("https://", ignoreCase = true) -> notice.ctaUrl
+                                notice.ctaUrl.startsWith("/") -> "https://beboss.rw" + notice.ctaUrl
+                                else -> ""
+                            }
+                            if (destination.isNotBlank()) runCatching { uriHandler.openUri(destination) }
+                        },
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)
+                    ) {
+                        Text(notice.ctaLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = accent)
+                    }
                 }
             }
         }

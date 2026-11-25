@@ -18,7 +18,8 @@ export async function requireAdminPermission(context: AdminCtx, permission: stri
 }
 
 export async function writeAudit(context: AdminCtx, email: string, action: string, target: string, details: string) {
-  await context.supabase.from("admin_audit_logs").insert({
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  await supabaseAdmin.from("admin_audit_logs").insert({
     id: crypto.randomUUID(),
     admin_email: email,
     action,
