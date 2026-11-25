@@ -9,6 +9,14 @@ export async function requireStaffRole(context: AdminCtx, adminOnly: boolean) {
   return { email, label: `BeBoss Admin (${email})` };
 }
 
+export async function requireAdminPermission(context: AdminCtx, permission: string) {
+  const { data, error } = await (context.supabase as any).rpc("has_admin_permission", { p_permission: permission });
+  if (error) throw new Error("Permission check failed: " + error.message);
+  if (data !== true) throw new Error("Forbidden: your assigned admin role does not include " + permission + ".");
+  const email = String(context.claims?.email ?? "admin");
+  return { email, label: "BeBoss Admin (" + email + ")" };
+}
+
 export async function writeAudit(context: AdminCtx, email: string, action: string, target: string, details: string) {
   await context.supabase.from("admin_audit_logs").insert({
     id: crypto.randomUUID(),

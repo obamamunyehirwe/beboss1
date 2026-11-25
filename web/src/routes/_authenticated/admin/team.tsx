@@ -23,7 +23,7 @@ function TeamPage() {
   const list = useServerFn(listTeam);
   const team = useQuery({ queryKey: ["admin", "team"], queryFn: () => list(), enabled: isAdmin });
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "support">("support");
+  const [role, setRole] = useState("SUPPORT");
   const grant = useAdminAction(useServerFn(grantTeamRole), { success: "Invitation sent or access granted", invalidate: [["admin", "team"]] });
   const revoke = useAdminAction(useServerFn(revokeTeamRole), { success: "Access removed", invalidate: [["admin", "team"]] });
 
@@ -31,7 +31,7 @@ function TeamPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Admin team" sub="Master admins can do everything. Support members can view all data and handle the inbox, but can't approve payments or change shops." />
+      <PageHeader title="Admin team" sub="Assign named roles with server-enforced permissions. Only a Master Admin can invite or change team roles." />
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -48,8 +48,14 @@ function TeamPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="support">{a("Support")}</SelectItem>
-            <SelectItem value="admin">{a("Master admin")}</SelectItem>
+            <SelectItem value="SUPPORT">Support · inbox and shop lookup</SelectItem>
+            <SelectItem value="RELEASE_MANAGER">Release manager</SelectItem>
+            <SelectItem value="ANNOUNCEMENT_MANAGER">Announcement manager</SelectItem>
+            <SelectItem value="DEVICE_AUDITOR">Device and sync auditor</SelectItem>
+            <SelectItem value="FINANCE_REVIEWER">Finance reviewer</SelectItem>
+            <SelectItem value="ANALYST">Business analyst</SelectItem>
+            <SelectItem value="OPERATIONS_MANAGER">Operations manager</SelectItem>
+            <SelectItem value="SUPER_ADMIN">Master admin · full access</SelectItem>
           </SelectContent>
         </Select>
         <Button type="submit" variant="hero" disabled={grant.isPending}>
@@ -72,7 +78,7 @@ function TeamPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={m.role === "admin" ? "brand" : "info"}>{a(m.role === "admin" ? "Master admin" : "Support")}</Badge>
+                <Badge variant={m.roleKey === "SUPER_ADMIN" ? "brand" : "info"}>{a(m.roleKey.replaceAll("_", " "))}</Badge>
                 <ConfirmAction
                   trigger={
                     <Button size="icon" variant="ghost" aria-label={a("Remove access")}>
@@ -80,10 +86,10 @@ function TeamPage() {
                     </Button>
                   }
                   title={a("Remove admin-team access?")}
-                  description={a("They keep their account but lose access to the admin center immediately.")}
+                  description={a("Their BeBoss account remains, but every platform-admin role and delegated permission is revoked.")}
                   destructive
                   confirmLabel="Remove access"
-                  onConfirm={() => revoke.mutate({ userId: m.userId, role: m.role })}
+                  onConfirm={() => revoke.mutate({ userId: m.userId })}
                 />
               </div>
             </div>

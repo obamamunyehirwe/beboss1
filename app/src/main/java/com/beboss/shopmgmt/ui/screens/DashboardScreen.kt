@@ -52,6 +52,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,11 +83,48 @@ import com.beboss.shopmgmt.ui.theme.WarningAmber
 import com.beboss.shopmgmt.ui.theme.WarningAmberLight
 import com.beboss.shopmgmt.ui.viewmodel.AppScreen
 import com.beboss.shopmgmt.util.AppLanguage
+import com.beboss.shopmgmt.util.AndroidDeviceCredentialStore
+import com.beboss.shopmgmt.util.SupabaseAdminClient
+import com.beboss.shopmgmt.util.SupabaseShopAnnouncementDto
 import com.beboss.shopmgmt.util.CloudSyncReport
 import com.beboss.shopmgmt.util.CloudSyncState
 import com.beboss.shopmgmt.util.ConnectivityStatus
 import com.beboss.shopmgmt.util.Localization
 import com.beboss.shopmgmt.util.ReceiptGenerator
+
+@Composable
+private fun DashboardAnnouncementCard(notice: SupabaseShopAnnouncementDto) {
+    val accent = when (notice.severity.uppercase()) {
+        "CRITICAL", "WARNING" -> WarningAmber
+        "SUCCESS" -> ProfitGreen
+        else -> OrangePrimary
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(15.dp),
+        color = accent.copy(alpha = 0.075f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Surface(shape = RoundedCornerShape(11.dp), color = accent.copy(alpha = 0.15f)) {
+                Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = accent, modifier = Modifier.padding(8.dp).size(18.dp))
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(notice.title, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+                if (notice.body.isNotBlank()) {
+                    Text(notice.body, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 16.sp)
+                }
+                if (notice.ctaLabel.isNotBlank()) {
+                    Text(notice.ctaLabel, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = accent)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun DashboardScreen(
@@ -125,6 +163,13 @@ fun DashboardScreen(
         }
     }
     val daysRemaining = shopProfile.daysRemaining
+    var announcements by remember { mutableStateOf<List<SupabaseShopAnnouncementDto>>(emptyList()) }
+    LaunchedEffect(shopProfile.id, language) {
+        val shopId = AndroidDeviceCredentialStore.currentShopId()
+        announcements = if (shopId.isBlank()) emptyList() else {
+            SupabaseAdminClient.fetchShopAnnouncements(shopId, language)
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -133,6 +178,28 @@ fun DashboardScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        if (announcements.isNotEmpty()) {
+            item(key = "beboss-announcement-feed") {
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(17.dp))
+                        Text(
+                            text = if (language == AppLanguage.KINYARWANDA) "Amatangazo ya BeBoss" else "BeBoss announcements",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Surface(shape = RoundedCornerShape(20.dp), color = OrangePrimary.copy(alpha = 0.12f)) {
+                            Text("LIVE", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = OrangePrimary)
+                        }
+                    }
+                    announcements.forEach { notice ->
+                        DashboardAnnouncementCard(notice = notice)
+                    }
+                }
+            }
+        }
+
         // Operational Branch, Auto-Sync & Monthly License Bar
         item {
             Row(

@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, ArrowUpRight, BarChart3, Building2, CreditCard, Package, RefreshCw, ShieldCheck, ShoppingCart, Smartphone, Truck, Users, Wallet, Zap } from "lucide-react";
+import { Activity, ArrowRight, ArrowUpRight, BarChart3, Building2, CreditCard, Megaphone, Package, RefreshCw, ShieldCheck, ShoppingCart, Smartphone, Truck, Users, Wallet, Zap } from "lucide-react";
 import { money, n, rows, s } from "../../lib/format";
 import type { CloudState, NavKey, Row, Snapshot } from "../../lib/types";
 import { PageHeading, SalesTable, StatCard, StatusPill } from "../ui";
@@ -18,6 +18,14 @@ export function WelcomePage({ cloud, snapshot, offline, revenueToday, profitToda
   const activeDevices = rows(cloud.devices).filter((item) => item.is_active === true);
   const pendingTransfers = rows(cloud.transfers).filter((item) => ["REQUESTED", "IN_TRANSIT", "RECEIPT_REQUESTED"].includes(s(item.status).toUpperCase()));
   const receivables = customers.reduce((sum, item) => sum + n(item.debtBalance), 0);
+  const now = Date.now();
+  const announcements = rows(cloud.announcements).filter((item) =>
+    item.is_active === true &&
+    ["ALL", "APP"].includes(s(item.audience).toUpperCase()) &&
+    (!s(item.target_shop_key) || s(item.target_shop_key) === s(cloud.shop.id)) &&
+    (!s(item.starts_at) || Date.parse(s(item.starts_at)) <= now) &&
+    (!s(item.ends_at) || Date.parse(s(item.ends_at)) > now)
+  ).slice(0, 3);
   const shortcuts: { title: string; description: string; view: NavKey; icon: typeof ShoppingCart; tone: string }[] = [
     { title: "Start a sale", description: "Open checkout and issue a receipt", view: "checkout", icon: ShoppingCart, tone: "orange" },
     { title: "Manage inventory", description: "Products, stock adjustments and reorder levels", view: "products", icon: Package, tone: "blue" },
@@ -28,6 +36,26 @@ export function WelcomePage({ cloud, snapshot, offline, revenueToday, profitToda
   ];
   return <div className="page-stack">
     <PageHeading eyebrow="YOUR RETAIL WORKSPACE" title={greeting + ", " + firstName} description="Your business workspace is ready. Review today's performance or jump straight into an operation." action={<button className="btn-primary" onClick={() => onNavigate("checkout")}><ShoppingCart size={16} /> New sale</button>} />
+    {announcements.length > 0 ? (
+      <section className="panel announcements" aria-label="BeBoss announcements">
+        <div className="panel-heading">
+          <div><span className="eyebrow muted">BEBOSS NOTICES</span><h3>Updates for your shop</h3></div>
+          <Megaphone size={18} className="muted-icon" />
+        </div>
+        {announcements.map((notice) => (
+          <article className="announcement-row" key={s(notice.id)}>
+            <StatusPill value={s(notice.severity) || "INFO"} />
+            <div>
+              <strong>{s(notice.title)}</strong>
+              {s(notice.body) ? <p>{s(notice.body)}</p> : null}
+              {s(notice.cta_label) && s(notice.cta_url) ? (
+                <button className="text-action" onClick={() => { void onAnnouncementAction?.(s(notice.cta_url)); }}>{s(notice.cta_label)} <ArrowUpRight size={13} /></button>
+              ) : null}
+            </div>
+          </article>
+        ))}
+      </section>
+    ) : null}
     <section className="welcome-hero">
       <div className="welcome-hero-copy">
         <span className={"welcome-live " + (offline ? "offline" : cloud.verifiedChunks > 0 ? "verified" : "pending")}><i />{offline ? "OFFLINE · LOCAL DATA" : cloud.verifiedChunks > 0 ? "CLOUD SNAPSHOT VERIFIED" : "CLOUD VERIFICATION PENDING"}</span>

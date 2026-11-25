@@ -264,7 +264,9 @@ class SyncCoordinator(
             try {
                 com.beboss.shopmgmt.util.ClockGuard.reInspectNow(application)
                 // Refresh foreground location telemetry when permission is active before pushing to cloud
-                LocationHelper.captureCurrentLocation(application)
+                if (com.beboss.shopmgmt.util.DeviceTelemetryUploader.isLocationSharingEnabled(application)) {
+                    LocationHelper.captureCurrentLocation(application)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -334,7 +336,9 @@ class SyncCoordinator(
             try {
                 try {
                     com.beboss.shopmgmt.util.ClockGuard.reInspectNow(application)
+                    if (com.beboss.shopmgmt.util.DeviceTelemetryUploader.isLocationSharingEnabled(application)) {
                     LocationHelper.captureCurrentLocation(application)
+                }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {

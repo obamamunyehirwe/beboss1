@@ -65,6 +65,12 @@ object LocationHelper {
         return fine || coarse
     }
 
+    fun clearCachedLocation(context: Context) {
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().clear().apply()
+        _lastLocation.value = CapturedLocation()
+    }
+
     fun loadCachedLocation(context: Context): CapturedLocation {
         val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val ts = prefs.getLong(KEY_TS, 0L)

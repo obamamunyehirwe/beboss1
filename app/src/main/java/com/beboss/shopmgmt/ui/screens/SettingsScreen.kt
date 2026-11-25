@@ -2795,6 +2795,52 @@ fun DevicePermissionsCard(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        val context = LocalContext.current
+        var locationSharingEnabled by remember {
+            mutableStateOf(com.beboss.shopmgmt.util.DeviceTelemetryUploader.isLocationSharingEnabled(context))
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(Icons.Default.Public, contentDescription = null, tint = OrangePrimary)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (language == AppLanguage.KINYARWANDA) "Sangira aho igikoresho giherereye" else "Share this device's foreground location",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = if (language == AppLanguage.KINYARWANDA)
+                            "Bifungura GPS igihe ukoresha BeBoss gusa. Nta gukurikirana mu ibanga cyangwa inyuma ya porogaramu."
+                        else "Optional. Uses GPS only while BeBoss is in use and permission is granted. No background tracking.",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = locationSharingEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled && !PermissionManager.hasLocationPermission(context)) {
+                            onManagePermissions()
+                        } else {
+                            com.beboss.shopmgmt.util.DeviceTelemetryUploader.setLocationSharingEnabled(context, enabled)
+                            locationSharingEnabled = enabled
+                        }
+                    }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
         Button(
             onClick = onManagePermissions,
             modifier = Modifier.fillMaxWidth(),

@@ -35,6 +35,13 @@ object AndroidDeviceCredentialStore {
             !prefs.getString(KEY_REFRESH, null).isNullOrBlank()
     }
 
+    /** Registered tenant id for the current paired terminal; contains no secret token. */
+    fun currentShopId(): String {
+        val context = appContext ?: return ""
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_SHOP_ID, "").orEmpty()
+    }
+
     fun readForShop(shopId: String): AndroidDeviceCredential? {
         val context = appContext ?: return null
         val deviceId = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

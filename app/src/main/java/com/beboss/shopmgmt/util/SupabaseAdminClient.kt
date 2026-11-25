@@ -35,6 +35,17 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.HttpsURLConnection
 
+data class SupabaseShopAnnouncementDto(
+    val id: String,
+    val title: String,
+    val body: String,
+    val severity: String,
+    val ctaLabel: String,
+    val ctaUrl: String,
+    val startsAt: String,
+    val endsAt: String?
+)
+
 data class SupabaseAdminSession(
     val accessToken: String,
     val refreshToken: String,
@@ -1868,6 +1879,54 @@ object SupabaseAdminClient {
             }
         } catch (e: Exception) {
             Log.e(TAG, "fetchDeviceTelemetryForShop error: ${e.safeMessage()}")
+            emptyList()
+        }
+    }
+
+    suspend fun fetchShopAnnouncements(
+        shopSyncKey: String,
+        language: AppLanguage
+    ): List<SupabaseShopAnnouncementDto> = withContext(Dispatchers.IO) {
+        if (!isConfigured() || shopSyncKey.isBlank()) return@withContext emptyList()
+        try {
+            val req = buildRestRequest(
+                "announcements?select=id,title,body,severity,cta_label,cta_url,translations,starts_at,ends_at,is_active&order=starts_at.desc&limit=10",
+                tenantSyncKey = shopSyncKey
+            ).get().build()
+            client.newCall(req).execute().use { response ->
+                if (!response.isSuccessful) return@withContext emptyList()
+                val now = System.currentTimeMillis()
+                val rows = JSONArray(response.body?.string().orEmpty().ifBlank { "[]" })
+                (0 until rows.length()).mapNotNull { index ->
+                    val row = rows.optJSONObject(index) ?: return@mapNotNull null
+                    if (!row.optBoolean("is_active", false)) return@mapNotNull null
+                    val starts = row.optString("starts_at", "")
+                    val ends = row.optString("ends_at", "").takeIf { it.isNotBlank() && it != "null" }
+                    val startsAt = runCatching { java.time.Instant.parse(starts).toEpochMilli() }.getOrDefault(Long.MAX_VALUE)
+                    val endsAt = ends?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrDefault(0L) }
+                    if (startsAt > now || (endsAt != null && endsAt <= now)) return@mapNotNull null
+                    val translations = row.optJSONObject("translations") ?: JSONObject()
+                    val languageKey = when (language) {
+                        AppLanguage.KINYARWANDA -> "rw"
+                        AppLanguage.FRENCH -> "fr"
+                        AppLanguage.SWAHILI -> "sw"
+                        else -> ""
+                    }
+                    val translated = translations.optJSONObject(languageKey) ?: JSONObject()
+                    SupabaseShopAnnouncementDto(
+                        id = row.optString("id"),
+                        title = translated.optString("title", row.optString("title")),
+                        body = translated.optString("body", row.optString("body")),
+                        severity = row.optString("severity", "INFO"),
+                        ctaLabel = translated.optString("cta_label", row.optString("cta_label")),
+                        ctaUrl = row.optString("cta_url"),
+                        startsAt = starts,
+                        endsAt = ends
+                    )
+                }
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "Shop announcement feed is unavailable: ${error.safeMessage()}")
             emptyList()
         }
     }

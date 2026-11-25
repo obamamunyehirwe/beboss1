@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { requireStaffRole, writeAudit, type AdminCtx } from "./admin-guard.server";
+import { requireAdminPermission, writeAudit, type AdminCtx } from "./admin-guard.server";
 
 const schema = z.object({
   id: z.string().uuid().optional(),
@@ -45,7 +45,7 @@ export const saveAnnouncement = createServerFn({ method: "POST" })
   .inputValidator((d: AnnouncementInput) => schema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as AdminCtx;
-    const admin = await requireStaffRole(ctx, true);
+    const admin = await requireAdminPermission(ctx, "announcements.manage");
     if (data.ends_at && new Date(data.ends_at) <= new Date(data.starts_at)) throw new Error("End date must be after the start date.");
     const { id, ...row } = data;
     const translations = await translateAnnouncement({ title: row.title, body: row.body, cta_label: row.cta_label });
@@ -63,7 +63,7 @@ export const deleteAnnouncement = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as AdminCtx;
-    const admin = await requireStaffRole(ctx, true);
+    const admin = await requireAdminPermission(ctx, "announcements.manage");
     const { error } = await ctx.supabase.from("announcements").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     await writeAudit(ctx, admin.email, "DELETE_ANNOUNCEMENT", data.id, "Removed announcement");

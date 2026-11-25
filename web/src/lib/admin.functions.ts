@@ -10,10 +10,28 @@ async function requireAdmin(context: Ctx, allowSupport = false) {
   const fn = allowSupport ? "is_beboss_staff" : "is_beboss_admin";
   const { data, error } = await context.supabase.rpc(fn);
   if (error) throw new Error(`Permission check failed: ${error.message}`);
-  if (!data) throw new Error("Forbidden: master admin access required.");
+  if (!data) throw new Error(allowSupport ? "Forbidden: BeBoss admin-team access required." : "Forbidden: master admin access required.");
   const email = String(context.claims?.email ?? "admin");
   return { email, label: `BeBoss Admin (${email})` };
 }
+
+async function requirePermission(context: Ctx, permission: string) {
+  const { data, error } = await context.supabase.rpc("has_admin_permission", { p_permission: permission });
+  if (error) throw new Error(`Permission check failed: ${error.message}`);
+  if (data !== true) throw new Error(`Forbidden: the assigned admin role does not include ${permission}.`);
+  const email = String(context.claims?.email ?? "admin");
+  return { email, label: `BeBoss Admin (${email})` };
+}
+
+const TEAM_ROLE_PERMISSIONS: Record<string, string[]> = {
+  RELEASE_MANAGER: ["releases.manage"],
+  ANNOUNCEMENT_MANAGER: ["announcements.manage"],
+  DEVICE_AUDITOR: ["devices.audit", "sync.view"],
+  SUPPORT: ["inbox.manage", "shops.view"],
+  FINANCE_REVIEWER: ["payments.review", "billing.view"],
+  ANALYST: ["analytics.view", "shops.view", "sync.view"],
+  OPERATIONS_MANAGER: ["shops.view", "devices.audit", "users.manage", "sync.view"],
+};
 
 async function audit(context: Ctx, email: string, action: string, target: string, details: string) {
   await context.supabase.from("admin_audit_logs").insert({
@@ -139,16 +157,20 @@ export const getAdminContext = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const ctx = context as unknown as Ctx;
-    const [adminResult, staffResult] = await Promise.all([
+    const [adminResult, staffResult, permissionResult, profileResult] = await Promise.all([
       ctx.supabase.rpc("is_beboss_admin"),
       ctx.supabase.rpc("is_beboss_staff"),
+      (ctx.supabase as any).rpc("current_admin_permissions"),
+      ctx.supabase.from("admin_profiles").select("role").eq("user_id", ctx.userId).maybeSingle(),
     ]);
-    if (adminResult.error || staffResult.error) {
-      console.error("[BeBoss admin auth] Supabase role verification failed", adminResult.error ?? staffResult.error);
+    if (adminResult.error || staffResult.error || permissionResult.error) {
+      console.error("[BeBoss admin auth] Supabase role verification failed", adminResult.error ?? staffResult.error ?? permissionResult.error);
       throw new Error("BeBoss could not verify this account's admin permissions. Please retry.");
     }
     const isAdmin = adminResult.data;
     const isStaff = staffResult.data;
+    const permissions = Array.isArray(permissionResult.data) ? permissionResult.data as string[] : [];
+    const roleKey = String(profileResult.data?.role ?? (isAdmin ? "SUPER_ADMIN" : "SUPPORT"));
     let signingKeyConfigured = false;
     if (isAdmin) {
       try {
@@ -158,7 +180,7 @@ export const getAdminContext = createServerFn({ method: "POST" })
         console.error("[BeBoss admin auth] BB3 key status is temporarily unavailable", error);
       }
     }
-    return { isAdmin: !!isAdmin, isStaff: !!isStaff, email: String(ctx.claims?.email ?? ""), signingKeyConfigured };
+    return { isAdmin: !!isAdmin, isStaff: !!isStaff, roleKey, permissions, email: String(ctx.claims?.email ?? ""), signingKeyConfigured };
   });
 
 // ---------------- Payments ----------------
@@ -1094,11 +1116,12 @@ export const publishRelease = createServerFn({ method: "POST" })
   .inputValidator((d: z.infer<typeof releaseSchema>) => releaseSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    const admin = await requireAdmin(ctx);
+    const admin = await requirePermission(ctx, "releases.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     if (data.make_current) {
-      await ctx.supabase.from("app_releases").update({ is_current: false }).eq("is_current", true);
+      await supabaseAdmin.from("app_releases").update({ is_current: false }).eq("is_current", true);
     }
-    const { data: row, error } = await ctx.supabase
+    const { data: row, error } = await supabaseAdmin
       .from("app_releases")
       .insert({
         version_name: data.version_name,
@@ -1117,7 +1140,7 @@ export const publishRelease = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     if (data.make_current) {
-      await ctx.supabase.from("app_config").update({ apk_download_url: data.public_download_url, apk_version: data.version_name, updated_at: Date.now() }).eq("id", "global");
+      await supabaseAdmin.from("app_config").update({ apk_download_url: data.public_download_url, apk_version: data.version_name, updated_at: Date.now() }).eq("id", "global");
     }
     await audit(ctx, admin.email, "PUBLISH_RELEASE", data.version_name, `${data.file_name} (${data.size_bytes} bytes)${data.make_current ? " — now current" : ""}`);
     return { id: row.id as string };
@@ -1128,13 +1151,14 @@ export const setCurrentRelease = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; public_download_url: string }) => z.object({ id: z.string().uuid(), public_download_url: z.string().url().max(500) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    const admin = await requireAdmin(ctx);
-    const { data: rel } = await ctx.supabase.from("app_releases").select("version_name").eq("id", data.id).maybeSingle();
+    const admin = await requirePermission(ctx, "releases.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rel } = await supabaseAdmin.from("app_releases").select("version_name").eq("id", data.id).maybeSingle();
     if (!rel) throw new Error("Release not found.");
-    await ctx.supabase.from("app_releases").update({ is_current: false }).eq("is_current", true);
-    const { error } = await ctx.supabase.from("app_releases").update({ is_current: true, file_url: data.public_download_url }).eq("id", data.id);
+    await supabaseAdmin.from("app_releases").update({ is_current: false }).eq("is_current", true);
+    const { error } = await supabaseAdmin.from("app_releases").update({ is_current: true, is_public: true, file_url: data.public_download_url } as never).eq("id", data.id);
     if (error) throw new Error(error.message);
-    await ctx.supabase.from("app_config").update({ apk_download_url: data.public_download_url, apk_version: rel.version_name, updated_at: Date.now() }).eq("id", "global");
+    await supabaseAdmin.from("app_config").update({ apk_download_url: data.public_download_url, apk_version: rel.version_name, updated_at: Date.now() }).eq("id", "global");
     await audit(ctx, admin.email, "SET_CURRENT_RELEASE", rel.version_name, "Marked as current download");
     return { ok: true };
   });
@@ -1144,14 +1168,31 @@ export const deleteRelease = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    const admin = await requireAdmin(ctx);
-    const { data: rel } = await ctx.supabase.from("app_releases").select("*").eq("id", data.id).maybeSingle();
+    const admin = await requirePermission(ctx, "releases.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rel } = await supabaseAdmin.from("app_releases").select("*").eq("id", data.id).maybeSingle();
     if (!rel) throw new Error("Release not found.");
     if (rel.is_current) throw new Error("Make another release current before deleting this one.");
-    await ctx.supabase.storage.from("releases").remove([rel.file_path]);
-    const { error } = await ctx.supabase.from("app_releases").delete().eq("id", data.id);
+    await supabaseAdmin.storage.from("releases").remove([rel.file_path]);
+    const { error } = await supabaseAdmin.from("app_releases").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     await audit(ctx, admin.email, "DELETE_RELEASE", rel.version_name, rel.file_name);
+    return { ok: true };
+  });
+
+export const setReleaseVisibility = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string; isPublic: boolean }) => z.object({ id: z.string().uuid(), isPublic: z.boolean() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requirePermission(ctx, "releases.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: release, error: readError } = await supabaseAdmin.from("app_releases").select("version_name,is_current").eq("id", data.id).maybeSingle();
+    if (readError || !release) throw new Error(readError?.message ?? "Release not found.");
+    if (release.is_current && !data.isPublic) throw new Error("The current release must remain public. Select another current release first.");
+    const { error } = await supabaseAdmin.from("app_releases").update({ is_public: data.isPublic } as never).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    await audit(ctx, admin.email, data.isPublic ? "SHOW_RELEASE_PUBLICLY" : "HIDE_RELEASE_PUBLICLY", data.id, `v${release.version_name}`);
     return { ok: true };
   });
 
@@ -1188,25 +1229,42 @@ export const listTeam = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     await requireAdmin(ctx);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: roles, error } = await supabaseAdmin.from("user_roles").select("user_id, role, created_at");
-    if (error) throw new Error(error.message);
-    const members = await Promise.all(
-      (roles ?? []).map(async (r) => {
-        const { data: u } = await supabaseAdmin.auth.admin.getUserById(r.user_id);
-        return { userId: r.user_id, role: r.role, since: r.created_at, email: u?.user?.email ?? "unknown", lastSignIn: u?.user?.last_sign_in_at ?? null };
-      }),
-    );
+    const [{ data: roles, error }, { data: grants, error: grantError }, { data: profiles, error: profileError }] = await Promise.all([
+      supabaseAdmin.from("user_roles").select("user_id, role, created_at"),
+      (supabaseAdmin as any).from("admin_role_grants").select("user_id, role_key, permissions, is_active, expires_at, granted_at"),
+      supabaseAdmin.from("admin_profiles").select("user_id, role, is_active"),
+    ]);
+    if (error || grantError || profileError) throw new Error(error?.message ?? grantError?.message ?? profileError?.message ?? "Could not load the admin team.");
+    const members = await Promise.all((roles ?? []).map(async (r) => {
+      const grant = (grants ?? []).find((g) => g.user_id === r.user_id);
+      const profile = (profiles ?? []).find((p) => p.user_id === r.user_id);
+      const { data: u } = await supabaseAdmin.auth.admin.getUserById(r.user_id);
+      return {
+        userId: r.user_id,
+        role: r.role,
+        roleKey: String(grant?.role_key ?? profile?.role ?? (r.role === "admin" ? "SUPER_ADMIN" : "SUPPORT")),
+        permissions: Array.isArray(grant?.permissions) ? grant.permissions : [],
+        active: profile?.is_active !== false && grant?.is_active !== false,
+        expiresAt: grant?.expires_at ?? null,
+        since: grant?.granted_at ?? r.created_at,
+        email: u?.user?.email ?? "unknown",
+        lastSignIn: u?.user?.last_sign_in_at ?? null,
+      };
+    }));
     return { members, me: ctx.userId };
   });
 
 export const grantTeamRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email: string; role: "admin" | "support" }) => z.object({ email: z.string().trim().email().max(200), role: z.enum(["admin", "support"]) }).parse(d))
+  .inputValidator((d: { email: string; role: string }) => z.object({
+    email: z.string().trim().email().max(200),
+    role: z.enum(["SUPER_ADMIN", "RELEASE_MANAGER", "ANNOUNCEMENT_MANAGER", "DEVICE_AUDITOR", "SUPPORT", "FINANCE_REVIEWER", "ANALYST", "OPERATIONS_MANAGER"]),
+  }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const target = data.email.toLowerCase();
+    const target = data.email.trim().toLowerCase();
     let found: { id: string; email?: string } | undefined;
 
     for (let page = 1; page <= 20 && !found; page++) {
@@ -1219,9 +1277,7 @@ export const grantTeamRole = createServerFn({ method: "POST" })
     let invited = false;
     if (!found) {
       const redirectTo = process.env["BEBOSS_ADMIN_URL"]?.trim();
-      if (!redirectTo) {
-        throw new Error("Team invitations are not configured. Set BEBOSS_ADMIN_URL to the production /reset-password?invite=1 URL first.");
-      }
+      if (!redirectTo) throw new Error("Team invitations are not configured. Set BEBOSS_ADMIN_URL to the production /reset-password?invite=1 URL first.");
       const { data: invitation, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(target, { redirectTo });
       if (error) throw new Error(`Could not invite this team member: ${error.message}`);
       if (!invitation.user?.id) throw new Error("Supabase did not return the invited account.");
@@ -1229,45 +1285,56 @@ export const grantTeamRole = createServerFn({ method: "POST" })
       invited = true;
     }
 
-    const { error: roleError } = await supabaseAdmin
-      .from("user_roles")
-      .upsert({ user_id: found.id, role: data.role }, { onConflict: "user_id,role" });
-    if (roleError) {
-      if (invited) await supabaseAdmin.auth.admin.deleteUser(found.id);
-      throw new Error(`Could not grant the requested role: ${roleError.message}`);
+    if (data.role === "SUPER_ADMIN") {
+      const { count } = await supabaseAdmin.from("user_roles").select("*", { count: "exact", head: true }).eq("role", "admin");
+      const { error: roleError } = await supabaseAdmin.from("user_roles").upsert({ user_id: found.id, role: "admin" }, { onConflict: "user_id,role" });
+      if (roleError) throw new Error(`Could not grant master admin access: ${roleError.message}`);
+      await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "support");
+      await supabaseAdmin.from("admin_role_grants").delete().eq("user_id", found.id);
+      await supabaseAdmin.from("admin_profiles").upsert({ user_id: found.id, email: target, full_name: target, role: "SUPER_ADMIN", is_active: true }, { onConflict: "user_id" });
+      await audit(ctx, admin.email, invited ? "INVITE_SUPER_ADMIN" : "GRANT_SUPER_ADMIN", target, "Full Master Admin access granted.");
+      return { ok: true, invited, email: target, role: data.role, permissions: ["*"] };
     }
 
+    const permissions = TEAM_ROLE_PERMISSIONS[data.role];
+    if (!permissions?.length) throw new Error("The requested team role has no configured permissions.");
+    const { count: masterCount } = await supabaseAdmin.from("user_roles").select("*", { count: "exact", head: true }).eq("role", "admin");
+    const { data: currentMaster } = await supabaseAdmin.from("user_roles").select("user_id").eq("user_id", found.id).eq("role", "admin").maybeSingle();
+    if (currentMaster && (masterCount ?? 0) <= 1) throw new Error("You cannot downgrade the last Master Admin. Promote another Master Admin first.");
+    const { error: roleError } = await supabaseAdmin.from("user_roles").upsert({ user_id: found.id, role: "support" }, { onConflict: "user_id,role" });
+    if (roleError) throw new Error(`Could not authorize the invited account: ${roleError.message}`);
+    await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "admin");
     const { error: profileError } = await supabaseAdmin.from("admin_profiles").upsert({
-      user_id: found.id,
-      email: target,
-      full_name: target,
-      role: data.role === "admin" ? "SUPER_ADMIN" : "SUPPORT",
+      user_id: found.id, email: target, full_name: target, role: data.role, is_active: true,
     }, { onConflict: "user_id" });
-    if (profileError) {
-      console.error("[BeBoss team] Role granted but admin profile could not be updated", profileError);
-    }
-
-    await audit(ctx, admin.email, invited ? "INVITE_TEAM_MEMBER" : "GRANT_ROLE", target, data.role);
-    return { ok: true, invited, email: target, role: data.role };
+    if (profileError) throw new Error(`Could not create the admin profile: ${profileError.message}`);
+    const { error: grantError } = await supabaseAdmin.from("admin_role_grants").upsert({
+      user_id: found.id, role_key: data.role, permissions, is_active: true,
+      granted_by: ctx.userId, granted_at: Date.now(), expires_at: null,
+    }, { onConflict: "user_id" });
+    if (grantError) throw new Error(`Could not store the assigned permissions: ${grantError.message}`);
+    await audit(ctx, admin.email, invited ? "INVITE_TEAM_MEMBER" : "ASSIGN_ADMIN_ROLE", target, `${data.role}: ${permissions.join(", ")}`);
+    return { ok: true, invited, email: target, role: data.role, permissions };
   });
 
 export const revokeTeamRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { userId: string; role: "admin" | "support" }) => z.object({ userId: z.string().uuid(), role: z.enum(["admin", "support"]) }).parse(d))
+  .inputValidator((d: { userId: string }) => z.object({ userId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
+    if (data.userId === ctx.userId) throw new Error("You cannot revoke your own admin access from this session.");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    if (data.role === "admin") {
-      const { count } = await supabaseAdmin.from("user_roles").select("*", { count: "exact", head: true }).eq("role", "admin");
-      if ((count ?? 0) <= 1) throw new Error("You can't remove the last master admin.");
-    }
-    const { error } = await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId).eq("role", data.role);
+    const { count } = await supabaseAdmin.from("user_roles").select("*", { count: "exact", head: true }).eq("role", "admin");
+    const { data: targetRoles } = await supabaseAdmin.from("user_roles").select("role").eq("user_id", data.userId);
+    if (targetRoles?.some((r) => r.role === "admin") && (count ?? 0) <= 1) throw new Error("You can't remove the last master admin.");
+    const { error } = await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId);
     if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, "REVOKE_ROLE", data.userId, data.role);
+    await supabaseAdmin.from("admin_role_grants").delete().eq("user_id", data.userId);
+    await supabaseAdmin.from("admin_profiles").update({ is_active: false }).eq("user_id", data.userId);
+    await audit(ctx, admin.email, "REVOKE_TEAM_ACCESS", data.userId, "Removed all BeBoss admin-team roles and permissions.");
     return { ok: true };
   });
-
 
 /**
  * Immediately revokes a shop owner's authenticated website membership.
