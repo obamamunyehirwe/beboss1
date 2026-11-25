@@ -331,7 +331,7 @@ function TopBar({ email, isAdmin, permissions, onSignOut }: { email: string; isA
           <Logo to="/admin" suffix="Admin" />
         </div>
         <div className="hidden sm:block">
-          <LivePulse />
+          <LivePulse enabled={isAdmin || permissions.includes("sync.view")} />
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -353,13 +353,15 @@ function TopBar({ email, isAdmin, permissions, onSignOut }: { email: string; isA
   );
 }
 
-function LivePulse() {
-  const { data, isLoading, isError } = useQuery(syncEventsQuery);
+function LivePulse({ enabled = true }: { enabled?: boolean }) {
+  const { data, isLoading, isError } = useQuery({ ...syncEventsQuery, enabled });
   const now = useNow(10_000);
   const last = data?.[0];
   const lastAt = last ? Date.parse(last.created_at) : Number.NaN;
-  const isRecent = Number.isFinite(lastAt) && lastAt <= now && now - lastAt < 15 * 60_000;
-  const label = isLoading
+  const isRecent = enabled && Number.isFinite(lastAt) && lastAt <= now && now - lastAt < 15 * 60_000;
+  const label = !enabled
+    ? "Cloud activity is not assigned to this role"
+    : isLoading
     ? "Checking cloud activity"
     : isError
       ? "Cloud activity unavailable"
