@@ -91,6 +91,21 @@ class AuthSessionCoordinator(
         pin: String,
         password: String
     ) {
+        // Enterprise hardening: rate-limit shop registration per device to prevent
+        // spam registration and username enumeration.
+        val regRate = AuthRateLimiter.checkAllowed("reg:device", application)
+        if (!regRate.allowed) {
+            _authError.value = regRate.message
+            scope.launch {
+                repository.recordLocalAudit(
+                    actorName = "Unknown", actorRole = "SECURITY",
+                    action = "REGISTRATION_RATE_LIMITED", targetId = "reg:device",
+                    details = regRate.message
+                )
+            }
+            return
+        }
+
         scope.launch {
             try {
                 val cleanPin = pin.trim()
@@ -105,17 +120,20 @@ class AuthSessionCoordinator(
                 // A valid owner identity is required for tenant isolation and cloud recovery.
                 if (cleanShopName.isBlank() || cleanOwnerName.isBlank() || cleanUsername.length < 2 ||
                     !cleanUsername.matches(Regex("[a-z0-9._-]{2,80}")) || phoneDigits.length != 9) {
+                    AuthRateLimiter.recordFailure("reg:device", application)
                     _authError.value = "Enter a shop name, owner name, a valid username, and the registered 9-digit Rwandan phone number."
                     return@launch
                 }
 
                 val pinCheck = SecurityUtils.validatePinStrength(cleanPin)
                 if (!pinCheck.isValid) {
+                    AuthRateLimiter.recordFailure("reg:device", application)
                     _authError.value = pinCheck.message
                     return@launch
                 }
                 val passCheck = SecurityUtils.validatePasswordStrength(cleanPassword)
                 if (!passCheck.isValid) {
+                    AuthRateLimiter.recordFailure("reg:device", application)
                     _authError.value = passCheck.message
                     return@launch
                 }
