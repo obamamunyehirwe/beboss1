@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, BarChart3, Bell, Building2, Briefcase, Check, ChevronDown,
   ClipboardList, CreditCard, Database, Home, LayoutDashboard, LoaderCircle, LogOut, Menu,
   Package, RefreshCw, Search, Settings, ShieldCheck, ShoppingCart, Smartphone, Truck, UserRound,
-  Users, Warehouse, X, Zap, Languages
+  Users, Warehouse, X, Zap, Languages, ShieldAlert
 } from "lucide-react";
 import { callDesktopApi, currentSession, signOut, OwnerAuthorizationError, type OwnerCredentials } from "./lib/cloud";
 import { BrowserRuntimeNotice } from "./components/BrowserRuntimeNotice";
@@ -28,6 +28,7 @@ import { BillingPage } from "./components/screens/BillingPage";
 import { DiagnosticsPage } from "./components/screens/DiagnosticsPage";
 import { SyncHubPage } from "./components/screens/SyncHubPage";
 import { OwnerAccessPage } from "./components/screens/OwnerAccessPage";
+import { AdminConsolePage } from "./components/screens/AdminConsolePage";
 import { BackupPage } from "./components/screens/BackupPage";
 import { SettingsPage } from "./components/screens/SettingsPage";
 import { WelcomePage } from "./components/screens/WelcomePage";
@@ -86,6 +87,7 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
   { id: "diagnostics", label: "System diagnostics", icon: Activity, group: "Administration" },
   { id: "sync", label: "Sync hub", icon: RefreshCw, group: "Administration" },
   { id: "admin", label: "Owner access", icon: ShieldCheck, group: "Administration" },
+  { id: "masterAdmin", label: "Master Admin Console", icon: ShieldAlert, group: "Administration" },
   { id: "backup", label: "Backup & recovery", icon: Database, group: "Administration" },
   { id: "settings", label: "Shop settings", icon: Settings, group: "Administration" }
 ];
@@ -712,7 +714,7 @@ function NativeDesktopApp() {
         {view === "welcome" && <WelcomePage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} lowStock={lowStock} onNavigate={setView} onReceipt={openReceipt} onAnnouncementAction={openAnnouncementAction} language={preferences.language} />}
         {view === "management" && <ManagementPage cloud={cloud} snapshot={snapshot} offline={offline} onNavigate={setView} onAnnouncementAction={openAnnouncementAction} language={preferences.language} />}
         {view === "overview" && <OverviewPage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} stockCost={stockCost} receivables={receivables} lowStock={lowStock} onNavigate={setView} onOpenCommand={() => setPaletteOpen(true)} />}
-        {view === "checkout" && <CheckoutPage key={checkoutStorageKey} storageKey={checkoutStorageKey} snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} />}
+        {view === "checkout" && <CheckoutPage key={checkoutStorageKey} storageKey={checkoutStorageKey} snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} cashierName={owner.username} />}
         {view === "products" && <ProductsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} />}
         {view === "sales" && <SalesPage snapshot={snapshot} query={search} onReceipt={openReceipt} />}
         {view === "customers" && <CustomersPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} onReceipt={openReceipt} />}
@@ -738,6 +740,7 @@ function NativeDesktopApp() {
         {view === "diagnostics" && <DiagnosticsPage cloud={cloud} snapshot={snapshot} onRefresh={refresh} />}
         {view === "sync" && <SyncHubPage cloud={cloud} deviceId={deviceId} offline={offline} onRefresh={refresh} />}
         {view === "admin" && <OwnerAccessPage cloud={cloud} />}
+        {view === "masterAdmin" && <AdminConsolePage />}
         {view === "backup" && <BackupPage snapshot={snapshot} cloud={cloud} onCommit={commitSnapshot}
           onCreateBranchShare={async (branchIdFilter) => {
             const result = await callAction("create_branch_share", { snapshot, branchIdFilter });

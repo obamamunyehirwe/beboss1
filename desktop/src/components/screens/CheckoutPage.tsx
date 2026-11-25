@@ -1,9 +1,9 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Barcode, Check, Minus, Package, Pause, Play, Plus, Search, ShieldCheck, ShoppingCart, Trash2, X } from "lucide-react";
+import { Barcode, Check, Minus, Package, Pause, Play, Plus, ReceiptText, Search, ShieldCheck, ShoppingCart, Trash2, X } from "lucide-react";
 import { activeCustomers, activeProducts, errorText, id, money, n, s } from "../../lib/format";
 import type { CommitSnapshot, Row, Snapshot } from "../../lib/types";
-import { Empty, PageHeading } from "../ui";
+import { Empty, Modal, PageHeading } from "../ui";
 
 type TenderKey = "cash" | "momo" | "airtel" | "card";
 type CartLine = { product: Row; quantity: number };
@@ -77,9 +77,9 @@ function serializeOrder(order: HeldCart): StoredOrder {
 
 const TENDER_LABELS: Record<TenderKey, string> = { cash: "Cash", momo: "MTN MoMo", airtel: "Airtel Money", card: "Card" };
 
-export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, storageKey }: {
+export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, storageKey, cashierName }: {
   snapshot: Snapshot | null; onCommit: CommitSnapshot; onReceipt: (sale: Row, items: Row[]) => void;
-  offline: boolean; busy: boolean; storageKey: string;
+  offline: boolean; busy: boolean; storageKey: string; cashierName: string;
 }) {
   const products = activeProducts(snapshot);
   const customers = activeCustomers(snapshot);
@@ -93,6 +93,15 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
   const [cart, setCart] = useState<CartLine[]>([]);
   const [notes, setNotes] = useState("");
   const [done, setDone] = useState("");
+  const [quickSaleOpen, setQuickSaleOpen] = useState(false);
+  const [quickSaleName, setQuickSaleName] = useState("");
+  const [quickSaleAmount, setQuickSaleAmount] = useState("");
+  const [quickSaleCost, setQuickSaleCost] = useState("");
+  const [quickSalePayment, setQuickSalePayment] = useState("CASH");
+  const [quickSaleBranchId, setQuickSaleBranchId] = useState("");
+  const [quickSaleNotes, setQuickSaleNotes] = useState("");
+  const [quickSaleBusy, setQuickSaleBusy] = useState(false);
+  const [quickSaleError, setQuickSaleError] = useState("");
   const [held, setHeld] = useState<HeldCart[]>([]);
   const [checkoutRestored, setCheckoutRestored] = useState(false);
   const [storageWritable, setStorageWritable] = useState(false);
@@ -299,7 +308,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
       paymentMethod: effectiveMethod, paymentStatus: saleDebt <= 0.01 ? "PAID" : salePaid > 0 ? "PARTIAL" : "UNPAID",
       amountPaid: Math.min(saleTotal, salePaid), tenders: split ? tenderRows : [], notes: notes.trim(), receiptNumber,
       branchId: s(saleCart[0]?.product.branchId) || "main_branch", branchName: "", cashierId: "DESKTOP",
-      cashierName: "Desktop Owner", synced: false, updatedAt: now, syncVersion: 1, hlcTimestamp: 0, lastModifiedDeviceId: "DESKTOP"
+      cashierName: cashierName || "Shop Owner", synced: false, updatedAt: now, syncVersion: 1, hlcTimestamp: 0, lastModifiedDeviceId: "DESKTOP"
     };
     await onCommit((next) => {
       const stockUpdates = items.map((item) => {
@@ -336,8 +345,72 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
     setSplit(false); setPayment("CASH"); setTenders(EMPTY_TENDERS);
   }
 
+  async function completeQuickSale(event: React.FormEvent) {
+    event.preventDefault();
+    if (quickSaleBusy) return;
+    const name = quickSaleName.trim();
+    const amount = n(quickSaleAmount);
+    const cost = quickSaleCost.trim() === "" ? amount * 0.7 : n(quickSaleCost);
+    if (!snapshot) throw new Error("A verified shop snapshot is required before recording a quick sale.");
+    if (name.length < 2) { setQuickSaleError("Enter a description for this item or service."); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { setQuickSaleError("Sale amount must be greater than zero."); return; }
+    if (!Number.isFinite(cost) || cost < 0) { setQuickSaleError("Cost estimate must be zero or greater."); return; }
+
+    const availableBranches = rows(snapshot.branches).filter((branch) => branch.isActive !== false);
+    const chosenBranch = availableBranches.find((branch) => s(branch.id) === quickSaleBranchId)
+      ?? availableBranches.find((branch) => branch.isMainBranch === true)
+      ?? availableBranches[0];
+    const branchId = s(chosenBranch?.id) || "main_branch";
+    const branchName = s(chosenBranch?.name) || "Main Branch";
+    const now = Date.now();
+    const saleId = id();
+    const receiptNumber = "BB-QS-" + now.toString().slice(-8);
+    const productId = "custom_" + saleId;
+    const item = {
+      id: id(), saleId, productId, productName: name, category: "Quick Sale", unit: "item",
+      quantitySold: 1, costPriceAtSale: cost, unitPriceAtSale: amount, subtotal: amount,
+      profit: amount - cost, branchId
+    };
+    const sale = {
+      id: saleId, customerId: null, customerName: "Quick Cash Customer", saleDate: now,
+      totalAmount: amount, totalCost: cost, totalProfit: amount - cost, discountAmount: 0,
+      paymentMethod: quickSalePayment, paymentStatus: "PAID", amountPaid: amount, tenders: [],
+      notes: ("Quick POS Sale: " + name + (quickSaleNotes.trim() ? " · " + quickSaleNotes.trim() : "") +
+        (quickSaleCost.trim() ? "" : " · estimated cost 70% of sale value")).slice(0, 1000),
+      receiptNumber, branchId, branchName, cashierId: cashierName || "DESKTOP", cashierName: cashierName || "Shop Owner",
+      synced: false, updatedAt: now, syncVersion: 1, hlcTimestamp: 0, lastModifiedDeviceId: "DESKTOP"
+    };
+
+    setQuickSaleBusy(true);
+    setQuickSaleError("");
+    try {
+      await onCommit((next) => {
+        if (next.sales.some((existing) => s(existing.id) === saleId)) {
+          throw new Error("This quick sale already exists. Refresh the ledger before retrying.");
+        }
+        if (branchId !== "main_branch" && !next.branches.some((branch) => s(branch.id) === branchId && branch.isActive !== false)) {
+          throw new Error("The selected branch is no longer active. Refresh branches and try again.");
+        }
+        next.sales.unshift(sale);
+        next.saleItems.push(item);
+      }, "SALE");
+      onReceipt(sale, [item]);
+      setDone(receiptNumber);
+      setQuickSaleOpen(false);
+      setQuickSaleName("");
+      setQuickSaleAmount("");
+      setQuickSaleCost("");
+      setQuickSalePayment("CASH");
+      setQuickSaleNotes("");
+    } catch (error) {
+      setQuickSaleError(errorText(error));
+    } finally {
+      setQuickSaleBusy(false);
+    }
+  }
+
   return <div className="page-stack">
-    <PageHeading eyebrow="POINT OF SALE" title="New sale" description="Search the shop catalogue, add products, collect payment and post a sale to the shared BeBoss ledger." action={<span className="secure-label"><ShieldCheck size={15} /> {offline ? "Offline-capable, owner-authorized checkout" : "Online, owner-authorized checkout"}</span>} />
+    <PageHeading eyebrow="POINT OF SALE" title="New sale" description="Search the shop catalogue, add products, collect payment and post a sale to the shared BeBoss ledger." action={<div className="heading-actions"><span className="secure-label"><ShieldCheck size={15} /> {offline ? "Offline-capable, owner-authorized checkout" : "Online, owner-authorized checkout"}</span><button type="button" className="btn-outline" onClick={() => { setQuickSaleError(""); setQuickSaleBranchId(s(snapshot?.metadata?.activeBranchId)); setQuickSaleOpen(true); }} disabled={!snapshot || busy}><ReceiptText size={15} /> Quick custom sale</button></div>} />
     {!snapshot ? <Empty title="No verified product catalogue" description="Sync the shop's Android terminal before starting desktop sales." /> : <div className="pos-layout">
       <section className="pos-products">
         <div className="pos-search"><Barcode size={16} /><input value={search} onChange={(e) => { setSearch(e.target.value); setScanFeedback(""); }} onKeyDown={scanBarcode} placeholder="Search or scan a barcode, then press Enter…" autoFocus /><span className="pos-search-count">{cartCount} in cart</span></div>
@@ -385,5 +458,18 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
         </div>
       </section>
     </div>}
+    {quickSaleOpen && <Modal title="Quick custom sale" onClose={() => { if (!quickSaleBusy) setQuickSaleOpen(false); }}>
+      <form className="form-grid" onSubmit={(event) => void completeQuickSale(event)}>
+        {quickSaleError && <div className="inline-alert error field-wide">{quickSaleError}</div>}
+        <label className="field-wide">Item or service description<input required minLength={2} maxLength={120} autoFocus value={quickSaleName} onChange={(event) => setQuickSaleName(event.target.value)} placeholder="e.g. Phone repair, delivery or service" /></label>
+        <label>Sale amount (FRw)<input required type="number" min="1" step="1" value={quickSaleAmount} onChange={(event) => setQuickSaleAmount(event.target.value)} placeholder="0" /></label>
+        <label>Cost estimate (FRw)<input type="number" min="0" step="1" value={quickSaleCost} onChange={(event) => setQuickSaleCost(event.target.value)} placeholder={quickSaleAmount ? String(Math.round(n(quickSaleAmount) * 0.7)) + " · 70% estimate" : "Enter cost"} /></label>
+        <label>Payment method<select value={quickSalePayment} onChange={(event) => setQuickSalePayment(event.target.value)}><option value="CASH">Cash</option><option value="MOMO">MTN MoMo</option><option value="AIRTEL">Airtel Money</option><option value="CARD">Card</option></select></label>
+        <label>Branch<select value={quickSaleBranchId} onChange={(event) => setQuickSaleBranchId(event.target.value)}>{rows(snapshot?.branches).filter((branch) => branch.isActive !== false).map((branch) => <option key={s(branch.id)} value={s(branch.id)}>{s(branch.name) || s(branch.code)}</option>)}{!rows(snapshot?.branches).length && <option value="main_branch">Main Branch</option>}</select></label>
+        <label className="field-wide">Notes (optional)<textarea rows={2} maxLength={500} value={quickSaleNotes} onChange={(event) => setQuickSaleNotes(event.target.value)} placeholder="Service details or transaction note" /></label>
+        <p className="panel-hint field-wide">This creates a paid sale and receipt in the shared ledger without adding a catalogue product or deducting stock. A blank cost uses the Android app's 70% estimated-cost rule; enter the actual cost to improve margin reporting.</p>
+        <div className="form-actions field-wide"><button type="button" className="btn-outline" disabled={quickSaleBusy} onClick={() => setQuickSaleOpen(false)}>Cancel</button><button type="submit" className="btn-primary" disabled={quickSaleBusy}>{quickSaleBusy ? "Saving sale…" : "Record quick sale"}</button></div>
+      </form>
+    </Modal>}
   </div>;
 }

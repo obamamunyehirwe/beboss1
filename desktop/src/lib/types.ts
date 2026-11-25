@@ -49,6 +49,7 @@ export type NavKey =
   | "diagnostics"
   | "sync"
   | "admin"
+  | "masterAdmin"
   | "backup"
   | "settings";
 

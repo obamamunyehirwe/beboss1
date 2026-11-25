@@ -26,6 +26,28 @@ export const authClient = createClient(url, publishableKey, {
   }
 });
 
+// Master Admin uses a separate Supabase Auth client and encrypted token namespace.
+// This keeps the global administrator's credentials completely separate from a
+// shop owner's mobile-number verified session.
+const masterAdminSecureStorage = {
+  getItem: (key: string) => window.beBossDesktop.secureStore.get("master-admin:" + key),
+  setItem: (key: string, value: string) => window.beBossDesktop.secureStore.set("master-admin:" + key, value).then(() => undefined),
+  removeItem: (key: string) => window.beBossDesktop.secureStore.remove("master-admin:" + key).then(() => undefined)
+};
+
+export const masterAdminAuthClient = createClient(url, publishableKey, {
+  auth: {
+    storage: masterAdminSecureStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+    flowType: "pkce"
+  },
+  global: {
+    headers: { "X-BeBoss-Client": "desktop-master-admin" }
+  }
+});
+
 export type OwnerCredentials = { username: string; phone: string };
 
 export class OwnerAuthorizationError extends Error {
