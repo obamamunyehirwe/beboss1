@@ -714,7 +714,7 @@ function NativeDesktopApp() {
         {view === "welcome" && <WelcomePage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} lowStock={lowStock} onNavigate={setView} onReceipt={openReceipt} onAnnouncementAction={openAnnouncementAction} language={preferences.language} />}
         {view === "management" && <ManagementPage cloud={cloud} snapshot={snapshot} offline={offline} onNavigate={setView} onAnnouncementAction={openAnnouncementAction} language={preferences.language} />}
         {view === "overview" && <OverviewPage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} stockCost={stockCost} receivables={receivables} lowStock={lowStock} onNavigate={setView} onOpenCommand={() => setPaletteOpen(true)} />}
-        {view === "checkout" && <CheckoutPage key={checkoutStorageKey} storageKey={checkoutStorageKey} snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} />}
+        {view === "checkout" && <CheckoutPage key={checkoutStorageKey} storageKey={checkoutStorageKey} snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} cashierName={owner.username} />}
         {view === "products" && <ProductsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} />}
         {view === "sales" && <SalesPage snapshot={snapshot} query={search} onReceipt={openReceipt} />}
         {view === "customers" && <CustomersPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} onReceipt={openReceipt} />}
