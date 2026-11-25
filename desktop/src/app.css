@@ -580,3 +580,7 @@ select option { background: var(--panel-bg); color: var(--text); }
   table { color: #111 !important; }
   th, td { color: #111 !important; background: #fff !important; }
 }
+
+/* Public entry to the separately authenticated Master Admin workspace */
+.landing-admin-entry{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:0 10px;border:1px solid rgba(82,153,226,.3);border-radius:8px;background:rgba(50,126,205,.09);color:#89bdf2;font-size:9px;font-weight:850;white-space:nowrap}
+.landing-admin-entry:hover{border-color:rgba(90,167,241,.55);background:rgba(50,126,205,.16);color:#acd3ff}

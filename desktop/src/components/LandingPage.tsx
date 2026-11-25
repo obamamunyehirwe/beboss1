@@ -139,6 +139,7 @@ export function LandingPage({
             {isDark ? <Sun size={17} /> : <Moon size={17} />}
           </button>
           <button className="landing-login landing-login-small" onClick={onSignIn}>{t.signIn}<ArrowRight size={15} /></button>
+          <button className="landing-admin-entry" type="button" onClick={onOpenAdmin}><ShieldCheck size={14} />Master Admin</button>
         </div>
       </header>
 

@@ -1,7 +1,7 @@
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Activity, Check, Download, KeyRound, LogOut, RefreshCw,
+  Activity, ArrowLeft, Check, Download, KeyRound, LogOut, RefreshCw,
   Search, Settings, ShieldAlert, ShieldCheck, Smartphone, Store, Trash2, Users, Wallet, X
 } from "lucide-react";
 import { masterAdminAuthClient } from "../../lib/cloud";
@@ -103,7 +103,7 @@ async function verifyMasterAdmin(userId: string) {
   return profile.data as Row;
 }
 
-export function AdminConsolePage() {
+export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
@@ -569,10 +569,21 @@ export function AdminConsolePage() {
   const filteredDevices = data?.devices.filter(matches) ?? [];
   const filteredUsers = data?.users.filter(matches) ?? [];
   const filteredCodes = data?.codes.filter(matches) ?? [];
+  const exportRows = data ? ({
+    payments: filteredPayments,
+    shops: filteredShops,
+    devices: filteredDevices,
+    users: filteredUsers,
+    codes: filteredCodes,
+    branches: data.snapshots.filter(matches),
+    audit: data.audit.filter(matches),
+    telemetry: data.telemetry.filter(matches)
+  } as Partial<Record<AdminTab, Row[]>>)[tab] ?? [] : [];
+  const exportColumns = Object.keys(exportRows[0] ?? {});
 
   if (checking) return <div className="setup-loading"><RefreshCw className="spin" size={24} /><span>Verifying Master Admin access…</span></div>;
   if (!verified) return <div className="page-stack">
-    <PageHeading eyebrow="PRIVILEGED WORKSPACE" title="BeBoss Master Admin" description="Sign in with a dedicated Supabase administrator account. Shop-owner credentials do not grant global admin access." />
+    <PageHeading eyebrow="PRIVILEGED WORKSPACE" title="BeBoss Master Admin" description="Sign in with a dedicated Supabase administrator account. Shop-owner credentials do not grant global admin access." action={onExit ? <button className="btn-outline" onClick={onExit}><ArrowLeft size={14} /> Back to BeBoss home</button> : undefined} />
     <section className="panel admin-login-panel">
       <div className="admin-login-icon"><ShieldAlert size={25} /></div>
       <h3>Secure administrator sign-in</h3>
@@ -610,7 +621,7 @@ export function AdminConsolePage() {
       <p className="panel-hint">All lists below come from Supabase; they are not demonstration records. Dashboard refresh runs every 30 seconds while this console is open. Actions are checked by Supabase row-level security and written to the administrator audit log.</p>
     </>}
 
-    {tab !== "overview" && tab !== "settings" && <div className="panel-heading admin-list-heading"><div><span className="eyebrow muted">LIVE SUPABASE RECORDS</span><h3>{TABS.find((item) => item.id === tab)?.label}</h3></div><div className="heading-actions"><label className="global-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter records…" /></label><button className="btn-outline" onClick={() => data && downloadCsv("beboss-admin-" + tab + "-" + Date.now() + ".csv", Object.keys((({payments:data.payments,shops:data.shops,devices:data.devices,users:data.users,codes:data.codes,branches:data.snapshots,audit:data.audit,telemetry:data.telemetry} as Record<string,Row[]>)[tab][0] ?? {}), ({payments:filteredPayments,shops:filteredShops,devices:filteredDevices,users:filteredUsers,codes:filteredCodes,branches:data.snapshots.filter(matches),audit:data.audit.filter(matches),telemetry:data.telemetry.filter(matches)} as Record<string,Row[]>)[tab])} disabled={!data}> <Download size={15} /> Export CSV</button></div></div>}
+    {tab !== "overview" && tab !== "settings" && <div className="panel-heading admin-list-heading"><div><span className="eyebrow muted">LIVE SUPABASE RECORDS</span><h3>{TABS.find((item) => item.id === tab)?.label}</h3></div><div className="heading-actions"><label className="global-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter records…" /></label><button className="btn-outline" onClick={() => downloadCsv("beboss-admin-" + tab + "-" + Date.now() + ".csv", exportColumns, exportRows)} disabled={!data || exportRows.length === 0}> <Download size={15} /> Export CSV</button></div></div>}
 
     {tab === "payments" && data && <section className="panel">
       {filteredPayments.length ? <div className="table-wrap"><table><thead><tr><th>Shop / owner</th><th>Provider & payer</th><th>Plan</th><th>Amount</th><th>Gateway evidence</th><th>Submitted</th><th>State</th><th>Actions</th></tr></thead><tbody>{filteredPayments.map((payment) => <tr key={s(payment.id)}>
