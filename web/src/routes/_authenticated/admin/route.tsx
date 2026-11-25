@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity, AppWindow, BarChart3, Bot, CreditCard, Megaphone, ExternalLink, FileClock, Inbox, KeyRound, LayoutDashboard, Loader2, LogOut, Menu, Radio, RefreshCw, Settings, ShieldAlert, Smartphone, Store, Users, UsersRound,
@@ -66,6 +66,25 @@ const NAV = [
   { to: "/admin/team", label: "Admin team", icon: UsersRound },
   { to: "/admin/settings", label: "Settings", icon: Settings },
 ] as const;
+
+const NAV_PERMISSION: Record<string, string> = {
+  "/admin": "shops.view",
+  "/admin/analytics": "analytics.view",
+  "/admin/copilot": "analytics.view",
+  "/admin/payments": "payments.review",
+  "/admin/shops": "shops.view",
+  "/admin/devices": "devices.audit",
+  "/admin/users": "users.manage",
+  "/admin/codes": "payments.review",
+  "/admin/sync": "sync.view",
+  "/admin/releases": "releases.manage",
+  "/admin/inbox": "inbox.manage",
+  "/admin/announcements": "announcements.manage",
+};
+const NAV_SUPER_ADMIN_ONLY = new Set(["/admin/audit", "/admin/team", "/admin/settings"]);
+function hasPermission(permissions: string[], permission?: string) {
+  return !permission || permissions.includes("*") || permissions.includes(permission);
+}
 
 function AdminQueryStatusBanner() {
   const queryClient = useQueryClient();
