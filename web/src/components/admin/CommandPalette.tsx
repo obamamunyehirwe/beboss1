@@ -12,15 +12,20 @@ import { formatRwf } from "@/lib/format";
 export type NavEntry = { to: string; label: string; icon: ComponentType<{ className?: string }> };
 
 /** Ctrl/⌘+K: jump to any page, shop, payment, code, device or staff member. */
-export function CommandPalette({ nav }: { nav: readonly NavEntry[] }) {
+export function CommandPalette({ nav, isAdmin, permissions }: { nav: readonly NavEntry[]; isAdmin: boolean; permissions: string[] }) {
   const [open, setOpen] = useState(false);
   const a=useAdminText();
   const navigate = useNavigate();
-  const shops = useQuery({ ...shopsQuery, enabled: open });
-  const pays = useQuery({ ...paymentsQuery, enabled: open });
-  const codes = useQuery({ ...codesQuery, enabled: open });
-  const devices = useQuery({ ...devicesQuery, enabled: open });
-  const users = useQuery({ ...usersQuery, enabled: open });
+  const canViewShops = isAdmin || permissions.includes("shops.view");
+  const canViewPayments = isAdmin || permissions.includes("payments.review") || permissions.includes("analytics.view");
+  const canViewCodes = isAdmin || permissions.includes("payments.review");
+  const canViewDevices = isAdmin || permissions.includes("devices.audit") || permissions.includes("analytics.view");
+  const canViewUsers = isAdmin || permissions.includes("users.manage") || permissions.includes("shops.view");
+  const shops = useQuery({ ...shopsQuery, enabled: open && canViewShops });
+  const pays = useQuery({ ...paymentsQuery, enabled: open && canViewPayments });
+  const codes = useQuery({ ...codesQuery, enabled: open && canViewCodes });
+  const devices = useQuery({ ...devicesQuery, enabled: open && canViewDevices });
+  const users = useQuery({ ...usersQuery, enabled: open && canViewUsers });
 
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
@@ -62,7 +67,7 @@ export function CommandPalette({ nav }: { nav: readonly NavEntry[] }) {
             ))}
           </CommandGroup>
           <CommandSeparator />
-          <CommandGroup heading="Shops">
+          {canViewShops && <CommandGroup heading="Shops">
             {(shops.data ?? []).slice(0, 300).map((s) => (
               <CommandItem key={s.id} value={`shop ${s.shop_name} ${s.owner_username} ${s.owner_phone} ${s.owner_name} ${s.id}`} onSelect={() => toShop(s.id)}>
                 <Store className="size-4" />
@@ -70,8 +75,8 @@ export function CommandPalette({ nav }: { nav: readonly NavEntry[] }) {
                 <span className="ml-auto text-xs text-muted-foreground">@{s.owner_username}</span>
               </CommandItem>
             ))}
-          </CommandGroup>
-          <CommandGroup heading="Payments">
+          </CommandGroup>}
+          {canViewPayments && <CommandGroup heading="Payments">
             {(pays.data ?? []).slice(0, 200).map((p) => (
               <CommandItem key={p.id} value={`payment ${p.shop_name} ${p.payer_phone} ${p.payer_full_name} ${p.owner_username} ${p.status} ${p.payment_note}`} onSelect={() => toShop(computeShopKey(p.owner_username, p.owner_phone))}>
                 <CreditCard className="size-4" />
@@ -79,8 +84,8 @@ export function CommandPalette({ nav }: { nav: readonly NavEntry[] }) {
                 <span className="ml-auto text-xs text-muted-foreground">{formatRwf(p.amount_rwf)} · {p.status.replaceAll("_", " ").toLowerCase()}</span>
               </CommandItem>
             ))}
-          </CommandGroup>
-          <CommandGroup heading="Unlock codes">
+          </CommandGroup>}
+          {canViewCodes && <CommandGroup heading="Unlock codes">
             {(codes.data ?? []).slice(0, 200).map((c) => (
               <CommandItem key={c.id} value={`code ${c.unlock_code} ${c.shop_username} ${c.shop_phone}`} onSelect={() => toShop(computeShopKey(c.shop_username, c.shop_phone))}>
                 <KeyRound className="size-4" />
@@ -88,8 +93,8 @@ export function CommandPalette({ nav }: { nav: readonly NavEntry[] }) {
                 <span className="ml-auto text-xs text-muted-foreground">@{c.shop_username} · {c.status.toLowerCase()}</span>
               </CommandItem>
             ))}
-          </CommandGroup>
-          <CommandGroup heading="Devices">
+          </CommandGroup>}
+          {canViewDevices && <CommandGroup heading="Devices">
             {(devices.data ?? []).slice(0, 200).map((d) => (
               <CommandItem key={d.id} value={`device ${d.device_name} ${d.device_id} ${d.join_code} ${d.shop_name} ${d.assigned_username}`} onSelect={() => toShop(d.shop_sync_key)}>
                 <Smartphone className="size-4" />
@@ -97,8 +102,8 @@ export function CommandPalette({ nav }: { nav: readonly NavEntry[] }) {
                 <span className="ml-auto text-xs text-muted-foreground">{d.shop_name}</span>
               </CommandItem>
             ))}
-          </CommandGroup>
-          <CommandGroup heading="Shop staff">
+          </CommandGroup>}
+          {canViewUsers && <CommandGroup heading="Shop staff">
             {(users.data ?? []).slice(0, 200).map((u) => (
               <CommandItem key={u.id} value={`staff ${u.full_name} ${u.username} ${u.phone} ${u.shop_name}`} onSelect={() => toShop(u.shop_sync_key)}>
                 <Users className="size-4" />
@@ -106,7 +111,7 @@ export function CommandPalette({ nav }: { nav: readonly NavEntry[] }) {
                 <span className="ml-auto text-xs text-muted-foreground">{u.role.toLowerCase()} · {u.shop_name}</span>
               </CommandItem>
             ))}
-          </CommandGroup>
+          </CommandGroup>}
         </CommandList>
       </CommandDialog>
     </>
