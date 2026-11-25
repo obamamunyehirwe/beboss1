@@ -3,9 +3,9 @@ import { money, n, rows, s } from "../../lib/format";
 import type { CloudState, NavKey, Row, Snapshot } from "../../lib/types";
 import { PageHeading, SalesTable, StatCard, StatusPill } from "../ui";
 
-export function WelcomePage({ cloud, snapshot, offline, revenueToday, profitToday, lowStock, onNavigate, onReceipt }: {
+export function WelcomePage({ cloud, snapshot, offline, revenueToday, profitToday, lowStock, onNavigate, onReceipt, onAnnouncementAction, language }: {
   cloud: CloudState; snapshot: Snapshot | null; offline: boolean; revenueToday: number; profitToday: number;
-  lowStock: number; onNavigate: (view: NavKey) => void; onReceipt: (sale: Row) => void
+  lowStock: number; onNavigate: (view: NavKey) => void; onReceipt: (sale: Row) => void; onAnnouncementAction?: (urlValue: string) => Promise<void>; language: string
 }) {
   const ownerName = s(cloud.owner?.owner_name) || s(cloud.shop.owner_name) || s(snapshot?.shopProfile?.name);
   const firstName = ownerName.trim().split(/\s+/)[0] || s(cloud.owner?.username) || "there";

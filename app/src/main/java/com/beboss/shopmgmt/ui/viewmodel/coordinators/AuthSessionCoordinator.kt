@@ -216,6 +216,7 @@ class AuthSessionCoordinator(
                 )
 
                 prefs.edit().putString("active_user_id", ownerUser.id).apply()
+                AuthRateLimiter.recordSuccess("reg:device", application)
                 _currentUser.value = ownerUser
                 _isRegistrationNeeded.value = false
                 _isLocked.value = false

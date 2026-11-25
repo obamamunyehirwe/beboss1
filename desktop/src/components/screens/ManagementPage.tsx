@@ -3,8 +3,8 @@ import { money, n, rows, s } from "../../lib/format";
 import type { CloudState, NavKey, Snapshot } from "../../lib/types";
 import { Empty, PageHeading, StatCard, StatusPill } from "../ui";
 
-export function ManagementPage({ cloud, snapshot, offline, onNavigate }: {
-  cloud: CloudState; snapshot: Snapshot | null; offline: boolean; onNavigate: (view: NavKey) => void
+export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnouncementAction, language }: {
+  cloud: CloudState; snapshot: Snapshot | null; offline: boolean; onNavigate: (view: NavKey) => void; onAnnouncementAction?: (urlValue: string) => Promise<void>; language: string
 }) {
   const products = rows(snapshot?.products).filter((item) => item.isDeleted !== true);
   const lowStock = products.filter((item) => n(item.quantityInStock) <= n(item.lowStockThreshold));
