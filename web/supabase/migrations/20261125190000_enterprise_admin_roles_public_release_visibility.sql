@@ -37,7 +37,7 @@ as $$
       'inbox.manage','shops.view','payments.review','billing.view',
       'analytics.view','users.manage'
     ]::text[]
-    else coalesce((
+    when public.is_beboss_staff() then coalesce((
       select g.permissions
       from public.admin_role_grants g
       where g.user_id = (select auth.uid())
@@ -45,6 +45,7 @@ as $$
         and (g.expires_at is null or g.expires_at > now())
       limit 1
     ), array[]::text[])
+    else array[]::text[]
   end;
 $$;
 
@@ -59,13 +60,16 @@ as $$
     auth.uid() is not null
     and (
       public.is_beboss_admin()
-      or exists (
-        select 1
-        from public.admin_role_grants g
-        where g.user_id = (select auth.uid())
-          and g.is_active
-          and (g.expires_at is null or g.expires_at > now())
-          and p_permission = any(g.permissions)
+      or (
+        public.is_beboss_staff()
+        and exists (
+          select 1
+          from public.admin_role_grants g
+          where g.user_id = (select auth.uid())
+            and g.is_active
+            and (g.expires_at is null or g.expires_at > now())
+            and p_permission = any(g.permissions)
+        )
       )
     ),
     false
