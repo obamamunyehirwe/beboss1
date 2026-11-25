@@ -5,6 +5,10 @@ project_id = "ahlpvlhmpfiyeoercxol"
 [auth]
 enable_signup = false
 
+# This endpoint verifies the signed-in Master Admin JWT and role itself.
+[functions.admin-team]
+verify_jwt = false
+
 [functions.issue-bb3-unlock]
 verify_jwt = true
 
