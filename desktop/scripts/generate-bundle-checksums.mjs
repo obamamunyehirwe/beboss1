@@ -10,8 +10,13 @@ if (!bundleDirectory) {
 
 const absoluteDirectory = path.resolve(process.cwd(), bundleDirectory);
 const entries = await readdir(absoluteDirectory, { withFileTypes: true });
+const packageExtensions = [".exe", ".dmg", ".appimage", ".deb", ".rpm", ".zip", ".tar.gz"];
 const artifacts = entries
-  .filter((entry) => entry.isFile() && entry.name !== "SHA256SUMS.txt")
+  .filter((entry) => {
+    if (!entry.isFile() || entry.name === "SHA256SUMS.txt") return false;
+    const filename = entry.name.toLowerCase();
+    return packageExtensions.some((extension) => filename.endsWith(extension));
+  })
   .map((entry) => entry.name)
   .sort();
 
