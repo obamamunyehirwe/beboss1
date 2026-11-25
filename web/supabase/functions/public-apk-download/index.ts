@@ -22,11 +22,61 @@ async function adminRest(path: string, init: RequestInit = {}) {
   return fetch(supabaseUrl + "/rest/v1/" + path, { ...init, headers });
 }
 
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function enforceDownloadRateLimit(request: Request): Promise<Response | null> {
+  // Supabase's edge gateway supplies the client address. Persist only a keyed digest.
+  const sourceIp = request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip");
+  if (!sourceIp) return text(503, "The download service could not verify the request source.");
+
+  const keyHash = await sha256Hex(`${sourceIp}:${serviceRoleKey.slice(0, 24)}`);
+  const response = await adminRest("rpc/consume_rate_limit", {
+    method: "POST",
+    body: JSON.stringify({
+      p_scope: "public_apk_download",
+      p_key_hash: keyHash,
+      p_max_hits: 30,
+      p_window_seconds: 900,
+    }),
+  });
+  if (!response.ok) {
+    console.error("[public-apk-download] Rate-limit service unavailable", response.status);
+    return text(503, "The download service is temporarily unavailable.");
+  }
+
+  const rows = await response.json();
+  const limit = Array.isArray(rows) ? rows[0] : rows;
+  if (!limit || typeof limit.allowed !== "boolean") {
+    console.error("[public-apk-download] Rate-limit response was invalid");
+    return text(503, "The download service is temporarily unavailable.");
+  }
+  if (!limit.allowed) {
+    const retryAfter = Math.max(1, Number(limit.retry_after_seconds) || 60);
+    return new Response("Too many download requests. Please try again later.", {
+      status: 429,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/plain; charset=utf-8",
+        "Retry-After": String(retryAfter),
+      },
+    });
+  }
+  return null;
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "GET") return text(405, "Method not allowed.");
 
   try {
+    const rateLimitResponse = await enforceDownloadRateLimit(request);
+    if (rateLimitResponse) return rateLimitResponse;
+
     const url = new URL(request.url);
     const requested = url.searchParams.get("release") ?? "";
     const channel = (url.searchParams.get("ch") ?? "web").replace(/[^a-z0-9_-]/gi, "").slice(0, 20) || "web";
