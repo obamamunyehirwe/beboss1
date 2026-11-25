@@ -54,12 +54,18 @@ jobs:
           deno check --no-lock supabase/functions/beboss-desktop/index.ts
           deno check --no-lock supabase/functions/request-desktop-owner-otp/index.ts
           deno check --no-lock supabase/functions/android-device-auth/index.ts
+          deno check --no-lock supabase/functions/send-auth-sms/index.ts
 
       - name: Test payment gateway primitives
         run: deno test --allow-env supabase/functions/_shared/payment-gateway.test.ts
 
       - name: Test Android device credential primitives
         run: deno test --no-lock supabase/functions/_shared/device-credentials.test.ts
+
+      - name: Test device billing and Africa's Talking SMS primitives
+        run: |
+          deno test --no-lock supabase/functions/_shared/shop-management.test.ts
+          deno test --no-lock supabase/functions/_shared/africastalking.test.ts
 
       - name: Test provider settlement identity, amount and currency checks
         run: deno test --no-lock supabase/functions/_shared/payment-settlement.test.ts

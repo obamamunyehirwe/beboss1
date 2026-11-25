@@ -37,6 +37,8 @@ import { SetupWizard } from "./components/SetupWizard";
 import { applyDesktopLanguage, DESKTOP_LANGUAGES } from "./lib/i18n";
 import type { StaffUpdate } from "./components/screens/StaffPage";
 
+function isDesktopInstallId(value: string) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
+
 const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = {
   theme: "system", density: "comfortable", accent: "orange", defaultView: "welcome",
   language: "en", autoSync: true, refreshMinutes: 5, reducedMotion: false
@@ -125,7 +127,19 @@ export default function App() {
     if (showBusy) setBusy(true);
     setError(""); setNotice("");
     try {
-      const response = await callDesktopApi<CloudState & { ok: true }>("bootstrap", credentials);
+      let installationId = deviceId;
+      if (!installationId) installationId = await window.beBossDesktop.getDeviceId().catch(() => "");
+      if (!isDesktopInstallId(installationId)) {
+        throw new Error("This desktop installation could not create a persistent device identity. Restart BeBoss and retry.");
+      }
+      if (installationId !== deviceId) setDeviceId(installationId);
+      const userAgent = navigator.userAgent;
+      const platform = /Windows/i.test(userAgent) ? "Windows" : /Mac OS X|Macintosh/i.test(userAgent) ? "macOS" : /Linux/i.test(userAgent) ? "Linux" : "Desktop";
+      const response = await callDesktopApi<CloudState & { ok: true; desktopDevice: Row }>(
+        "bootstrap",
+        credentials,
+        { deviceId: installationId, deviceName: "BeBoss Desktop · " + platform }
+      );
       const pending = await window.beBossDesktop.local.pending();
       let next = { ...response, snapshot: ensureSnapshot(response.snapshot) } as CloudState;
       if (pending.length && next.snapshot) {
@@ -133,7 +147,7 @@ export default function App() {
         if (latest) {
           const merge = mergeSnapshots(next.snapshot, latest);
           const merged = await callDesktopApi<{ ok: true; uploadedAt: number; snapshot: Snapshot }>("save_snapshot", credentials, {
-            deviceId, expectedUpdatedAt: next.snapshotUpdatedAt, snapshot: merge.snapshot
+            deviceId: installationId, expectedUpdatedAt: next.snapshotUpdatedAt, snapshot: merge.snapshot
           });
           next = { ...next, snapshot: ensureSnapshot(merged.snapshot), snapshotUpdatedAt: merged.uploadedAt };
           await window.beBossDesktop.local.acknowledge(pending.map((item) => item.id));
@@ -142,8 +156,8 @@ export default function App() {
       }
       setCloud(next); setOwner(credentials); setOffline(false);
       await saveCache(credentials, next);
-      setNotice("Shop data verified and synchronized with BeBoss Cloud.");
-      setTimeout(() => setNotice(""), 5000);
+      setNotice("Shop data and this licensed desktop installation are synchronized with BeBoss Cloud.");
+      window.setTimeout(() => setNotice(""), 5000);
       return true;
     } catch (e) {
       const message = errorText(e);
@@ -359,15 +373,62 @@ export default function App() {
     if (!owner || offline) throw new Error("Reconnect and verify the shop owner before changing cloud management records.");
     setBusy(true); setError(""); setNotice("");
     try {
-      const result = await callDesktopApi(action, owner, payload);
-      await bootstrap(owner, false);
+      const currentActorDeviceId = "DESKTOP:" + deviceId;
+      const result = await callDesktopApi(action, owner, {
+        ...payload,
+        actorDeviceId: currentActorDeviceId,
+        currentDeviceId: currentActorDeviceId
+      });
+      // Management writes refresh only the compact organization projection.
+      // The multi-megabyte signed sales/inventory snapshot is left untouched.
+      const management = await callDesktopApi<{
+        ok: true; shop: Row; devices: Row[]; branches: Row[]; transfers: Row[];
+        staff: Row[]; announcements: Row[]; payments: Row[]; codes: Row[]; serverTime: number;
+      }>("management_refresh", owner);
+      if (cloud) {
+        const updated: CloudState = {
+          ...cloud,
+          shop: management.shop,
+          devices: rows(management.devices),
+          branches: rows(management.branches),
+          transfers: rows(management.transfers),
+          staff: rows(management.staff),
+          announcements: rows(management.announcements),
+          payments: rows(management.payments),
+          codes: rows(management.codes),
+          serverTime: management.serverTime
+        };
+        setCloud(updated);
+        setOffline(false);
+        await saveCache(owner, updated);
+      }
+      setNotice("Shop management changes are saved to BeBoss Cloud.");
+      window.setTimeout(() => setNotice(""), 4500);
       return result as Record<string, any>;
     } catch (e) {
       if (e instanceof OwnerAuthorizationError) await invalidateOwnerAuthorization();
       else setError(errorText(e));
       throw e;
-    }
-    finally { setBusy(false); }
+    } finally { setBusy(false); }
+  }
+
+  async function openAnnouncementAction(urlValue: string) {
+    const url = urlValue.trim();
+    const internal: Record<string, NavKey> = {
+      "/": "welcome", "/inventory": "products", "/products": "products",
+      "/sales": "sales", "/customers": "customers", "/purchases": "purchases",
+      "/branches": "branches", "/devices": "devices", "/staff": "staff",
+      "/billing": "billing", "/reports": "reports", "/sync": "sync",
+      "/settings": "settings", "/management": "management"
+    };
+    const path = url.split("?")[0].split("#")[0];
+    const route = internal[path];
+    if (route) { setView(route); setMenuOpen(false); return; }
+    try {
+      const parsed = new URL(url, window.location.origin);
+      if (parsed.protocol !== "https:") throw new Error("Announcement links must use HTTPS.");
+      await window.beBossDesktop.openExternal(parsed.toString());
+    } catch (e) { setError(errorText(e)); }
   }
 
   async function saveStaffAccess(input: StaffUpdate) {
@@ -587,8 +648,8 @@ export default function App() {
         {notice && <div className="global-alert success"><Check size={16} /><span>{notice}</span><button onClick={() => setNotice("")}><X size={15} /></button></div>}
         {offline && <div className="offline-banner"><AlertTriangle size={17} /><span>Offline-first mode. Sales and stock changes are saved in an encrypted SQLite transaction queue and will sync when the connection returns.</span></div>}
         {!snapshot && <LoginHint />}
-        {view === "welcome" && <WelcomePage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} lowStock={lowStock} onNavigate={setView} onReceipt={openReceipt} />}
-        {view === "management" && <ManagementPage cloud={cloud} snapshot={snapshot} offline={offline} onNavigate={setView} />}
+        {view === "welcome" && <WelcomePage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} lowStock={lowStock} onNavigate={setView} onReceipt={openReceipt} onAnnouncementAction={openAnnouncementAction} language={preferences.language} />}
+        {view === "management" && <ManagementPage cloud={cloud} snapshot={snapshot} offline={offline} onNavigate={setView} onAnnouncementAction={openAnnouncementAction} language={preferences.language} />}
         {view === "overview" && <OverviewPage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} stockCost={stockCost} receivables={receivables} lowStock={lowStock} onNavigate={setView} onOpenCommand={() => setPaletteOpen(true)} />}
         {view === "checkout" && <CheckoutPage snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} />}
         {view === "products" && <ProductsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} />}
@@ -598,7 +659,7 @@ export default function App() {
         {view === "reports" && <ReportsPage snapshot={snapshot} />}
         {view === "branches" && <BranchesPage cloud={cloud} onAction={callAction} offline={offline} />}
         {view === "staff" && <StaffPage cloud={cloud} snapshot={snapshot} onSaveStaff={saveStaffAccess} offline={offline} />}
-        {view === "devices" && <DevicesPage cloud={cloud} onAction={callAction} offline={offline} />}
+        {view === "devices" && <DevicesPage cloud={cloud} onAction={callAction} offline={offline} currentDeviceId={"DESKTOP:" + deviceId} />}
         {view === "transfers" && <TransfersPage cloud={cloud} snapshot={snapshot} onAction={callAction} offline={offline} />}
         {view === "billing" && <BillingPage cloud={cloud} onNavigate={setView} onCheckout={async (payload) => {
           const result = await callAction("create_checkout", payload);

@@ -4,6 +4,7 @@ import {
   DEVICE_ACCESS_TTL_MS,
   DEVICE_REFRESH_TTL_MS,
 } from "../_shared/device-credentials.ts";
+import { monthlyShopFeeRwf } from "../_shared/shop-management.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -459,6 +460,117 @@ function branchPayload(data: Row, shopId: string) {
   };
 }
 
+
+
+async function refreshShopUsageSummaryV2(admin: SupabaseClient, shopId: string) {
+  const [devices, staff, branches, shop] = await Promise.all([
+    admin.from("shop_devices").select("id", { count: "exact", head: true }).eq("shop_sync_key", shopId).eq("is_active", true),
+    admin.from("shop_users").select("user_id", { count: "exact", head: true }).eq("shop_sync_key", shopId).eq("is_active", true),
+    admin.from("shop_branches").select("id", { count: "exact", head: true }).eq("shop_sync_key", shopId).eq("is_active", true),
+    admin.from("shop_accounts").select("device_limit").eq("id", shopId).maybeSingle()
+  ]);
+  for (const result of [devices, staff, branches, shop]) {
+    if (result.error) throw new Error("Could not reconcile the shop's licensed usage summary: " + result.error.message);
+  }
+  const deviceCount = Math.max(1, Number(devices.count) || 0);
+  const workerCount = Math.max(1, Number(staff.count) || 0);
+  const branchCount = Math.max(1, Number(branches.count) || 0);
+  const monthlyFee = monthlyShopFeeRwf(branchCount, workerCount, deviceCount);
+  const { data, error } = await admin.from("shop_accounts").update({
+    device_count: deviceCount,
+    device_limit: Math.max(deviceCount, Number(shop.data?.device_limit) || 1),
+    worker_count: workerCount,
+    branch_count: branchCount,
+    monthly_fee_rwf: monthlyFee,
+    updated_at: Date.now()
+  }).eq("id", shopId).select("id,device_count,device_limit,worker_count,branch_count,monthly_fee_rwf").single();
+  if (error || !data) throw new Error("Could not update the shop's server-calculated license and billing summary: " + (error?.message || "No row returned."));
+  return data;
+}
+
+async function loadManagementRecordsV2(admin: SupabaseClient, shopId: string, ownerUsername: string) {
+  const [shop, devices, branches, transfers, staff, announcements, payments, codes] = await Promise.all([
+    admin.from("shop_accounts").select("id,shop_name,owner_name,owner_username,owner_phone,subscription_status,subscription_expires_at,branch_count,worker_count,device_count,device_limit,monthly_fee_rwf,business_type,updated_at").eq("id", shopId).maybeSingle(),
+    admin.from("shop_devices").select("id,device_name,device_id,role,branch_name,branch_id,is_active,is_owner_primary,assigned_user_id,assigned_username,assigned_user_name,last_synced_at,created_at,updated_at,monthly_fee_addon_rwf").eq("shop_sync_key", shopId).order("updated_at", { ascending: false }).limit(500),
+    admin.from("shop_branches").select("*").eq("shop_sync_key", shopId).order("is_main_branch", { ascending: false }).limit(500),
+    admin.from("shop_stock_transfers").select("*").eq("shop_sync_key", shopId).order("updated_at", { ascending: false }).limit(1000),
+    admin.from("shop_users").select("user_id,full_name,username,phone,role,assigned_branch_id,assigned_branch_name,is_active,updated_at").eq("shop_sync_key", shopId).order("full_name", { ascending: true }).limit(1000),
+    admin.from("announcements").select("id,title,body,severity,audience,target_shop_key,cta_label,cta_url,starts_at,ends_at,is_active,translations").in("audience", ["ALL","APP"]).eq("is_active", true).or(`target_shop_key.eq.${shopId},target_shop_key.eq.`).order("starts_at", { ascending: false }).limit(50),
+    admin.from("payment_requests").select("id,provider,amount_rwf,duration_months,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,rejection_reason,created_at,updated_at,gateway_provider,gateway_reference,gateway_verified_at").eq("owner_username", ownerUsername).order("created_at", { ascending: false }).limit(100),
+    admin.from("unlock_codes").select("unlock_code,tier_code,plan_days,status,issued_at,redeemed_at").eq("shop_username", ownerUsername).order("issued_at", { ascending: false }).limit(100)
+  ]);
+  for (const result of [shop, devices, branches, transfers, staff, announcements, payments, codes]) {
+    if (result.error) throw new Error("Could not refresh shop management records: " + result.error.message);
+  }
+  if (!shop.data) throw new Error("The registered shop account is unavailable.");
+  return { shop: shop.data, devices: devices.data ?? [], branches: branches.data ?? [], transfers: transfers.data ?? [],
+    staff: staff.data ?? [], announcements: announcements.data ?? [], payments: payments.data ?? [], codes: codes.data ?? [], serverTime: Date.now() };
+}
+
+async function ownerManagementActorV2(admin: SupabaseClient, shopId: string, actorDeviceId: string, ownerUserId: string) {
+  const normalizedActorDeviceId = text(actorDeviceId).trim();
+  if (!/^DESKTOP:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedActorDeviceId) || !ownerUserId) {
+    throw new Error("This desktop installation does not have a valid registered device identity.");
+  }
+  const [ownerUser, actorDevice, mainBranch] = await Promise.all([
+    admin.from("shop_users").select("user_id,username,full_name,role,is_active")
+      .eq("shop_sync_key", shopId).eq("user_id", ownerUserId).eq("role", "OWNER").eq("is_active", true).maybeSingle(),
+    admin.from("shop_devices").select("id,device_id,assigned_user_id,is_active")
+      .eq("shop_sync_key", shopId).eq("device_id", normalizedActorDeviceId)
+      .eq("is_active", true).maybeSingle(),
+    admin.from("shop_branches").select("id,name").eq("shop_sync_key", shopId)
+      .eq("is_active", true).eq("is_main_branch", true).maybeSingle()
+  ]);
+  if (ownerUser.error || !ownerUser.data || actorDevice.error || !actorDevice.data ||
+      actorDevice.data.assigned_user_id !== ownerUserId) {
+    throw new Error("This desktop is not registered as an active device for the verified shop owner. Sign in again or use another active owner device.");
+  }
+  if (mainBranch.error) throw new Error("Could not load the shop's main branch.");
+  let effectiveMainBranch = mainBranch.data;
+  if (!effectiveMainBranch) {
+    const fallback = await admin.from("shop_branches").select("id,name").eq("shop_sync_key", shopId)
+      .eq("is_active", true).order("created_at", { ascending: true }).limit(1).maybeSingle();
+    if (fallback.error) throw new Error("Could not load an active branch for device registration.");
+    effectiveMainBranch = fallback.data;
+  }
+  return { ownerUser: ownerUser.data, actorDeviceId: text(actorDevice.data.device_id), mainBranch: effectiveMainBranch };
+}
+
+function validatedJwtAuthTimeSeconds(req: Request): number {
+  const authorization = req.headers.get("Authorization") ?? "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const segment = token.split(".")[1] ?? "";
+  if (!segment) return 0;
+  try {
+    const base64 = segment.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(segment.length / 4) * 4, "=");
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+    const claims = JSON.parse(new TextDecoder().decode(bytes)) as Row;
+    return Math.max(0, Math.floor(number(claims.auth_time)));
+  } catch { return 0; }
+}
+
+async function issueDeviceInvitationV2(
+  config: { url: string; serviceKey: string }, shopId: string, deviceRecordId: string,
+  branchId: string, primaryDeviceId: string, ownerUserId: string
+) {
+  const random = crypto.getRandomValues(new Uint8Array(16));
+  const joinCode = "BB-" + Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(joinCode));
+  const codeHash = bytesToHex(new Uint8Array(hash));
+  const now = Date.now();
+  const tenantAdmin = createClient(config.url, config.serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { "X-Shop-Sync-Key": shopId } }
+  });
+  const { error } = await tenantAdmin.rpc("issue_shop_device_invite", {
+    p_shop_sync_key: shopId, p_device_record_id: deviceRecordId, p_code_hash: codeHash,
+    p_created_by_device_id: primaryDeviceId, p_created_by_user_id: ownerUserId,
+    p_branch_id: branchId, p_expires_at: now + 60 * 60 * 1000
+  });
+  if (error) throw new Error("Supabase rejected the secure device invitation: " + error.message);
+  return { joinCode, expiresAt: now + 60 * 60 * 1000 };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json(405, { ok: false, message: "Method not allowed." });
@@ -633,6 +745,77 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "bootstrap") {
+      const installationId = text(body.deviceId).trim();
+      if (!isUuid(installationId)) {
+        return json(403, { ok: false, message: "This desktop installation has no valid persistent device identity. Reopen the application and try again." });
+      }
+      const { data: ownerUser, error: ownerUserError } = await admin.from("shop_users")
+        .select("user_id,username,full_name,role,is_active")
+        .eq("shop_sync_key", owner.shopId).eq("user_id", owner.user.id)
+        .eq("role", "OWNER").eq("is_active", true).maybeSingle();
+      if (ownerUserError || !ownerUser) {
+        return json(403, { ok: false, message: "This verified account is not an active owner in the shop staff directory." });
+      }
+      const desktopId = "DESKTOP:" + installationId;
+      const { data: existingDevice, error: existingDeviceError } = await admin.from("shop_devices")
+        .select("id,device_id,device_name,assigned_user_id,role,is_active,is_owner_primary,branch_id")
+        .eq("shop_sync_key", owner.shopId).eq("device_id", desktopId).maybeSingle();
+      if (existingDeviceError) throw new Error("Could not verify this desktop's shop device record.");
+      if (existingDevice && (!existingDevice.is_active || existingDevice.is_owner_primary ||
+          existingDevice.assigned_user_id !== ownerUser.user_id || existingDevice.role !== "OWNER")) {
+        return json(403, { ok: false, message: "This desktop has been paused or removed from the shop device fleet. Verify the owner phone again from this installation to request re-registration." });
+      }
+      const authTime = validatedJwtAuthTimeSeconds(req);
+      if (!existingDevice && (!authTime || Date.now() / 1000 - authTime > 15 * 60 || authTime > Date.now() / 1000 + 60)) {
+        return json(403, { ok: false, message: "A fresh owner SMS verification is required to register this new desktop installation." });
+      }
+      const { data: mainBranch, error: mainBranchError } = await admin.from("shop_branches")
+        .select("id,name").eq("shop_sync_key", owner.shopId).eq("is_active", true)
+        .eq("is_main_branch", true).maybeSingle();
+      if (mainBranchError) throw new Error("Could not load the shop's main branch.");
+      let registrationBranch = mainBranch;
+      if (!registrationBranch && existingDevice?.branch_id) {
+        const currentBranch = await admin.from("shop_branches").select("id,name")
+          .eq("shop_sync_key", owner.shopId).eq("id", existingDevice.branch_id).eq("is_active", true).maybeSingle();
+        if (currentBranch.error) throw new Error("Could not verify this desktop's assigned branch.");
+        registrationBranch = currentBranch.data;
+      }
+      if (!registrationBranch) {
+        const fallbackBranch = await admin.from("shop_branches").select("id,name")
+          .eq("shop_sync_key", owner.shopId).eq("is_active", true)
+          .order("created_at", { ascending: true }).limit(1).maybeSingle();
+        if (fallbackBranch.error) throw new Error("Could not find an active shop branch for this desktop.");
+        registrationBranch = fallbackBranch.data;
+      }
+      if (!registrationBranch) {
+        return json(409, { ok: false, message: "Create or synchronize the shop's first active branch on the owner terminal before registering this desktop." });
+      }
+      const now = Date.now();
+      const deviceName = text(body.deviceName).trim().slice(0, 120) || "BeBoss Desktop";
+      let registeredDesktop: Row;
+      if (existingDevice) {
+        const { data, error } = await admin.from("shop_devices").update({
+          last_synced_at: now,
+          updated_at: now,
+          ...(!existingDevice.branch_id ? { branch_id: registrationBranch.id, branch_name: registrationBranch.name } : {})
+        }).eq("id", existingDevice.id).eq("shop_sync_key", owner.shopId)
+          .select("id,device_name,device_id,role,branch_name,branch_id,is_active,is_owner_primary,assigned_user_id,assigned_username,assigned_user_name,last_synced_at,created_at,updated_at,monthly_fee_addon_rwf").single();
+        if (error || !data) throw new Error("Could not refresh this desktop's registered device record.");
+        registeredDesktop = data;
+      } else {
+        const { data, error } = await admin.from("shop_devices").insert({
+          id: crypto.randomUUID(), shop_sync_key: owner.shopId, shop_name: text(owner.shop.shop_name),
+          device_id: desktopId, device_name: deviceName, join_code: "",
+          assigned_user_id: ownerUser.user_id, assigned_username: ownerUser.username,
+          assigned_user_name: ownerUser.full_name, role: "OWNER",
+          branch_id: registrationBranch.id, branch_name: registrationBranch.name,
+          is_owner_primary: false, is_active: true, monthly_fee_addon_rwf: 2000,
+          last_synced_at: now, created_at: now, updated_at: now
+        }).select("id,device_name,device_id,role,branch_name,branch_id,is_active,is_owner_primary,assigned_user_id,assigned_username,assigned_user_name,last_synced_at,created_at,updated_at,monthly_fee_addon_rwf").single();
+        if (error || !data) throw new Error("Could not register this desktop as an additional billable device: " + (error?.message || "No row returned."));
+        registeredDesktop = data;
+      }
+      const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
       const [snapshotResult, paymentsResult, codesResult, devicesResult, branchesResult, transfersResult, staffResult, newsResult] = await Promise.all([
         latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret),
         admin.from("payment_requests").select("id,provider,amount_rwf,duration_months,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,rejection_reason,created_at,updated_at,gateway_provider,gateway_reference,gateway_verified_at").eq("owner_username", owner.username).order("created_at", { ascending: false }).limit(100),
@@ -641,14 +824,15 @@ Deno.serve(async (req: Request) => {
         admin.from("shop_branches").select("*").eq("shop_sync_key", owner.shopId).order("is_main_branch", { ascending: false }).limit(500),
         admin.from("shop_stock_transfers").select("*").eq("shop_sync_key", owner.shopId).order("updated_at", { ascending: false }).limit(1000),
         admin.from("shop_users").select("user_id,full_name,username,phone,role,assigned_branch_id,assigned_branch_name,is_active,updated_at").eq("shop_sync_key", owner.shopId).order("full_name", { ascending: true }).limit(1000),
-        admin.from("announcements").select("id,title,body,severity,audience,cta_label,cta_url,starts_at,ends_at,is_active,translations").in("audience", ["ALL","APP"]).eq("is_active", true).order("starts_at", { ascending: false }).limit(30)
+        admin.from("announcements").select("id,title,body,severity,audience,target_shop_key,cta_label,cta_url,starts_at,ends_at,is_active,translations").in("audience", ["ALL","APP"]).eq("is_active", true).or(`target_shop_key.eq.${owner.shopId},target_shop_key.eq.`).order("starts_at", { ascending: false }).limit(30)
       ]);
       for (const result of [paymentsResult, codesResult, devicesResult, branchesResult, transfersResult, staffResult, newsResult]) {
         if (result.error) throw new Error("Could not load a BeBoss management record: " + result.error.message);
       }
       return json(200, {
         ok: true,
-        shop: owner.shop,
+        shop: { ...owner.shop, ...shopUsage },
+        desktopDevice: registeredDesktop,
         owner: { id: owner.user.id, phone: owner.user.phone, username: owner.username },
         snapshot: snapshotResult.snapshot,
         snapshotUpdatedAt: snapshotResult.uploadedAt,
@@ -664,13 +848,20 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (action === "management_refresh") {
+      const records = await loadManagementRecordsV2(admin, owner.shopId, owner.username);
+      return json(200, { ok: true, ...records });
+    }
+
     if (action === "save_snapshot") {
+      const installationId = text(body.deviceId).trim();
+      if (!isUuid(installationId)) throw new Error("The desktop installation identifier is invalid.");
+      const actor = await ownerManagementActorV2(admin, owner.shopId, "DESKTOP:" + installationId, text(owner.user.id));
       const snapshot = sanitizeSnapshot(body.snapshot, { username: owner.username, shop: owner.shop });
       nowSnapshot(snapshot, owner.username);
       const encoded = await encodeToken(snapshot, config.hmacSecret);
       const mainBranch = snapshot.branches.find((branch) => branch.isMainBranch === true) ?? snapshot.branches[0] ?? {};
-      const deviceId = text(body.deviceId);
-      if (!isUuid(deviceId)) throw new Error("The desktop installation identifier is invalid.");
+      const deviceId = installationId;
       const summary = snapshot.branches.length + " branches • " + snapshot.products.length + " products • " +
         snapshot.sales.length + " sales • " + snapshot.customers.length + " customers";
       const { data: savedAt, error } = await admin.rpc("write_beboss_desktop_snapshot", {
@@ -1034,7 +1225,16 @@ if (action === "submit_payment_proof") {
     }
 
     if (action === "branch_upsert") {
+      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
       const row = branchPayload((body.branch ?? {}) as Row, owner.shopId);
+      if (row.manager_user_id) {
+        const manager = await admin.from("shop_users").select("user_id,full_name,role,is_active")
+          .eq("shop_sync_key", owner.shopId).eq("user_id", row.manager_user_id).eq("is_active", true).maybeSingle();
+        if (manager.error || !manager.data || manager.data.role !== "MANAGER") {
+          throw new Error("Choose an active Manager account from this shop, or clear the branch manager.");
+        }
+        row.manager_name = text(manager.data.full_name);
+      } else row.manager_name = "";
       if (row.is_main_branch) {
         await admin.from("shop_branches").update({
           is_main_branch: false, updated_at: Date.now(), hlc_timestamp: Date.now(), last_modified_device_id: "DESKTOP"
@@ -1046,23 +1246,38 @@ if (action === "submit_payment_proof") {
       row.created_at = number(old?.created_at) || row.created_at;
       const { error } = await admin.from("shop_branches").upsert(row, { onConflict: "id" });
       if (error) throw new Error("Could not save the branch: " + error.message);
-      return json(200, { ok: true, id: row.id });
+      const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
+      return json(200, { ok: true, id: row.id, shopUsage });
     }
 
     if (action === "branch_delete") {
-      const id = text(body.id);
-      if (!id) throw new Error("A branch ID is required.");
-      const { data: branch, error: readError } = await admin.from("shop_branches").select("id,is_main_branch").eq("id", id).eq("shop_sync_key", owner.shopId).maybeSingle();
+      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      const branchId = text(body.id);
+      if (!branchId) throw new Error("A branch ID is required.");
+      const { data: branch, error: readError } = await admin.from("shop_branches")
+        .select("id,is_main_branch").eq("id", branchId).eq("shop_sync_key", owner.shopId).maybeSingle();
       if (readError || !branch) throw new Error("The branch could not be found in this shop.");
       if (branch.is_main_branch) throw new Error("The main shop branch cannot be deactivated.");
+      const [devices, staff] = await Promise.all([
+        admin.from("shop_devices").select("id", { count: "exact", head: true })
+          .eq("shop_sync_key", owner.shopId).eq("branch_id", branchId).eq("is_active", true),
+        admin.from("shop_users").select("user_id", { count: "exact", head: true })
+          .eq("shop_sync_key", owner.shopId).eq("assigned_branch_id", branchId).eq("is_active", true)
+      ]);
+      if (devices.error || staff.error) throw new Error("Could not verify branch assignments before deactivation.");
+      if ((devices.count ?? 0) > 0 || (staff.count ?? 0) > 0) {
+        throw new Error("Reassign active devices and staff before deactivating this branch. Existing sales and stock history will be retained.");
+      }
       const { error } = await admin.from("shop_branches").update({
         is_active: false, operational_status: "CLOSED", updated_at: Date.now(), hlc_timestamp: Date.now(), last_modified_device_id: "DESKTOP"
-      }).eq("id", id).eq("shop_sync_key", owner.shopId);
+      }).eq("id", branchId).eq("shop_sync_key", owner.shopId);
       if (error) throw new Error("Could not deactivate the branch: " + error.message);
-      return json(200, { ok: true });
+      const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
+      return json(200, { ok: true, shopUsage });
     }
 
     if (action === "staff_update") {
+      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
       const userId = text(body.userId);
       const role = text(body.role).toUpperCase();
       const isActive = body.isActive === true;
@@ -1087,7 +1302,8 @@ if (action === "submit_payment_proof") {
         updated_at: Date.now()
       }).eq("shop_sync_key", owner.shopId).eq("user_id", userId);
       if (error) throw new Error("Could not update staff access: " + error.message);
-      return json(200, { ok: true });
+      const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
+      return json(200, { ok: true, shopUsage });
     }
 
     if (action === "transfer_create") {
@@ -1162,38 +1378,24 @@ if (action === "submit_payment_proof") {
         throw new Error("Enter a device name and select an active staff member and branch.");
       }
       const { data: shop, error: shopError } = await admin.from("shop_accounts")
-        .select("shop_name,device_count,device_limit,branch_count,worker_count,remote_kill_switch")
-        .eq("id", owner.shopId).maybeSingle();
+        .select("shop_name,remote_kill_switch").eq("id", owner.shopId).maybeSingle();
       if (shopError || !shop || shop.remote_kill_switch) throw new Error("This shop is not available for new device registration.");
-      const [ownerUserRes, primaryRes, staffRes, branchRes, deviceCountRes, workerCountRes, branchCountRes, cfgRes] = await Promise.all([
-        admin.from("shop_users").select("user_id").eq("shop_sync_key", owner.shopId).eq("role", "OWNER").eq("is_active", true).maybeSingle(),
-        admin.from("shop_devices").select("device_id,assigned_user_id").eq("shop_sync_key", owner.shopId).eq("is_owner_primary", true).eq("is_active", true).maybeSingle(),
-        admin.from("shop_users").select("user_id,username,full_name,role,assigned_branch_id,is_active").eq("shop_sync_key", owner.shopId).eq("user_id", assignedUserId).eq("is_active", true).maybeSingle(),
-        admin.from("shop_branches").select("id,name,is_active").eq("shop_sync_key", owner.shopId).eq("id", branchId).eq("is_active", true).maybeSingle(),
-        admin.from("shop_devices").select("id", { count: "exact", head: true }).eq("shop_sync_key", owner.shopId).eq("is_active", true),
-        admin.from("shop_users").select("user_id", { count: "exact", head: true }).eq("shop_sync_key", owner.shopId).eq("is_active", true),
-        admin.from("shop_branches").select("id", { count: "exact", head: true }).eq("shop_sync_key", owner.shopId).eq("is_active", true),
-        admin.from("app_config").select("per_device_fee_rwf").eq("id", "global").maybeSingle()
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      const [staffRes, branchRes] = await Promise.all([
+        admin.from("shop_users").select("user_id,username,full_name,role,assigned_branch_id,is_active")
+          .eq("shop_sync_key", owner.shopId).eq("user_id", assignedUserId).eq("is_active", true).maybeSingle(),
+        admin.from("shop_branches").select("id,name,is_active")
+          .eq("shop_sync_key", owner.shopId).eq("id", branchId).eq("is_active", true).maybeSingle()
       ]);
-      const ownerUser = ownerUserRes.data;
-      const primary = primaryRes.data;
       const staff = staffRes.data;
       const branch = branchRes.data;
-      if (ownerUserRes.error || !ownerUser || primaryRes.error || !primary?.device_id || primary.assigned_user_id !== ownerUser.user_id) {
-        throw new Error("Sync the registered owner device to the cloud before inviting another terminal.");
-      }
       if (staffRes.error || !staff || staff.role === "OWNER" || staff.assigned_branch_id !== branchId) {
         throw new Error("Choose an active Manager or Cashier already assigned to the selected branch.");
       }
       if (branchRes.error || !branch) throw new Error("Choose an active branch in this shop.");
-
       const newId = crypto.randomUUID();
       const now = Date.now();
-      const random = crypto.getRandomValues(new Uint8Array(16));
-      const joinCode = "BB-" + Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
-      const hashBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(joinCode));
-      const codeHash = bytesToHex(new Uint8Array(hashBytes));
-      const { error: slotError } = await admin.from("shop_devices").insert({
+      const { data: slot, error: slotError } = await admin.from("shop_devices").insert({
         id: newId, shop_sync_key: owner.shopId, shop_name: shop.shop_name,
         device_id: "", device_name: deviceName, join_code: "",
         assigned_user_id: staff.user_id, assigned_username: staff.username,
@@ -1201,29 +1403,143 @@ if (action === "submit_payment_proof") {
         branch_id: branch.id, branch_name: branch.name, is_owner_primary: false,
         is_active: true, monthly_fee_addon_rwf: 2000, last_synced_at: 0,
         created_at: now, updated_at: now
-      });
-      if (slotError) throw new Error("Could not create the secure device slot: " + slotError.message);
+      }).select("id,device_name,device_id,role,branch_name,branch_id,is_active,is_owner_primary,assigned_user_id,assigned_username,assigned_user_name,last_synced_at,created_at,updated_at,monthly_fee_addon_rwf").single();
+      if (slotError || !slot) throw new Error("Could not create the secure device slot: " + (slotError?.message || "No row returned."));
+      try {
+        const invite = await issueDeviceInvitationV2(config, owner.shopId, newId, branch.id, actor.actorDeviceId, actor.ownerUser.user_id);
+        const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
+        return json(200, { ok: true, ...slot, joinCode: invite.joinCode, expiresAt: invite.expiresAt, monthlyAddonRwf: 2000, shopUsage });
+      } catch (error) {
+        await admin.from("shop_devices").delete().eq("id", newId).eq("shop_sync_key", owner.shopId);
+        throw error;
+      }
+    }
 
-      // The private invitation RPC validates current_shop_sync_key() even when
-      // invoked by the trusted server role. Bind the verified tenant context.
+    if (action === "device_update") {
+      const deviceRecordId = text(body.id).trim();
+      const deviceName = text(body.deviceName).trim();
+      const nextAssignedUserId = text(body.assignedUserId).trim();
+      const nextBranchId = text(body.branchId).trim();
+      if (!deviceRecordId || deviceName.length < 2 || deviceName.length > 120 || !nextBranchId) {
+        throw new Error("Enter a valid device name and select a branch.");
+      }
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      const { data: current, error: currentError } = await admin.from("shop_devices")
+        .select("id,device_id,assigned_user_id,role,branch_id,is_owner_primary,is_active")
+        .eq("id", deviceRecordId).eq("shop_sync_key", owner.shopId).maybeSingle();
+      if (currentError || !current || current.is_owner_primary) throw new Error("This device cannot be edited.");
+      if (!current.is_active) throw new Error("Activate the device before editing its assignment.");
+      const { data: branch, error: branchError } = await admin.from("shop_branches")
+        .select("id,name,is_active").eq("id", nextBranchId).eq("shop_sync_key", owner.shopId).eq("is_active", true).maybeSingle();
+      if (branchError || !branch) throw new Error("Choose an active branch from this shop.");
+      const isOwnerDesktop = current.role === "OWNER";
+      const assignedUserId = isOwnerDesktop ? actor.ownerUser.user_id : nextAssignedUserId;
+      let assignee: Row | null = null;
+      if (isOwnerDesktop) {
+        if (current.assigned_user_id !== actor.ownerUser.user_id) throw new Error("This desktop is assigned to another account and cannot be reassigned here.");
+        assignee = actor.ownerUser as unknown as Row;
+      } else {
+        const { data, error } = await admin.from("shop_users").select("user_id,username,full_name,role,assigned_branch_id,is_active")
+          .eq("shop_sync_key", owner.shopId).eq("user_id", assignedUserId).eq("is_active", true).maybeSingle();
+        if (error || !data || data.role === "OWNER" || data.assigned_branch_id !== nextBranchId) {
+          throw new Error("Choose an active Manager or Cashier already assigned to the selected branch.");
+        }
+        assignee = data as Row;
+      }
+      const reassignment = current.assigned_user_id !== assignedUserId || current.branch_id !== nextBranchId;
+      if (reassignment && current.device_id !== "" && !text(current.device_id).startsWith("DESKTOP:")) {
+        throw new Error("This terminal is already paired. Remove it and issue a new one-time invitation to change its assigned staff member or branch.");
+      }
+      const { error } = await admin.from("shop_devices").update({
+        device_name: deviceName, branch_id: branch.id, branch_name: branch.name,
+        ...(reassignment ? {
+          assigned_user_id: assignedUserId, assigned_username: text(assignee?.username),
+          assigned_user_name: text(assignee?.full_name), role: text(assignee?.role)
+        } : {}),
+        updated_at: Date.now()
+      }).eq("id", deviceRecordId).eq("shop_sync_key", owner.shopId);
+      if (error) throw new Error("Could not save device details: " + error.message);
+      const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
+      if (reassignment && current.device_id === "") {
+        const invite = await issueDeviceInvitationV2(config, owner.shopId, deviceRecordId, branch.id, actor.actorDeviceId, actor.ownerUser.user_id);
+        return json(200, { ok: true, id: deviceRecordId, joinCode: invite.joinCode, expiresAt: invite.expiresAt, shopUsage });
+      }
+      return json(200, { ok: true, id: deviceRecordId, shopUsage });
+    }
+
+    if (action === "device_set_active") {
+      const deviceRecordId = text(body.id).trim();
+      const isActive = body.isActive === true;
+      if (!deviceRecordId) throw new Error("A device record ID is required.");
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
       const tenantAdmin = createClient(config.url, config.serviceKey, {
         auth: { persistSession: false, autoRefreshToken: false },
         global: { headers: { "X-Shop-Sync-Key": owner.shopId } }
       });
-      const { error: inviteError } = await tenantAdmin.rpc("issue_shop_device_invite", {
-        p_shop_sync_key: owner.shopId,
-        p_device_record_id: newId,
-        p_code_hash: codeHash,
-        p_created_by_device_id: primary.device_id,
-        p_created_by_user_id: ownerUser.user_id,
-        p_branch_id: branch.id,
-        p_expires_at: now + 60 * 60 * 1000
-      });
-      if (inviteError) {
-        await admin.from("shop_devices").delete().eq("id", newId).eq("shop_sync_key", owner.shopId);
-        throw new Error("Supabase rejected the secure device invitation: " + inviteError.message);
+      const { data: device, error: readError } = await admin.from("shop_devices")
+        .select("id,device_id,is_owner_primary,is_active,assigned_user_id,branch_id").eq("id", deviceRecordId).eq("shop_sync_key", owner.shopId).maybeSingle();
+      if (readError || !device || device.is_owner_primary) throw new Error("This device cannot be paused or resumed.");
+      if (text(device.device_id) === actor.actorDeviceId) throw new Error("Use another owner device to pause the desktop currently managing this shop.");
+      if (isActive) {
+        const [staff, branch] = await Promise.all([
+          admin.from("shop_users").select("user_id").eq("shop_sync_key", owner.shopId).eq("user_id", device.assigned_user_id).eq("is_active", true).maybeSingle(),
+          admin.from("shop_branches").select("id").eq("shop_sync_key", owner.shopId).eq("id", device.branch_id).eq("is_active", true).maybeSingle()
+        ]);
+        if (staff.error || !staff.data || branch.error || !branch.data) throw new Error("Reassign this terminal to an active staff member and branch before resuming it.");
       }
-      return json(200, { ok: true, id: newId, joinCode, expiresAt: now + 60 * 60 * 1000, monthlyAddonRwf: 2000 });
+      const { data: changed, error } = await tenantAdmin.rpc("set_shop_device_active", {
+        p_shop_sync_key: owner.shopId, p_device_record_id: deviceRecordId,
+        p_actor_device_id: actor.actorDeviceId, p_actor_user_id: actor.ownerUser.user_id, p_is_active: isActive
+      });
+      if (error || changed !== true) throw new Error("The shop's secure device-control procedure rejected the change: " + (error?.message || "No update was confirmed."));
+      const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
+      return json(200, { ok: true, isActive, shopUsage });
+    }
+
+    if (action === "device_remove") {
+      const deviceRecordId = text(body.id).trim();
+      if (!deviceRecordId) throw new Error("A device record ID is required.");
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      const { data: device, error: readError } = await admin.from("shop_devices")
+        .select("id,device_id,is_owner_primary").eq("id", deviceRecordId).eq("shop_sync_key", owner.shopId).maybeSingle();
+      if (readError || !device || device.is_owner_primary) throw new Error("The primary owner terminal cannot be removed.");
+      if (text(device.device_id) === actor.actorDeviceId ||
+          (text(body.currentDeviceId) && text(device.device_id) === text(body.currentDeviceId))) {
+        throw new Error("Use another owner device to remove the desktop currently running this session.");
+      }
+      const tenantAdmin = createClient(config.url, config.serviceKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { "X-Shop-Sync-Key": owner.shopId } }
+      });
+      const { data: removed, error } = await tenantAdmin.rpc("delete_shop_device", {
+        p_shop_sync_key: owner.shopId, p_device_record_id: deviceRecordId,
+        p_actor_device_id: actor.actorDeviceId, p_actor_user_id: actor.ownerUser.user_id
+      });
+      if (error || removed !== true) throw new Error("The shop's secure device-removal procedure rejected the request: " + (error?.message || "No deletion was confirmed."));
+      const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
+      return json(200, { ok: true, shopUsage });
+    }
+
+    if (action === "device_reinvite") {
+      const deviceRecordId = text(body.id).trim();
+      if (!deviceRecordId) throw new Error("A device record ID is required.");
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      const { data: device, error: readError } = await admin.from("shop_devices")
+        .select("id,device_id,is_owner_primary,is_active,assigned_user_id,branch_id").eq("id", deviceRecordId).eq("shop_sync_key", owner.shopId).maybeSingle();
+      if (readError || !device || !device.is_active || device.is_owner_primary || text(device.device_id) !== "") {
+        throw new Error("Only an active, unpaired invitation slot can receive a new join code. Paired terminals must be removed and invited again.");
+      }
+      const tenantAdmin = createClient(config.url, config.serviceKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { "X-Shop-Sync-Key": owner.shopId } }
+      });
+      const { error: revokeError } = await tenantAdmin.rpc("revoke_shop_device_invites", {
+        p_shop_sync_key: owner.shopId, p_device_record_id: deviceRecordId,
+        p_actor_device_id: actor.actorDeviceId, p_actor_user_id: actor.ownerUser.user_id
+      });
+      if (revokeError) throw new Error("Could not revoke the previous unredeemed invitation.");
+      const invite = await issueDeviceInvitationV2(config, owner.shopId, deviceRecordId, device.branch_id, actor.actorDeviceId, actor.ownerUser.user_id);
+      return json(200, { ok: true, id: deviceRecordId, joinCode: invite.joinCode, expiresAt: invite.expiresAt });
     }
 
     return json(400, { ok: false, message: "Unknown BeBoss desktop operation." });

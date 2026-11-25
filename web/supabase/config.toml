@@ -33,3 +33,6 @@ verify_jwt = false
 # credentials and performs its own database verification; it does not trust JWT headers.
 [functions.android-device-auth]
 verify_jwt = false
+
+[functions.send-auth-sms]
+verify_jwt = false
