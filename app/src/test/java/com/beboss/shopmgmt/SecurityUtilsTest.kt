@@ -6,6 +6,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 
 class SecurityUtilsTest {
 
@@ -79,6 +81,29 @@ class SecurityUtilsTest {
         // Strong non-sequential PINs
         assertTrue(SecurityUtils.validatePinStrength("4829").isValid)
         assertTrue(SecurityUtils.validatePinStrength("917382").isValid)
+    }
+
+    @Test
+    fun testCurrentCredentialHashesUseUpgradedWorkFactor() {
+        val hash = SecurityUtils.hashPin("4829")
+        assertEquals(210000, hash.split(":").getOrNull(1)?.toIntOrNull())
+        assertFalse(SecurityUtils.needsUpgrade(hash))
+        assertTrue(SecurityUtils.verifyPin("4829", hash))
+        assertFalse(SecurityUtils.verifyPin("9999", hash))
+    }
+
+    @Test
+    fun testLegacyRuntimePepperHashRemainsReadableOnlyForMigration() {
+        val salt = ByteArray(16) { (it + 1).toByte() }
+        val legacyInput = "4829:BeBossRuntimeHardwarePepperV2".toCharArray()
+        val spec = PBEKeySpec(legacyInput, salt, 60000, 256)
+        val hashBytes = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            .generateSecret(spec).encoded
+        val legacyHash = "pbkdf2:60000:${SecurityUtils.bytesToHex(salt)}:${SecurityUtils.bytesToHex(hashBytes)}"
+
+        assertTrue(SecurityUtils.verifyPin("4829", legacyHash))
+        assertFalse(SecurityUtils.verifyPin("9999", legacyHash))
+        assertTrue(SecurityUtils.needsUpgrade(legacyHash))
     }
 
     @Test

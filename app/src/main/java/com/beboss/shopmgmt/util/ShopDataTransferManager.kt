@@ -75,15 +75,13 @@ object ShopDataTransferManager {
     )
 
     private fun getShareHmacSecret(): String {
-        val s = try {
-            BuildConfig.BEBOSS_DATASHARE_HMAC_SECRET.trim()
-        } catch (_: Throwable) {
-            ""
-        }
-        if (s.isNotEmpty() && s != "DEFAULT_DATSHARE_SECRET_PLACEHOLDER") {
-            return s
-        }
-        return "BeBossDefaultDataShareHmacKeyV2"
+        val secret = try { BuildConfig.BEBOSS_DATASHARE_HMAC_SECRET.trim() } catch (_: Throwable) { "" }
+        if (secret.length >= 32 && secret != "DEFAULT_DATSHARE_SECRET_PLACEHOLDER" &&
+            secret != "BeBossDefaultDataShareHmacKeyV2") return secret
+        // The compatibility value is confined to debug/test builds. Release builds
+        // require the same protected BBSHARE key configured in Supabase.
+        if (BuildConfig.DEBUG) return "BeBossDefaultDataShareHmacKeyV2"
+        throw SecurityException("BEBOSS_DATASHARE_HMAC_SECRET is not configured. Secure cross-device sharing is disabled until the protected key is provisioned.")
     }
 
     /**

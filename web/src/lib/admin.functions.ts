@@ -177,7 +177,8 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
       Boolean(String(req.gateway_reference ?? "").trim()) &&
       Boolean(String(req.gateway_transaction_id ?? "").trim());
     const manualVerificationNote = String(data.verificationNote ?? "").trim();
-    if (!gatewayVerified && (data.providerVerified !== true || manualVerificationNote.length < 5)) {
+    const alreadyFinalized = ["APPROVED", "REDEEMED"].includes(String(req.status));
+    if (!alreadyFinalized && !gatewayVerified && (data.providerVerified !== true || manualVerificationNote.length < 5)) {
       throw new Error("This payment has no verified gateway settlement. Record the provider transaction check before issuing an unlock code.");
     }
     const verificationNote = gatewayVerified
@@ -196,18 +197,22 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     const payerFullName = String(req.payer_full_name || "");
     const paymentNote = String(req.payment_note || "");
 
-    if (req.status === "APPROVED") {
+    if (req.status === "APPROVED" || req.status === "REDEEMED") {
       if (!req.generated_unlock_code || req.approval_mode !== "UNLOCK_CODE") {
-        throw new Error("This payment was already approved using direct auto-unlock.");
+        if (req.approval_mode === "DIRECT_AUTO_UNLOCK" || !req.generated_unlock_code) {
+          throw new Error("This payment has already been activated directly in BeBoss Cloud. No unlock code is required; refresh the shop to synchronize its subscription.");
+        }
+        throw new Error("This payment has already been redeemed. A replacement unlock code will not be issued.");
       }
       const { data: existingCode, error: codeError } = await ctx.supabase
-        .from("unlock_codes").select("payment_request_id, unlock_code")
+        .from("unlock_codes").select("payment_request_id, unlock_code, plan_digest, status")
         .eq("unlock_code", req.generated_unlock_code).maybeSingle();
-      if (codeError || !existingCode || existingCode.payment_request_id !== req.id) {
-        throw new Error("This approved payment has no matching payment-linked unlock record. Contact the master administrator.");
+      if (codeError || !existingCode || existingCode.payment_request_id !== req.id ||
+          !["ISSUED", "REDEEMED"].includes(String(existingCode.status))) {
+        throw new Error("This payment has no active payment-linked unlock record. Contact the master administrator; no replacement code was issued.");
       }
       const shop = await getShop(ctx, shopId);
-      return { code: req.generated_unlock_code, alreadyApproved: true, days: calc.days, tier: calc.tier, total: calc.total, expiresAt: Number(shop?.subscription_expires_at ?? 0), shopName: req.shop_name, username: req.owner_username, phone: payerPhone };
+      return { code: req.generated_unlock_code, alreadyApproved: true, days: calc.days, tier: calc.tier, total: calc.total, expiresAt: Number(shop?.subscription_expires_at ?? 0), shopName: req.shop_name, username: req.owner_username, phone: payerPhone, alreadyRedeemed: req.status === "REDEEMED" };
     }
     if (!["PENDING_VERIFICATION", "REJECTED"].includes(String(req.status))) {
       throw new Error(`This payment claim is ${String(req.status).toLowerCase().replaceAll("_", " ")} and cannot be approved again.`);
@@ -289,15 +294,32 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     }).eq("id", req.id).eq("status", req.status).select("id").maybeSingle();
 
     if (claim.error || !claim.data) {
-      const { data: latest } = await ctx.supabase.from("payment_requests").select("status,generated_unlock_code").eq("id", req.id).maybeSingle();
-      if (latest?.status === "APPROVED" && latest.generated_unlock_code === codeToUse) {
-        const { data: activeShop } = await ctx.supabase.from("shop_accounts").select("subscription_expires_at").eq("id", shopId).maybeSingle();
-        return { code: codeToUse, days: calc.days, tier: calc.tier, total: calc.total, expiresAt: Number(activeShop?.subscription_expires_at ?? 0), shopName: req.shop_name, username: req.owner_username, phone: payerPhone, alreadyApproved: true };
+      const { data: latest } = await ctx.supabase.from("payment_requests")
+        .select("status,approval_mode,generated_unlock_code").eq("id", req.id).maybeSingle();
+      if (["APPROVED", "REDEEMED"].includes(String(latest?.status)) && latest?.generated_unlock_code) {
+        const { data: linkedCode } = await ctx.supabase.from("unlock_codes")
+          .select("id,unlock_code,plan_digest,status").eq("payment_request_id", req.id)
+          .in("status", ["ISSUED", "REDEEMED"]).maybeSingle();
+        if (linkedCode && linkedCode.unlock_code === latest.generated_unlock_code &&
+            linkedCode.unlock_code === codeToUse && linkedCode.plan_digest === expectedPlanDigest) {
+          const { data: activeShop } = await ctx.supabase.from("shop_accounts")
+            .select("subscription_expires_at").eq("id", shopId).maybeSingle();
+          return { code: linkedCode.unlock_code, days: calc.days, tier: calc.tier, total: calc.total,
+            expiresAt: Number(activeShop?.subscription_expires_at ?? 0), shopName: req.shop_name,
+            username: req.owner_username, phone: payerPhone, alreadyApproved: true,
+            alreadyRedeemed: latest.status === "REDEEMED" };
+        }
+      }
+      if (latest?.status === "APPROVED" && latest.approval_mode === "DIRECT_AUTO_UNLOCK" && !latest.generated_unlock_code) {
+        throw new Error("This payment was already activated directly in BeBoss Cloud. Refresh the shop; a second unlock code is not needed.");
+      }
+      if (latest?.status === "REDEEMED") {
+        throw new Error("This payment has already been redeemed. BeBoss will not issue a replacement code.");
       }
       if (insertedNewCode) {
         await ctx.supabase.from("unlock_codes").update({ status: "REVOKED" }).eq("id", unlockCodeId).eq("status", "ISSUED");
       }
-      throw new Error("Another administrator changed this payment first. Refresh the queue before trying again.");
+      throw new Error("The payment changed while approval was being saved. Refresh the queue and inspect its current status before retrying.");
     }
 
     const expiresAt = await activateShop(ctx, shopId, { addDays: calc.days, branches: req.branch_count, workers: req.worker_count, devices: req.device_count || 1, monthly: calc.monthly });
@@ -328,7 +350,8 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
       Boolean(String(req.gateway_reference ?? "").trim()) &&
       Boolean(String(req.gateway_transaction_id ?? "").trim());
     const manualVerificationNote = String(data.verificationNote ?? "").trim();
-    if (!gatewayVerified && (data.providerVerified !== true || manualVerificationNote.length < 5)) {
+    const alreadyFinalized = req.status === "APPROVED";
+    if (!alreadyFinalized && !gatewayVerified && (data.providerVerified !== true || manualVerificationNote.length < 5)) {
       throw new Error("This payment has no verified gateway settlement. Record the provider transaction check before activating the shop.");
     }
     const verificationNote = gatewayVerified
@@ -413,7 +436,12 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
           };
         }
       }
-      throw new Error("Another administrator changed this payment first. Refresh the queue before trying again.");
+      if ((latest?.status === "APPROVED" || latest?.status === "REDEEMED") && latest.generated_unlock_code) {
+        throw new Error(latest.status === "REDEEMED"
+          ? "This payment was already redeemed with its existing unlock code. A second cloud activation was not performed."
+          : "This payment was already approved with an unlock code. Deliver the existing code instead of activating it a second time.");
+      }
+      throw new Error("The payment changed while direct activation was being saved. Refresh the queue and inspect the current status.");
     }
 
     let expiresAt: number;
@@ -487,7 +515,7 @@ export const rejectPayment = createServerFn({ method: "POST" })
       .select("id")
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!rejected) throw new Error("Another administrator changed this payment first. Refresh the queue.");
+    if (!rejected) throw new Error("The payment status changed before rejection was saved. Refresh the queue and review its latest status.");
     await audit(ctx, admin.email, "REJECT_PAYMENT", `@${req.owner_username ?? data.requestId}`, reason);
     return { ok: true };
   });

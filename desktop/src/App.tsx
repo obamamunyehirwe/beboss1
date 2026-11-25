@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, BarChart3, Bell, Building2, Briefcase, Check, ChevronDown,
   ClipboardList, CreditCard, Database, Home, LayoutDashboard, LoaderCircle, LogOut, Menu,
   Package, RefreshCw, Search, Settings, ShieldCheck, ShoppingCart, Smartphone, Truck, UserRound,
-  Users, Warehouse, X, Zap
+  Users, Warehouse, X, Zap, Languages
 } from "lucide-react";
 import { callDesktopApi, currentSession, signOut, type OwnerCredentials } from "./lib/cloud";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
@@ -34,10 +34,12 @@ import { WelcomePage } from "./components/screens/WelcomePage";
 import { ManagementPage } from "./components/screens/ManagementPage";
 import { CommandPalette } from "./components/CommandPalette";
 import { SetupWizard } from "./components/SetupWizard";
+import { applyDesktopLanguage, DESKTOP_LANGUAGES } from "./lib/i18n";
+import type { StaffUpdate } from "./components/screens/StaffPage";
 
 const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = {
   theme: "system", density: "comfortable", accent: "orange", defaultView: "welcome",
-  autoSync: true, refreshMinutes: 5, reducedMotion: false
+  language: "en", autoSync: true, refreshMinutes: 5, reducedMotion: false
 };
 
 function normalizeDesktopPreferences(value: unknown): DesktopPreferences {
@@ -47,7 +49,9 @@ function normalizeDesktopPreferences(value: unknown): DesktopPreferences {
   const accents = ["orange", "blue", "green"];
   const views = ["welcome", "overview", "management"];
   const refreshIntervals = [0, 1, 5, 15];
+  const languages = ["en", "rw", "fr", "sw"];
   return {
+    language: languages.includes(String(saved.language)) ? saved.language as DesktopPreferences["language"] : DEFAULT_DESKTOP_PREFERENCES.language,
     theme: themes.includes(String(saved.theme)) ? saved.theme as DesktopPreferences["theme"] : DEFAULT_DESKTOP_PREFERENCES.theme,
     density: densities.includes(String(saved.density)) ? saved.density as DesktopPreferences["density"] : DEFAULT_DESKTOP_PREFERENCES.density,
     accent: accents.includes(String(saved.accent)) ? saved.accent as DesktopPreferences["accent"] : DEFAULT_DESKTOP_PREFERENCES.accent,
@@ -183,6 +187,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const root = document.getElementById("root");
+    if (!root || !preferencesReady) return;
+    return applyDesktopLanguage(root, preferences.language);
+  }, [preferences.language, preferencesReady, owner, view, setupRequired]);
+
+  useEffect(() => {
     let alive = true;
     (async () => {
       try {
@@ -313,6 +323,111 @@ export default function App() {
     finally { setBusy(false); }
   }
 
+  async function saveStaffAccess(input: StaffUpdate) {
+    if (!owner || offline) throw new Error("Reconnect the owner account before editing staff access.");
+    if (!input.userId.trim()) throw new Error("A staff account identifier is required.");
+    setBusy(true); setError(""); setNotice("");
+    try {
+      // Read the latest signed snapshot before changing the staff mirror so permission
+      // changes merge against current Android edits, never the desktop's stale cache.
+      const latest = await callDesktopApi<CloudState & { ok: true }>("bootstrap", owner);
+      const base = ensureSnapshot(latest.snapshot);
+      const targetStaff = rows(latest.staff).find((staff) => s(staff.user_id) === input.userId);
+      const targetUsername = s(targetStaff?.username).toLowerCase();
+      const users = rows(base?.users);
+      const index = users.findIndex((item) =>
+        s(item.id) === input.userId ||
+        (targetUsername && s(item.username).toLowerCase() === targetUsername)
+      );
+      if (input.permissions && index < 0) {
+        throw new Error("This staff member's permission profile is not in the latest signed mobile snapshot. Synchronize the Android owner terminal before editing granular permissions.");
+      }
+
+      await callDesktopApi("staff_update", owner, {
+        userId: input.userId, role: input.role, branchId: input.branchId, isActive: input.isActive
+      });
+
+      if (base && index >= 0) {
+        const next = structuredClone(base);
+        const now = Date.now();
+        next.users[index] = {
+          ...next.users[index],
+          ...(input.permissions ?? {}),
+          role: input.role,
+          assignedBranchId: input.branchId,
+          isActive: input.isActive,
+          updatedAt: now,
+          hlcTimestamp: now,
+          lastModifiedDeviceId: "DESKTOP"
+        };
+        const queued = await window.beBossDesktop.local.queue(
+          "STAFF_ACCESS_UPDATE", next, deviceId, latest.snapshotUpdatedAt, false,
+          n(latest.shop.subscription_expires_at), s(latest.shop.subscription_status).toUpperCase()
+        );
+        try {
+          const saved = await callDesktopApi<{ ok: true; uploadedAt: number; snapshot: Snapshot }>(
+            "save_snapshot", owner, { deviceId, expectedUpdatedAt: latest.snapshotUpdatedAt, snapshot: queued.payload }
+          );
+          await window.beBossDesktop.local.acknowledge([queued.id]);
+          const updated: CloudState = {
+            ...latest,
+            snapshot: ensureSnapshot(saved.snapshot),
+            snapshotUpdatedAt: saved.uploadedAt,
+            staff: rows(latest.staff).map((staff) => s(staff.user_id) === input.userId
+              ? { ...staff, role: input.role, assigned_branch_id: input.branchId,
+                  assigned_branch_name: rows(latest.branches).find((branch) => s(branch.id) === input.branchId)?.name || "All Branches",
+                  is_active: input.isActive }
+              : staff)
+          };
+          setCloud(updated); setOffline(false);
+          await saveCache(owner, updated);
+        } catch (saveError) {
+          const message = errorText(saveError);
+          if (/newer shop data|snapshot/i.test(message)) {
+            const recovered = await bootstrap(owner, false);
+            if (recovered) {
+              setNotice("Staff access was saved. BeBoss refreshed and merged it with the latest mobile and desktop snapshot.");
+              return;
+            }
+          }
+          if (!navigator.onLine || /failed to fetch|network|timeout|connection|offline/i.test(message)) {
+            const updated: CloudState = {
+              ...latest,
+              snapshot: ensureSnapshot(queued.payload as Snapshot),
+              staff: rows(latest.staff).map((staff) => s(staff.user_id) === input.userId
+                ? { ...staff, role: input.role, assigned_branch_id: input.branchId,
+                    assigned_branch_name: rows(latest.branches).find((branch) => s(branch.id) === input.branchId)?.name || "All Branches",
+                    is_active: input.isActive }
+                : staff)
+            };
+            setCloud(updated); setOffline(true);
+            setNotice("Staff access is saved to the encrypted local outbox and will synchronize when the connection returns.");
+            return;
+          }
+          throw saveError;
+        }
+      } else {
+        // The staff cloud mirror may exist before its first mobile snapshot enrollment.
+        // Basic access changes remain available, but granular permission writes do not.
+        const updated: CloudState = {
+          ...latest,
+          staff: rows(latest.staff).map((staff) => s(staff.user_id) === input.userId
+            ? { ...staff, role: input.role, assigned_branch_id: input.branchId,
+                assigned_branch_name: rows(latest.branches).find((branch) => s(branch.id) === input.branchId)?.name || "All Branches",
+                is_active: input.isActive }
+            : staff)
+        };
+        setCloud(updated);
+        await saveCache(owner, updated);
+      }
+      await bootstrap(owner, false);
+      setNotice("Staff role, branch, operating state and available mobile permissions were synchronized.");
+    } catch (e) {
+      setError(errorText(e));
+      throw e;
+    } finally { setBusy(false); }
+  }
+
   async function logout() {
     setBusy(true);
     try {
@@ -355,7 +470,7 @@ export default function App() {
     });
   }
 
-  return <div className="app-shell" data-theme={preferences.theme} data-density={preferences.density} data-accent={preferences.accent} data-motion={preferences.reducedMotion ? "reduced" : "full"}>
+  return <div className="app-shell" data-theme={preferences.theme} data-density={preferences.density} data-accent={preferences.accent} data-motion={preferences.reducedMotion ? "reduced" : "full"} data-language={preferences.language}>
     <aside className={"sidebar " + (menuOpen ? "open" : "")}>
       <div className="brand-row"><span className="brand-mark brand-logo-mark"><img src="/beboss-app-icon.png" alt="BeBoss" /></span><div><strong>BeBoss</strong><small>RETAIL COMMAND</small></div><span className="desktop-tag">DESKTOP</span></div>
       <div className="shop-switcher"><span className="shop-avatar">{s(cloud.shop.shop_name).slice(0, 1).toUpperCase() || "B"}</span><div><strong>{s(cloud.shop.shop_name) || "My Shop"}</strong><small>@{owner.username}</small></div><ChevronDown size={15} /></div>
@@ -383,6 +498,7 @@ export default function App() {
         <div className="topbar-left"><button className="mobile-menu icon-btn" onClick={() => setMenuOpen((v) => !v)}><Menu size={20} /></button><div className="breadcrumb"><span>BeBoss</span><b>/</b><strong>{pageTitle}</strong></div></div>
         <div className="topbar-right">
           <button className="command-btn" onClick={() => setPaletteOpen(true)} title="Command menu (Ctrl+K)"><Search size={15} /><span>Command</span><kbd>Ctrl K</kbd></button>
+          <label className="desktop-language-control"><Languages size={15} /><select aria-label="Interface language" value={preferences.language} onChange={(event) => void saveDesktopPreferences({ ...preferences, language: event.target.value as DesktopPreferences["language"] })}>{DESKTOP_LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.short}</option>)}</select></label>
           <label className="global-search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products, sales, customers…" /></label>
           <button className={"connection-chip " + (offline ? "offline" : "online")} onClick={refresh} title="Refresh cloud data"><span className="connection-dot" />{offline ? "Offline cache" : "Cloud synced"}</button>
           <button className="icon-btn" onClick={refresh} title="Refresh"><RefreshCw size={17} className={busy ? "spin" : ""} /></button>
@@ -405,7 +521,7 @@ export default function App() {
         {view === "purchases" && <PurchasesPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} />}
         {view === "reports" && <ReportsPage snapshot={snapshot} />}
         {view === "branches" && <BranchesPage cloud={cloud} onAction={callAction} offline={offline} />}
-        {view === "staff" && <StaffPage cloud={cloud} onAction={callAction} offline={offline} />}
+        {view === "staff" && <StaffPage cloud={cloud} snapshot={snapshot} onSaveStaff={saveStaffAccess} offline={offline} />}
         {view === "devices" && <DevicesPage cloud={cloud} onAction={callAction} offline={offline} />}
         {view === "transfers" && <TransfersPage cloud={cloud} snapshot={snapshot} onAction={callAction} offline={offline} />}
         {view === "billing" && <BillingPage cloud={cloud} onNavigate={setView} onCheckout={async (payload) => {

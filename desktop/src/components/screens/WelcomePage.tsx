@@ -44,6 +44,28 @@ export function WelcomePage({ cloud, snapshot, offline, revenueToday, profitToda
         <small className="welcome-snapshot-time">{cloud.snapshotUpdatedAt ? "Last snapshot " + new Date(cloud.snapshotUpdatedAt).toLocaleString() : "No cloud snapshot timestamp yet"}</small>
       </div>
     </section>
+    <section className="welcome-visual-stage">
+      <div className="welcome-visual-copy">
+        <span className="eyebrow">THE CONNECTED RETAIL WORKSPACE</span>
+        <h3>Run every part of your shop from <em>one clear view.</em></h3>
+        <p>Sales, stock, customer balances, people and branches work together with BeBoss Cloud and encrypted offline recovery.</p>
+        <div className="welcome-visual-actions">
+          <button className="btn-primary" onClick={() => onNavigate("checkout")}><ShoppingCart size={15} /> Open point of sale</button>
+          <button className="btn-outline" onClick={() => onNavigate("staff")}><Users size={15} /> Manage your team</button>
+        </div>
+        <div className="welcome-visual-footnote"><ShieldCheck size={15} /> Real shop data · signed synchronization · local encrypted operations</div>
+      </div>
+      <div className="welcome-visual-art">
+        <div className="welcome-art-image"><img src="/Friendly%20Modern%20Store%20Checkout.png" alt="Modern retail checkout counter" /></div>
+        <div className="welcome-art-shade" />
+        <div className="welcome-art-brand"><img src="/beboss-wordmark-light.png" alt="BeBoss" /></div>
+        <div className="welcome-art-float welcome-art-float-revenue"><span>TODAY'S REVENUE</span><strong>{money(revenueToday)}</strong><small>From saved sales</small></div>
+        <div className="welcome-art-float welcome-art-float-stock"><span>INVENTORY WATCH</span><strong>{lowStock.toLocaleString()}</strong><small>Items at reorder level</small></div>
+        <div className="welcome-art-orbit welcome-art-orbit-one" />
+        <div className="welcome-art-orbit welcome-art-orbit-two" />
+        <div className="welcome-art-caption"><span><i /> {offline ? "LOCAL WORKSPACE" : "CONNECTED WORKSPACE"}</span><b>{activeBranches.length} branches · {activeDevices.length} terminals</b></div>
+      </div>
+    </section>
     <div className="stat-grid four">
       <StatCard label="Today's revenue" value={money(revenueToday)} sub="From recorded sales today" icon={Wallet} tone="blue" />
       <StatCard label="Today's gross profit" value={money(profitToday)} sub="Saved sale cost basis" icon={ArrowUpRight} tone="green" />

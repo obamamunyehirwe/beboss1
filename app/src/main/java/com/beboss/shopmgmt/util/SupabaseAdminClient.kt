@@ -2529,13 +2529,21 @@ object SupabaseAdminClient {
         if (request.status != "APPROVED" && !gatewayVerified && effectiveVerificationNote.length < 5) {
             return@withContext Pair(false, "This payment has no verified online gateway settlement. Confirm the provider transaction in the official merchant portal before issuing BB3.")
         }
-        if (request.status == "APPROVED") {
+        if (request.status in setOf("APPROVED", "REDEEMED")) {
             if (request.generatedUnlockCode.isBlank() || request.approvalMode != "UNLOCK_CODE") {
-                return@withContext Pair(false, "This payment has already been approved using direct auto-unlock.")
+                val message = if (request.approvalMode == "DIRECT_AUTO_UNLOCK" || request.generatedUnlockCode.isBlank()) {
+                    "This payment has already been activated directly in BeBoss Cloud. No unlock code is required; refresh the registered shop to synchronize its subscription."
+                } else {
+                    "This payment has already been redeemed. BeBoss will not issue a second unlock code."
+                }
+                return@withContext Pair(false, message)
             }
             val linked = findUnlockCodeForPayment(request.id)
-            return@withContext if (linked == request.generatedUnlockCode) Pair(true, linked)
-                else Pair(false, "This payment does not have its matching unlock-code ledger record. Contact the master administrator.")
+            return@withContext when {
+                linked == request.generatedUnlockCode -> Pair(true, linked)
+                request.status == "REDEEMED" -> Pair(false, "This payment is already marked REDEEMED. The original code is not available in the active unlock ledger, so a replacement will not be issued.")
+                else -> Pair(false, "This payment does not have its matching unlock-code ledger record. Contact the master administrator.")
+            }
         }
         if (request.status !in setOf("PENDING_VERIFICATION", "REJECTED")) {
             return@withContext Pair(false, "This payment claim is no longer awaiting approval.")
@@ -2654,8 +2662,26 @@ object SupabaseAdminClient {
             }
             if (!claimWon) {
                 val current = getPaymentRequestStatus(request.id)
-                if (current?.optCleanString("status") == "APPROVED" && current.optCleanString("generated_unlock_code") == codeToUse) {
-                    return@withContext Pair(true, codeToUse)
+                val currentStatus = current?.optCleanString("status").orEmpty()
+                val currentCode = current?.optCleanString("generated_unlock_code").orEmpty()
+                if (currentStatus in setOf("APPROVED", "REDEEMED") && currentCode.isNotBlank()) {
+                    val linkedRecord = findUnlockCodeRecordForPayment(request.id)
+                    val linkedCode = linkedRecord?.optCleanString("unlock_code").orEmpty()
+                    val linkedDigest = linkedRecord?.optCleanString("plan_digest").orEmpty()
+                    if (currentCode == codeToUse && linkedCode == codeToUse && linkedDigest == signed.planDigest) {
+                        // A successful redemption may move APPROVED to REDEEMED before
+                        // this admin request reads its final response. Reuse the one
+                        // code already linked to the payment; never revoke or re-issue it.
+                        return@withContext Pair(true, linkedCode)
+                    }
+                }
+                if (currentStatus == "APPROVED" &&
+                    current?.optCleanString("approval_mode") == "DIRECT_AUTO_UNLOCK" &&
+                    currentCode.isBlank()) {
+                    return@withContext Pair(false, "This payment was already activated directly in BeBoss Cloud. Refresh the shop; do not issue a second code.")
+                }
+                if (currentStatus == "REDEEMED") {
+                    return@withContext Pair(false, "This payment has already been redeemed. No replacement unlock code was issued.")
                 }
                 if (insertedNewCode) {
                     val revokePayload = JSONObject().put("status", "REVOKED")
@@ -2663,7 +2689,7 @@ object SupabaseAdminClient {
                         .patch(revokePayload.toString().toRequestBody(jsonMediaType)).build()
                     client.newCall(revoke).execute().close()
                 }
-                return@withContext Pair(false, "Another administrator processed this payment first. Refresh the queue.")
+                return@withContext Pair(false, "The payment changed while approval was being saved. Refresh the queue and inspect its current status before retrying.")
             }
 
             val shopKey = signed.shopId.ifBlank { computeShopSyncKey(request.ownerUsername, request.ownerPhone) }
@@ -2708,7 +2734,7 @@ object SupabaseAdminClient {
 
     private suspend fun getPaymentRequestStatus(paymentRequestId: String): JSONObject? = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(paymentRequestId, "UTF-8")
-        val request = buildRestRequest("payment_requests?id=eq.$encoded&select=status,generated_unlock_code&limit=1", useAdminJwtIfAvailable = true).get().build()
+        val request = buildRestRequest("payment_requests?id=eq.$encoded&select=status,approval_mode,generated_unlock_code&limit=1", useAdminJwtIfAvailable = true).get().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@withContext null
             JSONArray(response.body?.string().orEmpty().ifBlank { "[]" }).optJSONObject(0)
