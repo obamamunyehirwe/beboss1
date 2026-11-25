@@ -338,7 +338,7 @@ function TopBar({ email, isAdmin, permissions, onSignOut }: { email: string; isA
           <Logo to={homeTarget} suffix="Admin" />
         </div>
         <div className="hidden sm:block">
-          <LivePulse enabled={isAdmin || permissions.includes("sync.view")} />
+          {(isAdmin || permissions.includes("sync.view")) ? <LivePulse /> : null}
         </div>
       </div>
       <div className="flex items-center gap-2">
