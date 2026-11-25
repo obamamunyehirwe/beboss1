@@ -2689,7 +2689,8 @@ object SupabaseAdminClient {
                         .patch(revokePayload.toString().toRequestBody(jsonMediaType)).build()
                     client.newCall(revoke).execute().close()
                 }
-                return@withContext Pair(false, "The payment changed while approval was being saved. Refresh the queue and inspect its current status before retrying.")
+                val latestStatus = currentStatus.ifBlank { "UNKNOWN" }.lowercase(Locale.ROOT).replace("_", " ")
+                return@withContext Pair(false, "This payment is now $latestStatus. Refresh the queue before taking another action.")
             }
 
             val shopKey = signed.shopId.ifBlank { computeShopSyncKey(request.ownerUsername, request.ownerPhone) }

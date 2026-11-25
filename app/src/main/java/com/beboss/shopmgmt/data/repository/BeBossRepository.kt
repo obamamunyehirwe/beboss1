@@ -587,6 +587,8 @@ class BeBossRepository(private val database: AppDatabase) {
         mainBranch: Branch?
     ): ShopDevice = withContext(Dispatchers.IO) {
         require(deviceId.isNotBlank()) { "A stable device ID is required before cloud registration." }
+        val detectedDeviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+            .trim().take(120).ifBlank { "Android Owner Terminal" }
         val existing = shopDeviceDao.getAllDevicesList()
 
         // A paired terminal keeps its own registry row. Never turn a joined cashier/manager
@@ -614,6 +616,7 @@ class BeBossRepository(private val database: AppDatabase) {
                 assignedUserId = owner.id,
                 assignedUsername = username,
                 assignedUserName = owner.name,
+                deviceName = detectedDeviceName,
                 role = owner.role.name,
                 branchId = mainBranch?.id ?: existingPrimary.branchId,
                 branchName = mainBranch?.name ?: existingPrimary.branchName,
@@ -629,7 +632,7 @@ class BeBossRepository(private val database: AppDatabase) {
             id = "${shopSyncKey}::PRIMARY",
             shopSyncKey = shopSyncKey,
             deviceId = deviceId,
-            deviceName = android.os.Build.MODEL?.ifBlank { "Owner Terminal" } ?: "Owner Terminal",
+            deviceName = detectedDeviceName,
             joinCode = "OWNER",
             assignedUserId = owner.id,
             assignedUsername = username,

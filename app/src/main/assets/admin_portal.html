@@ -2384,7 +2384,8 @@ create table if not exists public.payment_requests (
               method: 'PATCH', body: JSON.stringify({ status: 'REVOKED' })
             }).catch(() => null);
           }
-          throw new Error('The payment changed while approval was being saved. Refresh the queue and inspect the latest status; no replacement code was issued.');
+          const currentStatus = String(latestPayment?.status || 'UNKNOWN').toLowerCase().replaceAll('_', ' ');
+          throw new Error(`This payment is now ${currentStatus}. Refresh the queue before taking another action; no replacement code was issued.`);
         }
         await extendOrActivateShop(computeShopKey(req.owner_username, req.owner_phone), {
           addDays: calc.days, branches: req.branch_count, workers: req.worker_count,
@@ -2401,17 +2402,36 @@ create table if not exists public.payment_requests (
 
     const handleConfirmReject = async () => {
       if (!rejectTarget) return;
+      const reason = rejectReason.trim() || 'Payment details could not be verified with the mobile-money provider';
       try {
-        await sbFetch(`payment_requests?id=eq.${encodeURIComponent(rejectTarget.id)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            status: 'REJECTED',
-            rejection_reason: rejectReason.trim() || 'Payment details could not be verified with the mobile-money provider',
-            verified_by_admin: `${session.fullName} (${session.email})`,
-            updated_at: Date.now()
-          })
-        });
-        await logAudit('REJECT_PAYMENT', rejectTarget.owner_username, rejectReason);
+        const updated = await sbFetch(
+          `payment_requests?id=eq.${encodeURIComponent(rejectTarget.id)}&status=eq.PENDING_VERIFICATION`,
+          {
+            method: 'PATCH',
+            headers: { Prefer: 'return=representation' },
+            body: JSON.stringify({
+              status: 'REJECTED',
+              rejection_reason: reason,
+              verified_by_admin: `${session.fullName} (${session.email})`,
+              updated_at: Date.now()
+            })
+          }
+        );
+        if (!Array.isArray(updated) || updated.length === 0) {
+          const latest = await sbFetch(
+            `payment_requests?id=eq.${encodeURIComponent(rejectTarget.id)}&select=status,rejection_reason&limit=1`
+          ).catch(() => []);
+          const current = Array.isArray(latest) ? latest[0] : null;
+          if (current?.status === 'REJECTED' && current.rejection_reason === reason) {
+            setRejectTarget(null);
+            await refreshAll(false);
+            notify('This payment was already rejected with the same reason.');
+            return;
+          }
+          const currentStatus = String(current?.status || 'UNKNOWN').toLowerCase().replaceAll('_', ' ');
+          throw new Error(`This payment is now ${currentStatus}. Refresh the queue before taking another action.`);
+        }
+        await logAudit('REJECT_PAYMENT', rejectTarget.owner_username, reason);
         setRejectTarget(null);
         await refreshAll(false);
         notify('Payment claim marked REJECTED.');
