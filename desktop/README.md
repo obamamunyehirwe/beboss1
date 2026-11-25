@@ -11,10 +11,10 @@ The first-launch wizard must run inside the installed BeBoss Desktop application
 
 ## Development
 
-Use Bun, the Rust stable toolchain and the platform build prerequisites for Tauri. From this directory:
+Use Node.js 22, npm, the Rust stable toolchain and the platform build prerequisites for Tauri. The desktop project is pinned by `package-lock.json`. From this directory:
 
 ```powershell
-bun install
+npm ci
 ```
 
 Create `.env.local` using the values from `.env.example` and set only the public desktop client configuration:
@@ -27,22 +27,22 @@ VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
 Run the **native app** (including the in-app setup wizard):
 
 ```powershell
-bun run dev
+npm run dev
 ```
 
 Build the frontend only for UI preview/testing (native operating-system checks will intentionally be unavailable):
 
 ```powershell
-bun run dev:ui
+npm run dev:ui
 ```
 
 Build a native installer for the current operating system:
 
 ```powershell
-bun run dist:win
+npm run dist:win
 ```
 
-Use `bun run dist:mac` on macOS and `bun run dist:linux` on Linux. The corresponding outputs are created under `src-tauri/target/release/bundle/nsis`, `dmg`, and `appimage`. GitHub Actions also builds unsigned packages for all three platforms and publishes SHA-256 manifests for integrity verification.
+Use `npm run dist:mac` on macOS and `npm run dist:linux` on Linux. The corresponding outputs are created under `src-tauri/target/release/bundle/nsis`, `dmg`, and `appimage`. GitHub Actions also builds unsigned packages for all three platforms and publishes SHA-256 manifests for integrity verification.
 
 ## Data and credentials
 
