@@ -342,7 +342,7 @@ function TopBar({ email, isAdmin, permissions, onSignOut }: { email: string; isA
         </div>
       </div>
       <div className="flex items-center gap-2">
-      <LanguageSwitcher /><ThemeToggle /><CommandPalette nav={NAV.filter((item) => isAdmin || (!NAV_SUPER_ADMIN_ONLY.has(item.to) && hasPermission(permissions, NAV_PERMISSION[item.to]))).map(n=>({...n,label:a(n.label)}))} />
+      <LanguageSwitcher /><ThemeToggle /><CommandPalette isAdmin={isAdmin} permissions={permissions} nav={NAV.filter((item) => isAdmin || (!NAV_SUPER_ADMIN_ONLY.has(item.to) && hasPermission(permissions, NAV_PERMISSION[item.to]))).map(n=>({...n,label:a(n.label)}))} />
       <Button
         size="sm"
         variant="glass"
