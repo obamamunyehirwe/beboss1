@@ -36,6 +36,26 @@ export function WelcomePage({ cloud, snapshot, offline, revenueToday, profitToda
   ];
   return <div className="page-stack">
     <PageHeading eyebrow="YOUR RETAIL WORKSPACE" title={greeting + ", " + firstName} description="Your business workspace is ready. Review today's performance or jump straight into an operation." action={<button className="btn-primary" onClick={() => onNavigate("checkout")}><ShoppingCart size={16} /> New sale</button>} />
+    {announcements.length > 0 ? (
+      <section className="panel announcements" aria-label="BeBoss announcements">
+        <div className="panel-heading">
+          <div><span className="eyebrow muted">BEBOSS NOTICES</span><h3>Updates for your shop</h3></div>
+          <Megaphone size={18} className="muted-icon" />
+        </div>
+        {announcements.map((notice) => (
+          <article className="announcement-row" key={s(notice.id)}>
+            <StatusPill value={s(notice.severity) || "INFO"} />
+            <div>
+              <strong>{s(notice.title)}</strong>
+              {s(notice.body) ? <p>{s(notice.body)}</p> : null}
+              {s(notice.cta_label) && s(notice.cta_url) ? (
+                <button className="text-action" onClick={() => { void onAnnouncementAction?.(s(notice.cta_url)); }}>{s(notice.cta_label)} <ArrowUpRight size={13} /></button>
+              ) : null}
+            </div>
+          </article>
+        ))}
+      </section>
+    ) : null}
     <section className="welcome-hero">
       <div className="welcome-hero-copy">
         <span className={"welcome-live " + (offline ? "offline" : cloud.verifiedChunks > 0 ? "verified" : "pending")}><i />{offline ? "OFFLINE · LOCAL DATA" : cloud.verifiedChunks > 0 ? "CLOUD SNAPSHOT VERIFIED" : "CLOUD VERIFICATION PENDING"}</span>
