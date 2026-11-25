@@ -77,9 +77,9 @@ function serializeOrder(order: HeldCart): StoredOrder {
 
 const TENDER_LABELS: Record<TenderKey, string> = { cash: "Cash", momo: "MTN MoMo", airtel: "Airtel Money", card: "Card" };
 
-export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, storageKey }: {
+export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, storageKey, cashierName }: {
   snapshot: Snapshot | null; onCommit: CommitSnapshot; onReceipt: (sale: Row, items: Row[]) => void;
-  offline: boolean; busy: boolean; storageKey: string;
+  offline: boolean; busy: boolean; storageKey: string; cashierName: string;
 }) {
   const products = activeProducts(snapshot);
   const customers = activeCustomers(snapshot);
@@ -377,7 +377,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
       paymentMethod: quickSalePayment, paymentStatus: "PAID", amountPaid: amount, tenders: [],
       notes: ("Quick POS Sale: " + name + (quickSaleNotes.trim() ? " · " + quickSaleNotes.trim() : "") +
         (quickSaleCost.trim() ? "" : " · estimated cost 70% of sale value")).slice(0, 1000),
-      receiptNumber, branchId, branchName, cashierId: "DESKTOP", cashierName: "Desktop Owner",
+      receiptNumber, branchId, branchName, cashierId: cashierName || "DESKTOP", cashierName: cashierName || "Shop Owner",
       synced: false, updatedAt: now, syncVersion: 1, hlcTimestamp: 0, lastModifiedDeviceId: "DESKTOP"
     };
 
