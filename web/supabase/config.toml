@@ -17,6 +17,11 @@ verify_jwt = false
 [functions.submit-public-contact]
 verify_jwt = false
 
+# The public downloader authenticates server-side with the service-role key,
+# checks the is_public release flag, and returns only a short-lived signed URL.
+[functions.public-apk-download]
+verify_jwt = false
+
 [functions.create-payment-checkout]
 verify_jwt = true
 
