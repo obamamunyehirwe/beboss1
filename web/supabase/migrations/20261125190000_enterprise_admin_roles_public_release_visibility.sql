@@ -276,3 +276,12 @@ $$;
 revoke execute on function public.admin_set_current_app_release(uuid, text) from public, anon;
 grant execute on function public.admin_set_current_app_release(uuid, text) to authenticated, service_role;
 alter function public.admin_set_current_app_release(uuid, text) set search_path = pg_catalog;
+
+-- Only Super Admins may change platform-admin profile state or role metadata.
+-- Delegated accounts can no longer self-edit their displayed privilege fields.
+drop policy if exists "Own or admin update profile" on public.admin_profiles;
+drop policy if exists "Super admins update admin profiles" on public.admin_profiles;
+create policy "Super admins update admin profiles"
+on public.admin_profiles for update to authenticated
+using (public.is_beboss_admin())
+with check (public.is_beboss_admin());
