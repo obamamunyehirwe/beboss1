@@ -80,7 +80,7 @@ function ShopDetail() {
   const calc = calculateSubscriptionFee(q.branches, q.workers, 1, q.devices, Number(cfg?.per_device_fee_rwf) || 2000);
   const shopDevices = (devices.data ?? []).filter((d) => d.shop_sync_key === shopId);
   const shopEvents = (events.data ?? []).filter((e) => e.shop_sync_key === shopId);
-  const flags = canViewPayments ? licenseFlags(shop, codes.data ?? [], pays.data ?? []) : [];
+  const flags = canViewPayments && canViewCodes ? licenseFlags(shop, codes.data ?? [], pays.data ?? []) : [];
   const shopUsers = (users.data ?? []).filter((u) => u.shop_sync_key === shopId);
   const shopPays = (pays.data ?? []).filter((p) => computeShopKey(p.owner_username, p.owner_phone) === shopId);
   const shopCodes = (codes.data ?? []).filter((x) => computeShopKey(x.shop_username, x.shop_phone) === shopId);
