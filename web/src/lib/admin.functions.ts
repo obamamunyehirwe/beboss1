@@ -1204,7 +1204,7 @@ export const updateContactMessage = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    const admin = await requireAdmin(ctx, true);
+    const admin = await requirePermission(ctx, "inbox.manage");
     const { error } = await ctx.supabase.from("contact_messages").update({ status: data.status, admin_reply_note: data.note, updated_at: new Date().toISOString() }).eq("id", data.id);
     if (error) throw new Error(error.message);
     await audit(ctx, admin.email, "UPDATE_INBOX", data.id, data.status).catch(() => undefined);
