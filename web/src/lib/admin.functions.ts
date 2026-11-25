@@ -1187,6 +1187,21 @@ export const deleteRelease = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const getAdminReleaseDownload = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    await requirePermission(ctx, "releases.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: release, error: readError } = await supabaseAdmin.from("app_releases").select("file_path,file_name").eq("id", data.id).maybeSingle();
+    if (readError || !release) throw new Error(readError?.message ?? "Release not found.");
+    if (!release.file_path) throw new Error("This archived release has no stored APK file.");
+    const { data: signed, error } = await supabaseAdmin.storage.from("releases").createSignedUrl(release.file_path, 10 * 60, { download: release.file_name });
+    if (error || !signed?.signedUrl) throw new Error(error?.message ?? "Could not create a private admin download link.");
+    return { url: signed.signedUrl, expiresInSeconds: 600, fileName: release.file_name };
+  });
+
 export const setReleaseVisibility = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string; isPublic: boolean }) => z.object({ id: z.string().uuid(), isPublic: z.boolean() }).parse(d))
