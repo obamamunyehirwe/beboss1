@@ -285,7 +285,7 @@ export default function App() {
         if (disposed) return;
         const latestSnapshotAt = n(probe.latestSnapshotUpdatedAt);
         const snapshotChanged = latestSnapshotAt > Math.max(current.snapshotUpdatedAt, n(cloud?.snapshotUpdatedAt));
-        const managementChanged = current.managementVersion !== "" && probe.managementVersion !== current.managementVersion;
+        const managementChanged = current.managementVersion === "" || probe.managementVersion !== current.managementVersion;
         if (snapshotChanged) {
           const refreshed = await bootstrap(owner, false);
           if (refreshed) current.snapshotUpdatedAt = latestSnapshotAt;
