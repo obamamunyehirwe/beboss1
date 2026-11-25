@@ -111,7 +111,7 @@ for delete to authenticated using (public.has_admin_permission('announcements.ma
 
 drop policy if exists "Staff read downloads" on public.apk_downloads;
 create policy "Release managers read downloads" on public.apk_downloads
-for select to authenticated using (public.has_admin_permission('releases.manage'));
+for select to authenticated using (public.has_admin_permission('releases.manage') or public.has_admin_permission('analytics.view'));
 
 drop policy if exists "Staff read snapshots" on public.branch_sync_snapshots;
 create policy "Sync viewers read snapshots" on public.branch_sync_snapshots
@@ -135,14 +135,14 @@ with check (public.has_admin_permission('inbox.manage'));
 drop policy if exists "Staff read device security telemetry" on public.device_security_telemetry;
 create policy "Device auditors read device security telemetry" on public.device_security_telemetry
 for select to authenticated using (
-  public.has_admin_permission('devices.audit')
+  (public.has_admin_permission('devices.audit') or public.has_admin_permission('analytics.view'))
   or shop_sync_key = public.current_shop_sync_key()
 );
 
 drop policy if exists "Staff read payment_requests" on public.payment_requests;
 create policy "Finance reviewers read payment_requests" on public.payment_requests
 for select to authenticated using (
-  public.has_admin_permission('payments.review')
+  (public.has_admin_permission('payments.review') or public.has_admin_permission('analytics.view'))
   or public.computed_shop_sync_key(owner_username, owner_phone) = public.current_shop_sync_key()
 );
 
