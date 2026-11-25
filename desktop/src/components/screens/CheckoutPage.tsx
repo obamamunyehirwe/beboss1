@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Barcode, Check, Minus, Package, Pause, Play, Plus, ReceiptText, Search, ShieldCheck, ShoppingCart, Trash2, X } from "lucide-react";
-import { activeCustomers, activeProducts, errorText, id, money, n, s } from "../../lib/format";
+import { activeCustomers, activeProducts, errorText, id, money, n, rows, s } from "../../lib/format";
 import type { CommitSnapshot, Row, Snapshot } from "../../lib/types";
 import { Empty, Modal, PageHeading } from "../ui";
 
@@ -39,7 +39,7 @@ function restoreHeldOrder(value: unknown, catalog: Row[]): HeldCart | null {
   const order = value as Partial<StoredOrder>;
   const cart = restoreCartLines(order.cart, catalog);
   const payment = ["CASH", "MOMO", "AIRTEL", "CARD", "DEBT"].includes(s(order.payment)) ? s(order.payment) : "CASH";
-  const rawTenders = order.tenders && typeof order.tenders === "object" ? order.tenders : {};
+  const rawTenders: Partial<Record<TenderKey, unknown>> = order.tenders && typeof order.tenders === "object" ? order.tenders as Partial<Record<TenderKey, unknown>> : {};
   const tenders = Object.fromEntries((Object.keys(EMPTY_TENDERS) as TenderKey[]).map((key) => [
     key, typeof rawTenders[key] === "string" ? rawTenders[key] : String(rawTenders[key] ?? "")
   ])) as Record<TenderKey, string>;
@@ -135,7 +135,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
             setSplit(draft?.split === true);
             setPayment(["CASH", "MOMO", "AIRTEL", "CARD", "DEBT"].includes(s(draft?.payment)) ? s(draft?.payment) : "CASH");
             setAmountPaid(String(draft?.amountPaid ?? ""));
-            const rawTenders = draft?.tenders && typeof draft.tenders === "object" ? draft.tenders : {};
+            const rawTenders: Partial<Record<TenderKey, unknown>> = draft?.tenders && typeof draft.tenders === "object" ? draft.tenders as Partial<Record<TenderKey, unknown>> : {};
             setTenders(Object.fromEntries((Object.keys(EMPTY_TENDERS) as TenderKey[]).map((key) => [
               key, typeof rawTenders[key] === "string" ? rawTenders[key] : String(rawTenders[key] ?? "")
             ])) as Record<TenderKey, string>);
