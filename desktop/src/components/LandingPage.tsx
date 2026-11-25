@@ -106,13 +106,14 @@ const COPY: Record<DesktopLanguage, Copy> = {
 const FEATURE_ICONS = [BarChart3, Boxes, Building2, Zap, LockKeyhole, Cloud];
 
 export function LandingPage({
-  language, theme, onLanguageChange, onThemeChange, onSignIn
+  language, theme, onLanguageChange, onThemeChange, onSignIn, onOpenAdmin
 }: {
   language: DesktopLanguage;
   theme: DesktopPreferences["theme"];
   onLanguageChange: (value: DesktopLanguage) => void;
   onThemeChange: (value: DesktopPreferences["theme"]) => void;
   onSignIn: () => void;
+  onOpenAdmin: () => void;
 }) {
   const t = COPY[language];
   const isDark = theme === "dark";
