@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ConfirmAction, EmptyState, LoadingBlock, PageHeader, StatCard, useAdminAction } from "@/components/admin/ui";
 import { supabase } from "@/integrations/supabase/client";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
-import { deleteRelease, publishRelease, setCurrentRelease } from "@/lib/admin.functions";
+import { deleteRelease, publishRelease, setCurrentRelease, setReleaseVisibility } from "@/lib/admin.functions";
 import { downloadsQuery, releasesQuery } from "@/lib/admin-queries";
 import { DOWNLOAD_PATH } from "@/lib/queries";
 import { formatBytes, formatDateTime } from "@/lib/format";
@@ -34,13 +34,16 @@ async function sha256Hex(file: File) {
 
 function ReleasesPage() {
   const a = useAdminText();
-  const isAdmin = !!useAdminCtx().data?.isAdmin;
+  const adminCtx = useAdminCtx();
+  const isAdmin = !!adminCtx.data?.isAdmin;
+  const canManageReleases = isAdmin || !!adminCtx.data?.permissions?.includes("releases.manage");
   const releases = useQuery(releasesQuery);
   const downloads = useQuery(downloadsQuery);
   const qc = useQueryClient();
   const publish = useServerFn(publishRelease);
   const setCurrent = useAdminAction(useServerFn(setCurrentRelease), { success: "Now the current download", invalidate: [["admin", "releases"], ["public-site"]] });
   const del = useAdminAction(useServerFn(deleteRelease), { success: "Release deleted", invalidate: [["admin", "releases"]] });
+  const visibility = useAdminAction(useServerFn(setReleaseVisibility), { success: "Public release visibility updated", invalidate: [["admin", "releases"], ["public-site"]] });
 
   const [file, setFile] = useState<File | null>(null);
   const [form, setForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "", make_current: true });
@@ -143,7 +146,7 @@ function ReleasesPage() {
         </div>
       </div>
 
-      {isAdmin ? (
+      {canManageReleases ? (
         <form onSubmit={submit} className="grid gap-4 rounded-2xl border border-border bg-card p-5 lg:grid-cols-2">
           <div className="space-y-4">
             <h2 className="flex items-center gap-2 font-semibold">
@@ -203,6 +206,9 @@ function ReleasesPage() {
                       <CheckCircle2 className="mr-1 size-3" /> {a("Current")}
                     </Badge>
                   ) : null}
+                  <Badge variant={r.is_public === false ? "secondary" : "outline"}>
+                    {r.is_public === false ? "Hidden from public" : "Publicly listed"}
+                  </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {r.file_name} • {formatBytes(Number(r.size_bytes))} • {r.min_android} • {formatDateTime(r.published_at)} • {r.created_by}
@@ -219,23 +225,35 @@ function ReleasesPage() {
                     <Download /> {a("APK")}
                   </a>
                 </Button>
-                {isAdmin && !r.is_current ? (
+                {canManageReleases ? (
                   <>
-                    <Button size="sm" variant="soft" onClick={() => setCurrent.mutate({ id: r.id, public_download_url: downloadUrl })}>
-                      <Star /> {a("Make current")}
+                    {!r.is_current ? (
+                      <Button size="sm" variant="soft" onClick={() => setCurrent.mutate({ id: r.id, public_download_url: downloadUrl })}>
+                        <Star /> {a("Make current")}
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={r.is_current && r.is_public !== false}
+                      onClick={() => visibility.mutate({ id: r.id, isPublic: r.is_public === false })}
+                    >
+                      {r.is_public === false ? "Show publicly" : "Hide publicly"}
                     </Button>
-                    <ConfirmAction
-                      trigger={
-                        <Button size="icon" variant="ghost" aria-label={a("Delete release")}>
-                          <Trash2 />
-                        </Button>
-                      }
-                      title={a("Delete release?")}
-                      description={a("The APK file is removed from storage and its download link stops working.")}
-                      destructive
-                      confirmLabel="Delete"
-                      onConfirm={() => del.mutate({ id: r.id })}
-                    />
+                    {isAdmin ? (
+                      <ConfirmAction
+                        trigger={
+                          <Button size="icon" variant="ghost" aria-label={a("Delete release")}>
+                            <Trash2 />
+                          </Button>
+                        }
+                        title={a("Delete release?")}
+                        description={a("The APK file is removed from storage and its download link stops working.")}
+                        destructive
+                        confirmLabel="Delete"
+                        onConfirm={() => del.mutate({ id: r.id })}
+                      />
+                    ) : null}
                   </>
                 ) : null}
               </div>
