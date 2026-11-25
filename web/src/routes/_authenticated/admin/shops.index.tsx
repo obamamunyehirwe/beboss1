@@ -4,6 +4,7 @@ import { ChevronRight, Download, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { EmptyState, FilterChips, LoadingBlock, PageHeader, SearchInput, StatusBadge, TableShell, downloadCsv, matches } from "@/components/admin/ui";
+import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { codesQuery, devicesQuery, paymentsQuery, shopsQuery } from "@/lib/admin-queries";
 import { FLAG_LABEL, licenseFlags } from "@/lib/sync-health";
 import { effectiveShopStatus, type ShopLifecycle } from "@/lib/pricing";
@@ -17,10 +18,15 @@ type F = ShopLifecycle | "ALL" | "EXPIRING" | "FLAGGED";
 type SortKey = "updated" | "expiry" | "fee" | "name";
 
 function ShopsPage() {
+  const adminCtx = useAdminCtx();
+  const isAdmin = !!adminCtx.data?.isAdmin;
+  const permissions = adminCtx.data?.permissions ?? [];
+  const canViewDevices = isAdmin || permissions.includes("devices.audit") || permissions.includes("analytics.view");
+  const canViewPayments = isAdmin || permissions.includes("payments.review") || permissions.includes("analytics.view");
   const { data, isLoading } = useQuery(shopsQuery);
-  const { data: devices } = useQuery(devicesQuery);
-  const { data: codes } = useQuery(codesQuery);
-  const { data: pays } = useQuery(paymentsQuery);
+  const { data: devices } = useQuery({ ...devicesQuery, enabled: canViewDevices });
+  const { data: codes } = useQuery({ ...codesQuery, enabled: canViewPayments });
+  const { data: pays } = useQuery({ ...paymentsQuery, enabled: canViewPayments });
   const [q, setQ] = useState("");
   const [f, setF] = useState<F>("ALL");
   const [sort, setSort] = useState<SortKey>("updated");
@@ -31,10 +37,10 @@ function ShopsPage() {
       (data ?? []).map((s) => ({
         ...s,
         eff: effectiveShopStatus(s, now),
-        dev: (devices ?? []).filter((d) => d.shop_sync_key === s.id).length,
-        flags: licenseFlags(s, codes ?? [], pays ?? [], now),
+        dev: canViewDevices ? (devices ?? []).filter((d) => d.shop_sync_key === s.id).length : null,
+        flags: canViewPayments ? licenseFlags(s, codes ?? [], pays ?? [], now) : [],
       })),
-    [data, devices, codes, pays, now],
+    [data, devices, codes, pays, now, canViewDevices, canViewPayments],
   );
   const counts = useMemo(() => {
     const c: Record<string, number> = { ALL: enriched.length, EXPIRING: 0 };
@@ -93,7 +99,7 @@ function ShopsPage() {
             { value: "EXPIRED", label: "Expired", count: counts["EXPIRED"] ?? 0 },
             { value: "SUSPENDED", label: "Suspended", count: counts["SUSPENDED"] ?? 0 },
             { value: "KILLED", label: "Kill switch", count: counts["KILLED"] ?? 0 },
-            { value: "FLAGGED", label: "Needs review", count: counts["FLAGGED"] ?? 0 },
+            ...(canViewPayments ? [{ value: "FLAGGED" as const, label: "Needs review", count: counts["FLAGGED"] ?? 0 }] : []),
           ]}
         />
       </div>
@@ -141,7 +147,7 @@ function ShopsPage() {
                       <p className={`text-xs ${dl < 0 ? "text-destructive" : dl <= 7 ? "text-warning" : "text-muted-foreground"}`}>{dl < 0 ? `${-dl}d ago` : `${dl}d left`}</p>
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {s.branch_count} br • {s.worker_count} staff • {s.dev}/{s.device_limit} dev
+                      {s.branch_count} br • {s.worker_count} staff • {s.dev == null ? "device details restricted" : `${s.dev}/${s.device_limit} dev`}
                     </td>
                     <td className="px-4 py-3 font-mono">{formatRwf(s.monthly_fee_rwf)}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{relativeTime(s.updated_at, now)}</td>
