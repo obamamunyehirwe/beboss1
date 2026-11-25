@@ -80,8 +80,15 @@ values
 
 do $test$
 begin
-  if has_function_privilege('anon', 'public.admin_android_device_credential_rollout()', 'EXECUTE') then
-    raise exception 'Anonymous users must not be able to execute the admin rollout function.';
+  if has_function_privilege('anon', 'public.admin_android_device_credential_rollout()', 'EXECUTE')
+     or has_function_privilege('anon', 'beboss_private.admin_android_device_credential_rollout()', 'EXECUTE') then
+    raise exception 'Anonymous users must not be able to execute either rollout function.';
+  end if;
+  if (select prosecdef from pg_catalog.pg_proc where oid = 'public.admin_android_device_credential_rollout()'::regprocedure) then
+    raise exception 'The public rollout RPC must remain SECURITY INVOKER.';
+  end if;
+  if not (select prosecdef from pg_catalog.pg_proc where oid = 'beboss_private.admin_android_device_credential_rollout()'::regprocedure) then
+    raise exception 'The private aggregate reader must use SECURITY DEFINER to read the private credential registry.';
   end if;
 end
 $test$;

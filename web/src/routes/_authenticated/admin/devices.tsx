@@ -81,12 +81,13 @@ function DevicesPage() {
             </div>
           ) : (
             <div className="p-5">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
                 {[
                   { label: "Shops", value: rolloutRows.length },
                   { label: "Active terminals", value: rolloutTotals.active },
                   { label: "Secured terminals", value: rolloutTotals.secured },
                   { label: "Missing credentials", value: rolloutTotals.missing },
+                  { label: "Ready for owner approval", value: rolloutTotals.ready },
                   { label: "Legacy retired", value: rolloutTotals.retired },
                 ].map((metric) => (
                   <div key={metric.label} className="rounded-2xl border border-border bg-background p-4">

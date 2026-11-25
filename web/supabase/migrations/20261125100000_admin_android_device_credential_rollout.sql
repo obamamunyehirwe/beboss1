@@ -1,6 +1,6 @@
 -- Master-admin-only view of Android per-device credential rollout coverage.
--- This function returns aggregate status, never credential material or token digests.
-create or replace function public.admin_android_device_credential_rollout()
+-- The privileged reader stays in the non-exposed private schema; the public RPC is invoker-only.
+create or replace function beboss_private.admin_android_device_credential_rollout()
 returns table (
   shop_sync_key text,
   shop_name text,
@@ -16,7 +16,7 @@ security definer
 set search_path = ''
 as $function$
 begin
-  if auth.uid() is null or not public.is_beboss_admin() then
+  if auth.uid() is null or not beboss_private.is_beboss_admin_internal() then
     raise exception using errcode = '42501', message = 'Master admin access required.';
   end if;
 
@@ -48,6 +48,28 @@ begin
   group by s.id, s.shop_name, s.legacy_sync_disabled
   order by s.shop_name, s.id;
 end;
+$function$;
+
+revoke all on function beboss_private.admin_android_device_credential_rollout() from public, anon;
+grant execute on function beboss_private.admin_android_device_credential_rollout() to authenticated;
+
+create or replace function public.admin_android_device_credential_rollout()
+returns table (
+  shop_sync_key text,
+  shop_name text,
+  legacy_sync_disabled boolean,
+  active_device_count bigint,
+  enrolled_device_count bigint,
+  missing_device_count bigint,
+  ready_to_retire boolean
+)
+language sql
+stable
+security invoker
+set search_path = ''
+as $function$
+  select *
+  from beboss_private.admin_android_device_credential_rollout();
 $function$;
 
 revoke all on function public.admin_android_device_credential_rollout() from public, anon;
