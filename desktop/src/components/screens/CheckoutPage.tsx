@@ -76,6 +76,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
   const [done, setDone] = useState("");
   const [held, setHeld] = useState<HeldCart[]>([]);
   const [checkoutRestored, setCheckoutRestored] = useState(false);
+  const [storageWritable, setStorageWritable] = useState(false);
   const [storageWarning, setStorageWarning] = useState("");
   const [scanFeedback, setScanFeedback] = useState("");
   const productsRef = useRef(products);
@@ -87,6 +88,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
   useEffect(() => {
     let active = true;
     setCheckoutRestored(false);
+    setStorageWritable(false);
     setStorageWarning("");
     void (async () => {
       try {
@@ -116,8 +118,12 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
             .slice(0, 50);
           setHeld(restoredHeld);
         }
+        if (active) setStorageWritable(true);
       } catch (error) {
-        if (active) setStorageWarning("Saved checkout data could not be restored: " + errorText(error));
+        if (active) {
+          setStorageWritable(false);
+          setStorageWarning("Saved checkout data could not be read. Existing saved data was preserved; this session's basket cannot be persisted. " + errorText(error));
+        }
       } finally {
         if (active) setCheckoutRestored(true);
       }
@@ -137,7 +143,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
 
   // Serialize writes so an earlier, slower request cannot overwrite a newer basket.
   useEffect(() => {
-    if (!checkoutRestored) return;
+    if (!checkoutRestored || !storageWritable) return;
     const activeOrder = {
       cart: cart.map((line) => ({ productId: s(line.product.id), quantity: line.quantity })),
       customerId, discount, notes, split, tenders, payment, amountPaid
@@ -149,7 +155,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
     }).catch((error) => {
       setStorageWarning("Checkout changes remain on screen but could not be persisted: " + errorText(error));
     });
-  }, [checkoutRestored, storageKey, cart, customerId, discount, notes, split, tenders, payment, amountPaid, held]);
+  }, [checkoutRestored, storageWritable, storageKey, cart, customerId, discount, notes, split, tenders, payment, amountPaid, held]);
 
   const filtered = products.filter((p) => [p.name, p.barcode, p.category].some((v) => s(v).toLowerCase().includes(search.toLowerCase())));
   const subtotal = cart.reduce((sum, item) => sum + n(item.product.sellingPrice) * item.quantity, 0);
