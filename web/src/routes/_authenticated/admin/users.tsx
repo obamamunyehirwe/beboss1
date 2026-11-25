@@ -107,7 +107,7 @@ function UsersPage() {
                   </td>
                   <td className="px-4 py-3">{canManageUsers ? <Switch checked={u.is_active} onCheckedChange={(v) => update.mutate({ id: u.id, isActive: v })} /> : <StatusBadge status={u.is_active ? "ACTIVE" : "SUSPENDED"} />}</td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">{relativeTime(u.updated_at)}</td>
-                  {isAdmin ? (
+                  {canManageUsers ? (
                     <td className="px-4 py-3 text-right">
                       <ConfirmAction
                         trigger={
