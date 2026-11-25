@@ -2,6 +2,40 @@
 -- Every fixture row is rolled back. No real shop, credential, or account is changed.
 begin;
 
+-- The public aggregate endpoint stays available to anonymous website visitors,
+-- but only through an invoker wrapper. Its elevated reader stays non-exposed.
+do $test$
+begin
+  if (select prosecdef from pg_catalog.pg_proc where oid = 'public.public_platform_stats()'::regprocedure) then
+    raise exception 'The public platform-stats RPC must remain SECURITY INVOKER.';
+  end if;
+  if not has_function_privilege('anon', 'public.public_platform_stats()', 'EXECUTE') then
+    raise exception 'The public platform-stats RPC must remain callable by the website.';
+  end if;
+  if has_function_privilege('authenticated', 'public.public_platform_stats()', 'EXECUTE') then
+    raise exception 'The public platform-stats RPC must not expand access to authenticated app users.';
+  end if;
+  if not (select prosecdef from pg_catalog.pg_proc where oid = 'beboss_private.public_platform_stats_internal()'::regprocedure) then
+    raise exception 'The internal platform-stats reader must remain isolated in the private schema.';
+  end if;
+end
+$test$;
+
+set local role anon;
+do $test$
+declare
+  stats json;
+begin
+  stats := public.public_platform_stats();
+  if stats is null or not ((stats::jsonb) ? 'shops_total') then
+    raise exception 'The anonymous website stats endpoint must return its safe aggregate payload.';
+  end if;
+end
+$test$;
+reset role;
+
+
+
 insert into public.shop_accounts (
   id, shop_name, owner_name, owner_username, owner_phone, legacy_sync_disabled
 ) values (
