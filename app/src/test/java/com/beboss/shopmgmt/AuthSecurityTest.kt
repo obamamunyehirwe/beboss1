@@ -156,6 +156,6 @@ class AuthSecurityTest {
         val text = ReceiptGenerator.generateTextReceipt(sale, items, profile)
         assertTrue(text.contains("TIN: 102938475"))
         assertTrue(text.contains("Incl. Tax (18.0%)"))
-        assertTrue(text.contains("Verify Seal: $seal"))
+        assertTrue(text.contains("Receipt Checksum (offline comparison only): $seal"))
     }
 }
