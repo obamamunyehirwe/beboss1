@@ -7,6 +7,7 @@ export type ShopAccount = Tables["shop_accounts"]["Row"];
 export type PaymentRequest = Tables["payment_requests"]["Row"];
 export type ShopDevice = Tables["shop_devices"]["Row"];
 export type DeviceSecurityTelemetry = Tables["device_security_telemetry"]["Row"];
+export type DeviceCredentialRollout = Database["public"]["Functions"]["admin_android_device_credential_rollout"]["Returns"][number];
 export type ShopUser = Tables["shop_users"]["Row"];
 export type ShopBranch = Tables["shop_branches"]["Row"];
 export type ShopStockTransfer = Tables["shop_stock_transfers"]["Row"];
@@ -37,6 +38,7 @@ export const adminKeys = {
   shops: ["admin", "shops"] as const,
   payments: ["admin", "payments"] as const,
   devices: ["admin", "devices"] as const,
+  deviceCredentialRollout: ["admin", "device-credential-rollout"] as const,
   securityTelemetry: ["admin", "device-security-telemetry"] as const,
   branches: ["admin", "branches"] as const,
   transfers: ["admin", "stock-transfers"] as const,
@@ -68,6 +70,17 @@ export const devicesQuery = queryOptions({
   staleTime: 5_000,
   refetchInterval: (query) => query.state.status === "error" ? false : 15_000,
 });
+export const deviceCredentialRolloutQuery = queryOptions({
+  queryKey: adminKeys.deviceCredentialRollout,
+  queryFn: async (): Promise<DeviceCredentialRollout[]> => {
+    const { data, error } = await supabase.rpc("admin_android_device_credential_rollout");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  },
+  staleTime: 15_000,
+  refetchInterval: (query) => query.state.status === "error" ? false : 30_000,
+});
+
 export const deviceSecurityTelemetryQuery = queryOptions({
   queryKey: adminKeys.securityTelemetry,
   queryFn: () => all<DeviceSecurityTelemetry>((a, b) =>

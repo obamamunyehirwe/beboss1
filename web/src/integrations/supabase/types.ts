@@ -1262,6 +1262,18 @@ export type Database = {
         Args: { p_phone: string; p_username: string }
         Returns: string
       }
+      admin_android_device_credential_rollout: {
+        Args: never
+        Returns: {
+          active_device_count: number
+          enrolled_device_count: number
+          legacy_sync_disabled: boolean
+          missing_device_count: number
+          ready_to_retire: boolean
+          shop_name: string
+          shop_sync_key: string
+        }[]
+      }
       current_shop_sync_key: { Args: never; Returns: string }
       has_role: {
         Args: {
