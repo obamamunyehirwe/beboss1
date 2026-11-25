@@ -66,6 +66,7 @@ export interface FileExportResult {
 declare global {
   interface Window {
     beBossDesktop: {
+      isNative: boolean;
       secureStore: {
         get(key: string): Promise<string | null>;
         set(key: string, value: string): Promise<boolean>;
