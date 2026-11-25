@@ -210,6 +210,7 @@ export const getPublicSite = createServerFn({ method: "GET" }).handler(async () 
     .from("app_releases")
     .select("id")
     .eq("is_current", true)
+    .filter("is_public", "eq", "true")
     .maybeSingle();
   if (currentError) {
     console.error("[BeBoss public site] Could not resolve the current release", currentError);
