@@ -71,8 +71,10 @@ class SubscriptionSecurityTest {
             validityWindowDays = 7
         )
 
-        // Modify signature character
-        val tampered = validVoucher.dropLast(2) + "99"
+        // Change the final hex digit deterministically; replacing with a fixed suffix
+        // could accidentally leave the signature unchanged when it already ends in that suffix.
+        val replacementDigit = if (validVoucher.last() == '0') '1' else '0'
+        val tampered = validVoucher.dropLast(1) + replacementDigit
 
         val result = SubscriptionSecurityManager.verifyVoucherToken(
             voucherInput = tampered,
