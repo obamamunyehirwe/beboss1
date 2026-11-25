@@ -11,7 +11,7 @@ type HeldCart = {
   id: string; label: string; heldAt: number; cart: CartLine[]; customerId: string; discount: string;
   notes: string; split: boolean; tenders: Record<TenderKey, string>; payment: string; amountPaid: string;
 };
-type StoredCartLine = { productId: string; quantity: number };
+type StoredCartLine = { productId: string; quantity: number; productSnapshot?: Row };
 type StoredOrder = {
   id: string; label: string; heldAt: number; cart: StoredCartLine[]; customerId: string; discount: string;
   notes: string; split: boolean; tenders: Record<TenderKey, string>; payment: string; amountPaid: string;
@@ -23,9 +23,13 @@ function restoreCartLines(value: unknown, catalog: Row[]): CartLine[] {
   const byId = new Map(catalog.map((product) => [s(product.id), product]));
   return value.flatMap((line) => {
     if (!line || typeof line !== "object") return [];
-    const product = byId.get(s((line as StoredCartLine).productId));
-    const quantity = Number((line as StoredCartLine).quantity);
-    if (!product || product.isDeleted === true || !Number.isFinite(quantity) || quantity <= 0) return [];
+    const stored = line as StoredCartLine;
+    const productId = s(stored.productId);
+    const currentProduct = byId.get(productId);
+    const snapshot = stored.productSnapshot && typeof stored.productSnapshot === "object" ? stored.productSnapshot : null;
+    const product = currentProduct ?? (snapshot ? { ...snapshot, id: productId, restoreUnavailable: true } : null);
+    const quantity = Number(stored.quantity);
+    if (!product || !Number.isFinite(quantity) || quantity <= 0) return [];
     return [{ product, quantity }];
   });
 }
@@ -47,10 +51,25 @@ function restoreHeldOrder(value: unknown, catalog: Row[]): HeldCart | null {
   };
 }
 
+function serializeCartLine(line: CartLine): StoredCartLine {
+  const product = line.product;
+  return {
+    productId: s(product.id),
+    quantity: line.quantity,
+    productSnapshot: {
+      id: s(product.id), name: s(product.name), category: s(product.category), barcode: s(product.barcode),
+      sku: s(product.sku), productCode: s(product.productCode), costPrice: n(product.costPrice),
+      sellingPrice: n(product.sellingPrice), quantityInStock: n(product.quantityInStock),
+      lowStockThreshold: n(product.lowStockThreshold), unit: s(product.unit), branchId: s(product.branchId),
+      isDeleted: product.isDeleted === true
+    }
+  };
+}
+
 function serializeOrder(order: HeldCart): StoredOrder {
   return {
     id: order.id, label: order.label, heldAt: order.heldAt,
-    cart: order.cart.map((line) => ({ productId: s(line.product.id), quantity: line.quantity })),
+    cart: order.cart.map(serializeCartLine),
     customerId: order.customerId, discount: order.discount, notes: order.notes,
     split: order.split, tenders: order.tenders, payment: order.payment, amountPaid: order.amountPaid
   };
@@ -145,7 +164,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
   useEffect(() => {
     if (!checkoutRestored || !storageWritable) return;
     const activeOrder = {
-      cart: cart.map((line) => ({ productId: s(line.product.id), quantity: line.quantity })),
+      cart: cart.map(serializeCartLine),
       customerId, discount, notes, split, tenders, payment, amountPaid
     };
     const payload = JSON.stringify({ version: 1, savedAt: Date.now(), active: activeOrder, held: held.map(serializeOrder) });
@@ -335,7 +354,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
         </div>}
 
         <div className="cart-lines">{cart.map((item) => <div className="cart-line" key={s(item.product.id)}>
-          <div className="cart-info"><strong>{s(item.product.name)}</strong><small>{money(item.product.sellingPrice)} each</small></div>
+          <div className="cart-info"><strong>{s(item.product.name)}</strong>{item.product.restoreUnavailable ? <small className="warn-text">No longer in the live catalogue — remove or replace this line before checkout.</small> : <small>{money(item.product.sellingPrice)} each</small>}</div>
           <div className="quantity-control"><button onClick={() => setQty(s(item.product.id), -1)}>−</button><span>{item.quantity}</span><button onClick={() => setQty(s(item.product.id), 1)} disabled={item.quantity >= n(item.product.quantityInStock)}>+</button></div>
           <strong className="line-total">{money(n(item.product.sellingPrice) * item.quantity)}</strong>
           <button className="cart-remove icon-btn danger-icon" title="Remove line" onClick={() => setCart((old) => old.filter((x) => s(x.product.id) !== s(item.product.id)))}><Trash2 size={13} /></button>
