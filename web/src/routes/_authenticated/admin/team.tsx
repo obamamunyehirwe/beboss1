@@ -55,6 +55,7 @@ function TeamPage() {
             <SelectItem value="FINANCE_REVIEWER">Finance reviewer</SelectItem>
             <SelectItem value="ANALYST">Business analyst</SelectItem>
             <SelectItem value="OPERATIONS_MANAGER">Operations manager</SelectItem>
+            <SelectItem value="STAFF_MANAGER">Staff manager</SelectItem>
             <SelectItem value="SUPER_ADMIN">Master admin · full access</SelectItem>
           </SelectContent>
         </Select>
