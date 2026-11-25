@@ -232,3 +232,75 @@
  .customer-payment-print-area{position:absolute!important;left:0!important;top:0!important;width:100%!important;max-width:none!important;margin:0!important;padding:8mm!important;border:0!important;border-radius:0!important;box-shadow:none!important}
  .customer-payment-paper{break-inside:avoid}
 }
+
+
+/* Enterprise branch and device operations workspaces */
+.enterprise-page-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.enterprise-branch-toolbar,.enterprise-device-toolbar{display:grid;grid-template-columns:minmax(210px,.75fr) minmax(320px,1.25fr);gap:14px 22px;align-items:center;padding:17px 19px}
+.enterprise-toolbar-copy h3{margin:4px 0;color:var(--foreground);font-size:15px;font-weight:850}
+.enterprise-toolbar-copy p{margin:4px 0 0;color:var(--muted-foreground);font-size:11px;line-height:1.5}
+.enterprise-toolbar-controls{display:flex;align-items:center;justify-content:flex-end;gap:9px;min-width:0}
+.enterprise-toolbar-controls select{height:39px;min-width:145px;padding:0 11px;border:1px solid var(--input);border-radius:10px;background:var(--background);color:var(--foreground);font-size:11px}
+.enterprise-search{display:flex;align-items:center;gap:9px;min-width:160px;max-width:440px;flex:1;height:39px;padding:0 11px;border:1px solid var(--input);border-radius:10px;background:var(--background);color:var(--muted-foreground)}
+.enterprise-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--foreground);font-size:11px}
+.enterprise-toolbar-foot{grid-column:1/-1;display:flex;justify-content:space-between;gap:12px;padding-top:10px;border-top:1px solid var(--border);color:var(--muted-foreground);font-size:9px}
+.enterprise-branch-grid,.enterprise-device-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.enterprise-branch-card,.enterprise-device-card{min-width:0;padding:17px;border:1px solid var(--border);border-radius:16px;background:var(--card);box-shadow:0 7px 24px rgba(15,23,42,.035);transition:border-color .2s ease,transform .2s ease,box-shadow .2s ease}
+.enterprise-branch-card:hover,.enterprise-device-card:hover{border-color:color-mix(in oklch,var(--primary) 28%,var(--border));box-shadow:0 12px 30px rgba(15,23,42,.07);transform:translateY(-2px)}
+.enterprise-branch-top,.enterprise-device-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.enterprise-branch-symbol,.enterprise-device-icon{display:flex;align-items:center;justify-content:center;width:39px;height:39px;border:1px solid color-mix(in oklch,var(--primary) 20%,var(--border));border-radius:12px;background:color-mix(in oklch,var(--primary) 8%,var(--card));color:var(--primary)}
+.enterprise-branch-badges,.enterprise-device-top-status{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+.enterprise-main-badge,.enterprise-current-device{padding:5px 8px;border:1px solid color-mix(in oklch,var(--primary) 25%,var(--border));border-radius:999px;color:var(--primary);background:color-mix(in oklch,var(--primary) 8%,var(--card));font-size:8px;font-weight:850;letter-spacing:.05em;text-transform:uppercase}
+.enterprise-branch-heading,.enterprise-device-name{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:14px}
+.enterprise-branch-heading h3,.enterprise-device-name h3{margin:0;color:var(--foreground);font-size:15px;font-weight:850;overflow-wrap:anywhere}
+.enterprise-branch-heading .mono{display:inline-block;margin-top:4px;color:var(--muted-foreground);font-size:9px}
+.enterprise-branch-id{flex-shrink:0;color:var(--muted-foreground);font-family:ui-monospace,monospace;font-size:9px}
+.enterprise-branch-address{display:flex;align-items:flex-start;gap:7px;min-height:30px;margin:12px 0;color:var(--muted-foreground);font-size:10px;line-height:1.5}
+.enterprise-branch-address svg{flex-shrink:0;margin-top:1px}
+.enterprise-branch-kpis{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.enterprise-branch-kpis>div{min-width:0;padding:11px;border:1px solid var(--border);border-radius:11px;background:color-mix(in oklch,var(--muted) 35%,var(--card))}
+.enterprise-branch-kpis span,.enterprise-branch-target span{display:block;color:var(--muted-foreground);font-size:9px}
+.enterprise-branch-kpis strong{display:block;margin-top:5px;color:var(--foreground);font-size:14px;font-weight:850;overflow-wrap:anywhere}
+.enterprise-branch-kpis small{display:block;margin-top:3px;color:var(--muted-foreground);font-size:8px}
+.enterprise-branch-target{display:grid;gap:7px;margin-top:13px}
+.enterprise-branch-target>div:first-child{display:flex;justify-content:space-between;gap:8px}
+.enterprise-branch-target>div:first-child strong{color:var(--foreground);font-size:10px}
+.enterprise-branch-target>small{color:var(--muted-foreground);font-size:8px}
+.enterprise-progress{height:7px;overflow:hidden;border-radius:99px;background:var(--muted)}
+.enterprise-progress span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#f59e0b,#16a36a);transition:width .35s ease}
+.enterprise-branch-people{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:13px;padding-top:11px;border-top:1px solid var(--border);color:var(--muted-foreground);font-size:9px}
+.enterprise-branch-people>span{display:inline-flex;align-items:center;gap:5px}
+.enterprise-branch-manager{margin-left:auto;color:var(--foreground);font-weight:750}
+.enterprise-branch-contact{display:flex;justify-content:space-between;gap:10px;margin-top:9px;color:var(--muted-foreground);font-size:8px}
+.enterprise-branch-notes{margin:9px 0 0;padding:9px 10px;border-radius:8px;background:var(--muted);color:var(--muted-foreground);font-size:9px;line-height:1.5}
+.enterprise-branch-actions,.enterprise-device-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.enterprise-branch-actions .btn-outline,.enterprise-device-actions .btn-outline{display:inline-flex;align-items:center;gap:5px}
+.enterprise-device-policy{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(190px,.45fr);align-items:center;gap:14px;padding:15px 17px;border:1px solid color-mix(in oklch,var(--primary) 22%,var(--border));border-radius:15px;background:linear-gradient(115deg,color-mix(in oklch,var(--primary) 9%,var(--card)),var(--card) 72%)}
+.enterprise-device-policy-icon{display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:13px;background:color-mix(in oklch,var(--primary) 12%,var(--card));color:var(--primary)}
+.enterprise-device-policy strong{color:var(--foreground);font-size:11px;font-weight:850}
+.enterprise-device-policy p{margin:4px 0 0;color:var(--muted-foreground);font-size:9px;line-height:1.55}
+.enterprise-device-policy-total{display:grid;gap:3px;padding-left:14px;border-left:1px solid var(--border)}
+.enterprise-device-policy-total span,.enterprise-device-policy-total small{color:var(--muted-foreground);font-size:8px}
+.enterprise-device-policy-total strong{font-size:15px}
+.enterprise-device-name{align-items:center}
+.enterprise-device-name p{margin:4px 0 0;color:var(--muted-foreground);font-size:10px}
+.enterprise-connection{display:inline-flex;align-items:center;gap:5px;color:var(--muted-foreground);font-size:8px;font-weight:750}
+.enterprise-connection i,.announcement-section-live i{display:block;width:7px;height:7px;border-radius:50%;background:#d59b35}
+.enterprise-connection.online i,.announcement-section-live i{background:#20a56d;box-shadow:0 0 0 3px rgba(32,165,109,.12)}
+.enterprise-device-info{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:13px}
+.enterprise-device-info>div{min-width:0;padding:9px 10px;border:1px solid var(--border);border-radius:9px}
+.enterprise-device-info span{display:flex;align-items:center;gap:5px;color:var(--muted-foreground);font-size:8px}
+.enterprise-device-info strong{display:block;margin-top:5px;color:var(--foreground);font-size:9px;overflow-wrap:anywhere}
+.enterprise-device-state{margin:10px 0 0;color:var(--muted-foreground);font-size:9px;line-height:1.45}
+.enterprise-device-id{display:grid;gap:5px;margin-top:11px;padding:9px 10px;border-radius:9px;background:var(--muted)}
+.enterprise-device-id span{color:var(--muted-foreground);font-size:8px;font-weight:750;text-transform:uppercase;letter-spacing:.06em}
+.enterprise-device-id code{color:var(--foreground);font-size:9px;overflow-wrap:anywhere}
+.enterprise-device-card-foot{display:flex;justify-content:space-between;gap:8px;margin-top:9px;color:var(--muted-foreground);font-size:8px}
+.enterprise-device-self-note{margin:8px 0 0;color:var(--muted-foreground);font-size:8px;line-height:1.45}
+.enterprise-invite-panel{display:grid;justify-items:center;gap:10px;padding:20px;border:1px solid var(--border);border-radius:14px;background:var(--muted);text-align:center}
+.enterprise-invite-panel>span{color:var(--muted-foreground);font-size:9px;font-weight:850;letter-spacing:.12em}
+.enterprise-invite-panel>strong{color:var(--foreground);font-family:ui-monospace,monospace;font-size:30px;letter-spacing:.16em}
+.enterprise-invite-panel>p{max-width:420px;margin:0;color:var(--muted-foreground);font-size:10px;line-height:1.55}
+.enterprise-invite-panel .btn-outline{display:inline-flex;align-items:center;gap:7px}
+@media(max-width:920px){.enterprise-branch-toolbar,.enterprise-device-toolbar{grid-template-columns:1fr}.enterprise-toolbar-controls{justify-content:stretch}.enterprise-device-policy{grid-template-columns:auto 1fr}.enterprise-device-policy-total{grid-column:1/-1;padding:10px 0 0;border-left:0;border-top:1px solid var(--border)}}
+@media(max-width:680px){.enterprise-branch-grid,.enterprise-device-grid{grid-template-columns:1fr}.enterprise-toolbar-controls{flex-direction:column;align-items:stretch}.enterprise-toolbar-controls select{width:100%}.enterprise-search{max-width:none}.enterprise-toolbar-foot{flex-direction:column;gap:5px}.enterprise-branch-people{gap:8px}.enterprise-branch-manager{width:100%;margin-left:0}.enterprise-branch-contact{flex-direction:column;gap:4px}.enterprise-device-policy{grid-template-columns:1fr}.enterprise-device-policy-icon{display:none}.enterprise-device-policy-total{grid-column:auto}.enterprise-page-actions{width:100%}.enterprise-page-actions button{flex:1}}

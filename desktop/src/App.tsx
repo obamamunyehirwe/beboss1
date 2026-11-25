@@ -369,6 +369,30 @@ export default function App() {
     } finally { setBusy(false); }
   }
 
+  async function refreshManagement() {
+    if (!owner || offline) throw new Error("Reconnect the owner account before refreshing cloud management records.");
+    const management = await callDesktopApi<{
+      ok: true; shop: Row; devices: Row[]; branches: Row[]; transfers: Row[];
+      staff: Row[]; announcements: Row[]; payments: Row[]; codes: Row[]; serverTime: number;
+    }>("management_refresh", owner);
+    if (!cloud) return;
+    const updated: CloudState = {
+      ...cloud,
+      shop: management.shop,
+      devices: rows(management.devices),
+      branches: rows(management.branches),
+      transfers: rows(management.transfers),
+      staff: rows(management.staff),
+      announcements: rows(management.announcements),
+      payments: rows(management.payments),
+      codes: rows(management.codes),
+      serverTime: management.serverTime
+    };
+    setCloud(updated);
+    setOffline(false);
+    await saveCache(owner, updated);
+  }
+
   async function callAction(action: Parameters<typeof callDesktopApi>[0], payload: Record<string, unknown>) {
     if (!owner || offline) throw new Error("Reconnect and verify the shop owner before changing cloud management records.");
     setBusy(true); setError(""); setNotice("");
@@ -379,29 +403,7 @@ export default function App() {
         actorDeviceId: currentActorDeviceId,
         currentDeviceId: currentActorDeviceId
       });
-      // Management writes refresh only the compact organization projection.
-      // The multi-megabyte signed sales/inventory snapshot is left untouched.
-      const management = await callDesktopApi<{
-        ok: true; shop: Row; devices: Row[]; branches: Row[]; transfers: Row[];
-        staff: Row[]; announcements: Row[]; payments: Row[]; codes: Row[]; serverTime: number;
-      }>("management_refresh", owner);
-      if (cloud) {
-        const updated: CloudState = {
-          ...cloud,
-          shop: management.shop,
-          devices: rows(management.devices),
-          branches: rows(management.branches),
-          transfers: rows(management.transfers),
-          staff: rows(management.staff),
-          announcements: rows(management.announcements),
-          payments: rows(management.payments),
-          codes: rows(management.codes),
-          serverTime: management.serverTime
-        };
-        setCloud(updated);
-        setOffline(false);
-        await saveCache(owner, updated);
-      }
+      await refreshManagement();
       setNotice("Shop management changes are saved to BeBoss Cloud.");
       window.setTimeout(() => setNotice(""), 4500);
       return result as Record<string, any>;
@@ -657,9 +659,9 @@ export default function App() {
         {view === "customers" && <CustomersPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} onReceipt={openReceipt} />}
         {view === "purchases" && <PurchasesPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} />}
         {view === "reports" && <ReportsPage snapshot={snapshot} />}
-        {view === "branches" && <BranchesPage cloud={cloud} onAction={callAction} offline={offline} />}
+        {view === "branches" && <BranchesPage cloud={cloud} snapshot={snapshot} onAction={callAction} onRefresh={refreshManagement} offline={offline} />}
         {view === "staff" && <StaffPage cloud={cloud} snapshot={snapshot} onSaveStaff={saveStaffAccess} offline={offline} />}
-        {view === "devices" && <DevicesPage cloud={cloud} onAction={callAction} offline={offline} currentDeviceId={"DESKTOP:" + deviceId} />}
+        {view === "devices" && <DevicesPage cloud={cloud} onAction={callAction} onRefresh={refreshManagement} offline={offline} currentDeviceId={"DESKTOP:" + deviceId} />}
         {view === "transfers" && <TransfersPage cloud={cloud} snapshot={snapshot} onAction={callAction} offline={offline} />}
         {view === "billing" && <BillingPage cloud={cloud} onNavigate={setView} onCheckout={async (payload) => {
           const result = await callAction("create_checkout", payload);

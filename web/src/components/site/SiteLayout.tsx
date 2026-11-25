@@ -1,16 +1,13 @@
 import { Cloud, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
-import { liveConfigured } from "@/lib/live-config";
 import { SiteHeader } from "./SiteHeader";
 import { SiteFooter } from "./SiteFooter";
-import { AnnouncementBanner } from "./AnnouncementBanner";
 
 export function SiteLayout({ children }: { children: ReactNode }) {
   return (
     <div className="site-public-shell flex min-h-screen flex-col">
       <SiteHeader />
       <main className="site-public-main flex-1 pt-[108px]">
-        {liveConfigured && <AnnouncementBanner />}
         {children}
       </main>
       <SiteFooter />
