@@ -1,64 +1,18 @@
-import { defineConfig, loadEnv } from "vite";
-import react from "@vitejs/plugin-react";
-import path from "path";
+// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
+// or the app will break with duplicate plugins:
+//   - TanStack devtools (dev-only, first), tanstackStart, viteReact, tailwindcss, tsConfigPaths,
+//     nitro (build-only using cloudflare as a default target), VITE_* env injection, @ path alias,
+//     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
+// Never set ssr.external or resolve.external: the Worker has no runtime module resolution, so
+// the build fails. Never add compression (compressPublicAssets, vite-plugin-compression):
+// hosting already compresses at the edge.
+// You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
+import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-export default defineConfig(({ mode }) => {
-  const desktopEnvDir = import.meta.dirname;
-  const repositoryEnvDir = path.resolve(desktopEnvDir, "..");
-  const desktopEnv = loadEnv(mode, desktopEnvDir, "");
-  const repositoryEnv = loadEnv(mode, repositoryEnvDir, "");
-
-  // The root .env is shared with Android and contains unprefixed public
-  // Supabase values. Only these two explicitly selected public values are
-  // mapped to import.meta.env; no other root environment variable is exposed.
-  const firstConfigured = (...values: Array<string | undefined>) =>
-    values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim() ?? "";
-  const supabaseUrl = firstConfigured(
-    process.env.VITE_SUPABASE_URL,
-    desktopEnv.VITE_SUPABASE_URL,
-    repositoryEnv.VITE_SUPABASE_URL,
-    repositoryEnv.SUPABASE_URL,
-    desktopEnv.SUPABASE_URL,
-  );
-  const supabasePublishableKey = firstConfigured(
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-    desktopEnv.VITE_SUPABASE_PUBLISHABLE_KEY,
-    repositoryEnv.VITE_SUPABASE_PUBLISHABLE_KEY,
-    repositoryEnv.SUPABASE_PUBLISHABLE_KEY,
-    desktopEnv.SUPABASE_PUBLISHABLE_KEY,
-  );
-
-  return {
-    envDir: desktopEnvDir,
-    plugins: [react()],
-    publicDir: "public",
-    define: {
-      "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
-      "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": JSON.stringify(supabasePublishableKey),
-    },
-    resolve: {
-      alias: {
-        "@": path.resolve(desktopEnvDir, "./src"),
-      },
-    },
-    server: {
-      host: "127.0.0.1",
-      port: 5173,
-      strictPort: true,
-      headers: {
-        "Cross-Origin-Opener-Policy": "same-origin",
-        "Cross-Origin-Embedder-Policy": "require-corp",
-      },
-    },
-    build: {
-      target: "es2022",
-      sourcemap: false,
-      emptyOutDir: true,
-      rollupOptions: {
-        output: {
-          assetFileNames: "assets/[name]-[hash][extname]",
-        },
-      },
-    },
-  };
+export default defineConfig({
+  tanstackStart: {
+    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
+    // nitro/vite builds from this
+    server: { entry: "server" },
+  },
 });

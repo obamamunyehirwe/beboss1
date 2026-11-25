@@ -16,3 +16,8 @@
 local.properties
 .env
 debug.keystore
+
+# Tauri desktop build artifacts (never track compiled binaries)
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/target/
