@@ -22,9 +22,16 @@ async function adminRest(path: string, init: RequestInit = {}) {
   return fetch(supabaseUrl + "/rest/v1/" + path, { ...init, headers });
 }
 
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+async function hmacSha256Hex(secret: string, value: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(signature), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function enforceDownloadRateLimit(request: Request): Promise<Response | null> {
@@ -34,7 +41,7 @@ async function enforceDownloadRateLimit(request: Request): Promise<Response | nu
     request.headers.get("x-real-ip");
   if (!sourceIp) return text(503, "The download service could not verify the request source.");
 
-  const keyHash = await sha256Hex(`${sourceIp}:${serviceRoleKey.slice(0, 24)}`);
+  const keyHash = await hmacSha256Hex(serviceRoleKey, sourceIp);
   const response = await adminRest("rpc/consume_rate_limit", {
     method: "POST",
     body: JSON.stringify({
