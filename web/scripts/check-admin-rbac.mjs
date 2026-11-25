@@ -17,10 +17,10 @@ let checked = 0;
 
 for (const module of modules) {
   const source = readFileSync(module.file, "utf8");
-  const declarations = [...source.matchAll(/^export const (\\w+)\\s*=\\s*createServerFn/mg)];
+  const declarations = [...source.matchAll(/^export const (\w+)\s*=\s*createServerFn/mg)];
 
   if (declarations.length === 0) {
-    console.error(`[admin-rbac] No createServerFn exports found in ${module.file}`);
+    console.error(\`[admin-rbac] No createServerFn exports found in \${module.file}\`);
     failures += 1;
     continue;
   }
@@ -32,14 +32,14 @@ for (const module of modules) {
     const block = source.slice(declaration.index, next?.index ?? source.length);
     checked += 1;
 
-    if (!/\\.middleware\\(\\s*\\[\\s*requireSupabaseAuth\\s*\\]\\s*\\)/s.test(block)) {
-      console.error(`[admin-rbac] ${module.file} :: ${action} is missing requireSupabaseAuth middleware`);
+    if (!/\.middleware\(\s*\[\s*requireSupabaseAuth\s*\]\s*\)/s.test(block)) {
+      console.error(\`[admin-rbac] \${module.file} :: \${action} is missing requireSupabaseAuth middleware\`);
       failures += 1;
     }
 
     if (!module.exceptions.has(action) &&
-        !/\\b(?:requireAdmin|requirePermission|requireAdminPermission)\\s*\\(/.test(block)) {
-      console.error(`[admin-rbac] ${module.file} :: ${action} is missing a server-side role/permission check`);
+        !/\b(?:requireAdmin|requirePermission|requireAdminPermission)\s*\(/.test(block)) {
+      console.error(\`[admin-rbac] \${module.file} :: \${action} is missing a server-side role/permission check\`);
       failures += 1;
     }
 
@@ -54,8 +54,8 @@ for (const module of modules) {
 }
 
 if (failures > 0) {
-  console.error(`[admin-rbac] Failed: ${failures} finding(s) across ${checked} server actions.`);
+  console.error(\`[admin-rbac] Failed: \${failures} finding(s) across \${checked} server actions.\`);
   process.exit(1);
 }
 
-console.log(`[admin-rbac] Passed: authentication and role/permission checks verified for ${checked} admin server actions.`);
+console.log(\`[admin-rbac] Passed: authentication and role/permission checks verified for \${checked} admin server actions.\`);
