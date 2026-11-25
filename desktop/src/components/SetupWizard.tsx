@@ -233,6 +233,13 @@ export function SetupWizard({
 
   async function runChecks(): Promise<boolean> {
     if (running) return false;
+    if (!window.beBossDesktop?.isNative) {
+      const message = "This is a browser preview. Install and launch BeBoss Desktop to run native Windows, SQLCipher and Credential Manager checks.";
+      setFailure(message);
+      setSteps((current) => current.map((step) => ({ ...step, status: "failed", details: message })));
+      log("Native validation is unavailable in a browser preview.");
+      return false;
+    }
     setRunning(true); setFailure(""); setCompleted(false); setDiagnostics(null);
     setSteps(INITIAL_STEPS); setLogs([]);
     let active: StepId = "system";
