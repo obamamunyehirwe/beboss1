@@ -85,7 +85,7 @@ jobs:
         run: choco install nsis -y --no-progress
 
       - name: Install pinned desktop dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Build desktop frontend
         run: bun run build
