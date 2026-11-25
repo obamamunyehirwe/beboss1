@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -79,6 +80,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -144,10 +146,10 @@ fun CustomersScreen(
     val canDeleteRecords = currentUser?.canDeleteRecords ?: true
     val canExportReports = currentUser?.canExportReports ?: true
 
-    var searchQuery by remember { mutableStateOf("") }
-    var filterMode by remember { mutableStateOf("ALL") } // ALL, OWES, OVERDUE_30, OVER_LIMIT
-    var sortField by remember { mutableStateOf(CustomerSortField.DEBT) }
-    var sortAscending by remember { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var filterMode by rememberSaveable { mutableStateOf("ALL") } // ALL, OWES, OVERDUE_30, OVER_LIMIT
+    var sortField by rememberSaveable { mutableStateOf(CustomerSortField.DEBT) }
+    var sortAscending by rememberSaveable { mutableStateOf(false) }
 
     val agingMap = remember(customerAgingSummary) {
         customerAgingSummary.entries.associateBy { it.customerId }
@@ -343,46 +345,41 @@ fun CustomersScreen(
                         val debtCount = customers.count { it.debtBalance > 0 }
                         val overdueCount = customerAgingSummary.entries.count { it.daysOld >= 31 }
                         val overLimitCount = customerAgingSummary.overLimitCount
-                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = filterMode == "ALL",
+                                onClick = { filterMode = "ALL" },
+                                label = { Text(Localization.format("cust_all_count_fmt", language, customers.size), fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = OrangePrimary, selectedLabelColor = Color.White),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            FilterChip(
+                                selected = filterMode == "OWES",
+                                onClick = { filterMode = "OWES" },
+                                label = { Text(Localization.format("cust_owes_count_fmt", language, debtCount), fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LossRed, selectedLabelColor = Color.White),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            if (overdueCount > 0) {
                                 FilterChip(
-                                    selected = filterMode == "ALL",
-                                    onClick = { filterMode = "ALL" },
-                                    label = { Text(Localization.format("cust_all_count_fmt", language, customers.size), fontSize = 11.sp) },
-                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = OrangePrimary, selectedLabelColor = Color.White),
+                                    selected = filterMode == "OVERDUE_30",
+                                    onClick = { filterMode = "OVERDUE_30" },
+                                    label = { Text("31+ Days ($overdueCount)", fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = WarningAmber, selectedLabelColor = Color.White),
                                     shape = RoundedCornerShape(8.dp)
                                 )
                             }
-                            item {
+                            if (overLimitCount > 0) {
                                 FilterChip(
-                                    selected = filterMode == "OWES",
-                                    onClick = { filterMode = "OWES" },
-                                    label = { Text(Localization.format("cust_owes_count_fmt", language, debtCount), fontSize = 11.sp) },
+                                    selected = filterMode == "OVER_LIMIT",
+                                    onClick = { filterMode = "OVER_LIMIT" },
+                                    label = { Text("Over Limit ($overLimitCount)", fontSize = 11.sp) },
                                     colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LossRed, selectedLabelColor = Color.White),
                                     shape = RoundedCornerShape(8.dp)
                                 )
-                            }
-                            if (overdueCount > 0) {
-                                item {
-                                    FilterChip(
-                                        selected = filterMode == "OVERDUE_30",
-                                        onClick = { filterMode = "OVERDUE_30" },
-                                        label = { Text("31+ Days ($overdueCount)", fontSize = 11.sp) },
-                                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = WarningAmber, selectedLabelColor = Color.White),
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                }
-                            }
-                            if (overLimitCount > 0) {
-                                item {
-                                    FilterChip(
-                                        selected = filterMode == "OVER_LIMIT",
-                                        onClick = { filterMode = "OVER_LIMIT" },
-                                        label = { Text("Over Limit ($overLimitCount)", fontSize = 11.sp) },
-                                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LossRed, selectedLabelColor = Color.White),
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                }
                             }
                         }
                     }

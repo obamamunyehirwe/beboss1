@@ -87,6 +87,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -138,9 +139,10 @@ fun AuthLockScreen(
     onToggleTheme: () -> Unit,
     onOpenRegister: () -> Unit
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: PIN, 1: Password
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) } // 0: PIN, 1: Password
+    // Credential fields stay memory-only; process recreation clears secrets instead of restoring them.
     var pinInput by remember { mutableStateOf("") }
-    var usernameInput by remember { mutableStateOf(currentUser?.username ?: "") }
+    var usernameInput by rememberSaveable { mutableStateOf(currentUser?.username ?: "") }
     var passwordInput by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
 
@@ -630,26 +632,26 @@ fun ShopRegistrationScreen(
     onSelectLanguage: ((AppLanguage) -> Unit)? = null,
     onToggleTheme: () -> Unit
 ) {
-    var registrationMode by remember { mutableIntStateOf(0) } // 0 = Create New Shop, 1 = Join Existing Shop (Add Device)
-    var step by remember { mutableIntStateOf(0) } // 0, 1, 2
-    var shopName by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("sector_retail") }
-    var currencySymbol by remember { mutableStateOf("FRw") }
-    var currencyCode by remember { mutableStateOf("RWF") }
-    var phone by remember { mutableStateOf("+250 ") }
-    var address by remember { mutableStateOf("Kigali, Rwanda") }
-    var ownerName by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
+    var registrationMode by rememberSaveable { mutableIntStateOf(0) } // 0 = Create New Shop, 1 = Join Existing Shop (Add Device)
+    var step by rememberSaveable { mutableIntStateOf(0) } // 0, 1, 2
+    var shopName by rememberSaveable { mutableStateOf("") }
+    var selectedCategory by rememberSaveable { mutableStateOf("sector_retail") }
+    var currencySymbol by rememberSaveable { mutableStateOf("FRw") }
+    var currencyCode by rememberSaveable { mutableStateOf("RWF") }
+    var phone by rememberSaveable { mutableStateOf("+250 ") }
+    var address by rememberSaveable { mutableStateOf("Kigali, Rwanda") }
+    var ownerName by rememberSaveable { mutableStateOf("") }
+    var username by rememberSaveable { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Join Existing Shop (Add Device) state
-    var joinOwnerUsername by remember { mutableStateOf("") }
-    var joinOwnerPhone by remember { mutableStateOf("+250 ") }
-    var joinCode by remember { mutableStateOf("") }
-    var joinDeviceName by remember { mutableStateOf("Cashier Device 2") }
+    // Join Existing Shop (Add Device) state; PINs and passwords remain transient.
+    var joinOwnerUsername by rememberSaveable { mutableStateOf("") }
+    var joinOwnerPhone by rememberSaveable { mutableStateOf("+250 ") }
+    var joinCode by rememberSaveable { mutableStateOf("") }
+    var joinDeviceName by rememberSaveable { mutableStateOf("Cashier Device 2") }
     var joinPin by remember { mutableStateOf("") }
     var joinPassword by remember { mutableStateOf("") }
     var showJoinPassword by remember { mutableStateOf(false) }
