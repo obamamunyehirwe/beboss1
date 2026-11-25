@@ -1,7 +1,7 @@
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Activity, Check, Download, KeyRound, LogOut, RefreshCw,
+  Activity, ArrowLeft, Check, Download, KeyRound, LogOut, RefreshCw,
   Search, Settings, ShieldAlert, ShieldCheck, Smartphone, Store, Trash2, Users, Wallet, X
 } from "lucide-react";
 import { masterAdminAuthClient } from "../../lib/cloud";
@@ -103,7 +103,7 @@ async function verifyMasterAdmin(userId: string) {
   return profile.data as Row;
 }
 
-export function AdminConsolePage() {
+export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
@@ -572,7 +572,7 @@ export function AdminConsolePage() {
 
   if (checking) return <div className="setup-loading"><RefreshCw className="spin" size={24} /><span>Verifying Master Admin access…</span></div>;
   if (!verified) return <div className="page-stack">
-    <PageHeading eyebrow="PRIVILEGED WORKSPACE" title="BeBoss Master Admin" description="Sign in with a dedicated Supabase administrator account. Shop-owner credentials do not grant global admin access." />
+    <PageHeading eyebrow="PRIVILEGED WORKSPACE" title="BeBoss Master Admin" description="Sign in with a dedicated Supabase administrator account. Shop-owner credentials do not grant global admin access." action={onExit ? <button className="btn-outline" onClick={onExit}><ArrowLeft size={14} /> Back to BeBoss home</button> : undefined} />
     <section className="panel admin-login-panel">
       <div className="admin-login-icon"><ShieldAlert size={25} /></div>
       <h3>Secure administrator sign-in</h3>
