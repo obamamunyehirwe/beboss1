@@ -185,7 +185,7 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Check desktop TypeScript types
-        run: npx tsc --noEmit -p tsconfig.json
+        run: npx tsc --noEmit -p tsconfig.desktop.json
       - name: Build desktop client
         run: npm run build
 
