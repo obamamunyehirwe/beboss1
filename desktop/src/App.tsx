@@ -31,6 +31,7 @@ import { BackupPage } from "./components/screens/BackupPage";
 import { SettingsPage } from "./components/screens/SettingsPage";
 import { WelcomePage } from "./components/screens/WelcomePage";
 import { ManagementPage } from "./components/screens/ManagementPage";
+import { LandingPage } from "./components/LandingPage";
 import { CommandPalette } from "./components/CommandPalette";
 import { SetupWizard } from "./components/SetupWizard";
 import { applyDesktopLanguage, DESKTOP_LANGUAGES } from "./lib/i18n";
@@ -505,8 +506,8 @@ export default function App() {
         <LandingPage
           language={preferences.language}
           theme={preferences.theme}
-          onLanguageChange={(language) => void saveDesktopPreferences({ ...preferences, language })}
-          onThemeChange={(theme) => void saveDesktopPreferences({ ...preferences, theme })}
+          onLanguageChange={(language: DesktopPreferences["language"]) => void saveDesktopPreferences({ ...preferences, language })}
+          onThemeChange={(theme: DesktopPreferences["theme"]) => void saveDesktopPreferences({ ...preferences, theme })}
           onSignIn={() => void enterSignIn()}
         />
         {busy && <div className="global-loading"><LoaderCircle className="spin" size={26} /><span>Verifying your owner session…</span></div>}
