@@ -3,7 +3,9 @@ package com.beboss.shopmgmt.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.widget.Toast
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -75,6 +77,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -190,28 +193,38 @@ fun AdminVerificationConsoleDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val clipboardManager = remember(context) {
+        context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    }
+    val clipboardHandler = remember { Handler(Looper.getMainLooper()) }
+    var pendingClipboardClear by remember { mutableStateOf<Runnable?>(null) }
+    var adminFeedback by rememberSaveable { mutableStateOf("") }
+    var pendingDeviceDelete by remember { mutableStateOf<SupabaseShopDeviceDto?>(null) }
+    var pendingCodeRevoke by remember { mutableStateOf<SupabaseUnlockCodeDto?>(null) }
+
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    // Unlock codes and administrator credentials are intentionally memory-only.
     var lastGeneratedCode by remember { mutableStateOf<String?>(null) }
     var lastTargetPhone by remember { mutableStateOf("") }
     var lastTargetUsername by remember { mutableStateOf("") }
     var lastTargetAmount by remember { mutableIntStateOf(0) }
     var lastTargetDays by remember { mutableIntStateOf(30) }
 
-    // Single Master Admin Auth Form State (Email locked strictly to MASTER_ADMIN_EMAIL)
-    var adminEmail by remember { mutableStateOf(SupabaseAdminClient.getDefaultAdminEmail()) }
+    // Single Master Admin Auth Form State (password is intentionally not restored).
+    var adminEmail by rememberSaveable { mutableStateOf(SupabaseAdminClient.getDefaultAdminEmail()) }
     var adminPassword by remember { mutableStateOf("") }
     var showAdminPassword by remember { mutableStateOf(false) }
 
-    // Queue, Users, Devices, Shops, Codes, Audit Filters
-    var queueStatusFilter by remember { mutableStateOf("ALL") }
-    var queueSearchQuery by remember { mutableStateOf("") }
-    var userSearchQuery by remember { mutableStateOf("") }
-    var deviceSearchQuery by remember { mutableStateOf("") }
-    var shopSearchQuery by remember { mutableStateOf("") }
-    var shopStatusFilter by remember { mutableStateOf("ALL") }
-    var codeSearchQuery by remember { mutableStateOf("") }
-    var codeStatusFilter by remember { mutableStateOf("ALL") }
-    var auditSubTab by remember { mutableIntStateOf(0) } // 0 = Cloud, 1 = Local Security, 2 = Security Diagnostics
+    // Queue, Users, Devices, Shops, Codes, Audit Filters.
+    var queueStatusFilter by rememberSaveable { mutableStateOf("ALL") }
+    var queueSearchQuery by rememberSaveable { mutableStateOf("") }
+    var userSearchQuery by rememberSaveable { mutableStateOf("") }
+    var deviceSearchQuery by rememberSaveable { mutableStateOf("") }
+    var shopSearchQuery by rememberSaveable { mutableStateOf("") }
+    var shopStatusFilter by rememberSaveable { mutableStateOf("ALL") }
+    var codeSearchQuery by rememberSaveable { mutableStateOf("") }
+    var codeStatusFilter by rememberSaveable { mutableStateOf("ALL") }
+    var auditSubTab by rememberSaveable { mutableIntStateOf(0) }
 
     // Manual provider-payment verification and reject modal state.
     var requestToVerify by remember { mutableStateOf<SupabasePaymentRequestDto?>(null) }
@@ -220,12 +233,38 @@ fun AdminVerificationConsoleDialog(
     var requestToReject by remember { mutableStateOf<SupabasePaymentRequestDto?>(null) }
     var rejectReasonInput by remember { mutableStateOf("Payment could not be confirmed in the provider statement") }
 
-    // Manual Generator Form State
-    var manualUsername by remember { mutableStateOf("") }
-    var manualPhone by remember { mutableStateOf("") }
-    var manualTier by remember { mutableStateOf("SINGLE") }
-    var manualDaysText by remember { mutableStateOf("30") }
-    var manualAmountText by remember { mutableStateOf("5000") }
+    // Manual Generator Form State.
+    var manualUsername by rememberSaveable { mutableStateOf("") }
+    var manualPhone by rememberSaveable { mutableStateOf("") }
+    var manualTier by rememberSaveable { mutableStateOf("SINGLE") }
+    var manualDaysText by rememberSaveable { mutableStateOf("30") }
+    var manualAmountText by rememberSaveable { mutableStateOf("5000") }
+
+    fun copyUnlockCode(code: String) {
+        clipboardManager.setPrimaryClip(ClipData.newPlainText("BeBoss Unlock Code", code))
+        adminFeedback = Localization.get("admin_unlock_copied", language)
+        pendingClipboardClear?.let(clipboardHandler::removeCallbacks)
+        val clearTask = Runnable {
+            val copiedValue = runCatching {
+                clipboardManager.primaryClip
+                    ?.takeIf { it.itemCount > 0 }
+                    ?.getItemAt(0)?.text?.toString()
+            }.getOrNull()
+            if (copiedValue == code) {
+                runCatching {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        clipboardManager.clearPrimaryClip()
+                    } else {
+                        clipboardManager.setPrimaryClip(ClipData.newPlainText("", ""))
+                    }
+                }.onSuccess {
+                    adminFeedback = Localization.get("admin_unlock_clipboard_cleared", language)
+                }
+            }
+        }
+        pendingClipboardClear = clearTask
+        clipboardHandler.postDelayed(clearTask, 60_000L)
+    }
 
     val dateFormatter = remember { SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()) }
     val syncTimeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
@@ -295,6 +334,31 @@ fun AdminVerificationConsoleDialog(
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
+
+                if (adminFeedback.isNotBlank()) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                adminFeedback,
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                fontSize = 12.sp
+                            )
+                            IconButton(onClick = { adminFeedback = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = Localization.get("close", language))
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
                 if (adminSession == null) {
                     // Password-only master admin gate. First-time setup is invitation-only
@@ -417,10 +481,10 @@ fun AdminVerificationConsoleDialog(
                             if (isLoading) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             } else {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Refresh, contentDescription = Localization.get("admin_sync_all", language), modifier = Modifier.size(16.dp))
                             }
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Sync All", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            Text(Localization.get("admin_sync_all", language), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Button(
@@ -430,9 +494,9 @@ fun AdminVerificationConsoleDialog(
                                 .heightIn(min = 48.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
                         ) {
-                            Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Public, contentDescription = Localization.get("adm_web_portal_btn", language), modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Web Portal", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            Text(Localization.get("adm_web_portal_btn", language), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedButton(
@@ -645,15 +709,13 @@ fun AdminVerificationConsoleDialog(
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(
                                         onClick = {
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            clipboard.setPrimaryClip(ClipData.newPlainText("BeBoss Unlock Code", generatedCodeSnapshot))
-                                            Toast.makeText(context, "Unlock code copied!", Toast.LENGTH_SHORT).show()
+                                            copyUnlockCode(generatedCodeSnapshot)
                                         },
                                         modifier = Modifier
                                             .weight(1f)
                                             .heightIn(min = 48.dp)
                                     ) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Icon(Icons.Default.ContentCopy, contentDescription = Localization.get("admin_copy_code", language), modifier = Modifier.size(15.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text("Copy Code", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
@@ -1624,13 +1686,11 @@ fun AdminVerificationConsoleDialog(
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         IconButton(
                                                             onClick = {
-                                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                                clipboard.setPrimaryClip(ClipData.newPlainText("BeBoss Unlock Code", codeDto.unlockCode))
-                                                                Toast.makeText(context, "Copied ${codeDto.unlockCode}", Toast.LENGTH_SHORT).show()
+                                            copyUnlockCode(codeDto.unlockCode)
                                                             },
                                                             modifier = Modifier.size(42.dp)
                                                         ) {
-                                                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy unlock code", tint = OrangePrimary, modifier = Modifier.size(17.dp))
+                                                            Icon(Icons.Default.ContentCopy, contentDescription = Localization.get("admin_copy_code", language), tint = OrangePrimary, modifier = Modifier.size(17.dp))
                                                         }
                                                         IconButton(
                                                             onClick = {
@@ -1648,7 +1708,7 @@ fun AdminVerificationConsoleDialog(
                                                             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send code via WhatsApp", tint = ProfitGreen, modifier = Modifier.size(17.dp))
                                                         }
                                                         IconButton(
-                                                            onClick = { onRevokeCode(codeDto) },
+                                                            onClick = { pendingCodeRevoke = codeDto },
                                                             modifier = Modifier.size(42.dp)
                                                         ) {
                                                             Icon(Icons.Default.Block, contentDescription = "Revoke code", tint = LossRed, modifier = Modifier.size(17.dp))
@@ -2064,7 +2124,7 @@ fun AdminVerificationConsoleDialog(
                                                         }
 
                                                         IconButton(
-                                                            onClick = { onDeleteShopDevice(dev) },
+                                                            onClick = { pendingDeviceDelete = dev },
                                                             modifier = Modifier.size(48.dp)
                                                         ) {
                                                             Icon(Icons.Default.Delete, contentDescription = "Remove paired device", tint = LossRed)
@@ -2240,12 +2300,10 @@ fun AdminVerificationConsoleDialog(
                                         savingCfg = true
                                         onSavePaymentConfig(draftConfig) { ok ->
                                             savingCfg = false
-                                            Toast.makeText(
-                                                context,
-                                                if (ok) Localization.get("admin_global_config_saved", language)
-                                                else Localization.get("admin_global_config_failed", language),
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                            adminFeedback = Localization.get(
+                                                if (ok) "admin_global_config_saved" else "admin_global_config_failed",
+                                                language
+                                            )
                                         }
                                     },
                                     enabled = !savingCfg && cfgWhatsApp.isNotBlank(),
@@ -2385,6 +2443,54 @@ fun AdminVerificationConsoleDialog(
             },
             dismissButton = {
                 OutlinedButton(onClick = { requestToReject = null }) {
+                    Text(Localization.get("admin_cancel", language))
+                }
+            }
+        )
+    }
+
+    pendingDeviceDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDeviceDelete = null },
+            title = { Text(Localization.get("admin_device_delete_title", language), fontWeight = FontWeight.Bold) },
+            text = { Text(Localization.format("admin_device_delete_body", language, target.deviceName)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteShopDevice(target)
+                        pendingDeviceDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = LossRed)
+                ) {
+                    Text(Localization.get("admin_confirm_delete", language), color = Color.White)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingDeviceDelete = null }) {
+                    Text(Localization.get("admin_cancel", language))
+                }
+            }
+        )
+    }
+
+    pendingCodeRevoke?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingCodeRevoke = null },
+            title = { Text(Localization.get("admin_code_revoke_title", language), fontWeight = FontWeight.Bold) },
+            text = { Text(Localization.format("admin_code_revoke_body", language, target.shopUsername)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRevokeCode(target)
+                        pendingCodeRevoke = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = LossRed)
+                ) {
+                    Text(Localization.get("admin_confirm_revoke", language), color = Color.White)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingCodeRevoke = null }) {
                     Text(Localization.get("admin_cancel", language))
                 }
             }

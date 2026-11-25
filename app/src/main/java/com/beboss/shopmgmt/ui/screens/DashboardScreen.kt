@@ -57,6 +57,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,7 +115,7 @@ private fun DashboardAnnouncementCard(notice: SupabaseShopAnnouncementDto) {
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Surface(shape = RoundedCornerShape(11.dp), color = accent.copy(alpha = 0.15f)) {
-                Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = accent, modifier = Modifier.padding(8.dp).size(18.dp))
+                Icon(Icons.Default.NotificationsActive, contentDescription = notice.title, tint = accent, modifier = Modifier.padding(8.dp).size(18.dp))
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(notice.title, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
@@ -169,7 +170,7 @@ fun DashboardScreen(
     val canViewCostAndProfit = currentUser?.canViewCostAndProfit ?: true
     val canViewAnalytics = currentUser?.canViewAnalytics ?: true
     val canManageInventory = currentUser?.canManageInventory ?: true
-    var branchMenuExpanded by remember { mutableStateOf(false) }
+    var branchMenuExpanded by rememberSaveable { mutableStateOf(false) }
     val activeBranchLabel = remember(branches, selectedBranchId, language) {
         if (selectedBranchId == "ALL") {
             Localization.format("dash_all_branches_fmt", language, branches.size.coerceAtLeast(1))
@@ -243,7 +244,7 @@ fun DashboardScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Default.Store, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(15.dp))
+                                Icon(Icons.Default.Store, contentDescription = Localization.get("dash_switch_branch_cd", language), tint = OrangePrimary, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = if (isBranchLocked) "$activeBranchLabel • Locked" else activeBranchLabel,

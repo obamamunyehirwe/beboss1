@@ -71,42 +71,20 @@ jobs:
       - name: Test provider settlement identity, amount and currency checks
         run: deno test --no-lock supabase/functions/_shared/payment-settlement.test.ts
 
-      - name: Lint changed security and authentication files
+      - name: Lint all web application and Supabase Edge Function source
         run: >-
           npx eslint --no-warn-ignored
           --rule 'prettier/prettier: off'
           --rule '@typescript-eslint/no-explicit-any: off'
-          src/lib/admin.functions.ts
-          src/lib/admin-guard.server.ts
-          src/lib/announcements.functions.ts
-          src/routes/_authenticated/admin/route.tsx
-          src/routes/_authenticated/admin/team.tsx
-          src/routes/_authenticated/admin/releases.tsx
-          src/routes/_authenticated/admin/announcements.tsx
-          src/routes/_authenticated/admin/shops.index.tsx
-          'src/routes/_authenticated/admin/shops.$shopId.tsx'
-          src/lib/pricing.ts
-          src/routes/_authenticated/admin/payments.tsx
-          src/lib/bb2.ts
-          src/lib/bb2.test.ts
-          src/lib/public.functions.ts
-          src/routes/my-shop.tsx
-          src/lib/admin-queries.ts
-          src/lib/admin-copy.ts
-          src/routes/_authenticated/admin/devices.tsx
-          src/lib/server/public-client.ts
-          src/integrations/supabase/auth-middleware.ts
-          src/components/site/ModernHero.tsx
-          src/components/site/SiteHeader.tsx
-          src/routes/_authenticated/admin/settings.tsx
-          src/routes/_authenticated/admin/sync.tsx
-          src/routes/auth.tsx
-          supabase/functions/bootstrap-first-admin/index.ts
-          supabase/functions/issue-bb3-unlock/index.ts
-          supabase/functions/verify-legacy-bb2/index.ts
-          supabase/functions/submit-public-contact/index.ts
-          src/lib/security-concurrency.integration.test.ts
-          src/routes/contact.tsx
+          --rule 'no-eval: error'
+          --rule 'no-new-func: error'
+          --rule 'no-implied-eval: error'
+          --rule 'no-script-url: error'
+          src
+          supabase/functions
+
+      - name: Verify every admin server function has authentication and role/permission guards
+        run: node scripts/check-admin-rbac.mjs
 
       - name: Run unit tests
         run: npm run test
@@ -300,6 +278,15 @@ jobs:
 
       - name: Run Android unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
+
+      - name: Run Android instrumentation smoke tests on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: gradle :app:connectedDebugAndroidTest --stacktrace
 
       - name: Verify Android DataShare signing fails closed without the shared secret
         shell: bash

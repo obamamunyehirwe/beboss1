@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -79,6 +80,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -144,10 +146,11 @@ fun CustomersScreen(
     val canDeleteRecords = currentUser?.canDeleteRecords ?: true
     val canExportReports = currentUser?.canExportReports ?: true
 
-    var searchQuery by remember { mutableStateOf("") }
-    var filterMode by remember { mutableStateOf("ALL") } // ALL, OWES, OVERDUE_30, OVER_LIMIT
-    var sortField by remember { mutableStateOf(CustomerSortField.DEBT) }
-    var sortAscending by remember { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var filterMode by rememberSaveable { mutableStateOf("ALL") } // ALL, OWES, OVERDUE_30, OVER_LIMIT
+    var sortField by rememberSaveable { mutableStateOf(CustomerSortField.DEBT) }
+    var sortAscending by rememberSaveable { mutableStateOf(false) }
+    var customerFeedback by rememberSaveable { mutableStateOf("") }
 
     val agingMap = remember(customerAgingSummary) {
         customerAgingSummary.entries.associateBy { it.customerId }
@@ -190,6 +193,32 @@ fun CustomersScreen(
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (customerFeedback.isNotBlank()) {
+                item(key = "customer-feedback") {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                customerFeedback,
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                fontSize = 12.sp
+                            )
+                            IconButton(onClick = { customerFeedback = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = Localization.get("close", language))
+                            }
+                        }
+                    }
+                }
+            }
+
             // Outstanding Debt KPI Card
             item {
                 Card(
@@ -252,7 +281,7 @@ fun CustomersScreen(
                                             val file = ExcelCsvExporter.exportCustomersCsv(context, customers, shopProfile)
                                             ExcelCsvExporter.shareCsvFile(context, file, Localization.get("cust_share_csv_title", language))
                                         } catch (e: Exception) {
-                                            Toast.makeText(context, Localization.format("inv_export_err_fmt", language, e.safeMessage()), Toast.LENGTH_SHORT).show()
+                                            customerFeedback = Localization.format("inv_export_err_fmt", language, e.safeMessage())
                                         }
                                     },
                                     modifier = Modifier.weight(1f),
@@ -343,46 +372,41 @@ fun CustomersScreen(
                         val debtCount = customers.count { it.debtBalance > 0 }
                         val overdueCount = customerAgingSummary.entries.count { it.daysOld >= 31 }
                         val overLimitCount = customerAgingSummary.overLimitCount
-                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            item {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = filterMode == "ALL",
+                                onClick = { filterMode = "ALL" },
+                                label = { Text(Localization.format("cust_all_count_fmt", language, customers.size), fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = OrangePrimary, selectedLabelColor = Color.White),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            FilterChip(
+                                selected = filterMode == "OWES",
+                                onClick = { filterMode = "OWES" },
+                                label = { Text(Localization.format("cust_owes_count_fmt", language, debtCount), fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LossRed, selectedLabelColor = Color.White),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            if (overdueCount > 0) {
                                 FilterChip(
-                                    selected = filterMode == "ALL",
-                                    onClick = { filterMode = "ALL" },
-                                    label = { Text(Localization.format("cust_all_count_fmt", language, customers.size), fontSize = 11.sp) },
-                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = OrangePrimary, selectedLabelColor = Color.White),
+                                    selected = filterMode == "OVERDUE_30",
+                                    onClick = { filterMode = "OVERDUE_30" },
+                                    label = { Text("31+ Days ($overdueCount)", fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = WarningAmber, selectedLabelColor = Color.White),
                                     shape = RoundedCornerShape(8.dp)
                                 )
                             }
-                            item {
+                            if (overLimitCount > 0) {
                                 FilterChip(
-                                    selected = filterMode == "OWES",
-                                    onClick = { filterMode = "OWES" },
-                                    label = { Text(Localization.format("cust_owes_count_fmt", language, debtCount), fontSize = 11.sp) },
+                                    selected = filterMode == "OVER_LIMIT",
+                                    onClick = { filterMode = "OVER_LIMIT" },
+                                    label = { Text("Over Limit ($overLimitCount)", fontSize = 11.sp) },
                                     colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LossRed, selectedLabelColor = Color.White),
                                     shape = RoundedCornerShape(8.dp)
                                 )
-                            }
-                            if (overdueCount > 0) {
-                                item {
-                                    FilterChip(
-                                        selected = filterMode == "OVERDUE_30",
-                                        onClick = { filterMode = "OVERDUE_30" },
-                                        label = { Text("31+ Days ($overdueCount)", fontSize = 11.sp) },
-                                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = WarningAmber, selectedLabelColor = Color.White),
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                }
-                            }
-                            if (overLimitCount > 0) {
-                                item {
-                                    FilterChip(
-                                        selected = filterMode == "OVER_LIMIT",
-                                        onClick = { filterMode = "OVER_LIMIT" },
-                                        label = { Text("Over Limit ($overLimitCount)", fontSize = 11.sp) },
-                                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = LossRed, selectedLabelColor = Color.White),
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                }
                             }
                         }
                     }
@@ -456,7 +480,7 @@ fun CustomersScreen(
                             if (customer.phone.isNotBlank()) {
                                 customerForReminder = customer
                             } else {
-                                Toast.makeText(context, Localization.format("cust_no_phone_toast_fmt", language, customer.name), Toast.LENGTH_SHORT).show()
+                                customerFeedback = Localization.format("cust_no_phone_toast_fmt", language, customer.name)
                             }
                         },
                         onGeneratePdf = {
@@ -472,7 +496,7 @@ fun CustomersScreen(
                                 )
                                 PdfReportGenerator.sharePdf(context, pdfFile, Localization.format("cust_statement_title_fmt", language, customer.name))
                             } catch (e: Exception) {
-                                Toast.makeText(context, Localization.format("cust_stmt_err_fmt", language, e.safeMessage()), Toast.LENGTH_SHORT).show()
+                                customerFeedback = Localization.format("cust_stmt_err_fmt", language, e.safeMessage())
                             }
                         },
                         onCallPhone = {
@@ -633,7 +657,7 @@ fun CustomersScreen(
                 } else {
                     Localization.format("cust_imported_toast_fmt", language, importedCount)
                 }
-                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                customerFeedback = message
             },
             onPickAndEdit = { contact ->
                 showBulkContactsDialog = false
@@ -644,11 +668,7 @@ fun CustomersScreen(
                 }
                 if (existingCustomer != null) {
                     customerToEdit = existingCustomer
-                    Toast.makeText(
-                        context,
-                        "This phone number is already saved. Opened the existing customer.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    customerFeedback = Localization.get("cust_existing_phone_opened", language)
                 } else {
                     customerToEdit = Customer(
                         id = UUID.randomUUID().toString(),

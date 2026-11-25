@@ -611,13 +611,14 @@ Deno.serve(async (req: Request) => {
       }
 
       const deviceFields = "id,device_id,device_name,role,assigned_user_id,is_active,is_owner_primary";
-      let { data: deviceRecord, error: deviceLookupError } = await admin
+      const { data: initialDeviceRecord, error: deviceLookupError } = await admin
         .from("shop_devices")
         .select(deviceFields)
         .eq("shop_sync_key", owner.shopId)
         .eq("device_id", deviceId)
         .eq("is_active", true)
         .maybeSingle();
+      let deviceRecord = initialDeviceRecord;
       if (deviceLookupError) throw new Error("Could not validate this shop terminal.");
 
       if (!deviceRecord) {

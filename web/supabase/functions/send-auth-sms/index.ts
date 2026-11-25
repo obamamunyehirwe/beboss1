@@ -9,7 +9,7 @@ Deno.serve(async (req:Request) => {
   const secrets=normalizeAfricaTalkingHookSecret(Deno.env.get("SEND_SMS_HOOK_SECRET")??"");
   if(!secrets.length) return reply(503,{error:{http_code:503,message:"Send SMS hook secret is not configured"}});
   let payload:Payload|undefined;
-  for(const secret of secrets){try{payload=await new Webhook(secret).verify(raw,Object.fromEntries(req.headers.entries())) as Payload;break;}catch{}}
+  for(const secret of secrets){try{payload=await new Webhook(secret).verify(raw,Object.fromEntries(req.headers.entries())) as Payload;break;}catch{continue;}}
   if(!payload) return reply(401,{error:{http_code:401,message:"Invalid Supabase Auth Hook signature"}});
   const phone=payload.user?.phone, sms=payload.sms??{};
   const otp=typeof sms.otp==="string"||typeof sms.otp==="number"?String(sms.otp).trim():"";
