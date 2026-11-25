@@ -627,7 +627,7 @@ function NativeDesktopApp() {
     />;
   }
 
-  if (!owner || !cloud) {
+  if ((!owner || !cloud) && view === "masterAdmin") {\n    return <AdminConsolePage onExit={() => setView("welcome")} />;\n  }\n\n  if (!owner || !cloud) {
     if (!showAuth) {
       return <>
         <LandingPage
@@ -635,7 +635,7 @@ function NativeDesktopApp() {
           theme={preferences.theme}
           onLanguageChange={(language: DesktopPreferences["language"]) => void saveDesktopPreferences({ ...preferences, language })}
           onThemeChange={(theme: DesktopPreferences["theme"]) => void saveDesktopPreferences({ ...preferences, theme })}
-          onSignIn={() => void enterSignIn()}
+          onSignIn={() => void enterSignIn()}\n          onOpenAdmin={() => setView("masterAdmin")}
         />
         {busy && <div className="global-loading"><LoaderCircle className="spin" size={26} /><span>Verifying your owner session…</span></div>}
         {error && <div className="login-error">{error}<button onClick={() => setError("")}><X size={15} /></button></div>}
