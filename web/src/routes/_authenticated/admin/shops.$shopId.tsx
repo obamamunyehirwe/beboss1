@@ -32,13 +32,14 @@ function ShopDetail() {
   const canViewDevices = isAdmin || permissions.includes("devices.audit") || permissions.includes("analytics.view");
   const canViewUsers = isAdmin || permissions.includes("users.manage") || permissions.includes("shops.view");
   const canViewPayments = isAdmin || permissions.includes("payments.review") || permissions.includes("analytics.view");
+  const canViewCodes = isAdmin || permissions.includes("payments.review");
   const canViewSync = isAdmin || permissions.includes("sync.view");
   const canViewInsights = isAdmin;
   const shops = useQuery(shopsQuery);
   const devices = useQuery({ ...devicesQuery, enabled: canViewDevices });
   const users = useQuery({ ...usersQuery, enabled: canViewUsers });
   const pays = useQuery({ ...paymentsQuery, enabled: canViewPayments });
-  const codes = useQuery({ ...codesQuery, enabled: canViewPayments });
+  const codes = useQuery({ ...codesQuery, enabled: canViewCodes });
   const snaps = useQuery({ ...snapshotsQuery, enabled: canViewSync });
   const { data: cfg } = useQuery({ ...configQuery, enabled: isAdmin });
   const events = useQuery({ ...syncEventsQuery, enabled: canViewSync });
@@ -288,7 +289,7 @@ function ShopDetail() {
           {canViewDevices && <TabsTrigger value="devices">Devices ({shopDevices.length})</TabsTrigger>}
           {canViewUsers && <TabsTrigger value="users">Staff ({shopUsers.length})</TabsTrigger>}
           {canViewPayments && <TabsTrigger value="payments">Payments ({shopPays.length})</TabsTrigger>}
-          {canViewPayments && <TabsTrigger value="codes">Codes ({shopCodes.length})</TabsTrigger>}
+          {canViewCodes && <TabsTrigger value="codes">Codes ({shopCodes.length})</TabsTrigger>}
           {canViewSync && <TabsTrigger value="sync">Branch sync ({shopSnaps.length})</TabsTrigger>}
           {canViewSync && <TabsTrigger value="activity">Sync activity ({shopEvents.length})</TabsTrigger>}
         </TabsList>
@@ -303,7 +304,7 @@ function ShopDetail() {
         {canViewPayments && <TabsContent value="payments">
           <MiniList empty="No payments" rows={shopPays.map((p) => ({ k: p.id, a: `${formatRwf(p.amount_rwf)} • ${p.provider}`, b: `${p.duration_months} mo • ${p.branch_count} branches • ${p.device_count} devices`, c: p.status, d: formatDateTime(p.created_at) }))} />
         </TabsContent>}
-        {canViewPayments && <TabsContent value="codes">
+        {canViewCodes && <TabsContent value="codes">
           <MiniList empty="No codes" rows={shopCodes.map((x) => ({ k: x.id, a: x.unlock_code, b: `${x.tier_code} • +${x.plan_days}d • ${formatRwf(x.amount_rwf)}`, c: x.status, d: formatDateTime(x.issued_at), mono: true }))} />
         </TabsContent>}
         {canViewSync && <TabsContent value="activity">
