@@ -245,11 +245,13 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
     const saleDebt = Math.max(0, saleTotal - salePaid);
     const saleCustomer = activeCustomers(snapshot).find((customer) => s(customer.id) === customerId);
     if (saleTotal <= 0) throw new Error("The sale total must be greater than zero.");
+    const saleBranches = new Set(saleCart.map((line) => s(line.product.branchId) || "main_branch"));
+    if (saleBranches.size > 1) throw new Error("A checkout can only contain products from one branch. Complete one branch sale at a time.");
     if (split && saleSplitPaid <= 0) throw new Error("Enter at least one amount for the split payment.");
     if (split && saleSplitPaid > saleTotal) throw new Error("Split tender amounts cannot exceed the sale total.");
     if (payment === "DEBT" && !saleCustomer) throw new Error("Select a customer before creating a credit sale.");
     if (saleDebt > 0 && !saleCustomer) throw new Error("Select a customer or collect the full sale amount.");
-    if (saleCustomer && saleDebt + n(saleCustomer.debtBalance) > n(saleCustomer.creditLimit)) throw new Error("This sale would exceed the customer's credit limit.");
+    if (saleCustomer && saleDebt > 0 && saleDebt + n(saleCustomer.debtBalance) > n(saleCustomer.creditLimit)) throw new Error("This sale would exceed the customer's credit limit.");
     const now = Date.now();
     const saleId = id();
     const receiptNumber = "BB-" + now.toString().slice(-10);
@@ -308,7 +310,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
     {!snapshot ? <Empty title="No verified product catalogue" description="Sync the shop's Android terminal before starting desktop sales." /> : <div className="pos-layout">
       <section className="pos-products">
         <div className="pos-search"><Barcode size={16} /><input value={search} onChange={(e) => { setSearch(e.target.value); setScanFeedback(""); }} onKeyDown={scanBarcode} placeholder="Search or scan a barcode, then press Enter…" autoFocus /><span className="pos-search-count">{cartCount} in cart</span></div>
-        <div className="checkout-assist-row"><span>USB / Bluetooth keyboard-wedge barcode scanners are supported.</span>{!checkoutRestored ? <strong>Restoring saved checkout…</strong> : scanFeedback ? <strong>{scanFeedback}</strong> : null}</div>
+        <div className="panel-hint checkout-assist-row"><span>USB / Bluetooth keyboard-wedge barcode scanners are supported.</span>{!checkoutRestored ? <strong>Restoring saved checkout…</strong> : scanFeedback ? <strong>{scanFeedback}</strong> : null}</div>
         {storageWarning && <div className="global-alert error">{storageWarning}</div>}
         <div className="product-grid">{filtered.map((p) => <button key={s(p.id)} className="product-tile" onClick={() => add(p)} disabled={n(p.quantityInStock) <= 0}>
           <span className="tile-image"><Package size={22} /></span><strong>{s(p.name)}</strong><small>{s(p.category)} · {n(p.quantityInStock)} {s(p.unit) || "pcs"} left</small><b>{money(p.sellingPrice)}</b>
