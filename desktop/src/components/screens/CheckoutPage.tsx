@@ -308,7 +308,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
       paymentMethod: effectiveMethod, paymentStatus: saleDebt <= 0.01 ? "PAID" : salePaid > 0 ? "PARTIAL" : "UNPAID",
       amountPaid: Math.min(saleTotal, salePaid), tenders: split ? tenderRows : [], notes: notes.trim(), receiptNumber,
       branchId: s(saleCart[0]?.product.branchId) || "main_branch", branchName: "", cashierId: "DESKTOP",
-      cashierName: "Desktop Owner", synced: false, updatedAt: now, syncVersion: 1, hlcTimestamp: 0, lastModifiedDeviceId: "DESKTOP"
+      cashierName: cashierName || "Shop Owner", synced: false, updatedAt: now, syncVersion: 1, hlcTimestamp: 0, lastModifiedDeviceId: "DESKTOP"
     };
     await onCommit((next) => {
       const stockUpdates = items.map((item) => {
