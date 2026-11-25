@@ -135,8 +135,12 @@ fun ShopDevicesDialog(
     var lastCreatedDevice by remember { mutableStateOf<ShopDevice?>(null) }
     var deviceToDelete by remember { mutableStateOf<ShopDevice?>(null) }
 
-    val activeCount = visibleDevices.count { it.isActive }.coerceAtLeast(1)
-    val extraDevices = (activeCount - 1).coerceAtLeast(0)
+    // Device pricing is shop-wide, not branch-scoped. A manager may only see their
+    // assigned terminals, but the owner fee must still be calculated from the complete fleet.
+    val shopActiveCount = shopDevices.count { it.isActive }.coerceAtLeast(1)
+    val visibleActiveCount = visibleDevices.count { it.isActive }.coerceAtLeast(1)
+    val activeCount = if (isShopOwner) shopActiveCount else visibleActiveCount
+    val extraDevices = if (isShopOwner) (shopActiveCount - 1).coerceAtLeast(0) else 0
     val extraMonthlyCost = extraDevices * OfflineSubscriptionManager.PER_EXTRA_DEVICE_FEE_RWF
 
     fun copyJoinCode(device: ShopDevice) {
