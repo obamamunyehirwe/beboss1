@@ -121,7 +121,8 @@ function ReleasesPage() {
     }
   };
 
-  const rows = releases.data ?? [];
+  type ReleaseWithVisibility = (NonNullable<typeof releases.data>[number]) & { is_public?: boolean };
+  const rows = (releases.data ?? []) as ReleaseWithVisibility[];
   const total = rows.reduce((acc, r) => acc + r.download_count, 0);
 
   return (
