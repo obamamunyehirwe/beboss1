@@ -28,14 +28,20 @@ function ShopDetail() {
   const navigate = useNavigate();
   const ctx = useAdminCtx();
   const isAdmin = !!ctx.data?.isAdmin;
+  const permissions = ctx.data?.permissions ?? [];
+  const canViewDevices = isAdmin || permissions.includes("devices.audit");
+  const canViewUsers = isAdmin || permissions.includes("users.manage") || permissions.includes("shops.view");
+  const canViewPayments = isAdmin || permissions.includes("payments.review") || permissions.includes("analytics.view");
+  const canViewSync = isAdmin || permissions.includes("sync.view");
+  const canViewInsights = isAdmin;
   const shops = useQuery(shopsQuery);
-  const devices = useQuery(devicesQuery);
-  const users = useQuery(usersQuery);
-  const pays = useQuery(paymentsQuery);
-  const codes = useQuery(codesQuery);
-  const snaps = useQuery(snapshotsQuery);
-  const { data: cfg } = useQuery(configQuery);
-  const events = useQuery(syncEventsQuery);
+  const devices = useQuery({ ...devicesQuery, enabled: canViewDevices });
+  const users = useQuery({ ...usersQuery, enabled: canViewUsers });
+  const pays = useQuery({ ...paymentsQuery, enabled: canViewPayments });
+  const codes = useQuery({ ...codesQuery, enabled: canViewPayments });
+  const snaps = useQuery({ ...snapshotsQuery, enabled: canViewSync });
+  const { data: cfg } = useQuery({ ...configQuery, enabled: isAdmin });
+  const events = useQuery({ ...syncEventsQuery, enabled: canViewSync });
   const shop = (shops.data ?? []).find((s) => s.id === shopId);
 
   const inv = [["admin", "shops"]] as const;
@@ -73,7 +79,7 @@ function ShopDetail() {
   const calc = calculateSubscriptionFee(q.branches, q.workers, 1, q.devices, Number(cfg?.per_device_fee_rwf) || 2000);
   const shopDevices = (devices.data ?? []).filter((d) => d.shop_sync_key === shopId);
   const shopEvents = (events.data ?? []).filter((e) => e.shop_sync_key === shopId);
-  const flags = licenseFlags(shop, codes.data ?? [], pays.data ?? []);
+  const flags = canViewPayments ? licenseFlags(shop, codes.data ?? [], pays.data ?? []) : [];
   const shopUsers = (users.data ?? []).filter((u) => u.shop_sync_key === shopId);
   const shopPays = (pays.data ?? []).filter((p) => computeShopKey(p.owner_username, p.owner_phone) === shopId);
   const shopCodes = (codes.data ?? []).filter((x) => computeShopKey(x.shop_username, x.shop_phone) === shopId);
@@ -115,8 +121,8 @@ function ShopDetail() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Expires" value={formatDateTime(shop.subscription_expires_at)} sub={dl < 0 ? `${-dl} days ago` : `${dl} days left`} tone={dl < 0 ? "danger" : dl <= 7 ? "warning" : "success"} />
         <StatCard label="Monthly fee" value={formatRwf(shop.monthly_fee_rwf)} sub={`${shop.branch_count} branches • ${shop.worker_count} staff`} />
-        <StatCard label="Devices" value={`${shopDevices.length} / ${shop.device_limit}`} sub={`${shopDevices.filter((d) => d.is_active).length} active`} />
-        <StatCard label="Lifetime paid" value={formatRwf(paid)} sub={`Last sync ${relativeTime(shop.updated_at)}`} tone="brand" />
+        <StatCard label="Devices" value={canViewDevices ? `${shopDevices.length} / ${shop.device_limit}` : "Restricted"} sub={canViewDevices ? `${shopDevices.filter((d) => d.is_active).length} active` : "Device audit permission required"} />
+        <StatCard label="Lifetime paid" value={canViewPayments ? formatRwf(paid) : "Restricted"} sub={`Last sync ${relativeTime(shop.updated_at)}`} tone="brand" />
       </div>
 
       {isAdmin ? (
@@ -275,19 +281,19 @@ function ShopDetail() {
         </section>
       ) : null}
 
-      <Tabs defaultValue="insights">
+      <Tabs defaultValue={isAdmin ? "insights" : canViewUsers ? "users" : canViewPayments ? "payments" : canViewSync ? "sync" : "devices"}>
         <TabsList className="flex-wrap">
-          <TabsTrigger value="insights">Retail insights</TabsTrigger>
-          <TabsTrigger value="records">Shop records</TabsTrigger>
-          <TabsTrigger value="devices">Devices ({shopDevices.length})</TabsTrigger>
-          <TabsTrigger value="users">Staff ({shopUsers.length})</TabsTrigger>
-          <TabsTrigger value="payments">Payments ({shopPays.length})</TabsTrigger>
-          <TabsTrigger value="codes">Codes ({shopCodes.length})</TabsTrigger>
-          <TabsTrigger value="sync">Branch sync ({shopSnaps.length})</TabsTrigger>
-          <TabsTrigger value="activity">Sync activity ({shopEvents.length})</TabsTrigger>
+          {canViewInsights && <TabsTrigger value="insights">Retail insights</TabsTrigger>
+          {isAdmin && <TabsTrigger value="records">Shop records</TabsTrigger>
+          {canViewDevices && <TabsTrigger value="devices">Devices ({shopDevices.length})</TabsTrigger>
+          {canViewUsers && <TabsTrigger value="users">Staff ({shopUsers.length})</TabsTrigger>
+          {canViewPayments && <TabsTrigger value="payments">Payments ({shopPays.length})</TabsTrigger>
+          {canViewPayments && <TabsTrigger value="codes">Codes ({shopCodes.length})</TabsTrigger>
+          {canViewSync && <TabsTrigger value="sync">Branch sync ({shopSnaps.length})</TabsTrigger>
+          {canViewSync && <TabsTrigger value="activity">Sync activity ({shopEvents.length})</TabsTrigger>
         </TabsList>
         <TabsContent value="insights">
-          <RetailInsights shopId={shopId} />
+          <RetailInsights shopId={shopId} />}}}}}}}}
         </TabsContent>
         <TabsContent value="records">
           <ShopRecords shopId={shopId} shopName={shop.shop_name} />
