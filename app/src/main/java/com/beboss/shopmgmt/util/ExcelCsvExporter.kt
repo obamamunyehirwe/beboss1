@@ -243,7 +243,15 @@ object ExcelCsvExporter {
         val quantityIndex = headerIndex("quantityinstock", "quantity", "qty", "stockquantity", "stockqty")
         val unitIndex = headerIndex("unit", "measurementunit")
         val costIndex = headerIndex("costprice", "unitcost", "purchaseprice", "cost")
+            .takeIf { it >= 0 }
+            ?: header.indexOfFirst {
+                it.startsWith("costprice") || it.startsWith("unitcost") || it.startsWith("purchaseprice")
+            }
         val sellingIndex = headerIndex("sellingprice", "unitprice", "retailprice", "price")
+            .takeIf { it >= 0 }
+            ?: header.indexOfFirst {
+                it.startsWith("sellingprice") || it.startsWith("unitprice") || it.startsWith("retailprice")
+            }
 
         val hasHeader = nameIndex >= 0 &&
             listOf(categoryIndex, quantityIndex, costIndex, sellingIndex).any { it >= 0 }
