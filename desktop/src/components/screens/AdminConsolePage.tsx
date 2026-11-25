@@ -246,7 +246,7 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
 
   async function auditAction(action: string, target: string, details: string) {
     const { error: auditError } = await masterAdminAuthClient.from("admin_audit_logs").insert({
-      id: id(), admin_email: adminEmail || "BeBoss Master Admin", action,
+      id: crypto.randomUUID(), admin_email: adminEmail || "BeBoss Master Admin", action,
       target_id: target, details: details.slice(0, 1000), created_at: Date.now()
     });
     if (auditError) throw new Error("The business change was saved, but its audit record failed: " + auditError.message);
@@ -329,7 +329,7 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
       .in("status", ["ISSUED", "REDEEMED"]).maybeSingle();
     if (priorError) throw new Error("Could not check for an existing payment-linked unlock code.");
     let codeToUse = s(signed.code);
-    let codeId = id();
+    let codeId = "";
     let insertedNew = false;
     if (prior) {
       if (s(prior.plan_digest) !== expectedDigest || !s(prior.unlock_code)) {
@@ -337,8 +337,10 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
       }
       codeToUse = s(prior.unlock_code); codeId = s(prior.id);
     } else {
+      const newCodeId = crypto.randomUUID();
+      codeId = newCodeId;
       const { error: insertError } = await masterAdminAuthClient.from("unlock_codes").insert({
-        id: codeId, unlock_code: codeToUse, payment_request_id: s(payment.id),
+        id: newCodeId, unlock_code: codeToUse, payment_request_id: s(payment.id),
         shop_username: username, shop_phone: ownerPhone, device_challenge: s(payment.device_challenge),
         tier_code: plan.tier, plan_days: plan.days, amount_rwf: plan.total,
         duration_months: plan.months, branch_count: plan.branches, worker_count: plan.workers, device_count: plan.devices,
