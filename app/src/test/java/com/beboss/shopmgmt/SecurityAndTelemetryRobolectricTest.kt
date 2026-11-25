@@ -2,6 +2,7 @@ package com.beboss.shopmgmt
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.beboss.shopmgmt.util.BeBossNotificationManager
 import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.DeviceSecurityManager
 import com.beboss.shopmgmt.util.LocationHelper
@@ -154,6 +155,21 @@ class SecurityAndTelemetryRobolectricTest {
         val pending = MessageAuditManager.getUnsyncedRecords(context)
         assertEquals(1, pending.size)
         assertEquals(second.id, pending.single().id)
+    }
+
+    @Test
+    fun `notification manager creates channels and dispatches device synced alert safely`() {
+        BeBossNotificationManager.createNotificationChannels(context)
+        BeBossNotificationManager.sendDeviceSyncedNotification(
+            context = context,
+            shopName = "Test Enterprise Shop",
+            deviceName = "Robolectric Terminal"
+        )
+        BeBossNotificationManager.sendTestNotification(
+            context = context,
+            channelId = BeBossNotificationManager.CHANNEL_SYNC_ID
+        )
+        // No exception thrown and channels initialized cleanly
     }
 
 }

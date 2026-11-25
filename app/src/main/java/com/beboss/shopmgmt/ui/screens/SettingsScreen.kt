@@ -3094,6 +3094,21 @@ fun NotificationTestButtons(
                 Text("Branch Sync Done", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = { onTest("SYNC_DEVICE") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF0284C7))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Admin Console Sync Alert", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 

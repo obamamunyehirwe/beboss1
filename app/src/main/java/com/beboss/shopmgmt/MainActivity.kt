@@ -864,7 +864,8 @@ private fun BeBossMainContent(
     if (showPermissionOnboardingDialog) {
         PermissionRequestDialog(
             language = currentLanguage,
-            onDismiss = { showPermissionOnboardingDialog = false }
+            onDismiss = { showPermissionOnboardingDialog = false },
+            onPermissionGranted = { viewModel.onPermissionsUpdated() }
         )
     }
 
