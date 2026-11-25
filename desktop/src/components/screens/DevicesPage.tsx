@@ -195,7 +195,11 @@ export function DevicesPage({ cloud, onAction, onRefresh, offline, currentDevice
           setUserId(event.target.value);
           if (user?.assigned_branch_id) setBranchId(s(user.assigned_branch_id));
         }}><option value="">Select an operator</option>{staff.map((user) => <option key={s(user.user_id)} value={s(user.user_id)}>{s(user.full_name)} · {s(user.role)} · {s(user.assigned_branch_name)}</option>)}</select></label>
-        <label className="field-wide">Assigned branch<select required value={branchId} onChange={(event) => setBranchId(event.target.value)}><option value="">Select a branch</option>{branches.map((branch) => <option key={s(branch.id)} value={s(branch.id)}>{s(branch.name)}</option>)}</select></label>
+        <label className="field-wide">Assigned branch<select required value={branchId} onChange={(event) => {
+          const nextBranchId = event.target.value;
+          setBranchId(nextBranchId);
+          if (!staff.some((user) => s(user.user_id) === userId && s(user.assigned_branch_id) === nextBranchId)) setUserId("");
+        }}><option value="">Select a branch</option>{branches.map((branch) => <option key={s(branch.id)} value={s(branch.id)}>{s(branch.name)}</option>)}</select></label>
         <div className="info-note field-wide"><ShieldCheck size={16} /> BeBoss creates a protected device slot and a single-use invitation that expires after one hour. The server applies the FRw 2,000 monthly add-on and validates that the operator belongs to the selected branch.</div>
         {pageError && <div className="inline-alert error field-wide">{pageError}</div>}
         <div className="modal-actions field-wide"><button type="button" className="btn-outline" disabled={saving} onClick={() => setOpen(false)}>Cancel</button><button className="btn-primary" disabled={saving || offline || !deviceName.trim() || !userId || !branchId}>{saving ? <LoaderCircle size={15} className="spin" /> : <Plus size={15} />}Create secure invitation</button></div>

@@ -43,7 +43,7 @@ function Home() {
   return (
     <SiteLayout>
       <ModernHero />
-      <AnnouncementBanner />
+      {liveConfigured && <AnnouncementBanner />}
       <section className="retail-section">
         <ToolkitHeader />
         <div className="tool-grid">

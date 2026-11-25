@@ -39,9 +39,12 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
 
   const salesByBranch = useMemo(() => {
     const result = new Map<string, { count: number; total: number }>();
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
     for (const sale of rows(snapshot?.sales)) {
       const branchId = s(sale.branchId || sale.branch_id);
-      if (!branchId) continue;
+      if (!branchId || n(sale.saleDate) < monthStart.getTime()) continue;
       const current = result.get(branchId) ?? { count: 0, total: 0 };
       current.count += 1;
       current.total += n(sale.totalAmount ?? sale.total_amount ?? sale.total);
@@ -145,7 +148,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
       <StatCard label="Registered branches" value={list.length.toLocaleString()} sub="Cloud-managed locations" icon={Building2} />
       <StatCard label="Open locations" value={activeCount.toLocaleString()} sub="Active and accepting operations" icon={Check} tone="green" />
       <StatCard label="Network stock value" value={money(totalStock)} sub="Latest branch stock snapshots" icon={Warehouse} tone="purple" />
-      <StatCard label="Mapped sales" value={money(networkRevenue)} sub={salesByBranch.size + " branches with sales records"} icon={Activity} tone="orange" />
+      <StatCard label="Mapped sales" value={money(networkRevenue)} sub={salesByBranch.size + " branches with sales this month"} icon={Activity} tone="orange" />
     </div>
 
     <section className="enterprise-branch-toolbar panel">
@@ -187,12 +190,12 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
           </div>
           <p className="enterprise-branch-address"><MapPin size={14} />{s(branch.address) || "No address recorded"}</p>
           <div className="enterprise-branch-kpis">
-            <div><span>Sales volume</span><strong>{money(metrics.total)}</strong><small>{metrics.count.toLocaleString()} transactions in snapshot</small></div>
+            <div><span>Sales this month</span><strong>{money(metrics.total)}</strong><small>{metrics.count.toLocaleString()} transactions this month</small></div>
             <div><span>Stock value</span><strong>{money(branch.stock_value_rwf)}</strong><small>{n(branch.product_count).toLocaleString()} products reported</small></div>
           </div>
           <div className="enterprise-branch-target">
             <div><span>Monthly target</span><strong>{target > 0 ? money(target) : "Not set"}</strong></div>
-            {target > 0 && <><div className="enterprise-progress"><span style={{ width: progress + "%" }} /></div><small>{progress.toFixed(1)}% of target reached from mapped sales</small></>}
+            {target > 0 && <><div className="enterprise-progress"><span style={{ width: progress + "%" }} /></div><small>{progress.toFixed(1)}% of target reached this month</small></>}
           </div>
           <div className="enterprise-branch-people">
             <span><Users size={14} />{staffCount} staff</span><span><Warehouse size={14} />{deviceCount} terminals</span>

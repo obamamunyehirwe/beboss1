@@ -23,6 +23,7 @@ export function AnnouncementCard({ a, onDismiss }: { a: Announcement; onDismiss?
   const body = tr?.body || a.body;
   const ctaLabel = tr?.cta_label || a.cta_label;
   const canExpand = body.length > 190;
+  const ctaHref = a.cta_url ? safeAnnouncementHref(a.cta_url) : "";
   const role = a.severity === "CRITICAL" ? "alert" : "status";
 
   return (
@@ -40,8 +41,8 @@ export function AnnouncementCard({ a, onDismiss }: { a: Announcement; onDismiss?
           <h3 className="text-base font-bold tracking-tight text-foreground sm:text-lg">{title}</h3>
           {body ? <p className={cn("mt-1.5 whitespace-pre-line text-sm leading-6 text-muted-foreground", canExpand && !expanded && "announcement-card-clamped")}>{body}</p> : null}
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            {a.cta_label && a.cta_url ? (
-              <a href={a.cta_url} className="announcement-card-cta inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-all" {...(a.cta_url.startsWith("http") ? { target: "_blank", rel: "noreferrer" } : {})}>
+            {ctaLabel && ctaHref ? (
+              <a href={ctaHref} className="announcement-card-cta inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-all" {...(ctaHref.startsWith("https://") ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
                 {ctaLabel}<ArrowUpRight className="size-3.5" aria-hidden="true" />
               </a>
             ) : null}
@@ -52,6 +53,17 @@ export function AnnouncementCard({ a, onDismiss }: { a: Announcement; onDismiss?
       </div>
     </article>
   );
+}
+
+function safeAnnouncementHref(value: string) {
+  const url = value.trim();
+  if (url.startsWith("/") && !url.startsWith("//")) return url;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
 }
 
 const KEY = "beboss.dismissedAnnouncements";
