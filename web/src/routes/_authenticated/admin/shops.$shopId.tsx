@@ -29,7 +29,7 @@ function ShopDetail() {
   const ctx = useAdminCtx();
   const isAdmin = !!ctx.data?.isAdmin;
   const permissions = ctx.data?.permissions ?? [];
-  const canViewDevices = isAdmin || permissions.includes("devices.audit");
+  const canViewDevices = isAdmin || permissions.includes("devices.audit") || permissions.includes("analytics.view");
   const canViewUsers = isAdmin || permissions.includes("users.manage") || permissions.includes("shops.view");
   const canViewPayments = isAdmin || permissions.includes("payments.review") || permissions.includes("analytics.view");
   const canViewSync = isAdmin || permissions.includes("sync.view");
