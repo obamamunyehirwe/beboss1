@@ -651,7 +651,7 @@ private fun BeBossMainContent(
                                 allPayments = allCustomerPayments,
                                 language = currentLanguage,
                                 onSaveCustomer = { c -> viewModel.saveCustomer(c) },
-                                onRecordPayment = { cId, amt -> viewModel.recordDebtPayment(cId, amt) },
+                                onRecordPayment = { cId, amt, method -> viewModel.recordDebtPayment(cId, amt, method) },
                                 onDeleteCustomer = { cId -> viewModel.deleteCustomer(cId) },
                                 onClearAllCustomers = { viewModel.clearAllCustomers() }
                             )

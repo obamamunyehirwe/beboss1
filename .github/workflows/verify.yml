@@ -173,11 +173,17 @@ jobs:
             throw "Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY GitHub Actions secrets before creating a Windows production release."
           }
 
-      - name: Install desktop dependencies
-        run: npm ci --no-audit --no-fund
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install desktop dependencies from the committed Bun lockfile
+        run: bun install --frozen-lockfile
+
+      - name: Run desktop customer management and receipt domain tests
+        run: bun run test
 
       - name: Type-check and build desktop client
-        run: npm run build
+        run: bun run build
 
       - name: Check native Tauri application
         run: cargo check --manifest-path src-tauri/Cargo.toml
@@ -189,8 +195,11 @@ jobs:
         shell: pwsh
         run: choco install nsis -y --no-progress
 
+      - name: Install the native Tauri CLI
+        run: cargo install tauri-cli --locked
+
       - name: Build the native Windows NSIS installer
-        run: npm run dist:win
+        run: cargo tauri build --bundles nsis
 
       - name: Verify the Windows installer artifact exists
         shell: pwsh

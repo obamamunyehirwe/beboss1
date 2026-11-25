@@ -23,7 +23,9 @@ type WizardCopy = {
   preferencesTag: string; preferencesTitle: string; preferencesBody: string;
   language: string; appearance: string; dark: string; light: string; system: string;
   sync: string; syncBody: string; frequency: string; motion: string; motionBody: string;
-  startPage: string; verificationTag: string; verificationTitle: string; verificationBody: string;
+  startPage: string;
+  privacyTitle: string; privacyBody: string; privacyCheck: string; privacyError: string;
+  verificationTag: string; verificationTitle: string; verificationBody: string;
   runChecks: string; retry: string; checking: string; finishTag: string; finishTitle: string;
   finishBody: string; installPath: string; localDatabase: string; pending: string;
   cloudWarning: string; back: string; next: string; finish: string; working: string;
@@ -49,6 +51,10 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     sync: "Automatic cloud synchronization", syncBody: "Retry queued changes when the network returns and refresh cloud data on the selected interval.",
     frequency: "Cloud refresh interval", motion: "Reduce interface motion", motionBody: "Respect reduced-motion preference and keep transitions minimal.",
     startPage: "Start page after owner sign-in",
+    privacyTitle: "Privacy and device access",
+    privacyBody: "BeBoss stores business records in its protected application-data workspace, uses the operating system's secure credential vault, and connects to BeBoss Cloud for owner sign-in and synchronization. Printer and file-export access is used when you choose Print, Save or Export. Setup does not request access to unrelated personal files or media.",
+    privacyCheck: "I have read and accept this device and data-use notice.",
+    privacyError: "Review the access notice and accept it before continuing.",
     verificationTag: "REAL DEVICE VALIDATION", verificationTitle: "Verify this installation.",
     verificationBody: "The checks below call the native desktop host and your configured cloud endpoint. A cloud warning does not block encrypted offline setup, but owner sign-in and synchronization require connectivity.",
     runChecks: "Run system checks", retry: "Retry checks", checking: "Running native checks…",
@@ -85,6 +91,10 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     sync: "Guhuza amakuru na Cloud byikora", syncBody: "Ongera ugerageze kohereza impinduka igihe internet igarutse kandi wongere usome amakuru ku gihe wahisemo.",
     frequency: "Igihe cyo kongera gusoma amakuru", motion: "Gabanya animasiyo", motionBody: "Kurikiza ihitamo ryo kugabanya imigendere y'amashusho.",
     startPage: "Ipaji ibanza nyuma yo kwinjira",
+    privacyTitle: "Ibanga n'uburenganzira bwa mudasobwa",
+    privacyBody: "BeBoss ibika amakuru y'ubucuruzi mu bubiko bwayo burinzwe, ikoresha ububiko bw'ibanga bwa sisitemu, kandi ihuza na BeBoss Cloud mu kwinjira no guhererekanya amakuru. Printer n'ububiko bwa dosiye bikoreshwa igihe uhisemo Gucapa, Kubika cyangwa Kohereza. Iyi setup ntisaba kugera ku mafoto cyangwa izindi dosiye zawe zitari iz'akazi.",
+    privacyCheck: "Nasomye kandi nemeye aya mabwiriza yo gukoresha mudasobwa n'amakuru.",
+    privacyError: "Soma amabwiriza yo kugera ku makuru hanyuma uyemere mbere yo gukomeza.",
     verificationTag: "IGENZURA NYAKURI", verificationTitle: "Genza iyi installation.",
     verificationBody: "Igenzura rikoresha native desktop host n'aderesi ya cloud washyizeho. Ikibazo cya cloud ntikibuza gutegura ububiko bwa offline burinzwe, ariko kwinjira no guhuza amakuru bisaba internet.",
     runChecks: "Tangira igenzura", retry: "Ongera ugenzure", checking: "Igenzura rirakorwa…",
@@ -121,6 +131,10 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     sync: "Synchronisation cloud automatique", syncBody: "Réessayez les changements en attente au retour du réseau et actualisez les données selon l'intervalle choisi.",
     frequency: "Intervalle d'actualisation", motion: "Réduire les animations", motionBody: "Respecter la préférence de réduction des mouvements.",
     startPage: "Page d'accueil après connexion",
+    privacyTitle: "Confidentialité et accès à l'appareil",
+    privacyBody: "BeBoss conserve les données professionnelles dans son espace applicatif protégé, utilise le coffre sécurisé du système et se connecte à BeBoss Cloud pour la connexion du propriétaire et la synchronisation. L'accès à l'imprimante et aux fichiers est utilisé lorsque vous choisissez Imprimer, Enregistrer ou Exporter. L'installation ne demande pas l'accès aux fichiers personnels ou médias sans rapport avec ces fonctions.",
+    privacyCheck: "J'ai lu et j'accepte cette notice d'utilisation de l'appareil et des données.",
+    privacyError: "Veuillez lire et accepter la notice d'accès avant de continuer.",
     verificationTag: "VALIDATION RÉELLE", verificationTitle: "Vérifiez cette installation.",
     verificationBody: "Les contrôles utilisent le composant natif et l'hôte cloud configuré. Un avertissement cloud n'empêche pas la configuration hors ligne chiffrée, mais la connexion propriétaire et la synchronisation nécessitent Internet.",
     runChecks: "Lancer les vérifications", retry: "Réessayer", checking: "Vérifications en cours…",
@@ -157,6 +171,10 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     sync: "Usawazishaji wa mtandao wa kiotomatiki", syncBody: "Jaribu tena mabadiliko yaliyosubiri mtandao unaporudi na usasishe data kwa muda uliochagua.",
     frequency: "Muda wa kusasisha data", motion: "Punguza mwendo", motionBody: "Heshimu upendeleo wa kupunguza uhuishaji.",
     startPage: "Ukurasa wa kuanza baada ya mmiliki kuingia",
+    privacyTitle: "Faragha na ufikiaji wa kifaa",
+    privacyBody: "BeBoss huhifadhi rekodi za biashara kwenye eneo lake salama la programu, hutumia hifadhi salama ya mfumo, na huunganisha BeBoss Cloud kwa kuingia kwa mmiliki na kusawazisha data. Ufikiaji wa kichapishi na faili hutumika unapochagua Chapisha, Hifadhi au Hamisha. Usakinishaji hauhitaji ufikiaji wa faili binafsi au midia isiyohusiana na kazi hizo.",
+    privacyCheck: "Nimesoma na kukubali taarifa hii ya matumizi ya kifaa na data.",
+    privacyError: "Soma na ukubali taarifa ya ufikiaji kabla ya kuendelea.",
     verificationTag: "UKAGUZI HALISI", verificationTitle: "Thibitisha usakinishaji huu.",
     verificationBody: "Ukaguzi huu hutumia mfumo asilia wa kompyuta na anwani halisi ya mtandao ulioweka. Onyo la mtandao halizuii usanidi fiche wa offline, lakini kuingia kwa mmiliki na usawazishaji vinahitaji intaneti.",
     runChecks: "Anza ukaguzi", retry: "Jaribu tena", checking: "Ukaguzi unaendelea…",
@@ -191,9 +209,10 @@ export function SetupWizard({
   initialPreferences, onComplete
 }: {
   initialPreferences: DesktopPreferences;
-  onComplete: (preferences: DesktopPreferences) => Promise<void>;
+  onComplete: (preferences: DesktopPreferences, privacyAccepted: boolean) => Promise<void>;
 }) {
   const [preferences, setPreferences] = useState<DesktopPreferences>(initialPreferences);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [page, setPage] = useState<PageId>("welcome");
   const [running, setRunning] = useState(false);
   const [finishing, setFinishing] = useState(false);
@@ -304,6 +323,10 @@ export function SetupWizard({
   }
 
   async function next() {
+    if (page === "preferences" && !privacyAccepted) {
+      setFailure(t.privacyError);
+      return;
+    }
     if (page === "verification") {
       if (!completed) {
         const ok = await runChecks();
@@ -315,7 +338,7 @@ export function SetupWizard({
     if (page === "finish") {
       if (!completed || !diagnostics) return;
       setFinishing(true); setFailure("");
-      try { await onComplete(preferences); }
+      try { await onComplete(preferences, privacyAccepted); }
       catch (error) { setFailure(errorMessage(error)); }
       finally { setFinishing(false); }
       return;
@@ -407,6 +430,17 @@ export function SetupWizard({
             </div>
           </>}
 
+          {page === "preferences" && <>
+            <section className="setup-privacy-notice" aria-labelledby="setup-privacy-title">
+              <div className="setup-privacy-icon"><ShieldCheck size={18}/></div>
+              <div><strong id="setup-privacy-title">{t.privacyTitle}</strong><p>{t.privacyBody}</p></div>
+              <label className="setup-privacy-accept">
+                <input type="checkbox" checked={privacyAccepted} onChange={(event) => { setPrivacyAccepted(event.target.checked); if (event.target.checked) setFailure(""); }}/>
+                <span>{t.privacyCheck}</span>
+              </label>
+            </section>
+            {failure && <p className="setup-error" role="alert">{failure}</p>}
+          </>}
           {page === "verification" && <>
             <div className="setup-icon">{completed ? <CheckCircle2 size={25} /> : <Activity size={25} />}</div>
             <small className="eyebrow muted">{t.verificationTag}</small>
@@ -439,7 +473,7 @@ export function SetupWizard({
 
           <div className="setup-actions">
             {pageIndex > 0 && <button type="button" className="setup-back-btn" onClick={() => setPage((["welcome", "preferences", "verification", "finish"] as PageId[])[pageIndex - 1])} disabled={running || finishing}><ArrowLeft size={16} />{t.back}</button>}
-            <button type="button" className="primary-btn" onClick={() => void next()} disabled={running || finishing || (page === "finish" && !completed)}>
+            <button type="button" className="primary-btn" onClick={() => void next()} disabled={running || finishing || (page === "finish" && !completed) || (page === "preferences" && !privacyAccepted)}>
               {running ? <RefreshCw size={16} className="spin" /> : finishing ? <RefreshCw size={16} className="spin" /> : page === "finish" ? <Check size={16} /> : <ArrowRight size={16} />}
               {running ? t.checking : finishing ? t.working : page === "finish" ? t.finish : page === "verification" && !completed ? t.runChecks : page === "verification" ? t.next : t.next}
             </button>

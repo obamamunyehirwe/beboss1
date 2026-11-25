@@ -160,7 +160,7 @@ class BrandingAndQrRobolectricTest {
 
         assertTrue(html.contains("data:image/png;base64,"))
         assertTrue(html.contains("alt=\"BeBoss logo\""))
-        assertTrue(html.contains("alt=\"Receipt verification QR\""))
+        assertTrue(html.contains("alt=\"Receipt details QR code\""))
         assertTrue(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"))
         assertTrue(html.contains("&lt;img src=x onerror=alert(1)&gt;"))
         assertFalse(html.contains("<script>alert(1)</script>"))

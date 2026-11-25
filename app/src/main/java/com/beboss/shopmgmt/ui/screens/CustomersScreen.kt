@@ -133,7 +133,7 @@ fun CustomersScreen(
     allPayments: List<CustomerPayment> = emptyList(),
     language: AppLanguage = AppLanguage.ENGLISH,
     onSaveCustomer: (Customer) -> Unit,
-    onRecordPayment: (String, Double) -> Unit,
+    onRecordPayment: (String, Double, String) -> Unit,
     onDeleteCustomer: (String) -> Unit,
     onClearAllCustomers: (() -> Unit)? = null,
     onExportAgingCsv: () -> Unit = {}
@@ -539,8 +539,8 @@ fun CustomersScreen(
             customer = paymentCustomer,
             shopProfile = shopProfile,
             language = language,
-            onConfirm = { amount ->
-                onRecordPayment(paymentCustomer.id, amount)
+            onConfirm = { amount, method ->
+                onRecordPayment(paymentCustomer.id, amount, method)
                 customerForPayment = null
             },
             onDismiss = { customerForPayment = null }
@@ -1314,7 +1314,7 @@ fun RecordDebtPaymentDialog(
     customer: Customer,
     shopProfile: ShopProfile,
     language: AppLanguage = AppLanguage.ENGLISH,
-    onConfirm: (Double) -> Unit,
+    onConfirm: (Double, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var amountStr by remember { mutableStateOf("${customer.debtBalance.toInt()}") }
@@ -1497,7 +1497,7 @@ fun RecordDebtPaymentDialog(
                     Button(
                         onClick = {
                             if (parsedAmount > 0) {
-                                onConfirm(parsedAmount)
+                                onConfirm(parsedAmount, paymentMethod)
                             }
                         },
                         modifier = Modifier.weight(1f),
