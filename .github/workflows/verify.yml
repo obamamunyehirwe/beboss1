@@ -173,6 +173,9 @@ jobs:
             throw "Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY GitHub Actions secrets before creating a Windows production release."
           }
 
+      - name: Pin stable npm for Windows dependency resolution
+        run: npm install --global npm@10.9.4
+
       - name: Install desktop dependencies
         run: npm ci --no-audit --no-fund
 

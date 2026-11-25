@@ -180,12 +180,14 @@ export default function App() {
     let alive = true;
     (async () => {
       try {
-        const [completedAt, completedVersion] = await Promise.all([
+        const [completedAt, completedVersion, privacyConsent] = await Promise.all([
           window.beBossDesktop.secureStore.get("installation-setup-completed-at"),
-          window.beBossDesktop.secureStore.get("installation-setup-version")
+          window.beBossDesktop.secureStore.get("installation-setup-version"),
+          window.beBossDesktop.secureStore.get("installation-privacy-consent")
         ]);
         const setupIsCurrent = completedVersion === window.beBossDesktop.version;
-        if (alive) setSetupRequired(!completedAt || !setupIsCurrent);
+        const privacyIsAccepted = Boolean(privacyConsent?.startsWith("v1:"));
+        if (alive) setSetupRequired(!completedAt || !setupIsCurrent || !privacyIsAccepted);
       } catch (e) {
         if (alive) {
           setSetupRequired(true);
@@ -491,8 +493,10 @@ export default function App() {
   if (setupRequired) {
     return <SetupWizard
       initialPreferences={preferences}
-      onComplete={async (nextPreferences) => {
+      onComplete={async (nextPreferences, privacyAccepted) => {
+        if (!privacyAccepted) throw new Error("Privacy and device-access acknowledgement is required.");
         await saveDesktopPreferences(nextPreferences);
+        await window.beBossDesktop.secureStore.set("installation-privacy-consent", "v1:" + new Date().toISOString());
         await window.beBossDesktop.secureStore.set("installation-setup-version", window.beBossDesktop.version);
         await window.beBossDesktop.secureStore.set("installation-setup-completed-at", new Date().toISOString());
         setError(""); setSetupRequired(false); setShowAuth(false);
