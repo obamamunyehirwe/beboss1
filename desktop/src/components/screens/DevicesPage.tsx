@@ -1,6 +1,6 @@
 import type React from "react";
 import { useMemo, useState } from "react";
-import { Activity, Clock3, Copy, CreditCard, Edit3, Laptop, LoaderCircle, Monitor, Pause, Play, Plus, RefreshCw, Search, ShieldCheck, Smartphone, Trash2, UserRound, Wifi, WifiOff } from "lucide-react";
+import { Activity, Clock3, Copy, CreditCard, Edit3, Laptop, LoaderCircle, Monitor, Pause, Play, Plus, RefreshCw, Search, ShieldCheck, Smartphone, Store, Trash2, UserRound, Wifi, WifiOff } from "lucide-react";
 import { activeStaff, dateTime, errorText, money, n, rows, s } from "../../lib/format";
 import type { CloudAction, CloudState, Row } from "../../lib/types";
 import { Empty, Modal, PageHeading, StatCard, StatusPill } from "../ui";
