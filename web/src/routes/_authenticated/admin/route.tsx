@@ -216,6 +216,9 @@ function AdminLayout() {
   const activeNav = NAV.find((item) => currentPath === item.to || (item.to !== "/admin" && currentPath.startsWith(item.to + "/")));
   const isSuperAdminPage = NAV_SUPER_ADMIN_ONLY.has(activeNav?.to ?? "");
   const pageAllowed = !!ctx.data.isAdmin || (!isSuperAdminPage && hasPermission(permissions, activeNav ? NAV_PERMISSION[activeNav.to] : undefined));
+  const defaultAdminPath = ctx.data.isAdmin ? "/admin" : NAV.find((item) =>
+    !NAV_SUPER_ADMIN_ONLY.has(item.to) && hasPermission(permissions, NAV_PERMISSION[item.to])
+  )?.to ?? "/";
 
   return (
     <div className="admin-workspace flex min-h-screen">
@@ -240,7 +243,7 @@ function AdminLayout() {
               <ShieldAlert className="mx-auto size-9 text-warning" />
               <h1 className="mt-3 text-lg font-bold">This area is not assigned to your role</h1>
               <p className="mt-2 text-sm text-muted-foreground">Your account can use only the administration tools granted by a Super Admin. Ask your platform owner to update the role when access is required.</p>
-              <Button asChild className="mt-5" variant="outline"><Link to="/admin">Return to your workspace</Link></Button>
+              <Button asChild className="mt-5" variant="outline"><Link to={defaultAdminPath}>Return to your workspace</Link></Button>
             </section>
           )}
         </main>
@@ -310,6 +313,9 @@ function SidebarBody({ email, isAdmin, permissions, onSignOut, onNavigate }: { e
 }
 
 function TopBar({ email, isAdmin, permissions, onSignOut }: { email: string; isAdmin: boolean; permissions: string[]; onSignOut: () => void }) {
+  const homeTarget = isAdmin ? "/admin" : NAV.find((item) =>
+    !NAV_SUPER_ADMIN_ONLY.has(item.to) && hasPermission(permissions, NAV_PERMISSION[item.to])
+  )?.to ?? "/";
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const a=useAdminText();
@@ -329,7 +335,7 @@ function TopBar({ email, isAdmin, permissions, onSignOut }: { email: string; isA
           </SheetContent>
         </Sheet>
         <div className="admin-topbar-mobile-brand lg:hidden">
-          <Logo to="/admin" suffix="Admin" />
+          <Logo to={homeTarget} suffix="Admin" />
         </div>
         <div className="hidden sm:block">
           <LivePulse enabled={isAdmin || permissions.includes("sync.view")} />
