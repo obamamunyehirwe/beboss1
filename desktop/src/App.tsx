@@ -6,6 +6,7 @@ import {
   Users, Warehouse, X, Zap, Languages
 } from "lucide-react";
 import { callDesktopApi, currentSession, signOut, OwnerAuthorizationError, type OwnerCredentials } from "./lib/cloud";
+import { BrowserRuntimeNotice } from "./components/BrowserRuntimeNotice";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
 import type { CloudState, DesktopPreferences, NavKey, ReceiptPayload, Row, Snapshot } from "./lib/types";
@@ -86,7 +87,7 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
   { id: "settings", label: "Shop settings", icon: Settings, group: "Administration" }
 ];
 
-export default function App() {
+function NativeDesktopApp() {
   const [startupReady, setStartupReady] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
@@ -759,4 +760,10 @@ export default function App() {
       onRefresh={() => { void refresh(); }}
     />}
   </div>;
+}
+
+/** Keep native-only setup, storage and device services out of ordinary browser previews. */
+export default function App() {
+  if (!window.beBossDesktop?.isNative) return <BrowserRuntimeNotice />;
+  return <NativeDesktopApp />;
 }
