@@ -650,7 +650,7 @@ fun ShopRegistrationScreen(
     // Join Existing Shop (Add Device) state; PINs and passwords remain transient.
     var joinOwnerUsername by rememberSaveable { mutableStateOf("") }
     var joinOwnerPhone by rememberSaveable { mutableStateOf("+250 ") }
-    var joinCode by rememberSaveable { mutableStateOf("") }
+    var joinCode by remember { mutableStateOf("") }
     var joinDeviceName by rememberSaveable { mutableStateOf("Cashier Device 2") }
     var joinPin by remember { mutableStateOf("") }
     var joinPassword by remember { mutableStateOf("") }

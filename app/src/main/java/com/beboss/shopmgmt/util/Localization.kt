@@ -716,6 +716,7 @@ object Localization {
         "admin_code_revoke_body" to locEntry("Revoke the outstanding unlock code issued for @%s? The code will no longer activate a shop.", "Guhagarika kode yatanzwe kuri @%s? Iyo kode ntizongera gufungura iduka.", "Révoquer le code encore valide émis pour @%s ? Il ne pourra plus activer une boutique.", "Batilisha msimbo uliotolewa kwa @%s? Msimbo huo hautafungua duka tena."),
         "admin_confirm_delete" to locEntry("Remove device", "Kuraho igikoresho", "Supprimer l'appareil", "Ondoa kifaa"),
         "admin_confirm_revoke" to locEntry("Revoke code", "Hagarika kode", "Révoquer le code", "Batilisha msimbo"),
+        "cust_existing_phone_opened" to locEntry("This phone number is already saved. Opened the existing customer.", "Iyi nimero isanzwe ihari. Hafunguwe amakuru y'umukiriya wari usanzwe.", "Ce numéro est déjà enregistré. La fiche client existante a été ouverte.", "Nambari hii tayari imehifadhiwa. Taarifa za mteja aliyepo zimefunguliwa."),
         "admin_issue_code" to locEntry("Issue code", "Tanga kode", "Émettre un code", "Toa msimbo"),
         "admin_revoke_code_cd" to locEntry("Revoke unlock code", "Hagarika kode yo gufungura", "Révoquer le code d’activation", "Batilisha msimbo wa kufungua"),
         "shop_devices_title" to locEntry(
