@@ -53,8 +53,8 @@
           "English",
           "French"
         ],
-        "headerImage": "src-tauri/installer/header.bmp",
-        "sidebarImage": "src-tauri/installer/sidebar.bmp",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp",
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico",
         "startMenuFolder": "BeBoss",
