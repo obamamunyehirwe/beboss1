@@ -153,3 +153,88 @@
     color: var(--color-foreground);
   }
 }
+
+
+/* Enterprise customer relationship workspace */
+.crm-filter-panel{padding:15px 17px}
+.crm-filter-row{display:grid;grid-template-columns:minmax(190px,1fr) minmax(150px,.45fr) minmax(145px,.45fr) minmax(145px,.45fr);gap:10px;align-items:center}
+.crm-filter-row select{min-width:0;height:39px;padding:0 10px;border:1px solid var(--border);border-radius:9px;color:var(--text);background:var(--panel);font-size:10px}
+.crm-filter-search{display:flex;align-items:center;gap:9px;min-width:0;height:39px;padding:0 11px;border:1px solid var(--border);border-radius:9px;color:var(--muted);background:var(--panel)}
+.crm-filter-search input{width:100%;min-width:0;border:0;outline:0;color:var(--text);background:transparent;font-size:10px}
+.crm-filter-foot{display:flex;justify-content:space-between;gap:12px;margin-top:10px;color:var(--muted);font-size:9px}
+.crm-table{min-width:1160px}
+.crm-category{display:inline-flex;align-items:center;max-width:180px;padding:4px 7px;border:1px solid rgba(116,145,184,.18);border-radius:7px;color:var(--muted);background:rgba(122,148,187,.06);font-size:8px;font-weight:800}
+.crm-overdue{display:block;margin-top:4px;color:#dc834b;font-size:8px;font-weight:800}
+.crm-row-actions{display:flex;align-items:center;gap:5px}
+.crm-row-actions .btn-outline.small,.crm-row-actions .btn-primary.small{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:27px}
+.util-bar span.over{background:linear-gradient(90deg,#fb8a58,#e35252)}
+.crm-detail{display:grid;gap:17px;max-height:min(78vh,850px);overflow:auto;padding-right:2px}
+.crm-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:4px 0 15px;border-bottom:1px solid var(--border)}
+.crm-detail-head h3{margin:10px 0 4px;color:var(--text);font-size:16px;font-weight:850}
+.crm-detail-head p{margin:0;color:var(--muted);font-size:10px;line-height:1.6}
+.crm-detail-actions{display:flex;flex-wrap:wrap;gap:7px}
+.crm-notes{padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.crm-notes strong{color:var(--text);font-size:10px}
+.crm-notes p{margin:5px 0 0;color:var(--muted);font-size:10px;white-space:pre-wrap}
+.crm-history-section{display:grid;gap:9px}
+.crm-history-section h4{display:flex;align-items:center;gap:8px;margin:0;color:var(--text);font-size:12px;font-weight:850}
+.crm-history-section h4 svg{color:var(--accent)}
+.crm-history-section table{min-width:650px}
+.crm-empty{margin:0;padding:14px;border:1px dashed var(--border);border-radius:9px;color:var(--muted);font-size:10px;text-align:center}
+.customer-payment-toolbar{align-items:center}
+.customer-payment-toolbar>div{display:flex;flex-wrap:wrap;gap:7px}
+.customer-payment-toolbar .btn-outline{display:inline-flex;align-items:center;gap:7px}
+.customer-payment-paper{width:min(100%,650px);margin:14px auto 22px;padding:29px 32px;border:1px solid #e3e8ef;border-radius:16px;color:#1b2e45;background:#fff;box-shadow:0 18px 46px rgba(0,0,0,.13)}
+.customer-payment-brand{display:flex;align-items:center;gap:14px;padding-bottom:19px;border-bottom:3px solid #f27b3c}
+.customer-payment-brand img{width:58px;height:58px;object-fit:contain}
+.customer-payment-brand strong,.customer-payment-brand span{display:block}
+.customer-payment-brand strong{color:#162941;font-size:20px;font-weight:900}
+.customer-payment-brand span{margin-top:4px;color:#dc7139;font-size:9px;font-weight:900;letter-spacing:1.5px}
+.customer-payment-amount{display:grid;gap:7px;margin:20px 0;padding:20px;border:1px solid #ffdcc8;border-radius:13px;background:linear-gradient(120deg,#fff5ed,#f6f8fc)}
+.customer-payment-amount span{color:#b85a2e;font-size:9px;font-weight:900;letter-spacing:1.3px}
+.customer-payment-amount strong{color:#d76735;font-size:34px;font-weight:950;letter-spacing:-1px}
+.customer-payment-amount small{color:#7e8fa4;font-size:10px}
+.customer-payment-details{display:grid;grid-template-columns:1fr 1fr;gap:13px 22px;padding:7px 0 19px}
+.customer-payment-details>div{display:grid;gap:4px;min-width:0}
+.customer-payment-details span,.customer-payment-balance span{color:#7a8ca2;font-size:8px;font-weight:850;letter-spacing:.8px;text-transform:uppercase}
+.customer-payment-details strong{overflow-wrap:anywhere;color:#1e344d;font-size:11px;font-weight:800}
+.customer-payment-balance{display:grid;gap:9px;padding:15px 17px;border:1px solid #e5eaf1;border-radius:12px;background:#f7f9fc}
+.customer-payment-balance>div{display:flex;justify-content:space-between;gap:14px;align-items:center}
+.customer-payment-balance strong{color:#304660;font-size:11px}
+.customer-payment-balance .remaining{margin-top:4px;padding-top:11px;border-top:1px solid #d9e1eb}
+.customer-payment-balance .remaining span,.customer-payment-balance .remaining strong{color:#d66531;font-size:12px;font-weight:900}
+.customer-payment-footer{display:flex;align-items:center;gap:15px;margin-top:18px;padding-top:17px;border-top:1px dashed #d3dce7}
+.customer-payment-footer img{width:105px;height:105px;object-fit:contain}
+.customer-payment-footer div{display:grid;gap:5px}
+.customer-payment-footer strong{color:#243b55;font-size:10px}
+.customer-payment-footer span{color:#71859e;font-size:8px;line-height:1.5}
+.customer-payment-footer small{color:#d66b36;font-size:8px;font-weight:800;letter-spacing:1px}
+.report-range-select{height:36px;min-width:130px;padding:0 10px;border:1px solid var(--border);border-radius:9px;color:var(--text);background:var(--panel);font-size:10px}
+.report-period-caption{display:flex;align-items:center;gap:15px;flex-wrap:wrap;color:var(--muted);font-size:9px}
+.report-period-caption strong{margin-left:auto;font-size:10px}
+.report-positive{color:#30ae7b}.report-negative{color:#e16b5e}
+.report-trend-panel{padding:18px 19px 14px}
+.report-legend{display:flex;align-items:center;gap:13px;color:var(--muted);font-size:8px;font-weight:750}
+.report-legend span{display:inline-flex;align-items:center;gap:6px}
+.report-legend i{width:8px;height:8px;border-radius:3px;display:inline-block}
+.report-legend .revenue-dot{background:linear-gradient(180deg,#ffa46f,#ed7540)}
+.report-legend .profit-dot{background:linear-gradient(180deg,#62d2a3,#2d9a70)}
+.report-trend-chart{display:grid;grid-template-columns:repeat(14,minmax(0,1fr));gap:clamp(3px,1vw,12px);align-items:end;height:180px;margin:20px 0 8px;padding:10px 7px 0;border-bottom:1px solid var(--border)}
+.report-trend-day{min-width:0;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:8px}
+.report-trend-bars{display:flex;align-items:flex-end;justify-content:center;gap:3px;width:100%;height:145px;padding:0 2px}
+.report-trend-bars i{display:block;width:min(13px,40%);min-height:2px;border-radius:4px 4px 1px 1px}
+.report-bar-revenue{background:linear-gradient(180deg,#ffb07d,#ed7540);box-shadow:0 2px 12px rgba(237,117,64,.16)}
+.report-bar-profit{background:linear-gradient(180deg,#78d8b3,#2a9a70)}
+.report-trend-day small{max-width:100%;overflow:hidden;color:var(--muted);font-size:7px;white-space:nowrap;text-overflow:ellipsis}
+@media(max-width:900px){.crm-filter-row{grid-template-columns:1fr 1fr}.crm-filter-search{grid-column:1/-1}.crm-detail-head{flex-direction:column}}
+@media(max-width:760px){.crm-table{min-width:1080px}.report-trend-chart{gap:3px;height:150px}.report-trend-bars{height:115px;gap:1px}.report-trend-day small{font-size:6px}.report-period-caption{gap:7px}.report-period-caption strong{margin-left:0}}
+@media(max-width:620px){.crm-filter-row{grid-template-columns:1fr}.crm-filter-search{grid-column:auto}.crm-filter-foot{flex-direction:column;gap:4px}.crm-detail{max-height:70vh}.customer-payment-paper{padding:18px 15px}.customer-payment-details{grid-template-columns:1fr}.customer-payment-amount strong{font-size:28px}.customer-payment-footer{align-items:flex-start}}
+@media(max-width:480px){.report-trend-chart{grid-template-columns:repeat(7,minmax(0,1fr));height:260px}.report-trend-day:nth-child(-n+7){display:none}.report-range-select{min-width:110px}}
+@media print{
+ .report-range-select{display:none!important}
+ .report-trend-panel,.report-grid,.panel{break-inside:avoid}
+ body:has(.customer-payment-print-area) *{visibility:hidden!important}
+ .customer-payment-print-area,.customer-payment-print-area *{visibility:visible!important}
+ .customer-payment-print-area{position:absolute!important;left:0!important;top:0!important;width:100%!important;max-width:none!important;margin:0!important;padding:8mm!important;border:0!important;border-radius:0!important;box-shadow:none!important}
+ .customer-payment-paper{break-inside:avoid}
+}

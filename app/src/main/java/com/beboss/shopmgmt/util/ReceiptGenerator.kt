@@ -41,7 +41,7 @@ object ReceiptGenerator {
     }
 
     /**
-     * Generates a deterministic 10-character tamper-evident verification seal
+     * Generates a deterministic 10-character offline receipt checksum
      * bound to the sale's canonical ID, receipt number, total cents, date, branch, cashier, and shop TIN.
      */
     fun computeOfflineReceiptSeal(sale: Sale, profile: ShopProfile): String {
@@ -71,7 +71,21 @@ object ReceiptGenerator {
         items: List<SaleItem>,
         profile: ShopProfile
     ): String {
-        val cacheKey = sale.id
+        // Invalidate cached receipt text whenever the saved sale, line items or
+        // receipt-facing shop profile changes. Sale ID alone is not a stable cache key.
+        val cacheKey = listOf(
+            sale.id, sale.updatedAt, sale.receiptNumber, sale.cashierId, sale.cashierName,
+            sale.customerId.orEmpty(), sale.customerName, sale.branchId, sale.branchName,
+            MoneyUtils.toCents(sale.totalAmount), MoneyUtils.toCents(sale.amountPaid),
+            sale.paymentMethod, sale.paymentStatus, sale.discountAmount,
+            sale.saleDate, sale.customerName, sale.cashierName, sale.branchId, sale.notes,
+            profile.shopName, profile.address, profile.phone, profile.email,
+            profile.tinNumber, profile.currencySymbol, profile.taxRate,
+            profile.showTaxOnReceipt, profile.receiptHeader, profile.receiptFooter,
+            items.joinToString(";") { item ->
+                listOf(item.id, item.productName, item.quantitySold, item.unitPriceAtSale, item.subtotal, item.unit).joinToString(":")
+            }
+        ).joinToString("|")
         receiptCache.get(cacheKey)?.let { return it }
 
         val sb = StringBuilder()
@@ -125,7 +139,7 @@ object ReceiptGenerator {
         val seal = computeOfflineReceiptSeal(sale, profile)
         sb.append(doubleLine).append("\n")
         sb.append("   ").append(profile.receiptFooter).append("\n")
-        sb.append("   Verify Seal: ").append(seal).append("\n")
+        sb.append("   Receipt Checksum (offline comparison only): ").append(seal).append("\n")
         sb.append("   Powered by BeBoss\n")
         sb.append(doubleLine)
 
@@ -315,12 +329,12 @@ object ReceiptGenerator {
                         <img src="
             """.trimIndent()
         )
-        html.append(qrData).append("\" alt=\"Receipt verification QR\">")
-        html.append("<div><strong>Scan to verify this BeBoss receipt</strong><div class=\"seal\">")
+        html.append(qrData).append("\" alt=\"Receipt details QR code\">")
+        html.append("<div><strong>Receipt details QR</strong><div class=\"seal\">")
             .append(escapeHtml(seal))
-            .append("</div><p>Keep this receipt and its verification seal for your records.</p></div></section>")
+            .append("</div><p>This offline checksum can detect changed receipt fields. It does not prove payment or authenticate the issuer.</p></div></section>")
         html.append("<footer class=\"footer\"><p>").append(footer)
-            .append("</p><p>Created with BeBoss POS • Offline receipt verification enabled</p></footer>")
+            .append("</p><p>Created with BeBoss POS • Offline receipt reference</p></footer>")
         html.append("</main></body></html>")
         return html.toString()
     }

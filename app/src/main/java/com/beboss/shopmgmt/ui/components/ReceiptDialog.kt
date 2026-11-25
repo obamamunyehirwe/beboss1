@@ -134,7 +134,7 @@ fun ReceiptDialog(
             append("👤 Customer: ${sale.customerName}\n")
             append("$paymentMethodEmoji Payment: ${sale.paymentMethod} ($statusEmoji ${sale.paymentStatus})\n")
             append("💰 Total: *${ReceiptGenerator.formatMoney(sale.totalAmount, shopProfile)}*\n")
-            append("🛡️ Verified Seal: $offlineSeal\n")
+            append("🧾 Receipt checksum (offline comparison only): $offlineSeal\n")
             append("━━━━━━━━━━━━━━━━━━━━\n")
             append(ReceiptGenerator.generateTextReceipt(sale, items, shopProfile))
         }
@@ -446,10 +446,10 @@ fun ReceiptDialog(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = ProfitGreen, modifier = Modifier.size(15.dp))
+                                        Icon(Icons.Default.QrCode2, contentDescription = null, tint = ProfitGreen, modifier = Modifier.size(15.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
-                                            text = "🛡️ Official Receipt QR",
+                                            text = "🧾 Receipt details QR",
                                             fontSize = 12.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = DarkNavy
@@ -465,7 +465,7 @@ fun ReceiptDialog(
                                     )
                                     Spacer(modifier = Modifier.height(3.dp))
                                     Text(
-                                        text = "Tap QR to enlarge, verify, or copy cryptographic seal.",
+                                        text = "Tap to enlarge the QR or copy the offline checksum. This is not proof of payment.",
                                         fontSize = 10.5.sp,
                                         color = InkMedium
                                     )
@@ -491,7 +491,7 @@ fun ReceiptDialog(
                                 append("🧾 *${shopProfile.shopName.ifBlank { "BeBoss Store" }}* — Official Receipt #${sale.receiptNumber}\n")
                                 append("👤 ${sale.customerName}\n")
                                 append("💰 Total: *${ReceiptGenerator.formatMoney(sale.totalAmount, shopProfile)}* ($statusEmoji ${sale.paymentStatus})\n")
-                                append("🛡️ Seal: $offlineSeal\n")
+                                append("🧾 Receipt checksum (offline comparison only): $offlineSeal\n")
                                 append("🙏 ${shopProfile.receiptFooter}")
                             }
                             PdfReportGenerator.sendWhatsAppDirect(

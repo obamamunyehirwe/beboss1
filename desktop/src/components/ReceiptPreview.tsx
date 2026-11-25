@@ -56,7 +56,14 @@ export function ReceiptPreview({ receipt, onClose }: { receipt: ReceiptPayload; 
     setShareBusy(true); setShareError("");
     try {
       const blob = await renderShareCard(buildShareCardData(receipt, seal));
-      triggerDownload(blob, "beboss-receipt-" + (s(sale.receiptNumber) || "card").replace(/[^\w.-]/g, "_") + ".png");
+      const filename = "beboss-receipt-" + (s(sale.receiptNumber) || "card").replace(/[^\w.-]/g, "_") + ".png";
+      const file = new File([blob], filename, { type: blob.type || "image/png" });
+      if (typeof navigator.share === "function" && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        await navigator.share({ title: "BeBoss sales receipt", text: "Receipt " + s(sale.receiptNumber), files: [file] });
+      } else {
+        triggerDownload(blob, filename);
+        setShareError("The system share sheet is not available here. The receipt image was downloaded so you can attach it to WhatsApp, email or another app.");
+      }
     } catch (e) {
       setShareError(e instanceof Error ? e.message : "Could not create the share card on this device.");
     } finally { setShareBusy(false); }
@@ -107,8 +114,8 @@ export function ReceiptPreview({ receipt, onClose }: { receipt: ReceiptPayload; 
         <div className="receipt-rule" />
         <footer className="receipt-footer">
           {s(profile.receiptFooter).trim() && <strong>{s(profile.receiptFooter)}</strong>}
-          {qr && <img className="receipt-qr" src={qr} alt="Receipt verification QR code" width="112" height="112" />}
-          <span>Verify seal: {seal || (sealError ? "Unavailable" : "Generating…")}</span>
+          {qr && <img className="receipt-qr" src={qr} alt="QR code containing receipt details and checksum" width="112" height="112" />}
+          <span>Receipt checksum (offline comparison only): {seal || (sealError ? "Unavailable" : "Generating…")}</span>
           {sealError && <small>{sealError}</small>}
           <span>Powered by BeBoss</span>
         </footer>

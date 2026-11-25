@@ -589,7 +589,7 @@ export default function App() {
         {view === "checkout" && <CheckoutPage snapshot={snapshot} onCommit={commitSnapshot} onReceipt={openReceipt} offline={offline} busy={busy} />}
         {view === "products" && <ProductsPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} />}
         {view === "sales" && <SalesPage snapshot={snapshot} query={search} onReceipt={openReceipt} />}
-        {view === "customers" && <CustomersPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} />}
+        {view === "customers" && <CustomersPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} onReceipt={openReceipt} />}
         {view === "purchases" && <PurchasesPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} />}
         {view === "reports" && <ReportsPage snapshot={snapshot} />}
         {view === "branches" && <BranchesPage cloud={cloud} onAction={callAction} offline={offline} />}
