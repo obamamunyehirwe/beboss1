@@ -412,11 +412,7 @@ const words: Record<string, readonly [string, string, string]> = {
   "Clipboard access is unavailable in this browser.": ["Gukoporora ntibishobotse muri iyi browser.", "Le presse-papiers n’est pas disponible dans ce navigateur.", "Ubao wa kunakili haupatikani kwenye kivinjari hiki."],
 };
 export function useAdminText() {
-  try {
-    const { lang } = useI18n();
-    return (s: string) =>
-      lang === "en" ? s : (words[s]?.[lang === "rw" ? 0 : lang === "fr" ? 1 : 2] ?? s);
-  } catch {
-    return (s: string) => s;
-  }
+  const { lang } = useI18n();
+  return (s: string) =>
+    lang === "en" ? s : (words[s]?.[lang === "rw" ? 0 : lang === "fr" ? 1 : 2] ?? s);
 }
