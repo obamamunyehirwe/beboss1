@@ -53,6 +53,7 @@ import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.ClockTamperStatus
 import com.beboss.shopmgmt.util.CloudHealthDiagnosticsDto
 import com.beboss.shopmgmt.util.CloudSyncReport
+import com.beboss.shopmgmt.util.CloudSyncScheduler
 import com.beboss.shopmgmt.util.ConnectivityStatus
 import com.beboss.shopmgmt.util.DeviceIntegrityStatus
 import com.beboss.shopmgmt.util.DeviceSecurityManager

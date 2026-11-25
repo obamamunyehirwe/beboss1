@@ -114,7 +114,7 @@ class BeBossRepository(private val database: AppDatabase) {
     val inventoryManager = InventoryManager(productDao, purchaseDao, syncQueueDao, syncTombstoneDao, database)
     val customerDebtManager = CustomerDebtManager(customerDao, customerPaymentDao, saleDao, syncQueueDao, syncTombstoneDao, database)
     val staffAuthManager = StaffAuthManager(userDao, syncQueueDao, syncTombstoneDao)
-    val branchTransferManager = BranchTransferManager(branchDao, stockTransferDao, productDao, shopProfileDao, syncQueueDao, syncTombstoneDao, database, SupabaseAdminClient.getOrCreateDeviceId(database.context))
+    val branchTransferManager = BranchTransferManager(branchDao, stockTransferDao, productDao, shopProfileDao, syncQueueDao, syncTombstoneDao, database, UUID.randomUUID().toString())
     val subscriptionManager = SubscriptionManager(shopProfileDao, redeemedVoucherDao)
     val analyticsEngine = AnalyticsEngine(saleDao)
     val allSaleItems: Flow<List<SaleItem>> = saleDao.getAllSaleItems()
