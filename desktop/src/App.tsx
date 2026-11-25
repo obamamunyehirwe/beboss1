@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, BarChart3, Bell, Building2, Briefcase, Check, ChevronDown,
   ClipboardList, CreditCard, Database, Home, LayoutDashboard, LoaderCircle, LogOut, Menu,
@@ -104,6 +104,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptPayload | null>(null);
+  const syncProbeRef = useRef({ ownerKey: "", managementVersion: "", snapshotUpdatedAt: 0, inFlight: false });
 
   async function saveCache(credentials: OwnerCredentials, data: CloudState) {
     try {
@@ -260,6 +261,59 @@ export default function App() {
     const retryTimer = window.setInterval(retrySync, 30_000);
     return () => { window.removeEventListener("online", retrySync); window.clearInterval(retryTimer); };
   }, [owner, offline, preferences.autoSync, busy]);
+
+  useEffect(() => {
+    if (!owner || offline || !preferences.autoSync) return;
+    const ownerKey = owner.username.trim().toLowerCase() + ":" + owner.phone.replace(/\\D/g, "");
+    if (syncProbeRef.current.ownerKey !== ownerKey) {
+      syncProbeRef.current = {
+        ownerKey,
+        managementVersion: "",
+        snapshotUpdatedAt: n(cloud?.snapshotUpdatedAt),
+        inFlight: false
+      };
+    }
+    let disposed = false;
+    const probeAndSync = async () => {
+      const current = syncProbeRef.current;
+      if (disposed || current.inFlight || busy || !navigator.onLine || document.visibilityState === "hidden") return;
+      current.inFlight = true;
+      try {
+        const probe = await callDesktopApi<{
+          ok: true; managementVersion: string; latestSnapshotUpdatedAt: number; serverTime: number;
+        }>("management_probe", owner);
+        if (disposed) return;
+        const latestSnapshotAt = n(probe.latestSnapshotUpdatedAt);
+        const snapshotChanged = latestSnapshotAt > Math.max(current.snapshotUpdatedAt, n(cloud?.snapshotUpdatedAt));
+        const managementChanged = current.managementVersion !== "" && probe.managementVersion !== current.managementVersion;
+        if (snapshotChanged) {
+          const refreshed = await bootstrap(owner, false);
+          if (refreshed) current.snapshotUpdatedAt = latestSnapshotAt;
+        } else if (managementChanged) {
+          await refreshManagement();
+        }
+        current.managementVersion = probe.managementVersion;
+      } catch (e) {
+        // Probe failures are non-destructive: local work stays in the encrypted outbox
+        // and the next connectivity/focus/interval probe retries without spamming alerts.
+        console.warn("BeBoss change probe failed; the next sync cycle will retry.", e);
+      } finally {
+        current.inFlight = false;
+      }
+    };
+    const handleFocus = () => { void probeAndSync(); };
+    const handleOnline = () => { void probeAndSync(); };
+    void probeAndSync();
+    const timer = window.setInterval(() => { void probeAndSync(); }, 30_000);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [owner, offline, preferences.autoSync, busy, cloud?.snapshotUpdatedAt]);
 
   useEffect(() => {
     if (!owner || offline || !preferences.autoSync || preferences.refreshMinutes === 0) return;
