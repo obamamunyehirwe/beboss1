@@ -4,7 +4,7 @@
   "version": "1.3.0",
   "identifier": "com.beboss.desktop",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "npm run dev:ui",
     "devUrl": "http://127.0.0.1:5173",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"

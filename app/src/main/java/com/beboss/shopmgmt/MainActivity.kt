@@ -107,16 +107,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AndroidDeviceCredentialStore.initialize(applicationContext)
         ClockGuard.init(this)
-        if (!BuildConfig.DEBUG) {
-            window.setFlags(
-                WindowManager.LayoutParams.FLAG_SECURE,
-                WindowManager.LayoutParams.FLAG_SECURE
-            )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                setRecentsScreenshotEnabled(false)
-            }
-            window.decorView.rootView.filterTouchesWhenObscured = true
+        // Enterprise hardening: FLAG_SECURE, screenshot prevention and touch filtering apply to
+        // ALL builds (debug and release) so no screen content ever leaks to recents, adb
+        // screencap, or third-party accessibility/capture services.
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            setRecentsScreenshotEnabled(false)
         }
+        window.decorView.rootView.filterTouchesWhenObscured = true
         enableEdgeToEdge()
 
         setContent {

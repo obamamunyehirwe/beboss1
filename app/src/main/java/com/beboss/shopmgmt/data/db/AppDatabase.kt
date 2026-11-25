@@ -107,7 +107,6 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(*DatabaseMigrations.ALL_MIGRATIONS)
                     .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
                     .setAutoCloseTimeout(60, TimeUnit.SECONDS)
-                    .allowMainThreadQueries()  // For emergency fallbacks only
 
                 if (!CryptoKeyManager.isRobolectricJvm()) {
                     val lazyEncryptedFactory = SupportSQLiteOpenHelper.Factory { configuration ->

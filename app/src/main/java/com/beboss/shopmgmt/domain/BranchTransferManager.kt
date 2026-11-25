@@ -46,7 +46,10 @@ class BranchTransferManager(
     private val syncQueueDao: SyncQueueDao,
     private val syncTombstoneDao: SyncTombstoneDao? = null,
     private val database: AppDatabase? = null,
-    private val nodeId: String = "ANDROID-${UUID.randomUUID()}"
+    // Enterprise hardening: stable, per-device node ID so HLC tie-breaking and conflict
+    // resolution remain deterministic across process restarts. Derived from the Supabase
+    // device registration rather than a random UUID per instance.
+    private val nodeId: String
 ) {
     private val TAG = "BranchTransferManager"
 

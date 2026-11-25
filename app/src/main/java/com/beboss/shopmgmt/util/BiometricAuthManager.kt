@@ -48,6 +48,9 @@ object BiometricAuthManager {
                 val prompt = BiometricPrompt.Builder(activity)
                     .setTitle(title)
                     .setSubtitle(subtitle)
+                    // Enterprise hardening: explicitly restrict to strong biometrics only.
+                    // Never allow weak biometrics or device-credential fallback through this prompt.
+                    .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
                     .setNegativeButton(negativeButtonText, executor) { _: DialogInterface?, _: Int ->
                         onCancelToPin()
                     }

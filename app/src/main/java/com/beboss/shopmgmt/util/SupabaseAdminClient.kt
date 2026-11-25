@@ -331,6 +331,13 @@ object SupabaseAdminClient {
     }
 
     private val client: OkHttpClient by lazy {
+        val pinner = buildCertificatePinner()
+        if (pinner == null && !BuildConfig.DEBUG) {
+            throw IllegalStateException(
+                "SUPABASE_CERT_PINS is not configured. Certificate pinning is mandatory for release builds. " +
+                "Provision SHA-256 pins for the Supabase host and rebuild."
+            )
+        }
         OkHttpClient.Builder()
             .connectionSpecs(listOf(modernTlsSpec))
             .followRedirects(false)
@@ -341,7 +348,7 @@ object SupabaseAdminClient {
                 response
             }
             .apply {
-                buildCertificatePinner()?.let { certificatePinner(it) }
+                pinner?.let { certificatePinner(it) }
             }
             .hostnameVerifier { hostname, session ->
                 HttpsURLConnection.getDefaultHostnameVerifier().verify(hostname, session)

@@ -1,8 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
+    <!-- Base: never allow cleartext traffic, trust only system CAs. -->
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+
+    <!-- Supabase cloud: enforce TLS only. Runtime certificate pinning is additionally
+         enforced by SupabaseAdminClient via CertificatePinner when SUPABASE_CERT_PINS
+         is provisioned. -->
+    <domain-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+        <domain includeSubdomains="true">ahlpvlhmpfiyeoercxol.supabase.co</domain>
+    </domain-config>
+
+    <!-- Debug/development fallback: still no cleartext, system trust anchors only. -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </debug-overrides>
 </network-security-config>
