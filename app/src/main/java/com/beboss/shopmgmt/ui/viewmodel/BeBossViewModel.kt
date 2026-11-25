@@ -1776,8 +1776,6 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         _customerSearchQuery.value = ""
     }
 
-    fun seedSampleData() = dbCoordinator.seedSampleData()
-    fun seedSampleCatalog() = dbCoordinator.seedSampleData()
 
     override fun onCleared() {
         super.onCleared()

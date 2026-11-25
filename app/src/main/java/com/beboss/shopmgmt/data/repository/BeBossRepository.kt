@@ -1634,31 +1634,6 @@ class BeBossRepository(private val database: AppDatabase) {
     suspend fun mergeShopDataPackageLww(summary: ShopImportSummary): BranchMergeResult =
         ConflictResolutionEngine.mergePackage(database, summary, "DataShare")
 
-    suspend fun seedSampleShopData() = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val sampleProducts = listOf(
-            Product(name = "Inyange Whole Milk 500ml", category = "Dairy & Beverages", costPrice = 500.0, sellingPrice = 700.0, quantityInStock = 50.0, barcode = "616110000101"),
-            Product(name = "Bakhresa Azam Wheat Flour 1kg", category = "Grains & Flour", costPrice = 1100.0, sellingPrice = 1400.0, quantityInStock = 30.0, barcode = "616110000102"),
-            Product(name = "Akabanga Chilli Oil 100ml", category = "Condiments & Spices", costPrice = 1800.0, sellingPrice = 2500.0, quantityInStock = 25.0, barcode = "616110000103"),
-            Product(name = "Sulfo Gorilla Matchbox (Pack of 10)", category = "Household", costPrice = 400.0, sellingPrice = 600.0, quantityInStock = 80.0, barcode = "616110000104"),
-            Product(name = "Kinazi Cassava Flour 2kg", category = "Grains & Flour", costPrice = 2200.0, sellingPrice = 2800.0, quantityInStock = 20.0, barcode = "616110000105"),
-            Product(name = "Mount Kenya Rice Super 5kg", category = "Grains & Rice", costPrice = 6500.0, sellingPrice = 8000.0, quantityInStock = 15.0, barcode = "616110000106"),
-            Product(name = "Sultani Sugar 1kg", category = "Pantry Essentials", costPrice = 1300.0, sellingPrice = 1600.0, quantityInStock = 40.0, barcode = "616110000107"),
-            Product(name = "Savon Omo Powder 500g", category = "Cleaning & Laundry", costPrice = 1200.0, sellingPrice = 1500.0, quantityInStock = 35.0, barcode = "616110000108"),
-            Product(name = "Skol Malt Can 500ml", category = "Beverages", costPrice = 900.0, sellingPrice = 1200.0, quantityInStock = 60.0, barcode = "616110000109"),
-            Product(name = "Primus Lager Beer 500ml", category = "Beverages", costPrice = 800.0, sellingPrice = 1000.0, quantityInStock = 48.0, barcode = "616110000110")
-        )
-        productDao.insertAll(sampleProducts)
-
-        val sampleCustomers = listOf(
-            Customer(name = "Kamanzi Eric", phone = "+250 788 111 222", category = "VIP", debtBalance = 15000.0, creditLimit = 50000.0, address = "Kigali, Nyarugenge"),
-            Customer(name = "Uwase Clarisse", phone = "+250 788 333 444", category = "Regular", debtBalance = 0.0, creditLimit = 20000.0, address = "Kigali, Gasabo"),
-            Customer(name = "Mugisha Emmanuel", phone = "+250 788 555 666", category = "Wholesale", debtBalance = 35000.0, creditLimit = 100000.0, address = "Kigali, Kicukiro")
-        )
-        customerDao.insertAll(sampleCustomers)
-    }
-
-    // -------------------------------------------------------------
     // DATABASE STATS & MAINTENANCE
     // -------------------------------------------------------------
     suspend fun getDatabaseStats(context: Context): DatabaseEngineStats = withContext(Dispatchers.IO) {
