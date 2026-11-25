@@ -319,7 +319,16 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
       if (insertedNewCode) {
         await ctx.supabase.from("unlock_codes").update({ status: "REVOKED" }).eq("id", unlockCodeId).eq("status", "ISSUED");
       }
-      throw new Error("The payment changed while approval was being saved. Refresh the queue and inspect its current status before retrying.");
+      if (claim.error) {
+        console.error("[payment approval] Conditional payment update failed", {
+          requestId: req.id,
+          code: claim.error.code,
+          message: claim.error.message,
+        });
+        throw new Error("BeBoss could not save this payment approval: " + claim.error.message);
+      }
+      const latestStatus = String(latest?.status ?? "UNKNOWN").toLowerCase().replaceAll("_", " ");
+      throw new Error("This payment is now " + latestStatus + ". Refresh the payment queue before taking another action.");
     }
 
     const expiresAt = await activateShop(ctx, shopId, { addDays: calc.days, branches: req.branch_count, workers: req.worker_count, devices: req.device_count || 1, monthly: calc.monthly });
@@ -514,10 +523,29 @@ export const rejectPayment = createServerFn({ method: "POST" })
       .eq("status", "PENDING_VERIFICATION")
       .select("id")
       .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!rejected) throw new Error("The payment status changed before rejection was saved. Refresh the queue and review its latest status.");
+    if (error) {
+      console.error("[payment rejection] Conditional payment update failed", {
+        requestId: data.requestId,
+        code: error.code,
+        message: error.message,
+      });
+      throw new Error("BeBoss could not save the payment rejection: " + error.message);
+    }
+    if (!rejected) {
+      const { data: latest, error: latestError } = await ctx.supabase
+        .from("payment_requests")
+        .select("status,rejection_reason")
+        .eq("id", data.requestId)
+        .maybeSingle();
+      if (latestError) throw new Error("Payment status changed, and BeBoss could not refresh it. Reload the queue.");
+      if (latest?.status === "REJECTED" && latest.rejection_reason === reason) {
+        return { ok: true, alreadyRejected: true };
+      }
+      const latestStatus = String(latest?.status ?? "UNKNOWN").toLowerCase().replaceAll("_", " ");
+      throw new Error("This payment is now " + latestStatus + ". Refresh the payment queue before taking another action.");
+    }
     await audit(ctx, admin.email, "REJECT_PAYMENT", `@${req.owner_username ?? data.requestId}`, reason);
-    return { ok: true };
+    return { ok: true, alreadyRejected: false };
   });
 
 const whatsappClaimSchema = z.object({
