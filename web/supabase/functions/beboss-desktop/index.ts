@@ -391,15 +391,26 @@ async function requireOwner(
 }
 
 async function latestVerifiedSnapshot(admin: SupabaseClient, shopId: string, secret: string) {
-  const { data: rows, error } = await admin
-    .from("branch_sync_snapshots")
-    .select("id,device_id,branch_name,payload_token,updated_at,sync_generation,chunk_index,chunk_count,records_summary")
-    .eq("shop_sync_key", shopId)
-    .order("updated_at", { ascending: false })
-    .limit(2000);
-  if (error) throw new Error("Could not read the shop's synchronized business data: " + error.message);
-
-  const allRows = rows ?? [];
+  // Read every retained generation. A fixed 2,000-row limit can truncate a
+  // large multi-device shop in the middle of a chunk set and make complete data
+  // appear missing on desktop restore.
+  const allRows: Row[] = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await admin
+      .from("branch_sync_snapshots")
+      .select("id,device_id,branch_name,payload_token,updated_at,sync_generation,chunk_index,chunk_count,records_summary")
+      .eq("shop_sync_key", shopId)
+      .order("updated_at", { ascending: false })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw new Error("Could not read the shop's synchronized business data: " + error.message);
+    const page = (data ?? []) as Row[];
+    allRows.push(...page);
+    if (page.length < pageSize) break;
+    if (allRows.length >= 100000) {
+      throw new Error("This shop has more than 100,000 retained snapshot chunks. Complete a sync cycle to prune older generations before restoring.");
+    }
+  }
   const latest = allRows.reduce((max, row) => Math.max(max, number(row.updated_at)), 0);
   const grouped = new Map<string, Row[]>();
   for (const row of allRows) {
