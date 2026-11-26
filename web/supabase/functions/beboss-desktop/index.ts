@@ -160,8 +160,16 @@ async function verifyBb3CodeSignature(code: string, username: string, phone: str
     );
     const signature = derEcdsaToRawSignature(base64ToBytes(signatureText));
     const payload = "BB3:" + tier + ":" + dayText + ":" + expiryText + ":" + accountText + ":" + nonce;
+    // Deno's current WebCrypto types require an ArrayBuffer-backed BufferSource.
+    // Copy both views so SharedArrayBuffer-compatible Uint8Array types cannot leak
+    // through the DOM Crypto API boundary.
+    const signatureBuffer = new ArrayBuffer(signature.byteLength);
+    new Uint8Array(signatureBuffer).set(signature);
+    const payloadBytes = new TextEncoder().encode(payload);
+    const payloadBuffer = new ArrayBuffer(payloadBytes.byteLength);
+    new Uint8Array(payloadBuffer).set(payloadBytes);
     return await crypto.subtle.verify(
-      { name: "ECDSA", hash: "SHA-256" }, publicKey, signature, new TextEncoder().encode(payload)
+      { name: "ECDSA", hash: "SHA-256" }, publicKey, signatureBuffer, payloadBuffer
     );
   } catch {
     return false;
