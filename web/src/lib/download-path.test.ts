@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DOWNLOAD_PATH } from "./download-path";
 
@@ -11,7 +12,7 @@ describe("public APK download path", () => {
 
   it("is imported explicitly by the admin release route", async () => {
     const route = await readFile(
-      new URL("../routes/_authenticated/admin/releases.tsx", import.meta.url),
+      resolve(process.cwd(), "src/routes/_authenticated/admin/releases.tsx"),
       "utf8",
     );
     expect(route).toMatch(/import\s+\{\s*DOWNLOAD_PATH\s*\}\s+from\s+["']@\/lib\/download-path["'];/);
