@@ -356,7 +356,14 @@ object ExcelCsvExporter {
     }
 
     private fun escapeCsv(value: String): String {
-        return value.replace("\"", "\"\"")
+        val firstNonWhitespace = value.firstOrNull { !it.isWhitespace() }
+        val startsWithControl = value.firstOrNull() in setOf('\t', '\r', '\n')
+        val startsFormula = firstNonWhitespace in setOf(
+            '=', '+', '-', '@',
+            '\uFF1D', '\uFF0B', '\uFF0D', '\uFF20'
+        )
+        val spreadsheetSafeValue = if (startsWithControl || startsFormula) "'$value" else value
+        return spreadsheetSafeValue.replace("\"", "\"\"")
     }
 
     private fun splitCsvLine(line: String): List<String> {
