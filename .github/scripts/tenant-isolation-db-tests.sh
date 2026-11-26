@@ -110,6 +110,8 @@ echo "Running role-separated RLS policy regression tests."
 psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/rls_role_policy_consolidation.sql
 echo "Running authenticated admin SECURITY DEFINER permission regression tests."
 psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/admin_release_definer_permissions.sql
+echo "Running server-only app secret and bootstrap grant regression tests."
+psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/server_secret_table_grants.sql
 echo "Running owner OTP destination-throttle regression tests."
 psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/owner_otp_phone_throttle.sql
 echo "Running payment gateway state-transition regression tests."

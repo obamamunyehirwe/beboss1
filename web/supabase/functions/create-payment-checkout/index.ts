@@ -8,6 +8,7 @@ import {
   restRows,
   restRequest,
 } from "../_shared/payment-gateway.ts";
+import { getMtnMomoPaymentStatus, matchesMtnMomoSettlement, readMtnMomoConfiguration, requestMtnMomoPayment } from "../_shared/mtn-momo.ts";
 
 type ShopRow = {
   id: string;
@@ -63,6 +64,97 @@ async function verifyOwnerSession(request: Request, shopId: string, ownerPhone: 
   return memberships.length === 1 && memberships[0].shop_id === shopId;
 }
 
+
+async function checkMtnPaymentStatus(request: Request, input: Record<string, unknown>) {
+  const requestId = requiredText(input?.paymentRequestId, "Payment request ID", 3, 200);
+  const username = requiredText(input?.username, "Registered shop username", 2, 80).toLowerCase();
+  const ownerPhone = requiredText(input?.phone, "Registered owner phone", 9, 30);
+  const filters = new URLSearchParams({
+    select: "id,owner_username,owner_phone,status,amount_rwf,payer_phone",
+    id: `eq.${requestId}`,
+    owner_username: `eq.${username}`,
+    limit: "1",
+  });
+  const payments = await restRows<{
+    id: string; owner_username: string; owner_phone: string; status: string;
+    amount_rwf: number; payer_phone: string;
+  }>(`payment_requests?${filters.toString()}`);
+  const payment = payments[0];
+  if (!payment || normalizePhone(payment.owner_phone) !== normalizePhone(ownerPhone)) {
+    return jsonResponse(404, { ok: false, message: "The registered payment request could not be found." });
+  }
+  const shopId = username + "_" + normalizePhone(ownerPhone);
+  if (!(await verifyOwnerSession(request, shopId, payment.owner_phone))) {
+    return jsonResponse(403, { ok: false, message: "A verified owner session for this shop is required to check payment status." });
+  }
+  const ledgerFilters = new URLSearchParams({
+    select: "payment_request_id,provider,provider_reference,provider_checkout_id,amount_rwf,currency,status",
+    payment_request_id: `eq.${requestId}`,
+    provider: "eq.MTN_MOMO",
+    limit: "1",
+  });
+  const ledger = await restRows<GatewayRow>(`payment_gateway_transactions?${ledgerFilters.toString()}`);
+  const row = ledger[0];
+  if (!row || !row.provider_checkout_id) {
+    return jsonResponse(404, { ok: false, message: "This payment has no MTN MoMo request to reconcile." });
+  }
+  if (row.status === "VERIFIED") {
+    return jsonResponse(200, { ok: true, pending: false, verified: true, status: "SUCCESSFUL", message: "MTN MoMo confirmed the payment. BeBoss will show it in the payment review queue." });
+  }
+  if (row.status === "FAILED") {
+    return jsonResponse(200, { ok: true, pending: false, verified: false, status: "FAILED", message: "MTN MoMo marked this payment as failed. Start a new payment request." });
+  }
+
+  const config = readMtnMomoConfiguration();
+  const status = await getMtnMomoPaymentStatus(config, row.provider_checkout_id);
+  if (status.status === "PENDING") {
+    return jsonResponse(200, { ok: true, pending: true, verified: false, status: "PENDING", message: "Payment request is still pending. Approve the prompt on the MTN MoMo wallet and check again." });
+  }
+
+  const expectedPayer = "250" + normalizePhone(payment.payer_phone);
+  if (status.status === "SUCCESSFUL" && !matchesMtnMomoSettlement(status, {
+    externalId: row.provider_reference,
+    amountRwf: Number(row.amount_rwf),
+    payerMsisdn: expectedPayer,
+  })) {
+    await restPatch(
+      `payment_gateway_transactions?${new URLSearchParams({ payment_request_id: `eq.${requestId}`, provider_reference: `eq.${row.provider_reference}` }).toString()}`,
+      { status: "REVIEW_REQUIRED", failure_reason: "MTN MoMo status did not match the registered payer, reference, amount or RWF currency.", updated_at: Date.now() },
+    );
+    return jsonResponse(409, { ok: true, pending: true, verified: false, status: "REVIEW_REQUIRED", message: "The provider response needs manual reconciliation. No subscription has been activated." });
+  }
+
+  if (status.status === "FAILED") {
+    const where = new URLSearchParams({ payment_request_id: `eq.${requestId}`, provider_reference: `eq.${row.provider_reference}` });
+    await restPatch(`payment_gateway_transactions?${where.toString()}`, {
+      status: "FAILED",
+      provider_transaction_id: status.financialTransactionId ?? "",
+      failure_reason: status.reason?.message ?? status.reason?.code ?? "MTN MoMo payment failed.",
+      updated_at: Date.now(),
+    });
+    return jsonResponse(200, { ok: true, pending: false, verified: false, status: "FAILED", message: "MTN MoMo marked this payment as failed. No subscription has been activated." });
+  }
+
+  const now = Date.now();
+  const where = new URLSearchParams({ payment_request_id: `eq.${requestId}`, provider_reference: `eq.${row.provider_reference}` });
+  await restPatch(`payment_gateway_transactions?${where.toString()}`, {
+    status: "VERIFIED",
+    provider_transaction_id: status.financialTransactionId ?? row.provider_checkout_id,
+    provider_event_id: `poll:${row.provider_checkout_id}`,
+    verified_at: now,
+    updated_at: now,
+  });
+  await restPatch(`payment_requests?${new URLSearchParams({ id: `eq.${requestId}` }).toString()}`, {
+    gateway_reference: row.provider_reference,
+    gateway_transaction_id: status.financialTransactionId ?? row.provider_checkout_id,
+    gateway_amount_rwf: Number(row.amount_rwf),
+    gateway_currency: "RWF",
+    gateway_verified_at: now,
+    updated_at: now,
+  });
+  return jsonResponse(200, { ok: true, pending: false, verified: true, status: "SUCCESSFUL", message: "MTN MoMo confirmed the exact payment. It is now waiting for BeBoss payment review; no code is issued until the review step." });
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return jsonResponse(405, { message: "Method not allowed." });
 
@@ -72,9 +164,10 @@ Deno.serve(async (request: Request) => {
   let providerRejected = false;
   try {
     const input = await request.json();
+    if (String(input?.action ?? "") === "status") return await checkMtnPaymentStatus(request, input);
     const gateway = String(input?.gateway ?? "").toLowerCase();
-    if (gateway !== "flutterwave" && gateway !== "stripe") {
-      return jsonResponse(400, { message: "Select a supported online payment gateway." });
+    if (gateway !== "flutterwave" && gateway !== "stripe" && gateway !== "mtn_momo") {
+      return jsonResponse(400, { message: "Select Flutterwave, Stripe or direct MTN MoMo checkout." });
     }
 
     const username = requiredText(input?.username, "Registered shop username", 2, 80).toLowerCase();
@@ -165,6 +258,10 @@ Deno.serve(async (request: Request) => {
     const flwWebhookSecret = Deno.env.get("FLW_WEBHOOK_SECRET_HASH") ?? "";
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
     const stripeWebhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
+    if (gateway === "mtn_momo") {
+      // Fail before reserving a checkout if the merchant credentials are missing or invalid.
+      readMtnMomoConfiguration();
+    }
     if (gateway === "flutterwave" && (!flwKey || !flwWebhookSecret)) {
       return jsonResponse(503, { message: "Flutterwave is not enabled. Configure its live secret key and webhook signing hash before accepting payments." });
     }
@@ -191,7 +288,7 @@ Deno.serve(async (request: Request) => {
       owner_username: username,
       owner_phone: ownerPhone,
       device_challenge: shop.device_challenge ?? "",
-      provider: gateway === "flutterwave" ? "Flutterwave" : "Stripe",
+      provider: gateway.toUpperCase(),
       gateway_reference: txRef,
       ussd_code: "ONLINE_CHECKOUT",
       payer_phone: payerPhone,
@@ -224,7 +321,41 @@ Deno.serve(async (request: Request) => {
     let checkoutUrl = "";
     let checkoutId = "";
 
-    if (gateway === "flutterwave") {
+    if (gateway === "mtn_momo") {
+      const mtnConfig = readMtnMomoConfiguration();
+      const referenceId = crypto.randomUUID();
+      // RequestToPay is asynchronous. HTTP 202 proves only that the wallet prompt
+      // was accepted, never that the customer approved or settled the payment.
+      providerRequestStarted = true;
+      await requestMtnMomoPayment(mtnConfig, {
+        referenceId,
+        externalId: txRef,
+        amountRwf,
+        payerMsisdn: "250" + normalizePhone(payerPhone),
+        payerMessage: `BeBoss subscription ${months} month(s)`,
+      });
+      checkoutId = referenceId;
+      const ledgerQuery = new URLSearchParams({
+        payment_request_id: `eq.${paymentRequestId}`,
+        provider_reference: `eq.${txRef}`,
+      });
+      await restPatch(`payment_gateway_transactions?${ledgerQuery.toString()}`, {
+        provider_checkout_id: checkoutId,
+        status: "PENDING",
+        updated_at: Date.now(),
+      });
+      return jsonResponse(200, {
+        ok: true,
+        pending: true,
+        paymentRequestId,
+        provider: "MTN_MOMO",
+        reference: txRef,
+        amountRwf,
+        currency: "RWF",
+        status: "PENDING",
+        message: "MTN MoMo payment prompt sent. Approve it on the payer's phone. BeBoss verifies the provider's final status before marking the payment as paid.",
+      });
+    } else if (gateway === "flutterwave") {
       providerRequestStarted = true;
       const response = await fetch("https://api.flutterwave.com/v3/payments", {
         method: "POST",

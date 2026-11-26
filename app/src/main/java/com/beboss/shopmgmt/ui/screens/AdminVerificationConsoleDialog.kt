@@ -916,7 +916,7 @@ fun AdminVerificationConsoleDialog(
                                                 req.gatewayAmountRwf == req.amountRwf &&
                                                 req.gatewayReference.isNotBlank() &&
                                                 req.gatewayTransactionId.isNotBlank() &&
-                                                req.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE")
+                                                req.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE", "MTN_MOMO")
                                             Surface(
                                                 shape = RoundedCornerShape(8.dp),
                                                 color = if (hasVerifiedGateway) ProfitGreen.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
@@ -1007,7 +1007,7 @@ fun AdminVerificationConsoleDialog(
                                                         req.gatewayAmountRwf == req.amountRwf &&
                                                         req.gatewayReference.isNotBlank() &&
                                                         req.gatewayTransactionId.isNotBlank() &&
-                                                        req.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE")
+                                                        req.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE", "MTN_MOMO")
                                                     providerVerified = onlineVerified
                                                     providerVerificationNote = if (onlineVerified) {
                                                         "Automated ${req.gatewayProvider} settlement ${req.gatewayReference}; transaction ${req.gatewayTransactionId}; amount ${req.gatewayAmountRwf} RWF; verified at ${req.gatewayVerifiedAt}."
@@ -2357,7 +2357,7 @@ fun AdminVerificationConsoleDialog(
             selectedPayment.gatewayAmountRwf == selectedPayment.amountRwf &&
             selectedPayment.gatewayReference.isNotBlank() &&
             selectedPayment.gatewayTransactionId.isNotBlank() &&
-            selectedPayment.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE")
+            selectedPayment.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE", "MTN_MOMO")
         AlertDialog(
             onDismissRequest = { requestToVerify = null },
             title = { Text(if (gatewayVerified) "Provider-verified ${selectedPayment.provider} payment" else "Review legacy ${selectedPayment.provider} payment", fontWeight = FontWeight.Bold) },

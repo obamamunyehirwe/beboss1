@@ -96,6 +96,7 @@ fun DataTransferDialog(
     onImportPackage: (ShopImportSummary) -> Unit,
     onExportFullPackage: (((File) -> Unit) -> Unit)? = null,
     onCreateShareToken: (((String) -> Unit) -> Unit)? = null,
+    onImportBranchToken: ((String, (Boolean, String) -> Unit) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -228,7 +229,7 @@ fun DataTransferDialog(
                                     onCreateShareToken { token ->
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         clipboard.setPrimaryClip(ClipData.newPlainText("BeBoss Branch Share Token", token))
-                                        Toast.makeText(context, "Signed BBSHARE1 token copied to clipboard!", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Signed shop-scoped BBSHARE2 token copied to clipboard!", Toast.LENGTH_LONG).show()
                                     }
                                 },
                                 modifier = Modifier
@@ -239,7 +240,7 @@ fun DataTransferDialog(
                             ) {
                                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp), tint = DarkNavy)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Copy Signed BBSHARE1: Branch Token", color = DarkNavy, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("Copy Signed BBSHARE2: Branch Token", color = DarkNavy, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
 
@@ -454,12 +455,12 @@ fun DataTransferDialog(
             title = { Text("Paste Branch Share Token or JSON", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
             text = {
                 Column {
-                    Text("Paste a signed BBSHARE1: branch transfer token (from WhatsApp/Bluetooth) or the raw JSON from a .beboss file:", fontSize = 12.sp, color = InkMedium)
+                    Text("Paste a shop-scoped BBSHARE2 token, a legacy BBSHARE1 token, or raw JSON from a .beboss file:", fontSize = 12.sp, color = InkMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = manualJsonText,
                         onValueChange = { manualJsonText = it },
-                        label = { Text("BBSHARE1: Token or Raw JSON") },
+                        label = { Text("BBSHARE2 / Legacy Token / Raw JSON") },
                         placeholder = { Text("BBSHARE1:... or {\"metadata\": ...}") },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -472,12 +473,28 @@ fun DataTransferDialog(
             confirmButton = {
                 Button(
                     onClick = {
-                        try {
-                            val summary = ShopDataTransferManager.parseShopPackageString(manualJsonText.trim())
-                            showManualJsonInput = false
-                            selectedBackupForPreview = summary
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Invalid token or JSON: ${e.safeMessage()}", Toast.LENGTH_SHORT).show()
+                        val candidate = manualJsonText.trim()
+                        if (candidate.startsWith("BBSHARE2:") || candidate.startsWith("BBSHARE1:")) {
+                            val importer = onImportBranchToken
+                            if (importer == null) {
+                                Toast.makeText(context, "Signed DataShare import requires the authenticated shop flow. Open Sync Hub and retry.", Toast.LENGTH_LONG).show()
+                            } else {
+                                importer(candidate) { success, message ->
+                                    if (success) {
+                                        showManualJsonInput = false
+                                        manualJsonText = ""
+                                    }
+                                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        } else {
+                            try {
+                                val summary = ShopDataTransferManager.parseShopPackageString(candidate)
+                                showManualJsonInput = false
+                                selectedBackupForPreview = summary
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Invalid JSON backup: ${e.safeMessage()}", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     },
                     enabled = manualJsonText.isNotBlank(),
