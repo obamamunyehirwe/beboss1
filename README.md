@@ -12,6 +12,20 @@ Built for the realities of retail in Rwanda and East Africa, BeBoss is designed 
 
 ---
 
+## Local web environment
+
+The web server reads its Supabase credentials from the repository-root `.env` or `.env.local` file (or the hosting provider's server-only environment settings). Start with the template:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Set `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SECRET_KEY` using the values from your Supabase project's **Settings → API Keys** page. Existing deployments may continue using `SUPABASE_SERVICE_ROLE_KEY` as a backward-compatible fallback. Never use a `VITE_` prefix for either secret key, commit a real key, or place a secret key in Android/desktop client configuration.
+
+Vite loads the repository-root environment file for local web development. After changing environment variables, stop and restart the dev server.
+
+---
+
 ## What BeBoss helps a business run
 
 | Business area | Capabilities |

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizeSupabaseApiKey } from "./api-key";
+import { normalizeSupabaseApiKey, resolveSupabaseSecretKey } from "./api-key";
 
 describe("normalizeSupabaseApiKey", () => {
   afterEach(() => {
@@ -32,5 +32,34 @@ describe("normalizeSupabaseApiKey", () => {
       .toThrow("SUPABASE_SERVICE_ROLE_KEY is not a valid Supabase API key");
     expect(() => normalizeSupabaseApiKey("sb_secret_clé", "SUPABASE_SERVICE_ROLE_KEY"))
       .toThrow("SUPABASE_SERVICE_ROLE_KEY is not a valid Supabase API key");
+  });
+});
+
+describe("resolveSupabaseSecretKey", () => {
+  const newSecret = "sb_secret_abcdefghijklmnopqrstuvwxyz0123456789-_";
+  const legacySecret = "eyJhbGciOiJIUzI1NiJ9.legacy-service-role-key";
+
+  it("prefers the current SUPABASE_SECRET_KEY variable", () => {
+    expect(resolveSupabaseSecretKey({
+      SUPABASE_SECRET_KEY: newSecret,
+      SUPABASE_SERVICE_ROLE_KEY: legacySecret,
+    })).toBe(newSecret);
+  });
+
+  it("continues to accept the legacy service-role variable", () => {
+    expect(resolveSupabaseSecretKey({
+      SUPABASE_SERVICE_ROLE_KEY: legacySecret,
+    })).toBe(legacySecret);
+  });
+
+  it("returns undefined when neither server credential is configured", () => {
+    expect(resolveSupabaseSecretKey({})).toBeUndefined();
+  });
+
+  it("reports the name of the configured key when its value is invalid", () => {
+    expect(() => resolveSupabaseSecretKey({
+      SUPABASE_SECRET_KEY: "not a valid key",
+      SUPABASE_SERVICE_ROLE_KEY: legacySecret,
+    })).toThrow("SUPABASE_SECRET_KEY is not a valid Supabase API key");
   });
 });
