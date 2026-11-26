@@ -866,6 +866,9 @@ function NativeDesktopApp() {
           const result = await callAction("submit_payment_proof", payload);
           setNotice("Mobile Money claim saved as pending verification. BeBoss will not activate the subscription until an administrator independently verifies the payment.");
           return result as Row;
+        }} onRedeemCode={async (code) => {
+          const result = await callAction("redeem_unlock_code", { code });
+          return result as Row;
         }} />}
         {view === "diagnostics" && <DiagnosticsPage cloud={cloud} snapshot={snapshot} onRefresh={refresh} />}
         {view === "sync" && <SyncHubPage cloud={cloud} deviceId={deviceId} offline={offline} onRefresh={refresh} />}
