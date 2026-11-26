@@ -62,18 +62,26 @@ internal data class LanHttpRequestHead(
  */
 internal fun readLanHttpRequestHead(input: InputStream): LanHttpRequestHead {
     val bytes = ByteArrayOutputStream()
-    val terminator = byteArrayOf(13, 10, 13, 10)
-    while (bytes.size() <= 32 * 4096) {
+    var terminatorState = 0
+    var headerBlock: ByteArray? = null
+    while (bytes.size() < 32 * 4096) {
         val next = input.read()
         if (next < 0) throw EOFException("The LAN peer closed before completing its HTTP headers.")
         bytes.write(next)
-        val current = bytes.toByteArray()
-        if (current.size >= 4 &&
-            current[current.size - 4] == terminator[0] &&
-            current[current.size - 3] == terminator[1] &&
-            current[current.size - 2] == terminator[2] &&
-            current[current.size - 1] == terminator[3]
-        ) {
+        terminatorState = when (terminatorState) {
+            0 -> if (next == 13) 1 else 0
+            1 -> if (next == 10) 2 else if (next == 13) 1 else 0
+            2 -> if (next == 13) 3 else 0
+            3 -> if (next == 10) 4 else if (next == 13) 1 else 0
+            else -> 4
+        }
+        if (terminatorState == 4) {
+            headerBlock = bytes.toByteArray()
+            break
+        }
+    }
+    val current = headerBlock ?: throw IllegalArgumentException("LAN HTTP headers exceed the 128 KB safety limit.")
+    run {
             val text = StandardCharsets.US_ASCII.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
@@ -101,6 +109,7 @@ internal fun readLanHttpRequestHead(input: InputStream): LanHttpRequestHead {
                 val name = line.substring(0, colon).trim().lowercase(Locale.ROOT)
                 val value = line.substring(colon + 1).trim()
                 require(name.matches(Regex("[a-z0-9-]{1,64}"))) { "A LAN HTTP header name is invalid." }
+                require(name !in headers) { "Duplicate LAN HTTP headers are not accepted." }
                 if (name == "content-length") {
                     require(declaredLength == null) { "Duplicate Content-Length headers are not accepted." }
                     require(value.matches(Regex("\\d{1,8}"))) { "Content-Length is invalid." }
@@ -116,9 +125,7 @@ internal fun readLanHttpRequestHead(input: InputStream): LanHttpRequestHead {
                 contentLength = declaredLength ?: 0,
                 headers = headers
             )
-        }
     }
-    throw IllegalArgumentException("LAN HTTP headers exceed the 128 KB safety limit.")
 }
 
 /** Read exactly Content-Length octets and decode them as strict UTF-8. */
