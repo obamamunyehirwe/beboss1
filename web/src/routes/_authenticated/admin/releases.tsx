@@ -151,7 +151,7 @@ function ReleasesPage() {
     try {
       const parsed = JSON.parse(await manifestFile.text()) as { version?: unknown };
       const version = typeof parsed.version === "string" ? parsed.version.trim() : "";
-      if (!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+      if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
         throw new Error("The selected package.json does not contain a valid semantic version.");
       }
       setDesktopManifestVersion(version);
@@ -173,7 +173,7 @@ function ReleasesPage() {
     }
 
     const version = desktopVersion.trim();
-    if (!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(version) || version !== desktopManifestVersion) {
+      if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
       toast.error("The release version must match the version read from your selected local desktop/package.json.");
       return;
     }
