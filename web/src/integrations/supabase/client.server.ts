@@ -66,18 +66,15 @@ export function createShopAdminClient(shopSyncKey: string) {
   if (!tenantKey) throw new Error("A verified shop tenant is required.");
 
   const SUPABASE_URL = process.env["SUPABASE_URL"];
-  const rawServiceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
-  const SUPABASE_SERVICE_ROLE_KEY = rawServiceRoleKey
-    ? normalizeSupabaseApiKey(rawServiceRoleKey, "SUPABASE_SERVICE_ROLE_KEY")
-    : undefined;
+  const SUPABASE_SECRET_KEY = resolveSupabaseSecretKey(process.env);
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
     throw new Error("The secure shop data service is not configured.");
   }
 
-  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  return createClient<Database>(SUPABASE_URL, SUPABASE_SECRET_KEY, {
     global: {
-      fetch: createSupabaseFetch(SUPABASE_SERVICE_ROLE_KEY),
+      fetch: createSupabaseFetch(SUPABASE_SECRET_KEY),
       headers: { "X-Shop-Sync-Key": tenantKey },
     },
     auth: {
