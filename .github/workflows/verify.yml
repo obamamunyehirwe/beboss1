@@ -77,6 +77,11 @@ jobs:
       - name: Test provider settlement identity, amount and currency checks
         run: deno test --no-lock supabase/functions/_shared/payment-settlement.test.ts
 
+      - name: Type-check and test MTN MoMo sandbox and Rwanda production adapter
+        run: |
+          deno check --no-lock supabase/functions/_shared/mtn-momo.ts
+          deno test --allow-env --no-lock supabase/functions/_shared/mtn-momo.test.ts
+
       - name: Lint all web application and Supabase Edge Function source
         run: >-
           npx eslint --no-warn-ignored
