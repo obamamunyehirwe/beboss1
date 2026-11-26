@@ -83,7 +83,8 @@ async function checkMtnPaymentStatus(request: Request, input: Record<string, unk
   if (!payment || normalizePhone(payment.owner_phone) !== normalizePhone(ownerPhone)) {
     return jsonResponse(404, { ok: false, message: "The registered payment request could not be found." });
   }
-  if (!(await verifyOwnerSession(request, String(payment.id).replace(/^$/, ""), payment.owner_phone))) {
+  const shopId = username + "_" + normalizePhone(ownerPhone);
+  if (!(await verifyOwnerSession(request, shopId, payment.owner_phone))) {
     return jsonResponse(403, { ok: false, message: "A verified owner session for this shop is required to check payment status." });
   }
   const ledgerFilters = new URLSearchParams({
