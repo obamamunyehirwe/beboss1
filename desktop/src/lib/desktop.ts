@@ -67,6 +67,8 @@ window.beBossDesktop = Object.freeze({
       nativeInvoke<void>("lan_store_shop_secret", { shopSyncKey, secret }),
     discoverHubs: (shopSyncKey: string, timeoutMs?: number) =>
       nativeInvoke<any[]>("lan_discover_hubs", { shopSyncKey, timeoutMs }),
+    pullFromHub: (shopSyncKey: string, ipAddress: string, port = 8989) =>
+      nativeInvoke<any>("lan_pull_from_hub", { shopSyncKey, ipAddress, port }),
     syncWithHub: (shopSyncKey: string, ipAddress: string, port: number, snapshot: Record<string, unknown>) =>
       nativeInvoke<any>("lan_sync_with_hub", { shopSyncKey, ipAddress, port, snapshot })
   }),
