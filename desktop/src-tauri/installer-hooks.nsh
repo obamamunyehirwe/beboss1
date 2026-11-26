@@ -3,6 +3,8 @@
 ; These hooks only clean up legacy BeBoss-owned Windows integrations. They never
 ; create broad firewall exceptions or delete the protected shop database.
 
+!include "WinVer.nsh"
+
 !macro NSIS_HOOK_PREINSTALL
   DetailPrint "Preparing BeBoss Desktop installation..."
   ${IfNot} ${AtLeastWin10}
