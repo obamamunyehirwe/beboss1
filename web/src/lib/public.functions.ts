@@ -757,6 +757,7 @@ export type PublicDesktopAsset = {
   downloadUrl: string;
   sizeBytes: number;
   downloadCount: number;
+  sha256: string | null;
 };
 
 export type PublicDesktopRelease = {
@@ -863,10 +864,46 @@ export const getPublicDesktopRelease = createServerFn({ method: "GET" }).handler
         }
       };
 
+      // Read the checksum manifest from the same published GitHub Release.
+      // Only the three exact installer filenames are accepted as checksum keys.
+      const checksums = new Map<string, string>();
+      const manifestAsset = release.assets?.find((item) => item.name === "SHA256SUMS.txt");
+      if (manifestAsset && typeof manifestAsset.browser_download_url === "string") {
+        try {
+          const manifestUrl = new URL(manifestAsset.browser_download_url);
+          if (manifestUrl.protocol === "https:" && manifestUrl.hostname === "github.com") {
+            const manifestResponse = await fetch(manifestUrl, {
+              signal: controller.signal,
+              cache: "no-store",
+              headers: { "User-Agent": "BeBoss-Download-Page" },
+            });
+            if (manifestResponse.ok) {
+              const manifestText = await manifestResponse.text();
+              if (manifestText.length <= 16_384) {
+                for (const line of manifestText.split(/\r?\n/)) {
+                  const match = line.trim().match(/^([a-f0-9]{64})\s+\*?(.+)$/i);
+                  if (!match) continue;
+                  const filename = match[2].trim();
+                  if (Object.values(DESKTOP_RELEASE_ASSET_NAMES).includes(filename as (typeof DESKTOP_RELEASE_ASSET_NAMES)[keyof typeof DESKTOP_RELEASE_ASSET_NAMES])) {
+                    checksums.set(filename, match[1].toLowerCase());
+                  }
+                }
+              } else {
+                console.warn("[BeBoss desktop releases] SHA-256 manifest exceeded the size limit.");
+              }
+            }
+          }
+        } catch (error) {
+          console.warn("[BeBoss desktop releases] Could not read SHA-256 manifest", error);
+        }
+      }
+
+      const attachChecksum = (asset: PublicDesktopAsset | null): PublicDesktopAsset | null =>
+        asset ? { ...asset, sha256: checksums.get(asset.name) ?? null } : null;
       const assets = {
-        windows: findAsset(DESKTOP_RELEASE_ASSET_NAMES.windows),
-        macos: findAsset(DESKTOP_RELEASE_ASSET_NAMES.macos),
-        linux: findAsset(DESKTOP_RELEASE_ASSET_NAMES.linux),
+        windows: attachChecksum(findAsset(DESKTOP_RELEASE_ASSET_NAMES.windows)),
+        macos: attachChecksum(findAsset(DESKTOP_RELEASE_ASSET_NAMES.macos)),
+        linux: attachChecksum(findAsset(DESKTOP_RELEASE_ASSET_NAMES.linux)),
       };
       const releaseUrl = (() => {
         try {
