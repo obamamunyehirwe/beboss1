@@ -773,25 +773,33 @@ object SupabaseAdminClient {
         }
         if (!tenantSyncKey.isNullOrBlank()) {
             val shopId = tenantSyncKey.trim()
-            if (AndroidDeviceCredentialStore.hasCredentialForShop(shopId)) {
-                // Once a device has enrolled, never silently downgrade it to the
-                // predictable legacy header—even when refresh fails or the device
-                // credential is revoked. This makes owner-approved retirement safe.
-                val storedCredential = AndroidDeviceCredentialStore.readForShop(shopId)
-                if (storedCredential != null) {
+            when (val authorization = resolveAndroidTenantSyncAuthorization(
+                hasEnrollmentMarker = AndroidDeviceCredentialStore.hasCredentialForShop(shopId),
+                credential = AndroidDeviceCredentialStore.readForShop(shopId)
+            )) {
+                is AndroidTenantSyncAuthorization.Device -> {
+                    // Refresh rotates the single-use credential under synchronization.
+                    // A transient failure may leave this token expired, but it never
+                    // authorizes fallback to the legacy tenant header.
                     val activeCredential = runCatching {
-                        refreshAndroidDeviceCredential(storedCredential)
+                        refreshAndroidDeviceCredential(authorization.credential)
                     }.onFailure {
                         Log.w(TAG, "Device credential refresh unavailable; legacy fallback is disabled.")
-                    }.getOrDefault(storedCredential)
+                    }.getOrDefault(authorization.credential)
                     builder
                         .addHeader("X-BeBoss-Device-ID", activeCredential.deviceId)
                         .addHeader("X-BeBoss-Device-Token", activeCredential.accessToken)
                 }
-            } else {
-                // Compatibility path for older app builds. The server rejects this
-                // deterministic header after an owner retires legacy access for the shop.
-                builder.addHeader("X-Shop-Sync-Key", shopId)
+                AndroidTenantSyncAuthorization.LegacyCompatibility -> {
+                    // Compatibility path for older app builds. The server rejects this
+                    // deterministic header after an owner retires legacy access for the shop.
+                    builder.addHeader("X-Shop-Sync-Key", shopId)
+                }
+                AndroidTenantSyncAuthorization.Blocked -> {
+                    // Enrollment marker exists but its Keystore-protected credentials
+                    // are unavailable. Send no tenant header and fail closed.
+                    Log.e(TAG, "Enrolled Android device credential is unavailable; cloud sync is blocked and legacy fallback is disabled.")
+                }
             }
         }
         return builder
