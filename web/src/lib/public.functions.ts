@@ -858,6 +858,7 @@ export const getPublicDesktopRelease = createServerFn({ method: "GET" }).handler
             downloadUrl: url.toString(),
             sizeBytes: Number.isFinite(asset.size) ? Number(asset.size) : 0,
             downloadCount: Number.isFinite(asset.download_count) ? Number(asset.download_count) : 0,
+            sha256: null,
           };
         } catch {
           return null;
