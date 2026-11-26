@@ -37,6 +37,10 @@ if (!helper.includes("requireOwnerSession(context, username, phone)")) {
 if (!helper.includes('createShopAdminClient(key)') || !helper.includes('.eq("id", key)')) {
   fail("The server client must be bound to the exact verified shop account.");
 }
+if (!helper.includes('import("@/lib/owner-tenant.server")') ||
+    serverClient.includes("createShopAdminClient")) {
+  fail("The per-request tenant client must live in a dedicated server-only module, not generated client code.");
+}
 if (!helper.includes("normalizePhoneLast9") || !helper.includes("owner_username")) {
   fail("The helper must re-check registered owner username and phone against the shop record.");
 }
