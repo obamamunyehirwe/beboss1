@@ -173,7 +173,7 @@ function ReleasesPage() {
     }
 
     const version = desktopVersion.trim();
-      if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version) || version !== desktopManifestVersion) {
       toast.error("The release version must match the version read from your selected local desktop/package.json.");
       return;
     }
