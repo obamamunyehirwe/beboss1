@@ -334,7 +334,10 @@ class BranchDataShareTest {
             ShopDataTransferManager.parseShopPackageString(token, shopSecret = otherShopSecret)
             fail("A BBSHARE2 token must not verify with a different shop key")
         } catch (expected: IllegalArgumentException) {
-            assertTrue(expected.message?.contains("integrity", ignoreCase = true) == true)
+            assertTrue(
+                expected.message?.contains("signature", ignoreCase = true) == true ||
+                    expected.message?.contains("shop key", ignoreCase = true) == true
+            )
         }
     }
 
@@ -401,10 +404,13 @@ class BranchDataShareTest {
         val tampered = "BBSHARE2:00000000:${parts[2]}"
 
         try {
-            ShopDataTransferManager.parseShopPackageString(tampered)
-            fail("Expected tampered BBSHARE1 token to throw IllegalArgumentException")
+            ShopDataTransferManager.parseShopPackageString(tampered, shopSecret = TEST_SHOP_SHARE_SECRET)
+            fail("Expected a tampered BBSHARE2 signature to be rejected")
         } catch (expected: IllegalArgumentException) {
-            assertTrue(expected.message?.contains("integrity", ignoreCase = true) == true)
+            assertTrue(
+                expected.message?.contains("BBSHARE2", ignoreCase = true) == true ||
+                    expected.message?.contains("signature", ignoreCase = true) == true
+            )
         }
     }
 
