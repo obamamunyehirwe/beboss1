@@ -260,6 +260,8 @@ fun SettingsScreen(
     onDeleteUser: (String) -> Unit = {},
     onImportPackage: (ShopImportSummary) -> Unit = {},
     onImportBranchToken: ((String, (Boolean, String) -> Unit) -> Unit)? = null,
+    onRequestLegacyShareOtp: (((Boolean, String) -> Unit) -> Unit)? = null,
+    onImportLegacyShareToken: ((String, String, (Boolean, String) -> Unit) -> Unit)? = null,
     onRefreshDatabaseStats: () -> Unit = {},
     onOptimizeDatabase: () -> Unit = {},
     onVerifyDatabaseIntegrity: () -> Unit = {},
