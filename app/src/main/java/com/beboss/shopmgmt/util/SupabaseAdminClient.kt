@@ -582,6 +582,69 @@ object SupabaseAdminClient {
             }
         }
 
+    /**
+     * Online-only compatibility route for customer-held BBSHARE1 and older
+     * project-signed BBSHARE2 exports. The global signing key stays in Supabase;
+     * the owner proves control of the registered phone and receives sanitized JSON.
+     */
+    suspend fun verifyLegacyBranchShareToken(
+        token: String,
+        ownerUsername: String,
+        ownerPhone: String,
+        otp: String
+    ): Result<ShopImportSummary> = withContext(Dispatchers.IO) {
+        if (!isConfigured()) {
+            return@withContext Result.failure(IllegalStateException("Supabase is not configured."))
+        }
+        val cleanToken = token.trim()
+        if (!cleanToken.startsWith("BBSHARE1:") && !cleanToken.startsWith("BBSHARE2:")) {
+            return@withContext Result.failure(IllegalArgumentException("Only signed legacy branch tokens can use this migration route."))
+        }
+        if (cleanToken.length > SyncPayloadValidator.MAX_TOKEN_LENGTH) {
+            return@withContext Result.failure(IllegalArgumentException("The legacy branch token exceeds the safe size limit."))
+        }
+        try {
+            val username = ownerUsername.trim().lowercase(Locale.ROOT)
+            require(username.matches(Regex("[a-z0-9._-]{2,80}"))) {
+                "The registered owner username is invalid."
+            }
+            val phone = normalizeOwnerPhoneE164(ownerPhone)
+            val ownerAccessToken = verifyOwnerPhoneOtp(phone, otp)
+            val payload = JSONObject()
+                .put("action", "verify_branch_share")
+                .put("username", username)
+                .put("phone", phone)
+                .put("token", cleanToken)
+            val request = Request.Builder()
+                .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
+                .addHeader("apikey", getSupabaseApiKey())
+                .addHeader("Authorization", "Bearer $ownerAccessToken")
+                .addHeader("Content-Type", "application/json")
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                val result = runCatching { JSONObject(raw) }.getOrNull()
+                if (!response.isSuccessful || result?.optBoolean("ok") != true) {
+                    val message = result?.optString("message").orEmpty()
+                    throw IOException(message.ifBlank {
+                        "The legacy DataShare could not be verified (HTTP ${response.code})."
+                    })
+                }
+                val snapshot = result.optJSONObject("snapshot")
+                    ?: throw IOException("The server returned no verified branch snapshot.")
+                Result.success(
+                    ShopDataTransferManager.parseShopPackageString(
+                        snapshot.toString(),
+                        enforceReplayProtection = true
+                    )
+                )
+            }
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
     private fun verifyOwnerPhoneOtp(phoneE164: String, otp: String): String {
         require(otp.matches(Regex("[0-9]{6,8}"))) { "Enter the SMS verification code." }
         val payload = JSONObject()
