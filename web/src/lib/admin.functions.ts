@@ -1453,7 +1453,7 @@ export const dispatchDesktopRelease = createServerFn({ method: "POST" })
     const admin = await requirePermission(ctx, "releases.manage");
     const token = String(process.env["GITHUB_RELEASE_TOKEN"] ?? "").trim();
     if (!token) {
-      throw new Error("Desktop publishing is not configured on this server. Add GITHUB_RELEASE_TOKEN as a server-only secret with Actions write and Contents write access to obamamunyehirwe/beboss1.");
+      throw new Error("Desktop publishing is not configured on this server. Add GITHUB_RELEASE_TOKEN as a server-only secret with Actions write and Contents read access to obamamunyehirwe/beboss1.");
     }
 
     const sourceVersion = await getDesktopSourceVersion();
