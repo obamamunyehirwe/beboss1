@@ -391,8 +391,8 @@ jobs:
       - name: Verify server-only credentials are not embedded in Android
         shell: bash
         run: |
-          config="$(find app/build/generated -type f -name BuildConfig.java | while read -r file; do if ! grep -Fq 'BEBOSS_SECURITY_PEPPER' "$file"; then printf '%s\\n' "$file"; fi; done | head -n 1)"
-          transition="$(find app/build/generated -type f -name BuildConfig.java | while read -r file; do if grep -Fq 'BEBOSS_SECURITY_PEPPER' "$file"; then printf '%s\\n' "$file"; fi; done | head -n 1)"
+          config="$(find app/build/generated -type f -name BuildConfig.java | while read -r file; do if ! grep -Fq 'BEBOSS_SECURITY_PEPPER' "$file"; then printf '%s\n' "$file"; fi; done | head -n 1)"
+          transition="$(find app/build/generated -type f -name BuildConfig.java | while read -r file; do if grep -Fq 'BEBOSS_SECURITY_PEPPER' "$file"; then printf '%s\n' "$file"; fi; done | head -n 1)"
           if [ -z "$config" ] || [ -z "$transition" ]; then
             echo "Both secret-free secure and migration-only transition BuildConfig files are required."
             exit 1
