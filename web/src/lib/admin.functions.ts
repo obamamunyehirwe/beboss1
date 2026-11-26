@@ -1199,17 +1199,53 @@ export const getAdminReleaseDownload = createServerFn({ method: "POST" })
     return { url: signed.signedUrl, expiresInSeconds: 600, fileName: release.file_name };
   });
 
+export const updateRelease = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string; version_name: string; version_code: number; min_android: string; release_notes: string }) =>
+    z.object({
+      id: z.string().uuid(),
+      version_name: z.string().trim().regex(/^[0-9]+([.][0-9]+){0,3}$/).max(40),
+      version_code: z.number().int().min(1).max(1_000_000),
+      min_android: z.string().trim().min(1).max(40),
+      release_notes: z.string().max(5000),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requirePermission(ctx, "releases.manage");
+    const { error } = await ctx.supabase.rpc("admin_update_app_release", {
+      p_release_id: data.id,
+      p_version_name: data.version_name,
+      p_version_code: data.version_code,
+      p_min_android: data.min_android,
+      p_release_notes: data.release_notes,
+    });
+    if (error) throw new Error(error.message);
+    // Auditing is best-effort: a logging outage must never turn a successful
+    // release update into a reported failure.
+    await audit(ctx, admin.email, "UPDATE_APP_RELEASE", data.id, `v${data.version_name} (code ${data.version_code})`)
+      .catch(() => console.warn("[BeBoss audit] Release metadata changed, but the audit event could not be recorded."));
+    return { ok: true };
+  });
+
 export const setArchivedReleaseVisibility = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { isPublic: boolean }) => z.object({ isPublic: z.boolean() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("app_releases").update({ is_public: data.isPublic } as never).eq("is_current", false);
+    const { data: updatedCount, error } = await ctx.supabase.rpc("admin_set_archived_release_visibility", {
+      p_is_public: data.isPublic,
+    });
     if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, data.isPublic ? "SHOW_ALL_ARCHIVED_RELEASES" : "HIDE_ALL_ARCHIVED_RELEASES", "app_releases", "Updated public visibility for every non-current archived release.");
-    return { ok: true };
+    await audit(
+      ctx,
+      admin.email,
+      data.isPublic ? "SHOW_ALL_ARCHIVED_RELEASES" : "HIDE_ALL_ARCHIVED_RELEASES",
+      "app_releases",
+      `Updated public visibility for ${Number(updatedCount ?? 0)} archived release(s).`,
+    ).catch(() => console.warn("[BeBoss audit] Archived release visibility changed, but the audit event could not be recorded."));
+    return { ok: true, updatedCount: Number(updatedCount ?? 0) };
   });
 
 export const setReleaseVisibility = createServerFn({ method: "POST" })
@@ -1218,13 +1254,18 @@ export const setReleaseVisibility = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: release, error: readError } = await supabaseAdmin.from("app_releases").select("version_name,is_current").eq("id", data.id).maybeSingle();
-    if (readError || !release) throw new Error(readError?.message ?? "Release not found.");
-    if (release.is_current && !data.isPublic) throw new Error("The current release must remain public. Select another current release first.");
-    const { error } = await supabaseAdmin.from("app_releases").update({ is_public: data.isPublic } as never).eq("id", data.id);
+    const { error } = await ctx.supabase.rpc("admin_set_app_release_visibility", {
+      p_release_id: data.id,
+      p_is_public: data.isPublic,
+    });
     if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, data.isPublic ? "SHOW_RELEASE_PUBLICLY" : "HIDE_RELEASE_PUBLICLY", data.id, `v${release.version_name}`);
+    await audit(
+      ctx,
+      admin.email,
+      data.isPublic ? "SHOW_RELEASE_PUBLICLY" : "HIDE_RELEASE_PUBLICLY",
+      data.id,
+      "Updated archived APK public visibility.",
+    ).catch(() => console.warn("[BeBoss audit] Release visibility changed, but the audit event could not be recorded."));
     return { ok: true };
   });
 

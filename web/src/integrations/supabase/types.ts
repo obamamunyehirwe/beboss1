@@ -220,6 +220,7 @@ export type Database = {
           file_url: string
           id: string
           is_current: boolean
+          is_public: boolean
           min_android: string
           published_at: string
           release_notes: string
@@ -236,6 +237,7 @@ export type Database = {
           file_url?: string
           id?: string
           is_current?: boolean
+          is_public?: boolean
           min_android?: string
           published_at?: string
           release_notes?: string
@@ -252,6 +254,7 @@ export type Database = {
           file_url?: string
           id?: string
           is_current?: boolean
+          is_public?: boolean
           min_android?: string
           published_at?: string
           release_notes?: string
@@ -1273,6 +1276,24 @@ export type Database = {
           shop_name: string
           shop_sync_key: string
         }[]
+      }
+      admin_set_app_release_visibility: {
+        Args: { p_release_id: string; p_is_public: boolean }
+        Returns: undefined
+      }
+      admin_set_archived_release_visibility: {
+        Args: { p_is_public: boolean }
+        Returns: number
+      }
+      admin_update_app_release: {
+        Args: {
+          p_release_id: string
+          p_version_name: string
+          p_version_code: number
+          p_min_android: string
+          p_release_notes: string
+        }
+        Returns: undefined
       }
       current_shop_sync_key: { Args: never; Returns: string }
       has_role: {
