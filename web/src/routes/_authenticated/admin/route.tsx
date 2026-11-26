@@ -329,8 +329,8 @@ function TopBar({ email, isAdmin, permissions, onSignOut }: { email: string; isA
   const a=useAdminText();
   const [spinning, setSpinning] = useState(false);
   return (
-    <div className="admin-topbar glass sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
-      <div className="flex items-center gap-2">
+    <div className="admin-topbar glass sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
+      <div className="admin-topbar-start flex min-w-0 items-center gap-3">
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
             <Button size="icon" variant="ghost" className="lg:hidden" aria-label="Open admin menu">
@@ -342,27 +342,41 @@ function TopBar({ email, isAdmin, permissions, onSignOut }: { email: string; isA
             <SidebarBody email={email} isAdmin={isAdmin} permissions={permissions} onSignOut={onSignOut} onNavigate={() => setOpen(false)} />
           </SheetContent>
         </Sheet>
+        <div className="admin-topbar-desktop-brand hidden lg:flex">
+          <Logo to={homeTarget} />
+          <span className="admin-topbar-brand-divider" />
+          <div>
+            <small>SECURE ADMIN WORKSPACE</small>
+            <strong>{isAdmin ? "BeBoss Control Center" : "Operations Console"}</strong>
+          </div>
+        </div>
         <div className="admin-topbar-mobile-brand lg:hidden">
           <Logo to={homeTarget} suffix="Admin" />
         </div>
-        <div className="hidden sm:block">
+        <div className="admin-topbar-pulse hidden sm:block">
           {(isAdmin || permissions.includes("sync.view")) ? <LivePulse /> : null}
         </div>
       </div>
-      <div className="flex items-center gap-2">
-      <LanguageSwitcher /><ThemeToggle /><CommandPalette isAdmin={isAdmin} permissions={permissions} nav={NAV.filter((item) => isAdmin || (!NAV_SUPER_ADMIN_ONLY.has(item.to) && hasPermission(permissions, NAV_PERMISSION[item.to]))).map(n=>({...n,label:a(n.label)}))} />
-      <Button
-        size="sm"
-        variant="glass"
-        onClick={async () => {
-          setSpinning(true);
-          await qc.invalidateQueries({ queryKey: ["admin"] });
-          setSpinning(false);
-          toast.success("Data refreshed");
-        }}
-      >
-        <RefreshCw className={cn(spinning && "animate-spin")} /> <span className="hidden sm:inline">{a('Refresh')}</span>
-      </Button>
+      <div className="admin-topbar-actions flex min-w-0 items-center gap-2">
+        <div className="admin-topbar-account hidden xl:flex">
+          <span className="admin-topbar-account-avatar">{email.slice(0, 1).toUpperCase()}</span>
+          <span><small>{isAdmin ? "SUPER ADMIN" : "ADMIN STAFF"}</small><strong>{email}</strong></span>
+        </div>
+        <LanguageSwitcher />
+        <ThemeToggle />
+        <CommandPalette isAdmin={isAdmin} permissions={permissions} nav={NAV.filter((item) => isAdmin || (!NAV_SUPER_ADMIN_ONLY.has(item.to) && hasPermission(permissions, NAV_PERMISSION[item.to]))).map(n=>({...n,label:a(n.label)}))} />
+        <Button
+          size="sm"
+          variant="glass"
+          onClick={async () => {
+            setSpinning(true);
+            await qc.invalidateQueries({ queryKey: ["admin"] });
+            setSpinning(false);
+            toast.success("Data refreshed");
+          }}
+        >
+          <RefreshCw className={cn(spinning && "animate-spin")} /> <span className="hidden sm:inline">{a('Refresh')}</span>
+        </Button>
       </div>
     </div>
   );
