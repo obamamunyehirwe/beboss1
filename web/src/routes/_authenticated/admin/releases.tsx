@@ -267,8 +267,259 @@ function ReleasesPage() {
       </div>
       {activeTab === "mobile" ? (
         <section role="tabpanel" className="space-y-6">
-          MOBILE_ACTIONS
-          MOBILE_EXISTING
+      {canManageReleases && archivedCount > 0 ? (
+        <div className="flex flex-wrap justify-end gap-2">
+          {visibleArchivedCount > 0 ? <ConfirmAction
+            trigger={<Button size="sm" variant="outline">Hide all archived ({visibleArchivedCount})</Button>}
+            title="Hide every archived mobile release?"
+            description="Older APKs remain stored in the admin archive but disappear from public listings and download links."
+            destructive confirmLabel="Hide archived releases"
+            onConfirm={() => bulkVisibility.mutate({ isPublic: false })}
+          /> : null}
+          {hiddenArchivedCount > 0 ? <ConfirmAction
+            trigger={<Button size="sm" variant="outline">Show archived ({hiddenArchivedCount})</Button>}
+            title="Show archived mobile releases publicly?"
+            description="Every archived APK will become visible in public release listings and eligible for a download link."
+            confirmLabel="Show archived releases"
+            onConfirm={() => bulkVisibility.mutate({ isPublic: true })}
+          /> : null}
+        </div>
+      ) : null}
+      <Dialog open={!!editingRelease} onOpenChange={(open) => { if (!open) setEditingRelease(null); }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{a("Edit APK release")}{editingRelease ? ` — v${editingRelease.version_name}` : ""}</DialogTitle>
+            <DialogDescription>
+              {a("Update the stored release metadata and public update information. Changes to the current release are synchronized to the global app version in the same database transaction. The APK binary itself remains immutable; publish a new version to replace the file.")}
+            </DialogDescription>
+          </DialogHeader>
+          {editingRelease ? (
+            <form
+              id="edit-apk-release-form"
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                editReleaseAction.mutate(
+                  { id: editingRelease.id, ...editForm },
+                  { onSuccess: () => setEditingRelease(null) },
+                );
+              }}
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>{a("Version name")}</Label>
+                  <Input
+                    value={editForm.version_name}
+                    onChange={(event) => setEditForm({ ...editForm, version_name: event.target.value })}
+                    required
+                    maxLength={40}
+                    pattern="^[0-9]+([.][0-9]+){0,3}$"
+                    placeholder="2.3.2"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{a("Version code")}</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={1000000}
+                    value={editForm.version_code}
+                    onChange={(event) => setEditForm({ ...editForm, version_code: Math.max(1, Math.min(1000000, Number(event.target.value) || 1)) })}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{a("Minimum Android")}</Label>
+                <Input
+                  value={editForm.min_android}
+                  onChange={(event) => setEditForm({ ...editForm, min_android: event.target.value })}
+                  maxLength={40}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{a("Release notes")}</Label>
+                <Textarea
+                  rows={6}
+                  value={editForm.release_notes}
+                  onChange={(event) => setEditForm({ ...editForm, release_notes: event.target.value })}
+                  maxLength={5000}
+                />
+                <p className="text-right text-xs text-muted-foreground">{editForm.release_notes.length}/5000</p>
+              </div>
+            </form>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditingRelease(null)}>
+              {a("Cancel")}
+            </Button>
+            <Button type="submit" form="edit-apk-release-form" disabled={!editingRelease || editReleaseAction.isPending}>
+              {editReleaseAction.isPending ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}
+              {editReleaseAction.isPending ? a("Saving…") : a("Save release")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="All-time downloads" value={total} icon={Download} tone="brand" />
+        <StatCard label="Last 30 days" value={daily.reduce((acc, d) => acc + d.n, 0)} sub={Object.entries(byChannel).map(([k, v]) => `${k} ${v}`).join(" • ") || "—"} />
+        <StatCard label="Current version" value={rows.find((r) => r.is_current)?.version_name ?? "—"} sub={<span className="break-all font-mono">{downloadUrl}</span>} icon={Star} />
+      </div>
+      <div className="rounded-2xl border border-border bg-card p-5">
+        <h2 className="font-semibold">{a("Downloads per day")}</h2>
+        <div className="mt-3 h-44">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={daily}>
+              <XAxis dataKey="day" stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} interval={4} />
+              <YAxis allowDecimals={false} width={24} stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
+              <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 }} cursor={{ fill: "var(--accent)" }} />
+              <Bar dataKey="n" name="Downloads" fill="var(--primary)" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {canManageReleases ? (
+        <form onSubmit={submit} className="grid gap-4 rounded-2xl border border-border bg-card p-5 lg:grid-cols-2">
+          <div className="space-y-4">
+            <h2 className="flex items-center gap-2 font-semibold">
+              <UploadCloud className="size-4 text-primary" /> {a("Publish a new version")}
+            </h2>
+            <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border px-4 py-8 text-center hover:border-primary/50">
+              <UploadCloud className="size-8 text-muted-foreground" />
+              <span className="text-sm">{file ? `${file.name} • ${formatBytes(file.size)}` : "Choose the signed release APK (max 100 MB)"}</span>
+              <input type="file" accept=".apk,application/vnd.android.package-archive" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            </label>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label>{a("Version name")}</Label>
+                <Input value={form.version_name} onChange={(e) => setForm({ ...form, version_name: e.target.value })} placeholder="2.1.0" required pattern="^[0-9]+(\.[0-9]+){0,3}$" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{a("Version code")}</Label>
+                <Input type="number" min={1} value={form.version_code} onChange={(e) => setForm({ ...form, version_code: Math.max(1, Number(e.target.value) || 1) })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{a("Minimum")}</Label>
+                <Input value={form.min_android} onChange={(e) => setForm({ ...form, min_android: e.target.value })} />
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex-1 space-y-1.5">
+              <Label>{a("What's new")}</Label>
+              <Textarea rows={6} value={form.release_notes} onChange={(e) => setForm({ ...form, release_notes: e.target.value })} maxLength={5000} placeholder={a("Release notes placeholder")} />
+            </div>
+            <label className="flex items-center gap-3 text-sm">
+              <Switch checked={form.make_current} onCheckedChange={(v) => setForm({ ...form, make_current: v })} />
+              {a("Make this the current download and push the update to apps")}
+            </label>
+            <Button type="submit" variant="hero" disabled={!!stage}>
+              {stage ? <Loader2 className="animate-spin" /> : <UploadCloud />}
+              {stage === "hashing" ? a("Verifying file…") : stage === "uploading" ? a("Uploading…") : stage === "publishing" ? a("Publishing…") : a("Upload & publish")}
+            </Button>
+          </div>
+        </form>
+      ) : null}
+
+      {releases.isLoading ? (
+        <LoadingBlock />
+      ) : !rows.length ? (
+        <EmptyState title="No releases yet" sub="Upload your signed BeBoss APK above. Until then the website shows a 'coming soon' notice." />
+      ) : (
+        <div className="space-y-3">
+          {rows.map((r) => (
+            <div key={r.id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card p-5">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-display text-lg font-bold">v{r.version_name}</h3>
+                  <span className="font-mono text-xs text-muted-foreground">({r.version_code})</span>
+                  {r.is_current ? (
+                    <Badge variant="success">
+                      <CheckCircle2 className="mr-1 size-3" /> {a("Current")}
+                    </Badge>
+                  ) : null}
+                  <Badge variant={r.is_public === false ? "secondary" : "outline"}>
+                    {r.is_public === false ? "Hidden from public" : "Publicly listed"}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {r.file_name} • {formatBytes(Number(r.size_bytes))} • {r.min_android} • {formatDateTime(r.published_at)} • {r.created_by}
+                </p>
+                <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">sha256 {r.sha256}</p>
+                {r.release_notes ? <p className="mt-2 line-clamp-2 whitespace-pre-line text-sm text-muted-foreground">{r.release_notes}</p> : null}
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="mr-2 text-sm">
+                  <span className="font-display text-xl font-bold">{r.download_count}</span> <span className="text-muted-foreground">{a("downloads")}</span>
+                </span>
+                {canManageReleases ? (
+                  <Button size="sm" variant="glass" onClick={async () => {
+                    try {
+                      const signed = await getPrivateDownload({ data: { id: r.id } });
+                      window.location.assign(signed.url);
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Private release download failed");
+                    }
+                  }}>
+                    <Download /> Admin APK
+                  </Button>
+                ) : null}
+                {canManageReleases ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="soft"
+                      title={r.is_current ? a("Edit the current APK release details") : a("Edit this previous APK release")}
+                      aria-label={r.is_current ? a("Edit current version") : a("Edit previous version")}
+                      onClick={() => {
+                        setEditingRelease(r);
+                        setEditForm({
+                          version_name: r.version_name,
+                          version_code: Number(r.version_code),
+                          min_android: r.min_android,
+                          release_notes: r.release_notes ?? "",
+                        });
+                      }}
+                    >
+                      <Pencil className="size-4" />
+                      {r.is_current ? a("Edit current version") : a("Edit previous version")}
+                    </Button>
+                    {!r.is_current ? (
+                      <Button size="sm" variant="soft" onClick={() => setCurrent.mutate({ id: r.id, public_download_url: downloadUrl })}>
+                        <Star /> {a("Make current")}
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={r.is_current && r.is_public !== false}
+                      onClick={() => visibility.mutate({ id: r.id, isPublic: r.is_public === false })}
+                    >
+                      {r.is_public === false ? "Show publicly" : "Hide publicly"}
+                    </Button>
+                    {isAdmin ? (
+                      <ConfirmAction
+                        trigger={
+                          <Button size="icon" variant="ghost" aria-label={a("Delete release")}>
+                            <Trash2 />
+                          </Button>
+                        }
+                        title={a("Delete release?")}
+                        description={a("The APK file is removed from storage and its download link stops working.")}
+                        destructive
+                        confirmLabel="Delete"
+                        onConfirm={() => del.mutate({ id: r.id })}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
         </section>
       ) : (
         <section role="tabpanel" className="space-y-6">
