@@ -92,6 +92,9 @@ jobs:
       - name: Verify every admin server function has authentication and role/permission guards
         run: node scripts/check-admin-rbac.mjs
 
+      - name: Verify desktop owner identity mapping is tenant-safe
+        run: node ../.github/scripts/check-desktop-owner-identity.mjs
+
       - name: Verify Supabase migration versions are unique
         run: npm run check:migrations
 
