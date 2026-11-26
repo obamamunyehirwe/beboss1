@@ -83,16 +83,47 @@ function constantTimeEq(a: string, b: string): boolean {
   for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return result === 0;
 }
-async function hmacHex(payload: string, secret: string) {
+async function hmacBytesHex(payload: string, keyBytes: Uint8Array) {
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(secret),
+    keyBytes,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   return bytesToHex(new Uint8Array(signature)).toUpperCase();
+}
+async function hmacHex(payload: string, secret: string) {
+  return hmacBytesHex(payload, new TextEncoder().encode(secret));
+}
+
+/**
+ * Matches Android CryptoKeyManager.deriveSubkey using the shop's 256-bit
+ * ASCII-hex LAN credential and an explicit domain separator. BBSHARE2 must
+ * use this same key on Android, desktop and server; the legacy project-wide
+ * HMAC is read-only compatibility for old snapshots and BBSHARE1 exports.
+ */
+async function deriveShopShareKey(shopSecret: string): Promise<Uint8Array> {
+  const clean = shopSecret.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(clean)) {
+    throw new Error("This shop has not provisioned a valid protected DataShare credential.");
+  }
+  const masterKey = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(clean),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const info = new Uint8Array([
+    ...new TextEncoder().encode("BeBoss_BBSHARE2_HMAC_v1"),
+    0x01
+  ]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", masterKey, info));
+}
+async function shopShareHmacHex(payload: string, shopSecret: string) {
+  return hmacBytesHex(payload, await deriveShopShareKey(shopSecret));
 }
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -199,7 +230,7 @@ async function streamToBytes(stream: ReadableStream<Uint8Array>, limit: number) 
   }
   return output;
 }
-async function verifyAndDecodeToken(token: string, secret: string): Promise<Row> {
+async function verifyAndDecodeToken(token: string, legacySecret: string, shopSecret?: string): Promise<Row> {
   let prefix = "";
   if (token.startsWith("BBSHARE2:")) prefix = "BBSHARE2:";
   else if (token.startsWith("BBSHARE1:")) prefix = "BBSHARE1:";
@@ -211,11 +242,25 @@ async function verifyAndDecodeToken(token: string, secret: string): Promise<Row>
   if (sep <= 0) throw new Error("A BeBoss snapshot token is malformed.");
   const signature = rest.slice(0, sep).toUpperCase();
   const payload = rest.slice(sep + 1);
-  const expected = await hmacHex(payload, secret);
-  const expectedSig = prefix === "BBSHARE1:" ? expected.slice(0, 16) : expected;
   const validSig = prefix === "BBSHARE1:" ? signature.length === 16 : signature.length === 64;
   if (!validSig || !/^[A-F0-9]+$/.test(signature)) throw new Error("A snapshot signature has an invalid format.");
-  if (!constantTimeEq(signature, expectedSig)) throw new Error("A BeBoss snapshot failed its HMAC integrity check.");
+
+  let verified = false;
+  if (prefix === "BBSHARE1:") {
+    // Legacy BBSHARE1 was signed with the project-wide key. Keep verification
+    // read-only until retained snapshot generations and customer-held exports
+    // have all transitioned to shop-scoped keys.
+    verified = constantTimeEq(signature, (await hmacHex(payload, legacySecret)).slice(0, 16));
+  } else {
+    if (shopSecret && /^[a-f0-9]{64}$/i.test(shopSecret)) {
+      verified = constantTimeEq(signature, await shopShareHmacHex(payload, shopSecret));
+    }
+    // Earlier desktop builds emitted BBSHARE2 with the old global key. Accept
+    // those existing rows during rollout, but all newly written BBSHARE2 data
+    // below is signed with the per-shop derived key.
+    if (!verified) verified = constantTimeEq(signature, await hmacHex(payload, legacySecret));
+  }
+  if (!verified) throw new Error("A BeBoss snapshot failed its HMAC integrity check.");
   const compressed = base64ToBytes(payload);
   const decompressed = await streamToBytes(
     new Blob([compressed]).stream().pipeThrough(new DecompressionStream("gzip")),
@@ -230,7 +275,7 @@ async function verifyAndDecodeToken(token: string, secret: string): Promise<Row>
   }
   return root;
 }
-async function encodeToken(snapshot: Row, secret: string) {
+async function encodeToken(snapshot: Row, shopSecret: string) {
   const raw = new TextEncoder().encode(JSON.stringify(snapshot));
   if (raw.length > 5 * 1024 * 1024) throw new Error("The desktop snapshot exceeds the 5 MB safe uncompressed limit.");
   const compressed = await streamToBytes(
@@ -238,7 +283,7 @@ async function encodeToken(snapshot: Row, secret: string) {
     7 * 1024 * 1024
   );
   const payload = bytesToBase64(compressed);
-  const signature = await hmacHex(payload, secret);
+  const signature = await shopShareHmacHex(payload, shopSecret);
   return "BBSHARE2:" + signature + ":" + payload;
 }
 function arrayRows(value: unknown): Row[] {
@@ -399,7 +444,21 @@ async function requireOwner(
   return { user, shop, shopId, username, phone };
 }
 
+async function getShopDataShareSecret(admin: SupabaseClient, shopId: string): Promise<string> {
+  const { data, error } = await admin
+    .from("shop_accounts")
+    .select("lan_sync_secret")
+    .eq("id", shopId)
+    .maybeSingle();
+  const secret = text(data?.lan_sync_secret).trim().toLowerCase();
+  if (error || !/^[a-f0-9]{64}$/.test(secret)) {
+    throw new Error("This shop has not provisioned its protected DataShare credential. Connect the primary Android terminal to BeBoss Cloud and retry.");
+  }
+  return secret;
+}
+
 async function latestVerifiedSnapshot(admin: SupabaseClient, shopId: string, secret: string) {
+  const shopShareSecret = await getShopDataShareSecret(admin, shopId);
   // Read every retained generation. A fixed 2,000-row limit can truncate a
   // large multi-device shop in the middle of a chunk set and make complete data
   // appear missing on desktop restore.
@@ -452,7 +511,7 @@ async function latestVerifiedSnapshot(admin: SupabaseClient, shopId: string, sec
     const ordered = [...value.rows].sort((a, b) => number(a.chunk_index) - number(b.chunk_index));
     sourceDevices.push({ deviceId, lastSyncedAt: value.updated });
     for (const row of ordered) {
-      parts.push(await verifyAndDecodeToken(text(row.payload_token), secret));
+      parts.push(await verifyAndDecodeToken(text(row.payload_token), secret, shopShareSecret));
       verifiedChunks++;
     }
   }
@@ -1160,7 +1219,8 @@ Deno.serve(async (req: Request) => {
       const actor = await ownerManagementActorV2(admin, owner.shopId, "DESKTOP:" + installationId, text(owner.user.id));
       const snapshot = sanitizeSnapshot(body.snapshot, { username: owner.username, shop: owner.shop });
       nowSnapshot(snapshot, owner.username);
-      const encoded = await encodeToken(snapshot, config.hmacSecret);
+      const shopShareSecret = await getShopDataShareSecret(admin, owner.shopId);
+      const encoded = await encodeToken(snapshot, shopShareSecret);
       const mainBranch = snapshot.branches.find((branch) => branch.isMainBranch === true) ?? snapshot.branches[0] ?? {};
       const deviceId = installationId;
       const summary = snapshot.branches.length + " branches • " + snapshot.products.length + " products • " +
@@ -1224,8 +1284,9 @@ if (action === "create_branch_share") {
         3 * 1024 * 1024
       );
       const payload = bytesToBase64(compressed);
-      const signature = (await hmacHex(payload, config.hmacSecret)).slice(0, 16);
-      const token = "BBSHARE1:" + signature + ":" + payload;
+      const shopShareSecret = await getShopDataShareSecret(admin, owner.shopId);
+      const signature = await shopShareHmacHex(payload, shopShareSecret);
+      const token = "BBSHARE2:" + signature + ":" + payload;
       if (token.length > 4 * 1024 * 1024) {
         throw new Error("The signed token exceeds the 4 MB Android DataShare limit. Export one branch or fewer records.");
       }
@@ -1251,7 +1312,8 @@ if (action === "create_branch_share") {
 
     if (action === "verify_branch_share") {
       const token = text(body.token).trim();
-      const decoded = await verifyAndDecodeToken(token, config.hmacSecret);
+      const shopShareSecret = await getShopDataShareSecret(admin, owner.shopId);
+      const decoded = await verifyAndDecodeToken(token, config.hmacSecret, shopShareSecret);
       const metadata = decoded.metadata && typeof decoded.metadata === "object" ? decoded.metadata as Row : {};
       if (text(metadata.format) !== "beboss_branch_datashare_v3") {
         throw new Error("This is not a supported BeBoss branch data-share package.");
