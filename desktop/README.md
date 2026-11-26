@@ -84,4 +84,4 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked
 npm run dist:win
 ```
 
-GitHub Actions validates the desktop TypeScript build, native Rust checks/tests and Windows NSIS installer. A produced CI installer is an unsigned test artifact; production distribution should use the protected Authenticode signing workflow and verified release credentials.
+GitHub Actions runs source checks and may produce CI inspection artifacts for testing. Those files are not official customer releases. Build the production installer locally and use the platform's signing/verification process before uploading it through the Admin page.
