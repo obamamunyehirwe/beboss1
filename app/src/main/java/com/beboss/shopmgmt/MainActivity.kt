@@ -733,6 +733,10 @@ private fun BeBossMainContent(
                                 onDeleteUser = { uId -> viewModel.deleteUser(uId) },
                                 onImportPackage = { summary -> viewModel.importShopPackage(summary) },
                                 onImportBranchToken = { token, onDone -> viewModel.importBranchShareToken(token, onDone) },
+                                onRequestLegacyShareOtp = { onDone -> viewModel.requestLegacyBranchShareOtp(onDone) },
+                                onImportLegacyShareToken = { token, otp, onDone ->
+                                    viewModel.importLegacyBranchShareToken(token, otp, onDone)
+                                },
                                 onLockApp = { viewModel.lockApp() },
                                 onLogout = { viewModel.logoutUser() },
                                 onSwitchUser = { u -> viewModel.switchUser(u) },
