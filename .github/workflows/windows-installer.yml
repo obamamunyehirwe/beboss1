@@ -36,7 +36,7 @@ jobs:
       - name: Reject exposed or invalid Windows signing certificate
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ..\\.github\\scripts\\verify-windows-signing-certificate.ps1
+        run: ../.github/scripts/verify-windows-signing-certificate.ps1
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
