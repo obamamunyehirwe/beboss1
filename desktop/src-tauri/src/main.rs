@@ -636,7 +636,6 @@ fn recover_local_database(app: tauri::AppHandle) -> Result<LocalDatabaseRecovery
         }
     }
 
-    let _ = get_device_id(app.clone())?;
     Ok(LocalDatabaseRecoveryResult {
         backup_path: backup_dir.to_string_lossy().to_string(),
         archived_files,
