@@ -1095,3 +1095,75 @@ select option { background: var(--panel-bg); color: var(--text); }
   .device-registration-confirm,.device-registration-cancel { transition: none; }
   .device-registration-confirm:hover:not(:disabled) { transform: none; }
 }
+
+
+
+/* Read-only phone recovery preview inside the native Sync Hub. */
+.lan-import-preview {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0;
+  padding: 17px;
+  border: 1px solid color-mix(in oklab, var(--success) 28%, var(--border));
+  border-radius: 16px;
+  background:
+    radial-gradient(75% 100% at 0% 0%, color-mix(in oklab, var(--success) 9%, transparent), transparent 72%),
+    var(--panel-soft);
+}
+.lan-import-preview-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+.lan-import-preview-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in oklab, var(--success) 28%, var(--border));
+  border-radius: 11px;
+  color: var(--success);
+  background: color-mix(in oklab, var(--success) 11%, transparent);
+}
+.lan-import-preview-head > div { display: grid; min-width: 0; flex: 1; gap: 3px; }
+.lan-import-preview-head strong { color: var(--text); font-size: 12px; }
+.lan-import-preview-head small { overflow-wrap: anywhere; color: var(--muted); font-size: 9px; }
+.lan-import-preview-count {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--success);
+  background: color-mix(in oklab, var(--success) 7%, transparent);
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.lan-import-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+.lan-import-preview-grid > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in oklab, var(--panel-bg) 78%, transparent);
+}
+.lan-import-preview-grid span { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.lan-import-preview-grid strong { color: var(--text); font-variant-numeric: tabular-nums; font-size: 11px; }
+.lan-import-preview > p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.65; }
+@media(max-width:720px) {
+  .lan-import-preview-head { align-items: flex-start; flex-wrap: wrap; }
+  .lan-import-preview-count { margin-left: 49px; }
+  .lan-import-preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media(prefers-reduced-motion:reduce) {
+  .lan-import-preview { scroll-behavior: auto; }
+}
