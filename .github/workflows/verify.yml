@@ -186,6 +186,9 @@ jobs:
       - name: Install desktop dependencies from the committed npm lockfile
         run: npm ci --no-audit --no-fund
 
+      - name: Run desktop client regression tests
+        run: npm test
+
       - name: Verify desktop package, Tauri and Rust versions are identical
         run: npm run check:versions
 
