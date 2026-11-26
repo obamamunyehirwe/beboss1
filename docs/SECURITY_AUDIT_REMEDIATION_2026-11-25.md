@@ -50,3 +50,15 @@ These items are intentionally not marked fixed. A few require new cryptographic 
 ## Release readiness
 
 This branch is a partial security remediation, not a clean security certification. Do not publish a new production-signed Android release until the release key has been rotated and the remaining client-embedded DataShare HMAC and credential pepper have a tested migration. The LAN global fallback removal also requires the Android build/test pipeline and a paired-device cloud-provisioning test before distribution. The live public APK download endpoint and release visibility migrations are already active.
+
+## 2026-11-26 follow-up — delegated admin RPC negative tests
+
+The live Supabase security advisor continues to report six SECURITY DEFINER functions as callable by the authenticated role. These grants are intentional for the delegated-admin UI and are not removed blindly: release mutation functions check the caller's server-derived releases.manage permission before performing any read or write. Revoking authenticated execution would break valid delegated administration.
+
+A new local PostgreSQL regression file, web/supabase/tests/admin_release_definer_permissions.sql, is wired into .github/scripts/tenant-isolation-db-tests.sh. It verifies:
+
+- Anonymous users cannot execute current_admin_permissions, has_admin_permission, or any of the four release-mutating RPCs.
+- An ordinary authenticated user with no admin/staff role receives an empty admin permission set and cannot invoke release visibility, release metadata, or current-release mutations (expected SQLSTATE 42501).
+- The service_role retains the required release-management function grants.
+
+This is regression coverage for the permission boundary, not removal of the advisor warnings. The security advisor is expected to continue listing the authenticated-executable functions because they are deliberately callable and internally guarded. The separate Auth leaked-password-protection warning remains a dashboard-level task and has not been changed by this code work.
