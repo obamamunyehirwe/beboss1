@@ -434,7 +434,8 @@ fn secure_get(app: tauri::AppHandle, key: String) -> Result<Option<String>, Stri
     
     match raw {
         Some(stored) => {
-            let key_seed = database_key()?;
+            let path = database_path(&app)?;
+            let key_seed = database_key(&path)?;
             // Attempt decryption; if legacy plaintext, return as is
             if let Ok(decrypted) = decrypt_payload(&stored, &key_seed) {
                 Ok(Some(decrypted))
@@ -449,7 +450,8 @@ fn secure_get(app: tauri::AppHandle, key: String) -> Result<Option<String>, Stri
 #[tauri::command]
 fn secure_set(app: tauri::AppHandle, key: String, value: String) -> Result<(), String> {
     if !is_valid_secure_key(&key) || value.len() > 8_000_000 { return Err("Invalid secure-storage value.".into()); }
-    let key_seed = database_key()?;
+    let path = database_path(&app)?;
+    let key_seed = database_key(&path)?;
     let encrypted = encrypt_payload(&value, &key_seed)?;
     let connection = open_database(&app)?;
     connection.execute("INSERT INTO secure_values(key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value", params![key, encrypted])
