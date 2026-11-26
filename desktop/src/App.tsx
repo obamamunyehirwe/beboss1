@@ -769,9 +769,10 @@ function NativeDesktopApp() {
     }
 
     // The LAN pull is signed by the shop-only pairing key. Merge the phone
-    // snapshot with the latest local baseline AND any queued full-snapshot work.
-    // Every outbox item is tenant-scoped; pending local changes must survive an
-    // import even when this desktop has not yet received its first cloud snapshot.
+    // snapshot with the latest cloud baseline AND all already queued work.
+    // Queue the merged result before a cloud write, even when online: an
+    // interrupted request must never turn a verified phone import into
+    // volatile, untracked desktop state.
     const pendingBeforeImport = await window.beBossDesktop.local.pending(shopSyncKey);
     const cloudBase = ensureSnapshot(cloud.snapshot);
     const queuedBase = pendingBeforeImport.length
@@ -790,38 +791,75 @@ function NativeDesktopApp() {
 
     const subscriptionStatus = s(cloud.shop.subscription_status || merged.shopProfile.subscriptionStatus).toUpperCase();
     const subscriptionExpiresAt = n(cloud.shop.subscription_expires_at || merged.shopProfile.subscriptionExpiresAt);
+
+    // Persist to the encrypted, shop-scoped SQLCipher outbox first. This
+    // transaction is acknowledged only after cloud acceptance or retained
+    // for automatic retry; the phone is never modified by this import.
+    const transaction = await window.beBossDesktop.local.queue(
+      shopSyncKey, "LAN_IMPORT", merged, deviceId, cloud.snapshotUpdatedAt,
+      false, subscriptionExpiresAt, subscriptionStatus
+    );
+    const queuedSnapshot = ensureSnapshot(transaction.payload as Snapshot);
+    const queuedCloud = { ...cloud, snapshot: queuedSnapshot };
+
     if (offline) {
-      const transaction = await window.beBossDesktop.local.queue(
-        shopSyncKey, "LAN_IMPORT", merged, deviceId, cloud.snapshotUpdatedAt,
-        false, subscriptionExpiresAt, subscriptionStatus
-      );
-      const next = { ...cloud, snapshot: ensureSnapshot(transaction.payload as Snapshot) };
-      setCloud(next);
-      await saveCache(owner, next);
+      setCloud(queuedCloud);
+      await saveCache(owner, queuedCloud);
       setNotice("Phone records were merged into this desktop's encrypted local queue. Nothing was sent to the phone. The merge will upload when BeBoss Cloud is reachable.");
       return;
     }
 
-    const saved = await callDesktopApi<{ ok: true; uploadedAt: number; snapshot: Snapshot }>(
-      "save_snapshot", owner, {
-        deviceId,
-        expectedUpdatedAt: cloud.snapshotUpdatedAt,
-        snapshot: merged
-      }
-    );
-    const updated = { ...cloud, snapshot: ensureSnapshot(saved.snapshot), snapshotUpdatedAt: saved.uploadedAt };
-    setCloud(updated);
-    setOffline(false);
-    if (pendingBeforeImport.length) {
-      await window.beBossDesktop.local.acknowledge(
-        shopSyncKey, pendingBeforeImport.map((item) => item.id)
+    try {
+      const saved = await callDesktopApi<{ ok: true; uploadedAt: number; snapshot: Snapshot }>(
+        "save_snapshot", owner, {
+          deviceId,
+          expectedUpdatedAt: cloud.snapshotUpdatedAt,
+          snapshot: transaction.payload
+        }
       );
+      const updated = { ...cloud, snapshot: ensureSnapshot(saved.snapshot), snapshotUpdatedAt: saved.uploadedAt };
+      setCloud(updated);
+      setOffline(false);
+      const acknowledgedIds = [...new Set([
+        ...pendingBeforeImport.map((item) => item.id),
+        transaction.id
+      ])];
+      await window.beBossDesktop.local.acknowledge(shopSyncKey, acknowledgedIds);
+      await window.beBossDesktop.local.saveBaseline(
+        shopSyncKey, saved.snapshot as unknown as Record<string, unknown>, saved.uploadedAt
+      ).catch((error) => console.warn("LAN recovery was cloud-accepted, but the local baseline refresh failed.", error));
+      await saveCache(owner, updated);
+      setNotice("Phone records were merged with this desktop and accepted by BeBoss Cloud. The phone was only read; its original records remain intact.");
+    } catch (saveError) {
+      if (saveError instanceof OwnerAuthorizationError) {
+        await invalidateOwnerAuthorization();
+        throw saveError;
+      }
+
+      const message = errorText(saveError);
+      if (/newer shop data|snapshot/i.test(message)) {
+        // A concurrent phone/desktop save may have won the snapshot race.
+        // Bootstrap attempts a bounded merge/retry against the latest cloud
+        // snapshot and acknowledges the outbox only if the server accepted it.
+        const reconciled = await bootstrap(owner, false).catch(() => false);
+        const remaining = await window.beBossDesktop.local.pending(shopSyncKey).catch(() => [transaction]);
+        if (reconciled && !remaining.some((item) => item.id === transaction.id)) {
+          setNotice("Phone records were merged with the latest cloud snapshot and accepted after conflict reconciliation.");
+          return;
+        }
+      }
+
+      setCloud(queuedCloud);
+      await saveCache(owner, queuedCloud);
+      if (!navigator.onLine || /failed to fetch|network|timeout|connection|offline/i.test(message)) {
+        setOffline(true);
+        setNotice("Phone records are safely stored in the encrypted desktop outbox. They will upload automatically when BeBoss Cloud is reachable.");
+        return;
+      }
+
+      setNotice("The phone import is safely queued on this desktop, but BeBoss Cloud has not accepted it yet. Review the sync hub and retry after resolving the reported issue.");
+      throw saveError;
     }
-    await window.beBossDesktop.local.saveBaseline(
-      shopSyncKey, saved.snapshot as unknown as Record<string, unknown>, saved.uploadedAt
-    ).catch((error) => console.warn("LAN recovery was cloud-accepted, but the local baseline refresh failed.", error));
-    await saveCache(owner, updated);
-    setNotice("Phone records were merged with this desktop and accepted by BeBoss Cloud. The phone was only read; its original records remain intact.");
   }
 
   async function refreshManagement() {

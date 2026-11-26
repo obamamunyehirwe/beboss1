@@ -80,8 +80,8 @@ android {
     applicationId = "com.beboss.shopmgmt"
     minSdk = 24
     targetSdk = 36
-    versionCode = 16
-    versionName = "2.3.2"
+    versionCode = 17
+    versionName = "2.4.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

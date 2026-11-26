@@ -74,5 +74,5 @@ window.beBossDesktop = Object.freeze({
   }),
   printReceipt: async (_lines: string[]) => { window.print(); },
   platform: navigator.platform,
-  version: "1.3.0"
+  version: "1.4.0"
 });

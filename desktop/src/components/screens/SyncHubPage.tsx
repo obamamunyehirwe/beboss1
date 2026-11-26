@@ -141,6 +141,8 @@ export function SyncHubPage({ cloud, deviceId, offline, snapshot, shopSyncKey, o
   const opLabel = (op: string) => {
     const clean = s(op).toUpperCase();
     if (clean === "SALE") return "New sale";
+    if (clean === "LAN_IMPORT") return "Phone / LAN import";
+    if (clean === "STAFF_ACCESS_UPDATE") return "Staff access update";
     if (clean.includes("CUSTOMER")) return "Customer update";
     if (clean.includes("PRODUCT")) return "Product update";
     if (clean.includes("PURCHASE")) return "Purchase";
