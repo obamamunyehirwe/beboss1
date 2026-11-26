@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ConfirmAction, EmptyState, LoadingBlock, PageHeader, StatCard, useAdminAction } from "@/components/admin/ui";
 import { supabase } from "@/integrations/supabase/client";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
-import { cleanupDesktopReleaseUpload, deleteDesktopRelease, deleteRelease, getAdminDesktopReleaseDownload, getAdminDesktopReleases, getAdminReleaseDownload, publishDesktopRelease, publishRelease, setArchivedReleaseVisibility, setCurrentDesktopRelease, setCurrentRelease, setDesktopReleaseVisibility, setReleaseVisibility, updateRelease } from "@/lib/admin.functions";
+import { cleanupDesktopReleaseUpload, deleteDesktopRelease, deleteRelease, getAdminDesktopReleaseDownload, getAdminDesktopReleases, getAdminDesktopSourceVersion, getAdminReleaseDownload, publishDesktopRelease, publishRelease, setArchivedReleaseVisibility, setCurrentDesktopRelease, setCurrentRelease, setDesktopReleaseVisibility, setReleaseVisibility, updateRelease } from "@/lib/admin.functions";
 import { downloadsQuery, releasesQuery } from "@/lib/admin-queries";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
@@ -50,6 +50,14 @@ function ReleasesPage() {
   const publish = useServerFn(publishRelease);
   const getPrivateDownload = useServerFn(getAdminReleaseDownload);
   const getDesktopReleases = useServerFn(getAdminDesktopReleases);
+  const getDesktopSourceVersion = useServerFn(getAdminDesktopSourceVersion);
+  const desktopSourceVersionQuery = useQuery({
+    queryKey: ["admin", "desktop-source-version"],
+    queryFn: () => getDesktopSourceVersion(),
+    enabled: canManageReleases,
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+  });
   const uploadDesktopRelease = useServerFn(publishDesktopRelease);
   const removePendingDesktopUpload = useServerFn(cleanupDesktopReleaseUpload);
   const getDesktopPrivateDownload = useServerFn(getAdminDesktopReleaseDownload);
@@ -86,12 +94,18 @@ function ReleasesPage() {
   const [stage, setStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
   const [desktopPlatform, setDesktopPlatform] = useState<DesktopPlatform>("windows");
   const [desktopFile, setDesktopFile] = useState<File | null>(null);
-  const [desktopVersion, setDesktopVersion] = useState("1.3.0");
+  const desktopFileInputRef = useRef<HTMLInputElement>(null);
+  const [desktopVersion, setDesktopVersion] = useState("");
   const [desktopNotes, setDesktopNotes] = useState("");
   const [desktopMakeCurrent, setDesktopMakeCurrent] = useState(true);
   const [desktopStage, setDesktopStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
   const [editingRelease, setEditingRelease] = useState<ReleaseWithVisibility | null>(null);
   const [editForm, setEditForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "" });
+  useEffect(() => {
+    const sourceVersion = desktopSourceVersionQuery.data;
+    if (sourceVersion) setDesktopVersion((current) => current.trim() ? current : sourceVersion);
+  }, [desktopSourceVersionQuery.data]);
+
   const editReleaseAction = useAdminAction(useServerFn(updateRelease), { success: "Release updated", invalidate: [["admin", "releases"], ["public-site"]] });
 
   const downloadUrl = `https://beboss.rw${DOWNLOAD_PATH}`;
@@ -129,7 +143,16 @@ function ReleasesPage() {
     if (!canManageReleases || desktopStage || !desktopFile) return;
 
     const version = desktopVersion.trim();
-    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+    const sourceVersion = desktopSourceVersionQuery.data;
+    if (!sourceVersion) {
+      toast.error("The current desktop source version could not be verified. Refresh and try again.");
+      return;
+    }
+    if (version !== sourceVersion) {
+      toast.error("Desktop release version must match the current source version " + sourceVersion + ". Update the desktop version manifests and rebuild first.");
+      return;
+    }
+    if (!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
       toast.error("Enter a valid semantic version.");
       return;
     }
@@ -183,6 +206,7 @@ function ReleasesPage() {
 
       toast.success(`${desktopPlatform} v${version} uploaded and ${desktopMakeCurrent ? "published as current" : "saved to the archive"}.`);
       setDesktopFile(null);
+      if (desktopFileInputRef.current) desktopFileInputRef.current.value = "";
       setDesktopNotes("");
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["admin", "desktop-releases"] }),
@@ -554,7 +578,7 @@ function ReleasesPage() {
                     { id: "macos", name: "macOS", detail: ".dmg", Icon: Apple },
                     { id: "linux", name: "Linux", detail: ".AppImage", Icon: Laptop },
                   ] as const).map(({ id, name, detail, Icon }) => (
-                    <button key={id} type="button" aria-pressed={desktopPlatform === id} onClick={() => { setDesktopPlatform(id); setDesktopFile(null); }}
+                    <button key={id} type="button" aria-pressed={desktopPlatform === id} onClick={() => { setDesktopPlatform(id); setDesktopFile(null); if (desktopFileInputRef.current) desktopFileInputRef.current.value = ""; }}
                       className={desktopPlatform === id
                         ? "rounded-xl border-2 border-primary bg-primary/5 p-3 text-left shadow-sm outline-none ring-2 ring-primary/10"
                         : "rounded-xl border border-border bg-background p-3 text-left transition hover:border-primary/50"}>
@@ -598,6 +622,12 @@ function ReleasesPage() {
               </div>
 
               <form className="space-y-4 rounded-xl border border-border p-4" onSubmit={(event) => void submitDesktopRelease(event)}>
+                {desktopSourceVersionQuery.isError ? (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert">
+                    {desktopSourceVersionQuery.error instanceof Error ? desktopSourceVersionQuery.error.message : "Could not verify the current desktop source version."}
+                    <Button type="button" variant="outline" size="sm" className="ml-2" onClick={() => void desktopSourceVersionQuery.refetch()}>Retry</Button>
+                  </div>
+                ) : null}
                 <div>
                   <h3 className="font-semibold">3. Upload and publish the local build</h3>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">The file is uploaded from this browser to private BeBoss release storage. Its SHA-256 is calculated locally before upload.</p>
@@ -605,7 +635,8 @@ function ReleasesPage() {
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,170px)_1fr]">
                   <div className="space-y-1.5">
                     <Label htmlFor="desktop-version">Desktop version</Label>
-                    <Input id="desktop-version" value={desktopVersion} onChange={(event) => setDesktopVersion(event.target.value)} required maxLength={40} pattern="^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$" placeholder="1.3.0" disabled={!!desktopStage} />
+                    <p className="text-xs text-muted-foreground">Must match the app version embedded in desktop/package.json: {desktopSourceVersionQuery.data ?? "checking source…"}.</p>
+                    <Input id="desktop-version" value={desktopVersion} onChange={(event) => setDesktopVersion(event.target.value)} required maxLength={40} pattern="^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$" placeholder={desktopSourceVersionQuery.data ?? "Checking desktop/package.json…"} disabled={!desktopSourceVersionQuery.data || !!desktopStage} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="desktop-notes">Release notes</Label>
@@ -618,7 +649,7 @@ function ReleasesPage() {
                     {desktopFile ? <FileCheck2 className="size-8 text-success" /> : <UploadCloud className="size-8 text-muted-foreground" />}
                     <span className="break-all text-sm font-semibold">{desktopFile ? desktopFile.name : `Choose .${desktopPlatform === "windows" ? "exe" : desktopPlatform === "macos" ? "dmg" : "AppImage"} installer`}</span>
                     <span className="text-xs text-muted-foreground">{desktopFile ? `${formatBytes(desktopFile.size)} · ready to verify` : "Up to 512 MB · only the selected platform format is accepted"}</span>
-                    <input id="desktop-artifact" type="file" className="sr-only"
+                    <input id="desktop-artifact" ref={desktopFileInputRef} type="file" className="sr-only"
                       accept={desktopPlatform === "windows" ? ".exe,application/vnd.microsoft.portable-executable,application/octet-stream" : desktopPlatform === "macos" ? ".dmg,application/x-apple-diskimage,application/octet-stream" : ".AppImage,.appimage,application/octet-stream"}
                       onChange={(event) => setDesktopFile(event.target.files?.[0] ?? null)} />
                   </label>
