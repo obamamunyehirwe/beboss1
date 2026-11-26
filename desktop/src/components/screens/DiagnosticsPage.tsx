@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Activity, AlertTriangle, Clock3, Cpu, Database, HardDrive, MemoryStick, Printer, RefreshCw, Server, ShieldCheck, Wifi } from "lucide-react";
 import { dateTime, errorText, n, s } from "../../lib/format";
+import { checkCloudDatabase } from "../../lib/cloud";
 import type { CloudState, Snapshot } from "../../lib/types";
 import { PageHeading, StatCard, StatusPill } from "../ui";
 
@@ -52,7 +53,7 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
 
   async function runPing() {
     setBusy(true); setError("");
-    try { setPing(await window.beBossDesktop.networkPing()); }
+    try { setPing(await checkCloudDatabase()); }
     catch (e) { setError(errorText(e)); }
     finally { setBusy(false); }
   }
@@ -98,14 +99,14 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
   const online = navigator.onLine;
 
   return <div className="page-stack">
-    <PageHeading eyebrow="SYSTEM HEALTH" title="Diagnostics & system health" description="Native diagnostics for this installation: operating system, SQLCipher database, sync outbox and verified hardware print-queue submission." action={<div className="heading-actions"><button className="btn-outline" onClick={() => void printTestReceipt()} disabled={printerBusy || busy || !diag?.defaultPrinterName}><Printer size={15} /> {printerBusy ? "Printing…" : "Print test receipt"}</button><button className="btn-outline" onClick={runPing} disabled={busy}><Wifi size={15} /> Ping cloud</button><button className="btn-primary" onClick={() => { void load(); onRefresh(); }} disabled={busy}><RefreshCw size={15} className={busy ? "spin" : ""} /> Refresh</button></div>} />
+    <PageHeading eyebrow="SYSTEM HEALTH" title="Diagnostics & system health" description="Native device diagnostics plus a live Supabase PostgreSQL API check. Shop records are authoritative in the cloud; the local encrypted store is only for cache, credentials and retry recovery." action={<div className="heading-actions"><button className="btn-outline" onClick={() => void printTestReceipt()} disabled={printerBusy || busy || !diag?.defaultPrinterName}><Printer size={15} /> {printerBusy ? "Printing…" : "Print test receipt"}</button><button className="btn-outline" onClick={runPing} disabled={busy}><Wifi size={15} /> Test cloud DB</button><button className="btn-primary" onClick={() => { void load(); onRefresh(); }} disabled={busy}><RefreshCw size={15} className={busy ? "spin" : ""} /> Refresh</button></div>} />
     {error && <div className="global-alert error"><AlertTriangle size={16} /><span>{error}</span></div>}
     {printerMessage && <div className="global-alert success"><Printer size={16} /><span>{printerMessage}</span></div>}
 
     <div className="stat-grid four">
-      <StatCard label="Network state" value={!online ? "Offline" : ping ? (ping.reachable ? "Cloud reachable" : "Cloud unreachable") : "Network online"} sub={!online ? "Using encrypted local storage" : ping ? ping.details : "Device network is available; run Ping cloud to test the configured host"} icon={Wifi} tone={!online ? "orange" : ping && !ping.reachable ? "red" : "green"} />
-      <StatCard label="Pending outbox" value={String(outbox)} sub="Queued local transactions" icon={Database} tone={outbox > 0 ? "orange" : "green"} />
-      <StatCard label="Snapshot integrity" value={cloud.verifiedChunks > 0 ? "Verified" : snapshot ? "Local only" : "No snapshot"} sub={cloud.verifiedChunks + " verified cloud chunks"} icon={ShieldCheck} tone={cloud.verifiedChunks > 0 ? "green" : snapshot ? "orange" : "red"} />
+      <StatCard label="Cloud database" value={ping ? (ping.reachable ? "Connected" : "Unavailable") : online ? "Not checked" : "Offline"} sub={ping ? ping.details : "Test the live Supabase PostgreSQL Data API"} icon={Wifi} tone={ping?.reachable ? "green" : online ? "orange" : "red"} />
+      <StatCard label="Pending cloud writes" value={String(outbox)} sub="Encrypted retry queue; not yet cloud-committed" icon={Database} tone={outbox > 0 ? "orange" : "green"} />
+      <StatCard label="Cloud snapshot integrity" value={cloud.verifiedChunks > 0 ? "Verified" : snapshot ? "Not verified" : "Unavailable"} sub={cloud.verifiedChunks + " verified cloud chunks · Supabase is the source of truth"} icon={ShieldCheck} tone={cloud.verifiedChunks > 0 ? "green" : snapshot ? "orange" : "red"} />
       <StatCard label="App uptime" value={diag ? formatUptime(diag.uptimeSeconds) : "—"} sub="This session" icon={Clock3} tone="purple" />
     </div>
 
@@ -119,9 +120,9 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
       </section>
 
       <section className="panel diag-card">
-        <div className="panel-heading"><div><span className="eyebrow muted">LOCAL DATABASE</span><h3>Encrypted SQLCipher database</h3></div><HardDrive size={18} className="muted-icon" /></div>
-        <div className="diag-row"><span>Database path</span><strong className="mono diag-path">{diag ? diag.dbPath : "—"}</strong></div>
-        <div className="diag-row"><span>Database size</span><strong>{diag ? formatBytes(diag.dbSizeBytes) : "—"}</strong></div>
+        <div className="panel-heading"><div><span className="eyebrow muted">ON-DEVICE RECOVERY</span><h3>Encrypted cache and retry store</h3></div><HardDrive size={18} className="muted-icon" /></div>
+        <div className="diag-row"><span>Protected recovery-store path</span><strong className="mono diag-path">{diag ? diag.dbPath : "—"}</strong></div>
+        <div className="diag-row"><span>Local cache/queue size</span><strong>{diag ? formatBytes(diag.dbSizeBytes) : "—"}</strong></div>
         <div className="diag-row"><span>Encryption</span><strong>{diag ? diag.databaseEncrypted ? "SQLCipher " + diag.databaseCipherVersion : "Not verified" : "Checking…"}</strong></div>
         <div className="diag-row"><span>Integrity quick-check</span><strong>{diag ? diag.databaseIntegrity === "ok" ? "Passed" : "Attention required" : "Checking…"}</strong></div>
         <div className="diag-row"><span>Journal mode</span><strong>{diag ? diag.journalMode.toUpperCase() : "Checking…"}</strong></div>
@@ -139,19 +140,22 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
       </section>
 
       <section className="panel diag-card">
-        <div className="panel-heading"><div><span className="eyebrow muted">CLOUD LATENCY</span><h3>Network reachability</h3></div><Activity size={18} className="muted-icon" /></div>
+        <div className="panel-heading"><div><span className="eyebrow muted">CLOUD DATABASE</span><h3>Supabase PostgreSQL · source of truth</h3></div><Activity size={18} className="muted-icon" /></div>
+        <div className="diag-row"><span>Business-data authority</span><strong>Supabase PostgreSQL</strong></div>
+        <div className="diag-row"><span>Last confirmed cloud snapshot</span><strong>{cloud.snapshotUpdatedAt ? dateTime(cloud.snapshotUpdatedAt) : "Not available"}</strong></div>
+        <div className="diag-row"><span>Verified cloud chunks</span><strong>{cloud.verifiedChunks}</strong></div>
         {ping ? <div className="diag-ping">
           <div className={"ping-orb " + (ping.reachable ? "ok" : "bad")}><Wifi size={22} /></div>
           <div><strong>{ping.reachable ? "Cloud reachable" : "Cloud unreachable"}</strong><small>{ping.reachable ? ping.latencyMs + " ms round-trip" : "Connection failed"}</small></div>
           <code>{ping.host}</code>
-        </div> : <div className="diag-empty"><Activity size={18} /><span>Run a latency probe to measure the connection to BeBoss Cloud.</span></div>}
+        </div> : <div className="diag-empty"><Activity size={18} /><span>Test the actual Supabase PostgreSQL Data API, not only the device network or TCP port.</span></div>}
       </section>
     </div>
 
     <section className="panel">
       <div className="panel-heading"><div><span className="eyebrow muted">HARDWARE & RUNTIME</span><h3>Device capabilities</h3></div><Cpu size={18} className="muted-icon" /></div>
       <div className="cap-grid">
-        <div className="cap-item"><MemoryStick size={16} /><div><strong>Local persistence</strong><small>SQLCipher + OS keyring</small></div><StatusPill value={diag?.databaseEncrypted ? "ACTIVE" : "PENDING"} /></div>
+        <div className="cap-item"><MemoryStick size={16} /><div><strong>On-device recovery</strong><small>Encrypted cache, credentials and retry queue only</small></div><StatusPill value={diag?.databaseEncrypted ? "ACTIVE" : "PENDING"} /></div>
         <div className="cap-item"><Cpu size={16} /><div><strong>Barcode input</strong><small>USB keyboard-wedge scanners</small></div><StatusPill value="ACTIVE" /></div>
         <div className="cap-item"><Printer size={16} /><div><strong>Receipt printing</strong><small>RAW ESC/POS via the OS default printer queue; system print/PDF remains available</small></div><StatusPill value={diag?.defaultPrinterName ? "ACTIVE" : "PENDING"} /></div>
         <div className="cap-item"><ShieldCheck size={16} /><div><strong>Owner verification</strong><small>SMS OTP + active membership</small></div><StatusPill value={s(cloud.owner?.user_id) ? "ACTIVE" : "PENDING"} /></div>

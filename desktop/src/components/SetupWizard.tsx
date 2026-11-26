@@ -5,6 +5,7 @@ import {
   Sun, Wifi, X, Zap
 } from "lucide-react";
 import { DESKTOP_LANGUAGES, type DesktopLanguage } from "../lib/i18n";
+import { checkCloudDatabase } from "../lib/cloud";
 import type { DesktopPreferences } from "../lib/types";
 
 type CheckStatus = "pending" | "running" | "complete" | "warning" | "failed";
@@ -37,15 +38,15 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
   en: {
     stepNames: ["Welcome", "Preferences", "System checks", "Ready"],
     welcomeTag: "FIRST-RUN SETUP", welcomeTitle: "Prepare your BeBoss workspace.",
-    welcomeBody: "Set your desktop preferences, verify the encrypted local workspace, and confirm that the device is ready before opening owner sign-in.",
+    welcomeBody: "Set your desktop preferences, verify the protected on-device recovery store, and confirm that the device is ready before opening owner sign-in.",
     features: [
-      { title: "Encrypted business data", body: "The local SQLCipher database is checked before the app continues." },
+      { title: "Cloud business data", body: "Supabase PostgreSQL is the source of truth; SQLCipher protects only the local cache and retry queue." },
       { title: "Protected credentials", body: "The operating-system credential vault is tested with a temporary secret." },
       { title: "Persistent device identity", body: "A unique desktop identity is provisioned for shop authorization." },
-      { title: "Cloud readiness", body: "The configured Supabase host is checked; sign-in performs the real authorization." }
+      { title: "Cloud readiness", body: "The PostgreSQL Data API is checked; SMS sign-in verifies owner and tenant access." }
     ],
     installTitle: "Choose the installation folder first.",
-    installBody: "On Windows, choose the application path in the installer directory screen. BeBoss creates its app icon and Start Menu shortcut. Business data stays in the operating system's protected application-data location.",
+    installBody: "On Windows, choose the application path in the installer directory screen. BeBoss creates its app icon and Start Menu shortcut. Shop records are stored in the Supabase cloud database; this computer keeps only a protected cache, pending retry queue, credentials and device settings.",
     preferencesTag: "PERSONALIZE YOUR WORKSPACE", preferencesTitle: "Make BeBoss work your way.",
     preferencesBody: "These choices are saved in the encrypted desktop preferences store and can be changed later in Settings.",
     language: "Interface language", appearance: "Appearance", dark: "Dark", light: "Light", system: "System",
@@ -53,39 +54,39 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     frequency: "Cloud refresh interval", motion: "Reduce interface motion", motionBody: "Respect reduced-motion preference and keep transitions minimal.",
     startPage: "Start page after owner sign-in",
     privacyTitle: "Privacy and device access",
-    privacyBody: "BeBoss stores business records in its protected application-data workspace, uses the operating system's secure credential vault, and connects to BeBoss Cloud for owner sign-in and synchronization. Printer and file-export access is used when you choose Print, Save or Export. Setup does not request access to unrelated personal files or media.",
+    privacyBody: "BeBoss stores authoritative shop records in its Supabase PostgreSQL cloud database. This computer keeps an encrypted temporary cache and retry queue for continuity, plus credentials and device preferences in protected storage. Printer and file-export access is used when you choose Print, Save or Export. Setup does not request access to unrelated personal files or media.",
     privacyCheck: "I have read and accept this device and data-use notice.",
     privacyError: "Review the access notice and accept it before continuing.",
     verificationTag: "REAL DEVICE VALIDATION", verificationTitle: "Verify this installation.",
-    verificationBody: "The checks below call the native desktop host and your configured cloud endpoint. A cloud warning does not block encrypted offline setup, but owner sign-in and synchronization require connectivity.",
+    verificationBody: "The checks below verify the native desktop runtime and make a real request to the Supabase PostgreSQL Data API. A live cloud database connection is required to finish first-time setup and sign in; cached data is never treated as a confirmed cloud write.",
     runChecks: "Run system checks", retry: "Retry checks", checking: "Running native checks…",
     finishTag: "SETUP COMPLETE", finishTitle: "Your desktop workspace is ready.",
-    finishBody: "Local security checks have passed. Continue to the BeBoss welcome page, then sign in with the shop owner's registered phone and SMS verification code.",
-    installPath: "Application data path", localDatabase: "Encrypted local database", pending: "Queued sync records",
-    cloudWarning: "The cloud endpoint could not be reached. You can finish local setup, but online owner verification and cloud synchronization require internet access.",
+    finishBody: "The Supabase cloud database and device security checks have passed. Continue to the BeBoss welcome page, then sign in with the shop owner's registered phone and SMS verification code.",
+    installPath: "Application data path", localDatabase: "Encrypted cache and retry store", pending: "Pending cloud writes",
+    cloudWarning: "The Supabase PostgreSQL database API is unreachable. Connect this device to the internet and verify the cloud endpoint before finishing setup.",
     back: "Back", next: "Next", finish: "Finish setup", working: "Saving preferences…",
     setupError: "Setup could not be completed. Resolve the failed check and retry.",
     statuses: { pending: "Pending", running: "Checking", complete: "Verified", warning: "Attention", failed: "Failed" },
     steps: [
       { title: "System compatibility", description: "Operating system and native desktop runtime" },
       { title: "Device identity", description: "Persistent desktop identity" },
-      { title: "Encrypted database", description: "SQLCipher and durable local outbox" },
+      { title: "Offline recovery store", description: "SQLCipher cache, credentials and durable retry queue" },
       { title: "Credential vault", description: "Operating-system secure storage" },
-      { title: "Cloud connectivity", description: "Supabase host reachability (TCP only)" }
+      { title: "Cloud connectivity", description: "Live Supabase PostgreSQL Data API request" }
     ]
   },
   rw: {
     stepNames: ["Murakaza neza", "Ibyo ukunda", "Igenzura", "Byiteguye"],
     welcomeTag: "GUTANGIZA BWA MBERE", welcomeTitle: "Tegura BeBoss kuri mudasobwa.",
-    welcomeBody: "Hitamo imiterere ukunda, genzura ububiko burinzwe n'ibanga, kandi wemeze ko igikoresho cyiteguye mbere yo kwinjira nk'umuyobozi.",
+    welcomeBody: "Hitamo imiterere ukunda, genzura ububiko bw'impinduka zitegereje, kandi wemeze ko database ya Supabase iri kuri internet mbere yo kwinjira nk'umuyobozi.",
     features: [
-      { title: "Amakuru arinzwe", body: "Ububiko bwa SQLCipher bugenzurwa mbere yo gukomeza." },
+      { title: "Amakuru yo muri Cloud", body: "Supabase PostgreSQL ni yo ibika amakuru nyayo; SQLCipher ibika cache n'impinduka zitegereje gusa." },
       { title: "Amakuru y'ibanga arinzwe", body: "Ububiko bw'ibanga bwa sisitemu bugenzurwa hakoreshejwe ijambo ry'ibanga ry'agateganyo." },
       { title: "Indangamuntu y'igikoresho", body: "Mudasobwa ihabwa indangamuntu yayo yo kwemezwa n'iduka." },
-      { title: "Guhuza na Cloud", body: "Aderesi ya Supabase iragenzurwa; kwinjira nyakuri ni byo byemeza uburenganzira." }
+      { title: "Guhuza na Cloud", body: "Supabase PostgreSQL Data API irageragezwa; SMS yemeza umuyobozi n'uburenganzira bw'iduka." }
     ],
     installTitle: "Banza uhitemo aho porogaramu izajya.",
-    installBody: "Kuri Windows, hitamo aho BeBoss izashyirwa mu idirishya ry'installer. BeBoss ikora ikirango cya porogaramu na shortcut muri Start Menu. Amakuru y'ubucuruzi abikwa ahantu harinzwe na sisitemu.",
+    installBody: "Kuri Windows, hitamo aho BeBoss izashyirwa mu idirishya ry'installer. BeBoss ikora ikirango cya porogaramu na shortcut muri Start Menu. Amakuru nyayo y'ubucuruzi abikwa muri database ya Supabase kuri cloud; mudasobwa igumana cache irinzwe, impinduka zitegereje koherezwa, ibanga n'igenamiterere gusa.",
     preferencesTag: "HITAMO IBYO UKUNDA", preferencesTitle: "Tegura BeBoss uko ubishaka.",
     preferencesBody: "Ibi bihitamo bibikwa mu bubiko burinzwe kandi ushobora kubihindura muri Settings nyuma.",
     language: "Ururimi", appearance: "Imigaragarire", dark: "Umwijima", light: "Umucyo", system: "Sisitemu",
@@ -93,39 +94,39 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     frequency: "Igihe cyo kongera gusoma amakuru", motion: "Gabanya animasiyo", motionBody: "Kurikiza ihitamo ryo kugabanya imigendere y'amashusho.",
     startPage: "Ipaji ibanza nyuma yo kwinjira",
     privacyTitle: "Ibanga n'uburenganzira bwa mudasobwa",
-    privacyBody: "BeBoss ibika amakuru y'ubucuruzi mu bubiko bwayo burinzwe, ikoresha ububiko bw'ibanga bwa sisitemu, kandi ihuza na BeBoss Cloud mu kwinjira no guhererekanya amakuru. Printer n'ububiko bwa dosiye bikoreshwa igihe uhisemo Gucapa, Kubika cyangwa Kohereza. Iyi setup ntisaba kugera ku mafoto cyangwa izindi dosiye zawe zitari iz'akazi.",
+    privacyBody: "Amakuru nyayo y'ubucuruzi abikwa muri database ya Supabase PostgreSQL. Mudasobwa igumana cache n'umurongo w'impinduka zitegereje byarinzwe n'ibanga, hamwe n'amakuru yo kwinjira n'igenamiterere. Printer n'ububiko bwa dosiye bikoreshwa igihe uhisemo Gucapa, Kubika cyangwa Kohereza. Iyi setup ntisaba kugera ku mafoto cyangwa izindi dosiye zawe zitari iz'akazi.",
     privacyCheck: "Nasomye kandi nemeye aya mabwiriza yo gukoresha mudasobwa n'amakuru.",
     privacyError: "Soma amabwiriza yo kugera ku makuru hanyuma uyemere mbere yo gukomeza.",
     verificationTag: "IGENZURA NYAKURI", verificationTitle: "Genza iyi installation.",
-    verificationBody: "Igenzura rikoresha native desktop host n'aderesi ya cloud washyizeho. Ikibazo cya cloud ntikibuza gutegura ububiko bwa offline burinzwe, ariko kwinjira no guhuza amakuru bisaba internet.",
+    verificationBody: "Igenzura risuzuma porogaramu ya mudasobwa kandi rikohereza ubusabe nyakuri kuri Supabase PostgreSQL Data API. Database yo muri Cloud igomba kuboneka mbere yo kurangiza setup no kwinjira; cache ntifatwa nk'impinduka yemejwe na server.",
     runChecks: "Tangira igenzura", retry: "Ongera ugenzure", checking: "Igenzura rirakorwa…",
     finishTag: "BYARANGIYE", finishTitle: "Ahantu ho gukorera hariteguye.",
     finishBody: "Igenzura ry'umutekano wa mudasobwa ryatsinze. Komeza ujye ku rupapuro rwa BeBoss, winjire ukoresheje telefone yanditse y'umuyobozi na kode ya SMS.",
-    installPath: "Aho amakuru abikwa", localDatabase: "Ububiko bw'ibanga bwa mudasobwa", pending: "Impinduka zitegereje koherezwa",
-    cloudWarning: "Aderesi ya cloud ntiyabonetse. Ushobora kurangiza gutegura mudasobwa, ariko kwemeza umuyobozi no guhuza amakuru bisaba internet.",
+    installPath: "Aho amakuru abikwa", localDatabase: "Cache n'umurongo wo kohereza impinduka", pending: "Impinduka zitegereje koherezwa",
+    cloudWarning: "Database ya Supabase PostgreSQL ntiboneka. Huza internet kandi ugenzure aderesi ya cloud mbere yo kurangiza setup.",
     back: "Subira inyuma", next: "Komeza", finish: "Rangiza", working: "Kubika ibyo wahisemo…",
     setupError: "Igenzura ntiryashoboye kurangira. Kosora ikibazo hanyuma wongere ugerageze.",
     statuses: { pending: "Birategereje", running: "Irakorwa", complete: "Byemejwe", warning: "Icyitonderwa", failed: "Byanze" },
     steps: [
       { title: "Sisitemu", description: "Operating system na porogaramu ya desktop" },
       { title: "Indangamuntu", description: "Indangamuntu ihoraho ya mudasobwa" },
-      { title: "Ububiko burinzwe", description: "SQLCipher n'umurongo w'impinduka" },
+      { title: "Ububiko bwo kugarura", description: "SQLCipher, cache n'umurongo wo kohereza" },
       { title: "Ububiko bw'ibanga", description: "Umutekano wa sisitemu" },
-      { title: "Guhuza na Cloud", description: "Kugera kuri Supabase (TCP gusa)" }
+      { title: "Guhuza na Cloud", description: "Ubusabe nyakuri kuri Supabase PostgreSQL Data API" }
     ]
   },
   fr: {
     stepNames: ["Bienvenue", "Préférences", "Vérifications", "Prêt"],
     welcomeTag: "PREMIÈRE INSTALLATION", welcomeTitle: "Préparez votre espace BeBoss.",
-    welcomeBody: "Choisissez vos préférences, vérifiez l'espace local chiffré et confirmez que l'appareil est prêt avant d'ouvrir la connexion propriétaire.",
+    welcomeBody: "Choisissez vos préférences, vérifiez le stockage de récupération protégé et confirmez que la base cloud Supabase est joignable avant la connexion propriétaire.",
     features: [
-      { title: "Données chiffrées", body: "La base locale SQLCipher est vérifiée avant de continuer." },
+      { title: "Données cloud", body: "Supabase PostgreSQL est la source de vérité ; SQLCipher protège uniquement le cache et la file de reprise locale." },
       { title: "Identifiants protégés", body: "Le coffre du système est testé avec un secret temporaire." },
       { title: "Identité persistante", body: "Une identité unique de bureau est créée pour l'autorisation de la boutique." },
-      { title: "Disponibilité du cloud", body: "L'hôte Supabase est testé ; la connexion vérifie réellement les droits." }
+      { title: "Disponibilité du cloud", body: "L'API PostgreSQL Supabase est testée ; le SMS confirme le propriétaire et les droits du magasin." }
     ],
     installTitle: "Choisissez d'abord le dossier d'installation.",
-    installBody: "Sous Windows, choisissez le chemin de l'application dans l'écran du dossier de l'installateur. BeBoss crée l'icône et le raccourci du menu Démarrer. Les données restent dans le dossier applicatif protégé du système.",
+    installBody: "Sous Windows, choisissez le chemin de l'application dans l'écran du dossier de l'installateur. BeBoss crée l'icône et le raccourci du menu Démarrer. Les données commerciales sont stockées dans la base cloud Supabase ; cet ordinateur ne conserve qu'un cache protégé, une file de reprise, les identifiants et les préférences de l'appareil.",
     preferencesTag: "PERSONNALISEZ VOTRE ESPACE", preferencesTitle: "Configurez BeBoss à votre façon.",
     preferencesBody: "Ces choix sont enregistrés dans les préférences chiffrées et restent modifiables dans les paramètres.",
     language: "Langue de l'interface", appearance: "Apparence", dark: "Sombre", light: "Clair", system: "Système",
@@ -133,39 +134,39 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     frequency: "Intervalle d'actualisation", motion: "Réduire les animations", motionBody: "Respecter la préférence de réduction des mouvements.",
     startPage: "Page d'accueil après connexion",
     privacyTitle: "Confidentialité et accès à l'appareil",
-    privacyBody: "BeBoss conserve les données professionnelles dans son espace applicatif protégé, utilise le coffre sécurisé du système et se connecte à BeBoss Cloud pour la connexion du propriétaire et la synchronisation. L'accès à l'imprimante et aux fichiers est utilisé lorsque vous choisissez Imprimer, Enregistrer ou Exporter. L'installation ne demande pas l'accès aux fichiers personnels ou médias sans rapport avec ces fonctions.",
+    privacyBody: "Les données commerciales faisant autorité sont stockées dans Supabase PostgreSQL. Cet ordinateur conserve un cache temporaire chiffré et une file de reprise, ainsi que les identifiants et préférences protégés. L'accès à l'imprimante et aux fichiers est utilisé lorsque vous choisissez Imprimer, Enregistrer ou Exporter. L'installation ne demande pas l'accès aux fichiers personnels ou médias sans rapport avec ces fonctions.",
     privacyCheck: "J'ai lu et j'accepte cette notice d'utilisation de l'appareil et des données.",
     privacyError: "Veuillez lire et accepter la notice d'accès avant de continuer.",
     verificationTag: "VALIDATION RÉELLE", verificationTitle: "Vérifiez cette installation.",
-    verificationBody: "Les contrôles utilisent le composant natif et l'hôte cloud configuré. Un avertissement cloud n'empêche pas la configuration hors ligne chiffrée, mais la connexion propriétaire et la synchronisation nécessitent Internet.",
+    verificationBody: "Les contrôles vérifient le composant natif et envoient une vraie requête à l'API de données Supabase PostgreSQL. La base cloud doit être joignable pour terminer la première configuration et se connecter ; le cache n'est jamais considéré comme une écriture confirmée dans le cloud.",
     runChecks: "Lancer les vérifications", retry: "Réessayer", checking: "Vérifications en cours…",
     finishTag: "INSTALLATION TERMINÉE", finishTitle: "Votre espace de travail est prêt.",
     finishBody: "Les contrôles locaux ont réussi. Continuez vers l'accueil BeBoss, puis connectez-vous avec le téléphone enregistré du propriétaire et le code SMS.",
-    installPath: "Chemin des données applicatives", localDatabase: "Base locale chiffrée", pending: "Éléments de synchronisation en attente",
-    cloudWarning: "L'hôte cloud est inaccessible. Vous pouvez terminer la configuration locale, mais la vérification propriétaire et la synchronisation nécessitent Internet.",
+    installPath: "Chemin des données applicatives", localDatabase: "Cache chiffré et file de reprise", pending: "Éléments de synchronisation en attente",
+    cloudWarning: "L'API de la base Supabase PostgreSQL est inaccessible. Connectez l'appareil à Internet et vérifiez le point de terminaison cloud avant de terminer.",
     back: "Retour", next: "Suivant", finish: "Terminer", working: "Enregistrement des préférences…",
     setupError: "La configuration n'a pas abouti. Corrigez le contrôle en échec et réessayez.",
     statuses: { pending: "En attente", running: "Vérification", complete: "Vérifié", warning: "Attention", failed: "Échec" },
     steps: [
       { title: "Compatibilité système", description: "Système et exécution native" },
       { title: "Identité de l'appareil", description: "Identité persistante du bureau" },
-      { title: "Base chiffrée", description: "SQLCipher et file locale durable" },
+      { title: "Base chiffrée", description: "Cache SQLCipher et file durable" },
       { title: "Coffre d'identifiants", description: "Stockage sécurisé du système" },
-      { title: "Connexion cloud", description: "Disponibilité de l'hôte Supabase (TCP)" }
+      { title: "Connexion cloud", description: "Requête réelle à l'API Supabase PostgreSQL" }
     ]
   },
   sw: {
     stepNames: ["Karibu", "Mapendeleo", "Ukaguzi", "Tayari"],
     welcomeTag: "MARA YA KWANZA", welcomeTitle: "Andaa sehemu yako ya BeBoss.",
-    welcomeBody: "Chagua mapendeleo ya kompyuta, kagua hifadhi fiche na uthibitishe kuwa kifaa kiko tayari kabla ya kufungua ukurasa wa mmiliki.",
+    welcomeBody: "Chagua mapendeleo ya kompyuta, kagua hifadhi ya foleni fiche na uthibitishe kuwa hifadhidata ya Supabase inapatikana kabla ya kuingia.",
     features: [
-      { title: "Data fiche za biashara", body: "Hifadhidata ya ndani ya SQLCipher hukaguliwa kabla ya kuendelea." },
+      { title: "Data ya Cloud", body: "Supabase PostgreSQL ndiyo hifadhidata kuu; SQLCipher hulinda cache na foleni ya kutuma mabadiliko tu." },
       { title: "Siri zilizolindwa", body: "Hifadhi salama ya mfumo hujaribiwa kwa siri ya muda." },
       { title: "Utambulisho wa kifaa", body: "Kompyuta hupata utambulisho wa kudumu kwa idhini ya duka." },
-      { title: "Utayari wa mtandao", body: "Anwani ya Supabase hukaguliwa; kuingia ndiko kunathibitisha idhini halisi." }
+      { title: "Utayari wa mtandao", body: "API ya Supabase PostgreSQL hupimwa; SMS huthibitisha mmiliki na ruhusa za duka." }
     ],
     installTitle: "Chagua folda ya usakinishaji kwanza.",
-    installBody: "Kwenye Windows, chagua mahali pa programu kwenye ukurasa wa folda wa kisakinishi. BeBoss hutengeneza ikoni na njia ya mkato ya Start Menu. Data ya biashara huhifadhiwa kwenye eneo la data la mfumo lililolindwa.",
+    installBody: "Kwenye Windows, chagua mahali pa programu kwenye ukurasa wa folda wa kisakinishi. BeBoss hutengeneza ikoni na njia ya mkato ya Start Menu. Data halisi ya biashara huhifadhiwa kwenye hifadhidata ya Supabase Cloud; kompyuta huweka cache fiche, foleni ya majaribio ya kutuma, siri na mapendeleo ya kifaa tu.",
     preferencesTag: "WEKA MAPENDELEO YAKO", preferencesTitle: "Tumia BeBoss unavyopendelea.",
     preferencesBody: "Chaguo hizi huhifadhiwa kwa usimbaji fiche na zinaweza kubadilishwa baadaye kwenye Settings.",
     language: "Lugha ya kiolesura", appearance: "Mwonekano", dark: "Giza", light: "Mwanga", system: "Mfumo",
@@ -173,25 +174,25 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     frequency: "Muda wa kusasisha data", motion: "Punguza mwendo", motionBody: "Heshimu upendeleo wa kupunguza uhuishaji.",
     startPage: "Ukurasa wa kuanza baada ya mmiliki kuingia",
     privacyTitle: "Faragha na ufikiaji wa kifaa",
-    privacyBody: "BeBoss huhifadhi rekodi za biashara kwenye eneo lake salama la programu, hutumia hifadhi salama ya mfumo, na huunganisha BeBoss Cloud kwa kuingia kwa mmiliki na kusawazisha data. Ufikiaji wa kichapishi na faili hutumika unapochagua Chapisha, Hifadhi au Hamisha. Usakinishaji hauhitaji ufikiaji wa faili binafsi au midia isiyohusiana na kazi hizo.",
+    privacyBody: "Data halisi ya biashara huhifadhiwa kwenye Supabase PostgreSQL. Kompyuta huweka cache ya muda iliyosimbwa na foleni ya kutuma tena, pamoja na siri na mapendeleo yaliyolindwa. Ufikiaji wa kichapishi na faili hutumika unapochagua Chapisha, Hifadhi au Hamisha. Usakinishaji hauhitaji ufikiaji wa faili binafsi au midia isiyohusiana na kazi hizo.",
     privacyCheck: "Nimesoma na kukubali taarifa hii ya matumizi ya kifaa na data.",
     privacyError: "Soma na ukubali taarifa ya ufikiaji kabla ya kuendelea.",
     verificationTag: "UKAGUZI HALISI", verificationTitle: "Thibitisha usakinishaji huu.",
-    verificationBody: "Ukaguzi huu hutumia mfumo asilia wa kompyuta na anwani halisi ya mtandao ulioweka. Onyo la mtandao halizuii usanidi fiche wa offline, lakini kuingia kwa mmiliki na usawazishaji vinahitaji intaneti.",
+    verificationBody: "Ukaguzi huthibitisha programu asilia na hutuma ombi halisi kwa Supabase PostgreSQL Data API. Hifadhidata ya Cloud lazima ipatikane ili kumaliza usanidi wa kwanza na kuingia; cache haihesabiwi kama maandishi yaliyohifadhiwa kwenye Cloud.",
     runChecks: "Anza ukaguzi", retry: "Jaribu tena", checking: "Ukaguzi unaendelea…",
     finishTag: "USANIDI UMEKAMILIKA", finishTitle: "Sehemu yako ya kazi iko tayari.",
     finishBody: "Ukaguzi wa usalama wa ndani umefaulu. Endelea kwenye ukurasa wa BeBoss kisha ingia kwa simu iliyosajiliwa ya mmiliki na msimbo wa SMS.",
-    installPath: "Mahali pa data ya programu", localDatabase: "Hifadhidata fiche ya ndani", pending: "Rekodi zinazosubiri kusawazishwa",
-    cloudWarning: "Anwani ya mtandao haipatikani. Unaweza kukamilisha usanidi wa ndani, lakini uthibitisho wa mmiliki na usawazishaji vinahitaji intaneti.",
+    installPath: "Mahali pa data ya programu", localDatabase: "Cache fiche na foleni ya kutuma tena", pending: "Rekodi zinazosubiri kusawazishwa",
+    cloudWarning: "Supabase PostgreSQL Data API haipatikani. Unganisha kompyuta kwenye intaneti na uthibitishe anwani ya Cloud kabla ya kumaliza usanidi.",
     back: "Rudi", next: "Endelea", finish: "Maliza usanidi", working: "Inahifadhi mapendeleo…",
     setupError: "Usanidi haujakamilika. Rekebisha ukaguzi ulioshindwa kisha ujaribu tena.",
     statuses: { pending: "Inasubiri", running: "Inakagua", complete: "Imethibitishwa", warning: "Tahadhari", failed: "Imeshindwa" },
     steps: [
       { title: "Ulinganifu wa mfumo", description: "Mfumo wa uendeshaji na runtime" },
       { title: "Utambulisho wa kifaa", description: "Utambulisho wa kudumu wa kompyuta" },
-      { title: "Hifadhidata fiche", description: "SQLCipher na foleni ya ndani" },
+      { title: "Hifadhi ya kurejesha", description: "Cache ya SQLCipher na foleni ya kudumu" },
       { title: "Hifadhi ya siri", description: "Usalama wa mfumo" },
-      { title: "Muunganisho wa mtandao", description: "Ufikivu wa Supabase (TCP pekee)" }
+      { title: "Muunganisho wa mtandao", description: "Ombi halisi kwa Supabase PostgreSQL Data API" }
     ]
   }
 };
@@ -263,20 +264,19 @@ export function SetupWizard({
       log("Persistent desktop identity verified.");
 
       active = "database"; setActiveStep(active);
-      updateStep(active, "running", "Opening SQLCipher and inspecting the sync outbox…");
+      updateStep(active, "running", "Verifying the encrypted recovery store and pending cloud-write queue…");
       const pending = await window.beBossDesktop.local.outboxCount();
-      const localSnapshot = await window.beBossDesktop.local.load();
       if (!system.databaseEncrypted || !system.databaseCipherVersion) {
-        throw new Error("SQLCipher could not confirm that the local database is encrypted.");
+        throw new Error("SQLCipher could not confirm that the local recovery store is encrypted.");
       }
       if (system.databaseIntegrity !== "ok") {
-        throw new Error("The local SQLCipher database did not pass its integrity check. Do not continue writing shop data until it is recovered from a verified backup.");
+        throw new Error("The encrypted local recovery store failed its integrity check. Do not discard it until any pending cloud writes have been recovered or a verified backup is available.");
       }
       if (system.journalMode.toLowerCase() !== "wal") {
-        throw new Error("The local SQLCipher database is not using WAL mode. Close other BeBoss instances and rerun setup diagnostics.");
+        throw new Error("The local recovery store is not using WAL mode. Close other BeBoss instances and rerun setup diagnostics.");
       }
-      updateStep(active, "complete", "SQLCipher " + system.databaseCipherVersion + " · integrity OK · WAL mode · " + (localSnapshot ? "existing shop data found" : "new workspace") + " · " + pending + " queued item(s)");
-      log("SQLCipher quick_check passed, WAL mode verified, and durable outbox inspected.");
+      updateStep(active, "complete", "Protected cache/retry store verified · SQLCipher " + system.databaseCipherVersion + " · integrity OK · WAL mode · " + pending + " pending cloud write(s)");
+      log("The encrypted on-device recovery store passed integrity checks; shop data remains cloud-authoritative.");
 
       active = "security"; setActiveStep(active);
       updateStep(active, "running", "Testing operating-system credential storage…");
@@ -293,32 +293,11 @@ export function SetupWizard({
       updateStep(active, "complete", "Credential vault write/read verified; temporary secret removed.");
 
       active = "cloud"; setActiveStep(active);
-      updateStep(active, "running", "Testing the configured Supabase network endpoint…");
-      const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || "").trim();
-      let cloudWarning = false;
-      if (!supabaseUrl) {
-        cloudWarning = true;
-        updateStep(active, "warning", "Supabase URL is not configured in this build.");
-        log("Cloud host is not configured; online sign-in and synchronization require build configuration.");
-      } else {
-        try {
-          const endpoint = new URL(supabaseUrl);
-          if (endpoint.protocol !== "https:") throw new Error("The configured Supabase endpoint must use HTTPS.");
-          const ping = await window.beBossDesktop.networkPing(endpoint.hostname + ":443");
-          if (ping.reachable) {
-            updateStep(active, "complete", "Supabase host reachable · " + ping.latencyMs + " ms TCP response (authentication not tested)");
-            log("Supabase TCP reachability verified. Authentication will be tested at owner sign-in.");
-          } else {
-            cloudWarning = true;
-            updateStep(active, "warning", "Cloud is unreachable. " + ping.details);
-            log("Cloud is currently unreachable; offline local setup remains available.");
-          }
-        } catch (error) {
-          cloudWarning = true;
-          updateStep(active, "warning", "Cloud reachability could not be verified: " + errorMessage(error));
-          log("Cloud connectivity check needs attention.");
-        }
-      }
+      updateStep(active, "running", "Sending a real request to the Supabase PostgreSQL Data API…");
+      log("Verifying the live Supabase database API rather than a TCP-only connection.");
+      const cloudProbe = await checkCloudDatabase();
+      updateStep(active, "complete", "Supabase PostgreSQL Data API reachable · " + cloudProbe.latencyMs + " ms · " + cloudProbe.host);
+      log("The cloud database API responded successfully. Owner identity and tenant permissions will be checked during SMS sign-in.");
       setDiagnostics({
         osPlatform: system.osPlatform, osArch: system.osArch, appVersion: system.appVersion,
         dbPath: system.dbPath, databaseEncrypted: Boolean(system.databaseEncrypted),
@@ -326,8 +305,7 @@ export function SetupWizard({
         journalMode: system.journalMode, pendingOutboxCount: pending
       });
       setCompleted(true); setActiveStep(null);
-      if (cloudWarning) log("Local checks passed with a cloud connectivity warning.");
-      else log("All required local checks passed.");
+      log("Cloud database connectivity and all required native security checks passed.");
       return true;
     } catch (error) {
       const message = errorMessage(error);

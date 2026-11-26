@@ -26,6 +26,58 @@ export const authClient = createClient(url, publishableKey, {
   }
 });
 
+
+/**
+ * Verify the actual Supabase Data API backed by PostgreSQL. A TCP handshake to
+ * port 443 is not enough: this request must reach PostgREST with the configured
+ * public project key before first-run setup can complete.
+ */
+export async function checkCloudDatabase(): Promise<{
+  host: string;
+  latencyMs: number;
+  reachable: boolean;
+  details: string;
+}> {
+  const host = new URL(url).host;
+  const endpoint = url.replace(/\/+$/, "") + "/rest/v1/app_releases?select=id&limit=1";
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 8_000);
+  const startedAt = performance.now();
+  try {
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        apikey: publishableKey,
+        Accept: "application/json"
+      },
+      cache: "no-store",
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => "")).slice(0, 240);
+      throw new Error("Supabase PostgreSQL Data API returned HTTP " + response.status +
+        (detail ? ": " + detail : ""));
+    }
+    const rows = await response.json().catch(() => null);
+    if (!Array.isArray(rows)) {
+      throw new Error("Supabase responded, but the protected public-release query did not return a valid database response.");
+    }
+    return {
+      host,
+      latencyMs: Math.round(performance.now() - startedAt),
+      reachable: true,
+      details: "Supabase PostgREST is responding. Owner authentication and tenant-scoped access are verified at sign-in."
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(detail.includes("aborted")
+      ? "Supabase PostgreSQL connection timed out after 8 seconds."
+      : "Could not verify the Supabase PostgreSQL Data API: " + detail);
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 // Master Admin uses a separate Supabase Auth client and encrypted token namespace.
 // This keeps the global administrator's credentials completely separate from a
 // shop owner's mobile-number verified session.
