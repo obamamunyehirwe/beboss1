@@ -750,6 +750,61 @@ object SupabaseAdminClient {
         }
     }
 
+    /**
+     * Migrates project-key-signed legacy branch snapshots without restoring the old
+     * global HMAC key to the APK. The Edge Function resolves the tenant from the
+     * registered per-device credential and verifies the legacy signature server-side.
+     * Current BBSHARE2 packets should still be verified locally with the shop key.
+     */
+    suspend fun verifyLegacyBranchShareWithDeviceCredential(token: String): Result<ShopImportSummary> =
+        withContext(Dispatchers.IO) {
+            val cleanToken = token.trim()
+            if (!cleanToken.startsWith("BBSHARE1:") && !cleanToken.startsWith("BBSHARE2:")) {
+                return@withContext Result.failure(IllegalArgumentException("The supplied branch token is not a supported signed DataShare package."))
+            }
+            if (!isConfigured()) {
+                return@withContext Result.failure(IllegalStateException("Connect this terminal to BeBoss Cloud to verify this older signed branch package."))
+            }
+            val shopId = AndroidDeviceCredentialStore.currentShopId()
+            val saved = AndroidDeviceCredentialStore.readForShop(shopId)
+                ?: return@withContext Result.failure(
+                    SecurityException("This terminal needs owner-approved device enrollment before it can migrate an older signed branch package.")
+                )
+            try {
+                val active = refreshAndroidDeviceCredential(saved)
+                val payload = JSONObject()
+                    .put("action", "verify_device_branch_share")
+                    .put("token", cleanToken)
+                val request = Request.Builder()
+                    .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
+                    .addHeader("apikey", getSupabaseApiKey())
+                    .addHeader("X-BeBoss-Device-ID", active.deviceId)
+                    .addHeader("X-BeBoss-Device-Token", active.accessToken)
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody(jsonMediaType))
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    val raw = response.body?.string().orEmpty()
+                    val result = runCatching { JSONObject(raw) }.getOrNull()
+                    if (!response.isSuccessful || result?.optBoolean("ok") != true) {
+                        val message = result?.optString("message").orEmpty()
+                        throw IOException(message.ifBlank {
+                            "The server could not verify this legacy DataShare token (HTTP ${response.code})."
+                        })
+                    }
+                    val snapshot = result.optJSONObject("snapshot")
+                        ?: throw IOException("The server returned no verified branch snapshot.")
+                    val parsed = ShopDataTransferManager.parseShopPackageString(
+                        snapshot.toString(),
+                        enforceReplayProtection = true
+                    )
+                    Result.success(parsed)
+                }
+            } catch (error: Exception) {
+                Result.failure(error)
+            }
+        }
+
     private fun buildRestRequest(
         path: String,
         useAdminJwtIfAvailable: Boolean = false,
