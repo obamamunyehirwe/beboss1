@@ -600,7 +600,12 @@ object SupabaseAdminClient {
         if (!cleanToken.startsWith("BBSHARE1:") && !cleanToken.startsWith("BBSHARE2:")) {
             return@withContext Result.failure(IllegalArgumentException("Only signed legacy branch tokens can use this migration route."))
         }
-        if (cleanToken.length > SyncPayloadValidator.MAX_TOKEN_LENGTH) {
+        val maxLegacyTokenLength = if (cleanToken.startsWith("BBSHARE1:")) {
+            4 * 1024 * 1024
+        } else {
+            7 * 1024 * 1024
+        }
+        if (cleanToken.length > maxLegacyTokenLength) {
             return@withContext Result.failure(IllegalArgumentException("The legacy branch token exceeds the safe size limit."))
         }
         try {
