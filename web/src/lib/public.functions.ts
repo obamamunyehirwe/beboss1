@@ -753,11 +753,12 @@ export const createGatewayCheckout = createServerFn({ method: "POST" })
  * Binary downloads remain on GitHub Releases; no storage credentials are used.
  */
 export type PublicDesktopAsset = {
+  id: string;
+  versionName: string;
   name: string;
-  downloadUrl: string;
   sizeBytes: number;
   downloadCount: number;
-  sha256: string | null;
+  sha256: string;
 };
 
 export type PublicDesktopRelease = {
@@ -773,163 +774,99 @@ export type PublicDesktopRelease = {
   };
 };
 
-type GithubReleaseAsset = {
-  name?: string;
-  browser_download_url?: string;
-  size?: number;
-  download_count?: number;
-};
-
-type GithubRelease = {
-  tag_name?: string;
-  html_url?: string;
-  published_at?: string;
-  draft?: boolean;
-  prerelease?: boolean;
-  assets?: GithubReleaseAsset[];
-};
-
-const DESKTOP_RELEASE_URL = "https://github.com/obamamunyehirwe/beboss1/releases";
+const DESKTOP_RELEASE_PAGE = "/download?platform=desktop";
 let desktopReleaseCache: { expiresAt: number; value: PublicDesktopRelease } | null = null;
-const DESKTOP_RELEASE_ASSET_NAMES = {
-  windows: "BeBoss-Windows-x64-Setup.exe",
-  macos: "BeBoss-macOS.dmg",
-  linux: "BeBoss-Linux-x64.AppImage",
-} as const;
 
 export const getPublicDesktopRelease = createServerFn({ method: "GET" }).handler(
   async (): Promise<PublicDesktopRelease> => {
     if (desktopReleaseCache && desktopReleaseCache.expiresAt > Date.now()) {
       return desktopReleaseCache.value;
     }
-    const cacheResult = (value: PublicDesktopRelease): PublicDesktopRelease => {
-      desktopReleaseCache = { expiresAt: Date.now() + 5 * 60_000, value };
-      return value;
-    };
     const empty: PublicDesktopRelease = {
       published: false,
       unavailable: false,
       tagName: null,
       publishedAt: null,
-      releaseUrl: DESKTOP_RELEASE_URL,
+      releaseUrl: DESKTOP_RELEASE_PAGE,
       assets: { windows: null, macos: null, linux: null },
     };
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6_000);
     try {
-      const response = await fetch(
-        "https://api.github.com/repos/obamamunyehirwe/beboss1/releases?per_page=30",
-        {
-          headers: {
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "BeBoss-Download-Page",
-          },
-          signal: controller.signal,
-          cache: "no-store",
-        },
-      );
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data, error } = await supabaseAdmin
+        .from("desktop_app_releases")
+        .select("id,platform,version_name,file_name,size_bytes,sha256,download_count,published_at")
+        .eq("is_current", true)
+        .eq("is_public", true)
+        .order("published_at", { ascending: false })
+        .limit(3);
+      if (error) throw new Error(error.message);
 
-      if (!response.ok) {
-        if (response.status === 404) return cacheResult(empty);
-        console.warn("[BeBoss desktop releases] GitHub returned", response.status);
-        return cacheResult({ ...empty, unavailable: true });
-      }
-
-      const releases = (await response.json()) as GithubRelease[];
-      const release = releases.find(
-        (item) =>
-          typeof item.tag_name === "string" &&
-          item.tag_name.startsWith("desktop-v") &&
-          item.draft !== true &&
-          item.prerelease !== true,
-      );
-      if (!release) return cacheResult(empty);
-
-      const findAsset = (expectedName: string): PublicDesktopAsset | null => {
-        const asset = release.assets?.find((item) => item.name === expectedName);
-        if (!asset || typeof asset.browser_download_url !== "string") return null;
-        try {
-          const url = new URL(asset.browser_download_url);
-          if (url.protocol !== "https:" || url.hostname !== "github.com") return null;
-          return {
-            name: expectedName,
-            downloadUrl: url.toString(),
-            sizeBytes: Number.isFinite(asset.size) ? Number(asset.size) : 0,
-            downloadCount: Number.isFinite(asset.download_count) ? Number(asset.download_count) : 0,
-            sha256: null,
-          };
-        } catch {
-          return null;
-        }
+      const assets: PublicDesktopRelease["assets"] = {
+        windows: null,
+        macos: null,
+        linux: null,
       };
-
-      // Read the checksum manifest from the same published GitHub Release.
-      // Only the three exact installer filenames are accepted as checksum keys.
-      const checksums = new Map<string, string>();
-      const manifestAsset = release.assets?.find((item) => item.name === "SHA256SUMS.txt");
-      if (manifestAsset && typeof manifestAsset.browser_download_url === "string") {
-        try {
-          const manifestUrl = new URL(manifestAsset.browser_download_url);
-          if (manifestUrl.protocol === "https:" && manifestUrl.hostname === "github.com") {
-            const manifestResponse = await fetch(manifestUrl, {
-              signal: controller.signal,
-              cache: "no-store",
-              headers: { "User-Agent": "BeBoss-Download-Page" },
-            });
-            if (manifestResponse.ok) {
-              const manifestText = await manifestResponse.text();
-              if (manifestText.length <= 16_384) {
-                for (const line of manifestText.split(/\r?\n/)) {
-                  const match = line.trim().match(/^([a-f0-9]{64})\s+\*?(.+)$/i);
-                  if (!match) continue;
-                  const filename = match[2].trim();
-                  if (Object.values(DESKTOP_RELEASE_ASSET_NAMES).includes(filename as (typeof DESKTOP_RELEASE_ASSET_NAMES)[keyof typeof DESKTOP_RELEASE_ASSET_NAMES])) {
-                    checksums.set(filename, match[1].toLowerCase());
-                  }
-                }
-              } else {
-                console.warn("[BeBoss desktop releases] SHA-256 manifest exceeded the size limit.");
-              }
-            }
-          }
-        } catch (error) {
-          console.warn("[BeBoss desktop releases] Could not read SHA-256 manifest", error);
-        }
+      for (const row of data ?? []) {
+        if (row.platform !== "windows" && row.platform !== "macos" && row.platform !== "linux") continue;
+        if (assets[row.platform]) continue;
+        assets[row.platform] = {
+          id: row.id,
+          versionName: row.version_name,
+          name: row.file_name,
+          sizeBytes: Number(row.size_bytes) || 0,
+          downloadCount: Number(row.download_count) || 0,
+          sha256: row.sha256,
+        };
       }
-
-      const attachChecksum = (asset: PublicDesktopAsset | null): PublicDesktopAsset | null =>
-        asset ? { ...asset, sha256: checksums.get(asset.name) ?? null } : null;
-      const assets = {
-        windows: attachChecksum(findAsset(DESKTOP_RELEASE_ASSET_NAMES.windows)),
-        macos: attachChecksum(findAsset(DESKTOP_RELEASE_ASSET_NAMES.macos)),
-        linux: attachChecksum(findAsset(DESKTOP_RELEASE_ASSET_NAMES.linux)),
-      };
-      const releaseUrl = (() => {
-        try {
-          const url = new URL(release.html_url ?? "");
-          return url.protocol === "https:" && url.hostname === "github.com"
-            ? url.toString()
-            : DESKTOP_RELEASE_URL;
-        } catch {
-          return DESKTOP_RELEASE_URL;
-        }
-      })();
-
-      return cacheResult({
+      const newest = (data ?? [])[0];
+      const value: PublicDesktopRelease = {
         published: Object.values(assets).some(Boolean),
         unavailable: false,
-        tagName: release.tag_name ?? null,
-        publishedAt: release.published_at ?? null,
-        releaseUrl,
+        tagName: newest?.version_name ?? null,
+        publishedAt: newest?.published_at ?? null,
+        releaseUrl: DESKTOP_RELEASE_PAGE,
         assets,
-      });
+      };
+      desktopReleaseCache = { expiresAt: Date.now() + 60_000, value };
+      return value;
     } catch (error) {
-      console.warn("[BeBoss desktop releases] Could not load release metadata", error);
+      console.warn("[BeBoss desktop releases] Could not load local-build release metadata", error);
       return { ...empty, unavailable: true };
-    } finally {
-      clearTimeout(timeout);
     }
   },
 );
+
+const publicDesktopDownloadSchema = z.object({
+  id: z.string().uuid(),
+});
+
+export const createPublicDesktopDownload = createServerFn({ method: "POST" })
+  .inputValidator((d: z.infer<typeof publicDesktopDownloadSchema>) => publicDesktopDownloadSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: release, error: readError } = await supabaseAdmin
+      .from("desktop_app_releases")
+      .select("id,file_path,file_name")
+      .eq("id", data.id)
+      .eq("is_current", true)
+      .eq("is_public", true)
+      .maybeSingle();
+    if (readError || !release) {
+      throw new Error("This desktop installer is no longer the current public release. Refresh the page and choose the latest version.");
+    }
+
+    const { data: signed, error: signingError } = await supabaseAdmin.storage
+      .from("releases")
+      .createSignedUrl(release.file_path, 10 * 60, { download: release.file_name });
+    if (signingError || !signed?.signedUrl) {
+      throw new Error(signingError?.message ?? "The installer download could not be prepared. Please try again.");
+    }
+    const { error: countError } = await supabaseAdmin.rpc("record_desktop_release_download", {
+      p_release_id: release.id,
+    });
+    if (countError) {
+      console.error("[BeBoss desktop downloads] Signed download link prepared, but the download counter could not be updated.", countError);
+      throw new Error("The installer is available, but its download could not be recorded. Please try again.");
+    }
+    return { url: signed.signedUrl, expiresInSeconds: 600, fileName: release.file_name };
+  });
