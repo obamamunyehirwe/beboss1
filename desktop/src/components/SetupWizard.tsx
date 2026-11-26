@@ -43,7 +43,7 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
       { title: "Cloud business data", body: "Supabase PostgreSQL is the source of truth; SQLCipher protects only the local cache and retry queue." },
       { title: "Protected credentials", body: "The operating-system credential vault is tested with a temporary secret." },
       { title: "Persistent device identity", body: "A unique desktop identity is provisioned for shop authorization." },
-      { title: "Cloud readiness", body: "The configured Supabase host is checked; sign-in performs the real authorization." }
+      { title: "Cloud readiness", body: "The PostgreSQL Data API is checked; SMS sign-in verifies owner and tenant access." }
     ],
     installTitle: "Choose the installation folder first.",
     installBody: "On Windows, choose the application path in the installer directory screen. BeBoss creates its app icon and Start Menu shortcut. Shop records are stored in the Supabase cloud database; this computer keeps only a protected cache, pending retry queue, credentials and device settings.",
@@ -83,7 +83,7 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
       { title: "Amakuru yo muri Cloud", body: "Supabase PostgreSQL ni yo ibika amakuru nyayo; SQLCipher ibika cache n'impinduka zitegereje gusa." },
       { title: "Amakuru y'ibanga arinzwe", body: "Ububiko bw'ibanga bwa sisitemu bugenzurwa hakoreshejwe ijambo ry'ibanga ry'agateganyo." },
       { title: "Indangamuntu y'igikoresho", body: "Mudasobwa ihabwa indangamuntu yayo yo kwemezwa n'iduka." },
-      { title: "Guhuza na Cloud", body: "Aderesi ya Supabase iragenzurwa; kwinjira nyakuri ni byo byemeza uburenganzira." }
+      { title: "Guhuza na Cloud", body: "Supabase PostgreSQL Data API irageragezwa; SMS yemeza umuyobozi n'uburenganzira bw'iduka." }
     ],
     installTitle: "Banza uhitemo aho porogaramu izajya.",
     installBody: "Kuri Windows, hitamo aho BeBoss izashyirwa mu idirishya ry'installer. BeBoss ikora ikirango cya porogaramu na shortcut muri Start Menu. Amakuru nyayo y'ubucuruzi abikwa muri database ya Supabase kuri cloud; mudasobwa igumana cache irinzwe, impinduka zitegereje koherezwa, ibanga n'igenamiterere gusa.",
@@ -123,7 +123,7 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
       { title: "Données cloud", body: "Supabase PostgreSQL est la source de vérité ; SQLCipher protège uniquement le cache et la file de reprise locale." },
       { title: "Identifiants protégés", body: "Le coffre du système est testé avec un secret temporaire." },
       { title: "Identité persistante", body: "Une identité unique de bureau est créée pour l'autorisation de la boutique." },
-      { title: "Disponibilité du cloud", body: "L'hôte Supabase est testé ; la connexion vérifie réellement les droits." }
+      { title: "Disponibilité du cloud", body: "L'API PostgreSQL Supabase est testée ; le SMS confirme le propriétaire et les droits du magasin." }
     ],
     installTitle: "Choisissez d'abord le dossier d'installation.",
     installBody: "Sous Windows, choisissez le chemin de l'application dans l'écran du dossier de l'installateur. BeBoss crée l'icône et le raccourci du menu Démarrer. Les données commerciales sont stockées dans la base cloud Supabase ; cet ordinateur ne conserve qu'un cache protégé, une file de reprise, les identifiants et les préférences de l'appareil.",
@@ -163,7 +163,7 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
       { title: "Data ya Cloud", body: "Supabase PostgreSQL ndiyo hifadhidata kuu; SQLCipher hulinda cache na foleni ya kutuma mabadiliko tu." },
       { title: "Siri zilizolindwa", body: "Hifadhi salama ya mfumo hujaribiwa kwa siri ya muda." },
       { title: "Utambulisho wa kifaa", body: "Kompyuta hupata utambulisho wa kudumu kwa idhini ya duka." },
-      { title: "Utayari wa mtandao", body: "Anwani ya Supabase hukaguliwa; kuingia ndiko kunathibitisha idhini halisi." }
+      { title: "Utayari wa mtandao", body: "API ya Supabase PostgreSQL hupimwa; SMS huthibitisha mmiliki na ruhusa za duka." }
     ],
     installTitle: "Chagua folda ya usakinishaji kwanza.",
     installBody: "Kwenye Windows, chagua mahali pa programu kwenye ukurasa wa folda wa kisakinishi. BeBoss hutengeneza ikoni na njia ya mkato ya Start Menu. Data halisi ya biashara huhifadhiwa kwenye hifadhidata ya Supabase Cloud; kompyuta huweka cache fiche, foleni ya majaribio ya kutuma, siri na mapendeleo ya kifaa tu.",
@@ -264,16 +264,16 @@ export function SetupWizard({
       log("Persistent desktop identity verified.");
 
       active = "database"; setActiveStep(active);
-      updateStep(active, "running", "Opening SQLCipher and inspecting the sync outbox…");
+      updateStep(active, "running", "Verifying the encrypted recovery store and pending cloud-write queue…");
       const pending = await window.beBossDesktop.local.outboxCount();
       if (!system.databaseEncrypted || !system.databaseCipherVersion) {
-        throw new Error("SQLCipher could not confirm that the local database is encrypted.");
+        throw new Error("SQLCipher could not confirm that the local recovery store is encrypted.");
       }
       if (system.databaseIntegrity !== "ok") {
-        throw new Error("The local SQLCipher database did not pass its integrity check. Do not continue writing shop data until it is recovered from a verified backup.");
+        throw new Error("The encrypted local recovery store failed its integrity check. Do not discard it until any pending cloud writes have been recovered or a verified backup is available.");
       }
       if (system.journalMode.toLowerCase() !== "wal") {
-        throw new Error("The local SQLCipher database is not using WAL mode. Close other BeBoss instances and rerun setup diagnostics.");
+        throw new Error("The local recovery store is not using WAL mode. Close other BeBoss instances and rerun setup diagnostics.");
       }
       updateStep(active, "complete", "Protected cache/retry store verified · SQLCipher " + system.databaseCipherVersion + " · integrity OK · WAL mode · " + pending + " pending cloud write(s)");
       log("The encrypted on-device recovery store passed integrity checks; shop data remains cloud-authoritative.");
