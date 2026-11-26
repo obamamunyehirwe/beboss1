@@ -183,5 +183,8 @@ export function matchesMtnMomoSettlement(
     status.currency.toUpperCase() === "RWF" &&
     Number(status.amount) === expected.amountRwf &&
     status.externalId === expected.externalId &&
-    (!status.payer?.partyId || status.payer.partyId.replace(/\D/g, "").slice(-9) === expected.payerMsisdn.slice(-9));
+    Boolean(status.financialTransactionId) &&
+    status.payer?.partyIdType === "MSISDN" &&
+    Boolean(status.payer.partyId) &&
+    status.payer.partyId.replace(/\D/g, "").slice(-9) === expected.payerMsisdn.slice(-9);
 }
