@@ -78,20 +78,15 @@ jobs:
           Write-Host "Size: $($installer.Length) bytes"
           if ($installer.Length -lt 1000000) { throw "The setup executable is unexpectedly small." }
 
-      - name: Authenticode sign and verify installer when production certificate is configured
+      - name: Require trusted Authenticode signature before publishing installer
         shell: pwsh
         run: |
           $installers = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File
           if (-not $installers) { throw "No Windows setup executable exists to sign." }
-          $statusPath = Join-Path "src-tauri/target/release/bundle/nsis" "signature-status.txt"
-          if (-not $env:WINDOWS_CODESIGN_PFX_BASE64 -and -not $env:WINDOWS_CODESIGN_PFX_PASSWORD) {
-            "signature=unsigned; reason=Authenticode certificate secrets are not configured" | Set-Content $statusPath
-            Write-Warning "Installer is built but unsigned. Configure WINDOWS_CODESIGN_PFX_BASE64 and WINDOWS_CODESIGN_PFX_PASSWORD for production distribution."
-            exit 0
-          }
           if (-not $env:WINDOWS_CODESIGN_PFX_BASE64 -or -not $env:WINDOWS_CODESIGN_PFX_PASSWORD) {
-            throw "Both Windows signing certificate secrets must be configured together."
+            throw "Refusing to publish an unsigned installer. Configure WINDOWS_CODESIGN_PFX_BASE64 and WINDOWS_CODESIGN_PFX_PASSWORD in GitHub Actions secrets."
           }
+          $statusPath = Join-Path "src-tauri/target/release/bundle/nsis" "signature-status.txt"
           $certificatePath = Join-Path $env:RUNNER_TEMP "beboss-release-signing.pfx"
           try {
             [System.IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_PFX_BASE64))
@@ -102,6 +97,8 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($installer.Name)." }
               & $signTool verify /pa /v $installer.FullName
               if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $($installer.Name)." }
+              $signature = Get-AuthenticodeSignature -FilePath $installer.FullName
+              if ($signature.Status -ne "Valid") { throw "Windows reports an invalid signature for $($installer.Name): $($signature.StatusMessage)" }
             }
             "signature=Authenticode signed and verified" | Set-Content $statusPath
           } finally {

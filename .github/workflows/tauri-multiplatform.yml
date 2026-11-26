@@ -111,6 +111,36 @@ jobs:
       - name: Build native desktop package
         run: npm run ${{ matrix.script }}
 
+      - name: Require trusted Authenticode signature for Windows package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+          WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CODESIGN_PFX_BASE64 -or -not $env:WINDOWS_CODESIGN_PFX_PASSWORD) {
+            throw "Refusing to publish an unsigned Windows package. Configure WINDOWS_CODESIGN_PFX_BASE64 and WINDOWS_CODESIGN_PFX_PASSWORD in GitHub Actions secrets."
+          }
+          $installerDirectory = "src-tauri/target/release/bundle/${{ matrix.bundle }}"
+          $installers = Get-ChildItem $installerDirectory -Filter "*.exe" -File
+          if (-not $installers) { throw "No Windows installer was produced." }
+          $certificatePath = Join-Path $env:RUNNER_TEMP "beboss-release-signing.pfx"
+          try {
+            [System.IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_PFX_BASE64))
+            $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+            if (-not $signTool) { throw "Windows SDK signtool.exe was not found." }
+            foreach ($installer in $installers) {
+              & $signTool sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $certificatePath /p $env:WINDOWS_CODESIGN_PFX_PASSWORD $installer.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($installer.Name)." }
+              & $signTool verify /pa /v $installer.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $($installer.Name)." }
+              $signature = Get-AuthenticodeSignature -FilePath $installer.FullName
+              if ($signature.Status -ne "Valid") { throw "Windows reports an invalid signature for $($installer.Name): $($signature.StatusMessage)" }
+            }
+          } finally {
+            if (Test-Path $certificatePath) { Remove-Item $certificatePath -Force }
+          }
+
       - name: Generate SHA-256 package manifest
         run: node scripts/generate-bundle-checksums.mjs "src-tauri/target/release/bundle/${{ matrix.bundle }}"
 
