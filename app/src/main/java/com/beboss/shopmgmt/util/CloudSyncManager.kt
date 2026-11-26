@@ -583,7 +583,10 @@ class CloudSyncManager(private val database: AppDatabase) {
 
                 for (snap in peerSnapshots) {
                     try {
-                        val decoded = ShopDataTransferManager.parseShopPackageString(snap.payloadToken)
+                        val decoded = ShopDataTransferManager.parseShopPackageString(
+                            snap.payloadToken,
+                            shopSecret = tokenShopSecret
+                        )
                         val mergeRes = mergeRemoteSummary?.invoke(decoded)
                             ?: ConflictResolutionEngine.mergePackage(database, decoded, "CLOUD:${snap.deviceId}")
                         itemsPulledCount += mergeRes.totalMergedCount
