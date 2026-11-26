@@ -49,6 +49,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      - name: Synchronize the npm lockfile for Cloudflare Worker dependencies
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
       - name: Install locked web dependencies
         run: npm ci --no-audit --no-fund
 
