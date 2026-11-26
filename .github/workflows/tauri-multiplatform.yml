@@ -45,7 +45,7 @@ jobs:
         working-directory: desktop
     env:
       VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
-      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_SFUKqYETliLdgqluQBQ2xg_XJNudcvM
       # Force the runner-host stable toolchain for cargo and Tauri's build subprocesses.
       # Do not inherit a target-specific toolchain alias from a developer/runner override.
       # Always use the runner's native host toolchain (not a Windows cross-target
