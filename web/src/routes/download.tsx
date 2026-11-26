@@ -27,6 +27,7 @@ import { ServiceUnavailable } from "@/components/site/ServiceUnavailable";
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
 import { DOWNLOAD_PATH } from "@/lib/download-path";
+import { buildDownloadHref, detectDesktopOS, type DesktopOS, type DownloadPlatform } from "@/lib/download-routing";
 import { desktopReleaseQuery, publicSiteQuery } from "@/lib/queries";
 import type { PublicDesktopRelease } from "@/lib/public.functions";
 import { formatBytes, formatDate } from "@/lib/format";
@@ -36,8 +37,6 @@ const downloadSearchSchema = z.object({
   platform: z.enum(["mobile", "desktop"]).catch("mobile"),
   os: z.enum(["windows", "macos", "linux"]).optional(),
 });
-type DownloadPlatform = "mobile" | "desktop";
-type DesktopOS = "windows" | "macos" | "linux";
 
 export const Route = createFileRoute("/download")({
   validateSearch: downloadSearchSchema,
@@ -104,15 +103,15 @@ function DownloadPage() {
   const downloadUrl = `${DOWNLOAD_PATH}?ch=web`;
   const changePlatform = (next: DownloadPlatform) => {
     if (next === "mobile") {
-      router.history.push("/download");
+      router.history.push(buildDownloadHref("mobile"));
       return;
     }
-    router.history.push(`/download?platform=desktop&os=${desktopOs}`);
+    router.history.push(buildDownloadHref("desktop", desktopOs));
   };
   const changeDesktopOs = (next: DesktopOS) => {
     // Keep the selected installer in the address bar. Browser back/forward now
     // restores both the application family and the chosen operating system.
-    router.history.push(`/download?platform=desktop&os=${next}`);
+    router.history.push(buildDownloadHref("desktop", next));
   };
   const qrUrl = origin && release ? `${origin}${DOWNLOAD_PATH}?ch=qr` : "";
 
@@ -120,10 +119,7 @@ function DownloadPage() {
     setOrigin(window.location.origin);
     // Respect an explicit URL selection; otherwise suggest the visitor's OS.
     if (os) return;
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    if (userAgent.includes("mac")) setDetectedOs("macos");
-    else if (userAgent.includes("linux")) setDetectedOs("linux");
-    else setDetectedOs("windows");
+    setDetectedOs(detectDesktopOS(window.navigator.userAgent));
   }, [os]);
 
   const copyHash = async () => {
