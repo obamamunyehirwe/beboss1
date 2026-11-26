@@ -166,7 +166,8 @@ class CloudSyncManager(private val database: AppDatabase) {
         deviceId: String = "DEV-LOCAL",
         context: Context? = null,
         retryDeadLetters: Boolean = false,
-        mergeRemoteSummary: (suspend (ShopImportSummary) -> BranchMergeResult)? = null
+        mergeRemoteSummary: (suspend (ShopImportSummary) -> BranchMergeResult)? = null,
+        shopShareSecret: String? = null
     ): CloudSyncReport = syncMutex.withLock {
         withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
@@ -270,7 +271,16 @@ class CloudSyncManager(private val database: AppDatabase) {
             }
             val dueQueueItems = syncQueueDao.getDueQueueItems(nowMs = now, limit = 250)
 
-            val chunkedTokens = ShopDataTransferManager.exportChunkedTokens(
+            val tokenShopSyncKey = primaryDeviceForIdentity?.shopSyncKey?.takeIf { it.isNotBlank() }
+                ?: SupabaseAdminClient.computeShopSyncKey(cloudOwnerUsername, cloudOwnerPhone)
+            // The shop key is issued by Supabase and sealed locally by Android Keystore.
+            // If this installation is offline and has no cached key yet, keep its outbox
+            // intact and defer only the remote snapshot-generation upload.
+            val tokenShopSecret = shopShareSecret?.takeIf { it.matches(Regex("[a-f0-9]{64}")) }
+                ?: if (SupabaseAdminClient.isConfigured()) {
+                    SupabaseAdminClient.fetchShopLanSyncSecret(tokenShopSyncKey)
+                } else null
+            val chunkedTokens = if (!tokenShopSecret.isNullOrBlank()) ShopDataTransferManager.exportChunkedTokens(
                 profile = profile,
                 users = users,
                 products = products,
@@ -284,8 +294,16 @@ class CloudSyncManager(private val database: AppDatabase) {
                 purchases = purchases,
                 sinceUpdatedAt = 0L, // Full authoritative state per snapshot slot so any branch joining cold catches up safely, while chunked <=250 rows/token
                 maxRecordsPerChunk = 250,
-                tombstones = tombstones
-            )
+                tombstones = tombstones,
+                shopSecret = tokenShopSecret
+            ) else emptyList()
+            if (chunkedTokens.isEmpty()) {
+                addAuditLog(
+                    type = "DATASHARE_SECURITY",
+                    status = "PENDING",
+                    summary = "Shop-scoped snapshot signing key is not available yet. Local changes remain queued; retry after the owner device completes secure cloud pairing."
+                )
+            }
             val payloadKb = chunkedTokens.sumOf { it.toByteArray(Charsets.UTF_8).size } / 1024.0
             val totalPushedCount = branches.size + users.size + products.size + customers.size +
                 payments.size + sales.size + saleItems.size + purchases.size + transfers.size
@@ -343,8 +361,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                 
                 val ownerUsername = cloudOwnerUsername
                 val ownerPhone = cloudOwnerPhone
-                val shopSyncKey = primaryDeviceForIdentity?.shopSyncKey?.takeIf { it.isNotBlank() }
-                    ?: SupabaseAdminClient.computeShopSyncKey(ownerUsername, ownerPhone)
+                val shopSyncKey = tokenShopSyncKey
                 val recordsSummary = "${branches.size} branches • ${products.size} items • ${sales.size} sales • ${customers.size} clients (${chunkedTokens.size} chunk(s))"
                 val syncGeneration = UUID.randomUUID().toString()
 
