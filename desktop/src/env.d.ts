@@ -7,10 +7,13 @@ export interface SystemDiagnostics {
   dbPath: string;
   dbSizeBytes: number;
   pendingOutboxCount: number;
+  oldestPendingAt: number | null;
   uptimeSeconds: number;
   hostname: string;
   databaseEncrypted: boolean;
   databaseCipherVersion: string;
+  databaseIntegrity: string;
+  journalMode: string;
 }
 
 export interface NetworkPingResult {

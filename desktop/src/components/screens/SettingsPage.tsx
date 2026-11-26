@@ -12,8 +12,9 @@ import { PageHeading, StatusPill } from "../ui";
 
 type RuntimeDiagnostics = {
   osPlatform?: string; osArch?: string; appVersion?: string; dbPath?: string;
-  dbSizeBytes?: number; pendingOutboxCount?: number; uptimeSeconds?: number;
+  dbSizeBytes?: number; pendingOutboxCount?: number; oldestPendingAt?: number | null; uptimeSeconds?: number;
   hostname?: string; databaseEncrypted?: boolean; databaseCipherVersion?: string;
+  databaseIntegrity?: string; journalMode?: string;
 };
 
 const DEFAULT_PREFERENCES: DesktopPreferences = {
