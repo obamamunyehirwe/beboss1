@@ -31,7 +31,7 @@ type WizardCopy = {
   runChecks: string; retry: string; checking: string; finishTag: string; finishTitle: string;
   finishBody: string; installPath: string; localDatabase: string; pending: string;
   cloudWarning: string; back: string; next: string; finish: string; working: string;
-  setupError: string; statuses: Record<CheckStatus, string>;
+  setupError: string; recoverLocalTitle: string; recoverLocalBody: string; recoverLocalButton: string; recoverLocalConfirm: string; recoverLocalComplete: string; statuses: Record<CheckStatus, string>;
   steps: { title: string; description: string }[];
 };
 const TEXT: Record<DesktopLanguage, WizardCopy> = {
@@ -66,6 +66,11 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     cloudWarning: "The Supabase PostgreSQL database API is unreachable. Connect this device to the internet and verify the cloud endpoint before finishing setup.",
     back: "Back", next: "Next", finish: "Finish setup", working: "Saving preferences…",
     setupError: "Setup could not be completed. Resolve the failed check and retry.",
+    recoverLocalTitle: "Recover this desktop from BeBoss Cloud",
+    recoverLocalBody: "BeBoss will move the unreadable SQLCipher database and retry queue into a timestamped recovery folder, preserve the old key in the operating-system vault when available, and create a new encrypted cache. After setup, sign in with the registered shop account and restore the verified cloud snapshot. Changes that existed only in an unreadable offline queue may not be recoverable.",
+    recoverLocalButton: "Quarantine local cache and recover",
+    recoverLocalConfirm: "BeBoss will move the unreadable database and retry queue into a recovery folder and create a fresh encrypted cache. The old files will be preserved, not deleted. Changes that existed only in the locked local queue may not be recoverable. Continue?",
+    recoverLocalComplete: "Old local database files were preserved for recovery at",
     statuses: { pending: "Pending", running: "Checking", complete: "Verified", warning: "Attention", failed: "Failed" },
     steps: [
       { title: "System compatibility", description: "Operating system and native desktop runtime" },
@@ -106,6 +111,11 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     cloudWarning: "Database ya Supabase PostgreSQL ntiboneka. Huza internet kandi ugenzure aderesi ya cloud mbere yo kurangiza setup.",
     back: "Subira inyuma", next: "Komeza", finish: "Rangiza", working: "Kubika ibyo wahisemo…",
     setupError: "Igenzura ntiryashoboye kurangira. Kosora ikibazo hanyuma wongere ugerageze.",
+    recoverLocalTitle: "Kugarura mudasobwa ukoresheje BeBoss Cloud",
+    recoverLocalBody: "BeBoss izabika database ya SQLCipher itabasha gufunguka n'umurongo w'impinduka zitegereje koherezwa mu bubiko bufite itariki, ibike urufunguzo rwa kera muri OS Vault niba rukiboneka, hanyuma ikore cache nshya irinzwe. Nyuma ya setup, injira kuri konti y'iduka maze ugarure amakuru yemejwe ari muri Cloud. Impinduka zari muri queue idashobora gufunguka zishobora kutazagarurwa.",
+    recoverLocalButton: "Bika cache yangiritse maze ukomeze",
+    recoverLocalConfirm: "BeBoss izimurira database idafunguka n'impinduka zitegereje koherezwa mu bubiko bwo kuyisubizamo, hanyuma ikore cache nshya. Amadosiye ya kera ntazasibwa. Impinduka zari muri queue ifunze gusa zishobora kutazagarurwa. Urashaka gukomeza?",
+    recoverLocalComplete: "Amadosiye ya database ya kera yabitswe hano kugira ngo azagarurwe nyuma",
     statuses: { pending: "Birategereje", running: "Irakorwa", complete: "Byemejwe", warning: "Icyitonderwa", failed: "Byanze" },
     steps: [
       { title: "Sisitemu", description: "Operating system na porogaramu ya desktop" },
@@ -146,6 +156,11 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     cloudWarning: "L'API de la base Supabase PostgreSQL est inaccessible. Connectez l'appareil à Internet et vérifiez le point de terminaison cloud avant de terminer.",
     back: "Retour", next: "Suivant", finish: "Terminer", working: "Enregistrement des préférences…",
     setupError: "La configuration n'a pas abouti. Corrigez le contrôle en échec et réessayez.",
+    recoverLocalTitle: "Récupérer cet ordinateur depuis BeBoss Cloud",
+    recoverLocalBody: "BeBoss déplacera la base SQLCipher illisible et la file de reprise dans un dossier horodaté, conservera l'ancienne clé dans le coffre du système si elle est disponible, puis créera un nouveau cache chiffré. Après la configuration, connectez-vous au compte de la boutique et restaurez l'instantané cloud vérifié. Les changements présents uniquement dans une file locale illisible peuvent ne pas être récupérables.",
+    recoverLocalButton: "Mettre le cache local en quarantaine et récupérer",
+    recoverLocalConfirm: "BeBoss déplacera la base illisible et la file de reprise dans un dossier de récupération et créera un nouveau cache chiffré. Les anciens fichiers seront conservés, pas supprimés. Les changements présents uniquement dans la file locale verrouillée peuvent ne pas être récupérables. Continuer ?",
+    recoverLocalComplete: "Les anciens fichiers de la base locale ont été conservés pour récupération ici",
     statuses: { pending: "En attente", running: "Vérification", complete: "Vérifié", warning: "Attention", failed: "Échec" },
     steps: [
       { title: "Compatibilité système", description: "Système et exécution native" },
@@ -186,6 +201,11 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     cloudWarning: "Supabase PostgreSQL Data API haipatikani. Unganisha kompyuta kwenye intaneti na uthibitishe anwani ya Cloud kabla ya kumaliza usanidi.",
     back: "Rudi", next: "Endelea", finish: "Maliza usanidi", working: "Inahifadhi mapendeleo…",
     setupError: "Usanidi haujakamilika. Rekebisha ukaguzi ulioshindwa kisha ujaribu tena.",
+    recoverLocalTitle: "Rejesha kompyuta hii kutoka BeBoss Cloud",
+    recoverLocalBody: "BeBoss itahamisha hifadhidata ya SQLCipher isiyoweza kusomwa na foleni ya kutuma mabadiliko kwenye folda yenye muhuri wa muda, itahifadhi ufunguo wa zamani kwenye hifadhi salama ya mfumo ikiwa bado upo, kisha itaunda cache mpya iliyosimbwa. Baada ya usanidi, ingia kwa akaunti ya duka na urejeshe nakala iliyothibitishwa ya Cloud. Mabadiliko yaliyokuwepo kwenye foleni fiche isiyosomeka pekee huenda yasirejeshwe.",
+    recoverLocalButton: "Hifadhi cache ya zamani kando na urejeshe",
+    recoverLocalConfirm: "BeBoss itahamisha hifadhidata isiyosomeka na foleni ya mabadiliko kwenye folda ya urejeshaji na kuunda cache mpya fiche. Faili za zamani zitahifadhiwa, hazitafutwa. Mabadiliko yaliyokuwepo kwenye foleni iliyofungwa pekee huenda yasirejeshwe. Endelea?",
+    recoverLocalComplete: "Faili za zamani za hifadhidata zimehifadhiwa kwa urejeshaji hapa",
     statuses: { pending: "Inasubiri", running: "Inakagua", complete: "Imethibitishwa", warning: "Tahadhari", failed: "Imeshindwa" },
     steps: [
       { title: "Ulinganifu wa mfumo", description: "Mfumo wa uendeshaji na runtime" },
@@ -208,10 +228,11 @@ const INITIAL_STEPS: SetupStep[] = [
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
 
 export function SetupWizard({
-  initialPreferences, onComplete
+  initialPreferences, onComplete, onRecoverLocalDatabase
 }: {
   initialPreferences: DesktopPreferences;
   onComplete: (preferences: DesktopPreferences, privacyAccepted: boolean) => Promise<void>;
+  onRecoverLocalDatabase: () => Promise<{ backupPath: string; archivedFiles: string[]; recoveryKeyReference: string | null }>;
 }) {
   const [preferences, setPreferences] = useState<DesktopPreferences>(initialPreferences);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
@@ -219,6 +240,7 @@ export function SetupWizard({
   const [running, setRunning] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [recoveryCompleted, setRecoveryCompleted] = useState(false);
   const [steps, setSteps] = useState<SetupStep[]>(INITIAL_STEPS);
   const [activeStep, setActiveStep] = useState<StepId | null>(null);
   const [diagnostics, setDiagnostics] = useState<SetupDiagnostics | null>(null);
@@ -233,8 +255,8 @@ export function SetupWizard({
   };
   const translatedSteps = steps.map((step, index) => ({ ...step, title: t.steps[index].title, description: t.steps[index].description }));
 
-  async function runChecks(): Promise<boolean> {
-    if (running) return false;
+  async function runChecks(allowWhileRunning = false): Promise<boolean> {
+    if (running && !allowWhileRunning) return false;
     if (!window.beBossDesktop?.isNative) {
       const message = "This is a browser preview. Install and launch BeBoss Desktop to run native Windows, SQLCipher and Credential Manager checks.";
       setFailure(message);
@@ -313,6 +335,33 @@ export function SetupWizard({
       log("Setup stopped: " + message);
       return false;
     } finally { setRunning(false); }
+  }
+
+  async function recoverLocalCache() {
+    if (running || finishing || recoveryCompleted) return;
+    if (!window.beBossDesktop?.isNative) {
+      setFailure("Local database recovery is available only inside the installed BeBoss Desktop application.");
+      return;
+    }
+    if (!window.confirm(t.recoverLocalConfirm)) return;
+
+    setRunning(true);
+    setFailure("");
+    try {
+      const recovered = await onRecoverLocalDatabase();
+      setRecoveryCompleted(true);
+      const checksPassed = await runChecks(true);
+      log(t.recoverLocalComplete + ": " + recovered.backupPath);
+      if (!checksPassed) {
+        setFailure((current) => current || "The old local files are preserved. Resolve the remaining setup check before signing in and restoring cloud data.");
+      }
+    } catch (error) {
+      const message = errorMessage(error);
+      setFailure(message);
+      log("Local recovery did not complete: " + message);
+    } finally {
+      setRunning(false);
+    }
   }
 
   async function next() {
@@ -449,6 +498,18 @@ export function SetupWizard({
             </div>
             {logs.length > 0 && <div className="setup-log-panel"><div><strong>Installation log</strong><span>{logs.length} events</span></div>{logs.map((entry, index) => <p key={index}>{entry}</p>)}</div>}
             {failure && <p className="setup-error" role="alert">{t.setupError} {failure}</p>}
+            {failure && !recoveryCompleted && /SQLCipher|local database|database could not be authenticated|credential vault/i.test(failure) && (
+              <section className="setup-install-note" aria-label={t.recoverLocalTitle}>
+                <Database size={18} />
+                <div>
+                  <strong>{t.recoverLocalTitle}</strong>
+                  <span>{t.recoverLocalBody}</span>
+                  <button type="button" className="setup-retry-btn" disabled={running || finishing} onClick={() => void recoverLocalCache()}>
+                    <RefreshCw size={15} />{running ? t.checking : t.recoverLocalButton}
+                  </button>
+                </div>
+              </section>
+            )}
             {completed && steps.find((step) => step.id === "cloud")?.status === "warning" && <p className="setup-offline-note">{t.cloudWarning}</p>}
           </>}
 

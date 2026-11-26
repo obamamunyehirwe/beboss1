@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 const KEYRING_SERVICE: &str = "com.beboss.desktop";
 const KEYRING_DATABASE_KEY: &str = "database-encryption-key";
+const KEYRING_DEVICE_ID_KEY: &str = "installation-device-id";
 
 /// Internal keys that the renderer bridge must never read or write directly.
 /// These are managed by the desktop host (device identity, sync clock, snapshots).
@@ -512,14 +513,134 @@ fn secure_remove(app: tauri::AppHandle, key: String) -> Result<(), String> {
 
 #[tauri::command]
 fn get_device_id(app: tauri::AppHandle) -> Result<String, String> {
-    let connection = open_database(&app)?;
-    if let Some(device_id) = connection.query_row("SELECT value FROM local_state WHERE key = 'desktop-device-id'", [], |row| row.get::<_, String>(0)).optional().map_err(|error| error.to_string())? {
-        return Ok(device_id);
+    let entry = Entry::new(KEYRING_SERVICE, KEYRING_DEVICE_ID_KEY)
+        .map_err(|error| format!("Could not open the operating-system device identity vault: {error}"))?;
+    match entry.get_password() {
+        Ok(device_id) => {
+            Uuid::parse_str(&device_id)
+                .map_err(|_| "The protected desktop device identity is malformed; do not register this installation until it is repaired.".to_string())?;
+            return Ok(device_id);
+        }
+        Err(keyring::Error::NoEntry) => {}
+        Err(error) => return Err(format!("The operating-system device identity vault is unavailable: {error}")),
     }
-    let device_id = Uuid::new_v4().to_string();
-    connection.execute("INSERT INTO local_state(key, value, updated_at) VALUES ('desktop-device-id', ?1, ?2)", params![device_id, now_millis()?])
-        .map_err(|error| error.to_string())?;
+
+    // Migrate the identity from older desktop versions when their database still
+    // opens. If it cannot be read, issue a new protected identity so the owner can
+    // explicitly re-enrol this recovered installation with BeBoss Cloud.
+    let legacy_device_id = open_database(&app).ok().and_then(|connection| {
+        connection.query_row(
+            "SELECT value FROM local_state WHERE key = 'desktop-device-id'",
+            [],
+            |row| row.get::<_, String>(0)
+        ).optional().ok().flatten()
+    });
+    let device_id = legacy_device_id
+        .filter(|value| Uuid::parse_str(value).is_ok())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    entry.set_password(&device_id)
+        .map_err(|error| format!("Could not persist the desktop device identity in the operating-system vault: {error}"))?;
     Ok(device_id)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalDatabaseRecoveryResult {
+    backup_path: String,
+    archived_files: Vec<String>,
+    recovery_key_reference: Option<String>,
+}
+
+/// Explicitly quarantine an unreadable local cache before creating a fresh SQLCipher
+/// store. This command never runs automatically: the user must confirm in setup.
+/// The old DB/WAL/SHM files are retained in the recovery folder, and an available old
+/// key is copied into a separate OS-vault entry so support can recover it later.
+#[tauri::command]
+fn recover_local_database(app: tauri::AppHandle) -> Result<LocalDatabaseRecoveryResult, String> {
+    let app_dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    fs::create_dir_all(&app_dir).map_err(|error| error.to_string())?;
+    let db_path = database_path(&app)?;
+    let timestamp = now_millis()?;
+    let backup_dir = app_dir.join("recovery").join(format!("locked-cache-{timestamp}"));
+    fs::create_dir_all(&backup_dir).map_err(|error| format!("Could not create the local recovery folder: {error}"))?;
+
+    let key_entry = Entry::new(KEYRING_SERVICE, KEYRING_DATABASE_KEY)
+        .map_err(|error| format!("Could not access the operating-system database key vault: {error}"))?;
+    let old_key = match key_entry.get_password() {
+        Ok(value) => Some(value),
+        Err(keyring::Error::NoEntry) => None,
+        Err(error) => return Err(format!("The existing local database key could not be read safely: {error}")),
+    };
+    let recovery_key_reference = old_key.as_ref().map(|_| format!("database-recovery-key-{timestamp}"));
+    if let (Some(old_key), Some(reference)) = (old_key.as_ref(), recovery_key_reference.as_ref()) {
+        Entry::new(KEYRING_SERVICE, reference)
+            .and_then(|entry| entry.set_password(old_key))
+            .map_err(|error| format!("The original database key could not be preserved in the operating-system vault; recovery was cancelled: {error}"))?;
+    }
+
+    let mut moved_files: Vec<(PathBuf, PathBuf)> = Vec::new();
+    for source in [
+        db_path.clone(),
+        db_path.with_extension("sqlite-wal"),
+        db_path.with_extension("sqlite-shm"),
+    ] {
+        if !source.exists() { continue; }
+        let filename = source.file_name()
+            .ok_or_else(|| "A local database recovery file has no valid name.".to_string())?;
+        let destination = backup_dir.join(filename);
+        if let Err(error) = fs::rename(&source, &destination) {
+            for (original, archived) in moved_files.iter().rev() {
+                let _ = fs::rename(archived, original);
+            }
+            return Err(format!("Could not quarantine the existing local database safely; no replacement cache was created: {error}"));
+        }
+        moved_files.push((source, destination));
+    }
+
+    let archived_files = moved_files.iter()
+        .map(|(_, archived)| archived.to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    let manifest = serde_json::json!({
+        "createdAt": timestamp,
+        "originalDatabasePath": db_path.to_string_lossy(),
+        "archivedFiles": archived_files,
+        "recoveryKeyReference": recovery_key_reference,
+        "note": "This is a quarantined SQLCipher database and retry queue. It is not a verified cloud backup. Restore only with the matching original key."
+    });
+    let manifest_path = backup_dir.join("manifest.json");
+    if let Err(error) = fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?) {
+        for (original, archived) in moved_files.iter().rev() {
+            let _ = fs::rename(archived, original);
+        }
+        return Err(format!("Could not write the local recovery manifest; the original files were returned to their original location: {error}"));
+    }
+
+    let new_key = Uuid::new_v4().simple().to_string() + &Uuid::new_v4().simple().to_string();
+    if let Err(error) = key_entry.set_password(&new_key) {
+        for (original, archived) in moved_files.iter().rev() {
+            let _ = fs::rename(archived, original);
+        }
+        return Err(format!("Could not provision a new local cache key; the original files were returned to their original location: {error}"));
+    }
+
+    // The old files remain quarantined. A successful open creates a new empty
+    // encrypted cache; the owner then signs in and restores authoritative business
+    // records from Supabase or a verified phone/device snapshot.
+    match open_database(&app) {
+        Ok(connection) => drop(connection),
+        Err(error) => {
+            return Err(format!(
+                "The old local files are preserved at {} but a new encrypted cache could not be initialized: {error}",
+                backup_dir.to_string_lossy()
+            ));
+        }
+    }
+
+    Ok(LocalDatabaseRecoveryResult {
+        backup_path: backup_dir.to_string_lossy().to_string(),
+        archived_files,
+        recovery_key_reference,
+    })
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -1431,7 +1552,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            secure_get, secure_set, secure_remove, get_device_id,
+            secure_get, secure_set, secure_remove, get_device_id, recover_local_database,
             local_load, local_save_baseline, local_queue, local_pending, local_outbox_count, local_unassigned_outbox_count, local_ack,
             system_diagnostics, network_ping, print_escpos_thermal,
             export_backup_file, lan_store_shop_secret, lan_discover_hubs, lan_sync_with_hub
