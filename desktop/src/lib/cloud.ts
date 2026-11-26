@@ -1,4 +1,5 @@
 import { createClient, type Session } from "@supabase/supabase-js";
+import { buildDesktopActionBody } from "./cloud-request";
 
 const url = import.meta.env.VITE_SUPABASE_URL?.trim();
 const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
@@ -182,7 +183,7 @@ export async function callDesktopApi<T = Record<string, unknown>>(
   if (!session?.access_token) throw new OwnerAuthorizationError("Your owner session has expired. Verify your phone again.");
 
   const { data, error } = await authClient.functions.invoke("beboss-desktop", {
-    body: { action, ...credentials, ...payload }
+    body: buildDesktopActionBody(action, credentials, payload)
   });
   if (error) {
     const context = (error as { context?: Response }).context;
