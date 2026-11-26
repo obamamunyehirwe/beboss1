@@ -7,10 +7,15 @@
 
 !macro NSIS_HOOK_PREINSTALL
   DetailPrint "Preparing BeBoss Desktop installation..."
-  ${IfNot} ${AtLeastWin10}
-    MessageBox MB_ICONSTOP "BeBoss Desktop requires Windows 10 or later.$\n$\nPlease upgrade Windows before installing BeBoss."
-    Abort
-  ${EndIf}
+  ; Read the Windows build number directly rather than relying on the
+  ; WinVer/LogicLib condition macros in Tauri's generated NSIS script.
+  ; Windows 10 starts at build 10240; Windows 11 and Server 2016+ are newer.
+  ReadRegStr $0 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion" "CurrentBuildNumber"
+  IntCmp $0 10240 beboss_windows_supported beboss_windows_unsupported beboss_windows_supported
+beboss_windows_unsupported:
+  MessageBox MB_ICONSTOP "BeBoss Desktop requires Windows 10 / Windows Server 2016 or later.$\n$\nPlease upgrade Windows before installing BeBoss."
+  Abort
+beboss_windows_supported:
   DetailPrint "Windows requirements verified."
 !macroend
 
