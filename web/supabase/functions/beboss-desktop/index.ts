@@ -706,7 +706,7 @@ async function ownerManagementActorV2(admin: SupabaseClient, shopId: string, act
       .eq("is_active", true).eq("is_main_branch", true).maybeSingle()
   ]);
   if (ownerUser.error || !ownerUser.data || actorDevice.error || !actorDevice.data ||
-      actorDevice.data.assigned_user_id !== ownerUserId) {
+      text(actorDevice.data.assigned_user_id) !== text(ownerUser.data.user_id)) {
     throw new Error("This desktop is not registered as an active device for the verified shop owner. Sign in again or use another active owner device.");
   }
   if (mainBranch.error) throw new Error("Could not load the shop's main branch.");
