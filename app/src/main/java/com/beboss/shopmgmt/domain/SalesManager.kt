@@ -82,15 +82,6 @@ class SalesManager(
             require(item.quantity.isFinite() && item.quantity > 0.0) {
                 "Every sale item must have a positive, finite quantity."
             }
-            require(item.effectiveUnitPrice.isFinite() && item.effectiveUnitPrice >= 0.0) {
-                "Every sale item must have a valid non-negative selling price."
-            }
-            require(item.product.costPrice.isFinite() && item.product.costPrice >= 0.0) {
-                "Every sale item must have a valid non-negative cost price."
-            }
-            require(item.product.branchId.isBlank() || item.product.branchId == branchId) {
-                "A sale cannot include products assigned to another branch."
-            }
         }
         ensureSufficientStorage()
 
@@ -100,7 +91,47 @@ class SalesManager(
                 val hlc = HlcClock.tick(now)
                 val saleId = UUID.randomUUID().toString()
 
-                val rawTotalCents = items.fold(0L) { total, item ->
+                // Re-read persisted catalogue rows inside the checkout transaction. A cart
+                // may have stayed open while another terminal changed price, branch or status.
+                val checkoutItems = items.map { cartItem ->
+                    val currentProduct = if (cartItem.product.id.startsWith("custom_")) {
+                        cartItem.product
+                    } else {
+                        val stored = productDao.getProductById(cartItem.product.id)
+                            ?: throw IllegalStateException(
+                                "${cartItem.product.name} is no longer in the product catalogue. Refresh the basket."
+                            )
+                        if (stored.isDeleted) {
+                            throw IllegalStateException(
+                                "${cartItem.product.name} is no longer active. Refresh the basket."
+                            )
+                        }
+                        if (cartItem.customPrice == null &&
+                            MoneyUtils.toCents(stored.sellingPrice) != MoneyUtils.toCents(cartItem.product.sellingPrice)
+                        ) {
+                            throw IllegalStateException(
+                                "The price of ${stored.name} changed on this shop. Review the basket and confirm the updated price."
+                            )
+                        }
+                        stored
+                    }
+                    require(currentProduct.sellingPrice.isFinite() && currentProduct.sellingPrice >= 0.0) {
+                        "The catalogue selling price for ${currentProduct.name} is invalid."
+                    }
+                    require(currentProduct.costPrice.isFinite() && currentProduct.costPrice >= 0.0) {
+                        "The catalogue cost price for ${currentProduct.name} is invalid."
+                    }
+                    val resolved = cartItem.copy(product = currentProduct)
+                    require(resolved.effectiveUnitPrice.isFinite() && resolved.effectiveUnitPrice >= 0.0) {
+                        "The sale price for ${currentProduct.name} is invalid."
+                    }
+                    require(currentProduct.branchId.isBlank() || currentProduct.branchId == branchId) {
+                        "A sale cannot include products assigned to another branch."
+                    }
+                    resolved
+                }
+
+                val rawTotalCents = checkoutItems.fold(0L) { total, item ->
                     Math.addExact(total, MoneyUtils.multiplyPriceQuantityCents(item.effectiveUnitPrice, item.quantity))
                 }
                 require(rawTotalCents > 0L) { "The sale total must be greater than zero." }
@@ -110,7 +141,7 @@ class SalesManager(
                 }
                 val netTotalCents = Math.subtractExact(rawTotalCents, discountCents)
                 require(netTotalCents > 0L) { "The sale total must be greater than zero after discount." }
-                val totalCostCents = items.fold(0L) { total, item ->
+                val totalCostCents = checkoutItems.fold(0L) { total, item ->
                     Math.addExact(total, MoneyUtils.multiplyPriceQuantityCents(item.product.costPrice, item.quantity))
                 }
                 val profitCents = Math.subtractExact(netTotalCents, totalCostCents)
@@ -151,7 +182,7 @@ class SalesManager(
                     }
                 }
 
-                val receiptNum = "REC-" + SimpleDateFormat("yyMMdd-HHmmss", Locale.getDefault()).format(Date(now))
+                val receiptNum = "REC-" + SimpleDateFormat("yyMMdd-HHmmss", Locale.getDefault()).format(Date(now)) + "-" + saleId.take(8).uppercase(Locale.ROOT)
 
                 val sale = Sale(
                     id = saleId,
@@ -176,7 +207,7 @@ class SalesManager(
                     hlcTimestamp = hlc
                 )
 
-                val saleItems = items.map { cart ->
+                val saleItems = checkoutItems.map { cart ->
                     val subCents = MoneyUtils.multiplyPriceQuantityCents(cart.effectiveUnitPrice, cart.quantity)
                     val itemCostCents = MoneyUtils.multiplyPriceQuantityCents(cart.product.costPrice, cart.quantity)
                     SaleItem(
@@ -200,7 +231,7 @@ class SalesManager(
                 saleDao.insertSaleItems(saleItems)
 
                 // Decrement product inventory safely and atomically for catalog items
-                for (item in items) {
+                for (item in checkoutItems) {
                     if (item.product.id.startsWith("custom_")) continue
                     val updatedRows = productDao.decrementStock(item.product.id, item.quantity, now)
                     if (updatedRows <= 0) {
@@ -221,7 +252,7 @@ class SalesManager(
                         operation = "CREATE",
                         payloadJson = JSONObject().apply {
                             put("total", netTotal)
-                            put("itemsCount", items.size)
+                            put("itemsCount", checkoutItems.size)
                             put("receipt", receiptNum)
                         }.toString()
                     )
