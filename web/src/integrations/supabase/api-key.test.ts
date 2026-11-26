@@ -58,7 +58,7 @@ describe("resolveSupabaseSecretKey", () => {
 
   it("reports the name of the configured key when its value is invalid", () => {
     expect(() => resolveSupabaseSecretKey({
-      SUPABASE_SECRET_KEY: "not a valid key",
+      SUPABASE_SECRET_KEY: "not-a-valid-key\u0001",
       SUPABASE_SERVICE_ROLE_KEY: legacySecret,
     })).toThrow("SUPABASE_SECRET_KEY is not a valid Supabase API key");
   });
