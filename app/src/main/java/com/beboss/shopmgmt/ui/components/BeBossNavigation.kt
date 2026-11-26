@@ -114,7 +114,10 @@ fun BeBossTopBar(
     onSettingsClick: () -> Unit = {},
     onSyncClick: () -> Unit,
     onHistoryClick: () -> Unit,
-    onLockClick: () -> Unit
+    onLockClick: () -> Unit,
+    updateAvailable: Boolean = false,
+    updateVersion: String = "",
+    onUpdateClick: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
 
@@ -134,7 +137,7 @@ fun BeBossTopBar(
                     color = Color(0xFF0F172A),
                     border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(OrangePrimary, Color(0xFFFFB74D)))),
                     shadowElevation = 4.dp,
-                    modifier = Modifier.size(38.dp)
+                    modifier = Modifier.size(44.dp)
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.beboss_app_icon),
@@ -151,7 +154,7 @@ fun BeBossTopBar(
                         text = Localization.get(currentScreen.stringKey, language),
                         fontFamily = GopherFontFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
+                        fontSize = 17.5.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -159,7 +162,7 @@ fun BeBossTopBar(
                         Text(
                             text = shopProfile.shopName.ifBlank { Localization.get("default_store_name", language) },
                             fontFamily = GopherFontFamily,
-                            fontSize = 11.5.sp,
+                            fontSize = 12.5.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -168,7 +171,7 @@ fun BeBossTopBar(
                             Text(
                                 text = " • ${currentUser.name.split(" ").first()}",
                                 fontFamily = GopherFontFamily,
-                                fontSize = 10.5.sp,
+                                fontSize = 11.5.sp,
                                 color = OrangePrimary,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
@@ -179,7 +182,7 @@ fun BeBossTopBar(
                             Text(
                                 text = " • $activeBranchLabel",
                                 fontFamily = GopherFontFamily,
-                                fontSize = 10.sp,
+                                fontSize = 11.sp,
                                 color = ProfitGreen,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
@@ -191,6 +194,35 @@ fun BeBossTopBar(
             }
         },
         actions = {
+            if (updateAvailable) {
+                Surface(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onUpdateClick()
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    color = ProfitGreen.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, ProfitGreen.copy(alpha = 0.34f)),
+                    modifier = Modifier.padding(end = 5.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Sync, contentDescription = null, tint = ProfitGreen, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "Update ${updateVersion.take(12)}",
+                            fontFamily = GopherFontFamily,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = ProfitGreen,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+
             // Quick Actions Shortcut
             Surface(
                 onClick = {

@@ -24,6 +24,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.TlsVersion
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.net.URL
 import java.net.URLEncoder
@@ -1413,6 +1415,171 @@ object SupabaseAdminClient {
             indexes.size == expectedCount &&
             indexes.all { it != null && it in 0 until expectedCount } &&
             indexes.filterNotNull().toSet().size == expectedCount
+
+    /**
+     * Reads only the release explicitly marked current and public in Supabase.
+     * The private storage path remains server-side; only public metadata is returned.
+     */
+    suspend fun fetchCurrentPublicAndroidRelease(): AndroidAppRelease? = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext null
+        try {
+            val path = "app_releases?select=id,version_name,version_code,file_name,size_bytes,sha256,min_android,release_notes&is_current=eq.true&is_public=eq.true&limit=1"
+            val request = buildRestRequest(path).get().build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Public Android release lookup returned HTTP ${response.code}")
+                    return@withContext null
+                }
+                val releases = JSONArray(response.body?.string().orEmpty())
+                if (releases.length() == 0) return@withContext null
+                val row = releases.getJSONObject(0)
+                val release = AndroidAppRelease(
+                    id = row.optString("id").trim(),
+                    versionName = row.optString("version_name").trim(),
+                    versionCode = row.optLong("version_code", 0L),
+                    fileName = row.optString("file_name").trim(),
+                    sizeBytes = row.optLong("size_bytes", 0L),
+                    sha256 = row.optString("sha256").trim().lowercase(Locale.ROOT),
+                    minimumAndroid = row.optString("min_android").trim(),
+                    releaseNotes = row.optString("release_notes").trim()
+                )
+                val validId = runCatching { UUID.fromString(release.id) }.isSuccess
+                val validName = release.fileName.endsWith(".apk", ignoreCase = true) &&
+                    release.fileName.length <= 180 &&
+                    !release.fileName.contains('/') &&
+                    !release.fileName.contains('\\')
+                val validSize = release.sizeBytes in 1L..(512L * 1024L * 1024L)
+                val validHash = Regex("^[a-f0-9]{64}$").matches(release.sha256)
+                if (!validId || !validName || !validSize || !validHash ||
+                    release.versionCode <= 0L || release.versionName.isBlank()) {
+                    Log.e(TAG, "The current public Android release metadata failed validation.")
+                    return@withContext null
+                }
+                release
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.w(TAG, "Could not check for a public Android update: ${error.message}")
+            null
+        }
+    }
+
+    /**
+     * Downloads a public APK only through the rate-limited Edge Function.
+     * Redirect origin, exact published size and SHA-256 are verified before
+     * the file is returned to Android's system package installer.
+     */
+    suspend fun downloadPublicAndroidRelease(
+        context: Context,
+        release: AndroidAppRelease
+    ): File = withContext(Dispatchers.IO) {
+        if (!isConfigured()) throw IOException("BeBoss cloud configuration is unavailable.")
+        if (!runCatching { UUID.fromString(release.id) }.isSuccess ||
+            !Regex("^[a-f0-9]{64}$").matches(release.sha256) ||
+            release.sizeBytes !in 1L..(512L * 1024L * 1024L)) {
+            throw IOException("The published APK metadata is invalid. Refresh the update check.")
+        }
+
+        val projectUrl = URL(getSupabaseUrl())
+        if (!projectUrl.protocol.equals("https", ignoreCase = true)) {
+            throw IOException("Secure HTTPS is required to download BeBoss updates.")
+        }
+
+        val encodedId = URLEncoder.encode(release.id, StandardCharsets.UTF_8.name())
+        val endpoint = "${getSupabaseUrl()}/functions/v1/public-apk-download?release=$encodedId&ch=android"
+        val redirectRequest = Request.Builder()
+            .url(endpoint)
+            .header("apikey", getSupabaseApiKey())
+            .get()
+            .build()
+
+        val signedUrl = client.newCall(redirectRequest).execute().use { response ->
+            if (response.code != 302) {
+                val detail = response.body?.string().orEmpty().take(240)
+                throw IOException(
+                    when (response.code) {
+                        404 -> "This APK is no longer publicly published."
+                        429 -> "Too many update requests. Please retry shortly."
+                        else -> detail.ifBlank { "The update service returned HTTP ${response.code}." }
+                    }
+                )
+            }
+            val location = response.header("Location")
+                ?: throw IOException("The update service did not return a signed APK URL.")
+            val resolved = URL(projectUrl, location)
+            if (!resolved.protocol.equals("https", ignoreCase = true) ||
+                !resolved.host.equals(projectUrl.host, ignoreCase = true) ||
+                resolved.userInfo != null) {
+                throw IOException("The update service returned an untrusted download location.")
+            }
+            resolved
+        }
+
+        val updatesDirectory = File(context.cacheDir, "verified-apk-updates")
+        if (!updatesDirectory.exists() && !updatesDirectory.mkdirs()) {
+            throw IOException("BeBoss could not prepare its private update cache.")
+        }
+        val safeName = release.fileName.replace(Regex("[^A-Za-z0-9._-]"), "_").take(140)
+        val destination = File(updatesDirectory, "BeBoss-${release.versionCode}-$safeName")
+        val partial = File(updatesDirectory, "BeBoss-${release.versionCode}.download")
+
+        try {
+            val downloadRequest = Request.Builder().url(signedUrl).get().build()
+            client.newCall(downloadRequest).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IOException("The APK download failed with HTTP ${response.code}.")
+                }
+                val body = response.body ?: throw IOException("The APK download was empty.")
+                if (body.contentLength() > 512L * 1024L * 1024L) {
+                    throw IOException("The downloaded APK exceeds the supported size limit.")
+                }
+                val digest = MessageDigest.getInstance("SHA-256")
+                var received = 0L
+                body.byteStream().use { input ->
+                    FileOutputStream(partial, false).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            if (count == 0) continue
+                            received += count
+                            if (received > release.sizeBytes || received > 512L * 1024L * 1024L) {
+                                throw IOException("The downloaded APK is larger than the published release.")
+                            }
+                            digest.update(buffer, 0, count)
+                            output.write(buffer, 0, count)
+                        }
+                        output.fd.sync()
+                    }
+                }
+                if (received != release.sizeBytes) {
+                    throw IOException("APK size verification failed. Expected ${release.sizeBytes} bytes, received $received bytes.")
+                }
+                val actualHash = digest.digest().joinToString("") { byte ->
+                    "%02x".format(Locale.ROOT, byte)
+                }
+                if (!MessageDigest.isEqual(
+                        actualHash.toByteArray(Charsets.US_ASCII),
+                        release.sha256.toByteArray(Charsets.US_ASCII)
+                    )) {
+                    throw IOException("APK integrity verification failed. The file was not made installable.")
+                }
+            }
+
+            if (destination.exists() && !destination.delete()) {
+                throw IOException("BeBoss could not replace an older cached update file.")
+            }
+            if (!partial.renameTo(destination)) {
+                partial.copyTo(destination, overwrite = true)
+                partial.delete()
+            }
+            destination
+        } catch (error: Exception) {
+            partial.delete()
+            throw error
+        }
+    }
 
     // -------------------------------------------------------------------------
     // GLOBAL ADMIN PAYMENT & WHATSAPP CONFIG (`app_config`)
