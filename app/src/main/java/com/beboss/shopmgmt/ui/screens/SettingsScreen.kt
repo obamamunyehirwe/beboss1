@@ -1082,6 +1082,7 @@ fun SettingsScreen(
         onCreateShareToken = onGenerateBranchShareToken?.let { tokenFn ->
             { onReady -> tokenFn(null, onReady) }
         },
+        onImportBranchToken = onImportBranchToken,
         onDismiss = { showDataTransferDialog = false }
     )
 
