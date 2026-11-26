@@ -62,6 +62,10 @@
       },
       "wix": {
         "language": "en-US"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
       }
     },
     "macOS": {
@@ -72,5 +76,6 @@
       "providerShortName": null,
       "signingIdentity": null
     }
-  }
+  },
+  "mainBinaryName": "BeBoss"
 }
