@@ -27,6 +27,9 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
     steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
       - name: Validate production deployment secrets
         shell: bash
         run: |
@@ -37,9 +40,6 @@ jobs:
               exit 1
             fi
           done
-      - name: Check out source
-        uses: actions/checkout@v4
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
