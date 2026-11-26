@@ -40,6 +40,7 @@ import { ManagementPage } from "./components/screens/ManagementPage";
 import { LandingPage } from "./components/LandingPage";
 import { CommandPalette } from "./components/CommandPalette";
 import { SetupWizard } from "./components/SetupWizard";
+import { NotificationBell, NotificationBridge, NotificationToasts } from "./components/notifications/NotificationCenter";
 import { applyDesktopLanguage, DESKTOP_LANGUAGES } from "./lib/i18n";
 import { parseAcceptedSnapshotMarker, shouldPromptForRemoteRestore } from "./lib/device-restore";
 import type { StaffUpdate } from "./components/screens/StaffPage";
@@ -1168,6 +1169,7 @@ function NativeDesktopApp() {
           <label className="global-search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products, sales, customers…" /></label>
           <button className={"connection-chip " + (offline ? "offline" : "online")} onClick={refresh} title="Refresh cloud data"><span className="connection-dot" />{offline ? "Offline cache" : "Cloud synced"}</button>
           <button className="icon-btn" onClick={refresh} title="Refresh"><RefreshCw size={17} className={busy ? "spin" : ""} /></button>
+          <NotificationBell />
           <button className="icon-btn" onClick={() => setView("billing")} title="Announcements and billing"><Bell size={17} /></button>
         </div>
       </header>
@@ -1235,6 +1237,8 @@ function NativeDesktopApp() {
       </div>
     </main>
     {receipt && <ReceiptPreview receipt={receipt} onClose={() => setReceipt(null)} />}
+    <NotificationBridge offline={offline} lowStock={lowStock} ownerName={owner.username} announcements={cloud.announcements} />
+    <NotificationToasts />
     {paletteOpen && <CommandPalette
       cloud={cloud}
       snapshot={snapshot}
