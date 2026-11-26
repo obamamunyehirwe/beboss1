@@ -12,6 +12,7 @@ import { mergeSnapshots } from "./lib/snapshot-merge";
 import type { CloudState, DesktopPreferences, LanSyncResult, NavKey, ReceiptPayload, RestorePreview, Row, Snapshot } from "./lib/types";
 import { AuthScreen } from "./components/AuthScreen";
 import { DeviceRestorePrompt } from "./components/DeviceRestorePrompt";
+import { DeviceRegistrationPrompt } from "./components/DeviceRegistrationPrompt";
 import { ReceiptPreview } from "./components/ReceiptPreview";
 import { LoginHint } from "./components/ui";
 import { OverviewPage } from "./components/screens/OverviewPage";
@@ -38,6 +39,7 @@ import { LandingPage } from "./components/LandingPage";
 import { CommandPalette } from "./components/CommandPalette";
 import { SetupWizard } from "./components/SetupWizard";
 import { applyDesktopLanguage, DESKTOP_LANGUAGES } from "./lib/i18n";
+import { parseAcceptedSnapshotMarker, shouldPromptForRemoteRestore } from "./lib/device-restore";
 import type { StaffUpdate } from "./components/screens/StaffPage";
 
 function isDesktopInstallId(value: string) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
@@ -99,6 +101,13 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
   { id: "settings", label: "Shop settings", icon: Settings, group: "Administration" }
 ];
 
+type DeviceFeePromptState = {
+  credentials: OwnerCredentials;
+  installationId: string;
+  platform: string;
+  monthlyAddonRwf: number;
+};
+
 function NativeDesktopApp() {
   const [startupReady, setStartupReady] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
@@ -120,6 +129,9 @@ function NativeDesktopApp() {
   const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(null);
   const [restoreCredentials, setRestoreCredentials] = useState<OwnerCredentials | null>(null);
   const [restoreBusy, setRestoreBusy] = useState(false);
+  const [deviceFeePrompt, setDeviceFeePrompt] = useState<DeviceFeePromptState | null>(null);
+  const [deviceFeeBusy, setDeviceFeeBusy] = useState(false);
+  const [deviceFeeError, setDeviceFeeError] = useState("");
   const syncProbeRef = useRef({ ownerKey: "", managementVersion: "", snapshotUpdatedAt: 0, inFlight: false });
 
   async function saveCache(credentials: OwnerCredentials, data: CloudState) {
@@ -187,13 +199,17 @@ function NativeDesktopApp() {
     } catch (e) {
       const message = errorText(e);
       if (e instanceof DeviceFeeConfirmationRequired) {
-        const accepted = window.confirm(
-          "New BeBoss desktop detected.\n\nRegistering this installation adds FRw " +
-          e.monthlyAddonRwf.toLocaleString("en-US") +
-          " per month to your shop subscription. This is a recurring monthly device fee, not a one-time purchase. No payment is taken in this confirmation step.\n\nContinue and register this desktop?"
-        );
-        if (accepted) return await bootstrap(credentials, showBusy, true);
-        setError("Desktop registration was cancelled. This installation has not been added to your device fleet and no device add-on was applied.");
+        const installationId = deviceId || await window.beBossDesktop.getDeviceId().catch(() => "");
+        if (!isDesktopInstallId(installationId)) {
+          setError("This desktop could not confirm its persistent device identity. Restart BeBoss and try again.");
+          return false;
+        }
+        const platform = /Windows/i.test(navigator.userAgent) ? "Windows"
+          : /Mac OS X|Macintosh/i.test(navigator.userAgent) ? "macOS"
+          : /Linux/i.test(navigator.userAgent) ? "Linux" : "Desktop";
+        setDeviceFeePrompt({ credentials, installationId, platform, monthlyAddonRwf: e.monthlyAddonRwf });
+        setDeviceFeeError("");
+        setShowAuth(false);
         return false;
       }
       if (e instanceof OwnerAuthorizationError) {
@@ -420,50 +436,71 @@ function NativeDesktopApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  async function authenticated(credentials: OwnerCredentials) {
-    // A fresh desktop checks for verified shop data before registering an additional
-    // billable terminal or opening an empty workspace. This read-only preview does not
-    // create a device record or change subscription billing.
+  async function continueAfterDeviceRegistration(
+    credentials: OwnerCredentials,
+    installationId: string,
+    platform: string,
+  ) {
+    // Registration must be confirmed by the server before even exposing the
+    // verified shop snapshot. This protects the device-fee and tenant boundary.
     try {
-      const installationId = deviceId || await window.beBossDesktop.getDeviceId();
-      if (isDesktopInstallId(installationId)) {
-        if (installationId !== deviceId) setDeviceId(installationId);
-        const cachedValue = await window.beBossDesktop.secureStore.get("shop-cache:" + credentials.username).catch(() => null);
-        let cachedState: CloudState | null = null;
-        if (cachedValue) {
-          try {
-            const parsed = JSON.parse(cachedValue) as CloudState;
-            if (s(parsed.owner?.username).trim().toLowerCase() === credentials.username.trim().toLowerCase()) {
-              cachedState = parsed;
-            }
-          } catch { cachedState = null; }
-        }
-        const cachedShopId = s(cachedState?.shop?.id);
-        const localSnapshot = cachedShopId
-          ? await window.beBossDesktop.local.load(cachedShopId).catch(() => null)
-          : null;
-        const cachedSnapshot = cachedState?.snapshot ?? null;
-        if (!hasBusinessData(localSnapshot) && !hasBusinessData(cachedSnapshot)) {
-          const platform = /Windows/i.test(navigator.userAgent) ? "Windows"
-            : /Mac OS X|Macintosh/i.test(navigator.userAgent) ? "macOS"
-            : /Linux/i.test(navigator.userAgent) ? "Linux" : "Desktop";
-          const preview = await callDesktopApi<RestorePreview>("restore_preview", credentials, {
-            deviceId: installationId,
-            deviceName: "BeBoss Desktop · " + platform
-          });
-          if (preview.restoreAvailable) {
-            setRestorePreview(preview);
-            setRestoreCredentials(credentials);
-            setShowAuth(false);
-            setError("");
-            return;
+      const cachedValue = await window.beBossDesktop.secureStore.get("shop-cache:" + credentials.username).catch(() => null);
+      let cachedState: CloudState | null = null;
+      if (cachedValue) {
+        try {
+          const parsed = JSON.parse(cachedValue) as CloudState;
+          if (s(parsed.owner?.username).trim().toLowerCase() === credentials.username.trim().toLowerCase()) {
+            cachedState = parsed;
           }
-        }
+        } catch { cachedState = null; }
+      }
+
+      const preview = await callDesktopApi<RestorePreview>("restore_preview", credentials, {
+        deviceId: installationId,
+        deviceName: "BeBoss Desktop · " + platform
+      });
+      const shopSyncKey = s(preview.shopSyncKey);
+      if (!shopSyncKey) throw new Error("The verified restore response did not include a shop identity.");
+      if (cachedState?.shop?.id && s(cachedState.shop.id) !== shopSyncKey) {
+        throw new Error("The saved desktop cache belongs to a different shop. BeBoss has not merged or opened that cache.");
+      }
+
+      const localSnapshot = await window.beBossDesktop.local.load(shopSyncKey).catch(() => null);
+      const cachedSnapshot = cachedState?.snapshot ?? null;
+      const localHasData = hasBusinessData(localSnapshot) || hasBusinessData(cachedSnapshot);
+      const localUpdatedAt = Math.max(
+        n((localSnapshot as Snapshot | null)?.metadata?.timestamp),
+        n(cachedState?.snapshotUpdatedAt),
+        n((cachedSnapshot as Snapshot | null)?.metadata?.timestamp),
+      );
+
+      const scopedMarkerKey = "desktop-restore-accepted:" + installationId + ":" + shopSyncKey;
+      const [scopedMarker, legacyMarker] = await Promise.all([
+        window.beBossDesktop.secureStore.get(scopedMarkerKey).catch(() => null),
+        window.beBossDesktop.secureStore.get("desktop-restore-accepted:" + installationId).catch(() => null)
+      ]);
+      const lastAcceptedSnapshotAt = Math.max(
+        parseAcceptedSnapshotMarker(scopedMarker),
+        parseAcceptedSnapshotMarker(legacyMarker),
+      );
+
+      if (shouldPromptForRemoteRestore(preview, {
+        installationId,
+        hasLocalBusinessData: localHasData,
+        localUpdatedAt,
+        lastAcceptedSnapshotAt
+      })) {
+        setRestorePreview(preview);
+        setRestoreCredentials(credentials);
+        setShowAuth(false);
+        setError("");
+        return;
       }
     } catch (e) {
       if (e instanceof OwnerAuthorizationError) throw e;
-      // A preview failure never replaces the existing bootstrap/offline recovery path.
-      console.warn("BeBoss restore preview unavailable; continuing with normal bootstrap.", e);
+      // Existing installations may sign in from their encrypted last-known cache.
+      // The server still enforces the device registration and fee before any writes.
+      console.warn("Verified restore preview unavailable; using the authenticated bootstrap path.", e);
     }
 
     const ready = await bootstrap(credentials);
@@ -475,6 +512,74 @@ function NativeDesktopApp() {
     }
   }
 
+  async function authenticated(credentials: OwnerCredentials) {
+    setError("");
+    const installationId = deviceId || await window.beBossDesktop.getDeviceId().catch(() => "");
+    if (!isDesktopInstallId(installationId)) {
+      throw new Error("This desktop installation could not create a persistent device identity. Restart BeBoss and retry.");
+    }
+    if (installationId !== deviceId) setDeviceId(installationId);
+    const platform = /Windows/i.test(navigator.userAgent) ? "Windows"
+      : /Mac OS X|Macintosh/i.test(navigator.userAgent) ? "macOS"
+      : /Linux/i.test(navigator.userAgent) ? "Linux" : "Desktop";
+    const deviceName = "BeBoss Desktop · " + platform;
+
+    try {
+      await callDesktopApi("register_desktop", credentials, {
+        deviceId: installationId,
+        deviceName
+      });
+    } catch (e) {
+      if (e instanceof DeviceFeeConfirmationRequired) {
+        setDeviceFeePrompt({ credentials, installationId, platform, monthlyAddonRwf: e.monthlyAddonRwf });
+        setDeviceFeeError("");
+        setShowAuth(false);
+        return;
+      }
+      if (e instanceof OwnerAuthorizationError) throw e;
+      // Continue only through the same secure bootstrap endpoint. If this is a
+      // genuinely new device, the backend will return the same fee requirement
+      // and the user will see the explicit registration screen.
+      console.warn("Dedicated device registration was unavailable; checking the guarded bootstrap path.", e);
+    }
+
+    await continueAfterDeviceRegistration(credentials, installationId, platform);
+  }
+
+  async function confirmDeviceRegistration() {
+    if (!deviceFeePrompt || deviceFeeBusy) return;
+    const prompt = deviceFeePrompt;
+    setDeviceFeeBusy(true);
+    setDeviceFeeError("");
+    try {
+      await callDesktopApi("register_desktop", prompt.credentials, {
+        deviceId: prompt.installationId,
+        deviceName: "BeBoss Desktop · " + prompt.platform,
+        confirmDeviceFee: true
+      });
+      setDeviceFeePrompt(null);
+      setDeviceFeeError("");
+      await continueAfterDeviceRegistration(prompt.credentials, prompt.installationId, prompt.platform);
+    } catch (e) {
+      if (e instanceof OwnerAuthorizationError) {
+        setDeviceFeePrompt(null);
+        await invalidateOwnerAuthorization();
+      } else {
+        setDeviceFeeError(errorText(e));
+      }
+    } finally {
+      setDeviceFeeBusy(false);
+    }
+  }
+
+  function cancelDeviceRegistration() {
+    if (deviceFeeBusy) return;
+    setDeviceFeePrompt(null);
+    setDeviceFeeError("");
+    setShowAuth(true);
+    setError("Desktop registration was cancelled. This installation has not been added to the shop device fleet.");
+  }
+
   async function acceptRemoteRestore() {
     if (!restoreCredentials) return;
     setRestoreBusy(true);
@@ -482,9 +587,13 @@ function NativeDesktopApp() {
     try {
       const ready = await bootstrap(restoreCredentials);
       if (!ready) return;
+      const latestPreview = await callDesktopApi<RestorePreview>("restore_preview", restoreCredentials, { deviceId });
       await window.beBossDesktop.secureStore.set(
-        "desktop-restore-accepted:" + deviceId,
-        new Date().toISOString()
+        "desktop-restore-accepted:" + deviceId + ":" + restorePreview.shopSyncKey,
+        JSON.stringify({
+          snapshotUpdatedAt: latestPreview.snapshotUpdatedAt,
+          acceptedAt: new Date().toISOString()
+        })
       );
       setRestorePreview(null);
       setRestoreCredentials(null);
@@ -526,12 +635,8 @@ function NativeDesktopApp() {
       if (session && identity) {
         const parsed = JSON.parse(identity) as OwnerCredentials;
         if (parsed.username && parsed.phone) {
-          const restored = await bootstrap(parsed, false);
-          if (restored) {
-            setShowAuth(false);
-            setView(preferences.defaultView);
-            return;
-          }
+          await authenticated(parsed);
+          return;
         }
       }
       setShowAuth(true);
@@ -821,10 +926,24 @@ function NativeDesktopApp() {
     return <div className="setup-loading"><LoaderCircle className="spin" size={28} /><span>Preparing BeBoss Desktop…</span></div>;
   }
 
+  if (deviceFeePrompt) {
+    return <DeviceRegistrationPrompt
+      monthlyFeeRwf={deviceFeePrompt.monthlyAddonRwf}
+      platform={deviceFeePrompt.platform}
+      theme={preferences.theme}
+      language={preferences.language}
+      busy={deviceFeeBusy}
+      error={deviceFeeError}
+      onConfirm={() => void confirmDeviceRegistration()}
+      onCancel={cancelDeviceRegistration}
+    />;
+  }
+
   if (restorePreview && restoreCredentials) {
     return <DeviceRestorePrompt
       preview={restorePreview}
       theme={preferences.theme}
+      language={preferences.language}
       busy={restoreBusy || busy}
       error={error}
       onRestore={() => void acceptRemoteRestore()}

@@ -1,34 +1,34 @@
 /* BeBoss Desktop retail workspace — application shell, operational screens and responsive layout. */
 :root {
   color-scheme: dark;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: Figtree, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
 * { box-sizing: border-box; }
 html, body, #root { width: 100%; min-width: 0; max-width: 100%; min-height: 100%; margin: 0; }
-body { background: #0a1120; color: #e8eef8; }
+body { background: oklch(0.155 0.028 262); color: oklch(0.965 0.012 85); }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .52; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #68a9ff; outline-offset: 2px; }
 .app-shell {
-  --app-bg: #0a1120;
-  --panel-bg: #101b2e;
-  --panel-soft: #15243a;
-  --panel-raised: #192a43;
-  --text: #e8eef8;
-  --foreground: #e8eef8;
-  --muted: #92a5c0;
-  --muted-foreground: #92a5c0;
-  --border: rgba(149, 174, 211, .16);
-  --input: rgba(149, 174, 211, .24);
-  --background: #0d1728;
-  --card: #101b2e;
-  --primary: #54a1f6;
-  --destructive: #e35d6a;
-  --success: #45c69b;
-  --warning: #e8ac57;
+  --app-bg: oklch(0.155 0.028 262);
+  --panel-bg: oklch(0.19 0.032 262);
+  --panel-soft: oklch(0.215 0.036 262);
+  --panel-raised: oklch(0.25 0.038 262);
+  --text: oklch(0.965 0.012 85);
+  --foreground: oklch(0.965 0.012 85);
+  --muted: oklch(0.72 0.028 255);
+  --muted-foreground: oklch(0.72 0.028 255);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --background: oklch(0.155 0.028 262);
+  --card: oklch(0.19 0.032 262);
+  --primary: oklch(0.72 0.185 48);
+  --destructive: oklch(0.64 0.21 25);
+  --success: oklch(0.78 0.16 158);
+  --warning: oklch(0.83 0.15 85);
   display: grid;
   grid-template-columns: 254px minmax(0, 1fr);
   width: 100%;
@@ -37,6 +37,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--text);
   font-size: 12px;
   line-height: 1.45;
+  font-family: Figtree, ui-sans-serif, system-ui, sans-serif;
 }
 .app-shell[data-theme="light"] {
   color-scheme: light;
@@ -883,4 +884,214 @@ select option { background: var(--panel-bg); color: var(--text); }
 @media(prefers-reduced-motion:reduce) {
   .device-restore-primary,.device-restore-secondary { transition:none; }
   .device-restore-primary:hover:not(:disabled) { transform:none; }
+}
+
+
+
+/* BeBoss web identity: Night Market ink, ember-orange highlights and mint status. */
+.app-shell h1,
+.app-shell h2,
+.app-shell h3,
+.app-shell h4,
+.device-registration-card h1,
+.device-restore-card h1 {
+  font-family: "Bricolage Grotesque", Figtree, ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.035em;
+}
+.app-shell code,
+.app-shell pre,
+.app-shell .mono,
+.device-registration-card .mono {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+/* First-time additional-device authorization */
+.device-registration-shell {
+  --registration-ink: oklch(0.155 0.028 262);
+  --registration-panel: oklch(0.19 0.032 262);
+  --registration-panel-raised: oklch(0.225 0.036 262);
+  --registration-text: oklch(0.965 0.012 85);
+  --registration-muted: oklch(0.72 0.028 255);
+  --registration-border: oklch(1 0 0 / 10%);
+  --registration-accent: oklch(0.72 0.185 48);
+  --registration-accent-soft: oklch(0.8 0.16 70);
+  position: relative;
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  overflow: hidden;
+  padding: clamp(18px, 4vw, 54px);
+  color: var(--registration-text);
+  background:
+    radial-gradient(55% 55% at 10% 8%, oklch(0.72 0.185 48 / 18%), transparent 68%),
+    radial-gradient(50% 55% at 94% 88%, oklch(0.78 0.16 158 / 8%), transparent 72%),
+    var(--registration-ink);
+}
+.device-registration-shell::before,
+.device-registration-shell::after {
+  position: absolute;
+  pointer-events: none;
+  content: "";
+  border: 1px solid oklch(1 0 0 / 5%);
+  border-radius: 50%;
+  animation: registration-orbit 24s linear infinite;
+}
+.device-registration-shell::before { width: 820px; height: 820px; right: -340px; top: -440px; }
+.device-registration-shell::after { width: 620px; height: 620px; left: -360px; bottom: -360px; animation-direction: reverse; }
+.device-registration-card {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(100%, 1120px);
+  min-height: min(760px, calc(100vh - 48px));
+  grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
+  overflow: hidden;
+  border: 1px solid var(--registration-border);
+  border-radius: 30px;
+  background: var(--registration-panel);
+  box-shadow: 0 40px 120px oklch(0 0 0 / 45%), inset 0 1px oklch(1 0 0 / 4%);
+  animation: registration-rise .55s cubic-bezier(.2,.8,.2,1) both;
+}
+.device-registration-visual {
+  position: relative;
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: clamp(24px, 3vw, 38px);
+  background: #101722;
+  isolation: isolate;
+}
+.device-registration-visual > img {
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: .55;
+  filter: saturate(.8) contrast(1.08);
+  transform: scale(1.04);
+}
+.device-registration-visual-overlay {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    linear-gradient(180deg, oklch(0.12 0.028 262 / 25%) 0%, oklch(0.12 0.028 262 / 8%) 34%, oklch(0.12 0.028 262 / 92%) 100%),
+    linear-gradient(135deg, oklch(0.72 0.185 48 / 19%), transparent 58%);
+}
+.device-registration-brand { display: flex; align-items: center; gap: 12px; }
+.device-registration-brand > img { width: 46px; height: 46px; border-radius: 13px; box-shadow: 0 12px 30px oklch(0.72 0.185 48 / 24%); }
+.device-registration-brand > span { display: grid; gap: 3px; }
+.device-registration-brand strong { color: #fff; font-family: "Bricolage Grotesque", sans-serif; font-size: 20px; font-weight: 800; }
+.device-registration-brand small { color: oklch(0.92 0.015 85 / 72%); font-family: "JetBrains Mono", monospace; font-size: 8px; letter-spacing: .18em; }
+.device-registration-visual-foot { display: flex; flex-wrap: wrap; gap: 8px; }
+.device-registration-visual-foot span {
+  display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px;
+  border: 1px solid oklch(1 0 0 / 17%); border-radius: 999px;
+  background: oklch(0.14 0.025 262 / 62%); color: oklch(0.94 0.012 85);
+  font-family: "JetBrains Mono", monospace; font-size: 8px; font-weight: 700; letter-spacing: .07em;
+  backdrop-filter: blur(12px);
+}
+.device-registration-visual-foot svg { color: var(--registration-accent); }
+.device-registration-orbit { position: absolute; z-index: -1; border: 1px solid oklch(0.8 0.16 70 / 22%); border-radius: 50%; pointer-events: none; }
+.device-registration-orbit-one { width: 360px; height: 360px; right: -190px; bottom: 8%; box-shadow: 0 0 0 26px oklch(0.8 0.16 70 / 3%), 0 0 0 52px oklch(0.8 0.16 70 / 2%); }
+.device-registration-orbit-two { width: 210px; height: 210px; right: -110px; bottom: calc(8% + 75px); border-color: oklch(0.78 0.16 158 / 18%); }
+.device-registration-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: clamp(28px, 4vw, 54px);
+  background:
+    radial-gradient(65% 45% at 100% 0%, oklch(0.72 0.185 48 / 7%), transparent 75%),
+    var(--registration-panel);
+}
+.device-registration-eyebrow {
+  display: flex; align-items: center; gap: 9px; margin: 0 0 14px;
+  color: var(--registration-accent); font-family: "JetBrains Mono", monospace;
+  font-size: 9px; font-weight: 800; letter-spacing: .16em;
+}
+.device-registration-eyebrow > span { width: 7px; height: 7px; border-radius: 50%; background: var(--registration-accent); box-shadow: 0 0 0 5px oklch(0.72 0.185 48 / 13%); }
+.device-registration-content h1 { margin: 0; color: var(--registration-text); font-size: clamp(30px, 4vw, 45px); line-height: 1.04; }
+.device-registration-lead { max-width: 620px; margin: 16px 0 22px; color: var(--registration-muted); font-size: 13px; line-height: 1.75; }
+.device-registration-device {
+  display: flex; align-items: center; gap: 12px; min-width: 0; padding: 13px 14px;
+  border: 1px solid var(--registration-border); border-radius: 15px; background: oklch(1 0 0 / 2%);
+}
+.device-registration-device-icon {
+  display: grid; width: 43px; height: 43px; flex: 0 0 auto; place-items: center;
+  border: 1px solid oklch(0.72 0.185 48 / 24%); border-radius: 12px;
+  color: var(--registration-accent); background: oklch(0.72 0.185 48 / 10%);
+}
+.device-registration-device > span:nth-child(2) { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.device-registration-device strong { overflow-wrap: anywhere; color: var(--registration-text); font-size: 12px; }
+.device-registration-device small { color: var(--registration-muted); font-family: "JetBrains Mono", monospace; font-size: 9px; }
+.device-registration-verified { display: inline-flex; align-items: center; gap: 5px; color: oklch(0.78 0.16 158); font-size: 9px; font-weight: 800; white-space: nowrap; }
+.device-registration-fee {
+  margin-top: 14px; padding: 17px; border: 1px solid oklch(0.72 0.185 48 / 32%);
+  border-radius: 17px; background: linear-gradient(135deg, oklch(0.72 0.185 48 / 11%), oklch(0.8 0.16 70 / 4%));
+  box-shadow: inset 0 1px oklch(1 0 0 / 4%), 0 16px 34px -28px oklch(0.72 0.185 48 / 45%);
+}
+.device-registration-fee-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 9px; }
+.device-registration-fee-top > span:first-child { display: inline-flex; align-items: center; gap: 8px; color: var(--registration-text); font-size: 11px; font-weight: 800; }
+.device-registration-fee-top svg { color: var(--registration-accent); }
+.device-registration-recurring { color: var(--registration-muted); font-family: "JetBrains Mono", monospace; font-size: 8px; letter-spacing: .04em; }
+.device-registration-fee-amount { display: flex; align-items: baseline; gap: 8px; margin-top: 14px; }
+.device-registration-fee-amount strong { color: var(--registration-text); font-family: "Bricolage Grotesque", sans-serif; font-size: clamp(29px, 3vw, 37px); font-weight: 800; letter-spacing: -.04em; }
+.device-registration-fee-amount strong small { color: var(--registration-accent); font-family: "Figtree", sans-serif; font-size: 12px; letter-spacing: .03em; }
+.device-registration-fee-amount > span { color: var(--registration-muted); font-size: 11px; }
+.device-registration-fee > p { margin: 10px 0 0; color: var(--registration-muted); font-size: 10px; line-height: 1.7; }
+.device-registration-security { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; padding: 12px 13px; border: 1px solid oklch(0.78 0.16 158 / 19%); border-radius: 13px; background: oklch(0.78 0.16 158 / 6%); }
+.device-registration-security > svg { flex: 0 0 auto; color: oklch(0.78 0.16 158); }
+.device-registration-security > span { display: grid; gap: 4px; min-width: 0; }
+.device-registration-security strong { color: var(--registration-text); font-size: 10px; }
+.device-registration-security small { color: var(--registration-muted); font-size: 9px; line-height: 1.55; }
+.device-registration-error { margin-top: 12px; padding: 11px 12px; border: 1px solid oklch(0.64 0.21 25 / 38%); border-radius: 11px; color: oklch(0.78 0.14 25); background: oklch(0.64 0.21 25 / 8%); font-size: 11px; line-height: 1.5; }
+.device-registration-actions { display: grid; gap: 8px; margin-top: 17px; }
+.device-registration-confirm, .device-registration-cancel {
+  display: flex; min-height: 48px; align-items: center; justify-content: center; gap: 10px;
+  border-radius: 13px; font-size: 11px; font-weight: 800; transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+}
+.device-registration-confirm {
+  border: 1px solid oklch(0.8 0.16 70 / 35%);
+  color: oklch(0.17 0.03 262);
+  background: linear-gradient(115deg, oklch(0.72 0.185 48), oklch(0.8 0.16 70));
+  box-shadow: 0 12px 28px -14px oklch(0.72 0.185 48 / 70%);
+}
+.device-registration-confirm:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 17px 34px -15px oklch(0.72 0.185 48 / 72%); }
+.device-registration-cancel { border: 1px solid var(--registration-border); color: var(--registration-muted); background: transparent; }
+.device-registration-cancel:hover:not(:disabled) { color: var(--registration-text); background: oklch(1 0 0 / 4%); }
+.device-registration-confirm:disabled, .device-registration-cancel:disabled { opacity: .55; cursor: wait; }
+.device-registration-arrow { transform: rotate(180deg); }
+.device-registration-spinner {
+  width: 15px; height: 15px; border: 2px solid oklch(0.17 0.03 262 / 25%);
+  border-top-color: oklch(0.17 0.03 262); border-radius: 50%; animation: registration-spin .7s linear infinite;
+}
+.device-registration-no-charge { margin: 13px 0 0; color: var(--registration-muted); font-size: 9px; line-height: 1.6; }
+@keyframes registration-spin { to { transform: rotate(360deg); } }
+@keyframes registration-orbit { to { transform: rotate(360deg); } }
+@keyframes registration-rise { from { opacity: 0; transform: translateY(13px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media(max-width:880px) {
+  .device-registration-card { grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr); }
+  .device-registration-content { padding: 25px; }
+  .device-registration-visual { padding: 24px; }
+}
+@media(max-width:700px) {
+  .device-registration-shell { padding: 12px; }
+  .device-registration-card { width: 100%; min-height: auto; grid-template-columns: 1fr; border-radius: 23px; }
+  .device-registration-visual { min-height: 165px; padding: 18px; }
+  .device-registration-visual > img { object-position: center 55%; }
+  .device-registration-visual-foot { display: none; }
+  .device-registration-orbit-one { width: 230px; height: 230px; }
+  .device-registration-orbit-two { width: 140px; height: 140px; }
+  .device-registration-content { padding: 23px 18px 24px; }
+  .device-registration-content h1 { font-size: 31px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .device-registration-shell::before,.device-registration-shell::after,.device-registration-card,.device-registration-spinner { animation: none; }
+  .device-registration-confirm,.device-registration-cancel { transition: none; }
+  .device-registration-confirm:hover:not(:disabled) { transform: none; }
 }
