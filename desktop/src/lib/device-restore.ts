@@ -33,10 +33,14 @@ export function shouldPromptForRemoteRestore(
   const localUpdatedAt = Math.max(0, Number(input.localUpdatedAt) || 0);
   const localIsEmpty = !input.hasLocalBusinessData;
   const remoteIsNewerThanLocal = remoteUpdatedAt > localUpdatedAt;
+  const hasOtherDeviceSource = preview.sourceDevices.some(
+    (device) => normalizedDeviceId(device.deviceId) !== normalizedDeviceId(input.installationId),
+  );
 
-  // Even a snapshot created by the same terminal may need retrieval after a
-  // cache/key recovery. The user must never be forced into an empty shop.
-  return localIsEmpty || remoteIsNewerThanLocal;
+  // A fresh or recovered installation must never open as an empty shop when
+  // verified cloud records exist. Existing populated installations are prompted
+  // only when another registered device has published a newer generation.
+  return localIsEmpty || (remoteIsNewerThanLocal && hasOtherDeviceSource);
 }
 
 export function parseAcceptedSnapshotMarker(value: string | null | undefined): number {
