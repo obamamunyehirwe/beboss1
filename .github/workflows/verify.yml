@@ -320,7 +320,7 @@ jobs:
     name: Android tests and debug-only build validation
     runs-on: ubuntu-24.04
     env:
-      BEBOSS_DATASHARE_HMAC_SECRET: ${{ secrets.BEBOSS_DATASHARE_HMAC_SECRET }}
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -358,16 +358,25 @@ jobs:
 
       - name: Inspect generated Android BuildConfig before compilation
         run: |
-          gradle :app:generateDebugBuildConfig --stacktrace
-          echo "----- Generated app BuildConfig.java -----"
-          sed -n '1,45p' app/build/generated/source/buildConfig/debug/com/beboss/shopmgmt/BuildConfig.java
+          gradle :app:generateSecureDebugBuildConfig :app:generateTransitionDebugBuildConfig --stacktrace
+          echo "----- Generated secure BuildConfig.java -----"
+          sed -n '1,45p' app/build/generated/source/buildConfig/secureDebug/com/beboss/shopmgmt/BuildConfig.java
 
       - name: Verify server-only credentials are not embedded in Android
         shell: bash
         run: |
-          config="app/build/generated/source/buildConfig/debug/com/beboss/shopmgmt/BuildConfig.java"
-          if grep -Eq 'AFRICASTALKING_|AIRTEL_MONEY_|MTN_MOMO_|SEND_SMS_HOOK_SECRET|FLW_SECRET_KEY|STRIPE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY' "$config"; then
-            echo "A server-only credential was exposed in Android BuildConfig."
+          config="app/build/generated/source/buildConfig/secureDebug/com/beboss/shopmgmt/BuildConfig.java"
+          transition="app/build/generated/source/buildConfig/transitionDebug/com/beboss/shopmgmt/BuildConfig.java"
+          if grep -Eq 'AFRICASTALKING_|AIRTEL_MONEY_|MTN_MOMO_|SEND_SMS_HOOK_SECRET|FLW_SECRET_KEY|STRIPE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY|BEBOSS_DATASHARE_HMAC_SECRET|BEBOSS_SECURITY_PEPPER' "$config"; then
+            echo "The final secure Android variant embedded a server credential or migration-only compatibility secret."
+            exit 1
+          fi
+          if ! grep -Fq 'BEBOSS_SECURITY_PEPPER' "$transition"; then
+            echo "The one-time transition Android variant is missing its protected legacy credential pepper."
+            exit 1
+          fi
+          if grep -Fq 'BEBOSS_DATASHARE_HMAC_SECRET' "$transition"; then
+            echo "The Android transition variant must not embed the old global DataShare key."
             exit 1
           fi
           if grep -Fq ' = ;' "$config"; then
@@ -380,7 +389,7 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             echo "Android unit-test attempt ${attempt}/3"
-            if gradle :app:testDebugUnitTest --stacktrace; then
+            if gradle :app:testSecureDebugUnitTest :app:testTransitionDebugUnitTest --stacktrace; then
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
@@ -399,26 +408,7 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          script: gradle :app:connectedDebugAndroidTest --stacktrace
-
-      - name: Verify Android DataShare signing fails closed without the shared secret
-        shell: bash
-        env:
-          BEBOSS_DATASHARE_HMAC_SECRET: ""
-        run: |
-          set +e
-          output="$(gradle --configuration-cache :app:validateDataShareSigningConfiguration 2>&1)"
-          status=$?
-          set -e
-          printf '%s\n' "$output"
-          if [ "$status" -eq 0 ]; then
-            echo "Android DataShare signing incorrectly accepted a missing shared HMAC key."
-            exit 1
-          fi
-          if ! grep -Fq "Android DataShare signing is not configured." <<< "$output"; then
-            echo "The expected fail-closed DataShare signing error was not found."
-            exit 1
-          fi
+          script: gradle :app:connectedSecureDebugAndroidTest --stacktrace
 
       - name: Verify Android release signing fails closed without production credentials
         shell: bash
@@ -443,4 +433,4 @@ jobs:
           fi
 
       - name: Compile Android debug variant for CI validation only
-        run: gradle :app:assembleDebug --stacktrace
+        run: gradle :app:assembleSecureDebug :app:assembleTransitionDebug --stacktrace
