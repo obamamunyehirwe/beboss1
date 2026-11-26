@@ -373,6 +373,23 @@ export function SetupWizard({initialPreferences,onComplete,onRecoverLocalDatabas
   const update=<K extends keyof DesktopPreferences>(key:K,value:DesktopPreferences[K])=>setPreferences(current=>({...current,[key]:value}));
 
   return <div className="setup-wizard" data-theme={preferences.theme} data-motion={preferences.reducedMotion?"reduced":"full"}>
+    <aside className="setup-visual" aria-label="BeBoss retail workspace">
+      <img className="setup-visual-image" src="/Friendly%20Modern%20Store%20Checkout.png" alt="" aria-hidden="true" />
+      <div className="setup-visual-brand">
+        <img src="/beboss-app-icon.png" alt="" />
+        <div><strong>BeBoss</strong><span>RETAIL OPERATIONS</span></div>
+      </div>
+      <div className="setup-visual-copy">
+        <span className="setup-visual-kicker">ONE CONNECTED WORKSPACE</span>
+        <h1>Every part of your shop, in sync.</h1>
+        <p>Sales, stock, people and branches—together in one clear, protected workspace.</p>
+      </div>
+      <div className="setup-visual-bottom">
+        <span><ShieldCheck size={15} /> Secure owner access</span>
+        <span><Cloud size={15} /> Cloud-connected operations</span>
+      </div>
+    </aside>
+    <section className="setup-workspace" aria-label="Desktop setup wizard">
     <header className="setup-header">
       <div className="setup-brand">
         <img src="/beboss-app-icon.png" alt="BeBoss" className="setup-brand-icon" />
@@ -630,5 +647,6 @@ export function SetupWizard({initialPreferences,onComplete,onRecoverLocalDatabas
       <span>BeBoss Desktop <b>1.4.2</b></span>
       <span>Protected local recovery · Supabase cloud data</span>
     </footer>
+    </section>
   </div>;
 }

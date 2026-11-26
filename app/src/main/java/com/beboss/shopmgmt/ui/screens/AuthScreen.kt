@@ -1882,27 +1882,7 @@ fun ShopRegistrationScreen(
     ) {
         val isWide = maxWidth >= 620.dp
 
-        // Brand photo, full-bleed. The scrim keeps it visible at the left/top
-        // while the form floats on a light translucent surface.
-        Image(
-            painter = painterResource(id = R.drawable.beboss_app_logo_1787833759468),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0.0f to Color.Transparent,
-                        0.22f to bgColors[0].copy(alpha = 0.12f),
-                        0.50f to bgColors[0].copy(alpha = 0.34f),
-                        1.0f to bgColors[0].copy(alpha = 0.50f)
-                    )
-                )
-        )
-
+        // Keep the brand artwork in its own visual area; never place it beneath the form.
         if (isWide) {
             Row(
                 modifier = Modifier
@@ -1912,12 +1892,30 @@ fun ShopRegistrationScreen(
                 horizontalArrangement = Arrangement.spacedBy(26.dp)
             ) {
                 // Left brand rail: the photo stays fully visible here.
-                Column(
+                Box(
                     modifier = Modifier
-                        .weight(0.8f)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.Bottom
+                        .weight(0.88f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(24.dp)),
+                    contentAlignment = Alignment.BottomStart
                 ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.beboss_app_logo_1787833759468),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    0.0f to Color.Transparent,
+                                    0.72f to Color.Transparent,
+                                    1.0f to Color.Black.copy(alpha = 0.18f)
+                                )
+                            )
+                    )
                     Surface(
                         shape = RoundedCornerShape(24.dp),
                         color = Color(0xFF0F172A).copy(alpha = 0.42f),
@@ -1970,11 +1968,11 @@ fun ShopRegistrationScreen(
                 // Right form panel: light, modern, translucent.
                 Surface(
                     modifier = Modifier
-                        .weight(1.2f)
+                        .weight(1.12f)
                         .fillMaxHeight()
-                        .widthIn(max = 640.dp),
+                        .widthIn(max = 680.dp),
                     shape = RoundedCornerShape(28.dp),
-                    color = Color.White.copy(alpha = 0.95f),
+                    color = Color.White.copy(alpha = 0.91f),
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.65f)),
                     shadowElevation = 14.dp
                 ) {
@@ -1997,9 +1995,26 @@ fun ShopRegistrationScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Compact brand header over the photo.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
+                // Keep the artwork visible as a compact banner on narrow screens.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 164.dp, max = 204.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.beboss_app_logo_1787833759468),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.16f))
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxSize().padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -2034,6 +2049,7 @@ fun ShopRegistrationScreen(
                             color = textSecondary
                         )
                     }
+                }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))

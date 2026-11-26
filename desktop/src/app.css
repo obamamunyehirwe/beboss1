@@ -1726,3 +1726,17 @@ select option { background: var(--panel-bg); color: var(--text); }
   .setup-btn-back, .setup-btn-primary, .setup-btn-retry { width: 100%; justify-content: center; }
   .setup-global-foot { padding: 14px 22px; }
 }
+
+
+/* Readable enterprise defaults across the desktop workspace and owner sign-in. */
+.app-shell{font-size:15px}
+.app-shell :where(p,li,label,input,select,textarea,td,th,.nav-link,.breadcrumb){font-size:max(13px,1em)}
+.app-shell :where(small,.small-text,.panel-hint,.support-card small){font-size:max(12px,1em)}
+.app-shell :where(.panel-heading h3,.section-title-row h3){font-size:max(15px,1em)}
+.app-shell :where(button){font-size:max(12px,1em)}
+.auth-shell .auth-form-wrap h1{font-size:clamp(29px,3vw,38px)}
+.auth-shell .auth-form-wrap>p{font-size:14px;line-height:1.65}
+.auth-shell .auth-form label{font-size:13px}
+.auth-shell .auth-form input{min-height:48px;font-size:16px}
+.auth-shell .auth-form button{min-height:46px;font-size:14px}
+.auth-shell .auth-secure{font-size:12px;line-height:1.5}

@@ -108,8 +108,8 @@ val Typography = Typography(
     bodySmall = TextStyle(
         fontFamily = GopherFontFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
+        fontSize = 13.sp,
+        lineHeight = 19.sp,
         letterSpacing = 0.4.sp
     ),
     labelLarge = TextStyle(
@@ -122,15 +122,15 @@ val Typography = Typography(
     labelMedium = TextStyle(
         fontFamily = GopherFontFamily,
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
+        fontSize = 13.sp,
+        lineHeight = 18.sp,
         letterSpacing = 0.5.sp
     ),
     labelSmall = TextStyle(
         fontFamily = GopherFontFamily,
         fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        lineHeight = 16.sp,
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
         letterSpacing = 0.5.sp
     )
 )

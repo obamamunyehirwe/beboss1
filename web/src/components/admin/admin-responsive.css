@@ -306,3 +306,17 @@
     margin-inline: 0;
   }
 }
+
+
+/* Admin readability baseline: retain the current visual system while removing tiny operational text. */
+.admin-main-content :where(p,li,dt,dd,label,th,td,input,select,textarea){font-size:max(13px,1em);line-height:1.5}
+.admin-main-content :where(small){font-size:max(12px,1em);line-height:1.45}
+.admin-main-content :where(button,a){font-size:max(13px,1em)}
+.admin-topbar :where(button,input,select){font-size:max(12px,1em)}
+.admin-main-content :where(h1){font-size:max(25px,1em)}
+.admin-main-content :where(h2){font-size:max(21px,1em)}
+.admin-main-content :where(h3){font-size:max(17px,1em)}
+@media(max-width:640px){
+  .admin-main-content :where(p,li,label,th,td,input,select,textarea){font-size:max(13px,1em)}
+  .admin-main-content :where(small){font-size:max(12px,1em)}
+}
