@@ -1305,6 +1305,15 @@ export type Database = {
       }
       is_beboss_admin: { Args: never; Returns: boolean }
       is_beboss_staff: { Args: never; Returns: boolean }
+      prune_branch_sync_snapshot_generations: {
+        Args: {
+          p_device_id: string
+          p_keep_generations?: number
+          p_shop_sync_key: string
+          p_sync_generation: string
+        }
+        Returns: number
+      }
       now_ms: { Args: never; Returns: number }
       issue_shop_device_invite: {
         Args: {
