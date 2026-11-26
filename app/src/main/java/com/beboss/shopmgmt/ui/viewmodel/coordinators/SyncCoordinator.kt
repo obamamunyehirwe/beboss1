@@ -579,7 +579,7 @@ class SyncCoordinator(
                 val owner = allUsers.value.firstOrNull {
                     it.role == com.beboss.shopmgmt.data.model.UserRole.OWNER && it.isActive
                 } ?: throw SecurityException("The registered shop owner profile is missing on this terminal.")
-                val phone = shopProfile.value.phone.ifBlank { owner.phone }
+                val phone = owner.phone.ifBlank { shopProfile.value.phone }
                 SupabaseAdminClient.requestOwnerDeviceCredentialOtp(owner.username, phone).getOrThrow()
                 val message = "A verification code was sent to the registered shop-owner phone. Enter it here to verify the legacy token online."
                 emitSnackbar(message)
@@ -607,7 +607,7 @@ class SyncCoordinator(
                 val owner = allUsers.value.firstOrNull {
                     it.role == com.beboss.shopmgmt.data.model.UserRole.OWNER && it.isActive
                 } ?: throw SecurityException("The registered shop owner profile is missing on this terminal.")
-                val phone = shopProfile.value.phone.ifBlank { owner.phone }
+                val phone = owner.phone.ifBlank { shopProfile.value.phone }
                 val summary = SupabaseAdminClient.verifyLegacyBranchShareToken(
                     token = token,
                     ownerUsername = owner.username,
