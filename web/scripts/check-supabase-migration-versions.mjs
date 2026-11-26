@@ -17,7 +17,7 @@ const seen = new Map();
 const problems = [];
 
 for (const file of files) {
-  const match = /^(\\d{14})_(.+)\\.sql$/.exec(file);
+  const match = /^([0-9]{14})_(.+)[.]sql$/.exec(file);
   if (!match) {
     problems.push(file + " must use the <14-digit timestamp>_<name>.sql format");
     continue;
