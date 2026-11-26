@@ -5,7 +5,7 @@ import {
   Package, RefreshCw, Search, Settings, ShieldCheck, ShoppingCart, Smartphone, Truck, UserRound,
   Users, Warehouse, X, Zap, Languages, ShieldAlert
 } from "lucide-react";
-import { callDesktopApi, currentSession, signOut, OwnerAuthorizationError, DeviceFeeConfirmationRequired, type OwnerCredentials } from "./lib/cloud";
+import { callDesktopApi, currentSession, signOut, subscribeToShopChanges, OwnerAuthorizationError, DeviceFeeConfirmationRequired, type OwnerCredentials } from "./lib/cloud";
 import { BrowserRuntimeNotice } from "./components/BrowserRuntimeNotice";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
@@ -287,6 +287,49 @@ function NativeDesktopApp() {
     const retryTimer = window.setInterval(retrySync, 30_000);
     return () => { window.removeEventListener("online", retrySync); window.clearInterval(retryTimer); };
   }, [owner, offline, preferences.autoSync, busy]);
+
+  useEffect(() => {
+    if (!owner || offline || !preferences.autoSync) return;
+    const shopSyncKey = s(cloud?.shop?.id);
+    if (!shopSyncKey) return;
+
+    let disposed = false;
+    let refreshTimer: number | null = null;
+    const unsubscribe = subscribeToShopChanges(
+      shopSyncKey,
+      (change) => {
+        if (disposed) return;
+        // A desktop receives its own successful snapshot write through the normal
+        // save response. Ignore that echo to avoid a second bootstrap cycle.
+        if (change.table === "branch_sync_snapshots" &&
+            change.deviceId === "DESKTOP:" + deviceId) return;
+
+        if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(() => {
+          if (disposed || !navigator.onLine) return;
+          // Snapshot changes require a verified, chunk-complete snapshot reload.
+          // Management changes refresh only the lightweight shop/device/staff lists.
+          const task = change.table === "branch_sync_snapshots"
+            ? bootstrap(owner, false)
+            : refreshManagement();
+          void task.catch((error) => {
+            console.warn("BeBoss realtime refresh failed; the periodic sync probe will retry.", error);
+          });
+        }, 300);
+      },
+      (status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          console.warn("BeBoss private realtime channel is unavailable; the 30-second sync probe remains active.", status);
+        }
+      }
+    );
+
+    return () => {
+      disposed = true;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      unsubscribe();
+    };
+  }, [owner, offline, preferences.autoSync, cloud?.shop?.id, deviceId]);
 
   useEffect(() => {
     if (!owner || offline || !preferences.autoSync) return;

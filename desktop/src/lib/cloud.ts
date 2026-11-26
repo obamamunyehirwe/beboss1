@@ -232,3 +232,45 @@ export function toOwnerPhoneE164(value: string) {
 export function ownerTenantKey(username: string, phone: string) {
   return username.trim().toLowerCase() + "_" + phone.replace(/\D/g, "").slice(-9);
 }
+
+export type ShopRealtimeChange = {
+  table: string;
+  operation: string;
+  updatedAt: string;
+  deviceId: string;
+};
+
+/**
+ * Subscribe to an owner-authorized private channel. Broadcast payloads contain
+ * only the table and change metadata; the app always reloads verified records
+ * through the authenticated BeBoss edge function before applying an update.
+ */
+export function subscribeToShopChanges(
+  shopSyncKey: string,
+  onChange: (change: ShopRealtimeChange) => void,
+  onStatus?: (status: string) => void
+) {
+  const topic = shopSyncKey.trim();
+  if (!topic || topic.length > 200) throw new Error("The shop identity is invalid for realtime subscription.");
+
+  const channel = authClient
+    .channel("shop:" + topic, { config: { private: true } })
+    .on("broadcast", { event: "shop-data-changed" }, (message) => {
+      const payload = message.payload && typeof message.payload === "object"
+        ? message.payload as Record<string, unknown>
+        : {};
+      const table = typeof payload.table === "string" ? payload.table : "";
+      if (!table) return;
+      onChange({
+        table,
+        operation: typeof payload.operation === "string" ? payload.operation : "",
+        updatedAt: typeof payload.updatedAt === "string" ? payload.updatedAt : "",
+        deviceId: typeof payload.deviceId === "string" ? payload.deviceId : ""
+      });
+    })
+    .subscribe((status) => onStatus?.(status));
+
+  return () => {
+    void authClient.removeChannel(channel);
+  };
+}

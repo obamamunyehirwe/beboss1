@@ -1,4 +1,9 @@
 /*
+ * Tailwind CSS entry
+ */
+@import "tailwindcss";
+
+/*
  * Tailwind v4 entry: config lives here, with no tailwind.config.js or PostCSS plugin.
  * - Keep every @import in this top block, above @theme and the rest of the file. Install an
  *   npm package before @importing its CSS. Never @import a remote URL (web fonts, CDN CSS): the

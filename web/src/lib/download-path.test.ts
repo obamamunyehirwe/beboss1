@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DOWNLOAD_PATH } from "./download-path";
@@ -10,8 +10,8 @@ describe("public APK download path", () => {
     expect(DOWNLOAD_PATH).not.toMatch(/^https?:/i);
   });
 
-  it("is imported explicitly by the admin release route", async () => {
-    const route = await readFile(
+  it("is imported explicitly by the admin release route", () => {
+    const route = readFileSync(
       resolve(process.cwd(), "src/routes/_authenticated/admin/releases.tsx"),
       "utf8",
     );

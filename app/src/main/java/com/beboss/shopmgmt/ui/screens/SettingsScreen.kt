@@ -259,6 +259,7 @@ fun SettingsScreen(
     onSaveUser: (User) -> Unit = {},
     onDeleteUser: (String) -> Unit = {},
     onImportPackage: (ShopImportSummary) -> Unit = {},
+    onImportBranchToken: ((String, (Boolean, String) -> Unit) -> Unit)? = null,
     onRefreshDatabaseStats: () -> Unit = {},
     onOptimizeDatabase: () -> Unit = {},
     onVerifyDatabaseIntegrity: () -> Unit = {},
@@ -990,6 +991,7 @@ fun SettingsScreen(
         onToggleLocalServer = onToggleLocalServer,
         onSyncWithLocalHub = onSyncWithLocalHub,
         onImportBranchPacket = onImportPackage,
+        onImportBranchToken = onImportBranchToken,
         onDismiss = { showSyncHubDialog = false }
     )
 
