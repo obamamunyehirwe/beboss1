@@ -1221,6 +1221,34 @@ object SupabaseAdminClient {
                 completeGeneration.orEmpty()
             }
 
+    /**
+     * Returns true when any peer's newest uploaded generation is not represented
+     * by the newest complete generation selected for merging. This distinguishes
+     * an empty shop (valid) from a peer whose first or latest multi-part upload is
+     * only partially committed.
+     */
+    fun hasIncompleteLatestSnapshotGeneration(
+        snapshots: List<SupabaseBranchSnapshotDto>,
+        completeSnapshots: List<SupabaseBranchSnapshotDto>
+    ): Boolean {
+        if (snapshots.isEmpty()) return false
+
+        val latestSnapshotByDevice = snapshots
+            .groupBy { snapshotDeviceBase(it.deviceId) }
+            .mapValues { (_, rows) -> rows.maxByOrNull { it.updatedAt } }
+
+        val completeSnapshotByDevice = completeSnapshots
+            .groupBy { snapshotDeviceBase(it.deviceId) }
+            .mapValues { (_, rows) -> rows.maxByOrNull { it.updatedAt } }
+
+        return latestSnapshotByDevice.any { (deviceId, latest) ->
+            val complete = completeSnapshotByDevice[deviceId]
+            complete == null ||
+                complete.syncGeneration != latest?.syncGeneration ||
+                complete.updatedAt < (latest?.updatedAt ?: 0L)
+        }
+    }
+
     private fun snapshotDeviceBase(deviceId: String): String =
         deviceId.replace(Regex("#c\\d+$"), "")
 

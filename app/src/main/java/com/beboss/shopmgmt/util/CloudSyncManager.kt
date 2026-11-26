@@ -294,6 +294,10 @@ class CloudSyncManager(private val database: AppDatabase) {
             var conflictsResolvedCount = 0
             var supabaseSyncOk = false
             var customServerSyncOk = false
+            // A sync is not complete until this device has also read and merged every
+            // peer's newest complete snapshot. Never clear the durable outbox on a
+            // successful push if the corresponding pull was unavailable or corrupt.
+            var peerSnapshotExchangeSucceeded = true
 
             // 1. Primary Cross-Branch Internet Sync via Supabase
             if (SupabaseAdminClient.isConfigured()) {
@@ -520,18 +524,31 @@ class CloudSyncManager(private val database: AppDatabase) {
                         users = latestUsers
                     )
 
-                val peerSnapshots = try {
-                    SupabaseAdminClient.latestCompleteSnapshotChunks(
-                        SupabaseAdminClient.fetchShopBranchSnapshots(
-                            shopSyncKey = shopSyncKey,
-                            excludingDeviceId = deviceId
-                        )
+                val peerSnapshotRows = try {
+                    SupabaseAdminClient.fetchShopBranchSnapshots(
+                        shopSyncKey = shopSyncKey,
+                        excludingDeviceId = deviceId
                     )
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    peerSnapshotExchangeSucceeded = false
                     Log.w(TAG, "Failed to fetch cloud branch snapshots: ${e.safeMessage("Snapshot fetch failed")}")
+                    addAuditLog(
+                        type = "BRANCH_AUTO_SYNC",
+                        status = "WARNING",
+                        summary = "Peer-device data download failed; local changes remain queued for retry."
+                    )
                     emptyList()
+                }
+                val peerSnapshots = SupabaseAdminClient.latestCompleteSnapshotChunks(peerSnapshotRows)
+                if (SupabaseAdminClient.hasIncompleteLatestSnapshotGeneration(peerSnapshotRows, peerSnapshots)) {
+                    peerSnapshotExchangeSucceeded = false
+                    addAuditLog(
+                        type = "BRANCH_AUTO_SYNC",
+                        status = "WARNING",
+                        summary = "A peer device has an incomplete newer snapshot generation. Its last complete data was retained; pending changes will retry."
+                    )
                 }
 
                 for (snap in peerSnapshots) {
@@ -544,7 +561,13 @@ class CloudSyncManager(private val database: AppDatabase) {
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
+                        peerSnapshotExchangeSucceeded = false
                         Log.w(TAG, "Skipped corrupt branch snapshot ${snap.id}: ${e.safeMessage("Corrupt snapshot")}")
+                        addAuditLog(
+                            type = "BRANCH_AUTO_SYNC",
+                            status = "WARNING",
+                            summary = "A peer-device snapshot could not be verified or merged. Pending changes remain queued for retry."
+                        )
                     }
                 }
 
@@ -643,6 +666,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
+                        peerSnapshotExchangeSucceeded = false
                         Log.w(TAG, "Failed to merge cloud branches/transfers: ${e.safeMessage("Merge failed")}")
                     }
                 }
@@ -668,7 +692,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                     )
                 }
                 if (!transfersUploaded) allChunksUploaded = false
-                supabaseSyncOk = allChunksUploaded && accountUploaded && usersUploaded && allDevicesUploaded
+                supabaseSyncOk = allChunksUploaded && accountUploaded && usersUploaded && allDevicesUploaded && peerSnapshotExchangeSucceeded
 
                 // Message dispatches are acknowledged only after the telemetry upsert succeeds.
                 // DeviceTelemetryUploader uploads privacy-safe aggregates and marks only the IDs
