@@ -13,7 +13,8 @@ permissions:
 
 concurrency:
   group: beboss-windows-setup-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not cancel an expensive native release build when unrelated main commits land.
+  cancel-in-progress: false
 
 jobs:
   windows-setup:
