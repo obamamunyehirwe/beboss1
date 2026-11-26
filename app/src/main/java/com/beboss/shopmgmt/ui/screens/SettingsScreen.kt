@@ -1085,6 +1085,8 @@ fun SettingsScreen(
             { onReady -> tokenFn(null, onReady) }
         },
         onImportBranchToken = onImportBranchToken,
+        onRequestLegacyShareOtp = onRequestLegacyShareOtp,
+        onImportLegacyShareToken = onImportLegacyShareToken,
         onDismiss = { showDataTransferDialog = false }
     )
 
