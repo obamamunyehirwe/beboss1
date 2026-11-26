@@ -9,7 +9,9 @@ import javax.crypto.spec.PBEKeySpec
  * Enterprise-grade security utility providing PBKDF2WithHmacSHA256 password/PIN hashing,
  * cryptographically secure salt generation, and timing-attack-safe verification.
  *
- * Strictly enforces PBKDF2 + BuildConfig pepper with ZERO plaintext, static-salt, or hardcoded fallbacks.
+ * New credentials use versioned PBKDF2-HMAC-SHA256 hashes with independent random salts.
+ * The old BuildConfig pepper is read-only compatibility for existing v1 hashes and is
+ * intentionally not used to create new credentials.
  */
 object SecurityUtils {
 
@@ -25,13 +27,11 @@ object SecurityUtils {
     }
 
     /**
-     * New credentials always use the protected installation pepper. The legacy value is
-     * available only in debug builds for local JVM/Robolectric tests; signed release
-     * builds are stopped by validateCredentialPepperConfiguration in Gradle.
+     * The compile-time pepper is retained only to read old v1 hashes during migration.
+     * New hashes never depend on a value embedded in the APK. Once telemetry confirms
+     * v1 credential hashes have been migrated on supported devices, this field and its
+     * legacy verifier can be removed in a later release.
      */
-    private fun pepperForNewCredentials(): String =
-        configuredPepper() ?: if (BuildConfig.DEBUG) LEGACY_RUNTIME_PEPPER
-        else throw SecurityException("BEBOSS_SECURITY_PEPPER is missing or invalid. Reinstall a correctly provisioned BeBoss release.");
 
     /**
      * Generates a cryptographically random salt.
@@ -45,7 +45,7 @@ object SecurityUtils {
 
     /**
      * Hashes a PIN using PBKDF2WithHmacSHA256 with an individual random salt.
-     * Output format: pbkdf2:iterations:saltHex:hashHex
+     * Output format: pbkdf2v2:iterations:saltHex:hashHex
      */
     fun hashPin(pin: String): String {
         val clean = pin.trim()
@@ -65,9 +65,10 @@ object SecurityUtils {
 
     private fun hashWithPbkdf2(input: String): String {
         val salt = generateSalt()
-        val pepperedInput = "$input:${pepperForNewCredentials()}"
-        val hash = pbkdf2(pepperedInput.toCharArray(), salt, ITERATIONS, KEY_LENGTH)
-        return "pbkdf2:$ITERATIONS:${bytesToHex(salt)}:${bytesToHex(hash)}"
+        // v2 is portable across devices and uses a per-credential random salt.
+        // APK-embedded peppers are not a durable secret and must not be used for new hashes.
+        val hash = pbkdf2(input.toCharArray(), salt, ITERATIONS, KEY_LENGTH)
+        return "pbkdf2v2:$ITERATIONS:${bytesToHex(salt)}:${bytesToHex(hash)}"
     }
 
     /**
@@ -85,10 +86,11 @@ object SecurityUtils {
     }
 
     /**
-     * Checks whether a credential value is missing PBKDF2 encoding or has an outdated work factor.
+     * v1 hashes depend on the legacy APK pepper. Successful sign-in rewrites them
+     * to the portable v2 format so that a later app release can remove the old key.
      */
     fun needsUpgrade(storedHash: String): Boolean {
-        if (!storedHash.startsWith("pbkdf2:")) return true
+        if (!storedHash.startsWith("pbkdf2v2:")) return true
         val parts = storedHash.split(":")
         if (parts.size != 4) return true
         val iter = parts[1].toIntOrNull() ?: 0
@@ -101,7 +103,9 @@ object SecurityUtils {
      */
     private fun verifySecret(enteredSecret: String, storedHash: String): Boolean {
         if (storedHash.isBlank() || enteredSecret.isBlank()) return false
-        if (!storedHash.startsWith("pbkdf2:")) return false
+        val isV2 = storedHash.startsWith("pbkdf2v2:")
+        val isV1 = storedHash.startsWith("pbkdf2:")
+        if (!isV1 && !isV2) return false
 
         val parts = storedHash.split(":")
         if (parts.size != 4) return false
@@ -116,17 +120,21 @@ object SecurityUtils {
         return try {
             val salt = hexToBytes(saltHex)
             val expectedHash = hexToBytes(hashHex)
-            val peppers = buildList {
-                configuredPepper()?.let(::add)
-                // Migration compatibility is read-only: only older hashes may be
-                // checked against the historical public fallback pepper. On successful
-                // sign-in the coordinator transparently re-hashes them with the
-                // protected pepper and the new 210,000-iteration work factor.
-                if (iterations < ITERATIONS || BuildConfig.DEBUG) add(LEGACY_RUNTIME_PEPPER)
-            }.distinct()
-            peppers.any { pepper ->
-                val actualHash = pbkdf2("$enteredSecret:$pepper".toCharArray(), salt, iterations, expectedHash.size * 8)
+            if (salt.size !in 8..64 || expectedHash.size !in 16..64) return false
+            if (isV2) {
+                val actualHash = pbkdf2(enteredSecret.toCharArray(), salt, iterations, expectedHash.size * 8)
                 java.security.MessageDigest.isEqual(expectedHash, actualHash)
+            } else {
+                // v1 compatibility is read-only. A successful authentication causes
+                // existing call sites to re-hash the credential using the v2 format.
+                val peppers = buildList {
+                    configuredPepper()?.let(::add)
+                    if (iterations < ITERATIONS || BuildConfig.DEBUG) add(LEGACY_RUNTIME_PEPPER)
+                }.distinct()
+                peppers.any { pepper ->
+                    val actualHash = pbkdf2("$enteredSecret:$pepper".toCharArray(), salt, iterations, expectedHash.size * 8)
+                    java.security.MessageDigest.isEqual(expectedHash, actualHash)
+                }
             }
         } catch (_: Throwable) {
             false

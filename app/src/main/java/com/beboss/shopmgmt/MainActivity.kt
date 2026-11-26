@@ -732,6 +732,7 @@ private fun BeBossMainContent(
                                 onSaveUser = { u -> viewModel.saveUser(u) },
                                 onDeleteUser = { uId -> viewModel.deleteUser(uId) },
                                 onImportPackage = { summary -> viewModel.importShopPackage(summary) },
+                                onImportBranchToken = { token, onDone -> viewModel.importBranchShareToken(token, onDone) },
                                 onLockApp = { viewModel.lockApp() },
                                 onLogout = { viewModel.logoutUser() },
                                 onSwitchUser = { u -> viewModel.switchUser(u) },

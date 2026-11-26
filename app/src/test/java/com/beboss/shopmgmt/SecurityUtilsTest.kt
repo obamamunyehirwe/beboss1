@@ -19,8 +19,8 @@ class SecurityUtilsTest {
 
         // PBKDF2 must use unique random salts for each hash
         assertNotEquals(hash1, hash2)
-        assertTrue(hash1.startsWith("pbkdf2:"))
-        assertTrue(hash2.startsWith("pbkdf2:"))
+        assertTrue(hash1.startsWith("pbkdf2v2:"))
+        assertTrue(hash2.startsWith("pbkdf2v2:"))
 
         // Verification must succeed for the right PIN
         assertTrue(SecurityUtils.verifyPin(pin, hash1))
@@ -36,7 +36,7 @@ class SecurityUtilsTest {
         val pass = "SuperAdmin2026!#"
         val hash = SecurityUtils.hashPassword(pass)
 
-        assertTrue(hash.startsWith("pbkdf2:"))
+        assertTrue(hash.startsWith("pbkdf2v2:"))
         assertTrue(SecurityUtils.verifyPassword(pass, hash))
         assertFalse(SecurityUtils.verifyPassword("WrongPassword", hash))
     }
@@ -104,6 +104,23 @@ class SecurityUtilsTest {
         assertTrue(SecurityUtils.verifyPin("4829", legacyHash))
         assertFalse(SecurityUtils.verifyPin("9999", legacyHash))
         assertTrue(SecurityUtils.needsUpgrade(legacyHash))
+    }
+
+    @Test
+    fun testVersionTwoHashesDoNotNeedTheLegacyPepper() {
+        val pin = "4829"
+        val password = "SuperAdmin2026!#"
+        val pinHash = SecurityUtils.hashPin(pin)
+        val passwordHash = SecurityUtils.hashPassword(password)
+
+        assertTrue(pinHash.startsWith("pbkdf2v2:"))
+        assertTrue(passwordHash.startsWith("pbkdf2v2:"))
+        assertFalse(SecurityUtils.needsUpgrade(pinHash))
+        assertFalse(SecurityUtils.needsUpgrade(passwordHash))
+        assertTrue(SecurityUtils.verifyPin(pin, pinHash))
+        assertTrue(SecurityUtils.verifyPassword(password, passwordHash))
+        assertFalse(SecurityUtils.verifyPin("9999", pinHash))
+        assertFalse(SecurityUtils.verifyPassword("WrongPassword", passwordHash))
     }
 
     @Test

@@ -155,6 +155,7 @@ fun ShopOwnerSyncHubDialog(
     onToggleLocalServer: (Boolean) -> Unit = {},
     onSyncWithLocalHub: (String) -> Unit = {},
     onImportBranchPacket: (ShopImportSummary) -> Unit,
+    onImportBranchToken: ((String, (Boolean, String) -> Unit) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -164,6 +165,7 @@ fun ShopOwnerSyncHubDialog(
     var selectedScopeBranchId by remember { mutableStateOf("ALL") }
     var mergeFeedback by remember { mutableStateOf<String?>(null) }
     var isMergeSuccess by remember { mutableStateOf(false) }
+    var isMerging by remember { mutableStateOf(false) }
 
     var customEndpointUrl by remember { mutableStateOf(shopProfile.backendServerUrl.ifBlank { "https://api.beboss.app/v1" }) }
     var pingResultState by remember { mutableStateOf<EndpointPingResult?>(null) }
@@ -569,20 +571,9 @@ fun ShopOwnerSyncHubDialog(
                                                 generatedShareToken = tok
                                             }
                                         } else {
-                                            val json = ShopDataTransferManager.createExportJson(
-                                                profile = shopProfile,
-                                                users = allUsers,
-                                                products = products,
-                                                customers = customers,
-                                                sales = sales,
-                                                saleItems = emptyList(),
-                                                payments = customerPayments,
-                                                exportedByUser = currentUser,
-                                                branches = branches,
-                                                stockTransfers = stockTransfers,
-                                                branchIdFilter = filter
-                                            )
-                                            generatedShareToken = ShopDataTransferManager.createCompressedSyncToken(json)
+                                            generatedShareToken = null
+                                            mergeFeedback = "Secure BBSHARE2 generation requires the signed-in shop owner's protected pairing credential. Reopen BeBoss Sync Hub after connecting to BeBoss Cloud."
+                                            isMergeSuccess = false
                                         }
                                     },
                                     modifier = Modifier
@@ -658,7 +649,7 @@ fun ShopOwnerSyncHubDialog(
                                                 onClick = {
                                                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                                     cm.setPrimaryClip(ClipData.newPlainText("BeBoss Branch Token", shareToken))
-                                                    Toast.makeText(context, "Copied BBSHARE1 token!", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, "Copied BBSHARE2 shop-scoped token!", Toast.LENGTH_SHORT).show()
                                                 },
                                                 modifier = Modifier.weight(1f)
                                             ) {
@@ -684,14 +675,14 @@ fun ShopOwnerSyncHubDialog(
 
                             HorizontalDivider()
 
-                            Text("Import & Verify Branch Token (`BBSHARE1:...`) or JSON:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Import & Verify Shop Token (`BBSHARE2:...`) or legacy backup:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             OutlinedTextField(
                                 value = importTokenOrJson,
                                 onValueChange = {
                                     importTokenOrJson = it
                                     mergeFeedback = null
                                 },
-                                label = { Text("Paste BBSHARE1:... token or JSON package") },
+                                label = { Text("Paste BBSHARE2:... shop token or legacy BBSHARE1 / JSON backup") },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(100.dp)
@@ -717,19 +708,35 @@ fun ShopOwnerSyncHubDialog(
 
                             Button(
                                 onClick = {
-                                    if (importTokenOrJson.isBlank()) {
-                                        mergeFeedback = "Paste a BBSHARE1 token or JSON sync package."
+                                    val candidate = importTokenOrJson.trim()
+                                    if (candidate.isBlank()) {
+                                        mergeFeedback = "Paste a BBSHARE2 token, legacy BBSHARE1 token, or JSON backup."
                                         isMergeSuccess = false
-                                    } else {
-                                        try {
-                                            val summary = ShopDataTransferManager.parseShopPackageString(importTokenOrJson)
-                                            onImportBranchPacket(summary)
-                                            isMergeSuccess = true
-                                            mergeFeedback = "Verified & merged ${summary.branches.size} branches, ${summary.productCount} products, ${summary.saleCount} sales!"
-                                            importTokenOrJson = ""
-                                        } catch (e: Exception) {
+                                    } else if (onImportBranchToken == null) {
+                                        if (candidate.startsWith("BBSHARE1:") || candidate.startsWith("BBSHARE2:")) {
+                                            mergeFeedback = "Signed DataShare import requires the authenticated shop owner flow. Reopen Sync Hub and retry."
                                             isMergeSuccess = false
-                                            mergeFeedback = "Verification failed: ${e.safeMessage()}"
+                                        } else {
+                                            try {
+                                                val summary = ShopDataTransferManager.parseShopPackageString(candidate)
+                                                onImportBranchPacket(summary)
+                                                isMergeSuccess = true
+                                                mergeFeedback = "Backup accepted for merge: ${summary.branches.size} branches, ${summary.productCount} products, ${summary.saleCount} sales."
+                                                importTokenOrJson = ""
+                                            } catch (e: Exception) {
+                                                isMergeSuccess = false
+                                                mergeFeedback = "Verification failed: ${e.safeMessage()}"
+                                            }
+                                        }
+                                    } else if (!isMerging) {
+                                        isMerging = true
+                                        mergeFeedback = "Checking shop credentials and verifying the signed package…"
+                                        isMergeSuccess = false
+                                        onImportBranchToken(candidate) { success, message ->
+                                            isMerging = false
+                                            isMergeSuccess = success
+                                            mergeFeedback = message
+                                            if (success) importTokenOrJson = ""
                                         }
                                     }
                                 },
@@ -742,7 +749,7 @@ fun ShopOwnerSyncHubDialog(
                             ) {
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Verify Integrity & Merge Branch Data", fontWeight = FontWeight.Bold)
+                                Text(if (isMerging) "Verifying & Merging…" else "Verify Integrity & Merge Branch Data", fontWeight = FontWeight.Bold)
                             }
                         }
                     }

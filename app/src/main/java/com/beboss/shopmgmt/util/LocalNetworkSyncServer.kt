@@ -167,6 +167,14 @@ class LocalNetworkSyncServer(
         }
     }
 
+    /** Returns the currently selected shop key only to callers inside the app process. */
+    @Synchronized
+    fun activeShopSharedSecret(): String? {
+        val bytes = activeShopLanSecretBytes ?: return null
+        val value = String(bytes, StandardCharsets.UTF_8).lowercase(Locale.ROOT)
+        return value.takeIf { it.matches(Regex("[a-f0-9]{64}")) }
+    }
+
     private fun getMasterLanSecretBytes(): ByteArray {
         activeShopLanSecretBytes?.let { return it.copyOf() }
         // LAN authentication uses only the shop-scoped key issued by Supabase and

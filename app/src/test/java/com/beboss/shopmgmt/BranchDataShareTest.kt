@@ -222,6 +222,80 @@ class BranchDataShareTest {
     }
 
     @Test
+    fun `BBSHARE2 is shop scoped and rejects a wrong shop key`() {
+        val profile = ShopProfile(id = 1, name = "Owner", shopName = "BeBoss Kigali", phone = "+250788111222")
+        val json = ShopDataTransferManager.createExportJson(
+            profile = profile,
+            users = emptyList(),
+            products = emptyList(),
+            customers = emptyList(),
+            sales = emptyList(),
+            saleItems = emptyList(),
+            payments = emptyList(),
+            exportedByUser = null
+        )
+        val shopSecret = "a".repeat(64)
+        val otherShopSecret = "b".repeat(64)
+        val token = ShopDataTransferManager.createShopScopedShareToken(json, shopSecret)
+
+        assertTrue(token.startsWith("BBSHARE2:"))
+        val parsed = ShopDataTransferManager.parseShopPackageString(token, shopSecret = shopSecret)
+        assertEquals("BeBoss Kigali", parsed.shopName)
+
+        try {
+            ShopDataTransferManager.parseShopPackageString(token, shopSecret = otherShopSecret)
+            fail("A BBSHARE2 token must not verify with a different shop key")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message?.contains("integrity", ignoreCase = true) == true)
+        }
+    }
+
+    @Test
+    fun `BBSHARE2 validates tampering and prevents replay`() {
+        val profile = ShopProfile(id = 1, name = "Owner", shopName = "BeBoss Kigali", phone = "+250788111222")
+        val json = ShopDataTransferManager.createExportJson(
+            profile = profile,
+            users = emptyList(),
+            products = emptyList(),
+            customers = emptyList(),
+            sales = emptyList(),
+            saleItems = emptyList(),
+            payments = emptyList(),
+            exportedByUser = null
+        )
+        val shopSecret = "c".repeat(64)
+        val token = ShopDataTransferManager.createShopScopedShareToken(json, shopSecret)
+        val first = ShopDataTransferManager.parseShopPackageString(
+            token,
+            enforceReplayProtection = true,
+            shopSecret = shopSecret
+        )
+        assertEquals("BeBoss Kigali", first.shopName)
+
+        try {
+            ShopDataTransferManager.parseShopPackageString(
+                token,
+                enforceReplayProtection = true,
+                shopSecret = shopSecret
+            )
+            fail("Expected replayed BBSHARE2 packet to be rejected")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message?.contains("replayed", ignoreCase = true) == true)
+        }
+
+        val changed = token.dropLast(1) + if (token.last() == 'A') "B" else "A"
+        try {
+            ShopDataTransferManager.parseShopPackageString(changed, shopSecret = shopSecret)
+            fail("Expected tampered BBSHARE2 token to be rejected")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(
+                expected.message?.contains("integrity", ignoreCase = true) == true ||
+                    expected.message?.contains("Base64", ignoreCase = true) == true
+            )
+        }
+    }
+
+    @Test
     fun `tampered BBSHARE1 token is rejected by HMAC integrity check`() {
         val profile = ShopProfile(id = 1, name = "Owner", shopName = "BeBoss Kigali", phone = "+250788111222")
         val json = ShopDataTransferManager.createExportJson(
