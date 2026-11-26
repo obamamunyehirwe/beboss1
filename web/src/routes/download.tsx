@@ -1,5 +1,5 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -58,9 +58,12 @@ export const Route = createFileRoute("/download")({
     ],
   }),
   errorComponent: () => <ServiceUnavailable title="downloadTitle" />,
-  loader: ({ context }) => Promise.all([
+  loaderDeps: ({ search }) => ({ platform: search.platform }),
+  loader: ({ context, deps }) => Promise.all([
     context.queryClient.ensureQueryData(publicSiteQuery),
-    context.queryClient.ensureQueryData(desktopReleaseQuery),
+    deps.platform === "desktop"
+      ? context.queryClient.ensureQueryData(desktopReleaseQuery)
+      : Promise.resolve(null),
   ]),
   component: DownloadPage,
 });
@@ -68,9 +71,20 @@ export const Route = createFileRoute("/download")({
 function DownloadPage() {
   const { t, p } = useI18n();
   const { data } = useSuspenseQuery(publicSiteQuery);
-  const { data: desktopRelease } = useSuspenseQuery(desktopReleaseQuery);
   const router = useRouter();
   const { platform } = Route.useSearch();
+  const { data: desktopReleaseData } = useQuery({
+    ...desktopReleaseQuery,
+    enabled: platform === "desktop",
+  });
+  const desktopRelease: PublicDesktopRelease = desktopReleaseData ?? {
+    published: false,
+    unavailable: false,
+    tagName: null,
+    publishedAt: null,
+    releaseUrl: "https://github.com/obamamunyehirwe/beboss1/releases",
+    assets: { windows: null, macos: null, linux: null },
+  };
   const [desktopOs, setDesktopOs] = useState<DesktopOS>("windows");
   const release = data.current;
   const [origin, setOrigin] = useState("");
