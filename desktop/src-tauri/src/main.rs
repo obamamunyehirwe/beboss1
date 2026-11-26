@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
+use aes_gcm::{aead::{Aead, KeyInit, Payload}, Aes256Gcm, Nonce};
 use base64::prelude::*;
 use keyring::Entry;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -9,12 +9,13 @@ use serde_json::{Number, Value};
 use sha2::{Digest, Sha256};
 use std::{
     env, fs,
-    net::{TcpStream, ToSocketAddrs},
+    io::{Read, Write},
+    net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket},
     path::PathBuf,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 #[cfg(not(target_os = "windows"))]
-use std::{io::Write, process::{Command, Stdio}};
+use std::process::{Command, Stdio};
 #[cfg(target_os = "windows")]
 use std::ptr::null_mut;
 use tauri::Manager;
@@ -926,6 +927,362 @@ fn export_backup_file(app: tauri::AppHandle, encrypted_content: String) -> Resul
 // Backup import is intentionally handled from a user-selected browser File in the
 // renderer. Do not expose an arbitrary-path filesystem read command to web content.
 
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LanHub {
+    id: String,
+    shop_name: String,
+    branch_name: String,
+    ip_address: String,
+    port: u16,
+    products_count: u64,
+    sales_count: u64,
+    branches_count: u64,
+    last_seen_at: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LanSyncResult {
+    success: bool,
+    peer_ip: String,
+    pushed_records: usize,
+    pulled_records: usize,
+    conflicts_available_for_merge: bool,
+    pulled_snapshot: Value,
+    latency_ms: u64,
+    message: String,
+}
+
+struct LanHttpResponse {
+    status_code: u16,
+    headers: std::collections::HashMap<String, String>,
+    body: String,
+}
+
+fn lan_keyring_username(shop_sync_key: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(shop_sync_key.as_bytes());
+    let digest = hasher.finalize();
+    format!("shop-lan-{}", digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>())
+}
+
+fn read_lan_pairing_secret(shop_sync_key: &str) -> Result<String, String> {
+    if shop_sync_key.trim().len() < 3 || shop_sync_key.len() > 200 {
+        return Err("The shop synchronization identity is invalid.".into());
+    }
+    let entry = Entry::new(KEYRING_SERVICE, &lan_keyring_username(shop_sync_key))
+        .map_err(|error| format!("Could not open the operating-system credential vault: {error}"))?;
+    let secret = entry.get_password().map_err(|error| {
+        format!("This desktop has not securely paired with the shop LAN yet. Connect to the internet and refresh the Sync Hub first. ({error})")
+    })?;
+    if secret.len() != 64 || !secret.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("The locally protected shop pairing credential is invalid. Reconnect to BeBoss Cloud to provision a fresh key.".into());
+    }
+    Ok(secret.to_ascii_lowercase())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn lan_store_shop_secret(shop_sync_key: String, secret: String) -> Result<(), String> {
+    let secret = secret.trim().to_ascii_lowercase();
+    if shop_sync_key.trim().len() < 3 || shop_sync_key.len() > 200
+        || secret.len() != 64 || !secret.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err("The server returned an invalid shop LAN credential.".into());
+    }
+    let entry = Entry::new(KEYRING_SERVICE, &lan_keyring_username(&shop_sync_key))
+        .map_err(|error| format!("Could not open the operating-system credential vault: {error}"))?;
+    entry.set_password(&secret)
+        .map_err(|error| format!("Could not protect the shop LAN credential in the operating-system vault: {error}"))
+}
+
+fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+    const BLOCK_SIZE: usize = 64;
+    let mut normalized = [0u8; BLOCK_SIZE];
+    if key.len() > BLOCK_SIZE {
+        let digest = Sha256::digest(key);
+        normalized[..32].copy_from_slice(&digest);
+    } else {
+        normalized[..key.len()].copy_from_slice(key);
+    }
+    let mut inner_pad = [0x36u8; BLOCK_SIZE];
+    let mut outer_pad = [0x5cu8; BLOCK_SIZE];
+    for index in 0..BLOCK_SIZE {
+        inner_pad[index] ^= normalized[index];
+        outer_pad[index] ^= normalized[index];
+    }
+    let mut inner = Sha256::new();
+    inner.update(inner_pad);
+    inner.update(message);
+    let inner_digest = inner.finalize();
+    let mut outer = Sha256::new();
+    outer.update(outer_pad);
+    outer.update(inner_digest);
+    outer.finalize().into()
+}
+
+fn lan_derive_subkey(master_secret_ascii_hex: &str, domain: &str) -> [u8; 32] {
+    let mut info = domain.as_bytes().to_vec();
+    // Keep this byte-for-byte compatible with Android CryptoKeyManager.deriveSubkey:
+    // HMAC-SHA256(shopSecretAsciiHex, UTF8(domain) || 0x01).
+    info.push(0x01);
+    hmac_sha256(master_secret_ascii_hex.as_bytes(), &info)
+}
+
+fn bytes_to_lower_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn constant_time_string_eq(left: &str, right: &str) -> bool {
+    let a = left.as_bytes();
+    let b = right.as_bytes();
+    if a.len() != b.len() { return false; }
+    a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+fn lan_signature(shop_secret: &str, payload: &str) -> String {
+    let key = lan_derive_subkey(shop_secret, "BeBoss_LAN_HMAC_v2");
+    bytes_to_lower_hex(&hmac_sha256(&key, payload.as_bytes())[..16])
+}
+
+fn lan_aes_key(shop_secret: &str) -> [u8; 32] {
+    lan_derive_subkey(shop_secret, "BeBoss_LAN_AES256GCM_v2")
+}
+
+fn encrypt_lan_body(plain: &str, shop_secret: &str, timestamp: &str, nonce_text: &str) -> Result<String, String> {
+    let key = lan_aes_key(shop_secret);
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|error| error.to_string())?;
+    let random = Uuid::new_v4();
+    let iv = &random.as_bytes()[..12];
+    let nonce = Nonce::from_slice(iv);
+    let aad = format!("{timestamp}|{nonce_text}");
+    let encrypted = cipher.encrypt(nonce, Payload { msg: plain.as_bytes(), aad: aad.as_bytes() })
+        .map_err(|error| format!("Could not encrypt the desktop LAN payload: {error}"))?;
+    Ok(format!("GCM1:{}:{}", BASE64_STANDARD.encode(iv), BASE64_STANDARD.encode(encrypted)))
+}
+
+fn decrypt_lan_body(envelope: &str, shop_secret: &str, timestamp: &str, nonce_text: &str) -> Result<String, String> {
+    let mut parts = envelope.splitn(3, ':');
+    let version = parts.next().unwrap_or_default();
+    let iv_text = parts.next().unwrap_or_default();
+    let cipher_text = parts.next().unwrap_or_default();
+    if version != "GCM1" || iv_text.is_empty() || cipher_text.is_empty() {
+        return Err("The Android hub returned an unsupported encrypted payload.".into());
+    }
+    let iv = BASE64_STANDARD.decode(iv_text).map_err(|_| "The Android hub returned an invalid encryption nonce.")?;
+    let ciphertext = BASE64_STANDARD.decode(cipher_text).map_err(|_| "The Android hub returned an invalid encrypted payload.")?;
+    if iv.len() != 12 || ciphertext.len() < 16 || ciphertext.len() > 70_000_000 {
+        return Err("The Android hub returned an incomplete or oversized encrypted snapshot.".into());
+    }
+    let key = lan_aes_key(shop_secret);
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|error| error.to_string())?;
+    let nonce = Nonce::from_slice(&iv);
+    let aad = format!("{timestamp}|{nonce_text}");
+    let plain = cipher.decrypt(nonce, Payload { msg: &ciphertext, aad: aad.as_bytes() })
+        .map_err(|_| "The Android hub payload failed AES-GCM authentication.")?;
+    String::from_utf8(plain).map_err(|_| "The Android hub payload is not valid UTF-8.")
+}
+
+fn lan_http_request(
+    ip: IpAddr,
+    port: u16,
+    method: &str,
+    path: &str,
+    timestamp: &str,
+    nonce: &str,
+    signature: &str,
+    body: &str,
+) -> Result<LanHttpResponse, String> {
+    let address = SocketAddr::new(ip, port);
+    let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(5))
+        .map_err(|error| format!("Could not connect to the Android hub at {ip}:{port}: {error}"))?;
+    stream.set_read_timeout(Some(Duration::from_secs(15))).map_err(|error| error.to_string())?;
+    stream.set_write_timeout(Some(Duration::from_secs(15))).map_err(|error| error.to_string())?;
+
+    let request_head = format!(
+        "{method} {path} HTTP/1.1\r\nHost: {ip}:{port}\r\nContent-Type: application/json; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\nX-BeBoss-Timestamp: {timestamp}\r\nX-BeBoss-Nonce: {nonce}\r\nX-BeBoss-Signature: {signature}\r\n\r\n",
+        body.as_bytes().len()
+    );
+    stream.write_all(request_head.as_bytes()).map_err(|error| error.to_string())?;
+    if !body.is_empty() {
+        stream.write_all(body.as_bytes()).map_err(|error| error.to_string())?;
+    }
+    stream.flush().map_err(|error| error.to_string())?;
+
+    let mut bytes = Vec::new();
+    let mut buffer = [0u8; 16_384];
+    loop {
+        let read = stream.read(&mut buffer).map_err(|error| format!("Could not read the Android hub response: {error}"))?;
+        if read == 0 { break; }
+        if bytes.len().saturating_add(read) > 72_000_000 {
+            return Err("The Android hub response exceeded the 72 MB safety limit.".into());
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+    }
+    let response = String::from_utf8(bytes).map_err(|_| "The Android hub returned a non-UTF-8 HTTP response.")?;
+    let separator = response.find("\r\n\r\n").ok_or_else(|| "The Android hub returned malformed HTTP.".to_string())?;
+    let header_text = &response[..separator];
+    let body_text = &response[separator + 4..];
+    let mut header_lines = header_text.split("\r\n");
+    let status_code = header_lines.next().and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|value| value.parse::<u16>().ok()).unwrap_or(500);
+    let mut headers = std::collections::HashMap::new();
+    for line in header_lines {
+        if let Some((key, value)) = line.split_once(':') {
+            headers.insert(key.trim().to_ascii_lowercase(), value.trim().to_string());
+        }
+    }
+    Ok(LanHttpResponse { status_code, headers, body: body_text.to_string() })
+}
+
+fn validate_private_lan_ip(ip: IpAddr) -> Result<(), String> {
+    let allowed = match ip {
+        IpAddr::V4(value) => value.is_private() || value.is_link_local() || value.is_loopback(),
+        IpAddr::V6(value) => value.is_unique_local() || value.is_unicast_link_local() || value.is_loopback(),
+    };
+    if !allowed {
+        return Err("LAN sync only connects to private, link-local or loopback addresses.".into());
+    }
+    Ok(())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn lan_discover_hubs(shop_sync_key: String, timeout_ms: Option<u64>) -> Result<Vec<LanHub>, String> {
+    let shop_secret = read_lan_pairing_secret(&shop_sync_key)?;
+    let timeout = timeout_ms.unwrap_or(8_000).clamp(1_000, 15_000);
+    let socket = UdpSocket::bind("0.0.0.0:8990")
+        .map_err(|error| format!("Could not listen for BeBoss LAN discovery on UDP 8990: {error}"))?;
+    socket.set_read_timeout(Some(Duration::from_millis(250))).map_err(|error| error.to_string())?;
+    let started = Instant::now();
+    let mut buffer = [0u8; 8_192];
+    let mut discovered: std::collections::HashMap<String, LanHub> = std::collections::HashMap::new();
+
+    while started.elapsed() < Duration::from_millis(timeout) {
+        match socket.recv_from(&mut buffer) {
+            Ok((size, sender)) => {
+                if size == 0 { continue; }
+                let value: Value = match serde_json::from_slice(&buffer[..size]) { Ok(value) => value, Err(_) => continue };
+                if value.get("magic").and_then(Value::as_str) != Some("BEBOSS_HUB_V3") { continue; }
+                let id = value.get("id").and_then(Value::as_str).unwrap_or_default();
+                let claimed_ip = value.get("ip").and_then(Value::as_str).unwrap_or_default();
+                let port = value.get("port").and_then(Value::as_u64).unwrap_or(0);
+                let timestamp = value.get("ts").and_then(Value::as_i64).unwrap_or(0);
+                let signature = value.get("sig").and_then(Value::as_str).unwrap_or_default();
+                if id.is_empty() || port != 8989 || timestamp <= 0
+                    || claimed_ip != sender.ip().to_string()
+                    || SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64
+                        .saturating_sub(timestamp).abs() > 30_000
+                { continue; }
+                let signed_data = format!("{id}|{claimed_ip}|{port}|{timestamp}");
+                if !constant_time_string_eq(signature, &lan_signature(&shop_secret, &signed_data)) { continue; }
+                let hub = LanHub {
+                    id: id.to_string(),
+                    shop_name: value.get("shopName").and_then(Value::as_str).unwrap_or("BeBoss Terminal").to_string(),
+                    branch_name: value.get("branchName").and_then(Value::as_str).unwrap_or("Main Store").to_string(),
+                    ip_address: claimed_ip.to_string(),
+                    port: port as u16,
+                    products_count: value.get("productsCount").and_then(Value::as_u64).unwrap_or(0),
+                    sales_count: value.get("salesCount").and_then(Value::as_u64).unwrap_or(0),
+                    branches_count: value.get("branchesCount").and_then(Value::as_u64).unwrap_or(0),
+                    last_seen_at: now_millis().unwrap_or_default(),
+                };
+                discovered.insert(hub.ip_address.clone(), hub);
+            }
+            Err(error) if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted) => continue,
+            Err(error) => return Err(format!("LAN discovery stopped unexpectedly: {error}")),
+        }
+    }
+    let mut hubs: Vec<LanHub> = discovered.into_values().collect();
+    hubs.sort_by(|a, b| b.last_seen_at.cmp(&a.last_seen_at));
+    Ok(hubs)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn lan_sync_with_hub(
+    shop_sync_key: String,
+    ip_address: String,
+    port: u16,
+    mut snapshot: Value,
+) -> Result<LanSyncResult, String> {
+    let started = Instant::now();
+    let shop_secret = read_lan_pairing_secret(&shop_sync_key)?;
+    if port != 8989 { return Err("BeBoss Android LAN hubs use TCP port 8989.".into()); }
+    let ip: IpAddr = ip_address.trim().parse().map_err(|_| "Enter a valid local IP address.")?;
+    validate_private_lan_ip(ip)?;
+    if !snapshot.is_object() { return Err("The current shop snapshot is unavailable for LAN synchronization.".into()); }
+
+    let timestamp_ms = now_millis()?;
+    let metadata = snapshot.as_object_mut().unwrap().entry("metadata").or_insert_with(|| serde_json::json!({}));
+    let metadata = metadata.as_object_mut().ok_or_else(|| "The shop snapshot metadata is invalid.".to_string())?;
+    metadata.insert("schemaVersion".into(), Value::from(3));
+    metadata.insert("timestamp".into(), Value::from(timestamp_ms));
+    metadata.insert("nonce".into(), Value::String(Uuid::new_v4().to_string()));
+    metadata.insert("expiresAt".into(), Value::from(timestamp_ms.saturating_add(30 * 24 * 60 * 60 * 1000)));
+    metadata.insert("exportedBy".into(), Value::String("BeBoss Desktop".into()));
+    let package = serde_json::to_string(&snapshot).map_err(|error| error.to_string())?;
+
+    let push_timestamp = timestamp_ms.to_string();
+    let push_nonce = Uuid::new_v4().to_string();
+    let encrypted_push = encrypt_lan_body(&package, &shop_secret, &push_timestamp, &push_nonce)?;
+    let push_body = serde_json::json!({ "enc": encrypted_push, "ts": push_timestamp, "nonce": push_nonce }).to_string();
+    let push_payload = format!("POST|/api/sync/push|{push_timestamp}|{push_nonce}|{push_body}");
+    let push_signature = lan_signature(&shop_secret, &push_payload);
+    let push = lan_http_request(ip, port, "POST", "/api/sync/push", &push_timestamp, &push_nonce, &push_signature, &push_body)?;
+    if !(200..300).contains(&push.status_code) {
+        return Err(format!("The Android hub rejected the desktop snapshot (HTTP {}).", push.status_code));
+    }
+    let push_signature_response = push.headers.get("x-beboss-signature").map(String::as_str).unwrap_or_default();
+    if !constant_time_string_eq(push_signature_response, &lan_signature(&shop_secret, &push.body)) {
+        return Err("The Android hub's push acknowledgement failed its HMAC check.".into());
+    }
+    let push_result: Value = serde_json::from_str(&push.body).map_err(|_| "The Android hub returned an invalid push acknowledgement.")?;
+    if push_result.get("success").and_then(Value::as_bool) != Some(true) {
+        return Err("The Android hub did not confirm the desktop snapshot merge.".into());
+    }
+
+    let pull_timestamp = now_millis()?.to_string();
+    let pull_nonce = Uuid::new_v4().to_string();
+    let pull_payload = format!("GET|/api/sync/pull|{pull_timestamp}|{pull_nonce}|");
+    let pull_signature = lan_signature(&shop_secret, &pull_payload);
+    let pull = lan_http_request(ip, port, "GET", "/api/sync/pull", &pull_timestamp, &pull_nonce, &pull_signature, "")?;
+    if !(200..300).contains(&pull.status_code) {
+        return Err(format!("The Android hub rejected the desktop snapshot request (HTTP {}).", pull.status_code));
+    }
+    let pull_signature_response = pull.headers.get("x-beboss-signature").map(String::as_str).unwrap_or_default();
+    if !constant_time_string_eq(pull_signature_response, &lan_signature(&shop_secret, &pull.body)) {
+        return Err("The Android hub's downloaded snapshot failed its HMAC check.".into());
+    }
+    let pull_envelope: Value = serde_json::from_str(&pull.body).map_err(|_| "The Android hub returned an invalid encrypted snapshot envelope.")?;
+    let encrypted = pull_envelope.get("enc").and_then(Value::as_str).ok_or_else(|| "The Android hub omitted its encrypted snapshot.".to_string())?;
+    let echoed_timestamp = pull_envelope.get("ts").and_then(Value::as_str).unwrap_or_default();
+    let echoed_nonce = pull_envelope.get("nonce").and_then(Value::as_str).unwrap_or_default();
+    if echoed_timestamp != pull_timestamp || echoed_nonce != pull_nonce {
+        return Err("The Android hub's snapshot response does not match this request.".into());
+    }
+    let pulled_json = decrypt_lan_body(encrypted, &shop_secret, &pull_timestamp, &pull_nonce)?;
+    let pulled_snapshot: Value = serde_json::from_str(&pulled_json).map_err(|_| "The Android hub snapshot is not valid JSON.")?;
+    if !pulled_snapshot.is_object() || !pulled_snapshot.get("metadata").is_some() {
+        return Err("The Android hub returned an incomplete business snapshot.".into());
+    }
+    let count_records = |key: &str| pulled_snapshot.get(key).and_then(Value::as_array).map(Vec::len).unwrap_or(0);
+    let pulled_records = ["products","customers","sales","saleItems","customerPayments","purchases","stockTransfers","branches","users"]
+        .iter().map(|key| count_records(key)).sum();
+    let pushed_records = ["products","customers","sales","saleItems","customerPayments","purchases","stockTransfers","branches","users"]
+        .iter().map(|key| snapshot.get(key).and_then(Value::as_array).map(Vec::len).unwrap_or(0)).sum();
+    Ok(LanSyncResult {
+        success: true,
+        peer_ip: ip.to_string(),
+        pushed_records,
+        pulled_records,
+        conflicts_available_for_merge: true,
+        pulled_snapshot,
+        latency_ms: started.elapsed().as_millis() as u64,
+        message: format!("Encrypted BeBoss LAN sync completed with {ip}: sent {pushed_records} and received {pulled_records} records. Conflict-safe merge is ready."),
+    })
+}
+
+
 fn main() {
     PROCESS_START.set(Instant::now()).ok();
 
@@ -935,7 +1292,7 @@ fn main() {
             secure_get, secure_set, secure_remove, get_device_id,
             local_load, local_queue, local_pending, local_outbox_count, local_ack,
             system_diagnostics, network_ping, print_escpos_thermal,
-            export_backup_file
+            export_backup_file, lan_store_shop_secret, lan_discover_hubs, lan_sync_with_hub
         ])
         .run(tauri::generate_context!())
         .expect("error while running BeBoss Desktop");
