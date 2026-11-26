@@ -125,6 +125,7 @@ function isOwnerAuthorizationMessage(value: unknown) {
 }
 export type DesktopAction =
   | "bootstrap"
+  | "register_desktop"
   | "restore_preview"
   | "redeem_unlock_code"
   | "save_snapshot"
