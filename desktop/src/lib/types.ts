@@ -31,6 +31,31 @@ export type CloudState = {
   serverTime: number;
 };
 
+export type RestorePreview = {
+  ok: true;
+  restoreAvailable: boolean;
+  snapshotUpdatedAt: number;
+  verifiedChunks: number;
+  totalRecords: number;
+  counts: {
+    products: number;
+    customers: number;
+    sales: number;
+    saleItems: number;
+    customerPayments: number;
+    purchases: number;
+    stockTransfers: number;
+    branches: number;
+    users: number;
+  };
+  sourceDevices: Array<{
+    deviceId: string;
+    name: string;
+    platform: "ANDROID" | "DESKTOP" | "OTHER";
+    lastSyncedAt: number;
+  }>;
+};
+
 export type NavKey =
   | "welcome"
   | "overview"

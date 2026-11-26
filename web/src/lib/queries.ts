@@ -7,7 +7,7 @@ export const publicSiteQuery = queryOptions({
   staleTime: 60_000,
 });
 
-export const DOWNLOAD_PATH = "/api/public/download/latest";
+export { DOWNLOAD_PATH } from "./download-path";
 
 import { getPlatformStats } from "./platform.functions";
 

@@ -350,9 +350,11 @@ async function latestVerifiedSnapshot(admin: SupabaseClient, shopId: string, sec
   }
 
   const parts: Row[] = [];
+  const sourceDevices: Array<{ deviceId: string; lastSyncedAt: number }> = [];
   let verifiedChunks = 0;
-  for (const value of newestByDevice.values()) {
+  for (const [deviceId, value] of newestByDevice.entries()) {
     const ordered = [...value.rows].sort((a, b) => number(a.chunk_index) - number(b.chunk_index));
+    sourceDevices.push({ deviceId, lastSyncedAt: value.updated });
     for (const row of ordered) {
       parts.push(await verifyAndDecodeToken(text(row.payload_token), secret));
       verifiedChunks++;
@@ -365,7 +367,8 @@ async function latestVerifiedSnapshot(admin: SupabaseClient, shopId: string, sec
     snapshot: parts.length ? mergeParts(parts) : null,
     uploadedAt: latest,
     rows: allRows,
-    verifiedChunks
+    verifiedChunks,
+    sourceDevices
   };
 }
 
@@ -600,8 +603,53 @@ Deno.serve(async (req: Request) => {
       admin,
       config.publishableKey,
       body,
-      action === "bootstrap" || action === "device_enroll" || action === "device_retire_legacy"
+      action === "bootstrap" || action === "restore_preview" || action === "device_enroll" || action === "device_retire_legacy"
     );
+
+    if (action === "restore_preview") {
+      const installationId = text(body.deviceId).trim();
+      if (!isUuid(installationId)) return json(403, { ok: false, message: "This desktop installation has no valid persistent device identity. Reopen BeBoss and try again." });
+      const { data: ownerUser, error: ownerUserError } = await admin.from("shop_users")
+        .select("user_id,username,full_name,role,is_active")
+        .eq("shop_sync_key", owner.shopId).eq("user_id", owner.user.id)
+        .eq("role", "OWNER").eq("is_active", true).maybeSingle();
+      if (ownerUserError || !ownerUser) return json(403, { ok: false, message: "This verified account is not an active owner in the shop staff directory." });
+      const [snapshotResult, devicesResult] = await Promise.all([
+        latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret),
+        admin.from("shop_devices")
+          .select("device_id,device_name,last_synced_at,is_active,role,branch_name")
+          .eq("shop_sync_key", owner.shopId)
+          .eq("is_active", true)
+          .order("last_synced_at", { ascending: false })
+          .limit(500)
+      ]);
+      if (devicesResult.error) throw new Error("Could not read the shop's registered device list: " + devicesResult.error.message);
+      const snapshot = snapshotResult.snapshot as Row | null;
+      const collectionKeys = ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users"] as const;
+      const counts = Object.fromEntries(collectionKeys.map((key) => [key, Array.isArray(snapshot?.[key]) ? (snapshot![key] as unknown[]).length : 0]));
+      const totalRecords = Object.values(counts).reduce((sum, count) => sum + number(count), 0);
+      const deviceDirectory = new Map((devicesResult.data ?? []).map((device) => [text(device.device_id), device]));
+      const sourceDevices = snapshotResult.sourceDevices.map((source) => {
+        const device = deviceDirectory.get(source.deviceId);
+        const platform = source.deviceId.startsWith("DESKTOP:") ? "DESKTOP"
+          : source.deviceId ? "ANDROID" : "OTHER";
+        return {
+          deviceId: source.deviceId,
+          name: text(device?.device_name) || (platform === "DESKTOP" ? "BeBoss Desktop" : "BeBoss mobile terminal"),
+          platform,
+          lastSyncedAt: Math.max(number(source.lastSyncedAt), number(device?.last_synced_at))
+        };
+      });
+      return json(200, {
+        ok: true,
+        restoreAvailable: !!snapshot && totalRecords > 0,
+        snapshotUpdatedAt: snapshotResult.uploadedAt,
+        verifiedChunks: snapshotResult.verifiedChunks,
+        totalRecords,
+        counts,
+        sourceDevices
+      });
+    }
 
     if (action === "device_enroll") {
       const deviceId = text(body.deviceId).trim();

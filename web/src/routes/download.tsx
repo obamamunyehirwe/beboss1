@@ -21,7 +21,8 @@ import { Button } from "@/components/ui/button";
 import { ServiceUnavailable } from "@/components/site/ServiceUnavailable";
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
-import { DOWNLOAD_PATH, publicSiteQuery } from "@/lib/queries";
+import { DOWNLOAD_PATH } from "@/lib/download-path";
+import { publicSiteQuery } from "@/lib/queries";
 import { formatBytes, formatDate } from "@/lib/format";
 import "./download-page.css";
 

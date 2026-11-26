@@ -9,8 +9,9 @@ import { callDesktopApi, currentSession, signOut, OwnerAuthorizationError, Devic
 import { BrowserRuntimeNotice } from "./components/BrowserRuntimeNotice";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
-import type { CloudState, DesktopPreferences, NavKey, ReceiptPayload, Row, Snapshot } from "./lib/types";
+import type { CloudState, DesktopPreferences, NavKey, ReceiptPayload, RestorePreview, Row, Snapshot } from "./lib/types";
 import { AuthScreen } from "./components/AuthScreen";
+import { DeviceRestorePrompt } from "./components/DeviceRestorePrompt";
 import { ReceiptPreview } from "./components/ReceiptPreview";
 import { LoginHint } from "./components/ui";
 import { OverviewPage } from "./components/screens/OverviewPage";
@@ -40,6 +41,12 @@ import { applyDesktopLanguage, DESKTOP_LANGUAGES } from "./lib/i18n";
 import type { StaffUpdate } from "./components/screens/StaffPage";
 
 function isDesktopInstallId(value: string) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
+function hasBusinessData(value: unknown) {
+  if (!value || typeof value !== "object") return false;
+  const data = value as Record<string, unknown>;
+  return ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users"]
+    .some((key) => Array.isArray(data[key]) && (data[key] as unknown[]).length > 0);
+}
 function desktopStorageScope(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, "-").slice(0, 100) || "default";
 }
@@ -110,6 +117,9 @@ function NativeDesktopApp() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptPayload | null>(null);
+  const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(null);
+  const [restoreCredentials, setRestoreCredentials] = useState<OwnerCredentials | null>(null);
+  const [restoreBusy, setRestoreBusy] = useState(false);
   const syncProbeRef = useRef({ ownerKey: "", managementVersion: "", snapshotUpdatedAt: 0, inFlight: false });
 
   async function saveCache(credentials: OwnerCredentials, data: CloudState) {
@@ -351,12 +361,93 @@ function NativeDesktopApp() {
   }, []);
 
   async function authenticated(credentials: OwnerCredentials) {
+    // A fresh desktop checks for verified shop data before registering an additional
+    // billable terminal or opening an empty workspace. This read-only preview does not
+    // create a device record or change subscription billing.
+    try {
+      const installationId = deviceId || await window.beBossDesktop.getDeviceId();
+      if (isDesktopInstallId(installationId)) {
+        if (installationId !== deviceId) setDeviceId(installationId);
+        const [localSnapshot, cachedValue] = await Promise.all([
+          window.beBossDesktop.local.load().catch(() => null),
+          window.beBossDesktop.secureStore.get("shop-cache:" + credentials.username).catch(() => null)
+        ]);
+        let cachedSnapshot: unknown = null;
+        if (cachedValue) {
+          try { cachedSnapshot = (JSON.parse(cachedValue) as CloudState).snapshot; }
+          catch { cachedSnapshot = null; }
+        }
+        if (!hasBusinessData(localSnapshot) && !hasBusinessData(cachedSnapshot)) {
+          const platform = /Windows/i.test(navigator.userAgent) ? "Windows"
+            : /Mac OS X|Macintosh/i.test(navigator.userAgent) ? "macOS"
+            : /Linux/i.test(navigator.userAgent) ? "Linux" : "Desktop";
+          const preview = await callDesktopApi<RestorePreview>("restore_preview", credentials, {
+            deviceId: installationId,
+            deviceName: "BeBoss Desktop · " + platform
+          });
+          if (preview.restoreAvailable) {
+            setRestorePreview(preview);
+            setRestoreCredentials(credentials);
+            setShowAuth(false);
+            setError("");
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      if (e instanceof OwnerAuthorizationError) throw e;
+      // A preview failure never replaces the existing bootstrap/offline recovery path.
+      console.warn("BeBoss restore preview unavailable; continuing with normal bootstrap.", e);
+    }
+
     const ready = await bootstrap(credentials);
     if (ready) {
       setShowAuth(false);
       setView(preferences.defaultView);
     } else {
       setShowAuth(true);
+    }
+  }
+
+  async function acceptRemoteRestore() {
+    if (!restoreCredentials) return;
+    setRestoreBusy(true);
+    setError("");
+    try {
+      const ready = await bootstrap(restoreCredentials);
+      if (!ready) return;
+      await window.beBossDesktop.secureStore.set(
+        "desktop-restore-accepted:" + deviceId,
+        new Date().toISOString()
+      );
+      setRestorePreview(null);
+      setRestoreCredentials(null);
+      setShowAuth(false);
+      setView(preferences.defaultView);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setRestoreBusy(false);
+    }
+  }
+
+  async function postponeRemoteRestore() {
+    setRestoreBusy(true);
+    try {
+      // Close the verified session so the cached auto-login path cannot skip this prompt.
+      await signOut();
+      setRestorePreview(null);
+      setRestoreCredentials(null);
+      setOwner(null);
+      setCloud(null);
+      setOffline(false);
+      setShowAuth(false);
+      setView("welcome");
+      setError("");
+    } catch (e) {
+      setError("Could not safely close the owner session. Your remote shop data remains unchanged. " + errorText(e));
+    } finally {
+      setRestoreBusy(false);
     }
   }
   async function enterSignIn() {
@@ -428,8 +519,21 @@ function NativeDesktopApp() {
         setNotice("Saved securely on this device. It will sync automatically when the connection returns."); return;
       }
       if (/newer shop data|snapshot/i.test(message)) {
-        setCloud({ ...cloud, snapshot: ensureSnapshot(localTransaction.payload as Snapshot) }); setOffline(true); setError("");
-        setNotice("Cloud data changed during this save. The local transaction is preserved; BeBoss is refreshing and merging before retrying."); return;
+        setCloud({ ...cloud, snapshot: ensureSnapshot(localTransaction.payload as Snapshot) });
+        setOffline(true);
+        setError("");
+        if (navigator.onLine) {
+          // A single bounded retry: bootstrap reloads the latest signed snapshot and
+          // merges the encrypted outbox using HLC/version/tombstone rules.
+          const reconciled = await bootstrap(owner, false);
+          const remaining = await window.beBossDesktop.local.pending();
+          if (reconciled && !remaining.some((item) => item.id === localTransaction.id)) {
+            setNotice("Concurrent phone/desktop changes were merged and the transaction was accepted by BeBoss Cloud.");
+            return;
+          }
+        }
+        setNotice("Cloud data changed during this save. Your transaction remains in the encrypted outbox and will retry when the latest snapshot is available.");
+        return;
       }
       setError(message);
       if (message.toLowerCase().includes("newer shop data") || message.toLowerCase().includes("snapshot")) {
@@ -621,6 +725,17 @@ function NativeDesktopApp() {
 
   if (!startupReady || !preferencesReady) {
     return <div className="setup-loading"><LoaderCircle className="spin" size={28} /><span>Preparing BeBoss Desktop…</span></div>;
+  }
+
+  if (restorePreview && restoreCredentials) {
+    return <DeviceRestorePrompt
+      preview={restorePreview}
+      theme={preferences.theme}
+      busy={restoreBusy || busy}
+      error={error}
+      onRestore={() => void acceptRemoteRestore()}
+      onNotNow={() => void postponeRemoteRestore()}
+    />;
   }
 
   if (setupRequired) {

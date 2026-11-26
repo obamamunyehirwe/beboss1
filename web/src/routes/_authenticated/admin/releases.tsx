@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@/lib/use-server-fn";
-import { CheckCircle2, Download, Loader2, Star, Trash2, UploadCloud } from "lucide-react";
+import { CheckCircle2, Download, Loader2, Pencil, Star, Trash2, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -11,14 +11,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmAction, EmptyState, LoadingBlock, PageHeader, StatCard, useAdminAction } from "@/components/admin/ui";
 import { supabase } from "@/integrations/supabase/client";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
-import { deleteRelease, getAdminReleaseDownload, publishRelease, setArchivedReleaseVisibility, setCurrentRelease, setReleaseVisibility } from "@/lib/admin.functions";
+import { deleteRelease, getAdminReleaseDownload, publishRelease, setArchivedReleaseVisibility, setCurrentRelease, setReleaseVisibility, updateRelease } from "@/lib/admin.functions";
 import { downloadsQuery, releasesQuery } from "@/lib/admin-queries";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
-import { DOWNLOAD_PATH } from "@/lib/queries";
+import { DOWNLOAD_PATH } from "@/lib/download-path";
 
 export const Route = createFileRoute("/_authenticated/admin/releases")({
   component: ReleasesPage,
@@ -39,6 +40,8 @@ function ReleasesPage() {
   const canManageReleases = isAdmin || !!adminCtx.data?.permissions?.includes("releases.manage");
   const releases = useQuery(releasesQuery);
   const downloads = useQuery(downloadsQuery);
+  type ReleaseWithVisibility = (NonNullable<typeof releases.data>[number]) & { is_public?: boolean };
+  const rows = (releases.data ?? []) as ReleaseWithVisibility[];
   const qc = useQueryClient();
   const publish = useServerFn(publishRelease);
   const getPrivateDownload = useServerFn(getAdminReleaseDownload);
@@ -50,6 +53,9 @@ function ReleasesPage() {
   const [file, setFile] = useState<File | null>(null);
   const [form, setForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "", make_current: true });
   const [stage, setStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
+  const [editingRelease, setEditingRelease] = useState<ReleaseWithVisibility | null>(null);
+  const [editForm, setEditForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "" });
+  const editReleaseAction = useAdminAction(useServerFn(updateRelease), { success: "Release updated", invalidate: [["admin", "releases"], ["public-site"]] });
 
   const downloadUrl = `https://beboss.rw${DOWNLOAD_PATH}`;
 
@@ -123,8 +129,6 @@ function ReleasesPage() {
     }
   };
 
-  type ReleaseWithVisibility = (NonNullable<typeof releases.data>[number]) & { is_public?: boolean };
-  const rows = (releases.data ?? []) as ReleaseWithVisibility[];
   const archived = rows.filter((release) => !release.is_current);
   const visibleArchivedCount = archived.filter((release) => release.is_public !== false).length;
   const hiddenArchivedCount = archived.length - visibleArchivedCount;
@@ -160,6 +164,82 @@ function ReleasesPage() {
           </div>
         ) : null}
       />
+      <Dialog open={!!editingRelease} onOpenChange={(open) => { if (!open) setEditingRelease(null); }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{a("Edit APK release")}{editingRelease ? ` — v${editingRelease.version_name}` : ""}</DialogTitle>
+            <DialogDescription>
+              {a("Update the stored release metadata and public update information. Changes to the current release are synchronized to the global app version in the same database transaction. The APK binary itself remains immutable; publish a new version to replace the file.")}
+            </DialogDescription>
+          </DialogHeader>
+          {editingRelease ? (
+            <form
+              id="edit-apk-release-form"
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                editReleaseAction.mutate(
+                  { id: editingRelease.id, ...editForm },
+                  { onSuccess: () => setEditingRelease(null) },
+                );
+              }}
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>{a("Version name")}</Label>
+                  <Input
+                    value={editForm.version_name}
+                    onChange={(event) => setEditForm({ ...editForm, version_name: event.target.value })}
+                    required
+                    maxLength={40}
+                    pattern="^[0-9]+([.][0-9]+){0,3}$"
+                    placeholder="2.3.2"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{a("Version code")}</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={1000000}
+                    value={editForm.version_code}
+                    onChange={(event) => setEditForm({ ...editForm, version_code: Math.max(1, Math.min(1000000, Number(event.target.value) || 1)) })}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{a("Minimum Android")}</Label>
+                <Input
+                  value={editForm.min_android}
+                  onChange={(event) => setEditForm({ ...editForm, min_android: event.target.value })}
+                  maxLength={40}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{a("Release notes")}</Label>
+                <Textarea
+                  rows={6}
+                  value={editForm.release_notes}
+                  onChange={(event) => setEditForm({ ...editForm, release_notes: event.target.value })}
+                  maxLength={5000}
+                />
+                <p className="text-right text-xs text-muted-foreground">{editForm.release_notes.length}/5000</p>
+              </div>
+            </form>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditingRelease(null)}>
+              {a("Cancel")}
+            </Button>
+            <Button type="submit" form="edit-apk-release-form" disabled={!editingRelease || editReleaseAction.isPending}>
+              {editReleaseAction.isPending ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}
+              {editReleaseAction.isPending ? a("Saving…") : a("Save release")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard label="All-time downloads" value={total} icon={Download} tone="brand" />
         <StatCard label="Last 30 days" value={daily.reduce((acc, d) => acc + d.n, 0)} sub={Object.entries(byChannel).map(([k, v]) => `${k} ${v}`).join(" • ") || "—"} />
@@ -267,6 +347,21 @@ function ReleasesPage() {
                 ) : null}
                 {canManageReleases ? (
                   <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingRelease(r);
+                        setEditForm({
+                          version_name: r.version_name,
+                          version_code: Number(r.version_code),
+                          min_android: r.min_android,
+                          release_notes: r.release_notes ?? "",
+                        });
+                      }}
+                    >
+                      <Pencil /> {a("Edit")}
+                    </Button>
                     {!r.is_current ? (
                       <Button size="sm" variant="soft" onClick={() => setCurrent.mutate({ id: r.id, public_download_url: downloadUrl })}>
                         <Star /> {a("Make current")}
