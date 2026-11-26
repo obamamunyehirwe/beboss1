@@ -1717,6 +1717,25 @@ fn lan_sync_with_hub(
 fn main() {
     PROCESS_START.set(Instant::now()).ok();
 
+    // Sentry's Rust client installs panic capture for the native process. The
+    // guard must outlive the Tauri event loop so pending crash events can flush.
+    let _sentry_guard = option_env!("SENTRY_DSN")
+        .map(str::trim)
+        .filter(|dsn| !dsn.is_empty())
+        .map(|dsn| {
+            sentry::init((
+                dsn,
+                sentry::ClientOptions {
+                    release: sentry::release_name!(),
+                    environment: Some(
+                        if cfg!(debug_assertions) { "development" } else { "production" }.into()
+                    ),
+                    send_default_pii: false,
+                    ..Default::default()
+                },
+            ))
+        });
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
