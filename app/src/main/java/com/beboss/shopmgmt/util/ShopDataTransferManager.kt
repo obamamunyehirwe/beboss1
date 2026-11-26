@@ -476,7 +476,11 @@ object ShopDataTransferManager {
         tombstones: List<SyncTombstone> = emptyList(),
         shopSecret: String
     ): List<String> {
-        val total = branches.size + users.size + products.size + customers.size + sales.size + payments.size
+        require(maxRecordsPerChunk in 1..1_000) {
+            "Snapshot chunk size must be between 1 and 1,000 records."
+        }
+        val total = branches.size + users.size + products.size + customers.size +
+            sales.size + saleItems.size + payments.size + stockTransfers.size + purchases.size + tombstones.size
         if (total <= maxRecordsPerChunk) {
             return listOf(
                 createShopScopedShareToken(
@@ -501,29 +505,47 @@ object ShopDataTransferManager {
         }
 
         val tokens = mutableListOf<String>()
-        // Chunk 0: master profile, branches, users, tombstones, products chunk 0
-        val prodChunks = products.chunked(maxRecordsPerChunk).ifEmpty { listOf(emptyList()) }
-        val custChunks = customers.chunked(maxRecordsPerChunk).ifEmpty { listOf(emptyList()) }
+        // Every record family is chunked independently. A previous implementation
+        // split products/customers/sales but placed all purchases, transfers, payments,
+        // users and tombstones in chunk zero, silently truncating or oversizing large shops.
+        val productChunks = products.chunked(maxRecordsPerChunk).ifEmpty { listOf(emptyList()) }
+        val customerChunks = customers.chunked(maxRecordsPerChunk).ifEmpty { listOf(emptyList()) }
         val saleChunks = sales.chunked(maxRecordsPerChunk).ifEmpty { listOf(emptyList()) }
-        val maxChunks = maxOf(prodChunks.size, custChunks.size, saleChunks.size)
+        val userChunks = users.chunked(maxRecordsPerChunk).ifEmpty { listOf(emptyList()) }
+        val paymentChunks = payments.chunked(maxRecordsPerChunk).ifEmpty { listOf(emptyList()) }
+        val purchaseChunks = purchases.chunked(maxRecordsPerChunk).ifEmpty { listOf(emptyList()) }
+        val transferChunks = stockTransfers.chunked(maxRecordsPerChunk).ifEmpty { listOf(emptyList()) }
+        val branchChunks = branches.chunked(maxRecordsPerChunk).ifEmpty { listOf(emptyList()) }
+        val tombstoneChunks = tombstones.chunked(maxRecordsPerChunk).ifEmpty { listOf(emptyList()) }
+        val maxChunks = maxOf(
+            productChunks.size,
+            customerChunks.size,
+            saleChunks.size,
+            userChunks.size,
+            paymentChunks.size,
+            purchaseChunks.size,
+            transferChunks.size,
+            branchChunks.size,
+            tombstoneChunks.size
+        )
 
         for (idx in 0 until maxChunks) {
-            val sChunk = saleChunks.getOrElse(idx) { emptyList() }
-            val sIds = sChunk.map { it.id }.toSet()
+            val salesForChunk = saleChunks.getOrElse(idx) { emptyList() }
+            val saleIds = salesForChunk.map { it.id }.toSet()
             val json = createExportJson(
                 profile = profile,
-                users = if (idx == 0) users else emptyList(),
-                products = prodChunks.getOrElse(idx) { emptyList() },
-                customers = custChunks.getOrElse(idx) { emptyList() },
-                sales = sChunk,
-                saleItems = saleItems.filter { sIds.contains(it.saleId) },
-                payments = if (idx == 0) payments else emptyList(),
+                users = userChunks.getOrElse(idx) { emptyList() },
+                products = productChunks.getOrElse(idx) { emptyList() },
+                customers = customerChunks.getOrElse(idx) { emptyList() },
+                sales = salesForChunk,
+                saleItems = saleItems.filter { it.saleId in saleIds },
+                payments = paymentChunks.getOrElse(idx) { emptyList() },
                 exportedByUser = exportedByUser,
-                branches = if (idx == 0) branches else emptyList(),
-                stockTransfers = if (idx == 0) stockTransfers else emptyList(),
-                purchases = if (idx == 0) purchases else emptyList(),
+                branches = branchChunks.getOrElse(idx) { emptyList() },
+                stockTransfers = transferChunks.getOrElse(idx) { emptyList() },
+                purchases = purchaseChunks.getOrElse(idx) { emptyList() },
                 sinceUpdatedAt = sinceUpdatedAt,
-                tombstones = if (idx == 0) tombstones else emptyList()
+                tombstones = tombstoneChunks.getOrElse(idx) { emptyList() }
             )
             tokens.add(createShopScopedShareToken(json, shopSecret))
         }
