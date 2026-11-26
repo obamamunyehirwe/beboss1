@@ -1419,7 +1419,6 @@ const desktopPlatformSchema = z.enum(["windows", "macos", "linux"]);
 const desktopReleaseUploadSchema = z.object({
   platform: desktopPlatformSchema,
   version_name: z.string().trim().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "Use a semantic version such as 1.3.1.").max(40),
-  source_manifest_version: z.string().trim().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "Select a valid local desktop/package.json manifest.").max(40),
   file_path: z.string().trim().min(1).max(500),
   file_name: z.string().trim().min(1).max(200),
   size_bytes: z.number().int().positive().max(536870912),
@@ -1427,12 +1426,6 @@ const desktopReleaseUploadSchema = z.object({
   release_notes: z.string().max(5000).default(""),
   make_current: z.boolean().default(true),
 });
-
-const DESKTOP_SOURCE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-
-// Desktop versions are verified against the package.json selected from the
-// administrator's local working copy. Publishing never fetches source files
-// or installer binaries from GitHub.
 
 export const getAdminDesktopReleases = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -1455,11 +1448,6 @@ export const publishDesktopRelease = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
-    if (data.version_name !== data.source_manifest_version) {
-      throw new Error(
-        "The release version does not match the version in the local desktop/package.json you selected. Select the package.json from the same source checkout used to build this installer.",
-      );
-    }
     const expectedExtension = data.platform === "windows" ? ".exe" : data.platform === "macos" ? ".dmg" : ".appimage";
     if (!data.file_name.toLowerCase().endsWith(expectedExtension)) {
       throw new Error(`The ${data.platform} release must be a ${expectedExtension} file.`);
