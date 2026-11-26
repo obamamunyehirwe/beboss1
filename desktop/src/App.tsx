@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Activity, AlertTriangle, BarChart3, Bell, Building2, Briefcase, Check, ChevronDown,
   ClipboardList, CreditCard, Database, Home, LayoutDashboard, LoaderCircle, LogOut, Menu,
@@ -290,6 +292,15 @@ function NativeDesktopApp() {
     if (!root || !preferencesReady) return;
     return applyDesktopLanguage(root, preferences.language);
   }, [preferences.language, preferencesReady, owner, view, setupRequired]);
+
+  useEffect(() => {
+    if (!preferencesReady || !isTauri()) return;
+    const nativeTheme = preferences.theme === "system" ? null : preferences.theme;
+    void getCurrentWindow().setTheme(nativeTheme).catch((error) => {
+      console.warn("[BeBoss desktop] Could not synchronize the native window theme.", error);
+    });
+  }, [preferences.theme, preferencesReady]);
+
 
   useEffect(() => {
     let alive = true;

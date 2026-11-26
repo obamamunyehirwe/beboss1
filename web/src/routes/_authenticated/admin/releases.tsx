@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@/lib/use-server-fn";
 import { Apple, CheckCircle2, Download, ExternalLink, Laptop, Loader2, Monitor, Pencil, RefreshCw, Star, Trash2, UploadCloud } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -71,10 +71,10 @@ function ReleasesPage() {
 
   const downloadUrl = `https://beboss.rw${DOWNLOAD_PATH}`;
 
-  const startDesktopRelease = async (event: React.FormEvent<HTMLFormElement>) => {
+  const startDesktopRelease = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canManageReleases || desktopDispatching) return;
-    if (!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(desktopVersion.trim())) {
+    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(desktopVersion.trim())) {
       toast.error("Enter a valid desktop version, for example 1.3.1.");
       return;
     }
@@ -259,15 +259,16 @@ function ReleasesPage() {
                       value={desktopVersion}
                       onChange={(event) => setDesktopVersion(event.target.value)}
                       placeholder="1.3.1"
-                      pattern="^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+                      pattern="^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$"
                       maxLength={40}
                       required
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="desktop-release-notes">Release notes</Label>
-                    <Input
+                    <Textarea
                       id="desktop-release-notes"
+                      rows={3}
                       value={desktopNotes}
                       onChange={(event) => setDesktopNotes(event.target.value)}
                       placeholder="Bug fixes, improvements and release highlights"
