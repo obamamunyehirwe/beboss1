@@ -4,14 +4,15 @@ import { resolve } from "node:path";
 const readJson = (file) => JSON.parse(readFileSync(resolve(file), "utf8"));
 const config = readJson("src-tauri/tauri.conf.json");
 const nsis = config.bundle?.windows?.nsis;
+const webviewInstallMode = config.bundle?.windows?.webviewInstallMode;
 const failures = [];
 const requireCheck = (condition, message) => { if (!condition) failures.push(message); };
 
 requireCheck(config.bundle?.targets?.includes("nsis"), "The release bundle must include the NSIS setup executable.");
 requireCheck(nsis?.installMode === "currentUser", "The installer must use currentUser mode so shop staff do not need administrator rights.");
 requireCheck(nsis?.displayLanguageSelector === false, "The branded installer should use the Windows language by default without an extra legacy selector page.");
-requireCheck(nsis?.webviewInstallMode?.type === "embedBootstrapper", "The WebView2 bootstrapper must be embedded so installation does not need to download the bootstrapper first.");
-requireCheck(nsis?.webviewInstallMode?.silent === true, "WebView2 bootstrapper installation must run silently.");
+requireCheck(webviewInstallMode?.type === "embedBootstrapper", "The WebView2 bootstrapper must be embedded so installation does not need to download the bootstrapper first.");
+requireCheck(webviewInstallMode?.silent === true, "WebView2 bootstrapper installation must run silently.");
 requireCheck(Boolean(nsis?.installerHooks), "NSIS installerHooks must be configured.");
 
 for (const key of ["headerImage", "sidebarImage", "uninstallerHeaderImage", "installerIcon", "uninstallerIcon"]) {
