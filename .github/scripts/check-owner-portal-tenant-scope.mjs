@@ -7,7 +7,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 const source = read("web/src/lib/public.functions.ts");
 const serverClient = read("web/src/lib/owner-tenant.server.ts");
-const migration = read("web/supabase/migrations/20261126123000_server_owner_portal_invite_context.sql");
+const generatedClient = read("web/src/integrations/supabase/client.server.ts");
+const migration = read("web/supabase/migrations/20261126113025_server_owner_portal_invite_context.sql");
 const sqlTest = read("web/supabase/tests/android_device_credentials.sql");
 
 const failures = [];
@@ -38,8 +39,10 @@ if (!helper.includes('createShopAdminClient(key)') || !helper.includes('.eq("id"
   fail("The server client must be bound to the exact verified shop account.");
 }
 if (!helper.includes('import("@/lib/owner-tenant.server")') ||
-    serverClient.includes("createShopAdminClient")) {
-  fail("The per-request tenant client must live in a dedicated server-only module, not generated client code.");
+    !serverClient.includes("export function createShopAdminClient") ||
+    generatedClient.includes("createShopAdminClient") ||
+    generatedClient.includes("X-Shop-Sync-Key")) {
+  fail("The per-request tenant client must live in its dedicated server-only module and remain absent from the generated integration client.");
 }
 if (!helper.includes("normalizePhoneLast9") || !helper.includes("owner_username")) {
   fail("The helper must re-check registered owner username and phone against the shop record.");
