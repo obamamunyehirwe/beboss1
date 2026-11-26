@@ -12,6 +12,9 @@ export function ReceiptPreview({ receipt, onClose }: { receipt: ReceiptPayload; 
   const [qr, setQr] = useState("");
   const [shareBusy, setShareBusy] = useState(false);
   const [shareError, setShareError] = useState("");
+  const [thermalBusy, setThermalBusy] = useState(false);
+  const [thermalError, setThermalError] = useState("");
+  const [thermalSuccess, setThermalSuccess] = useState("");
   const profile = receipt.profile ?? {};
   const sale = receipt.sale ?? {};
   const items = rows(receipt.items);
@@ -69,11 +72,52 @@ export function ReceiptPreview({ receipt, onClose }: { receipt: ReceiptPayload; 
     } finally { setShareBusy(false); }
   }
 
+  async function handleThermalPrint() {
+    if (thermalBusy) return;
+    setThermalBusy(true);
+    setThermalError("");
+    setThermalSuccess("");
+    try {
+      const result = await window.beBossDesktop.printEscposThermal({
+        shopName,
+        receiptNumber: s(sale.receiptNumber) || s(sale.id),
+        date: dateTime(sale.saleDate),
+        cashier: s(sale.cashierName) || "—",
+        customer: s(sale.customerName) || "Walk-in Customer",
+        items: items.map((item) => ({
+          name: s(item.productName) || "Item",
+          quantity: n(item.quantitySold),
+          unitPrice: n(item.unitPriceAtSale),
+          subtotal: n(item.subtotal) || n(item.unitPriceAtSale) * n(item.quantitySold)
+        })),
+        subtotal,
+        discount,
+        total,
+        paid,
+        balance,
+        paymentMethod: s(sale.paymentMethod) || "—",
+        tin: s(profile.tinNumber),
+        address: s(profile.address),
+        phone: s(profile.phone),
+        header: s(profile.receiptHeader),
+        footer: s(profile.receiptFooter),
+        seal: seal || "BB-UNAVAILABLE"
+      });
+      setThermalSuccess(result.message || ("Receipt submitted to " + result.printerName + " (job " + result.jobId + ")."));
+    } catch (error) {
+      setThermalError(error instanceof Error ? error.message : "The thermal printer rejected the receipt.");
+    } finally {
+      setThermalBusy(false);
+    }
+  }
+
   return <div className="modal-backdrop receipt-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="modal-card receipt-modal-card" role="dialog" aria-modal="true" aria-label="Receipt preview">
       <div className="modal-head"><div><span className="eyebrow muted">COMPLETED TRANSACTION</span><h3>Receipt {s(sale.receiptNumber)}</h3></div><button className="icon-btn" onClick={onClose} aria-label="Close receipt"><X size={18} /></button></div>
-      <div className="receipt-toolbar"><span><ShieldCheck size={15} /> Receipt details from the saved shop transaction</span><div><button className="btn-outline" disabled={shareBusy} onClick={handleShare}>{shareBusy ? <LoaderCircle className="spin" size={15} /> : <Share2 size={15} />}{shareBusy ? "Creating…" : "Share card"}</button><button className="btn-outline" onClick={() => window.print()}><Printer size={15} /> Print / Save PDF</button><button className="btn-primary" onClick={onClose}>Done</button></div></div>
+      <div className="receipt-toolbar"><span><ShieldCheck size={15} /> Receipt details from the saved shop transaction</span><div><button className="btn-outline" disabled={shareBusy} onClick={handleShare}>{shareBusy ? <LoaderCircle className="spin" size={15} /> : <Share2 size={15} />}{shareBusy ? "Creating…" : "Share card"}</button><button className="btn-outline" onClick={() => void handleThermalPrint()} disabled={thermalBusy}><Printer size={15} />{thermalBusy ? "Sending…" : "Thermal print"}</button><button className="btn-outline" onClick={() => window.print()}><Printer size={15} /> Print / Save PDF</button><button className="btn-primary" onClick={onClose}>Done</button></div></div>
       {shareError && <div className="inline-alert error"><Share2 size={14} />{shareError}</div>}
+      {thermalError && <div className="inline-alert error"><Printer size={14} />{thermalError}</div>}
+      {thermalSuccess && <div className="inline-alert success"><Printer size={14} />{thermalSuccess}</div>}
       <article className="receipt-paper receipt-print-area">
         <header className="receipt-brand"><img src="/beboss-app-logo.png" alt="BeBoss logo" /><div><strong>{shopName}</strong><span>SALES RECEIPT</span></div></header>
         {s(profile.receiptHeader).trim() && <p className="receipt-custom-line">{s(profile.receiptHeader)}</p>}
