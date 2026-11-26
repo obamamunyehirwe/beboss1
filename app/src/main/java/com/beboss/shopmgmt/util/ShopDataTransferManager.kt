@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
-import com.beboss.shopmgmt.BuildConfig
 import com.beboss.shopmgmt.data.model.Branch
 import com.beboss.shopmgmt.data.model.Customer
 import com.beboss.shopmgmt.data.model.CustomerPayment
@@ -74,16 +73,6 @@ object ShopDataTransferManager {
             }
         }
     )
-
-    private fun getShareHmacSecret(): String {
-        val secret = try { BuildConfig.BEBOSS_DATASHARE_HMAC_SECRET.trim() } catch (_: Throwable) { "" }
-        if (secret.length >= 32 && secret != "DEFAULT_DATSHARE_SECRET_PLACEHOLDER" &&
-            secret != "BeBossDefaultDataShareHmacKeyV2") return secret
-        // The compatibility value is confined to debug/test builds. Release builds
-        // require the same protected BBSHARE key configured in Supabase.
-        if (BuildConfig.DEBUG) return "BeBossDefaultDataShareHmacKeyV2"
-        throw SecurityException("BEBOSS_DATASHARE_HMAC_SECRET is not configured. Secure cross-device sharing is disabled until the protected key is provisioned.")
-    }
 
     /**
      * Creates full or delta JSON Object for shop & multi-branch data.
@@ -575,20 +564,6 @@ object ShopDataTransferManager {
     }
 
     /**
-     * Generates a GZIP-compressed, HMAC-signed portable Branch Share Token (`BBSHARE1:...`).
-     */
-    fun createCompressedSyncToken(json: JSONObject): String {
-        val rawBytes = json.toString().toByteArray(StandardCharsets.UTF_8)
-        val baos = ByteArrayOutputStream()
-        GZIPOutputStream(baos).use { gzip ->
-            gzip.write(rawBytes)
-        }
-        val b64Payload = Base64.getEncoder().encodeToString(baos.toByteArray())
-        val sig16 = computeShareHmac(b64Payload).take(16).uppercase(Locale.ROOT)
-        return "$SHARE_TOKEN_PREFIX$sig16:$b64Payload"
-    }
-
-    /**
      * Creates a per-shop authenticated share token. The shop key is already provisioned
      * by the owner through Supabase and stored in the platform keystore; the derived
      * BBSHARE2 key is domain separated from LAN encryption and authentication keys.
@@ -638,15 +613,8 @@ object ShopDataTransferManager {
             "Malformed BBSHARE2 signature."
         }
         val shopScopedSignature = computeHmacHex(shopShareHmacKey(shopSecret), payload).uppercase(Locale.ROOT)
-        val verifiedForShop = constantTimeEquals(providedSignature, shopScopedSignature)
-        // Read-only compatibility for snapshots created by earlier desktop releases,
-        // which used a full-length BBSHARE2 HMAC with the old project-wide key.
-        // New mobile and desktop writers always use the shop-derived key above.
-        val verifiedLegacy = if (verifiedForShop) false else runCatching {
-            constantTimeEquals(providedSignature, computeShareHmac(payload).uppercase(Locale.ROOT))
-        }.getOrDefault(false)
-        require(verifiedForShop || verifiedLegacy) {
-            "Shop-scoped branch token integrity check failed. Confirm this token belongs to the signed-in shop."
+        require(constantTimeEquals(providedSignature, shopScopedSignature)) {
+            "This BBSHARE2 token was not signed by the registered shop key. Older project-wide tokens must be verified by BeBoss Cloud."
         }
         return decompressSharePayload(payload)
     }
@@ -668,29 +636,6 @@ object ShopDataTransferManager {
             }
             return result.toString()
         }
-    }
-
-    fun decodeCompressedSyncToken(token: String): String {
-        val trimmed = token.trim()
-        require(trimmed.length <= SyncPayloadValidator.MAX_TOKEN_LENGTH) {
-            "BeBoss Share Token exceeds safe size limit."
-        }
-        require(trimmed.startsWith(SHARE_TOKEN_PREFIX)) { "Invalid BeBoss Share Token prefix." }
-        val remainder = trimmed.removePrefix(SHARE_TOKEN_PREFIX)
-        val sepIndex = remainder.indexOf(':')
-        require(sepIndex > 0) { "Malformed BeBoss Share Token structure." }
-        val providedSig = remainder.substring(0, sepIndex).uppercase(Locale.ROOT)
-        val b64Payload = remainder.substring(sepIndex + 1)
-        val fullHmac = computeShareHmac(b64Payload).uppercase(Locale.ROOT)
-        val expectedSig = fullHmac.take(providedSig.length.coerceIn(8, 16))
-        require(
-            providedSig.length in listOf(8, 16) &&
-                constantTimeEquals(providedSig, expectedSig)
-        ) {
-            "Branch Share Token integrity check failed (truncated or tampered)."
-        }
-
-        return decompressSharePayload(b64Payload)
     }
 
     /**
@@ -762,16 +707,19 @@ object ShopDataTransferManager {
         val isLegacyToken = trimmed.startsWith(SHARE_TOKEN_PREFIX)
         val isShopScopedToken = trimmed.startsWith(SHOP_SHARE_TOKEN_PREFIX)
         val isToken = isLegacyToken || isShopScopedToken
-        val jsonString = when {
-            isShopScopedToken -> decodeShopScopedShareToken(
+        if (isLegacyToken) {
+            throw SecurityException(
+                "This is a legacy BBSHARE1 token. For security, Android no longer contains the old global signing key. Verify it online with the registered shop owner SMS code, or use a current BBSHARE2 token."
+            )
+        }
+        val jsonString = if (isShopScopedToken) {
+            decodeShopScopedShareToken(
                 trimmed,
                 shopSecret ?: throw SecurityException(
                     "BBSHARE2 tokens require the matching signed-in shop's protected pairing credential."
                 )
             )
-            isLegacyToken -> decodeCompressedSyncToken(trimmed)
-            else -> trimmed
-        }
+        } else trimmed
 
         val root = SyncPayloadValidator.validateAndParseRoot(jsonString)
 
@@ -1255,13 +1203,6 @@ object ShopDataTransferManager {
             Please keep your credentials private. You can now log in directly on the store terminal.
             — ${shopProfile.name.ifBlank { "Store Management" }}
         """.trimIndent()
-    }
-
-    private fun computeShareHmac(data: String): String {
-        val mac = Mac.getInstance("HmacSHA256")
-        val keySpec = SecretKeySpec(getShareHmacSecret().toByteArray(StandardCharsets.UTF_8), "HmacSHA256")
-        mac.init(keySpec)
-        return SecurityUtils.bytesToHex(mac.doFinal(data.toByteArray(StandardCharsets.UTF_8)))
     }
 
     private fun constantTimeEquals(a: String, b: String): Boolean {
