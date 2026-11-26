@@ -113,7 +113,8 @@ A role name is not a security boundary by itself: server functions call the data
 The Admin → App Releases workspace has two separate interactive tabs: **Mobile releases** and **Desktop releases**. They maintain separate version histories and public download pointers.
 
 **Mobile**
-- Upload signed Android APKs with version name, monotonically increasing version code, minimum Android version, release notes and SHA-256 metadata.
+- Build the production-signed Android APK locally from the repository root with `./gradlew :app:assembleRelease` (Windows: `gradlew.bat :app:assembleRelease`). Select the resulting `app/build/outputs/apk/release/app-release.apk` in the Admin page; do not upload a debug APK.
+- Upload signed Android APKs with version name, monotonically increasing version code, minimum Android version, release notes and SHA-256 metadata. The browser calculates the file's SHA-256 before upload.
 - Select the current APK, manage public visibility of archived releases, and review download totals and channel activity.
 - Edit release metadata without replacing the immutable APK binary. Destructive archive deletion remains a Super Admin action.
 
@@ -218,7 +219,7 @@ BeBoss does not promise that every provider integration is automatically active 
 │   └── supabase/
 │       ├── functions/            # Server-side Edge Functions
 │       └── migrations/           # Database schema, indexes and RLS policies
-├── .github/workflows/            # CI, Android and native desktop builds
+├── .github/workflows/            # Source checks and CI-only installation smoke tests; no production release uploads
 └── README.md
 ```
 
