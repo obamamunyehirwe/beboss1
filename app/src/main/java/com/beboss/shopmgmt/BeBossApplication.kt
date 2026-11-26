@@ -6,6 +6,7 @@ import com.beboss.shopmgmt.util.BeBossNotificationManager
 import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.CloudSyncScheduler
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
+import com.beboss.shopmgmt.util.LegacyCredentialPepperStore
 import io.sentry.Sentry
 import io.sentry.SentryLevel
 import io.sentry.android.core.SentryAndroid
@@ -19,6 +20,15 @@ class BeBossApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Seal the old credential pepper before any local staff authentication runs.
+        // The Secure flavor has no embedded pepper and reads only this Keystore envelope.
+        LegacyCredentialPepperStore.initialize(this)
+        if (LegacyCredentialPepperStore.migrationStatus() == "TRANSITION_VALUE_AVAILABLE_BUT_NOT_PERSISTED") {
+            BeBossLogger.w(
+                "CredentialMigration",
+                "The legacy offline credential key is available for this session but was not persisted to Android Keystore. Keep this transition build installed and retry the migration before upgrading to Secure."
+            )
+        }
         ClockGuard.init(this)
         OfflineSubscriptionManager.initConfigCache(this)
         installGlobalExceptionHandler()
@@ -65,14 +75,25 @@ class BeBossApplication : Application() {
                 options.isDebug = BuildConfig.DEBUG
             }
 
-            BeBossLogger.SentryCrashReporter = { tag, message, _ ->
+            BeBossLogger.SentryCrashReporter = { tag, message, throwable ->
                 try {
                     Sentry.withScope { scope ->
                         scope.setTag("component", tag.take(64))
-                        Sentry.captureMessage(
-                            BeBossLogger.scrub(message).take(1_000),
-                            SentryLevel.ERROR
-                        )
+                        scope.setExtra("beboss_diagnostic", BeBossLogger.scrub(message).take(1_000))
+                        if (throwable != null) {
+                            // Preserve the original stack without attaching the original
+                            // potentially sensitive message/cause chain to production telemetry.
+                            val sanitized = RuntimeException(
+                                BeBossLogger.scrub(throwable.message ?: message).take(1_000)
+                            )
+                            sanitized.stackTrace = throwable.stackTrace
+                            Sentry.captureException(sanitized)
+                        } else {
+                            Sentry.captureMessage(
+                                BeBossLogger.scrub(message).take(1_000),
+                                SentryLevel.ERROR
+                            )
+                        }
                     }
                 } catch (_: Throwable) {
                     // Diagnostics must never crash the POS or interrupt a business operation.
