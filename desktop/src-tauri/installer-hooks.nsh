@@ -1,63 +1,95 @@
-; BeBoss Desktop NSIS lifecycle hooks.
-; Tauri owns the per-user installation registry metadata and application files.
-; These hooks only clean up legacy BeBoss-owned Windows integrations. They never
-; create broad firewall exceptions or delete the protected shop database.
+; BeBoss Desktop — production NSIS install / upgrade / uninstall lifecycle.
+; These hooks replace application binaries and shortcuts while preserving ALL
+; per-user SQLCipher data, keyring credentials, DPAPI key backups and sync queues.
+; The app performs key validation and database migration after installation.
 
 !include "LogicLib.nsh"
 
 !macro NSIS_HOOK_PREINSTALL
-  DetailPrint "Preparing BeBoss Desktop installation..."
-  ; Read the Windows build number directly rather than relying on the
-  ; WinVer/LogicLib condition macros in Tauri's generated NSIS script.
-  ; Windows 10 starts at build 10240; Windows 11 and Server 2016+ are newer.
+  DetailPrint "Preparing BeBoss Desktop..."
+
+  ; BeBoss Desktop 1.4.x requires Windows 10 (build 10240) or newer.
+  SetRegView 64
+  ClearErrors
   ReadRegStr $0 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion" "CurrentBuildNumber"
-  IntCmp $0 10240 beboss_windows_supported beboss_windows_unsupported beboss_windows_supported
-beboss_windows_unsupported:
-  MessageBox MB_ICONSTOP "BeBoss Desktop requires Windows 10 / Windows Server 2016 or later.$\n$\nPlease upgrade Windows before installing BeBoss."
-  Abort
-beboss_windows_supported:
-  DetailPrint "Windows requirements verified."
+  ${If} ${Errors}
+    StrCpy $0 ""
+  ${EndIf}
+  ${If} $0 == ""
+    MessageBox MB_ICONSTOP "Windows version could not be verified. BeBoss Desktop requires Windows 10 or later."
+    Abort
+  ${EndIf}
+  ${If} $0 < 10240
+    MessageBox MB_ICONSTOP "BeBoss Desktop requires Windows 10 (build 10240) or later.$\r$\n$\r$\nUpdate Windows and run this installer again."
+    Abort
+  ${EndIf}
+  DetailPrint "Windows compatibility check passed."
+
+  ; A same-path install is an in-place application upgrade / repair. The
+  ; installer replaces program files, never the user's encrypted business DB.
+  IfFileExists "$INSTDIR\BeBoss.exe" 0 beboss_fresh_install
+    MessageBox MB_ICONINFORMATION|MB_OKCANCEL "An existing BeBoss Desktop installation was found.$\r$\n$\r$\nContinue to replace the installed application files with this version? Your encrypted local database, protected credentials, pending sync queue and recovery archives will be preserved.$\r$\n$\r$\nBeBoss will verify the database key on its next launch." IDOK beboss_upgrade_confirmed
+    Abort
+  beboss_upgrade_confirmed:
+    DetailPrint "Existing installation detected. Starting a safe in-place upgrade."
+    ; Request a graceful close before replacing a loaded executable. No /F:
+    ; the installer does not forcibly terminate the user's active session.
+    nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM BeBoss.exe /T'
+    Pop $1
+    Sleep 1200
+    Goto beboss_preinstall_done
+  beboss_fresh_install:
+    DetailPrint "Fresh per-user installation selected."
+  beboss_preinstall_done:
+  DetailPrint "Protected shop data will not be deleted or overwritten by NSIS."
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  DetailPrint "Finalizing BeBoss Desktop installation..."
+  DetailPrint "Finalizing BeBoss Desktop..."
 
-  ; Remove only the two explicitly named inbound rules created by legacy
-  ; BeBoss versions. Current desktop sync uses authenticated outbound HTTPS.
+  ; Remove only legacy BeBoss-owned inbound firewall rules. Current cloud sync
+  ; uses authenticated outbound HTTPS and does not require inbound exceptions.
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop Sync"'
   Pop $1
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop"'
   Pop $1
 
-  ; Remove only the obsolete association if it still points to the old
-  ; BeBoss-owned ProgID. Never change a user-selected application association.
+  ; Remove an obsolete file association only when it is still owned by BeBoss.
   ReadRegStr $0 HKCR ".bbbackup" ""
   ${If} $0 == "BeBoss.BackupFile"
     DeleteRegKey HKCR ".bbbackup"
     DeleteRegKey HKCR "BeBoss.BackupFile"
   ${EndIf}
 
-  ; Tauri creates the BeBoss Start Menu application shortcut. Create the
-  ; optional desktop shortcut and a direct uninstall shortcut for this user.
-  CreateShortcut "$DESKTOP\BeBoss Desktop.lnk" "$INSTDIR\BeBoss.exe" "" "$INSTDIR\BeBoss.exe" 0
+  ; Keep a predictable Start Menu entry and provide a desktop launcher.
   CreateDirectory "$SMPROGRAMS\BeBoss"
+  CreateShortcut "$SMPROGRAMS\BeBoss\BeBoss Desktop.lnk" "$INSTDIR\BeBoss.exe" "" "$INSTDIR\BeBoss.exe" 0
   CreateShortcut "$SMPROGRAMS\BeBoss\Uninstall.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0
+  CreateShortcut "$DESKTOP\BeBoss Desktop.lnk" "$INSTDIR\BeBoss.exe" "" "$INSTDIR\BeBoss.exe" 0
 
-  DetailPrint "BeBoss Desktop installed for the current Windows user."
-  DetailPrint "Application: $INSTDIR\BeBoss.exe"
-  DetailPrint "Encrypted business data remains in the user's protected application-data folder."
+  DetailPrint "BeBoss Desktop installation completed."
+  DetailPrint "Application files: $INSTDIR"
+  DetailPrint "Encrypted shop data and recovery archives: preserved in the current user's app-data directory."
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  DetailPrint "Removing BeBoss Desktop application files..."
+  DetailPrint "Preparing to remove BeBoss Desktop application files..."
+  MessageBox MB_ICONINFORMATION|MB_OKCANCEL "This removes the BeBoss Desktop program and shortcuts only.$\r$\n$\r$\nYour encrypted shop database, protected credentials, pending sync queue and recovery backups will remain on this Windows user account." IDOK beboss_uninstall_confirmed
+  Abort
+  beboss_uninstall_confirmed:
 
-  ; Remove shortcuts owned by BeBoss. Do not remove the per-user app-data
-  ; directory: SQLCipher data, keychain material and local backups are retained.
+  ; Ask the application to exit before removing its executable.
+  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /IM BeBoss.exe /T'
+  Pop $1
+  Sleep 1000
+
   Delete "$DESKTOP\BeBoss Desktop.lnk"
+  Delete "$SMPROGRAMS\BeBoss\BeBoss Desktop.lnk"
   Delete "$SMPROGRAMS\BeBoss\Uninstall.lnk"
   RMDir "$SMPROGRAMS\BeBoss"
 
-  ; Remove legacy BeBoss-owned integrations only.
+  ; Never delete APPDATA/LOCALAPPDATA, the SQLCipher database, the OS keyring
+  ; entry, the DPAPI key backup or any recovery/outbox archive from NSIS.
   ReadRegStr $0 HKCR ".bbbackup" ""
   ${If} $0 == "BeBoss.BackupFile"
     DeleteRegKey HKCR ".bbbackup"
@@ -70,15 +102,20 @@ beboss_windows_supported:
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
-  DetailPrint "BeBoss Desktop was uninstalled. Shop data and backups were preserved."
+  DetailPrint "BeBoss Desktop was uninstalled. Protected shop data and backups were preserved."
 !macroend
 
 !macro NSIS_HOOK_PREFINISHPAGE
-  !ifdef MUI_FINISHPAGE_RUN_NOTCHECKED
-    !undef MUI_FINISHPAGE_RUN_NOTCHECKED
+  ; Make first launch the clear default action on the modern finish page.
+  !ifdef MUI_FINISHPAGE_RUN
+    !undef MUI_FINISHPAGE_RUN
   !endif
+  !define MUI_FINISHPAGE_RUN "$INSTDIR\BeBoss.exe"
   !ifdef MUI_FINISHPAGE_RUN_TEXT
     !undef MUI_FINISHPAGE_RUN_TEXT
   !endif
   !define MUI_FINISHPAGE_RUN_TEXT "Launch BeBoss Desktop"
+  !ifdef MUI_FINISHPAGE_RUN_NOTCHECKED
+    !undef MUI_FINISHPAGE_RUN_NOTCHECKED
+  !endif
 !macroend
