@@ -23,10 +23,10 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.BufferedInputStream
-import java.io.BufferedReader
+import java.io.EOFException
 import java.io.ByteArrayOutputStream
-import java.io.InputStreamReader
 import java.io.OutputStream
+import java.io.InputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.Inet4Address
@@ -35,6 +35,8 @@ import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
@@ -45,6 +47,105 @@ import java.util.UUID
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.abs
+
+internal data class LanHttpRequestHead(
+    val method: String,
+    val path: String,
+    val contentLength: Int,
+    val headers: Map<String, String>
+)
+
+/**
+ * Read a bounded HTTP/1.x header block without a character reader. HTTP
+ * Content-Length counts octets, so buffering through a Reader before reading
+ * the body can consume or miscount UTF-8 data.
+ */
+internal fun readLanHttpRequestHead(input: InputStream): LanHttpRequestHead {
+    val bytes = ByteArrayOutputStream()
+    var terminatorState = 0
+    var headerBlock: ByteArray? = null
+    while (bytes.size() < 32 * 4096) {
+        val next = input.read()
+        if (next < 0) throw EOFException("The LAN peer closed before completing its HTTP headers.")
+        bytes.write(next)
+        terminatorState = when (terminatorState) {
+            0 -> if (next == 13) 1 else 0
+            1 -> if (next == 10) 2 else if (next == 13) 1 else 0
+            2 -> if (next == 13) 3 else 0
+            3 -> if (next == 10) 4 else if (next == 13) 1 else 0
+            else -> 4
+        }
+        if (terminatorState == 4) {
+            headerBlock = bytes.toByteArray()
+            break
+        }
+    }
+    val current = headerBlock ?: throw IllegalArgumentException("LAN HTTP headers exceed the 128 KB safety limit.")
+    run {
+            val text = StandardCharsets.US_ASCII.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(current, 0, current.size - 4))
+                .toString()
+            val lines = text.split("\r\n")
+            val requestLine = lines.firstOrNull().orEmpty()
+            require(requestLine.length <= 4096) { "The LAN HTTP request line is too large." }
+            val requestParts = requestLine.split(' ')
+            require(
+                requestParts.size == 3 &&
+                    requestParts[0].matches(Regex("[A-Z]{1,16}")) &&
+                    requestParts[1].startsWith("/") &&
+                    requestParts[2] in setOf("HTTP/1.0", "HTTP/1.1")
+            ) { "The LAN HTTP request line is invalid." }
+
+            val headers = linkedMapOf<String, String>()
+            var declaredLength: Int? = null
+            val headerLines = lines.drop(1)
+            require(headerLines.size <= 32) { "LAN HTTP header count exceeds the limit." }
+            for (line in headerLines) {
+                require(line.length <= 4096 && line.isNotBlank()) { "A LAN HTTP header is invalid or too large." }
+                val colon = line.indexOf(':')
+                require(colon in 1 until line.lastIndex) { "A LAN HTTP header is malformed." }
+                val name = line.substring(0, colon).trim().lowercase(Locale.ROOT)
+                val value = line.substring(colon + 1).trim()
+                require(name.matches(Regex("[a-z0-9-]{1,64}"))) { "A LAN HTTP header name is invalid." }
+                require(name !in headers) { "Duplicate LAN HTTP headers are not accepted." }
+                if (name == "content-length") {
+                    require(declaredLength == null) { "Duplicate Content-Length headers are not accepted." }
+                    require(value.matches(Regex("\\d{1,8}"))) { "Content-Length is invalid." }
+                    declaredLength = value.toIntOrNull()
+                        ?: throw IllegalArgumentException("Content-Length is outside the supported range.")
+                }
+                require(name != "transfer-encoding") { "Chunked LAN HTTP requests are not supported." }
+                headers[name] = value
+            }
+            return LanHttpRequestHead(
+                method = requestParts[0],
+                path = requestParts[1],
+                contentLength = declaredLength ?: 0,
+                headers = headers
+            )
+    }
+}
+
+/** Read exactly Content-Length octets and decode them as strict UTF-8. */
+internal fun readLanHttpRequestBody(input: InputStream, contentLength: Int, maxBytes: Int): String {
+    require(contentLength >= 0) { "Content-Length cannot be negative." }
+    require(contentLength <= maxBytes) { "The LAN HTTP body exceeds the configured safety limit." }
+    val bytes = ByteArray(contentLength)
+    var offset = 0
+    while (offset < contentLength) {
+        val count = input.read(bytes, offset, contentLength - offset)
+        if (count < 0) throw EOFException("The LAN peer closed before the full HTTP body was received.")
+        if (count == 0) continue
+        offset += count
+    }
+    return StandardCharsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .decode(ByteBuffer.wrap(bytes))
+        .toString()
+}
 
 enum class LocalServerStatus {
     STOPPED,
@@ -576,66 +677,30 @@ class LocalNetworkSyncServer(
         val remoteIp = socket.inetAddress?.hostAddress ?: "Peer"
         try {
             socket.soTimeout = 10_000
-            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val input = BufferedInputStream(socket.getInputStream())
             val out = socket.getOutputStream()
-
-            val requestLine = reader.readLine() ?: return@withContext
-            if (requestLine.length > 4096) {
-                sendJsonResponse(out, 413, """{"error":"Request line too large"}""")
+            val request = try {
+                readLanHttpRequestHead(input)
+            } catch (error: Exception) {
+                sendJsonResponse(out, 400, JSONObject().put("error", error.message ?: "Invalid HTTP request").toString())
                 return@withContext
             }
-            val parts = requestLine.split(" ")
-            if (parts.size < 2) return@withContext
 
-            val method = parts[0].uppercase(Locale.ROOT)
-            val path = parts[1]
-
-            var contentLength = 0
-            var receivedSig = ""
-            var receivedTs = ""
-            var receivedNonce = ""
-            var headerCount = 0
-            var headerLine = reader.readLine()
-            while (!headerLine.isNullOrBlank()) {
-                headerCount++
-                if (headerCount > 32 || headerLine.length > 4096) {
-                    sendJsonResponse(out, 400, """{"error":"Header limits exceeded"}""")
-                    return@withContext
-                }
-                when {
-                    headerLine.startsWith("Content-Length:", ignoreCase = true) -> {
-                        contentLength = headerLine.substringAfter(":").trim().toIntOrNull() ?: 0
-                    }
-                    headerLine.startsWith("X-BeBoss-Signature:", ignoreCase = true) -> {
-                        receivedSig = headerLine.substringAfter(":").trim()
-                    }
-                    headerLine.startsWith("X-BeBoss-Timestamp:", ignoreCase = true) -> {
-                        receivedTs = headerLine.substringAfter(":").trim()
-                    }
-                    headerLine.startsWith("X-BeBoss-Nonce:", ignoreCase = true) -> {
-                        receivedNonce = headerLine.substringAfter(":").trim()
-                    }
-                }
-                headerLine = reader.readLine()
-            }
-
-            if (contentLength < 0 || contentLength > SyncPayloadValidator.MAX_RAW_PAYLOAD_BYTES) {
+            if (request.contentLength > SyncPayloadValidator.MAX_RAW_PAYLOAD_BYTES) {
                 sendJsonResponse(out, 413, """{"error":"Payload size out of safe bounds"}""")
                 return@withContext
             }
-
-            val bodyBuilder = StringBuilder()
-            if (contentLength > 0) {
-                val buffer = CharArray(contentLength)
-                var read = 0
-                while (read < contentLength) {
-                    val r = reader.read(buffer, read, contentLength - read)
-                    if (r <= 0) break
-                    read += r
-                }
-                bodyBuilder.append(buffer, 0, read)
+            val method = request.method
+            val path = request.path
+            val receivedSig = request.headers["x-beboss-signature"].orEmpty()
+            val receivedTs = request.headers["x-beboss-timestamp"].orEmpty()
+            val receivedNonce = request.headers["x-beboss-nonce"].orEmpty()
+            val body = try {
+                readLanHttpRequestBody(input, request.contentLength, SyncPayloadValidator.MAX_RAW_PAYLOAD_BYTES)
+            } catch (error: Exception) {
+                sendJsonResponse(out, 400, JSONObject().put("error", error.message ?: "Invalid HTTP body").toString())
+                return@withContext
             }
-            val body = bodyBuilder.toString()
 
             // Mandatory HMAC + Timestamp + Anti-Replay Nonce verification on ALL endpoints
             if (!verifyIncomingHeaders(method, path, receivedTs, receivedNonce, receivedSig, body)) {

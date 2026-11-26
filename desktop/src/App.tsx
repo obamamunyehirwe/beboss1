@@ -52,7 +52,7 @@ function desktopStorageScope(value: string) {
 }
 
 const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = {
-  theme: "system", density: "comfortable", accent: "orange", defaultView: "welcome",
+  theme: "dark", density: "comfortable", accent: "orange", defaultView: "welcome",
   language: "en", autoSync: true, refreshMinutes: 5, reducedMotion: false
 };
 
