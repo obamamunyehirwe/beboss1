@@ -46,6 +46,9 @@ jobs:
     env:
       VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      # Force the runner-host stable toolchain for cargo and Tauri's build subprocesses.
+      # Do not inherit a target-specific toolchain alias from a developer/runner override.
+      RUSTUP_TOOLCHAIN: stable
 
     steps:
       - name: Check out source
@@ -60,6 +63,9 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Pin this runner to its host stable Rust toolchain
+        run: rustup override set stable
 
       - name: Install Linux Tauri prerequisites
         if: runner.os == 'Linux'
