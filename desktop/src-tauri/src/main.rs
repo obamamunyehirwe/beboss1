@@ -1461,6 +1461,45 @@ fn lan_discover_hubs(shop_sync_key: String, timeout_ms: Option<u64>) -> Result<V
     Ok(hubs)
 }
 
+fn decode_verified_lan_snapshot(
+    response: &LanHttpResponse,
+    shop_secret: &str,
+    expected_timestamp: &str,
+    expected_nonce: &str,
+) -> Result<Value, String> {
+    let response_signature = response.headers.get("x-beboss-signature").map(String::as_str).unwrap_or_default();
+    if !constant_time_string_eq(response_signature, &lan_signature(shop_secret, &response.body)) {
+        return Err("The Android hub's downloaded snapshot failed its HMAC check.".into());
+    }
+    let envelope: Value = serde_json::from_str(&response.body)
+        .map_err(|_| "The Android hub returned an invalid encrypted snapshot envelope.")?;
+    let encrypted = envelope.get("enc").and_then(Value::as_str)
+        .ok_or_else(|| "The Android hub omitted its encrypted snapshot.".to_string())?;
+    let echoed_timestamp = envelope.get("ts").and_then(Value::as_str).unwrap_or_default();
+    let echoed_nonce = envelope.get("nonce").and_then(Value::as_str).unwrap_or_default();
+    if echoed_timestamp != expected_timestamp || echoed_nonce != expected_nonce {
+        return Err("The Android hub's snapshot response does not match this request.".into());
+    }
+
+    let pulled_json = decrypt_lan_body(encrypted, shop_secret, expected_timestamp, expected_nonce)?;
+    let pulled_snapshot: Value = serde_json::from_str(&pulled_json)
+        .map_err(|_| "The Android hub snapshot is not valid JSON.")?;
+    if !pulled_snapshot.is_object() || !pulled_snapshot.get("metadata").is_some_and(Value::is_object) {
+        return Err("The Android hub returned an incomplete business snapshot.".into());
+    }
+    let schema_version = pulled_snapshot["metadata"].get("schemaVersion")
+        .and_then(Value::as_u64).unwrap_or(0);
+    if !(1..=3).contains(&schema_version) {
+        return Err(format!("The Android hub snapshot schema version {schema_version} is not supported by this desktop."));
+    }
+    for key in ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users", "tombstones"] {
+        if !pulled_snapshot.get(key).is_some_and(Value::is_array) {
+            return Err(format!("The Android hub snapshot is missing its {key} collection. No data was imported."));
+        }
+    }
+    Ok(pulled_snapshot)
+}
+
 #[tauri::command(rename_all = "camelCase")]
 fn lan_pull_from_hub(
     shop_sync_key: String,
@@ -1487,36 +1526,9 @@ fn lan_pull_from_hub(
         return Err(format!("The Android hub rejected the read-only recovery request (HTTP {}).", pull.status_code));
     }
 
-    let response_signature = pull.headers.get("x-beboss-signature").map(String::as_str).unwrap_or_default();
-    if !constant_time_string_eq(response_signature, &lan_signature(&shop_secret, &pull.body)) {
-        return Err("The Android hub's downloaded snapshot failed its HMAC check.".into());
-    }
-    let envelope: Value = serde_json::from_str(&pull.body)
-        .map_err(|_| "The Android hub returned an invalid encrypted snapshot envelope.")?;
-    let encrypted = envelope.get("enc").and_then(Value::as_str)
-        .ok_or_else(|| "The Android hub omitted its encrypted snapshot.".to_string())?;
-    let echoed_timestamp = envelope.get("ts").and_then(Value::as_str).unwrap_or_default();
-    let echoed_nonce = envelope.get("nonce").and_then(Value::as_str).unwrap_or_default();
-    if echoed_timestamp != pull_timestamp || echoed_nonce != pull_nonce {
-        return Err("The Android hub's snapshot response does not match this request.".into());
-    }
-
-    let pulled_json = decrypt_lan_body(encrypted, &shop_secret, &pull_timestamp, &pull_nonce)?;
-    let pulled_snapshot: Value = serde_json::from_str(&pulled_json)
-        .map_err(|_| "The Android hub snapshot is not valid JSON.")?;
-    if !pulled_snapshot.is_object() || !pulled_snapshot.get("metadata").is_some_and(Value::is_object) {
-        return Err("The Android hub returned an incomplete business snapshot.".into());
-    }
-    let schema_version = pulled_snapshot["metadata"].get("schemaVersion")
-        .and_then(Value::as_u64).unwrap_or(0);
-    if !(1..=3).contains(&schema_version) {
-        return Err(format!("The Android hub snapshot schema version {schema_version} is not supported by this desktop."));
-    }
-    for key in ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users", "tombstones"] {
-        if !pulled_snapshot.get(key).is_some_and(Value::is_array) {
-            return Err(format!("The Android hub snapshot is missing its {key} collection. No data was imported."));
-        }
-    }
+    let pulled_snapshot = decode_verified_lan_snapshot(
+        &pull, &shop_secret, &pull_timestamp, &pull_nonce
+    )?;
 
     let pulled_records = [
         "products", "customers", "sales", "saleItems", "customerPayments",
@@ -1822,6 +1834,118 @@ mod database_encryption_tests {
         drop(connection);
         let directory = path.parent().expect("test path has a parent");
         let _ = fs::remove_dir_all(directory);
+    }
+
+
+    #[test]
+    fn read_only_phone_recovery_accepts_a_valid_hmac_and_aes_gcm_snapshot() {
+        let secret = "ab".repeat(32);
+        let timestamp = "1790000000000";
+        let nonce = "recovery-nonce-123";
+        let snapshot = serde_json::json!({
+            "metadata": { "schemaVersion": 3, "timestamp": 1790000000000i64 },
+            "shopProfile": { "shopName": "BeBoss Test Shop" },
+            "products": [], "customers": [], "sales": [], "saleItems": [],
+            "customerPayments": [], "purchases": [], "stockTransfers": [],
+            "branches": [], "users": [], "tombstones": []
+        });
+        let encrypted = encrypt_lan_body(&snapshot.to_string(), &secret, timestamp, nonce)
+            .expect("snapshot should encrypt");
+        let body = serde_json::json!({ "enc": encrypted, "ts": timestamp, "nonce": nonce }).to_string();
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("x-beboss-signature".into(), lan_signature(&secret, &body));
+        let response = LanHttpResponse { status_code: 200, headers, body };
+
+        let decoded = decode_verified_lan_snapshot(&response, &secret, timestamp, nonce)
+            .expect("signed and encrypted phone snapshot should verify");
+        assert_eq!(decoded["metadata"]["schemaVersion"], 3);
+        assert!(decoded["products"].is_array());
+    }
+
+    #[test]
+    fn read_only_phone_recovery_rejects_a_modified_response_signature() {
+        let secret = "cd".repeat(32);
+        let timestamp = "1790000000000";
+        let nonce = "recovery-nonce-456";
+        let snapshot = serde_json::json!({
+            "metadata": { "schemaVersion": 3 },
+            "products": [], "customers": [], "sales": [], "saleItems": [],
+            "customerPayments": [], "purchases": [], "stockTransfers": [],
+            "branches": [], "users": [], "tombstones": []
+        });
+        let encrypted = encrypt_lan_body(&snapshot.to_string(), &secret, timestamp, nonce)
+            .expect("snapshot should encrypt");
+        let body = serde_json::json!({ "enc": encrypted, "ts": timestamp, "nonce": nonce }).to_string();
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("x-beboss-signature".into(), "00".repeat(32));
+        let response = LanHttpResponse { status_code: 200, headers, body };
+
+        assert!(decode_verified_lan_snapshot(&response, &secret, timestamp, nonce).is_err());
+    }
+
+    #[test]
+    fn read_only_phone_recovery_rejects_a_response_bound_to_another_request() {
+        let secret = "ef".repeat(32);
+        let timestamp = "1790000000000";
+        let nonce = "recovery-nonce-789";
+        let snapshot = serde_json::json!({
+            "metadata": { "schemaVersion": 3 },
+            "products": [], "customers": [], "sales": [], "saleItems": [],
+            "customerPayments": [], "purchases": [], "stockTransfers": [],
+            "branches": [], "users": [], "tombstones": []
+        });
+        let encrypted = encrypt_lan_body(&snapshot.to_string(), &secret, timestamp, nonce)
+            .expect("snapshot should encrypt");
+        let body = serde_json::json!({ "enc": encrypted, "ts": timestamp, "nonce": "other-request" }).to_string();
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("x-beboss-signature".into(), lan_signature(&secret, &body));
+        let response = LanHttpResponse { status_code: 200, headers, body };
+
+        assert!(decode_verified_lan_snapshot(&response, &secret, timestamp, nonce).is_err());
+    }
+
+    #[test]
+    fn read_only_phone_recovery_rejects_incomplete_business_collections() {
+        let secret = "11".repeat(32);
+        let timestamp = "1790000000000";
+        let nonce = "recovery-nonce-abc";
+        let snapshot = serde_json::json!({
+            "metadata": { "schemaVersion": 3 },
+            "products": [], "customers": [], "sales": [], "saleItems": [],
+            "customerPayments": [], "purchases": [], "stockTransfers": [],
+            "branches": [], "users": []
+        });
+        let encrypted = encrypt_lan_body(&snapshot.to_string(), &secret, timestamp, nonce)
+            .expect("snapshot should encrypt");
+        let body = serde_json::json!({ "enc": encrypted, "ts": timestamp, "nonce": nonce }).to_string();
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("x-beboss-signature".into(), lan_signature(&secret, &body));
+        let response = LanHttpResponse { status_code: 200, headers, body };
+
+        let error = decode_verified_lan_snapshot(&response, &secret, timestamp, nonce)
+            .expect_err("snapshot without tombstones must be rejected");
+        assert!(error.contains("tombstones"));
+    }
+
+    #[test]
+    fn read_only_phone_recovery_rejects_unknown_schema_versions() {
+        let secret = "22".repeat(32);
+        let timestamp = "1790000000000";
+        let nonce = "recovery-nonce-def";
+        let snapshot = serde_json::json!({
+            "metadata": { "schemaVersion": 99 },
+            "products": [], "customers": [], "sales": [], "saleItems": [],
+            "customerPayments": [], "purchases": [], "stockTransfers": [],
+            "branches": [], "users": [], "tombstones": []
+        });
+        let encrypted = encrypt_lan_body(&snapshot.to_string(), &secret, timestamp, nonce)
+            .expect("snapshot should encrypt");
+        let body = serde_json::json!({ "enc": encrypted, "ts": timestamp, "nonce": nonce }).to_string();
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("x-beboss-signature".into(), lan_signature(&secret, &body));
+        let response = LanHttpResponse { status_code: 200, headers, body };
+
+        assert!(decode_verified_lan_snapshot(&response, &secret, timestamp, nonce).is_err());
     }
 
     #[test]
