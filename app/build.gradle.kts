@@ -199,8 +199,6 @@ android {
       // One-time migration release: move the old pepper into Android Keystore at first launch.
       // This constant exists in Transition only; Secure intentionally has no such field.
       buildConfigField("String", "BEBOSS_SECURITY_PEPPER", envConfigString("BEBOSS_SECURITY_PEPPER"))
-      // This field exists in TransitionRelease only; SecureRelease has no such constant.
-      buildConfigField("String", "BEBOSS_SECURITY_PEPPER", envConfigString("BEBOSS_SECURITY_PEPPER"))
     }
     create("secure") {
       dimension = "credentialCompatibility"
