@@ -42,8 +42,19 @@ try {
             throw "The configured Authenticode certificate is not currently valid."
         }
 
-        $eku = $certificate.Extensions | Where-Object { $_.Oid.Value -eq "2.5.29.37" } | Select-Object -First 1
-        if (-not $eku -or $eku.Format($false) -notmatch "1\.3\.6\.1\.5\.5\.7\.3\.3") {
+        $ekuExtension = $certificate.Extensions |
+            Where-Object { $_ -is [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension] } |
+            Select-Object -First 1
+        $hasCodeSigningUsage = $false
+        if ($ekuExtension) {
+            foreach ($usage in $ekuExtension.EnhancedKeyUsages) {
+                if ($usage.Value -eq "1.3.6.1.5.5.7.3.3") {
+                    $hasCodeSigningUsage = $true
+                    break
+                }
+            }
+        }
+        if (-not $hasCodeSigningUsage) {
             throw "The configured certificate does not include the Code Signing extended key usage."
         }
 
