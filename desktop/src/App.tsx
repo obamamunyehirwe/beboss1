@@ -157,7 +157,11 @@ function NativeDesktopApp() {
         credentials,
         { deviceId: installationId, deviceName: "BeBoss Desktop · " + platform, ...(confirmDeviceFee ? { confirmDeviceFee: true } : {}) }
       );
-      const pending = await window.beBossDesktop.local.pending();
+      const shopSyncKey = s(response.shop?.id);
+      if (!shopSyncKey) {
+        throw new Error("BeBoss Cloud did not return a registered shop identity. Local sync data was not opened.");
+      }
+      const pending = await window.beBossDesktop.local.pending(shopSyncKey);
       let next = { ...response, snapshot: ensureSnapshot(response.snapshot) } as CloudState;
       if (pending.length && next.snapshot) {
         const latest = ensureSnapshot(pending[pending.length - 1].payload as Snapshot);
@@ -167,11 +171,15 @@ function NativeDesktopApp() {
             deviceId: installationId, expectedUpdatedAt: next.snapshotUpdatedAt, snapshot: merge.snapshot
           });
           next = { ...next, snapshot: ensureSnapshot(merged.snapshot), snapshotUpdatedAt: merged.uploadedAt };
-          await window.beBossDesktop.local.acknowledge(pending.map((item) => item.id));
+          await window.beBossDesktop.local.acknowledge(shopSyncKey, pending.map((item) => item.id));
           if (merge.conflictsResolved > 0) setNotice(`Reconnected and merged ${merge.conflictsResolved} concurrent record update(s) using BeBoss version and tombstone rules.`);
         }
       }
       setCloud(next); setOwner(credentials); setOffline(false);
+      if (next.snapshot) {
+        await window.beBossDesktop.local.saveBaseline(shopSyncKey, next.snapshot as unknown as Record<string, unknown>, next.snapshotUpdatedAt)
+          .catch((error) => console.warn("Tenant-scoped cloud baseline was not refreshed; the pending queue remains authoritative.", error));
+      }
       await saveCache(credentials, next);
       setNotice("Shop data was loaded from BeBoss Cloud and this licensed desktop installation is synchronized.");
       window.setTimeout(() => setNotice(""), 5000);
@@ -196,20 +204,27 @@ function NativeDesktopApp() {
       if (cached) {
         try {
           const stored = JSON.parse(cached) as CloudState;
-          if (stored.shop && stored.snapshotUpdatedAt !== undefined) {
-            const localSnapshot = await window.beBossDesktop.local.load().catch(() => null);
+          if (stored.shop && stored.snapshotUpdatedAt !== undefined &&
+              s(stored.owner?.username).trim().toLowerCase() === credentials.username.trim().toLowerCase()) {
+            const shopSyncKey = s(stored.shop.id);
+            const localSnapshot = shopSyncKey
+              ? await window.beBossDesktop.local.load(shopSyncKey).catch(() => null)
+              : null;
             setCloud({ ...stored, snapshot: ensureSnapshot(localSnapshot || stored.snapshot) });
             setOwner(credentials); setOffline(true);
-            setError("BeBoss Cloud is unavailable. Showing the last encrypted device cache; pending changes remain local until the cloud confirms them. " + message);
+            setError("BeBoss Cloud is unavailable. Showing this shop's encrypted device cache; other shop queues remain isolated and pending changes stay local until the cloud confirms them. " + message);
             return true;
           }
         } catch { /* ignore corrupt cache */ }
       }
-      if (cloud?.snapshot) {
-        const localSnapshot = await window.beBossDesktop.local.load().catch(() => null);
+      if (cloud?.snapshot && s(cloud.owner?.username).trim().toLowerCase() === credentials.username.trim().toLowerCase()) {
+        const shopSyncKey = s(cloud.shop?.id);
+        const localSnapshot = shopSyncKey
+          ? await window.beBossDesktop.local.load(shopSyncKey).catch(() => null)
+          : null;
         setCloud({ ...cloud, snapshot: ensureSnapshot(localSnapshot || cloud.snapshot) });
         setOwner(credentials); setOffline(true);
-        setError("BeBoss Cloud is unavailable. Showing the last encrypted device cache; pending changes remain local until the cloud confirms them. " + message);
+        setError("BeBoss Cloud is unavailable. Showing this shop's encrypted device cache; pending changes remain local until the cloud confirms them. " + message);
         return true;
       }
       setError(message);
@@ -413,15 +428,21 @@ function NativeDesktopApp() {
       const installationId = deviceId || await window.beBossDesktop.getDeviceId();
       if (isDesktopInstallId(installationId)) {
         if (installationId !== deviceId) setDeviceId(installationId);
-        const [localSnapshot, cachedValue] = await Promise.all([
-          window.beBossDesktop.local.load().catch(() => null),
-          window.beBossDesktop.secureStore.get("shop-cache:" + credentials.username).catch(() => null)
-        ]);
-        let cachedSnapshot: unknown = null;
+        const cachedValue = await window.beBossDesktop.secureStore.get("shop-cache:" + credentials.username).catch(() => null);
+        let cachedState: CloudState | null = null;
         if (cachedValue) {
-          try { cachedSnapshot = (JSON.parse(cachedValue) as CloudState).snapshot; }
-          catch { cachedSnapshot = null; }
+          try {
+            const parsed = JSON.parse(cachedValue) as CloudState;
+            if (s(parsed.owner?.username).trim().toLowerCase() === credentials.username.trim().toLowerCase()) {
+              cachedState = parsed;
+            }
+          } catch { cachedState = null; }
         }
+        const cachedShopId = s(cachedState?.shop?.id);
+        const localSnapshot = cachedShopId
+          ? await window.beBossDesktop.local.load(cachedShopId).catch(() => null)
+          : null;
+        const cachedSnapshot = cachedState?.snapshot ?? null;
         if (!hasBusinessData(localSnapshot) && !hasBusinessData(cachedSnapshot)) {
           const platform = /Windows/i.test(navigator.userAgent) ? "Windows"
             : /Mac OS X|Macintosh/i.test(navigator.userAgent) ? "macOS"
@@ -535,13 +556,15 @@ function NativeDesktopApp() {
     const subscriptionStatus = s(cloud.shop.subscription_status || next.shopProfile.subscriptionStatus).toUpperCase();
     const subscriptionExpiresAt = n(cloud.shop.subscription_expires_at || next.shopProfile.subscriptionExpiresAt);
     const requiresActiveSubscription = operation === "SALE";
+    const shopSyncKey = s(cloud.shop?.id);
+    if (!shopSyncKey) throw new Error("The registered shop identity is missing; this change was not written to local storage.");
     if (offline) {
-      const localTransaction = await window.beBossDesktop.local.queue(operation, next, deviceId, cloud.snapshotUpdatedAt, requiresActiveSubscription, subscriptionExpiresAt, subscriptionStatus);
+      const localTransaction = await window.beBossDesktop.local.queue(shopSyncKey, operation, next, deviceId, cloud.snapshotUpdatedAt, requiresActiveSubscription, subscriptionExpiresAt, subscriptionStatus);
       setCloud({ ...cloud, snapshot: ensureSnapshot(localTransaction.payload as Snapshot) });
       setNotice("Saved to the encrypted retry queue on this device. It is not cloud-committed yet and will retry when the connection returns.");
       return;
     }
-    const localTransaction = await window.beBossDesktop.local.queue(operation, next, deviceId, cloud.snapshotUpdatedAt, requiresActiveSubscription, subscriptionExpiresAt, subscriptionStatus);
+    const localTransaction = await window.beBossDesktop.local.queue(shopSyncKey, operation, next, deviceId, cloud.snapshotUpdatedAt, requiresActiveSubscription, subscriptionExpiresAt, subscriptionStatus);
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await callDesktopApi<{ ok: true; uploadedAt: number; snapshot: Snapshot }>(
@@ -549,7 +572,7 @@ function NativeDesktopApp() {
       );
       const updated = { ...cloud, snapshot: ensureSnapshot(response.snapshot), snapshotUpdatedAt: response.uploadedAt };
       setCloud(updated);
-      await window.beBossDesktop.local.acknowledge([localTransaction.id]);
+      await window.beBossDesktop.local.acknowledge(shopSyncKey, [localTransaction.id]);
       await saveCache(owner, updated);
       setNotice("Changes were accepted by BeBoss Cloud and saved to the shared shop snapshot.");
       setTimeout(() => setNotice(""), 4500);
@@ -571,7 +594,7 @@ function NativeDesktopApp() {
           // A single bounded retry: bootstrap reloads the latest signed snapshot and
           // merges the encrypted outbox using HLC/version/tombstone rules.
           const reconciled = await bootstrap(owner, false);
-          const remaining = await window.beBossDesktop.local.pending();
+          const remaining = await window.beBossDesktop.local.pending(shopSyncKey);
           if (reconciled && !remaining.some((item) => item.id === localTransaction.id)) {
             setNotice("Concurrent phone/desktop changes were merged and the transaction was accepted by BeBoss Cloud.");
             return;
@@ -713,15 +736,17 @@ function NativeDesktopApp() {
           hlcTimestamp: now,
           lastModifiedDeviceId: "DESKTOP"
         };
+        const shopSyncKey = s(latest.shop?.id);
+        if (!shopSyncKey) throw new Error("The registered shop identity is unavailable; staff changes were not queued.");
         const queued = await window.beBossDesktop.local.queue(
-          "STAFF_ACCESS_UPDATE", next, deviceId, latest.snapshotUpdatedAt, false,
+          shopSyncKey, "STAFF_ACCESS_UPDATE", next, deviceId, latest.snapshotUpdatedAt, false,
           n(latest.shop.subscription_expires_at), s(latest.shop.subscription_status).toUpperCase()
         );
         try {
           const saved = await callDesktopApi<{ ok: true; uploadedAt: number; snapshot: Snapshot }>(
             "save_snapshot", owner, { deviceId, expectedUpdatedAt: latest.snapshotUpdatedAt, snapshot: queued.payload }
           );
-          await window.beBossDesktop.local.acknowledge([queued.id]);
+          await window.beBossDesktop.local.acknowledge(shopSyncKey, [queued.id]);
           const updated: CloudState = {
             ...latest,
             snapshot: ensureSnapshot(saved.snapshot),
