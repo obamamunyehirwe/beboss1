@@ -1,6 +1,28 @@
 -- The direct MTN MoMo Collection rail is an asynchronous Request-to-Pay
 -- provider. Expand the server-only ledger and throttle allow-list without
 -- granting any new client access or enabling direct Airtel API calls.
+
+-- Normalize only historical hosted-checkout requests that have a corresponding
+-- server ledger. Manual proof submissions (including legacy MTN/Airtel claims)
+-- have no gateway ledger and remain untouched.
+update public.payment_requests p
+set provider = case lower(trim(p.provider))
+  when 'flutterwave' then 'FLUTTERWAVE'
+  when 'stripe' then 'STRIPE'
+  else p.provider
+end
+where lower(trim(p.provider)) in ('flutterwave', 'stripe')
+  and exists (
+    select 1
+    from public.payment_gateway_transactions t
+    where t.payment_request_id = p.id
+      and t.provider = case lower(trim(p.provider))
+        when 'flutterwave' then 'FLUTTERWAVE'
+        when 'stripe' then 'STRIPE'
+        else ''
+      end
+  );
+
 alter table public.payment_gateway_transactions
   drop constraint if exists payment_gateway_transactions_provider_check;
 alter table public.payment_gateway_transactions
