@@ -151,7 +151,7 @@ function ReleasesPage() {
       toast.error("Desktop release version must match the current source version " + sourceVersion + ". Update the desktop version manifests and rebuild first.");
       return;
     }
-    if (!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
       toast.error("Enter a valid semantic version.");
       return;
     }
@@ -628,7 +628,7 @@ function ReleasesPage() {
                   <div className="space-y-1.5">
                     <Label htmlFor="desktop-version">Desktop version</Label>
                     <p className="text-xs text-muted-foreground">Must match the app version embedded in desktop/package.json: {desktopSourceVersionQuery.data ?? "checking source…"}.</p>
-                    <Input id="desktop-version" value={desktopVersion} onChange={(event) => setDesktopVersion(event.target.value)} required maxLength={40} pattern="^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$" placeholder={desktopSourceVersionQuery.data ?? "Checking desktop/package.json…"} disabled={!desktopSourceVersionQuery.data || !!desktopStage} />
+                    <Input id="desktop-version" value={desktopVersion} onChange={(event) => setDesktopVersion(event.target.value)} required maxLength={40} pattern="^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$" placeholder={desktopSourceVersionQuery.data ?? "Checking desktop/package.json…"} disabled={!desktopSourceVersionQuery.data || !!desktopStage} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="desktop-notes">Release notes</Label>
