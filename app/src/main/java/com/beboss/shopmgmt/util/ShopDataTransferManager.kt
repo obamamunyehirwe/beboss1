@@ -553,7 +553,8 @@ object ShopDataTransferManager {
         val baos = ByteArrayOutputStream()
         GZIPOutputStream(baos).use { gzip -> gzip.write(rawBytes) }
         val payload = Base64.getEncoder().encodeToString(baos.toByteArray())
-        val signature = computeHmacHex(key, payload).take(32).uppercase(Locale.ROOT)
+        // Full SHA-256 HMAC (256 bits) matches the desktop/server BBSHARE2 protocol.
+        val signature = computeHmacHex(key, payload).uppercase(Locale.ROOT)
         return "$SHOP_SHARE_TOKEN_PREFIX$signature:$payload"
     }
 
@@ -587,12 +588,18 @@ object ShopDataTransferManager {
         require(separator > 0) { "Malformed BBSHARE2 token structure." }
         val providedSignature = remainder.substring(0, separator).uppercase(Locale.ROOT)
         val payload = remainder.substring(separator + 1)
-        require(providedSignature.matches(Regex("[A-F0-9]{32}"))) {
+        require(providedSignature.matches(Regex("[A-F0-9]{64}"))) {
             "Malformed BBSHARE2 signature."
         }
-        val expectedSignature = computeHmacHex(shopShareHmacKey(shopSecret), payload)
-            .take(32).uppercase(Locale.ROOT)
-        require(constantTimeEquals(providedSignature, expectedSignature)) {
+        val shopScopedSignature = computeHmacHex(shopShareHmacKey(shopSecret), payload).uppercase(Locale.ROOT)
+        val verifiedForShop = constantTimeEquals(providedSignature, shopScopedSignature)
+        // Read-only compatibility for snapshots created by earlier desktop releases,
+        // which used a full-length BBSHARE2 HMAC with the old project-wide key.
+        // New mobile and desktop writers always use the shop-derived key above.
+        val verifiedLegacy = if (verifiedForShop) false else runCatching {
+            constantTimeEquals(providedSignature, computeShareHmac(payload).uppercase(Locale.ROOT))
+        }.getOrDefault(false)
+        require(verifiedForShop || verifiedLegacy) {
             "Shop-scoped branch token integrity check failed. Confirm this token belongs to the signed-in shop."
         }
         return decompressSharePayload(payload)

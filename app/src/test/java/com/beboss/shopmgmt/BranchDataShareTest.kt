@@ -239,6 +239,7 @@ class BranchDataShareTest {
         val token = ShopDataTransferManager.createShopScopedShareToken(json, shopSecret)
 
         assertTrue(token.startsWith("BBSHARE2:"))
+        assertEquals(64, token.removePrefix("BBSHARE2:").substringBefore(':').length)
         val parsed = ShopDataTransferManager.parseShopPackageString(token, shopSecret = shopSecret)
         assertEquals("BeBoss Kigali", parsed.shopName)
 
