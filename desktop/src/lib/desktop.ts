@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { LanHub, LanSyncResult } from "../env";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 type PendingTransaction = { id: string; payload: any; hlc: number; expectedUpdatedAt: number };
