@@ -39,7 +39,7 @@ export async function checkCloudDatabase(): Promise<{
   details: string;
 }> {
   const host = new URL(url).host;
-  const endpoint = url.replace(/\/+$/, "") + "/rest/v1/";
+  const endpoint = url.replace(/\/+$/, "") + "/rest/v1/app_releases?select=id&limit=1";
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 8_000);
   const startedAt = performance.now();
@@ -48,7 +48,7 @@ export async function checkCloudDatabase(): Promise<{
       method: "GET",
       headers: {
         apikey: publishableKey,
-        Accept: "application/openapi+json"
+        Accept: "application/json"
       },
       cache: "no-store",
       signal: controller.signal
@@ -58,9 +58,9 @@ export async function checkCloudDatabase(): Promise<{
       throw new Error("Supabase PostgreSQL Data API returned HTTP " + response.status +
         (detail ? ": " + detail : ""));
     }
-    const specification = await response.json().catch(() => null);
-    if (!specification || typeof specification !== "object") {
-      throw new Error("Supabase responded, but its PostgreSQL Data API did not return a valid schema response.");
+    const rows = await response.json().catch(() => null);
+    if (!Array.isArray(rows)) {
+      throw new Error("Supabase responded, but the protected public-release query did not return a valid database response.");
     }
     return {
       host,
