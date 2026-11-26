@@ -1411,3 +1411,136 @@ export const managePaymentGatewayRefund = createServerFn({ method: "POST" })
     }>(ctx, "manage-payment-refund", data);
   });
 
+
+
+// ---------------- Native desktop releases ----------------
+const desktopReleaseDispatchSchema = z.object({
+  version: z.string().trim().regex(/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/, "Use a semantic version such as 1.3.1."),
+  release_notes: z.string().trim().max(4000).default(""),
+});
+
+const GITHUB_RELEASE_REPOSITORY = "obamamunyehirwe/beboss1";
+const GITHUB_DESKTOP_RELEASE_WORKFLOW = "desktop-release.yml";
+const GITHUB_API_HEADERS = (token: string) => ({
+  Accept: "application/vnd.github+json",
+  Authorization: `Bearer ${token}`,
+  "X-GitHub-Api-Version": "2022-11-28",
+  "User-Agent": "BeBoss-Admin-Desktop-Releases",
+});
+
+export const dispatchDesktopRelease = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: z.infer<typeof desktopReleaseDispatchSchema>) => desktopReleaseDispatchSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requirePermission(ctx, "releases.manage");
+    const token = String(process.env["GITHUB_RELEASE_TOKEN"] ?? "").trim();
+    if (!token) {
+      throw new Error("Desktop publishing is not configured on this server. Add GITHUB_RELEASE_TOKEN as a server-only secret with Actions write and Contents write access to obamamunyehirwe/beboss1.");
+    }
+
+    const tagName = `desktop-v${data.version}`;
+    const headers = GITHUB_API_HEADERS(token);
+    const tagResponse = await fetch(
+      `https://api.github.com/repos/${GITHUB_RELEASE_REPOSITORY}/git/ref/tags/${encodeURIComponent(tagName)}`,
+      { headers, cache: "no-store" },
+    );
+    if (tagResponse.ok) throw new Error(`The release tag ${tagName} already exists. Choose a new version instead of overwriting a published build.`);
+    if (tagResponse.status !== 404) {
+      throw new Error(`Could not check the desktop release tag (GitHub HTTP ${tagResponse.status}). Verify the server token permissions.`);
+    }
+
+    const dispatchResponse = await fetch(
+      `https://api.github.com/repos/${GITHUB_RELEASE_REPOSITORY}/actions/workflows/${GITHUB_DESKTOP_RELEASE_WORKFLOW}/dispatches`,
+      {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ref: "main",
+          inputs: { version: data.version, release_notes: data.release_notes },
+        }),
+        cache: "no-store",
+      },
+    );
+    if (dispatchResponse.status !== 204) {
+      const detail = await dispatchResponse.text().catch(() => "");
+      throw new Error(`GitHub did not accept the desktop release workflow (HTTP ${dispatchResponse.status}). ${detail.slice(0, 500)}`);
+    }
+
+    await audit(ctx, admin.email, "DISPATCH_DESKTOP_RELEASE", tagName, "Started native Windows, macOS and Linux build/release workflow.")
+      .catch(() => console.warn("[BeBoss audit] Desktop release dispatch succeeded, but its audit event could not be recorded."));
+    return {
+      ok: true,
+      tagName,
+      workflowUrl: `https://github.com/${GITHUB_RELEASE_REPOSITORY}/actions/workflows/${GITHUB_DESKTOP_RELEASE_WORKFLOW}`,
+      releaseUrl: `https://github.com/${GITHUB_RELEASE_REPOSITORY}/releases/tag/${tagName}`,
+    };
+  });
+
+export const getDesktopReleaseStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const ctx = context as unknown as Ctx;
+    await requirePermission(ctx, "releases.manage");
+    const token = String(process.env["GITHUB_RELEASE_TOKEN"] ?? "").trim();
+    const workflowUrl = `https://github.com/${GITHUB_RELEASE_REPOSITORY}/actions/workflows/${GITHUB_DESKTOP_RELEASE_WORKFLOW}`;
+    const releasesUrl = `https://github.com/${GITHUB_RELEASE_REPOSITORY}/releases`;
+    if (!token) {
+      return {
+        configured: false,
+        workflowUrl,
+        releasesUrl,
+        latestRun: null,
+        latestRelease: null,
+      };
+    }
+
+    const headers = GITHUB_API_HEADERS(token);
+    const [runResponse, releaseResponse] = await Promise.all([
+      fetch(`https://api.github.com/repos/${GITHUB_RELEASE_REPOSITORY}/actions/workflows/${GITHUB_DESKTOP_RELEASE_WORKFLOW}/runs?per_page=10&branch=main`, { headers, cache: "no-store" }),
+      fetch(`https://api.github.com/repos/${GITHUB_RELEASE_REPOSITORY}/releases?per_page=30`, { headers, cache: "no-store" }),
+    ]);
+    if (!runResponse.ok) {
+      throw new Error(`Could not read desktop workflow status (GitHub HTTP ${runResponse.status}). Check GITHUB_RELEASE_TOKEN permissions.`);
+    }
+    if (!releaseResponse.ok) {
+      throw new Error(`Could not read official desktop releases (GitHub HTTP ${releaseResponse.status}).`);
+    }
+
+    const runPayload = await runResponse.json() as { workflow_runs?: Array<Record<string, unknown>> };
+    const releasePayload = await releaseResponse.json() as Array<Record<string, unknown>>;
+    const latestRun = (runPayload.workflow_runs ?? []).map((run) => ({
+      id: Number(run.id) || 0,
+      status: String(run.status ?? ""),
+      conclusion: run.conclusion ? String(run.conclusion) : null,
+      event: String(run.event ?? ""),
+      createdAt: String(run.created_at ?? ""),
+      updatedAt: String(run.updated_at ?? ""),
+      htmlUrl: String(run.html_url ?? workflowUrl),
+      runNumber: Number(run.run_number) || 0,
+      headSha: String(run.head_sha ?? ""),
+    })).sort((a, b) => b.id - a.id)[0] ?? null;
+
+    const release = releasePayload.find((item) =>
+      typeof item.tag_name === "string" &&
+      item.tag_name.startsWith("desktop-v") &&
+      item.draft !== true &&
+      item.prerelease !== true
+    );
+    const latestRelease = release ? {
+      tagName: String(release.tag_name),
+      name: String(release.name ?? release.tag_name),
+      publishedAt: release.published_at ? String(release.published_at) : null,
+      htmlUrl: String(release.html_url ?? releasesUrl),
+      assets: Array.isArray(release.assets)
+        ? (release.assets as Array<Record<string, unknown>>).map((asset) => ({
+            name: String(asset.name ?? ""),
+            sizeBytes: Number(asset.size) || 0,
+            downloadCount: Number(asset.download_count) || 0,
+            downloadUrl: String(asset.browser_download_url ?? ""),
+          })).filter((asset) => asset.name && asset.downloadUrl.startsWith("https://github.com/"))
+        : [],
+    } : null;
+
+    return { configured: true, workflowUrl, releasesUrl, latestRun, latestRelease };
+  });

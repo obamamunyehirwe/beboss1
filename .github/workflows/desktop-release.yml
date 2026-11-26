@@ -5,6 +5,16 @@ on:
     tags:
       - "desktop-v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version without the desktop-v prefix (for example 1.3.1)"
+        type: string
+        required: true
+      release_notes:
+        description: "Release notes shown on the official desktop release"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -53,6 +63,18 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Validate manually requested desktop version
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Use a semantic version such as 1.3.1."
+            exit 1
+          fi
 
       - name: Reject exposed or invalid Windows signing certificate
         if: runner.os == 'Windows'
@@ -113,8 +135,9 @@ jobs:
             echo "::error::Configure all six Apple signing/notarization secrets together, or leave all of them empty."
             exit 1
           fi
-          if [[ "$configured" -eq 0 ]]; then
-            echo "::warning::Apple signing credentials are not configured. The DMG will be built, but macOS may show an unidentified-developer warning."
+          if [[ "$configured" -ne 6 ]]; then
+            echo "::error::A production macOS release requires all six Apple signing and notarization secrets. Configure them together before publishing."
+            exit 1
           fi
 
       - name: Install pinned desktop dependencies
@@ -201,7 +224,7 @@ jobs:
 
   publish:
     name: Publish one multi-platform desktop release
-    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    if: startsWith(github.ref, 'refs/tags/desktop-v') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-22.04
     steps:
@@ -234,7 +257,9 @@ jobs:
       - name: Publish BeBoss desktop release
         uses: softprops/action-gh-release@v2
         with:
-          name: BeBoss Desktop ${{ github.ref_name }}
+          name: BeBoss Desktop ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('desktop-v{0}', inputs.version) || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
@@ -243,6 +268,8 @@ jobs:
             release-assets/BeBoss-Linux-x64.AppImage
             release-assets/SHA256SUMS.txt
           body: |
+            ${{ inputs.release_notes }}
+
             Official BeBoss native desktop installers for Windows, macOS and Linux.
 
-            The Windows installer is published only after Authenticode signing and signature verification. macOS signing and notarization are applied when the Apple release credentials are configured for this repository. Verify downloaded packages with the attached SHA-256 manifest.
+            Windows is published only after Authenticode signing and signature verification. macOS is published only after Apple code signing and notarization. Verify downloaded packages with the attached SHA-256 manifest.
