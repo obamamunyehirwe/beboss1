@@ -224,34 +224,35 @@ class SyncCoordinator(
      * created/updated the shop row. It is wrapped by Android Keystore before storage.
      */
     private suspend fun prepareShopLanSecretFromCloud(): Boolean {
-        if (!SupabaseAdminClient.isConfigured()) return localNetworkSyncServer
-            .useCachedShopSharedSecret(
-                SupabaseAdminClient.computeShopSyncKey(
-                    allUsers.value.firstOrNull { it.role.toString().equals("OWNER", true) }?.username
-                        ?: shopProfile.value.email.substringBefore("@"),
-                    allUsers.value.firstOrNull { it.role.toString().equals("OWNER", true) }?.phone
-                        ?.ifBlank { shopProfile.value.phone }
-                        ?: shopProfile.value.phone
-                )
-            )
-
         val profile = shopProfile.value
         val owner = allUsers.value.firstOrNull { it.role.toString().equals("OWNER", true) }
-        val username = owner?.username?.trim()?.ifBlank { profile.email.substringBefore("@").trim() }
+        // Joined devices may not have the owner in their local staff table. Prefer
+        // the canonical shop identity already recorded on the owner-primary device.
+        val primaryDevice = runCatching {
+            db.shopDeviceDao().getAllDevicesList().firstOrNull { it.isOwnerPrimary }
+        }.getOrNull()
+        val username = owner?.username?.trim()?.takeIf { it.isNotBlank() }
+            ?: primaryDevice?.assignedUsername?.trim()?.takeIf { it.isNotBlank() }
             ?: profile.email.substringBefore("@").trim()
-        val phone = owner?.phone?.trim()?.ifBlank { profile.phone.trim() }
+        val phone = owner?.phone?.trim()?.takeIf { it.isNotBlank() }
             ?: profile.phone.trim()
-        if (username.isBlank() || phone.filter { it.isDigit() }.takeLast(9).length != 9) {
-            return false
+        val shopSyncKey = primaryDevice?.shopSyncKey?.trim()?.takeIf { it.isNotBlank() }
+            ?: if (username.isNotBlank() && phone.filter { it.isDigit() }.takeLast(9).length == 9) {
+                SupabaseAdminClient.computeShopSyncKey(username, phone)
+            } else return false
+
+        if (!SupabaseAdminClient.isConfigured()) {
+            return localNetworkSyncServer.useCachedShopSharedSecret(shopSyncKey)
         }
 
-        val shopSyncKey = SupabaseAdminClient.computeShopSyncKey(username, phone)
         val cloudSecret = SupabaseAdminClient.fetchShopLanSyncSecret(shopSyncKey)
         if (!cloudSecret.isNullOrBlank() &&
             localNetworkSyncServer.configureShopSharedSecret(shopSyncKey, cloudSecret)
         ) {
             return true
         }
+        // A previously provisioned key remains usable on the local Wi-Fi/hotspot
+        // even when the shop's internet connection is temporarily unavailable.
         return localNetworkSyncServer.useCachedShopSharedSecret(shopSyncKey)
     }
 
@@ -278,22 +279,27 @@ class SyncCoordinator(
             } catch (e: Exception) {
                 repository.logSyncEvent("SUPABASE_ADMIN", "FAILED", "Admin cloud check failed: ${e.safeMessage("Check connection")}")
             }
+            // Provision or unlock the shop key before constructing the authoritative
+            // snapshot. New cloud generations are signed as BBSHARE2 with this key.
+            val shopSecretReady = prepareShopLanSecretFromCloud()
+            val shopShareSecret = if (shopSecretReady) {
+                localNetworkSyncServer.activeShopSharedSecret()
+            } else null
+            if (shopShareSecret.isNullOrBlank()) {
+                repository.logSyncEvent(
+                    "DATASHARE_SECURITY",
+                    "PENDING",
+                    "Shop-scoped snapshot signing key is unavailable. Local records and outbox are preserved; retry online pairing before uploading a new full snapshot."
+                )
+            }
             val report = repository.performSync(
                 activeBranchId = selectedBranchId.value,
                 deviceId = deviceId,
                 context = application,
-                retryDeadLetters = retryDeadLetters
+                retryDeadLetters = retryDeadLetters,
+                shopShareSecret = shopShareSecret
             )
             _cloudSyncReport.value = report
-            // First cloud sync provisions the shop-scoped LAN key; every paired terminal
-            // then keeps its own Keystore-wrapped copy for offline hotspot operation.
-            if (!prepareShopLanSecretFromCloud()) {
-                repository.logSyncEvent(
-                    "LAN_SECURITY",
-                    "PENDING",
-                    "Shop LAN pairing key is not available yet. Keep cloud sync online and retry before using local terminal discovery."
-                )
-            }
             if (SupabaseAdminClient.isConfigured() && report.state != com.beboss.shopmgmt.util.CloudSyncState.SYNCED) {
                 val telemetryUploaded = DeviceTelemetryUploader.upload(
                     context = application,
@@ -343,20 +349,25 @@ class SyncCoordinator(
                     throw e
                 } catch (_: Exception) {
                 }
+                val shopSecretReady = prepareShopLanSecretFromCloud()
+                val shopShareSecret = if (shopSecretReady) {
+                    localNetworkSyncServer.activeShopSharedSecret()
+                } else null
                 val report = repository.cloudSyncManager.syncAllDataToCloud(
                     serverEndpoint = endpoint,
                     activeBranchId = selectedBranchId.value,
                     deviceId = deviceId,
                     context = application,
                     retryDeadLetters = true,
-                    mergeRemoteSummary = { summary -> repository.mergeShopDataPackageLww(summary) }
+                    mergeRemoteSummary = { summary -> repository.mergeShopDataPackageLww(summary) },
+                    shopShareSecret = shopShareSecret
                 )
                 _cloudSyncReport.value = report
-                if (!prepareShopLanSecretFromCloud()) {
+                if (shopShareSecret.isNullOrBlank()) {
                     repository.logSyncEvent(
-                        "LAN_SECURITY",
+                        "DATASHARE_SECURITY",
                         "PENDING",
-                        "Shop LAN pairing key is not available yet; retry once the shop account has synchronized."
+                        "Relay sync retained local changes, but a complete shop-signed cloud snapshot could not be generated because the shop key is not provisioned."
                     )
                 }
                 if (SupabaseAdminClient.isConfigured() && report.state != com.beboss.shopmgmt.util.CloudSyncState.SYNCED) {
