@@ -880,8 +880,8 @@ export const getPublicDesktopRelease = createServerFn({ method: "GET" }).handler
             if (manifestResponse.ok) {
               const manifestText = await manifestResponse.text();
               if (manifestText.length <= 16_384) {
-                for (const line of manifestText.split(/\\r?\\n/)) {
-                  const match = line.trim().match(/^([a-f0-9]{64})\\s+\\*?(.+)$/i);
+                for (const line of manifestText.split(/\r?\n/)) {
+                  const match = line.trim().match(/^([a-f0-9]{64})\s+\*?(.+)$/i);
                   if (!match) continue;
                   const filename = match[2].trim();
                   if (Object.values(DESKTOP_RELEASE_ASSET_NAMES).includes(filename as (typeof DESKTOP_RELEASE_ASSET_NAMES)[keyof typeof DESKTOP_RELEASE_ASSET_NAMES])) {
