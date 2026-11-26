@@ -54,6 +54,14 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Reject exposed or invalid Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+          WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
+        run: ../.github/scripts/verify-windows-signing-certificate.ps1
+
       - name: Verify production desktop configuration
         shell: bash
         run: |
