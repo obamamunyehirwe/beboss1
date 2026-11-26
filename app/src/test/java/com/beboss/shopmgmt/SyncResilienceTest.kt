@@ -1,5 +1,7 @@
 package com.beboss.shopmgmt
 
+private const val TEST_SHOP_SHARE_SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -78,7 +80,7 @@ class SyncResilienceTest {
     }
 
     @Test
-    fun `BBSHARE1 token replay protection accepts first use and blocks replay`() {
+    fun `BBSHARE2 token replay protection accepts first use and blocks replay`() {
         val profile = ShopProfile(id = 1L, name = "Owner", shopName = "BeBoss Kigali", phone = "+250788111222")
         val json = ShopDataTransferManager.createExportJson(
             profile = profile,
@@ -90,15 +92,15 @@ class SyncResilienceTest {
             payments = emptyList(),
             exportedByUser = null
         )
-        val token = ShopDataTransferManager.createCompressedSyncToken(json)
+        val token = ShopDataTransferManager.createShopScopedShareToken(json, TEST_SHOP_SHARE_SECRET)
 
-        val firstParse = ShopDataTransferManager.parseShopPackageString(token, enforceReplayProtection = true)
+        val firstParse = ShopDataTransferManager.parseShopPackageString(token, enforceReplayProtection = true, shopSecret = TEST_SHOP_SHARE_SECRET)
         assertEquals("BeBoss Kigali", firstParse.shopName)
         assertTrue(firstParse.packetNonce.isNotBlank())
 
         try {
-            ShopDataTransferManager.parseShopPackageString(token, enforceReplayProtection = true)
-            fail("Expected replayed BBSHARE1 packet to throw IllegalArgumentException")
+            ShopDataTransferManager.parseShopPackageString(token, enforceReplayProtection = true, shopSecret = TEST_SHOP_SHARE_SECRET)
+            fail("Expected replayed BBSHARE2 packet to throw IllegalArgumentException")
         } catch (expected: IllegalArgumentException) {
             assertTrue(expected.message?.contains("replayed", ignoreCase = true) == true)
         }
@@ -289,8 +291,8 @@ class SyncResilienceTest {
             exportedByUser = null,
             stockTransfers = listOf(original)
         )
-        val token = ShopDataTransferManager.createCompressedSyncToken(json)
-        val restored = ShopDataTransferManager.parseShopPackageString(token).stockTransfers.single()
+        val token = ShopDataTransferManager.createShopScopedShareToken(json, TEST_SHOP_SHARE_SECRET)
+        val restored = ShopDataTransferManager.parseShopPackageString(token, shopSecret = TEST_SHOP_SHARE_SECRET).stockTransfers.single()
 
         assertEquals(original.id, restored.id)
         assertEquals(original.status, restored.status)
