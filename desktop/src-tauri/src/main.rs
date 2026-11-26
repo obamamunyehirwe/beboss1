@@ -24,6 +24,57 @@ use uuid::Uuid;
 const KEYRING_SERVICE: &str = "com.beboss.desktop";
 const KEYRING_DATABASE_KEY: &str = "database-encryption-key";
 const KEYRING_DEVICE_ID_KEY: &str = "installation-device-id";
+const DATABASE_KEY_BACKUP_FILE: &str = "beboss-local.sqlite.dpapi-key";
+const DATABASE_KEY_DPAPI_ENTROPY: &[u8] = b"BeBoss Desktop SQLCipher master key v1";
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct DataBlob { cb_data: u32, pb_data: *mut u8 }
+#[cfg(target_os = "windows")]
+#[link(name = "Crypt32")]
+extern "system" {
+ fn CryptProtectData(input:*const DataBlob,description:*const u16,entropy:*const DataBlob,reserved:*mut std::ffi::c_void,prompt:*mut std::ffi::c_void,flags:u32,output:*mut DataBlob)->i32;
+ fn CryptUnprotectData(input:*const DataBlob,description:*mut *mut u16,entropy:*const DataBlob,reserved:*mut std::ffi::c_void,prompt:*mut std::ffi::c_void,flags:u32,output:*mut DataBlob)->i32;
+}
+#[cfg(target_os = "windows")]
+#[link(name = "Kernel32")]
+extern "system" { fn LocalFree(memory:*mut std::ffi::c_void)->*mut std::ffi::c_void; }
+#[cfg(target_os = "windows")]
+fn windows_dpapi_transform(value:&[u8],protect:bool)->Result<Vec<u8>,String>{
+ use std::slice;
+ if value.is_empty()||value.len()>4096{return Err("Invalid protected database-key payload size.".into());}
+ let input=DataBlob{cb_data:value.len() as u32,pb_data:value.as_ptr() as *mut u8};
+ let entropy=DataBlob{cb_data:DATABASE_KEY_DPAPI_ENTROPY.len() as u32,pb_data:DATABASE_KEY_DPAPI_ENTROPY.as_ptr() as *mut u8};
+ let mut output=DataBlob{cb_data:0,pb_data:null_mut()};
+ let description:Vec<u16>="BeBoss Desktop database key".encode_utf16().chain(Some(0)).collect();
+ let ok=unsafe{if protect{CryptProtectData(&input,description.as_ptr(),&entropy,null_mut(),null_mut(),0x1,&mut output)}else{CryptUnprotectData(&input,null_mut(),&entropy,null_mut(),null_mut(),0x1,&mut output)}};
+ if ok==0{return Err(format!("Windows DPAPI failed: {}",std::io::Error::last_os_error()));}
+ if output.pb_data.is_null()||output.cb_data==0{return Err("Windows DPAPI returned an empty key payload.".into());}
+ let value=unsafe{slice::from_raw_parts(output.pb_data,output.cb_data as usize).to_vec()};
+ unsafe{LocalFree(output.pb_data as *mut std::ffi::c_void);}
+ Ok(value)
+}
+fn database_key_backup_path(path:&std::path::Path)->PathBuf{path.with_file_name(DATABASE_KEY_BACKUP_FILE)}
+fn load_database_key_backup(path:&std::path::Path)->Result<Option<String>,String>{
+ #[cfg(target_os="windows")]{
+  let file=database_key_backup_path(path);if !file.is_file(){return Ok(None);}
+  let bytes=fs::read(file).map_err(|e|e.to_string())?;
+  let plain=match windows_dpapi_transform(&bytes,false){Ok(v)=>v,Err(_)=>return Ok(None)};
+  let key=String::from_utf8(plain).map_err(|_|"DPAPI key backup is not valid UTF-8.".to_string())?;
+  if key.len()<32{return Err("DPAPI key backup has invalid length.".into());}Ok(Some(key))
+ }
+ #[cfg(not(target_os="windows"))]{let _=path;Ok(None)}
+}
+fn save_database_key_backup(path:&std::path::Path,key:&str)->Result<(),String>{
+ #[cfg(target_os="windows")]{
+  let bytes=windows_dpapi_transform(key.as_bytes(),true)?;
+  let target=database_key_backup_path(path);let temp=target.with_extension("dpapi-key.tmp");
+  fs::write(&temp,bytes).map_err(|e|e.to_string())?;
+  if target.exists(){fs::remove_file(&target).map_err(|e|e.to_string())?;}
+  fs::rename(&temp,&target).map_err(|e|e.to_string())?;
+ }
+ #[cfg(not(target_os="windows"))]{let _=(path,key);}
+ Ok(())
+}
 
 /// Internal keys that the renderer bridge must never read or write directly.
 /// These are managed by the desktop host (device identity, sync clock, snapshots).
@@ -93,25 +144,28 @@ fn may_generate_database_key(path: &std::path::Path) -> bool {
     }
 }
 
-fn database_key(path: &std::path::Path) -> Result<String, String> {
-    let entry = Entry::new(KEYRING_SERVICE, KEYRING_DATABASE_KEY)
-        .map_err(|error| format!("Could not open the operating-system credential vault: {error}"))?;
-    match entry.get_password() {
-        Ok(key) => Ok(key),
-        Err(keyring::Error::NoEntry) => {
-            if !may_generate_database_key(path) {
-                return Err(
-                    "BeBoss found an existing encrypted local database, but its matching key is missing from the operating-system credential vault. No replacement key was generated and the original database and pending sync queue were not modified. Restore the original Windows credential profile or a trusted BeBoss recovery backup, then restart BeBoss."
-                        .into()
-                );
-            }
-            let key = Uuid::new_v4().simple().to_string() + &Uuid::new_v4().simple().to_string();
-            entry.set_password(&key)
-                .map_err(|error| format!("Could not persist the database key in the operating-system credential vault: {error}"))?;
-            Ok(key)
-        }
-        Err(error) => Err(format!("The operating-system credential vault is unavailable; the local database was not opened: {error}")),
+fn database_key(path:&std::path::Path)->Result<String,String>{
+ let entry=Entry::new(KEYRING_SERVICE,KEYRING_DATABASE_KEY).map_err(|e|format!("Could not open OS credential vault: {e}"))?;
+ match entry.get_password(){
+  Ok(key)=>Ok(key),
+  Err(keyring::Error::NoEntry)=>{
+   if let Some(backup)=load_database_key_backup(path)?{
+    let exists=fs::metadata(path).map(|m|m.len()>0).unwrap_or(false);
+    if !exists||open_keyed_database(path,&backup).is_ok(){
+     entry.set_password(&backup).map_err(|e|format!("Recovered key could not be restored to Credential Manager: {e}"))?;
+     return Ok(backup);
     }
+   }
+   if !may_generate_database_key(path){
+    return Err("BeBoss found an existing encrypted local database, but its key is missing from Credential Manager and no usable Windows-profile recovery key was found. The database and pending sync queue were not modified. Keep this Windows profile intact and restore the original credential profile or a trusted BeBoss recovery key before replacing the local cache.".into());
+   }
+   let key=Uuid::new_v4().simple().to_string()+&Uuid::new_v4().simple().to_string();
+   entry.set_password(&key).map_err(|e|format!("Could not persist database key in Credential Manager: {e}"))?;
+   save_database_key_backup(path,&key).map_err(|e|format!("DPAPI backup failed: {e}"))?;
+   Ok(key)
+  }
+  Err(error)=>Err(format!("The operating-system credential vault is unavailable; local database was not opened: {error}")),
+ }
 }
 
 fn key_hex(key_seed: &str) -> String {
@@ -287,33 +341,31 @@ fn ensure_sync_outbox_tenant_column(connection: &Connection) -> Result<(), Strin
     Ok(())
 }
 
-fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
-    let path = database_path(app)?;
-    let key_seed = database_key(&path)?;
-    let has_existing_file = path.metadata().map(|metadata| metadata.len() > 0).unwrap_or(false);
-
-    let connection = if has_existing_file {
-        match open_keyed_database(&path, &key_seed) {
-            Ok(connection) => connection,
-            Err(encrypted_error) => {
-                // Old desktop versions used ordinary SQLite. Only migrate when the
-                // existing file can be read without a key; never overwrite an
-                // encrypted/corrupt database after a failed key check.
-                let is_legacy_plaintext = is_readable_legacy_plaintext_database(&path);
-                if !is_legacy_plaintext {
-                    return Err(format!(
-                        "BeBoss could not unlock its local SQLCipher database. The original data has not been changed. Check the operating-system credential vault or restore a trusted backup. ({encrypted_error})"
-                    ));
-                }
-                migrate_plaintext_database(&path, &key_seed)?;
-                open_keyed_database(&path, &key_seed)?
-            }
-        }
-    } else {
-        open_keyed_database(&path, &key_seed)?
-    };
-
-    connection.execute_batch(
+fn open_database(app:&tauri::AppHandle)->Result<Connection,String>{
+ let path=database_path(&app)?;let mut key_seed=database_key(&path)?;
+ let exists=path.metadata().map(|m|m.len()>0).unwrap_or(false);
+ let connection=if exists{
+  match open_keyed_database(&path,&key_seed){
+   Ok(db)=>db,
+   Err(error)=>{
+    let mut recovered=None;
+    if let Some(backup)=load_database_key_backup(&path)?{
+     if backup!=key_seed{
+      if let Ok(db)=open_keyed_database(&path,&backup){
+       key_seed=backup;
+       if let Ok(entry)=Entry::new(KEYRING_SERVICE,KEYRING_DATABASE_KEY){let _=entry.set_password(&key_seed);}
+       recovered=Some(db);
+      }
+     }
+    }
+    if let Some(db)=recovered{db}else{
+     if !is_readable_legacy_plaintext_database(&path){return Err(format!("BeBoss could not unlock its SQLCipher database. Original files were not changed. Credential Manager and the Windows-profile recovery key did not unlock it. ({error})"));}
+     migrate_plaintext_database(&path,&key_seed)?;open_keyed_database(&path,&key_seed)?
+    }
+   }
+  }
+ }else{open_keyed_database(&path,&key_seed)?};
+ connection.execute_batch(
         "PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;
          PRAGMA foreign_keys = ON;
@@ -349,6 +401,7 @@ fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
     ).map_err(|error| error.to_string())?;
 
     ensure_sync_outbox_tenant_column(&connection)?;
+    if let Err(error)=save_database_key_backup(&path,&key_seed){eprintln!("[BeBoss] DPAPI key backup refresh failed: {error}");}
     Ok(connection)
 }
 
@@ -566,10 +619,10 @@ fn recover_local_database(app: tauri::AppHandle) -> Result<LocalDatabaseRecovery
 
     let key_entry = Entry::new(KEYRING_SERVICE, KEYRING_DATABASE_KEY)
         .map_err(|error| format!("Could not access the operating-system database key vault: {error}"))?;
-    let old_key = match key_entry.get_password() {
-        Ok(value) => Some(value),
-        Err(keyring::Error::NoEntry) => None,
-        Err(error) => return Err(format!("The existing local database key could not be read safely: {error}")),
+    let old_key=match key_entry.get_password(){
+        Ok(value)=>Some(value),
+        Err(keyring::Error::NoEntry)=>load_database_key_backup(&db_path)?,
+        Err(error)=>return Err(format!("The existing local database key could not be read safely: {error}")),
     };
     let recovery_key_reference = old_key.as_ref().map(|_| format!("database-recovery-key-{timestamp}"));
     if let (Some(old_key), Some(reference)) = (old_key.as_ref(), recovery_key_reference.as_ref()) {
@@ -623,6 +676,9 @@ fn recover_local_database(app: tauri::AppHandle) -> Result<LocalDatabaseRecovery
         return Err(format!("Could not provision a new local cache key; the original files were returned to their original location: {error}"));
     }
 
+    if let Err(error)=save_database_key_backup(&db_path,&new_key){
+        return Err(format!("Original files remain preserved at {}. DPAPI failed for the new cache key: {error}",backup_dir.to_string_lossy()));
+    }
     // The old files remain quarantined. A successful open creates a new empty
     // encrypted cache; the owner then signs in and restores authoritative business
     // records from Supabase or a verified phone/device snapshot.
@@ -823,6 +879,31 @@ fn database_storage_bytes(db_path: &std::path::Path) -> u64 {
     .fold(0u64, u64::saturating_add)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all="camelCase")]
+struct SetupPreflight{os_platform:String,os_arch:String,app_version:String,database_state:String,database_message:String,database_path:String,database_size_bytes:u64,pending_outbox_count:Option<i64>,recovery_archive_count:usize,dpapi_backup_available:bool}
+#[tauri::command]
+fn setup_preflight(app:tauri::AppHandle)->Result<SetupPreflight,String>{
+ let path=database_path(&app)?;let size=database_storage_bytes(&path);
+ let(state,message,pending)=match open_database(&app){
+  Ok(db)=>{let n=db.query_row("SELECT COUNT(*) FROM sync_outbox WHERE status='PENDING'",[],|row|row.get::<_,i64>(0)).unwrap_or(0);("ready".to_string(),String::new(),Some(n))},
+  Err(e)=>("locked".to_string(),e,None)
+ };
+ let dir=app.path().app_data_dir().map_err(|e|e.to_string())?;
+ let archives=fs::read_dir(dir.join("recovery")).ok().into_iter().flatten().filter_map(Result::ok).filter(|e|e.file_type().map(|t|t.is_dir()).unwrap_or(false)).count();
+ let dpapi=load_database_key_backup(&path).ok().flatten().is_some();
+ Ok(SetupPreflight{os_platform:env::consts::OS.to_string(),os_arch:env::consts::ARCH.to_string(),app_version:env!("CARGO_PKG_VERSION").to_string(),database_state:state,database_message:message,database_path:path.to_string_lossy().to_string(),database_size_bytes:size,pending_outbox_count:pending,recovery_archive_count:archives,dpapi_backup_available:dpapi})
+}
+#[tauri::command]
+fn test_credential_vault()->Result<(),String>{
+ let name=format!("setup-probe-{}",Uuid::new_v4().simple());let expected=Uuid::new_v4().simple().to_string();
+ let entry=Entry::new(KEYRING_SERVICE,&name).map_err(|e|format!("Could not open OS credential vault: {e}"))?;
+ entry.set_password(&expected).map_err(|e|format!("Credential vault write failed: {e}"))?;
+ let read=entry.get_password();let cleanup=entry.delete_credential();
+ let value=read.map_err(|e|format!("Credential vault read failed: {e}"))?;
+ if value!=expected{let _=cleanup;return Err("Credential vault returned a different value.".into());}
+ cleanup.map_err(|e|format!("Credential vault cleanup failed: {e}"))?;Ok(())
+}
 #[tauri::command]
 fn system_diagnostics(app: tauri::AppHandle) -> Result<SystemDiagnostics, String> {
     let db_path = database_path(&app)?;
@@ -1640,6 +1721,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             secure_get, secure_set, secure_remove, get_device_id, recover_local_database,
+            setup_preflight, test_credential_vault,
             local_load, local_save_baseline, local_queue, local_pending, local_outbox_count, local_unassigned_outbox_count, local_ack,
             system_diagnostics, network_ping, print_escpos_thermal,
             export_backup_file, lan_store_shop_secret, lan_discover_hubs, lan_pull_from_hub, lan_sync_with_hub
