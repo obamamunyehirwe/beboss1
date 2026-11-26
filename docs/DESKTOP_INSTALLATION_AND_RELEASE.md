@@ -58,6 +58,32 @@ The repository's Windows CI additionally builds the NSIS installer, performs a s
 
 **Certificate rotation notice:** the repository previously tracked `desktop/codesign.pfx` while the repository was public. That file has been removed from the current source tree and `*.pfx` / `*.p12` are now ignored. Removing a file does not erase older public Git history, so the old certificate must be revoked or invalidated by its issuer. CI explicitly rejects the exact exposed PFX and validates that the replacement contains a valid private key and the Code Signing extended key usage before invoking SignTool. Store only the newly issued PFX (base64) and its password in GitHub Actions secrets; never put either value or a PFX file in Git.
 
+## Build and sign a Windows installer locally
+
+From the `desktop` directory in Windows PowerShell:
+
+```powershell
+npm ci
+npm run check:versions
+npm run check:types
+npm run build
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+npm run dist:win
+```
+
+For local Authenticode signing, put the replacement PFX somewhere outside the repository. Set the password only in the current PowerShell session, then run:
+
+```powershell
+$env:WINDOWS_CODESIGN_PFX_PASSWORD = Read-Host "PFX password" -AsSecureString |
+  ForEach-Object { [System.Net.NetworkCredential]::new("", $_).Password }
+$env:WINDOWS_CODESIGN_PFX_PATH = "C:\\BeBossSigning\\new-codesign.pfx"
+npm run sign:win:local
+```
+
+Or run the entire native Windows installer build, signing and checksum generation with `npm run release:win:local`. The script validates the PFX (private key, validity and Code Signing EKU), uses SignTool with an RFC 3161 timestamp, verifies the Authenticode chain, and writes a SHA-256 manifest beside the installer. It explicitly rejects the PFX that was previously committed to the public repository. A self-signed or otherwise untrusted certificate will fail SignTool trust verification and is not suitable for production distribution. Clear the password from your current shell when finished with `Remove-Item Env:WINDOWS_CODESIGN_PFX_PASSWORD`.
+
+The local build does not upload files or publish a GitHub Release. Publishing a public release is a separate authenticated workflow action and requires the server-only `GITHUB_RELEASE_TOKEN` plus the protected platform signing credentials.
+
 ## Production signing and distribution
 
 A production Windows installer is not considered release-ready until Authenticode signing and signature verification succeed. The release workflow requires the protected GitHub Actions secrets:

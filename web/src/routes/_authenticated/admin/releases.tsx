@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@/lib/use-server-fn";
-import { CheckCircle2, Download, Loader2, Pencil, Star, Trash2, UploadCloud } from "lucide-react";
+import { Apple, CheckCircle2, Download, ExternalLink, Laptop, Loader2, Monitor, Pencil, RefreshCw, Star, Trash2, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ConfirmAction, EmptyState, LoadingBlock, PageHeader, StatCard, useAdminAction } from "@/components/admin/ui";
 import { supabase } from "@/integrations/supabase/client";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
-import { deleteRelease, getAdminReleaseDownload, publishRelease, setArchivedReleaseVisibility, setCurrentRelease, setReleaseVisibility, updateRelease } from "@/lib/admin.functions";
+import { deleteRelease, dispatchDesktopRelease, getAdminReleaseDownload, getDesktopReleaseStatus, publishRelease, setArchivedReleaseVisibility, setCurrentRelease, setReleaseVisibility, updateRelease } from "@/lib/admin.functions";
 import { downloadsQuery, releasesQuery } from "@/lib/admin-queries";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
@@ -45,6 +45,15 @@ function ReleasesPage() {
   const qc = useQueryClient();
   const publish = useServerFn(publishRelease);
   const getPrivateDownload = useServerFn(getAdminReleaseDownload);
+  const dispatchDesktop = useServerFn(dispatchDesktopRelease);
+  const getDesktopStatus = useServerFn(getDesktopReleaseStatus);
+  const desktopStatus = useQuery({
+    queryKey: ["admin", "desktop-release-status"],
+    queryFn: () => getDesktopStatus(),
+    enabled: canManageReleases,
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+  });
   const setCurrent = useAdminAction(useServerFn(setCurrentRelease), { success: "Now the current download", invalidate: [["admin", "releases"], ["public-site"]] });
   const del = useAdminAction(useServerFn(deleteRelease), { success: "Release deleted", invalidate: [["admin", "releases"]] });
   const visibility = useAdminAction(useServerFn(setReleaseVisibility), { success: "Public release visibility updated", invalidate: [["admin", "releases"], ["public-site"]] });
@@ -53,11 +62,34 @@ function ReleasesPage() {
   const [file, setFile] = useState<File | null>(null);
   const [form, setForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "", make_current: true });
   const [stage, setStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
+  const [desktopVersion, setDesktopVersion] = useState("1.3.1");
+  const [desktopNotes, setDesktopNotes] = useState("");
+  const [desktopDispatching, setDesktopDispatching] = useState(false);
   const [editingRelease, setEditingRelease] = useState<ReleaseWithVisibility | null>(null);
   const [editForm, setEditForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "" });
   const editReleaseAction = useAdminAction(useServerFn(updateRelease), { success: "Release updated", invalidate: [["admin", "releases"], ["public-site"]] });
 
   const downloadUrl = `https://beboss.rw${DOWNLOAD_PATH}`;
+
+  const startDesktopRelease = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canManageReleases || desktopDispatching) return;
+    if (!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(desktopVersion.trim())) {
+      toast.error("Enter a valid desktop version, for example 1.3.1.");
+      return;
+    }
+    setDesktopDispatching(true);
+    try {
+      const result = await dispatchDesktop({ data: { version: desktopVersion.trim(), release_notes: desktopNotes.trim() } });
+      toast.success(`${result.tagName} build and release workflow started.`);
+      setDesktopNotes("");
+      await qc.invalidateQueries({ queryKey: ["admin", "desktop-release-status"] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not start the desktop release workflow.");
+    } finally {
+      setDesktopDispatching(false);
+    }
+  };
 
   // Start new releases above the highest version code already published.
   useEffect(() => {
@@ -164,6 +196,156 @@ function ReleasesPage() {
           </div>
         ) : null}
       />
+      {canManageReleases ? (
+        <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm" aria-labelledby="desktop-release-heading">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border p-5 sm:p-6">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="grid size-12 shrink-0 place-items-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+                <Laptop className="size-6" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 id="desktop-release-heading" className="text-lg font-bold">Native desktop releases</h2>
+                  <Badge variant={desktopStatus.data?.configured ? "default" : "secondary"}>
+                    {desktopStatus.isFetching ? "Refreshing" : desktopStatus.data?.configured ? "Connected to GitHub" : "Not configured"}
+                  </Badge>
+                </div>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  Build and publish the native Windows setup, macOS disk image and Linux AppImage. Publishing happens only after platform build, signature and checksum gates pass.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => void desktopStatus.refetch()} disabled={desktopStatus.isFetching}>
+                <RefreshCw className={desktopStatus.isFetching ? "animate-spin" : ""} /> Refresh status
+              </Button>
+              {desktopStatus.data?.workflowUrl ? (
+                <Button asChild type="button" variant="outline" size="sm">
+                  <a href={desktopStatus.data.workflowUrl} target="_blank" rel="noreferrer">GitHub Actions <ExternalLink /></a>
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,.85fr)]">
+            <div className="min-w-0 space-y-4">
+              {desktopStatus.isError ? (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert">
+                  {desktopStatus.error instanceof Error ? desktopStatus.error.message : "Desktop release status could not be loaded."}
+                </div>
+              ) : null}
+
+              {!desktopStatus.data?.configured ? (
+                <div className="rounded-xl border border-warning/35 bg-warning/5 p-4">
+                  <p className="font-semibold text-foreground">Server release access must be configured</p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    Add <code>GITHUB_RELEASE_TOKEN</code> as a server-only environment secret. Grant it Actions read/write and Contents read/write access for this repository. Do not add the token to browser variables or commit it.
+                  </p>
+                </div>
+              ) : null}
+
+              <form className="space-y-4 rounded-xl border border-border bg-background/60 p-4" onSubmit={(event) => void startDesktopRelease(event)}>
+                <div>
+                  <h3 className="font-semibold">Start a native desktop release</h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Uses the current main branch and refuses to overwrite an existing desktop version tag.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,190px)_1fr]">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="desktop-release-version">Desktop version</Label>
+                    <Input
+                      id="desktop-release-version"
+                      value={desktopVersion}
+                      onChange={(event) => setDesktopVersion(event.target.value)}
+                      placeholder="1.3.1"
+                      pattern="^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+                      maxLength={40}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="desktop-release-notes">Release notes</Label>
+                    <Input
+                      id="desktop-release-notes"
+                      value={desktopNotes}
+                      onChange={(event) => setDesktopNotes(event.target.value)}
+                      placeholder="Bug fixes, improvements and release highlights"
+                      maxLength={4000}
+                    />
+                  </div>
+                </div>
+                <Button type="submit" variant="hero" disabled={!desktopStatus.data?.configured || desktopDispatching}>
+                  {desktopDispatching ? <Loader2 className="animate-spin" /> : <UploadCloud />}
+                  {desktopDispatching ? "Starting release workflow…" : "Build and publish Windows, macOS and Linux"}
+                </Button>
+              </form>
+            </div>
+
+            <div className="min-w-0 space-y-4">
+              <div className="rounded-xl border border-border p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-semibold">Latest workflow run</h3>
+                  {desktopStatus.data?.latestRun ? (
+                    <Badge variant={
+                      desktopStatus.data.latestRun.conclusion === "success" ? "default" :
+                      desktopStatus.data.latestRun.conclusion === "failure" ? "destructive" : "secondary"
+                    }>
+                      {desktopStatus.data.latestRun.conclusion || desktopStatus.data.latestRun.status || "Unknown"}
+                    </Badge>
+                  ) : <span className="text-xs text-muted-foreground">No run found</span>}
+                </div>
+                {desktopStatus.data?.latestRun ? (
+                  <div className="mt-3 space-y-2 text-sm">
+                    <p className="text-muted-foreground">Run #{desktopStatus.data.latestRun.runNumber} · {desktopStatus.data.latestRun.event}</p>
+                    <p className="text-xs text-muted-foreground">Started {formatDateTime(desktopStatus.data.latestRun.createdAt)}</p>
+                    <a className="inline-flex items-center gap-2 font-semibold text-primary hover:underline" href={desktopStatus.data.latestRun.htmlUrl} target="_blank" rel="noreferrer">
+                      Inspect live build logs <ExternalLink className="size-3.5" />
+                    </a>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">No desktop release workflow has run yet. Start a release above to build all supported desktop platforms.</p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold">Latest published desktop release</h3>
+                  {desktopStatus.data?.latestRelease ? <Badge variant="default">Published</Badge> : <Badge variant="secondary">Not published</Badge>}
+                </div>
+                {desktopStatus.data?.latestRelease ? (
+                  <>
+                    <p className="mt-2 font-mono text-sm">{desktopStatus.data.latestRelease.tagName}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {desktopStatus.data.latestRelease.publishedAt ? formatDateTime(desktopStatus.data.latestRelease.publishedAt) : "Published release"}
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {desktopStatus.data.latestRelease.assets.map((asset) => (
+                        <div key={asset.name} className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-xs">
+                          <span className="min-w-0 break-all text-muted-foreground">{asset.name} · {formatBytes(asset.sizeBytes)}</span>
+                          <a className="inline-flex shrink-0 items-center gap-1 font-semibold text-primary hover:underline" href={asset.downloadUrl} target="_blank" rel="noreferrer">
+                            Download <Download className="size-3.5" />
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                    <a className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline" href={desktopStatus.data.latestRelease.htmlUrl} target="_blank" rel="noreferrer">
+                      Open official release <ExternalLink className="size-3.5" />
+                    </a>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">The public download page will activate each installer only after the official GitHub Release contains that platform's real package.</p>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-3 border-t border-border bg-muted/20 p-4 sm:grid-cols-3 sm:p-5">
+            <div className="flex items-center gap-2 text-sm"><Monitor className="size-4 text-primary" /><span>Windows · Authenticode signed</span></div>
+            <div className="flex items-center gap-2 text-sm"><Apple className="size-4 text-primary" /><span>macOS · signed and notarized</span></div>
+            <div className="flex items-center gap-2 text-sm"><Laptop className="size-4 text-primary" /><span>Linux · AppImage + SHA-256</span></div>
+          </div>
+        </section>
+      ) : null}
       <Dialog open={!!editingRelease} onOpenChange={(open) => { if (!open) setEditingRelease(null); }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
