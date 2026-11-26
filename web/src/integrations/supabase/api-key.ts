@@ -7,12 +7,14 @@ export function normalizeSupabaseApiKey(value: string, variableName: string): st
   const normalized = value.replace(/\s+/gu, "");
   if (normalized !== value) {
     console.warn(
-      \`[Supabase] Whitespace was removed from \${variableName}. Update the deployment variable with the exact key from Supabase Settings → API Keys.\`,
+      "[Supabase] Whitespace was removed from " + variableName +
+        ". Update the deployment variable with the exact key from Supabase Settings → API Keys.",
     );
   }
   if (!normalized || /[^\x21-\x7E]/u.test(normalized)) {
     throw new Error(
-      \`\${variableName} is not a valid Supabase API key. Replace it with the exact key from Supabase Settings → API Keys.\`,
+      variableName +
+        " is not a valid Supabase API key. Replace it with the exact key from Supabase Settings → API Keys.",
     );
   }
   return normalized;
