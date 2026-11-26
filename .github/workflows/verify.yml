@@ -191,6 +191,8 @@ jobs:
 
       - name: Verify desktop package, Tauri and Rust versions are identical
         run: npm run check:versions
+      - name: Verify NSIS upgrade policy, assets and protected-data safeguards
+        run: npm run check:installer
 
       - name: Check desktop TypeScript types
         run: npm run check:types
@@ -250,6 +252,36 @@ jobs:
           }
           if (-not (Test-Path $startMenuLink -PathType Leaf)) { throw "The BeBoss Start Menu application shortcut is missing." }
 
+          # Seed a representative locked-cache recovery archive. Re-running the
+          # installer must replace app binaries while leaving encrypted payloads
+          # and the queued offline work byte-for-byte intact.
+          $appData = Join-Path $env:APPDATA "com.beboss.desktop"
+          $recoveryFixture = Join-Path $appData "recovery\locked-cache-upgrade-test"
+          New-Item -ItemType Directory -Force -Path $recoveryFixture | Out-Null
+          $protectedFixtures = @(
+            (Join-Path $recoveryFixture "beboss-local.sqlite"),
+            (Join-Path $recoveryFixture "pending-outbox.json"),
+            (Join-Path $recoveryFixture "beboss-local.sqlite.dpapi-key")
+          )
+          $fixturePayloads = @("encrypted-database-preservation-fixture", "queued-offline-operations-fixture", "protected-key-backup-fixture")
+          for ($i = 0; $i -lt $protectedFixtures.Count; $i++) {
+            Set-Content -LiteralPath $protectedFixtures[$i] -Value $fixturePayloads[$i] -NoNewline
+          }
+          $fixtureHashes = @{}
+          foreach ($fixture in $protectedFixtures) {
+            $fixtureHashes[$fixture] = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash
+          }
+
+          $upgrade = Start-Process -FilePath $installer.FullName -ArgumentList @("/S", "/D=$installRoot") -Wait -PassThru
+          if ($upgrade.ExitCode -ne 0) { throw "BeBoss in-place upgrade returned exit code $($upgrade.ExitCode)." }
+          if (-not (Test-Path $appExe -PathType Leaf)) { throw "The BeBoss.exe application was not replaced during upgrade." }
+          foreach ($fixture in $protectedFixtures) {
+            if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) { throw "Upgrade deleted protected recovery data: $fixture" }
+            $afterHash = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash
+            if ($afterHash -ne $fixtureHashes[$fixture]) { throw "Upgrade modified encrypted data or a pending sync payload: $fixture" }
+          }
+          Write-Host "In-place upgrade replaced app files and preserved encrypted DB, key backup and pending sync archive."
+
           # Launch the installed native GUI process, not only inspect its executable.
           # A missing WebView2 runtime or broken native bundle must fail this test.
           $application = Start-Process -FilePath $appExe -PassThru
@@ -268,7 +300,6 @@ jobs:
 
           # Place a sentinel in the app's official per-user data location. A proper
           # uninstall removes binaries and shortcuts but must retain this data.
-          $appData = Join-Path $env:APPDATA "com.beboss.desktop"
           New-Item -ItemType Directory -Force -Path $appData | Out-Null
           $sentinel = Join-Path $appData "installer-uninstall-preservation-test.txt"
           Set-Content -Path $sentinel -Value "preserve-shop-data" -NoNewline
@@ -277,8 +308,12 @@ jobs:
           if ($uninstall.ExitCode -ne 0) { throw "BeBoss uninstaller returned exit code $($uninstall.ExitCode)." }
           if (Test-Path $appExe) { throw "BeBoss application files were not removed by uninstall." }
           if (-not (Test-Path $sentinel)) { throw "Uninstall removed the per-user app-data directory; shop data would be lost." }
+          foreach ($fixture in $protectedFixtures) {
+            if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) { throw "Uninstall removed protected recovery data: $fixture" }
+          }
 
           Remove-Item $sentinel -Force
+          Remove-Item (Split-Path $protectedFixtures[0] -Parent) -Recurse -Force
           Write-Host "NSIS install/uninstall passed; Start Menu shortcut created and user data preserved."
 
   android:
