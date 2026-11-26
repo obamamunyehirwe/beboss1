@@ -537,36 +537,51 @@ export const upsertMyShopBranch = createServerFn({ method: "POST" })
     const ownerContext = context as unknown as OwnerAuthContext;
     const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const now = Date.now();
-    const { error } = await sb.from("shop_branches").upsert(
-      {
-        id: data.id,
-        shop_sync_key: key,
-        name: data.name,
-        code: data.code,
-        address: data.address,
-        phone: data.phoneBranch,
-        manager_user_id: "",
-        manager_name: data.managerName,
-        is_main_branch: data.isMainBranch,
-        is_active: true,
-        color_hex: data.colorHex,
-        daily_sales_target_rwf: data.dailySalesTargetRwf,
-        monthly_target_rwf: data.monthlyTargetRwf,
-        opening_cash_float: data.openingCashFloat,
-        stock_value_rwf: 0,
-        product_count: 0,
-        operational_status: data.operationalStatus,
-        email: data.email,
-        notes: data.notes,
-        created_at: now,
-        updated_at: now,
-        sync_version: 1,
-        hlc_timestamp: now,
-        last_modified_device_id: "WEB",
-      },
-      { onConflict: "id" },
-    );
-    if (error) throw new Error("Could not save the branch. Please try again.");
+    const { data: existing, error: readError } = await sb
+      .from("shop_branches")
+      .select("id,shop_sync_key,created_at")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (readError) throw new Error("Could not verify the branch identity. Please retry.");
+    if (existing && existing.shop_sync_key !== key) {
+      throw new Error("This branch identifier is already registered to another shop.");
+    }
+
+    const branchPayload = {
+      shop_sync_key: key,
+      name: data.name,
+      code: data.code,
+      address: data.address,
+      phone: data.phoneBranch,
+      manager_user_id: "",
+      manager_name: data.managerName,
+      is_main_branch: data.isMainBranch,
+      is_active: true,
+      color_hex: data.colorHex,
+      daily_sales_target_rwf: data.dailySalesTargetRwf,
+      monthly_target_rwf: data.monthlyTargetRwf,
+      opening_cash_float: data.openingCashFloat,
+      operational_status: data.operationalStatus,
+      email: data.email,
+      notes: data.notes,
+      created_at: Number(existing?.created_at) || now,
+      updated_at: now,
+      sync_version: 1,
+      hlc_timestamp: now,
+      last_modified_device_id: "WEB",
+    };
+    const save = existing
+      ? await sb.from("shop_branches").update(branchPayload).eq("id", data.id).eq("shop_sync_key", key)
+      : await sb.from("shop_branches").insert({ id: data.id, ...branchPayload });
+    if (save.error) throw new Error("Could not save the branch. Please try again.");
+
+    if (data.isMainBranch) {
+      const { error: mainBranchError } = await sb.from("shop_branches")
+        .update({ is_main_branch: false, updated_at: now, hlc_timestamp: now, last_modified_device_id: "WEB" })
+        .eq("shop_sync_key", key).eq("is_main_branch", true).neq("id", data.id);
+      if (mainBranchError) throw new Error("The branch was saved, but the main-branch setting could not be synchronized.");
+    }
+
     return { ok: true, id: data.id };
   });
 
@@ -582,13 +597,25 @@ export const deleteMyShopBranch = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
     const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
+    const { data: branch, error: branchError } = await sb.from("shop_branches")
+      .select("id,is_main_branch,is_active")
+      .eq("id", data.id).eq("shop_sync_key", key).maybeSingle();
+    if (branchError || !branch || !branch.is_active) throw new Error("The active branch could not be found in this shop.");
+    if (branch.is_main_branch) throw new Error("The main branch cannot be deleted. Set another branch as main first.");
+
+    const [devices, staff] = await Promise.all([
+      sb.from("shop_devices").select("id").eq("shop_sync_key", key).eq("branch_id", data.id).eq("is_active", true).limit(1),
+      sb.from("shop_users").select("user_id").eq("shop_sync_key", key).eq("assigned_branch_id", data.id).eq("is_active", true).limit(1),
+    ]);
+    if (devices.error || staff.error) throw new Error("Could not verify the branch's active assignments.");
+    if ((devices.data?.length ?? 0) > 0 || (staff.data?.length ?? 0) > 0) {
+      throw new Error("Move active devices and staff to another branch before deleting this branch.");
+    }
+
     const now = Date.now();
-    // RLS allows tenant update but not delete; soft-delete via is_active=false + fresh HLC.
-    const { error } = await sb
-      .from("shop_branches")
+    const { error } = await sb.from("shop_branches")
       .update({ is_active: false, updated_at: now, hlc_timestamp: now, last_modified_device_id: "WEB" })
-      .eq("id", data.id)
-      .eq("shop_sync_key", key);
+      .eq("id", data.id).eq("shop_sync_key", key).eq("is_main_branch", false);
     if (error) throw new Error("Could not delete the branch. Please try again.");
     return { ok: true };
   });
