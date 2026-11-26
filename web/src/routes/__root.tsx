@@ -100,9 +100,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/beboss-brand.svg", type: "image/svg+xml", sizes: "any" },
-      { rel: "icon", href: "/beboss-app-icon.png", type: "image/png", sizes: "1022x1026" },
-      { rel: "apple-touch-icon", href: "/beboss-app-icon.png", sizes: "1022x1026" },
+      { rel: "icon", href: "/beboss-app-logo.png", type: "image/png", sizes: "any" },
+      { rel: "icon", href: "/beboss-app-logo.png", type: "image/png", sizes: "any" },
+      { rel: "apple-touch-icon", href: "/beboss-app-logo.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
