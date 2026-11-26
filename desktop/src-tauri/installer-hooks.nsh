@@ -1,71 +1,56 @@
-; BeBoss Desktop NSIS Installer Hooks
-; This file extends the Tauri NSIS configuration
+; BeBoss Desktop NSIS lifecycle hooks.
+; Tauri owns the per-user installation registry metadata and application files.
+; These hooks only clean up legacy BeBoss-owned Windows integrations. They never
+; create broad firewall exceptions or delete the protected shop database.
 
 !macro NSIS_HOOK_PREINSTALL
   DetailPrint "Preparing BeBoss Desktop installation..."
-  
-  ; Verify Windows 10+
   ${IfNot} ${AtLeastWin10}
-    MessageBox MB_ICONSTOP "BeBoss Desktop requires Windows 10 or later.$\n$\nPlease upgrade your operating system before installing BeBoss."
+    MessageBox MB_ICONSTOP "BeBoss Desktop requires Windows 10 or later.$\n$\nPlease upgrade Windows before installing BeBoss."
     Abort
   ${EndIf}
-  
-  DetailPrint "System requirements verified."
+  DetailPrint "Windows requirements verified."
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
   DetailPrint "Finalizing BeBoss Desktop installation..."
-  
-  ; Tauri stores user data under the platform app_data_dir. The installer must
-  ; not create an unrelated second data directory.
-  
-  ; Register application for the installing Windows user (no administrator elevation required).
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "DisplayName" "BeBoss Desktop"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "DisplayVersion" "1.3.0"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "Publisher" "BeBoss Retail Operations"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "DisplayIcon" "$INSTDIR\BeBoss.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "InstallLocation" "$INSTDIR"
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "NoModify" 1
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop" "NoRepair" 1
-  
-  ; Remove legacy broad firewall exceptions and the obsolete file association
-  ; installed by earlier BeBoss desktop installers. Do not create new rules.
+
+  ; Remove only the two explicitly named inbound rules created by legacy
+  ; BeBoss versions. Current desktop sync uses authenticated outbound HTTPS.
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop Sync"'
   Pop $1
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop"'
   Pop $1
+
+  ; Remove only the obsolete association if it still points to the old
+  ; BeBoss-owned ProgID. Never change a user-selected application association.
   ReadRegStr $0 HKCR ".bbbackup" ""
   ${If} $0 == "BeBoss.BackupFile"
     DeleteRegKey HKCR ".bbbackup"
     DeleteRegKey HKCR "BeBoss.BackupFile"
   ${EndIf}
-  
-  ; Create desktop shortcut
+
+  ; Tauri creates the BeBoss Start Menu application shortcut. Create the
+  ; optional desktop shortcut and a direct uninstall shortcut for this user.
   CreateShortcut "$DESKTOP\BeBoss Desktop.lnk" "$INSTDIR\BeBoss.exe" "" "$INSTDIR\BeBoss.exe" 0
-  
-  ; Create Start Menu entries
   CreateDirectory "$SMPROGRAMS\BeBoss"
-  CreateShortcut "$SMPROGRAMS\BeBoss\BeBoss Desktop.lnk" "$INSTDIR\BeBoss.exe" "" "$INSTDIR\BeBoss.exe" 0
   CreateShortcut "$SMPROGRAMS\BeBoss\Uninstall.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0
-  
-  ; Backup files are restored from the authenticated in-app Backup & Recovery
-  ; screen, where the owner explicitly selects a local file and enters its key.
-  
-  DetailPrint "BeBoss Desktop installed successfully."
-  DetailPrint "Installation path: $INSTDIR"
-  DetailPrint "Click Finish to complete the setup."
+
+  DetailPrint "BeBoss Desktop installed for the current Windows user."
+  DetailPrint "Application: $INSTDIR\BeBoss.exe"
+  DetailPrint "Encrypted business data remains in the user's protected application-data folder."
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  DetailPrint "Removing BeBoss Desktop..."
-  
-  ; Preserve the business database, encrypted credentials, and backups in
-  ; Tauri's application-data directory when the program is uninstalled.
-  ; Remove shortcuts
+  DetailPrint "Removing BeBoss Desktop application files..."
+
+  ; Remove shortcuts owned by BeBoss. Do not remove the per-user app-data
+  ; directory: SQLCipher data, keychain material and local backups are retained.
   Delete "$DESKTOP\BeBoss Desktop.lnk"
-  RMDir /r "$SMPROGRAMS\BeBoss"
-  
-  ; Remove installer artifacts owned by previous BeBoss releases only.
+  Delete "$SMPROGRAMS\BeBoss\Uninstall.lnk"
+  RMDir "$SMPROGRAMS\BeBoss"
+
+  ; Remove legacy BeBoss-owned integrations only.
   ReadRegStr $0 HKCR ".bbbackup" ""
   ${If} $0 == "BeBoss.BackupFile"
     DeleteRegKey HKCR ".bbbackup"
@@ -75,21 +60,12 @@
   Pop $1
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="BeBoss Desktop"'
   Pop $1
-
-  ; Remove the per-user registry entries.
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BeBoss Desktop"
-
-  DetailPrint "BeBoss Desktop has been removed."
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
-  DetailPrint "Uninstall complete. Thank you for using BeBoss."
+  DetailPrint "BeBoss Desktop was uninstalled. Shop data and backups were preserved."
 !macroend
 
-; Tauri's NSIS finish page includes a preselected "Run BeBoss" action.
-; The generated installer uses nsis_tauri_utils::RunAsUser, so clicking Finish
-; launches the desktop app in the signed-in user's context, not as the elevated
-; per-machine installer. Keep the action enabled and use a clear label.
 !macro NSIS_HOOK_PREFINISHPAGE
   !ifdef MUI_FINISHPAGE_RUN_NOTCHECKED
     !undef MUI_FINISHPAGE_RUN_NOTCHECKED
