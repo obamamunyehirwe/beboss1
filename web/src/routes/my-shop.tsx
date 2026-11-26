@@ -142,6 +142,13 @@ function LookupPanel() {
   }, [lookup, username, phone, p.myShop.lookupFailed]);
 
   const hasAuthenticatedShop = result !== null;
+  const activeDeviceAddonRows = (result?.devices ?? []).filter((device) =>
+    device.is_active && !device.is_owner_primary && Number(device.monthly_fee_addon_rwf) > 0
+  );
+  const activeDeviceAddonTotalRwf = activeDeviceAddonRows.reduce(
+    (total, device) => total + Math.max(0, Number(device.monthly_fee_addon_rwf) || 0),
+    0
+  );
   useEffect(() => {
     if (!hasAuthenticatedShop) return;
     const refreshWhenVisible = () => {
@@ -484,19 +491,37 @@ function LookupPanel() {
             <Smartphone className="size-4 text-primary" /> {t("myDevices")}
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            Device slots, staff roles and branch assignments are shared with the Android app through the same shop cloud account.
+            Android terminals and BeBoss Desktop installations share this shop's registered device fleet, staff assignments and recurring subscription add-ons.
           </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3">
+              <p className="text-xs text-muted-foreground">{t("activeDeviceAddons")}</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums">{activeDeviceAddonRows.length.toLocaleString()}</p>
+            </div>
+            <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3">
+              <p className="text-xs text-muted-foreground">{t("monthlyDeviceAddon")}</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums">{formatRwf(activeDeviceAddonTotalRwf)} <span className="text-xs font-normal text-muted-foreground">{t("perMonth")}</span></p>
+            </div>
+          </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {result.devices.map((d) => {
               const h = deviceHealth(d.last_synced_at);
+              const desktopInstall = String(d.device_id || "").startsWith("DESKTOP:");
+              const deviceAddonRwf = Math.max(0, Number(d.monthly_fee_addon_rwf) || 0);
               return (
                 <div key={d.id} className="flex items-center justify-between gap-3 rounded-2xl border border-border px-4 py-3">
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">
                       {d.device_name || d.device_id || "Unpaired device slot"}
                       {d.is_owner_primary ? <span className="text-xs text-muted-foreground"> · {t("ownerPhone")}</span> : null}
                     </p>
-                    <p className="truncate text-xs text-muted-foreground">
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      <Badge variant="outline">{desktopInstall ? t("desktopDevice") : t("androidTerminal")}</Badge>
+                      {d.is_active && deviceAddonRwf > 0 ? (
+                        <Badge variant="warning">{formatRwf(deviceAddonRwf)} / {t("perMonth")}</Badge>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
                       {d.assigned_user_name} · {d.branch_name} · {d.device_id ? (d.last_synced_at ? relativeTime(d.last_synced_at) : "Waiting for first sync") : "Waiting for pairing"}
                     </p>
                   </div>
