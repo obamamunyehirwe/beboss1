@@ -68,6 +68,29 @@ export interface FileExportResult {
   sha256: string;
 }
 
+export interface LanHub {
+  id: string;
+  shopName: string;
+  branchName: string;
+  ipAddress: string;
+  port: number;
+  productsCount: number;
+  salesCount: number;
+  branchesCount: number;
+  lastSeenAt: number;
+}
+
+export interface LanSyncResult {
+  success: boolean;
+  peerIp: string;
+  pushedRecords: number;
+  pulledRecords: number;
+  conflictsAvailableForMerge: boolean;
+  pulledSnapshot: Record<string, unknown>;
+  latencyMs: number;
+  message: string;
+}
+
 
 declare global {
   interface Window {
@@ -100,6 +123,11 @@ declare global {
       networkPing(targetHost?: string): Promise<NetworkPingResult>;
       printEscposThermal(payload: ReceiptPrintPayload): Promise<EscposPrintResult>;
       exportBackupFile(encryptedContent: string): Promise<FileExportResult>;
+      lan: {
+        storeShopSecret(shopSyncKey: string, secret: string): Promise<void>;
+        discoverHubs(shopSyncKey: string, timeoutMs?: number): Promise<LanHub[]>;
+        syncWithHub(shopSyncKey: string, ipAddress: string, port: number, snapshot: Record<string, unknown>): Promise<LanSyncResult>;
+      };
       printReceipt(lines?: string[]): Promise<void>;
       platform: string;
       version: string;

@@ -90,6 +90,9 @@ jobs:
       - name: Verify every admin server function has authentication and role/permission guards
         run: node scripts/check-admin-rbac.mjs
 
+      - name: Verify Android does not bundle the deprecated global LAN secret
+        run: node ../.github/scripts/check-android-lan-secret.mjs
+
       - name: Run unit tests
         run: npm run test
 
@@ -235,6 +238,22 @@ jobs:
             $startMenuLink = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\BeBoss\BeBoss Desktop.lnk"
           }
           if (-not (Test-Path $startMenuLink -PathType Leaf)) { throw "The BeBoss Start Menu application shortcut is missing." }
+
+          # Launch the installed native GUI process, not only inspect its executable.
+          # A missing WebView2 runtime or broken native bundle must fail this test.
+          $application = Start-Process -FilePath $appExe -PassThru
+          try {
+            Start-Sleep -Seconds 8
+            if ($application.HasExited) {
+              throw "BeBoss.exe exited during native application startup with code $($application.ExitCode)."
+            }
+            Write-Host "BeBoss native application remained running after startup."
+          } finally {
+            if (-not $application.HasExited) {
+              Stop-Process -Id $application.Id -Force
+              Wait-Process -Id $application.Id -Timeout 15 -ErrorAction SilentlyContinue
+            }
+          }
 
           # Place a sentinel in the app's official per-user data location. A proper
           # uninstall removes binaries and shortcuts but must retain this data.
