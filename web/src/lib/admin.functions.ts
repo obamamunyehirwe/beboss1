@@ -1421,7 +1421,7 @@ const desktopReleaseDispatchSchema = z.object({
 
 const GITHUB_RELEASE_REPOSITORY = "obamamunyehirwe/beboss1";
 const GITHUB_DESKTOP_RELEASE_WORKFLOW = "desktop-release.yml";
-const DESKTOP_VERSION_PATTERN = /^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/;
+const DESKTOP_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 async function getDesktopSourceVersion(): Promise<string> {
   const response = await fetch(
