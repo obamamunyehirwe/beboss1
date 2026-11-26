@@ -61,6 +61,9 @@ jobs:
       - name: Test payment gateway primitives
         run: deno test --allow-env supabase/functions/_shared/payment-gateway.test.ts
 
+      - name: Test snapshot generation integrity
+        run: deno test --no-lock supabase/functions/_shared/snapshot-generations.test.ts
+
       - name: Test Android device credential primitives
         run: deno test --no-lock supabase/functions/_shared/device-credentials.test.ts
 
