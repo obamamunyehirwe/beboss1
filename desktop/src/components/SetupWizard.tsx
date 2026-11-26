@@ -70,7 +70,7 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     steps: [
       { title: "System compatibility", description: "Operating system and native desktop runtime" },
       { title: "Device identity", description: "Persistent desktop identity" },
-      { title: "Encrypted database", description: "SQLCipher cache, credentials and durable retry queue" },
+      { title: "Offline recovery store", description: "SQLCipher cache, credentials and durable retry queue" },
       { title: "Credential vault", description: "Operating-system secure storage" },
       { title: "Cloud connectivity", description: "Live Supabase PostgreSQL Data API request" }
     ]
@@ -110,7 +110,7 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     steps: [
       { title: "Sisitemu", description: "Operating system na porogaramu ya desktop" },
       { title: "Indangamuntu", description: "Indangamuntu ihoraho ya mudasobwa" },
-      { title: "Ububiko burinzwe", description: "SQLCipher, cache n'umurongo wo kohereza" },
+      { title: "Ububiko bwo kugarura", description: "SQLCipher, cache n'umurongo wo kohereza" },
       { title: "Ububiko bw'ibanga", description: "Umutekano wa sisitemu" },
       { title: "Guhuza na Cloud", description: "Ubusabe nyakuri kuri Supabase PostgreSQL Data API" }
     ]
@@ -190,7 +190,7 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     steps: [
       { title: "Ulinganifu wa mfumo", description: "Mfumo wa uendeshaji na runtime" },
       { title: "Utambulisho wa kifaa", description: "Utambulisho wa kudumu wa kompyuta" },
-      { title: "Hifadhidata fiche", description: "Cache ya SQLCipher na foleni ya kudumu" },
+      { title: "Hifadhi ya kurejesha", description: "Cache ya SQLCipher na foleni ya kudumu" },
       { title: "Hifadhi ya siri", description: "Usalama wa mfumo" },
       { title: "Muunganisho wa mtandao", description: "Ombi halisi kwa Supabase PostgreSQL Data API" }
     ]
@@ -292,8 +292,6 @@ export function SetupWizard({
       }
       updateStep(active, "complete", "Credential vault write/read verified; temporary secret removed.");
 
-      active = "cloud"; setActiveStep(active);
-      updateStep(active, "running", "Testing the configured Supabase network endpoint…");
       active = "cloud"; setActiveStep(active);
       updateStep(active, "running", "Sending a real request to the Supabase PostgreSQL Data API…");
       log("Verifying the live Supabase database API rather than a TCP-only connection.");
