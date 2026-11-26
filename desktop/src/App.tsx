@@ -581,7 +581,8 @@ function NativeDesktopApp() {
   }
 
   async function acceptRemoteRestore() {
-    if (!restoreCredentials) return;
+    const previewToAccept = restorePreview;
+    if (!restoreCredentials || !previewToAccept) return;
     setRestoreBusy(true);
     setError("");
     try {
@@ -589,7 +590,7 @@ function NativeDesktopApp() {
       if (!ready) return;
       const latestPreview = await callDesktopApi<RestorePreview>("restore_preview", restoreCredentials, { deviceId });
       await window.beBossDesktop.secureStore.set(
-        "desktop-restore-accepted:" + deviceId + ":" + restorePreview.shopSyncKey,
+        "desktop-restore-accepted:" + deviceId + ":" + previewToAccept.shopSyncKey,
         JSON.stringify({
           snapshotUpdatedAt: latestPreview.snapshotUpdatedAt,
           acceptedAt: new Date().toISOString()
