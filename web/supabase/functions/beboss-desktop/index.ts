@@ -786,15 +786,27 @@ Deno.serve(async (req: Request) => {
       const installationId = text(body.deviceId).trim();
       if (!isUuid(installationId)) return json(403, { ok: false, message: "This desktop installation has no valid device identity." });
       const desktopId = "DESKTOP:" + installationId;
+      const { data: ownerUser, error: ownerUserError } = await admin
+        .from("shop_users")
+        .select("user_id,username,role,is_active")
+        .eq("shop_sync_key", owner.shopId)
+        .eq("username", owner.username)
+        .eq("role", "OWNER")
+        .eq("is_active", true)
+        .maybeSingle();
       const { data: device, error: deviceError } = await admin
         .from("shop_devices")
-        .select("device_id,role,is_active,is_owner_primary,assigned_username")
+        .select("device_id,assigned_user_id,role,is_active,is_owner_primary,assigned_username")
         .eq("shop_sync_key", owner.shopId)
         .eq("device_id", desktopId)
         .eq("is_active", true)
         .maybeSingle();
-      if (deviceError || !device || device.role !== "OWNER" || device.is_owner_primary ||
-          text(device.assigned_username).trim().toLowerCase() !== owner.username) {
+      // Bind pairing to the precise active owner row in this tenant. Username-only
+      // checks could otherwise outlive a deleted/re-created staff owner identity.
+      if (ownerUserError || !ownerUser || deviceError || !device ||
+          device.role !== "OWNER" || device.is_owner_primary === true ||
+          text(device.assigned_user_id) !== text(ownerUser.user_id) ||
+          text(device.assigned_username).trim().toLowerCase() !== text(ownerUser.username).trim().toLowerCase()) {
         return json(403, { ok: false, message: "This desktop must be an active, owner-assigned device before LAN pairing credentials can be issued." });
       }
       const { data: shopSecret, error: secretError } = await admin
