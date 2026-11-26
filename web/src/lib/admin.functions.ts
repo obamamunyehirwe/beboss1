@@ -1448,6 +1448,9 @@ export const publishDesktopRelease = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
+    const token = String(process.env["GITHUB_RELEASE_TOKEN"] ?? "").trim();
+    if (!token) {
+      throw new Error("Desktop publishing is not configured on this server. Add GITHUB_RELEASE_TOKEN as a server-only secret with Actions write and Contents read access to obamamunyehirwe/beboss1.");
     const expectedExtension = data.platform === "windows" ? ".exe" : data.platform === "macos" ? ".dmg" : ".appimage";
     if (!data.file_name.toLowerCase().endsWith(expectedExtension)) {
       throw new Error(`The ${data.platform} release must be a ${expectedExtension} file.`);

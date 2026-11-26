@@ -140,6 +140,33 @@ jobs:
             exit 1
           fi
 
+      - name: Import and verify Apple Developer ID certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          certificate_path="$RUNNER_TEMP/beboss-developer-id.p12"
+          keychain_path="$RUNNER_TEMP/beboss-build.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 -D > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security default-keychain -s "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -t 3600 -u "$keychain_path"
+          security import "$certificate_path" -k "$keychain_path" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_path"
+          certificate_identity="$(security find-identity -v -p codesigning "$keychain_path" | awk -F '"' '/Developer ID Application/ {print $2; exit}')"
+          rm -f "$certificate_path"
+          if [[ -z "$certificate_identity" ]]; then
+            echo "::error::The imported P12 contains no valid Developer ID Application signing identity."
+            exit 1
+          fi
+          if [[ "$certificate_identity" != "$APPLE_SIGNING_IDENTITY" ]]; then
+            echo "::error::APPLE_SIGNING_IDENTITY does not match the imported Developer ID Application certificate."
+            exit 1
+          fi
+          echo "Verified Apple signing identity: $certificate_identity"
+
       - name: Install pinned desktop dependencies
         run: npm ci --no-audit --no-fund
 
