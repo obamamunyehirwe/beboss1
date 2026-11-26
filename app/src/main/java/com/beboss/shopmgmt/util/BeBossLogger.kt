@@ -11,9 +11,9 @@ object BeBossLogger {
 
     private val secretPatterns = listOf(
         Regex("""(?i)(pin|password|passcode|pinHash|secret|token|apikey|authorization|x-shop-sync-key)\s*[:=]\s*["']?([^\s,"'}\]]+)"""),
-        Regex("""BB2-[A-Z0-9-]+"""),
-        Regex("""BBSHARE1:[A-Za-z0-9+/=:-]+"""),
-        Regex("""pbkdf2:[0-9]+:[a-fA-F0-9]+:[a-fA-F0-9]+"""),
+        Regex("""BB[23]-[A-Z0-9-]+"""),
+        Regex("""BBSHARE[12]:[A-Za-z0-9+/=:-]+"""),
+        Regex("""pbkdf2v?2?:[0-9]+:[a-fA-F0-9]+:[a-fA-F0-9]+"""),
         Regex("""Bearer\s+[A-Za-z0-9._-]+""")
     )
 
