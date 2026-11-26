@@ -9,13 +9,14 @@ use serde_json::{Number, Value};
 use sha2::{Digest, Sha256};
 use std::{
     env, fs,
-    io::Write,
     net::{TcpStream, ToSocketAddrs},
     path::PathBuf,
-    process::{Command, Stdio},
-    ptr::null_mut,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+#[cfg(not(target_os = "windows"))]
+use std::{io::Write, process::{Command, Stdio}};
+#[cfg(target_os = "windows")]
+use std::ptr::null_mut;
 use tauri::Manager;
 use uuid::Uuid;
 
