@@ -32,7 +32,10 @@ import type { PublicDesktopRelease } from "@/lib/public.functions";
 import { formatBytes, formatDate } from "@/lib/format";
 import "./download-page.css";
 
-const downloadSearchSchema = z.object({ platform: z.enum(["mobile", "desktop"]).catch("mobile") });
+const downloadSearchSchema = z.object({
+  platform: z.enum(["mobile", "desktop"]).catch("mobile"),
+  os: z.enum(["windows", "macos", "linux"]).optional(),
+});
 type DownloadPlatform = "mobile" | "desktop";
 type DesktopOS = "windows" | "macos" | "linux";
 
@@ -72,7 +75,7 @@ function DownloadPage() {
   const { t, p } = useI18n();
   const { data } = useSuspenseQuery(publicSiteQuery);
   const router = useRouter();
-  const { platform } = Route.useSearch();
+  const { platform, os } = Route.useSearch();
   const { data: desktopReleaseData } = useQuery({
     ...desktopReleaseQuery,
     enabled: platform === "desktop",
@@ -85,7 +88,8 @@ function DownloadPage() {
     releaseUrl: "https://github.com/obamamunyehirwe/beboss1/releases",
     assets: { windows: null, macos: null, linux: null },
   };
-  const [desktopOs, setDesktopOs] = useState<DesktopOS>("windows");
+  const [detectedOs, setDetectedOs] = useState<DesktopOS>("windows");
+  const desktopOs: DesktopOS = os ?? detectedOs;
   const release = data.current;
   const [origin, setOrigin] = useState("");
   const [copiedHash, setCopiedHash] = useState(false);
@@ -99,17 +103,28 @@ function DownloadPage() {
   );
   const downloadUrl = `${DOWNLOAD_PATH}?ch=web`;
   const changePlatform = (next: DownloadPlatform) => {
-    router.history.push(next === "mobile" ? "/download" : "/download?platform=desktop");
+    if (next === "mobile") {
+      router.history.push("/download");
+      return;
+    }
+    router.history.push(`/download?platform=desktop&os=${desktopOs}`);
+  };
+  const changeDesktopOs = (next: DesktopOS) => {
+    // Keep the selected installer in the address bar. Browser back/forward now
+    // restores both the application family and the chosen operating system.
+    router.history.push(`/download?platform=desktop&os=${next}`);
   };
   const qrUrl = origin && release ? `${origin}${DOWNLOAD_PATH}?ch=qr` : "";
 
   useEffect(() => {
     setOrigin(window.location.origin);
+    // Respect an explicit URL selection; otherwise suggest the visitor's OS.
+    if (os) return;
     const userAgent = window.navigator.userAgent.toLowerCase();
-    if (userAgent.includes("mac")) setDesktopOs("macos");
-    else if (userAgent.includes("linux")) setDesktopOs("linux");
-    else setDesktopOs("windows");
-  }, []);
+    if (userAgent.includes("mac")) setDetectedOs("macos");
+    else if (userAgent.includes("linux")) setDetectedOs("linux");
+    else setDetectedOs("windows");
+  }, [os]);
 
   const copyHash = async () => {
     if (!release) return;
@@ -417,7 +432,7 @@ function DownloadPage() {
         <DesktopDownloads
           release={desktopRelease}
           selectedOs={desktopOs}
-          onSelectOs={setDesktopOs}
+          onSelectOs={changeDesktopOs}
         />
       )}
     </SiteLayout>
