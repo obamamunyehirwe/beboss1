@@ -8,7 +8,7 @@ import {
   restRows,
   restRequest,
 } from "../_shared/payment-gateway.ts";
-import { getMtnMomoAccessToken, getMtnMomoPaymentStatus, matchesMtnMomoSettlement, MtnMomoRequestRejectedError, readMtnMomoConfiguration, requestMtnMomoPayment } from "../_shared/mtn-momo.ts";
+import { getMtnMomoAccessToken, getMtnMomoPaymentStatus, matchesMtnMomoSettlement, MtnMomoRequestRejectedError, readMtnMomoConfiguration, requestMtnMomoPayment, type MtnMomoStatus } from "../_shared/mtn-momo.ts";
 
 type ShopRow = {
   id: string;
@@ -137,7 +137,7 @@ async function checkMtnPaymentStatus(request: Request, input: Record<string, unk
 
 
   const config = readMtnMomoConfiguration();
-  let status;
+  let status: MtnMomoStatus;
   try {
     status = await getMtnMomoPaymentStatus(config, row.provider_checkout_id);
   } catch (error) {
