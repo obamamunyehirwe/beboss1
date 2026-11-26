@@ -474,8 +474,13 @@ class SyncCoordinator(
                     branchIdFilter = branchIdFilter,
                     tombstones = repository.getAllTombstonesList()
                 )
-                val token = ShopDataTransferManager.createCompressedSyncToken(json)
-                repository.logSyncEvent("BRANCH_TOKEN", "SUCCESS", "Generated signed BBSHARE1 token (${token.length} chars)")
+                if (!prepareShopLanSecretFromCloud()) {
+                    throw SecurityException("Secure shop DataShare is not provisioned. Connect the owner phone to BeBoss Cloud once, then retry.")
+                }
+                val shopSecret = localNetworkSyncServer.activeShopSharedSecret()
+                    ?: throw SecurityException("The shop's protected DataShare key is unavailable on this device.")
+                val token = ShopDataTransferManager.createShopScopedShareToken(json, shopSecret)
+                repository.logSyncEvent("BRANCH_TOKEN", "SUCCESS", "Generated shop-scoped BBSHARE2 token (${token.length} chars)")
                 onReady(token)
             } catch (e: CancellationException) {
                 throw e
@@ -517,7 +522,19 @@ class SyncCoordinator(
     fun importBranchShareToken(tokenOrJson: String, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
         scope.launch {
             try {
-                val summary = ShopDataTransferManager.parseShopPackageString(tokenOrJson, enforceReplayProtection = true)
+                val cleanToken = tokenOrJson.trim()
+                val shopSecret = if (cleanToken.startsWith("BBSHARE2:")) {
+                    if (!prepareShopLanSecretFromCloud()) {
+                        throw SecurityException("Connect this device to the shop's registered owner account once to retrieve its protected DataShare key.")
+                    }
+                    localNetworkSyncServer.activeShopSharedSecret()
+                        ?: throw SecurityException("The shop's protected DataShare key is unavailable on this device.")
+                } else null
+                val summary = ShopDataTransferManager.parseShopPackageString(
+                    cleanToken,
+                    enforceReplayProtection = true,
+                    shopSecret = shopSecret
+                )
                 val result = repository.importShopDataPackage(summary, currentUser.value)
                 val msg = "Merged ${summary.branches.size} branches, ${result.mergedProducts} products, ${result.mergedSales} sales (${result.conflictsResolved} HLC conflicts resolved)."
                 repository.logSyncEvent("BRANCH_IMPORT", "SUCCESS", msg)
