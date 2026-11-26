@@ -748,9 +748,9 @@ export const createGatewayCheckout = createServerFn({ method: "POST" })
 
 
 /**
- * Public, read-only desktop release metadata. Only published BeBoss desktop
- * tags and an explicit installer allow-list are exposed to the download page.
- * Binary downloads remain on GitHub Releases; no storage credentials are used.
+ * Public, read-only desktop release metadata. Only current, publicly visible
+ * platform installers and approved archived versions in private BeBoss release
+ * storage are exposed. Downloads are issued through short-lived signed URLs.
  */
 export type PublicDesktopAsset = {
   id: string;
