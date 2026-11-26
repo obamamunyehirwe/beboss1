@@ -473,12 +473,13 @@ object ShopDataTransferManager {
         purchases: List<PurchaseRecord> = emptyList(),
         sinceUpdatedAt: Long = 0L,
         maxRecordsPerChunk: Int = 250,
-        tombstones: List<SyncTombstone> = emptyList()
+        tombstones: List<SyncTombstone> = emptyList(),
+        shopSecret: String
     ): List<String> {
         val total = branches.size + users.size + products.size + customers.size + sales.size + payments.size
         if (total <= maxRecordsPerChunk) {
             return listOf(
-                createCompressedSyncToken(
+                createShopScopedShareToken(
                     createExportJson(
                         profile = profile,
                         users = users,
@@ -493,7 +494,8 @@ object ShopDataTransferManager {
                         purchases = purchases,
                         sinceUpdatedAt = sinceUpdatedAt,
                         tombstones = tombstones
-                    )
+                    ),
+                    shopSecret
                 )
             )
         }
@@ -523,7 +525,7 @@ object ShopDataTransferManager {
                 sinceUpdatedAt = sinceUpdatedAt,
                 tombstones = if (idx == 0) tombstones else emptyList()
             )
-            tokens.add(createCompressedSyncToken(json))
+            tokens.add(createShopScopedShareToken(json, shopSecret))
         }
         return tokens
     }
