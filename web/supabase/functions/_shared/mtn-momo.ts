@@ -48,7 +48,7 @@ export function readMtnMomoConfiguration(): MtnMomoConfiguration {
   const defaultBaseUrl = environment === "sandbox"
     ? "https://sandbox.momodeveloper.mtn.com"
     : "https://momoapi.momo.africa";
-  const baseUrl = (Deno.env.get("MTN_MOMO_BASE_URL")?.trim() || defaultBaseUrl).replace(/\\/+$/, "");
+  const baseUrl = (Deno.env.get("MTN_MOMO_BASE_URL")?.trim() || defaultBaseUrl).replace(/\/+$/, "");
   const parsed = new URL(baseUrl);
   const expectedHost = environment === "sandbox"
     ? "sandbox.momodeveloper.mtn.com"
