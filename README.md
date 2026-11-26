@@ -113,7 +113,8 @@ A role name is not a security boundary by itself: server functions call the data
 The Admin → App Releases workspace has two separate interactive tabs: **Mobile releases** and **Desktop releases**. They maintain separate version histories and public download pointers.
 
 **Mobile**
-- Upload signed Android APKs with version name, monotonically increasing version code, minimum Android version, release notes and SHA-256 metadata.
+- Build the production-signed Android APK locally from the repository root with `./gradlew :app:assembleRelease` (Windows: `gradlew.bat :app:assembleRelease`). Select the resulting `app/build/outputs/apk/release/app-release.apk` in the Admin page; do not upload a debug APK.
+- Upload signed Android APKs with version name, monotonically increasing version code, minimum Android version, release notes and SHA-256 metadata. The browser calculates the file's SHA-256 before upload.
 - Select the current APK, manage public visibility of archived releases, and review download totals and channel activity.
 - Edit release metadata without replacing the immutable APK binary. Destructive archive deletion remains a Super Admin action.
 
@@ -123,7 +124,7 @@ The Admin → App Releases workspace has two separate interactive tabs: **Mobile
 - Publish platforms independently. Making a new Windows build current does not change macOS, Linux or Android.
 - Review per-platform current versions, archive history, checksums and download counts; change the public current build, hide an archived version, or delete an old package (Super Admin only).
 
-Desktop installer binaries stay in private storage. The public download page receives only metadata for each current public platform build; the server issues a short-lived signed download link after rechecking the release state and increments the associated download counter. The storage service key and private object paths are never exposed to the browser.
+Desktop installer binaries stay in private storage. The public download page exposes metadata for each current platform build and for archived versions that an administrator has explicitly made public. The server issues a short-lived signed download link only after rechecking the selected release's public visibility, and increments its associated download counter. The storage service key and private object paths are never exposed to the browser.
 
 Production Android distribution still requires the real upload keystore, signing passwords, package validation and a tested update path. A debug APK is for internal testing and must not replace an already installed production-signed build. Windows customer installers must pass local Authenticode signing and verification; macOS signing/notarization and Linux compatibility must be tested on their corresponding platforms before broad distribution.
 
@@ -218,7 +219,7 @@ BeBoss does not promise that every provider integration is automatically active 
 │   └── supabase/
 │       ├── functions/            # Server-side Edge Functions
 │       └── migrations/           # Database schema, indexes and RLS policies
-├── .github/workflows/            # CI, Android and native desktop builds
+├── .github/workflows/            # Source checks and CI-only installation smoke tests; no production release uploads
 └── README.md
 ```
 
