@@ -779,7 +779,7 @@ Deno.serve(async (req: Request) => {
       admin,
       config.publishableKey,
       body,
-      action === "bootstrap" || action === "restore_preview" || action === "redeem_unlock_code" || action === "device_enroll" || action === "device_retire_legacy"
+      action === "bootstrap" || action === "register_desktop" || action === "restore_preview" || action === "redeem_unlock_code" || action === "device_enroll" || action === "device_retire_legacy"
     );
 
     if (action === "lan_pairing_credentials") {
@@ -840,6 +840,7 @@ Deno.serve(async (req: Request) => {
       });
       return json(200, {
         ok: true,
+        shopSyncKey: owner.shopId,
         restoreAvailable: !!snapshot && totalRecords > 0,
         snapshotUpdatedAt: snapshotResult.uploadedAt,
         verifiedChunks: snapshotResult.verifiedChunks,
@@ -1086,7 +1087,7 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true, legacySyncDisabled: true });
     }
 
-    if (action === "bootstrap") {
+    if (action === "bootstrap" || action === "register_desktop") {
       const installationId = text(body.deviceId).trim();
       if (!isUuid(installationId)) {
         return json(403, { ok: false, message: "This desktop installation has no valid persistent device identity. Reopen the application and try again." });
@@ -1168,6 +1169,22 @@ Deno.serve(async (req: Request) => {
         registeredDesktop = data;
       }
       const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
+
+      // Registration is a separate server-confirmed step so a new desktop is
+      // never shown a cloud restore prompt before the owner accepts its recurring
+      // monthly device fee. This response deliberately contains no business data.
+      if (action === "register_desktop") {
+        return json(200, {
+          ok: true,
+          registered: true,
+          shop: { ...owner.shop, ...shopUsage },
+          desktopDevice: registeredDesktop,
+          monthlyAddonRwf: number(registeredDesktop.monthly_fee_addon_rwf),
+          registeredAt: now,
+          restoreRequired: true
+        });
+      }
+
       const [snapshotResult, paymentsResult, codesResult, devicesResult, branchesResult, transfersResult, staffResult, newsResult] = await Promise.all([
         latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret),
         admin.from("payment_requests").select("id,provider,amount_rwf,duration_months,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,rejection_reason,created_at,updated_at,gateway_provider,gateway_reference,gateway_verified_at").eq("owner_username", owner.username).order("created_at", { ascending: false }).limit(100),
