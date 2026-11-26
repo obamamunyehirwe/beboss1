@@ -169,7 +169,7 @@ export function WelcomePage({ cloud, snapshot, offline, revenueToday, profitToda
   const locale: DesktopLanguage = language in WELCOME_COPY ? language as DesktopLanguage : "en";
   const t = WELCOME_COPY[locale];
   const ownerName = s(cloud.owner?.owner_name) || s(cloud.shop.owner_name) || s(snapshot?.shopProfile?.name);
-  const firstName = ownerName.trim().split(/\\s+/)[0] || s(cloud.owner?.username) || "there";
+  const firstName = ownerName.trim().split(/\s+/)[0] || s(cloud.owner?.username) || "there";
   const hour = new Date().getHours();
   const greeting = hour < 12 ? t.greeting[0] : hour < 17 ? t.greeting[1] : t.greeting[2];
   const products = rows(snapshot?.products).filter((item) => item.isDeleted !== true);
