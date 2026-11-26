@@ -307,8 +307,12 @@ function mergeParts(parts: Row[]): Snapshot {
     const meta = (part.metadata && typeof part.metadata === "object" ? part.metadata : {}) as Row;
     const fallback = number(meta.timestamp);
     exportedAt = Math.max(exportedAt, fallback);
-    if (Object.keys(shopProfile).length === 0 && part.shopProfile && typeof part.shopProfile === "object") {
-      shopProfile = part.shopProfile as Row;
+    if (part.shopProfile && typeof part.shopProfile === "object") {
+      const candidateProfile = part.shopProfile as Row;
+      if (Object.keys(shopProfile).length === 0 ||
+          getVersion(candidateProfile, fallback) >= getVersion(shopProfile, number(metadata.timestamp))) {
+        shopProfile = candidateProfile;
+      }
     }
     if (fallback >= number(metadata.timestamp)) metadata = meta;
 
@@ -322,7 +326,13 @@ function mergeParts(parts: Row[]): Snapshot {
       }
     }
 
-    const alias: Partial<Record<DataKey, string>> = { customerPayments: "customerPayments" };
+    // Tombstones are named after Android Room table names, while snapshot
+    // collections use their JSON keys. Normalize both to the same canonical key.
+    const tombstoneTable: Partial<Record<DataKey, string>> = {
+      saleItems: "sale_items",
+      customerPayments: "customer_payments",
+      stockTransfers: "stock_transfers",
+    };
     for (const key of DATA_KEYS) {
       const rows = arrayRows(part[alias[key] ?? key]);
       for (const row of rows) {
@@ -336,17 +346,22 @@ function mergeParts(parts: Row[]): Snapshot {
 
   const live = (key: DataKey) => [...maps[key].values()].filter((row) => {
     if (row.isDeleted === true) return false;
-    const tombstone = tombstones.get(key + ":" + text(row.id));
+    const canonicalTombstoneTable = tombstoneTable[key] ?? key;
+    const tombstone = tombstones.get(canonicalTombstoneTable + ":" + text(row.id));
     return !tombstone || getVersion(row, exportedAt) > (number(tombstone.hlcTimestamp) || number(tombstone.deletedAt));
   });
+
+  const liveSales = live("sales");
+  const liveSaleIds = new Set(liveSales.map((sale) => text(sale.id)));
 
   return {
     metadata: { ...metadata, timestamp: exportedAt, schemaVersion: 3 },
     shopProfile,
     products: live("products"),
     customers: live("customers"),
-    sales: live("sales"),
-    saleItems: live("saleItems"),
+    sales: liveSales,
+    // A deleted sale must not leave its immutable line items in restored reports.
+    saleItems: live("saleItems").filter((item) => liveSaleIds.has(text(item.saleId))),
     customerPayments: live("customerPayments"),
     purchases: live("purchases"),
     stockTransfers: live("stockTransfers"),
