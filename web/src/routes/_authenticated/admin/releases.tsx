@@ -704,7 +704,7 @@ function ReleasesPage() {
                   </code>
                 </div>
                 <div className="rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs leading-5 text-muted-foreground">
-                  <strong className="text-foreground">Release safety:</strong> upload only a completed production build. Windows must pass Authenticode signing and verification; macOS signing/notarization and Linux runtime checks must be completed before customer distribution.
+                  <strong className="text-foreground">Release safety:</strong> browser checks confirm the package format, not publisher identity. Windows must pass local Authenticode signing and verification; macOS must be signed/notarized on macOS; Linux must pass runtime checks. Do not distribute an unsigned or unverified package.
                 </div>
                 <p className="text-xs leading-5 text-muted-foreground">The admin page never runs these commands and never builds source code for you. It only receives the local files you select.</p>
               </div>
