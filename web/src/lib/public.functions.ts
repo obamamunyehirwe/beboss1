@@ -48,6 +48,29 @@ async function requireOwnerSession(context: OwnerAuthContext, username: string, 
   return key;
 }
 
+/**
+ * Establish the tenant boundary for owner-portal mutations and reads.
+ * Authenticated owner membership is checked first with the caller's JWT. A fresh
+ * per-request server client is then created with the verified shop context; callers
+ * must still include explicit shop predicates on every table read/write.
+ */
+async function requireOwnerTenantAdmin(context: OwnerAuthContext, username: string, phone: string) {
+  const key = await requireOwnerSession(context, username, phone);
+  const { createShopAdminClient } = await import("@/integrations/supabase/client.server");
+  const supabase = createShopAdminClient(key);
+  const { data: shop, error } = await supabase
+    .from("shop_accounts")
+    .select("id,owner_username,owner_phone")
+    .eq("id", key)
+    .maybeSingle();
+  if (error || !shop ||
+      String(shop.owner_username ?? "").trim().toLowerCase() !== username.trim().toLowerCase() ||
+      normalizePhoneLast9(String(shop.owner_phone ?? "")) !== normalizePhoneLast9(phone)) {
+    throw new Error("The verified owner account does not match this registered shop.");
+  }
+  return { key, supabase };
+}
+
 const ownerEnrollmentSchema = z.object({
   username: z.string().trim().min(2).max(80),
   phone: z.string().trim().min(9).max(30),
@@ -230,17 +253,14 @@ export const lookupMyShop = createServerFn({ method: "POST" })
   .validator((d: z.infer<typeof lookupSchema>) => lookupSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
-    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
     const ownerUsername = data.username.trim().toLowerCase();
     const ownerPhone = ownerPhoneE164(data.phone);
     const ownerPhoneLast9 = normalizePhoneLast9(ownerPhone);
     if (ownerPhoneLast9.length !== 9) throw new Error("Enter the full phone number registered in the app.");
 
-    // My Shop has already verified the signed-in phone and active owner membership.
-    // Its normal user client does not carry an Android device credential header, so
-    // tenant RLS intentionally returns no shop rows. Use the service client only
-    // after that membership check, then scope every read to the exact tenant identity.
-    const { supabaseAdmin: sb } = await import("@/integrations/supabase/client.server");
+    // Owner membership is verified by the caller's JWT before the tenant client
+    // is created. All result queries below are explicitly scoped to this shop.
+    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const shopResult = await sb
       .from("shop_accounts")
       .select("id,shop_name,owner_name,owner_username,owner_phone,business_type,branch_count,worker_count,device_count,device_limit,monthly_fee_rwf,subscription_status,subscription_expires_at,remote_kill_switch,updated_at,lan_sync_secret")
@@ -377,8 +397,7 @@ export const addMyShopDevice = createServerFn({ method: "POST" })
   .validator((d: z.infer<typeof addShopDeviceSchema>) => addShopDeviceSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
-    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
-    const sb = ownerContext.supabase;
+    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const [shopResult, ownerResult, primaryResult, userResult, branchResult, devicesResult, usersResult, branchesResult, configResult] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, device_count, device_limit, branch_count, worker_count, remote_kill_switch").eq("id", key).maybeSingle(),
       sb.from("shop_users").select("user_id, username, full_name, role, is_active").eq("shop_sync_key", key).eq("role", "OWNER").eq("is_active", true).maybeSingle(),
@@ -516,8 +535,7 @@ export const upsertMyShopBranch = createServerFn({ method: "POST" })
   .validator((d: z.infer<typeof branchSchema>) => branchSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
-    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
-    const sb = ownerContext.supabase;
+    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const now = Date.now();
     const { error } = await sb.from("shop_branches").upsert(
       {
@@ -563,8 +581,7 @@ export const deleteMyShopBranch = createServerFn({ method: "POST" })
   .validator((d: z.infer<typeof branchIdSchema>) => branchIdSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
-    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
-    const sb = ownerContext.supabase;
+    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const now = Date.now();
     // RLS allows tenant update but not delete; soft-delete via is_active=false + fresh HLC.
     const { error } = await sb
@@ -599,9 +616,8 @@ export const upsertMyShopStockTransfer = createServerFn({ method: "POST" })
   .validator((d: z.infer<typeof transferSchema>) => transferSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
-    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
+    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     if (data.fromBranchId === data.toBranchId) throw new Error("Source and destination branches must differ.");
-    const sb = ownerContext.supabase;
     const { data: existing, error: readError } = await sb
       .from("shop_stock_transfers")
       .select("id,status")
@@ -663,8 +679,7 @@ export const confirmMyShopStockTransfer = createServerFn({ method: "POST" })
   .validator((d: z.infer<typeof confirmTransferSchema>) => confirmTransferSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
-    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
-    const sb = ownerContext.supabase;
+    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const now = Date.now();
     const { data: updated, error } = await sb
       .from("shop_stock_transfers")
@@ -710,8 +725,7 @@ export const requestMyShopStockTransferCancellation = createServerFn({ method: "
   .validator((d: z.infer<typeof cancelTransferSchema>) => cancelTransferSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
-    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
-    const sb = ownerContext.supabase;
+    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const now = Date.now();
     const { data: updated, error } = await sb
       .from("shop_stock_transfers")
