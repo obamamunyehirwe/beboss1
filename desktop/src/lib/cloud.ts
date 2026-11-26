@@ -57,6 +57,16 @@ export class OwnerAuthorizationError extends Error {
   }
 }
 
+export class DeviceFeeConfirmationRequired extends Error {
+  readonly monthlyAddonRwf: number;
+
+  constructor(monthlyAddonRwf = 2_000, message = "A new desktop requires owner approval for the monthly device add-on.") {
+    super(message);
+    this.name = "DeviceFeeConfirmationRequired";
+    this.monthlyAddonRwf = Number.isFinite(monthlyAddonRwf) && monthlyAddonRwf > 0 ? Math.floor(monthlyAddonRwf) : 2_000;
+  }
+}
+
 function isOwnerAuthorizationMessage(value: unknown) {
   const message = typeof value === "string" ? value.toLowerCase() : "";
   return /sign in with the registered shop-owner phone|sms-verified account|registered beboss shop owner|shop has been disabled|owner access .*revoked|not been enrolled as the owner|secure shop-owner enrollment|owner session has expired|unauthorized|forbidden|not authorized/.test(message);
@@ -123,6 +133,12 @@ export async function callDesktopApi<T = Record<string, unknown>>(
     if (context) {
       const details = await context.clone().json().catch(() => null);
       const responseMessage = typeof details?.message === "string" ? details.message : "";
+      if (details?.requiresDeviceFeeConfirmation === true) {
+        throw new DeviceFeeConfirmationRequired(
+          Number(details.monthlyAddonRwf) || 2_000,
+          responseMessage || "This additional desktop requires approval for its monthly device fee."
+        );
+      }
       if (context.status === 401 || context.status === 403 || isOwnerAuthorizationMessage(responseMessage)) {
         throw new OwnerAuthorizationError(responseMessage || "The owner session is no longer authorized.");
       }
