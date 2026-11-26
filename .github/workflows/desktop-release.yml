@@ -35,8 +35,14 @@ jobs:
           perl-version: "5.40"
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Verify desktop package, Tauri and Rust versions are identical
+        run: npm run check:versions
       - name: Type-check and build renderer
-        run: npm run build
+        run: |
+          npm run check:types
+          npm run build
+      - name: Test native encrypted database and lifecycle primitives
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - name: Build Windows installer
         run: npm run dist:win
       - name: Sign Windows installer
