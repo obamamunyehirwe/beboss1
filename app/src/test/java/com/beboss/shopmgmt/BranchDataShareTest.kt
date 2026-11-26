@@ -708,7 +708,7 @@ class BranchDataShareTest {
                 notes = "Test atomic checkout"
             )
 
-            assertTrue(sale.receiptNumber.matches(Regex("""REC-\\d{6}-\\d{6}-[A-F0-9]{8}""")))
+            assertTrue(sale.receiptNumber.matches(Regex("""REC-\d{6}-\d{6}-[A-F0-9]{8}""")))
             assertEquals(59.00, sale.totalAmount, 0.001)
             assertEquals(37.02, sale.totalCost, 0.001)
             assertEquals(21.98, sale.totalProfit, 0.001)
