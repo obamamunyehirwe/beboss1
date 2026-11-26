@@ -26,6 +26,8 @@ jobs:
       VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_SFUKqYETliLdgqluQBQ2xg_XJNudcvM
       RUSTUP_TOOLCHAIN: stable
+      WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+      WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -39,6 +41,11 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies and release outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> desktop/src-tauri/target
 
       - name: Set up Perl for bundled SQLCipher OpenSSL
         uses: shogo82148/actions-setup-perl@v1
@@ -70,6 +77,35 @@ jobs:
           Write-Host "Size: $($installer.Length) bytes"
           if ($installer.Length -lt 1000000) { throw "The setup executable is unexpectedly small." }
 
+      - name: Authenticode sign and verify installer when production certificate is configured
+        shell: pwsh
+        run: |
+          $installers = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File
+          if (-not $installers) { throw "No Windows setup executable exists to sign." }
+          $statusPath = Join-Path "src-tauri/target/release/bundle/nsis" "signature-status.txt"
+          if (-not $env:WINDOWS_CODESIGN_PFX_BASE64 -and -not $env:WINDOWS_CODESIGN_PFX_PASSWORD) {
+            "signature=unsigned; reason=Authenticode certificate secrets are not configured" | Set-Content $statusPath
+            Write-Warning "Installer is built but unsigned. Configure WINDOWS_CODESIGN_PFX_BASE64 and WINDOWS_CODESIGN_PFX_PASSWORD for production distribution."
+            exit 0
+          }
+          if (-not $env:WINDOWS_CODESIGN_PFX_BASE64 -or -not $env:WINDOWS_CODESIGN_PFX_PASSWORD) {
+            throw "Both Windows signing certificate secrets must be configured together."
+          }
+          $certificatePath = Join-Path $env:RUNNER_TEMP "beboss-release-signing.pfx"
+          try {
+            [System.IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_PFX_BASE64))
+            $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+            if (-not $signTool) { throw "Windows SDK signtool.exe was not found." }
+            foreach ($installer in $installers) {
+              & $signTool sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $certificatePath /p $env:WINDOWS_CODESIGN_PFX_PASSWORD $installer.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($installer.Name)." }
+              & $signTool verify /pa /v $installer.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $($installer.Name)." }
+            }
+            "signature=Authenticode signed and verified" | Set-Content $statusPath
+          } finally {
+            if (Test-Path $certificatePath) { Remove-Item $certificatePath -Force }
+          }
       - name: Generate SHA-256 manifest
         run: node scripts/generate-bundle-checksums.mjs "src-tauri/target/release/bundle/nsis"
 
