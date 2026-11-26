@@ -33,6 +33,7 @@ export type CloudState = {
 
 export type RestorePreview = {
   ok: true;
+  shopSyncKey: string;
   restoreAvailable: boolean;
   snapshotUpdatedAt: number;
   verifiedChunks: number;
