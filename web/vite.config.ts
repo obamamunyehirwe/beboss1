@@ -11,6 +11,9 @@ import tsconfigPaths from "vite-tsconfig-paths";
 const webRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(webRoot, "..");
 const mode = process.env.NODE_ENV === "production" ? "production" : "development";
+// Keep local workerd startup within the newest date supported by the runtime
+// currently bundled by the installed Cloudflare Vite plugin.
+const localWorkerCompatibilityDate = "2026-11-24";
 
 // Keep repository-root .env support for public build-time configuration.
 // Worker secrets are loaded at runtime from Cloudflare bindings / .dev.vars.
@@ -58,9 +61,17 @@ if (publicSupabaseKey) {
   publicSupabaseDefine["import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY"] = JSON.stringify(publicSupabaseKey);
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [
-    cloudflare({ viteEnvironment: { name: "ssr" } }),
+    cloudflare({
+      viteEnvironment: { name: "ssr" },
+      // `vite dev`/`vite preview` run the locally bundled workerd binary. Its
+      // supported date can lag the production Workers runtime by a day or two.
+      // Keep the Wrangler date (used for production builds/deploys) unchanged.
+      ...(command === "serve"
+        ? { config: { compatibility_date: localWorkerCompatibilityDate } }
+        : {}),
+    }),
     tanstackStart({ server: { entry: "server" } }),
     react(),
     tailwindcss(),
@@ -74,4 +85,4 @@ export default defineConfig({
   server: {
     allowedHosts: ["workspace-zkvm7tks-8b08c7aa60177527.v0.build"],
   },
-});
+}));
