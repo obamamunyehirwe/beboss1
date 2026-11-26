@@ -1,15 +1,16 @@
 import type React from "react";
 import { useState } from "react";
-import { Activity, AlertTriangle, Bell, CheckCircle2, Clipboard, CreditCard, LoaderCircle, MessageCircle, ShieldCheck, Smartphone, Wallet } from "lucide-react";
+import { Activity, AlertTriangle, Bell, CheckCircle2, Clipboard, CreditCard, KeyRound, LoaderCircle, MessageCircle, ShieldCheck, Smartphone, Wallet } from "lucide-react";
 import { dateOnly, dateTime, errorText, money, n, rows, s } from "../../lib/format";
 import type { CloudState, NavKey, Row } from "../../lib/types";
 import { Empty, Modal, PageHeading, StatusPill } from "../ui";
 
-export function BillingPage({ cloud, onNavigate, onCheckout, onPaymentProof }: {
+export function BillingPage({ cloud, onNavigate, onCheckout, onPaymentProof, onRedeemCode }: {
   cloud: CloudState;
   onNavigate: (view: NavKey) => void;
   onCheckout: (payload: Row) => Promise<void>;
   onPaymentProof: (payload: Row) => Promise<Row>;
+  onRedeemCode: (code: string) => Promise<Row>;
 }) {
   const shop = cloud.shop;
   const payments = rows(cloud.payments);
@@ -35,6 +36,10 @@ export function BillingPage({ cloud, onNavigate, onCheckout, onPaymentProof }: {
   const [proofNotice, setProofNotice] = useState("");
   const [proofResult, setProofResult] = useState<Row | null>(null);
   const [proofRequestId, setProofRequestId] = useState(() => "DESKTOP-" + crypto.randomUUID().toUpperCase());
+  const [activationCode, setActivationCode] = useState("");
+  const [activationBusy, setActivationBusy] = useState(false);
+  const [activationError, setActivationError] = useState("");
+  const [activationNotice, setActivationNotice] = useState("");
   const billingMonths = n(months);
   const monthly = n(shop.monthly_fee_rwf);
   const gross = monthly * billingMonths;
@@ -73,6 +78,27 @@ export function BillingPage({ cloud, onNavigate, onCheckout, onPaymentProof }: {
     }
   }
 
+  async function submitActivationCode(event: React.FormEvent) {
+    event.preventDefault();
+    const code = activationCode.trim();
+    if (!code) return;
+    setActivationBusy(true);
+    setActivationError("");
+    setActivationNotice("");
+    try {
+      const result = await onRedeemCode(code);
+      setActivationNotice("Activation code redeemed successfully. BeBoss has refreshed the shop subscription and cloud payment history.");
+      setActivationCode("");
+      if (result?.format === "BB2") {
+        setActivationNotice("Legacy BB2 code verified against its original issued BeBoss record and redeemed once.");
+      }
+    } catch (error) {
+      setActivationError(errorText(error));
+    } finally {
+      setActivationBusy(false);
+    }
+  }
+
   function closePaymentProof() {
     if (proofBusy) return;
     setProofOpen(false);
@@ -104,6 +130,18 @@ export function BillingPage({ cloud, onNavigate, onCheckout, onPaymentProof }: {
 
   return <div className="page-stack"><PageHeading title="Subscription & payments" description="Review the active shop plan, payment claims and issued activation records." action={<><button className="btn-outline" onClick={() => onNavigate("devices")}><Smartphone size={16} /> Manage devices</button><button className="btn-outline" onClick={() => { setProofResult(null); setProofError(""); setProofNotice(""); setProofOpen(true); }}><Wallet size={16} /> Mobile Money claim</button><button className="btn-primary" onClick={() => setRenewOpen(true)}><CreditCard size={16} /> Renew or upgrade</button></>} />
     <section className="plan-card"><div><span className="eyebrow">CURRENT SHOP PLAN</span><h2>{s(shop.subscription_status) || "UNAVAILABLE"}</h2><p>{s(shop.shop_name)} · {s(shop.business_type) || "Retail"}</p></div><div className="plan-expiry"><span>Subscription expiry</span><strong>{dateTime(shop.subscription_expires_at)}</strong><StatusPill value={expired ? "EXPIRED" : s(shop.subscription_status) || "TRIAL"} /></div><div className="plan-summary"><span>Monthly plan price</span><strong>{money(shop.monthly_fee_rwf)}</strong><small>{n(shop.branch_count)} branches · {n(shop.worker_count)} staff · {n(shop.device_count)} devices</small></div></section>
+    <section className="panel">
+      <div className="panel-heading"><div><span className="eyebrow muted">ACTIVATION</span><h3>Redeem a BeBoss unlock code</h3></div><KeyRound size={18} className="muted-icon" /></div>
+      <form className="form-grid" onSubmit={(event) => void submitActivationCode(event)}>
+        <label className="field-wide">BB3 or registered legacy BB2 code
+          <input value={activationCode} onChange={(event) => setActivationCode(event.target.value)} maxLength={512} autoComplete="off" spellCheck={false} placeholder="BB3-SINGLE-30-… or BB2-…" />
+        </label>
+        <div className="info-note field-wide"><ShieldCheck size={16} /> Codes are checked against this signed-in shop owner, verified cryptographically or against the original legacy issue record, and claimed once in BeBoss Cloud. An internet connection is required. Device-bound Android-only vouchers cannot be transferred to desktop.</div>
+        {activationError && <div className="inline-alert error field-wide"><AlertTriangle size={15} />{activationError}</div>}
+        {activationNotice && <div className="inline-alert info field-wide"><CheckCircle2 size={15} />{activationNotice}</div>}
+        <div className="modal-actions field-wide"><button className="btn-primary" disabled={activationBusy || !activationCode.trim()}>{activationBusy ? <LoaderCircle size={16} className="spin" /> : <KeyRound size={16} />}Redeem activation code</button></div>
+      </form>
+    </section>
     <div className="two-col"><section className="panel table-panel"><div className="panel-heading"><div><span className="eyebrow muted">PAYMENT CLAIMS</span><h3>Recent claims</h3></div></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Provider</th><th>Amount</th><th>Duration</th><th>Status</th></tr></thead><tbody>{payments.map((p) => <tr key={s(p.id)}><td>{dateOnly(p.created_at)}</td><td>{s(p.provider)}</td><td>{money(p.amount_rwf)}</td><td>{n(p.duration_months)} months</td><td><StatusPill value={s(p.status)} /></td></tr>)}</tbody></table></div>{!payments.length && <Empty title="No payment claims" description="Payment claims submitted for this shop will appear here." />}</section>
     <section className="panel table-panel"><div className="panel-heading"><div><span className="eyebrow muted">ACTIVATION CODES</span><h3>Issued codes</h3></div></div><div className="table-wrap"><table><thead><tr><th>Plan</th><th>Days</th><th>Status</th><th>Issued</th></tr></thead><tbody>{codes.map((c) => <tr key={s(c.unlock_code)}><td>{s(c.tier_code)}</td><td>{n(c.plan_days)}</td><td><StatusPill value={s(c.status)} /></td><td>{dateOnly(c.issued_at)}</td></tr>)}</tbody></table></div>{!codes.length && <Empty title="No activation codes" description="Verified payment claims and unlock codes are recorded here." />}</section></div>
     <section className="panel announcements"><div className="panel-heading"><div><span className="eyebrow muted">BEBOSS NOTICES</span><h3>Shop announcements</h3></div><Bell size={18} className="muted-icon" /></div>{rows(cloud.announcements).length ? rows(cloud.announcements).map((a) => <div className="announcement-row" key={s(a.id)}><StatusPill value={s(a.severity)} /><div><strong>{s(a.title)}</strong><p>{s(a.body)}</p></div></div>) : <Empty title="No active announcements" description="Important service updates for shop owners appear here." icon={Bell} />}</section>
