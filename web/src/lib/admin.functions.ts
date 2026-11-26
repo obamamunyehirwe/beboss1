@@ -1421,6 +1421,23 @@ const desktopReleaseDispatchSchema = z.object({
 
 const GITHUB_RELEASE_REPOSITORY = "obamamunyehirwe/beboss1";
 const GITHUB_DESKTOP_RELEASE_WORKFLOW = "desktop-release.yml";
+const DESKTOP_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+
+async function getDesktopSourceVersion(): Promise<string> {
+  const response = await fetch(
+    `https://raw.githubusercontent.com/${GITHUB_RELEASE_REPOSITORY}/main/desktop/package.json`,
+    { cache: "no-store", headers: { "User-Agent": "BeBoss-Admin-Desktop-Releases" } },
+  );
+  if (!response.ok) {
+    throw new Error(`Could not read the desktop source version from GitHub (HTTP ${response.status}).`);
+  }
+  const manifest = await response.json() as { version?: unknown };
+  const version = typeof manifest.version === "string" ? manifest.version.trim() : "";
+  if (!DESKTOP_VERSION_PATTERN.test(version)) {
+    throw new Error("The desktop package.json does not contain a valid semantic version.");
+  }
+  return version;
+}
 const GITHUB_API_HEADERS = (token: string) => ({
   Accept: "application/vnd.github+json",
   Authorization: `Bearer ${token}`,
@@ -1437,6 +1454,13 @@ export const dispatchDesktopRelease = createServerFn({ method: "POST" })
     const token = String(process.env["GITHUB_RELEASE_TOKEN"] ?? "").trim();
     if (!token) {
       throw new Error("Desktop publishing is not configured on this server. Add GITHUB_RELEASE_TOKEN as a server-only secret with Actions write and Contents write access to obamamunyehirwe/beboss1.");
+    }
+
+    const sourceVersion = await getDesktopSourceVersion();
+    if (data.version !== sourceVersion) {
+      throw new Error(
+        `Desktop release version must match the source version (${sourceVersion}). Update desktop/package.json, package-lock.json, src-tauri/tauri.conf.json, Cargo.toml and Cargo.lock together, then push the version bump before publishing.`,
+      );
     }
 
     const tagName = `desktop-v${data.version}`;
@@ -1485,9 +1509,11 @@ export const getDesktopReleaseStatus = createServerFn({ method: "GET" })
     const token = String(process.env["GITHUB_RELEASE_TOKEN"] ?? "").trim();
     const workflowUrl = `https://github.com/${GITHUB_RELEASE_REPOSITORY}/actions/workflows/${GITHUB_DESKTOP_RELEASE_WORKFLOW}`;
     const releasesUrl = `https://github.com/${GITHUB_RELEASE_REPOSITORY}/releases`;
+    const sourceVersion = await getDesktopSourceVersion();
     if (!token) {
       return {
         configured: false,
+        sourceVersion,
         workflowUrl,
         releasesUrl,
         latestRun: null,
@@ -1542,5 +1568,5 @@ export const getDesktopReleaseStatus = createServerFn({ method: "GET" })
         : [],
     } : null;
 
-    return { configured: true, workflowUrl, releasesUrl, latestRun, latestRelease };
+    return { configured: true, sourceVersion, workflowUrl, releasesUrl, latestRun, latestRelease };
   });

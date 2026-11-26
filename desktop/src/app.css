@@ -1302,3 +1302,35 @@ select option { background: var(--panel-bg); color: var(--text); }
   .auth-shell[data-theme="system"] .auth-back-home { color:#ff9e65; }
   .auth-shell[data-theme="system"] .auth-secure { color:#91a6c1; }
 }
+
+
+/* Larger native application identity in the workspace chrome. */
+.brand-row { min-height: 82px; gap: 14px; }
+.brand-row .brand-mark.brand-logo-mark {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+  border-radius: 19px;
+}
+.breadcrumb-brand-icon {
+  display: block;
+  flex: 0 0 27px;
+  width: 27px;
+  height: 27px;
+  padding: 1px;
+  border: 1px solid rgba(255, 157, 100, .35);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(243,111,33,.18), rgba(12,30,53,.86));
+  object-fit: contain;
+  box-shadow: 0 4px 12px rgba(243,111,33,.14);
+}
+.breadcrumb { gap: 9px; }
+@media(max-width:680px) {
+  .brand-row { min-height: 72px; }
+  .brand-row .brand-mark.brand-logo-mark { flex-basis: 54px; width: 54px; height: 54px; border-radius: 16px; }
+  .breadcrumb-brand-icon { flex-basis: 24px; width: 24px; height: 24px; }
+}
+@media(max-width:460px) {
+  .brand-row .brand-mark.brand-logo-mark { flex-basis: 49px; width: 49px; height: 49px; }
+  .breadcrumb-brand-icon { flex-basis: 21px; width: 21px; height: 21px; }
+}

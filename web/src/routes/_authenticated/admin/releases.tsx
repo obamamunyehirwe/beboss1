@@ -62,11 +62,16 @@ function ReleasesPage() {
   const [file, setFile] = useState<File | null>(null);
   const [form, setForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "", make_current: true });
   const [stage, setStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
-  const [desktopVersion, setDesktopVersion] = useState("1.3.1");
+  const [desktopVersion, setDesktopVersion] = useState("");
   const [desktopNotes, setDesktopNotes] = useState("");
   const [desktopDispatching, setDesktopDispatching] = useState(false);
   const [editingRelease, setEditingRelease] = useState<ReleaseWithVisibility | null>(null);
   const [editForm, setEditForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "" });
+
+  useEffect(() => {
+    const sourceVersion = desktopStatus.data?.sourceVersion;
+    if (sourceVersion) setDesktopVersion((current) => current.trim() ? current : sourceVersion);
+  }, [desktopStatus.data?.sourceVersion]);
   const editReleaseAction = useAdminAction(useServerFn(updateRelease), { success: "Release updated", invalidate: [["admin", "releases"], ["public-site"]] });
 
   const downloadUrl = `https://beboss.rw${DOWNLOAD_PATH}`;
@@ -74,8 +79,17 @@ function ReleasesPage() {
   const startDesktopRelease = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canManageReleases || desktopDispatching) return;
+    const sourceVersion = desktopStatus.data?.sourceVersion;
+    if (!sourceVersion) {
+      toast.error("The current desktop source version could not be verified. Refresh release status before publishing.");
+      return;
+    }
+    if (desktopVersion.trim() !== sourceVersion) {
+      toast.error("Desktop release version must match the source version " + sourceVersion + ". Update the desktop package versions first.");
+      return;
+    }
     if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(desktopVersion.trim())) {
-      toast.error("Enter a valid desktop version, for example 1.3.1.");
+      toast.error("Enter a valid desktop version.");
       return;
     }
     setDesktopDispatching(true);
@@ -258,11 +272,15 @@ function ReleasesPage() {
                       id="desktop-release-version"
                       value={desktopVersion}
                       onChange={(event) => setDesktopVersion(event.target.value)}
-                      placeholder="1.3.1"
+                      placeholder={desktopStatus.data?.sourceVersion ?? "Loading source version…"}
                       pattern="^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$"
                       maxLength={40}
+                      disabled={!desktopStatus.data?.sourceVersion || desktopDispatching}
                       required
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Must exactly match the source version in desktop/package.json: {desktopStatus.data?.sourceVersion ?? "checking GitHub…"}.
+                    </p>
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="desktop-release-notes">Release notes</Label>
