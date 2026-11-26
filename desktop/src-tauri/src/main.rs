@@ -1169,10 +1169,10 @@ fn lan_discover_hubs(shop_sync_key: String, timeout_ms: Option<u64>) -> Result<V
                 let port = value.get("port").and_then(Value::as_u64).unwrap_or(0);
                 let timestamp = value.get("ts").and_then(Value::as_i64).unwrap_or(0);
                 let signature = value.get("sig").and_then(Value::as_str).unwrap_or_default();
+                let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
                 if id.is_empty() || port != 8989 || timestamp <= 0
                     || claimed_ip != sender.ip().to_string()
-                    || SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64
-                        .saturating_sub(timestamp).abs() > 30_000
+                    || now_ms.saturating_sub(timestamp).abs() > 30_000
                 { continue; }
                 let signed_data = format!("{id}|{claimed_ip}|{port}|{timestamp}");
                 if !constant_time_string_eq(signature, &lan_signature(&shop_secret, &signed_data)) { continue; }
