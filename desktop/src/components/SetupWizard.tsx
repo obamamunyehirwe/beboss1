@@ -115,7 +115,7 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     recoverLocalBody: "BeBoss izabika database ya SQLCipher itabasha gufunguka n'umurongo w'impinduka zitegereje koherezwa mu bubiko bufite itariki, ibike urufunguzo rwa kera muri OS Vault niba rukiboneka, hanyuma ikore cache nshya irinzwe. Nyuma ya setup, injira kuri konti y'iduka maze ugarure amakuru yemejwe ari muri Cloud. Impinduka zari muri queue idashobora gufunguka zishobora kutazagarurwa.",
     recoverLocalButton: "Bika cache yangiritse maze ukomeze",
     recoverLocalConfirm: "BeBoss izimurira database idafunguka n'impinduka zitegereje koherezwa mu bubiko bwo kuyisubizamo, hanyuma ikore cache nshya. Amadosiye ya kera ntazasibwa. Impinduka zari muri queue ifunze gusa zishobora kutazagarurwa. Urashaka gukomeza?",
-    recoverLocalComplete: "Amadosiye ya database ya kera yabitswe hano kugira ngo azagarurwe nyuma"
+    recoverLocalComplete: "Amadosiye ya database ya kera yabitswe hano kugira ngo azagarurwe nyuma",
     statuses: { pending: "Birategereje", running: "Irakorwa", complete: "Byemejwe", warning: "Icyitonderwa", failed: "Byanze" },
     steps: [
       { title: "Sisitemu", description: "Operating system na porogaramu ya desktop" },
@@ -160,7 +160,7 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     recoverLocalBody: "BeBoss déplacera la base SQLCipher illisible et la file de reprise dans un dossier horodaté, conservera l'ancienne clé dans le coffre du système si elle est disponible, puis créera un nouveau cache chiffré. Après la configuration, connectez-vous au compte de la boutique et restaurez l'instantané cloud vérifié. Les changements présents uniquement dans une file locale illisible peuvent ne pas être récupérables.",
     recoverLocalButton: "Mettre le cache local en quarantaine et récupérer",
     recoverLocalConfirm: "BeBoss déplacera la base illisible et la file de reprise dans un dossier de récupération et créera un nouveau cache chiffré. Les anciens fichiers seront conservés, pas supprimés. Les changements présents uniquement dans la file locale verrouillée peuvent ne pas être récupérables. Continuer ?",
-    recoverLocalComplete: "Les anciens fichiers de la base locale ont été conservés pour récupération ici"
+    recoverLocalComplete: "Les anciens fichiers de la base locale ont été conservés pour récupération ici",
     statuses: { pending: "En attente", running: "Vérification", complete: "Vérifié", warning: "Attention", failed: "Échec" },
     steps: [
       { title: "Compatibilité système", description: "Système et exécution native" },
@@ -205,7 +205,7 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     recoverLocalBody: "BeBoss itahamisha hifadhidata ya SQLCipher isiyoweza kusomwa na foleni ya kutuma mabadiliko kwenye folda yenye muhuri wa muda, itahifadhi ufunguo wa zamani kwenye hifadhi salama ya mfumo ikiwa bado upo, kisha itaunda cache mpya iliyosimbwa. Baada ya usanidi, ingia kwa akaunti ya duka na urejeshe nakala iliyothibitishwa ya Cloud. Mabadiliko yaliyokuwepo kwenye foleni fiche isiyosomeka pekee huenda yasirejeshwe.",
     recoverLocalButton: "Hifadhi cache ya zamani kando na urejeshe",
     recoverLocalConfirm: "BeBoss itahamisha hifadhidata isiyosomeka na foleni ya mabadiliko kwenye folda ya urejeshaji na kuunda cache mpya fiche. Faili za zamani zitahifadhiwa, hazitafutwa. Mabadiliko yaliyokuwepo kwenye foleni iliyofungwa pekee huenda yasirejeshwe. Endelea?",
-    recoverLocalComplete: "Faili za zamani za hifadhidata zimehifadhiwa kwa urejeshaji hapa"
+    recoverLocalComplete: "Faili za zamani za hifadhidata zimehifadhiwa kwa urejeshaji hapa",
     statuses: { pending: "Inasubiri", running: "Inakagua", complete: "Imethibitishwa", warning: "Tahadhari", failed: "Imeshindwa" },
     steps: [
       { title: "Ulinganifu wa mfumo", description: "Mfumo wa uendeshaji na runtime" },
