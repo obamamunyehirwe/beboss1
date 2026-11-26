@@ -1466,7 +1466,18 @@ if (action === "create_branch_share") {
 
     if (action === "verify_branch_share") {
       const token = text(body.token).trim();
-      const shopShareSecret = await getShopDataShareSecret(admin, owner.shopId);
+      // Existing shops may not yet have provisioned the newer shop-scoped key.
+      // Legacy BBSHARE1 and old globally signed BBSHARE2 remain verifiable with
+      // the server-only compatibility key; never require or return that key on
+      // the client. When a shop key exists, it is tried first for current BBSHARE2.
+      const { data: shareSettings, error: shareSettingsError } = await admin
+        .from("shop_accounts")
+        .select("lan_sync_secret")
+        .eq("id", owner.shopId)
+        .maybeSingle();
+      if (shareSettingsError) throw new Error("Could not load the shop's protected DataShare settings.");
+      const candidateShopSecret = text(shareSettings?.lan_sync_secret).trim().toLowerCase();
+      const shopShareSecret = /^[a-f0-9]{64}$/.test(candidateShopSecret) ? candidateShopSecret : undefined;
       const decoded = await verifyAndDecodeToken(token, config.hmacSecret, shopShareSecret);
       const metadata = decoded.metadata && typeof decoded.metadata === "object" ? decoded.metadata as Row : {};
       if (text(metadata.format) !== "beboss_branch_datashare_v3") {
