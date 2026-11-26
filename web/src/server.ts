@@ -1,26 +1,20 @@
+import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
-type ServerEntry = {
-  fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
+const noStore = {
+  "Cache-Control": "no-store, max-age=0",
+  "X-Content-Type-Options": "nosniff",
 };
 
-let serverEntryPromise: Promise<ServerEntry> | undefined;
-
-async function getServerEntry(): Promise<ServerEntry> {
-  if (!serverEntryPromise) {
-    serverEntryPromise = import("@tanstack/react-start/server-entry").then(
-      (m) => (m.default ?? m) as ServerEntry,
-    );
-  }
-  return serverEntryPromise;
-}
-
-// h3 swallows in-handler throws into a normal 500 Response with body
-// {"unhandled":true,"message":"HTTPError"} — try/catch alone never fires for those.
-async function normalizeCatastrophicSsrResponse(response: Response): Promise<Response> {
+// h3 can turn a thrown SSR error into a generic HTTPError response. Keep the
+// original exception in the server log so the root cause is actionable.
+async function normalizeCatastrophicSsrResponse(
+  response: Response,
+  request: Request,
+): Promise<Response> {
   if (response.status < 500) return response;
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) return response;
@@ -28,10 +22,15 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   const body = await response.clone().text();
   if (!isH3SwallowedErrorBody(body)) return response;
 
-  console.error(consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`));
+  const url = new URL(request.url);
+  console.error(
+    `[BeBoss SSR] ${request.method} ${url.pathname}`,
+    consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`),
+  );
+
   return new Response(renderErrorPage(), {
     status: 500,
-    headers: { "content-type": "text/html; charset=utf-8" },
+    headers: { "Content-Type": "text/html; charset=utf-8", ...noStore },
   });
 }
 
@@ -44,21 +43,36 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
-// Hosting compresses every response at the edge. Never compress a body (gzip, brotli,
-// CompressionStream) or set content-encoding here or in a server route: the body gets encoded
-// twice and renders garbled.
-export default {
-  async fetch(request: Request, env: unknown, ctx: unknown) {
+// TanStack Start's server-entry API passes a request-options object as its
+// second fetch argument. createServerEntry supplies the correct runtime
+// adapter contract for Vite/Nitro/Cloudflare. Do not call handler.fetch with
+// the raw (request, env, ctx) platform signature: that drops Start's request
+// context and can make normal routes and server functions fail with HTTP 500.
+export default createServerEntry({
+  async fetch(request, opts) {
+    const url = new URL(request.url);
+
+    // Browsers commonly request /favicon.ico even when the document declares
+    // a different icon. This project keeps the official icon as a PNG.
+    if (url.pathname === "/favicon.ico") {
+      return new Response(null, {
+        status: 308,
+        headers: {
+          Location: "/beboss-app-icon.png",
+          ...noStore,
+        },
+      });
+    }
+
     try {
-      const handler = await getServerEntry();
-      const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      const response = await handler.fetch(request, opts);
+      return await normalizeCatastrophicSsrResponse(response, request);
     } catch (error) {
-      console.error(error);
+      console.error(`[BeBoss server] ${request.method} ${url.pathname}`, error);
       return new Response(renderErrorPage(), {
         status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
+        headers: { "Content-Type": "text/html; charset=utf-8", ...noStore },
       });
     }
   },
-};
+});
