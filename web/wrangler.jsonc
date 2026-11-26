@@ -3,6 +3,8 @@
   "name": "beboss-web",
   "main": "@tanstack/react-start/server-entry",
   "compatibility_date": "2026-11-26",
+  "workers_dev": true,
+  "preview_urls": true,
   "observability": {
     "enabled": true
   },
