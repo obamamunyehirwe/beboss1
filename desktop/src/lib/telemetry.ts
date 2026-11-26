@@ -16,7 +16,7 @@ export function scrubDesktopDiagnostic(value: string): string {
   return safe.replace(RWANDA_PHONE, "[PHONE]");
 }
 
-function sanitizeEvent(event: Sentry.Event): Sentry.Event {
+const sanitizeEvent: NonNullable<Parameters<typeof Sentry.init>[0]["beforeSend"]> = (event) => {
   if (event.message) event.message = scrubDesktopDiagnostic(event.message);
   if (event.exception?.values) {
     event.exception.values = event.exception.values.map((item) => ({
