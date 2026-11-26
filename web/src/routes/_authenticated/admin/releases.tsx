@@ -465,7 +465,8 @@ function ReleasesPage() {
       </div>
 
       {canManageReleases ? (
-        <div className="rounded-2xl border border-border bg-muted/20 p-4 sm:p-5">
+        <>
+          <div className="rounded-2xl border border-border bg-muted/20 p-4 sm:p-5">
           <div className="flex items-start gap-3">
             <HardDrive className="mt-0.5 size-5 shrink-0 text-primary" />
             <div className="min-w-0">
@@ -516,6 +517,7 @@ function ReleasesPage() {
             </Button>
           </div>
         </form>
+        </>
       ) : null}
 
       {releases.isLoading ? (
