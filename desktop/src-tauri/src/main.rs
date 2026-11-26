@@ -815,8 +815,7 @@ fn submit_raw_escpos(printer_name: &str, bytes: &[u8]) -> Result<String, String>
     Ok(request)
 }
 
-#[tauri::command]
-fn print_escpos_thermal(app: tauri::AppHandle, payload: ReceiptPrintPayload) -> Result<EscposPrintResult, String> {
+fn encode_escpos_receipt(payload: ReceiptPrintPayload) -> Vec<u8> {
     let mut bytes = Vec::new();
 
     // ESC @ - Initialize printer
@@ -866,6 +865,13 @@ fn print_escpos_thermal(app: tauri::AppHandle, payload: ReceiptPrintPayload) -> 
     bytes.extend_from_slice(&[0x1D, 0x56, 0x42, 0x00]);
     bytes.extend_from_slice(&[0x1B, 0x70, 0x00, 0x19, 0xFA]);
 
+
+    bytes
+}
+
+#[tauri::command]
+fn print_escpos_thermal(app: tauri::AppHandle, payload: ReceiptPrintPayload) -> Result<EscposPrintResult, String> {
+    let bytes = encode_escpos_receipt(payload);
     let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let spool_file = app_dir.join("thermal_receipt_spool.bin");
     fs::write(&spool_file, &bytes)
@@ -1009,6 +1015,46 @@ mod database_encryption_tests {
         assert_eq!(database_storage_bytes(&path), 224);
         let directory = path.parent().expect("test path has a parent");
         let _ = fs::remove_dir_all(directory);
+    }
+
+    fn printer_test_payload() -> ReceiptPrintPayload {
+        ReceiptPrintPayload {
+            shop_name: "BeBoss - PRINTER TEST".into(),
+            receipt_number: "TEST-0001".into(),
+            date: "2026-11-26 10:00".into(),
+            cashier: "SYSTEM TEST".into(),
+            customer: "NOT A SALE".into(),
+            items: vec![ReceiptItemPayload {
+                name: "Printer test".into(),
+                quantity: 1.0,
+                unit_price: 0.0,
+                subtotal: 0.0,
+            }],
+            subtotal: 0.0,
+            discount: 0.0,
+            total: 0.0,
+            paid: 0.0,
+            balance: 0.0,
+            payment_method: "TEST ONLY".into(),
+            tin: "".into(),
+            address: "".into(),
+            phone: "".into(),
+            header: "TEST PRINT - NOT A SALE".into(),
+            footer: "No sale, stock or payment was recorded.".into(),
+            seal: "DIAGNOSTIC ONLY".into(),
+        }
+    }
+
+    #[test]
+    fn escpos_test_receipt_contains_initialize_cut_and_no_sale_marker() {
+        let bytes = encode_escpos_receipt(printer_test_payload());
+        assert!(bytes.starts_with(&[0x1B, 0x40]), "ESC/POS job must initialize the printer");
+        assert!(
+            bytes.windows(b"TEST PRINT - NOT A SALE".len()).any(|w| w == b"TEST PRINT - NOT A SALE"),
+            "printer diagnostics must be clearly marked as a test, not a sale"
+        );
+        assert!(bytes.ends_with(&[0x1D, 0x56, 0x42, 0x00, 0x1B, 0x70, 0x00, 0x19, 0xFA]),
+            "receipt must include paper cut and cash drawer command sequence");
     }
 
     #[test]
