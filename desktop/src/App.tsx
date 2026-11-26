@@ -5,7 +5,7 @@ import {
   Package, RefreshCw, Search, Settings, ShieldCheck, ShoppingCart, Smartphone, Truck, UserRound,
   Users, Warehouse, X, Zap, Languages, ShieldAlert
 } from "lucide-react";
-import { callDesktopApi, currentSession, signOut, OwnerAuthorizationError, type OwnerCredentials } from "./lib/cloud";
+import { callDesktopApi, currentSession, signOut, OwnerAuthorizationError, DeviceFeeConfirmationRequired, type OwnerCredentials } from "./lib/cloud";
 import { BrowserRuntimeNotice } from "./components/BrowserRuntimeNotice";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
@@ -130,7 +130,7 @@ function NativeDesktopApp() {
     setError("Owner authorization is no longer valid. Verify the registered owner phone again before opening cached shop data.");
   }
 
-  async function bootstrap(credentials: OwnerCredentials, showBusy = true) {
+  async function bootstrap(credentials: OwnerCredentials, showBusy = true, confirmDeviceFee = false) {
     if (showBusy) setBusy(true);
     setError(""); setNotice("");
     try {
@@ -145,7 +145,7 @@ function NativeDesktopApp() {
       const response = await callDesktopApi<CloudState & { ok: true; desktopDevice: Row }>(
         "bootstrap",
         credentials,
-        { deviceId: installationId, deviceName: "BeBoss Desktop · " + platform }
+        { deviceId: installationId, deviceName: "BeBoss Desktop · " + platform, ...(confirmDeviceFee ? { confirmDeviceFee: true } : {}) }
       );
       const pending = await window.beBossDesktop.local.pending();
       let next = { ...response, snapshot: ensureSnapshot(response.snapshot) } as CloudState;
@@ -168,6 +168,16 @@ function NativeDesktopApp() {
       return true;
     } catch (e) {
       const message = errorText(e);
+      if (e instanceof DeviceFeeConfirmationRequired) {
+        const accepted = window.confirm(
+          "New BeBoss desktop detected.\\n\\nRegistering this installation adds FRw " +
+          e.monthlyAddonRwf.toLocaleString("en-US") +
+          " per month to your shop subscription. This is a recurring monthly device fee, not a one-time purchase. No payment is taken in this confirmation step.\\n\\nContinue and register this desktop?"
+        );
+        if (accepted) return await bootstrap(credentials, showBusy, true);
+        setError("Desktop registration was cancelled. This installation has not been added to your device fleet and no device add-on was applied.");
+        return false;
+      }
       if (e instanceof OwnerAuthorizationError) {
         await invalidateOwnerAuthorization();
         return false;
