@@ -1,7 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { z } from "zod";
 import { QRCodeSVG } from "qrcode.react";
 import {
+  Apple,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -9,11 +11,14 @@ import {
   Download,
   FileCheck2,
   FileDown,
+  Laptop,
+  Monitor,
   Printer,
   QrCode,
   ShieldCheck,
   Smartphone,
   Wifi,
+  ExternalLink,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -22,24 +27,30 @@ import { ServiceUnavailable } from "@/components/site/ServiceUnavailable";
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
 import { DOWNLOAD_PATH } from "@/lib/download-path";
-import { publicSiteQuery } from "@/lib/queries";
+import { desktopReleaseQuery, publicSiteQuery } from "@/lib/queries";
+import type { PublicDesktopRelease } from "@/lib/public.functions";
 import { formatBytes, formatDate } from "@/lib/format";
 import "./download-page.css";
 
+const downloadSearchSchema = z.object({ platform: z.enum(["mobile", "desktop"]).catch("mobile") });
+type DownloadPlatform = "mobile" | "desktop";
+type DesktopOS = "windows" | "macos" | "linux";
+
 export const Route = createFileRoute("/download")({
+  validateSearch: downloadSearchSchema,
   head: () => ({
     meta: [
-      { title: "Download BeBoss POS for Android — official app release" },
+      { title: "Download BeBoss POS — Android, Windows, macOS and Linux" },
       {
         name: "description",
         content:
-          "Get the official BeBoss Android POS installer, inspect release information, verify its SHA-256 checksum and scan a branded QR code for the direct download.",
+          "Download the official BeBoss POS applications for Android, Windows, macOS and Linux. Review release details and verify installer integrity.",
       },
-      { property: "og:title", content: "Download BeBoss POS for Android" },
+      { property: "og:title", content: "Download BeBoss POS for every device" },
       {
         property: "og:description",
         content:
-          "Official Android installer with release details, SHA-256 integrity information and a branded direct-download QR code.",
+          "Official BeBoss mobile and desktop installers with release details and integrity verification.",
       },
       { property: "og:type", content: "website" },
       { property: "og:image", content: "/beboss-app-icon.png" },
@@ -47,13 +58,20 @@ export const Route = createFileRoute("/download")({
     ],
   }),
   errorComponent: () => <ServiceUnavailable title="downloadTitle" />,
-  loader: ({ context }) => context.queryClient.ensureQueryData(publicSiteQuery),
+  loader: ({ context }) => Promise.all([
+    context.queryClient.ensureQueryData(publicSiteQuery),
+    context.queryClient.ensureQueryData(desktopReleaseQuery),
+  ]),
   component: DownloadPage,
 });
 
 function DownloadPage() {
   const { t, p } = useI18n();
   const { data } = useSuspenseQuery(publicSiteQuery);
+  const { data: desktopRelease } = useSuspenseQuery(desktopReleaseQuery);
+  const router = useRouter();
+  const { platform } = Route.useSearch();
+  const [desktopOs, setDesktopOs] = useState<DesktopOS>("windows");
   const release = data.current;
   const [origin, setOrigin] = useState("");
   const [copiedHash, setCopiedHash] = useState(false);
@@ -66,10 +84,17 @@ function DownloadPage() {
     release && normalizedHash.length === 64 && normalizedHash !== release.sha256.toLowerCase(),
   );
   const downloadUrl = `${DOWNLOAD_PATH}?ch=web`;
+  const changePlatform = (next: DownloadPlatform) => {
+    router.history.push(next === "mobile" ? "/download" : "/download?platform=desktop");
+  };
   const qrUrl = origin && release ? `${origin}${DOWNLOAD_PATH}?ch=qr` : "";
 
   useEffect(() => {
     setOrigin(window.location.origin);
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    if (userAgent.includes("mac")) setDesktopOs("macos");
+    else if (userAgent.includes("linux")) setDesktopOs("linux");
+    else setDesktopOs("windows");
   }, []);
 
   const copyHash = async () => {
@@ -98,25 +123,73 @@ function DownloadPage() {
 
   return (
     <SiteLayout>
-      <PageHero eyebrow={t("navDownload")} title={t("downloadTitle")} sub={t("downloadSub")}>
+      <PageHero
+        eyebrow={t("navDownload")}
+        title={platform === "desktop" ? "Download BeBoss Desktop" : t("downloadTitle")}
+        sub={platform === "desktop"
+          ? "Choose the native installer for Windows, macOS or Linux. Every package comes from the official BeBoss desktop release."
+          : t("downloadSub")}
+      >
         <div className="flex flex-wrap items-center gap-3">
-          {release ? (
-            <Button asChild variant="hero" size="lg">
-              <a href={downloadUrl}>
-                <Download /> Download official APK <ArrowRight />
-              </a>
-            </Button>
+          {platform === "mobile" ? (
+            <>
+              {release ? (
+                <Button asChild variant="hero" size="lg">
+                  <a href={downloadUrl}>
+                    <Download /> Download official APK <ArrowRight />
+                  </a>
+                </Button>
+              ) : (
+                <span className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-2 text-sm text-warning">
+                  No signed Android release is currently published.
+                </span>
+              )}
+              <Button asChild variant="glass" size="lg">
+                <a href="#release-details">Review release integrity</a>
+              </Button>
+            </>
           ) : (
-            <span className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-2 text-sm text-warning">
-              No signed Android release is currently published.
-            </span>
+            <>
+              <Button asChild variant="hero" size="lg">
+                <a href="#desktop-download-options">
+                  <Download /> Choose desktop installer <ArrowRight />
+                </a>
+              </Button>
+              <Button asChild variant="glass" size="lg">
+                <a href={desktopRelease.releaseUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink /> Release history
+                </a>
+              </Button>
+            </>
           )}
-          <Button asChild variant="glass" size="lg">
-            <a href="#release-details">Review release integrity</a>
-          </Button>
         </div>
       </PageHero>
 
+      <section className="download-platform-switcher mx-auto max-w-7xl px-4 pt-8 sm:px-6" aria-label="Choose your BeBoss app">
+        <div className="download-platform-tabs" role="tablist" aria-label="Application type">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={platform === "mobile"}
+            className={platform === "mobile" ? "download-platform-tab download-platform-tab-active" : "download-platform-tab"}
+            onClick={() => changePlatform("mobile")}
+          >
+            <Smartphone aria-hidden="true" /> Mobile app <span>Android</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={platform === "desktop"}
+            className={platform === "desktop" ? "download-platform-tab download-platform-tab-active" : "download-platform-tab"}
+            onClick={() => changePlatform("desktop")}
+          >
+            <Monitor aria-hidden="true" /> Desktop app <span>Windows · macOS · Linux</span>
+          </button>
+        </div>
+      </section>
+
+      {platform === "mobile" ? (
+      <>
       <section id="release-details" className="download-page-layout mx-auto grid max-w-7xl gap-6 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-[minmax(0,1.35fr)_minmax(310px,.8fr)]">
         <div className="download-release-card rounded-[2rem] border border-border bg-card bg-card-sheen p-6 sm:p-8 lg:p-9">
           {release ? (
@@ -325,7 +398,187 @@ function DownloadPage() {
           </div>
         </section>
       ) : null}
+      </>
+      ) : (
+        <DesktopDownloads
+          release={desktopRelease}
+          selectedOs={desktopOs}
+          onSelectOs={setDesktopOs}
+        />
+      )}
     </SiteLayout>
+  );
+}
+
+
+function DesktopDownloads({
+  release,
+  selectedOs,
+  onSelectOs,
+}: {
+  release: PublicDesktopRelease;
+  selectedOs: DesktopOS;
+  onSelectOs: (os: DesktopOS) => void;
+}) {
+  const asset = release.assets[selectedOs];
+  const labels: Record<DesktopOS, string> = {
+    windows: "Windows",
+    macos: "macOS",
+    linux: "Linux",
+  };
+  const version = release.tagName?.replace(/^desktop-/, "") ?? "Latest";
+  const options: { os: DesktopOS; title: string; subtitle: string }[] = [
+    { os: "windows", title: "Windows", subtitle: "64-bit · .exe installer" },
+    { os: "macos", title: "macOS", subtitle: "Disk image · .dmg" },
+    { os: "linux", title: "Linux", subtitle: "64-bit · AppImage" },
+  ];
+
+  return (
+    <main className="download-desktop-layout mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14">
+      <section className="download-desktop-card overflow-hidden rounded-[2rem] border border-border bg-card shadow-soft">
+        <div className="download-desktop-intro p-6 sm:p-9 lg:p-11">
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="download-app-art">
+              <img src="/beboss-app-logo.png" alt="BeBoss app logo" width={64} height={64} loading="eager" decoding="async" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-2xl font-bold sm:text-3xl">BeBoss Desktop</h2>
+                <span className={release.published
+                  ? "inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2.5 py-1 text-[11px] font-semibold text-success"
+                  : "inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 text-[11px] font-semibold text-warning"}>
+                  <CheckCircle2 className="size-3.5" />
+                  {release.published ? "Official release available" : release.unavailable ? "Release status unavailable" : "Awaiting first desktop release"}
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Native retail workspace for Windows, macOS and Linux
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-7 max-w-3xl">
+            <p className="text-base leading-7 text-muted-foreground">
+              Bring your complete BeBoss shop workspace to a larger screen. Manage checkout, products, inventory, customers, staff, branches and reports in the native desktop application, with the same authenticated shop account and cloud data.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            {options.map((option) => {
+              const selected = selectedOs === option.os;
+              const available = Boolean(release.assets[option.os]);
+              return (
+                <button
+                  key={option.os}
+                  type="button"
+                  aria-pressed={selected}
+                  className={selected
+                    ? "download-os-option download-os-option-active"
+                    : "download-os-option"}
+                  onClick={() => onSelectOs(option.os)}
+                >
+                  <span className="download-os-option-icon" aria-hidden="true">
+                    {option.os === "windows" ? <Monitor /> : option.os === "macos" ? <Apple /> : <Laptop />}
+                  </span>
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block font-semibold">{option.title}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">{option.subtitle}</span>
+                    <span className={available ? "download-os-availability download-os-availability-ready" : "download-os-availability"}>
+                      {available ? "Installer ready" : "Not published"}
+                    </span>
+                  </span>
+                  <span className="download-os-radio" aria-hidden="true">{selected ? "✓" : ""}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div id="desktop-download-options" className="download-desktop-download border-t border-border bg-surface/60 p-6 sm:p-9">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">Selected installer</p>
+              <h3 className="mt-2 text-2xl font-bold">{labels[selectedOs]}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{options.find((item) => item.os === selectedOs)?.subtitle}</p>
+            </div>
+            {asset ? (
+              <Button asChild variant="hero" size="xl" className="w-full sm:w-auto">
+                <a href={asset.downloadUrl}>
+                  <Download /> Download for {labels[selectedOs]} <ArrowRight />
+                </a>
+              </Button>
+            ) : (
+              <Button type="button" variant="hero" size="xl" className="w-full sm:w-auto" disabled>
+                <Download /> Installer not available yet
+              </Button>
+            )}
+          </div>
+
+          {asset ? (
+            <dl className="mt-6 grid gap-3 sm:grid-cols-3">
+              <Meta label="Desktop version" value={version} />
+              <Meta label="Package size" value={asset.sizeBytes > 0 ? formatBytes(asset.sizeBytes) : "Provided by release"} />
+              <Meta label="Downloads" value={asset.downloadCount.toLocaleString()} />
+            </dl>
+          ) : (
+            <div className="mt-6 rounded-2xl border border-warning/30 bg-warning/5 p-4 text-sm leading-6 text-muted-foreground" role="status">
+              {release.unavailable
+                ? "The release service could not be reached. The download page is still available; retry later or open the official release history."
+                : release.published
+                  ? `The latest desktop release does not contain a ${labels[selectedOs]} installer yet.`
+                  : "No desktop installer has been published yet. The Windows, macOS and Linux download buttons will activate automatically after the first verified desktop release is published."}
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+            <p className="text-xs text-muted-foreground">
+              {release.publishedAt ? `Published ${formatDate(release.publishedAt)}` : "Official BeBoss desktop distribution"}
+            </p>
+            <a
+              href={release.releaseUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-primary underline-offset-4 hover:underline"
+            >
+              View all desktop releases <ExternalLink className="size-4" />
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-7 grid gap-4 md:grid-cols-3">
+        <article className="download-os-guide">
+          <Monitor className="size-5 text-primary" />
+          <h3 className="mt-3 font-semibold">Windows setup</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">Run the NSIS setup file, follow the installer and launch BeBoss from the Start Menu. The production Windows release is only published after Authenticode signature verification.</p>
+        </article>
+        <article className="download-os-guide">
+          <Apple className="size-5 text-primary" />
+          <h3 className="mt-3 font-semibold">macOS installation</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">Open the DMG and move BeBoss to Applications. Whether Gatekeeper accepts the app without an additional confirmation depends on the Apple signing and notarization credentials used for that release.</p>
+        </article>
+        <article className="download-os-guide">
+          <Laptop className="size-5 text-primary" />
+          <h3 className="mt-3 font-semibold">Linux installation</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">Download the AppImage, make it executable with <code>chmod +x BeBoss-Linux-x64.AppImage</code>, then run it. Your distribution must provide the Tauri WebKit runtime dependencies.</p>
+        </article>
+      </section>
+
+      <section className="mt-7 rounded-3xl border border-border bg-card p-6 sm:p-8">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="mt-0.5 size-5 shrink-0 text-success" />
+          <div>
+            <h3 className="font-semibold">Official packages and integrity</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Desktop installers are built from the BeBoss repository by GitHub Actions. A SHA-256 manifest is attached to each published desktop release so the downloaded package can be checked before installation. Never install a package from an unofficial mirror.
+            </p>
+            <a href={release.releaseUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
+              Open signed release assets and SHA-256 manifest <ExternalLink className="size-4" />
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }
 
