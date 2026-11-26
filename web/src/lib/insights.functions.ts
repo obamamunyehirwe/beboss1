@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { computeRetailInsights, decodeShareToken, extractShopRecords, mergeShareJson, parseShareToken, pickLatestChunkSet, type RetailInsights, type ShopRecords } from "./snapshot-analytics";
-import { invokeSupabaseEdgeFunction, requireStaffRole, writeAudit, type AdminCtx } from "./admin-guard.server";
+import { invokeSupabaseEdgeFunction, requireAdminPermission, requireStaffRole, writeAudit, type AdminCtx } from "./admin-guard.server";
 
 const DATASHARE_SECRET = "BEBOSS_DATASHARE_HMAC_SECRET";
 const SNAPSHOT_PAGE_SIZE = 1000;
@@ -49,7 +49,8 @@ export const getShopInsights = createServerFn({ method: "POST" })
   .validator((d: { shopId: string }) => z.object({ shopId: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }): Promise<ShopInsightsResult> => {
     const ctx = context as unknown as AdminCtx;
-    await requireStaffRole(ctx, false);
+    await requireAdminPermission(ctx, "analytics.view");
+    await requireAdminPermission(ctx, "shops.view");
     const rows = await loadShopSnapshots(ctx, data.shopId);
     const set = pickLatestChunkSet(rows);
     const empty: ShopInsightsResult = { insights: null, chunks: 0, deviceId: "", branchName: "", uploadedAt: 0, signature: "UNCHECKED", error: null };
@@ -123,7 +124,7 @@ export const getShopRecords = createServerFn({ method: "POST" })
   .validator((d: { shopId: string }) => z.object({ shopId: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }): Promise<{ records: ShopRecords | null; uploadedAt: number; error: string | null }> => {
     const ctx = context as unknown as AdminCtx;
-    await requireStaffRole(ctx, false);
+    await requireAdminPermission(ctx, "shops.view");
 
     // Live branch + transfer rows from their normalized cloud tables (written by the phone
     // and the owner portal). These are authoritative when present; otherwise fall back to

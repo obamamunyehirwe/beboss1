@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { effectiveShopStatus } from "./pricing";
-import { requireStaffRole, type AdminCtx } from "./admin-guard.server";
+import { requireAdminPermission, type AdminCtx } from "./admin-guard.server";
 import { runAiText } from "./ai-gateway.server";
 
 const DAY = 86_400_000;
@@ -82,7 +82,8 @@ export const askCopilot = createServerFn({ method: "POST" })
   .validator((d: z.infer<typeof msgSchema>) => msgSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as AdminCtx;
-    await requireStaffRole(ctx, false);
+    await requireAdminPermission(ctx, "analytics.view");
+    await requireAdminPermission(ctx, "shops.view");
     const digest = await buildDigest(ctx);
     const text = await runAiText(`${COPILOT_RULES}\n\nBusiness digest (JSON):\n${JSON.stringify(digest)}`, data.messages);
     return { text };
@@ -93,7 +94,7 @@ export const draftInboxReply = createServerFn({ method: "POST" })
   .validator((d: { messageId: string; tone: "friendly" | "formal" }) => z.object({ messageId: z.string().uuid(), tone: z.enum(["friendly", "formal"]) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as AdminCtx;
-    await requireStaffRole(ctx, false);
+    await requireAdminPermission(ctx, "inbox.manage");
     const { data: m, error } = await ctx.supabase.from("contact_messages").select("full_name, shop_name, topic, message").eq("id", data.messageId).maybeSingle();
     if (error || !m) throw new Error("Message not found.");
     const { data: cfg } = await ctx.supabase.from("app_config").select("mtn_momo_code, mtn_recipient_name, airtel_money_phone, per_device_fee_rwf, apk_version").eq("id", "global").maybeSingle();
