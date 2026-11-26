@@ -442,3 +442,49 @@
 .setup-wizard[data-theme="system"] .setup-step.active {
   background: linear-gradient(110deg, rgba(249, 128, 74, .11), rgba(255,255,255,.6));
 }
+
+/* First-run setup shares BeBoss orange, charcoal and navy branding. */
+.setup-wizard { background:radial-gradient(ellipse at 82% 8%,rgba(243,111,33,.14),transparent 36%),#091524; }
+.setup-rail { border-right-color:rgba(243,111,33,.16);background:radial-gradient(ellipse at 18% 0,rgba(243,111,33,.17),transparent 43%),linear-gradient(160deg,#14243b,#091423); }
+.setup-brand { gap:13px; }
+.setup-brand img { width:62px;height:62px;flex:0 0 62px;padding:3px;object-fit:contain;border:1px solid rgba(255,163,107,.36);border-radius:18px;background:linear-gradient(145deg,rgba(243,111,33,.22),rgba(12,28,48,.92));box-shadow:0 11px 26px rgba(243,111,33,.18),inset 0 1px 0 rgba(255,255,255,.18); }
+.setup-brand strong { font-size:20px;letter-spacing:-.6px; }
+.setup-brand small { color:#ffad7c;font-size:8px;letter-spacing:1.45px; }
+.setup-step.active { border-color:rgba(243,111,33,.32);background:linear-gradient(100deg,rgba(243,111,33,.13),rgba(243,111,33,.035)); }
+.setup-step.active>span { color:#ffb17e;background:rgba(243,111,33,.19); }
+.setup-topline i { background:linear-gradient(90deg,#f36f21,#ffb173); }
+.setup-icon { width:62px;height:62px;border-color:rgba(243,111,33,.3);border-radius:18px;color:#ff995f;background:linear-gradient(145deg,rgba(243,111,33,.18),rgba(243,111,33,.04));box-shadow:0 10px 23px -17px rgba(243,111,33,.7); }
+.setup-install-note { border-color:rgba(243,111,33,.24);color:#ffad7c;background:linear-gradient(110deg,rgba(243,111,33,.12),rgba(22,42,66,.46)); }
+.setup-install-note strong { color:#ffe0cb; }
+.setup-install-note span { color:#c0a995; }
+.setup-language-grid button>span { color:#ffad7c;background:rgba(243,111,33,.14); }
+.setup-language-grid button:hover,.setup-language-grid button.selected,.setup-choice-row button:hover,.setup-choice-row button.selected { border-color:rgba(255,145,91,.55);background:rgba(243,111,33,.1); }
+.setup-check-icon.ready { color:#71ddb4;background:rgba(50,200,141,.14); }
+.setup-setting-row input[type="checkbox"] { accent-color:#f36f21; }
+@media(max-width:900px) {
+  .setup-rail { gap:14px;padding:15px 18px; }
+  .setup-brand img { width:50px;height:50px;flex-basis:50px;border-radius:15px; }
+  .setup-brand strong { font-size:17px; }
+}
+@media(max-width:560px) {
+  .setup-main { padding:22px 16px; }
+  .setup-brand img { width:46px;height:46px;flex-basis:46px; }
+  .setup-brand strong { font-size:15px; }
+  .setup-progress { gap:3px; }
+  .setup-step { min-width:29px;min-height:34px; }
+}
+.setup-wizard[data-theme="light"] { background:radial-gradient(ellipse at 82% 8%,rgba(243,111,33,.09),transparent 36%),#f3f6fb; }
+.setup-wizard[data-theme="light"] .setup-rail { border-color:rgba(36,58,88,.14);background:radial-gradient(ellipse at 18% 0,rgba(243,111,33,.13),transparent 43%),linear-gradient(160deg,#fff,#edf2f8); }
+.setup-wizard[data-theme="light"] .setup-brand strong { color:#172943; }
+.setup-wizard[data-theme="light"] .setup-brand small { color:#d66b2b; }
+.setup-wizard[data-theme="light"] .setup-step strong { color:#334967; }
+.setup-wizard[data-theme="light"] .setup-step.active { background:linear-gradient(100deg,rgba(243,111,33,.12),rgba(255,255,255,.8)); }
+.setup-wizard[data-theme="light"] .setup-security { border-color:rgba(243,111,33,.17);color:#c9652e;background:rgba(243,111,33,.06); }
+.setup-wizard[data-theme="light"] .setup-security strong { color:#7b4729; }
+.setup-wizard[data-theme="light"] .setup-security small { color:#866f61; }
+@media(prefers-color-scheme:light) {
+  .setup-wizard[data-theme="system"] { background:radial-gradient(ellipse at 82% 8%,rgba(243,111,33,.09),transparent 36%),#f3f6fb; }
+  .setup-wizard[data-theme="system"] .setup-rail { border-color:rgba(36,58,88,.14);background:radial-gradient(ellipse at 18% 0,rgba(243,111,33,.13),transparent 43%),linear-gradient(160deg,#fff,#edf2f8); }
+  .setup-wizard[data-theme="system"] .setup-brand strong { color:#172943; }
+  .setup-wizard[data-theme="system"] .setup-brand small { color:#d66b2b; }
+}
