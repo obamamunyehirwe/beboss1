@@ -99,9 +99,9 @@ export function BackupPage({ snapshot, cloud, onCommit, onCreateBranchShare, onV
     try {
       if (!snapshot) throw new Error("Sync the shop snapshot before creating a branch share package.");
       const token = await onCreateBranchShare(shareBranchId);
-      if (!token.startsWith("BBSHARE1:")) throw new Error("The server returned an invalid branch share token.");
+      if (!token.startsWith("BBSHARE2:")) throw new Error("The server did not return a shop-scoped BBSHARE2 token.");
       setShareToken(token);
-      setShareMessage("A signed BBSHARE1 package was created. It expires automatically and can be imported by BeBoss mobile or desktop.");
+      setShareMessage("A shop-scoped BBSHARE2 package was created. It expires automatically and can be imported by BeBoss mobile or desktop.");
     } catch (e) { setShareError(errorText(e)); }
     finally { setShareBusy(false); }
   }
@@ -133,7 +133,7 @@ export function BackupPage({ snapshot, cloud, onCommit, onCreateBranchShare, onV
       }
       const fileToken = shareFile ? await shareFile.text() : "";
       const token = importToken.trim() || fileToken.trim();
-      if (!token.startsWith("BBSHARE1:")) throw new Error("Choose a .beboss package or paste a valid BBSHARE1 token.");
+      if (!token.startsWith("BBSHARE2:") && !token.startsWith("BBSHARE1:")) throw new Error("Choose a .beboss package or paste a valid BBSHARE2 token (legacy BBSHARE1 is accepted only during migration).");
       if (token.length > 4 * 1024 * 1024) throw new Error("The branch share package exceeds the 4 MB Android DataShare limit.");
       const verified = await onVerifyBranchShare(token);
       const nonce = s(verified.metadata?.nonce);
@@ -201,12 +201,12 @@ export function BackupPage({ snapshot, cloud, onCommit, onCreateBranchShare, onV
     </div>
     <section className="panel backup-card">
       <div className="panel-heading"><div><span className="eyebrow muted">BRANCH DATASHARE</span><h3>Signed branch exchange</h3></div><Share2 size={18} className="muted-icon" /></div>
-      <p className="backup-desc">Create an Android-compatible BBSHARE1 package signed by the BeBoss server key, then import it on another terminal. Package integrity, shop identity and expiry are checked before any records are merged.</p>
+      <p className="backup-desc">Create an Android-compatible, shop-scoped BBSHARE2 package, then import it on another terminal. Package integrity, shop identity and expiry are checked before any records are merged.</p>
       <label className="backup-field">Export scope<select value={shareBranchId} onChange={(event) => setShareBranchId(event.target.value)}><option value="ALL">All branches</option>{rows(snapshot?.branches).map((branch) => <option key={s(branch.id)} value={s(branch.id)}>{s(branch.name) || s(branch.id)}</option>)}</select></label>
       <div className="backup-actions"><button className="btn-primary" onClick={() => void createBranchShare()} disabled={shareBusy || !snapshot}><Share2 size={15} /> {shareBusy ? "Preparing package…" : "Create signed branch package"}</button>{shareToken && <><button className="btn-outline" onClick={() => void copyBranchShare()}><Clipboard size={15} /> Copy token</button><button className="btn-outline" onClick={downloadBranchShare}><Download size={15} /> Download .beboss</button></>}</div>
-      {shareToken && <label className="backup-field">Generated BBSHARE1 token<textarea readOnly value={shareToken} rows={4} /></label>}
+      {shareToken && <label className="backup-field">Generated BBSHARE2 token<textarea readOnly value={shareToken} rows={4} /></label>}
       <label className="backup-field">Choose a signed .beboss package<input type="file" accept=".beboss,.txt,text/plain" onChange={(event) => setShareFile(event.target.files?.[0] ?? null)} /><small>{shareFile ? `Selected: ${shareFile.name}` : "Select a .beboss file downloaded or received from another BeBoss terminal."}</small></label>
-      <label className="backup-field">Or paste BBSHARE1 token<textarea value={importToken} onChange={(event) => setImportToken(event.target.value)} placeholder="Paste a branch share token received from another BeBoss terminal…" rows={4} /></label>
+      <label className="backup-field">Or paste BBSHARE2 token (or legacy BBSHARE1)<textarea value={importToken} onChange={(event) => setImportToken(event.target.value)} placeholder="Paste a branch share token received from another BeBoss terminal…" rows={4} /></label>
       <div className="backup-actions"><button className="btn-primary" onClick={() => void importBranchShare()} disabled={shareBusy || !snapshot || (!importToken.trim() && !shareFile)}><FileCheck2 size={15} /> Verify and merge package</button></div>
       {shareError && <div className="inline-alert error"><AlertTriangle size={15} />{shareError}</div>}
       {shareMessage && <div className="inline-alert info"><Check size={15} />{shareMessage}</div>}
