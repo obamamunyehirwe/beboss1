@@ -789,6 +789,7 @@ type GithubRelease = {
 };
 
 const DESKTOP_RELEASE_URL = "https://github.com/obamamunyehirwe/beboss1/releases";
+let desktopReleaseCache: { expiresAt: number; value: PublicDesktopRelease } | null = null;
 const DESKTOP_RELEASE_ASSET_NAMES = {
   windows: "BeBoss-Windows-x64-Setup.exe",
   macos: "BeBoss-macOS.dmg",
@@ -797,6 +798,13 @@ const DESKTOP_RELEASE_ASSET_NAMES = {
 
 export const getPublicDesktopRelease = createServerFn({ method: "GET" }).handler(
   async (): Promise<PublicDesktopRelease> => {
+    if (desktopReleaseCache && desktopReleaseCache.expiresAt > Date.now()) {
+      return desktopReleaseCache.value;
+    }
+    const cacheResult = (value: PublicDesktopRelease): PublicDesktopRelease => {
+      desktopReleaseCache = { expiresAt: Date.now() + 5 * 60_000, value };
+      return value;
+    };
     const empty: PublicDesktopRelease = {
       published: false,
       unavailable: false,
@@ -823,9 +831,9 @@ export const getPublicDesktopRelease = createServerFn({ method: "GET" }).handler
       );
 
       if (!response.ok) {
-        if (response.status === 404) return empty;
+        if (response.status === 404) return cacheResult(empty);
         console.warn("[BeBoss desktop releases] GitHub returned", response.status);
-        return { ...empty, unavailable: true };
+        return cacheResult({ ...empty, unavailable: true });
       }
 
       const releases = (await response.json()) as GithubRelease[];
@@ -836,7 +844,7 @@ export const getPublicDesktopRelease = createServerFn({ method: "GET" }).handler
           item.draft !== true &&
           item.prerelease !== true,
       );
-      if (!release) return empty;
+      if (!release) return cacheResult(empty);
 
       const findAsset = (expectedName: string): PublicDesktopAsset | null => {
         const asset = release.assets?.find((item) => item.name === expectedName);
@@ -860,20 +868,25 @@ export const getPublicDesktopRelease = createServerFn({ method: "GET" }).handler
         macos: findAsset(DESKTOP_RELEASE_ASSET_NAMES.macos),
         linux: findAsset(DESKTOP_RELEASE_ASSET_NAMES.linux),
       };
-      const releaseUrl =
-        typeof release.html_url === "string" &&
-        new URL(release.html_url).hostname === "github.com"
-          ? release.html_url
-          : DESKTOP_RELEASE_URL;
+      const releaseUrl = (() => {
+        try {
+          const url = new URL(release.html_url ?? "");
+          return url.protocol === "https:" && url.hostname === "github.com"
+            ? url.toString()
+            : DESKTOP_RELEASE_URL;
+        } catch {
+          return DESKTOP_RELEASE_URL;
+        }
+      })();
 
-      return {
+      return cacheResult({
         published: Object.values(assets).some(Boolean),
         unavailable: false,
         tagName: release.tag_name ?? null,
         publishedAt: release.published_at ?? null,
         releaseUrl,
         assets,
-      };
+      });
     } catch (error) {
       console.warn("[BeBoss desktop releases] Could not load release metadata", error);
       return { ...empty, unavailable: true };
