@@ -308,6 +308,8 @@ struct SystemDiagnostics {
     db_size_bytes: u64,
     #[serde(rename = "pendingOutboxCount")]
     pending_outbox_count: i64,
+    #[serde(rename = "oldestPendingAt")]
+    oldest_pending_at: Option<i64>,
     #[serde(rename = "uptimeSeconds")]
     uptime_seconds: u64,
     hostname: String,
@@ -315,6 +317,10 @@ struct SystemDiagnostics {
     database_encrypted: bool,
     #[serde(rename = "databaseCipherVersion")]
     database_cipher_version: String,
+    #[serde(rename = "databaseIntegrity")]
+    database_integrity: String,
+    #[serde(rename = "journalMode")]
+    journal_mode: String,
 }
 
 #[derive(Serialize)]
@@ -523,20 +529,54 @@ fn local_ack(app: tauri::AppHandle, ids: Vec<String>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn database_integrity_check(connection: &Connection) -> Result<String, String> {
+    let result = connection.query_row("PRAGMA quick_check(1)", [], |row| row.get::<_, String>(0))
+        .map_err(|error| format!("SQLCipher database integrity check failed: {error}"))?;
+    if !result.eq_ignore_ascii_case("ok") {
+        return Err(format!("SQLCipher database integrity check reported corruption: {result}"));
+    }
+    Ok(result)
+}
+
+fn database_storage_bytes(db_path: &std::path::Path) -> u64 {
+    [
+        db_path.to_path_buf(),
+        db_path.with_extension("sqlite-wal"),
+        db_path.with_extension("sqlite-shm"),
+    ]
+    .iter()
+    .filter_map(|path| fs::metadata(path).ok().map(|metadata| metadata.len()))
+    .fold(0u64, u64::saturating_add)
+}
+
 fn system_diagnostics(app: tauri::AppHandle) -> Result<SystemDiagnostics, String> {
     let db_path = database_path(&app)?;
-    let db_size_bytes = fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
     let connection = open_database(&app)?;
+    let db_size_bytes = database_storage_bytes(&db_path);
     let pending_outbox_count = connection.query_row(
         "SELECT COUNT(*) FROM sync_outbox WHERE status = 'PENDING'",
         [],
         |row| row.get(0)
+    ).map_err(|error| error.to_string())?;
+    let oldest_pending_at = connection.query_row(
+        "SELECT MIN(created_at) FROM sync_outbox WHERE status = 'PENDING'",
+        [],
+        |row| row.get::<_, Option<i64>>(0)
     ).map_err(|error| error.to_string())?;
     let database_cipher_version = connection.query_row(
         "PRAGMA cipher_version",
         [],
         |row| row.get::<_, String>(0)
     ).map_err(|error| format!("SQLCipher verification failed: {error}"))?;
+    if database_cipher_version.trim().is_empty() {
+        return Err("SQLCipher did not report an active database cipher.".into());
+    }
+    let database_integrity = database_integrity_check(&connection)?;
+    let journal_mode = connection.query_row(
+        "PRAGMA journal_mode",
+        [],
+        |row| row.get::<_, String>(0)
+    ).map_err(|error| format!("Could not verify the desktop database journal mode: {error}"))?;
     let uptime_seconds = PROCESS_START.get().map(|s| s.elapsed().as_secs()).unwrap_or(0);
     let hostname = env::var("COMPUTERNAME").or_else(|_| env::var("HOSTNAME")).unwrap_or_else(|_| "localhost".into());
 
@@ -547,10 +587,13 @@ fn system_diagnostics(app: tauri::AppHandle) -> Result<SystemDiagnostics, String
         db_path: db_path.to_string_lossy().to_string(),
         db_size_bytes,
         pending_outbox_count,
+        oldest_pending_at,
         uptime_seconds,
         hostname,
-        database_encrypted: !database_cipher_version.trim().is_empty(),
+        database_encrypted: true,
         database_cipher_version,
+        database_integrity,
+        journal_mode,
     })
 }
 
@@ -763,6 +806,37 @@ mod database_encryption_tests {
             without_key.query_row("SELECT COUNT(*) FROM retained_records", [], |row| row.get::<_, i64>(0)).is_err(),
             "the migrated database must not be readable without its encryption key"
         );
+        let directory = path.parent().expect("test path has a parent");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn database_quick_check_confirms_a_healthy_encrypted_database() {
+        let path = test_path("quick-check");
+        let connection = open_keyed_database(&path, "integrity-test-key")
+            .expect("SQLCipher database should initialize");
+        connection.execute_batch(
+            "CREATE TABLE shop_records (id TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO shop_records(id, value) VALUES ('one', 'retained data');"
+        ).expect("test data should be written");
+
+        assert_eq!(
+            database_integrity_check(&connection).expect("healthy database should pass quick_check"),
+            "ok"
+        );
+        drop(connection);
+        let directory = path.parent().expect("test path has a parent");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn database_storage_size_includes_wal_and_shared_memory_files() {
+        let path = test_path("storage-size");
+        fs::write(&path, vec![0u8; 128]).expect("database fixture should be created");
+        fs::write(path.with_extension("sqlite-wal"), vec![0u8; 64]).expect("WAL fixture should be created");
+        fs::write(path.with_extension("sqlite-shm"), vec![0u8; 32]).expect("SHM fixture should be created");
+
+        assert_eq!(database_storage_bytes(&path), 224);
         let directory = path.parent().expect("test path has a parent");
         let _ = fs::remove_dir_all(directory);
     }
