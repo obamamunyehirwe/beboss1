@@ -163,6 +163,8 @@ jobs:
     env:
       VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
     defaults:
       run:
         working-directory: desktop
@@ -183,7 +185,10 @@ jobs:
         with:
           perl-version: "5.40"
 
-      - name: Install desktop dependencies from the committed npm lockfile
+      - name: Synchronize desktop npm lockfile for new observability dependencies
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Install desktop dependencies from the synchronized npm lockfile
         run: npm ci --no-audit --no-fund
 
       - name: Run desktop client regression tests
