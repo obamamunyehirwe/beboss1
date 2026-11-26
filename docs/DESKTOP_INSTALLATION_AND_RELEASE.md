@@ -56,6 +56,8 @@ npm run dist:win
 
 The repository's Windows CI additionally builds the NSIS installer, performs a silent install, checks the executable and Start Menu shortcut, silently uninstalls it, and asserts that a per-user app-data sentinel survives uninstall.
 
+**Certificate rotation notice:** the repository previously tracked `desktop/codesign.pfx` while the repository was public. That file has been removed from the current source tree and `*.pfx` / `*.p12` are now ignored. Removing a file does not erase older public Git history, so the old certificate must be revoked or invalidated by its issuer. CI explicitly rejects the exact exposed PFX and validates that the replacement contains a valid private key and the Code Signing extended key usage before invoking SignTool. Store only the newly issued PFX (base64) and its password in GitHub Actions secrets; never put either value or a PFX file in Git.
+
 ## Production signing and distribution
 
 A production Windows installer is not considered release-ready until Authenticode signing and signature verification succeed. The release workflow requires the protected GitHub Actions secrets:
