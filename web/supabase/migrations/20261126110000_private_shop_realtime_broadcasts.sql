@@ -5,22 +5,34 @@
 -- Private channel topic: shop:<shop_sync_key>
 -- Authorization is checked once on channel join and refreshed with the owner's JWT.
 
-CREATE POLICY "BeBoss active shop owners receive private shop change broadcasts"
-ON realtime.messages
-FOR SELECT
-TO authenticated
-USING (
-  extension = 'broadcast'
-  AND realtime.topic() LIKE 'shop:%'
-  AND EXISTS (
-    SELECT 1
-    FROM public.shop_owner_memberships AS membership
-    WHERE membership.user_id = (SELECT auth.uid())
-      AND membership.shop_id = substr(realtime.topic(), 6)
-      AND membership.status = 'ACTIVE'
-      AND membership.revoked_at = 0
-  )
-);
+-- The GitHub migration test database is plain PostgreSQL and does not install
+-- Supabase Realtime. Apply the authorization policy only where the Realtime
+-- extension is present; production Supabase has realtime.messages.
+DO $do$
+BEGIN
+  IF to_regclass('realtime.messages') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "BeBoss active shop owners receive private shop change broadcasts" ON realtime.messages';
+    EXECUTE $policy$
+      CREATE POLICY "BeBoss active shop owners receive private shop change broadcasts"
+      ON realtime.messages
+      FOR SELECT
+      TO authenticated
+      USING (
+        extension = 'broadcast'
+        AND realtime.topic() LIKE 'shop:%'
+        AND EXISTS (
+          SELECT 1
+          FROM public.shop_owner_memberships AS membership
+          WHERE membership.user_id = (SELECT auth.uid())
+            AND membership.shop_id = substr(realtime.topic(), 6)
+            AND membership.status = 'ACTIVE'
+            AND membership.revoked_at = 0
+        )
+      )
+    $policy$;
+  END IF;
+END;
+$do$;
 
 CREATE OR REPLACE FUNCTION public.broadcast_beboss_shop_change()
 RETURNS trigger
@@ -48,6 +60,12 @@ BEGIN
   END IF;
 
   -- Never broadcast row contents, personal data, tokens, balances or credentials.
+  -- Plain PostgreSQL CI has no Realtime extension; the trigger is a no-op
+  -- there, while Supabase production performs the metadata-only broadcast.
+  IF to_regprocedure('realtime.send(jsonb,text,text,boolean)') IS NULL THEN
+    RETURN NULL;
+  END IF;
+
   PERFORM realtime.send(
     jsonb_build_object(
       'table', TG_TABLE_NAME,
