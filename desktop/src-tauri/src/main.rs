@@ -246,6 +246,46 @@ fn stamp_desktop_records(value: &mut Value, hlc: i64, updated_since: i64, device
     }
 }
 
+fn validate_shop_scope(shop_sync_key: &str) -> Result<&str, String> {
+    let clean = shop_sync_key.trim();
+    if !(8..=120).contains(&clean.len())
+        || !clean.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        return Err("A valid registered shop identity is required for local sync storage.".into());
+    }
+    Ok(clean)
+}
+
+fn scoped_snapshot_key(shop_sync_key: &str) -> Result<String, String> {
+    Ok(format!("snapshot:{}", validate_shop_scope(shop_sync_key)?))
+}
+
+fn scoped_hlc_key(shop_sync_key: &str) -> Result<String, String> {
+    Ok(format!("last-hlc:{}", validate_shop_scope(shop_sync_key)?))
+}
+
+fn ensure_sync_outbox_tenant_column(connection: &Connection) -> Result<(), String> {
+    // Old outbox rows receive tenant_id='' and stay quarantined: they are never
+    // replayed into an arbitrary account after an owner switches shops.
+    let has_tenant_id = {
+        let mut statement = connection.prepare("PRAGMA table_info(sync_outbox)")
+            .map_err(|error| error.to_string())?;
+        let columns = statement.query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        columns.iter().any(|column| column == "tenant_id")
+    };
+    if !has_tenant_id {
+        connection.execute_batch("ALTER TABLE sync_outbox ADD COLUMN tenant_id TEXT NOT NULL DEFAULT '';")
+            .map_err(|error| format!("Could not safely add shop-scoped offline queue metadata: {error}"))?;
+    }
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS sync_outbox_tenant_ready ON sync_outbox(tenant_id, status, created_at);"
+    ).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
     let path = database_path(app)?;
     let key_seed = database_key(&path)?;
@@ -291,6 +331,7 @@ fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
              payload TEXT NOT NULL,
              hlc INTEGER NOT NULL,
              device_id TEXT NOT NULL,
+             tenant_id TEXT NOT NULL DEFAULT '',
              status TEXT NOT NULL DEFAULT 'PENDING',
              attempts INTEGER NOT NULL DEFAULT 0,
              last_error TEXT NOT NULL DEFAULT '',
@@ -305,6 +346,8 @@ fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
          );
          CREATE INDEX IF NOT EXISTS sync_outbox_ready ON sync_outbox(status, created_at);"
     ).map_err(|error| error.to_string())?;
+
+    ensure_sync_outbox_tenant_column(&connection)?;
     Ok(connection)
 }
 
@@ -479,17 +522,50 @@ fn get_device_id(app: tauri::AppHandle) -> Result<String, String> {
     Ok(device_id)
 }
 
-#[tauri::command]
-fn local_load(app: tauri::AppHandle) -> Result<Option<Value>, String> {
+#[tauri::command(rename_all = "camelCase")]
+fn local_load(app: tauri::AppHandle, shop_sync_key: String) -> Result<Option<Value>, String> {
+    let snapshot_key = scoped_snapshot_key(&shop_sync_key)?;
     let connection = open_database(&app)?;
-    let value = connection.query_row("SELECT value FROM local_state WHERE key = 'snapshot'", [], |row| row.get::<_, String>(0))
+    let value = connection.query_row("SELECT value FROM local_state WHERE key = ?1", [snapshot_key], |row| row.get::<_, String>(0))
         .optional().map_err(|error| error.to_string())?;
     value.map(|json| serde_json::from_str(&json).map_err(|error| error.to_string())).transpose()
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
+fn local_save_baseline(
+    app: tauri::AppHandle,
+    shop_sync_key: String,
+    snapshot: Value,
+    snapshot_updated_at: i64,
+) -> Result<(), String> {
+    let snapshot_key = scoped_snapshot_key(&shop_sync_key)?;
+    if snapshot_updated_at < 0 || !snapshot.is_object() ||
+        !snapshot.get("metadata").is_some_and(Value::is_object)
+    {
+        return Err("The verified cloud snapshot is incomplete.".into());
+    }
+    let serialized = serde_json::to_string(&snapshot).map_err(|error| error.to_string())?;
+    let connection = open_database(&app)?;
+    let transaction = connection.unchecked_transaction().map_err(|error| error.to_string())?;
+    let pending: i64 = transaction.query_row(
+        "SELECT COUNT(*) FROM sync_outbox WHERE tenant_id = ?1 AND status = 'PENDING'",
+        [&shop_sync_key],
+        |row| row.get(0)
+    ).map_err(|error| error.to_string())?;
+    if pending > 0 {
+        return Err("A newer local transaction is still pending; the verified baseline was not allowed to replace it.".into());
+    }
+    transaction.execute(
+        "INSERT INTO local_state(key, value, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        params![snapshot_key, serialized, snapshot_updated_at]
+    ).map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())
+}
+
+#[tauri::command(rename_all = "camelCase")]
 fn local_queue(
     app: tauri::AppHandle,
+    shop_sync_key: String,
     operation: String,
     mut payload: Value,
     device_id: String,
@@ -498,6 +574,9 @@ fn local_queue(
     subscription_expires_at: i64,
     subscription_status: String,
 ) -> Result<PendingTransaction, String> {
+    validate_shop_scope(&shop_sync_key)?;
+    let snapshot_key = scoped_snapshot_key(&shop_sync_key)?;
+    let hlc_key = scoped_hlc_key(&shop_sync_key)?;
     if operation.is_empty() || operation.len() > 100 || device_id.is_empty() || device_id.len() > 180 || expected_updated_at < 0 {
         return Err("Invalid local transaction.".into());
     }
@@ -514,8 +593,13 @@ fn local_queue(
     if requires_active_subscription && !is_subscription_active(&subscription_status, subscription_expires_at, now) {
         return Err("The shop subscription is expired or suspended. Renew it before recording another sale.".into());
     }
-    let prior_outbox_hlc: Option<i64> = connection.query_row("SELECT MAX(hlc) FROM sync_outbox", [], |row| row.get(0)).map_err(|error| error.to_string())?;
-    let prior_saved_hlc: Option<String> = connection.query_row("SELECT value FROM local_state WHERE key = 'last-hlc'", [], |row| row.get(0)).optional().map_err(|error| error.to_string())?;
+    let prior_outbox_hlc: Option<i64> = connection.query_row(
+        "SELECT MAX(hlc) FROM sync_outbox WHERE tenant_id = ?1 AND status = 'PENDING'",
+        [&shop_sync_key], |row| row.get(0)
+    ).map_err(|error| error.to_string())?;
+    let prior_saved_hlc: Option<String> = connection.query_row(
+        "SELECT value FROM local_state WHERE key = ?1", [&hlc_key], |row| row.get(0)
+    ).optional().map_err(|error| error.to_string())?;
     let prior_hlc = prior_outbox_hlc.into_iter().chain(prior_saved_hlc.and_then(|value| value.parse::<i64>().ok())).max();
     let wall_hlc = now.checked_shl(16).ok_or_else(|| "Clock value is out of range.".to_string())?;
     let hlc = wall_hlc.max(prior_hlc.unwrap_or(0).saturating_add(1));
@@ -523,22 +607,30 @@ fn local_queue(
     let id = Uuid::new_v4().to_string();
     let serialized = serde_json::to_string(&payload).map_err(|error| error.to_string())?;
     let transaction = connection.unchecked_transaction().map_err(|error| error.to_string())?;
-    transaction.execute("INSERT INTO local_state(key, value, updated_at) VALUES ('snapshot', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at", params![serialized, now])
-        .map_err(|error| error.to_string())?;
-    transaction.execute("INSERT INTO local_state(key, value, updated_at) VALUES ('last-hlc', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at", params![hlc.to_string(), now])
-        .map_err(|error| error.to_string())?;
-    transaction.execute("INSERT INTO sync_outbox(id, operation, payload, hlc, device_id, expected_updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", params![id, operation, serialized, hlc, device_id, expected_updated_at, now])
-        .map_err(|error| error.to_string())?;
+    transaction.execute(
+        "INSERT INTO local_state(key, value, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        params![snapshot_key, serialized, now]
+    ).map_err(|error| error.to_string())?;
+    transaction.execute(
+        "INSERT INTO local_state(key, value, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        params![hlc_key, hlc.to_string(), now]
+    ).map_err(|error| error.to_string())?;
+    transaction.execute(
+        "INSERT INTO sync_outbox(id, operation, payload, hlc, device_id, tenant_id, expected_updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![id, operation, serialized, hlc, device_id, shop_sync_key, expected_updated_at, now]
+    ).map_err(|error| error.to_string())?;
     transaction.commit().map_err(|error| error.to_string())?;
     Ok(PendingTransaction { id, payload, hlc, expected_updated_at })
 }
 
-#[tauri::command]
-fn local_pending(app: tauri::AppHandle) -> Result<Vec<PendingTransaction>, String> {
+#[tauri::command(rename_all = "camelCase")]
+fn local_pending(app: tauri::AppHandle, shop_sync_key: String) -> Result<Vec<PendingTransaction>, String> {
+    validate_shop_scope(&shop_sync_key)?;
     let connection = open_database(&app)?;
-    let mut statement = connection.prepare("SELECT id, payload, hlc, expected_updated_at FROM sync_outbox WHERE status = 'PENDING' ORDER BY created_at ASC, id ASC")
-        .map_err(|error| error.to_string())?;
-    let records = statement.query_map([], |row| {
+    let mut statement = connection.prepare(
+        "SELECT id, payload, hlc, expected_updated_at FROM sync_outbox WHERE status = 'PENDING' AND tenant_id = ?1 ORDER BY created_at ASC, id ASC"
+    ).map_err(|error| error.to_string())?;
+    let records = statement.query_map([shop_sync_key], |row| {
         let json: String = row.get(1)?;
         let payload = serde_json::from_str(&json).map_err(|error| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(error)))?;
         Ok(PendingTransaction { id: row.get(0)?, payload, hlc: row.get(2)?, expected_updated_at: row.get(3)? })
@@ -546,22 +638,46 @@ fn local_pending(app: tauri::AppHandle) -> Result<Vec<PendingTransaction>, Strin
     records.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-fn local_outbox_count(app: tauri::AppHandle) -> Result<i64, String> {
-    open_database(&app)?.query_row("SELECT COUNT(*) FROM sync_outbox WHERE status = 'PENDING'", [], |row| row.get(0))
-        .map_err(|error| error.to_string())
+#[tauri::command(rename_all = "camelCase")]
+fn local_outbox_count(app: tauri::AppHandle, shop_sync_key: Option<String>) -> Result<i64, String> {
+    let connection = open_database(&app)?;
+    match shop_sync_key {
+        Some(shop) => {
+            validate_shop_scope(&shop)?;
+            connection.query_row(
+                "SELECT COUNT(*) FROM sync_outbox WHERE status = 'PENDING' AND tenant_id = ?1",
+                [shop], |row| row.get(0)
+            ).map_err(|error| error.to_string())
+        }
+        None => connection.query_row(
+            "SELECT COUNT(*) FROM sync_outbox WHERE status = 'PENDING'",
+            [], |row| row.get(0)
+        ).map_err(|error| error.to_string())
+    }
 }
 
 #[tauri::command]
-fn local_ack(app: tauri::AppHandle, ids: Vec<String>) -> Result<(), String> {
+fn local_unassigned_outbox_count(app: tauri::AppHandle) -> Result<i64, String> {
+    open_database(&app)?.query_row(
+        "SELECT COUNT(*) FROM sync_outbox WHERE status = 'PENDING' AND tenant_id = ''",
+        [], |row| row.get(0)
+    ).map_err(|error| error.to_string())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn local_ack(app: tauri::AppHandle, shop_sync_key: String, ids: Vec<String>) -> Result<(), String> {
+    validate_shop_scope(&shop_sync_key)?;
     if ids.len() > 10_000 || ids.iter().any(|id| id.len() > 80) { return Err("Invalid outbox acknowledgement.".into()); }
     let mut connection = open_database(&app)?;
     let transaction = connection.transaction().map_err(|error| error.to_string())?;
     for id in ids {
-        transaction.execute("UPDATE sync_outbox SET status = 'SYNCED' WHERE id = ?1", [id]).map_err(|error| error.to_string())?;
+        transaction.execute("UPDATE sync_outbox SET status = 'SYNCED' WHERE id = ?1 AND tenant_id = ?2", params![id, shop_sync_key])
+            .map_err(|error| error.to_string())?;
     }
-    transaction.execute("DELETE FROM sync_outbox WHERE status = 'SYNCED' AND created_at < ?1", [now_millis()?.saturating_sub(30 * 24 * 60 * 60 * 1000)])
-        .map_err(|error| error.to_string())?;
+    transaction.execute(
+        "DELETE FROM sync_outbox WHERE status = 'SYNCED' AND created_at < ?1",
+        [now_millis()?.saturating_sub(30 * 24 * 60 * 60 * 1000)]
+    ).map_err(|error| error.to_string())?;
     transaction.commit().map_err(|error| error.to_string())
 }
 
@@ -1316,7 +1432,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             secure_get, secure_set, secure_remove, get_device_id,
-            local_load, local_queue, local_pending, local_outbox_count, local_ack,
+            local_load, local_save_baseline, local_queue, local_pending, local_outbox_count, local_unassigned_outbox_count, local_ack,
             system_diagnostics, network_ping, print_escpos_thermal,
             export_backup_file, lan_store_shop_secret, lan_discover_hubs, lan_sync_with_hub
         ])
@@ -1409,6 +1525,88 @@ mod database_encryption_tests {
         );
         let directory = path.parent().expect("test path has a parent");
         let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn shop_scope_rejects_invalid_keys_and_namespaces_local_state() {
+        assert_eq!(scoped_snapshot_key("shop_123456").unwrap(), "snapshot:shop_123456");
+        assert_eq!(scoped_hlc_key("shop_123456").unwrap(), "last-hlc:shop_123456");
+        assert!(scoped_snapshot_key("").is_err());
+        assert!(scoped_snapshot_key("shop:one").is_err());
+        assert!(scoped_hlc_key("shop with spaces").is_err());
+    }
+
+    #[test]
+    fn legacy_outbox_rows_are_quarantined_by_tenant_column_migration() {
+        let connection = Connection::open_in_memory().expect("SQLite should open");
+        connection.execute_batch(
+            "CREATE TABLE sync_outbox (
+                id TEXT PRIMARY KEY NOT NULL,
+                operation TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                hlc INTEGER NOT NULL,
+                device_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT NOT NULL DEFAULT '',
+                expected_updated_at INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+             );
+             INSERT INTO sync_outbox(id, operation, payload, hlc, device_id, created_at)
+             VALUES ('legacy-1', 'SALE', '{}', 1, 'old-device', 10);"
+        ).expect("legacy outbox schema should be created");
+
+        ensure_sync_outbox_tenant_column(&connection)
+            .expect("tenant column migration should succeed");
+        let tenant: String = connection.query_row(
+            "SELECT tenant_id FROM sync_outbox WHERE id = 'legacy-1'",
+            [],
+            |row| row.get(0)
+        ).expect("legacy row should remain present");
+        assert_eq!(tenant, "", "old rows must not be assigned to an arbitrary shop");
+
+        let tenant_columns: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sync_outbox') WHERE name = 'tenant_id'",
+            [],
+            |row| row.get(0)
+        ).expect("tenant column should exist");
+        assert_eq!(tenant_columns, 1);
+
+        let directory = env::temp_dir().join(format!("unused-tenant-test-{}", Uuid::new_v4()));
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn pending_outbox_queries_are_isolated_by_registered_shop() {
+        let connection = Connection::open_in_memory().expect("SQLite should open");
+        connection.execute_batch(
+            "CREATE TABLE sync_outbox (
+                id TEXT PRIMARY KEY NOT NULL,
+                tenant_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+             );
+             INSERT INTO sync_outbox(id, tenant_id, status, created_at) VALUES
+               ('shop-a-1', 'shop_A_123', 'PENDING', 1),
+               ('shop-b-1', 'shop_B_123', 'PENDING', 2),
+               ('legacy-1', '', 'PENDING', 3);"
+        ).expect("outbox fixture should be created");
+
+        let shop_a: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sync_outbox WHERE status='PENDING' AND tenant_id='shop_A_123'",
+            [], |row| row.get(0)
+        ).expect("shop A count should be readable");
+        let shop_b: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sync_outbox WHERE status='PENDING' AND tenant_id='shop_B_123'",
+            [], |row| row.get(0)
+        ).expect("shop B count should be readable");
+        let unassigned: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sync_outbox WHERE status='PENDING' AND tenant_id=''",
+            [], |row| row.get(0)
+        ).expect("legacy count should be readable");
+        assert_eq!(shop_a, 1);
+        assert_eq!(shop_b, 1);
+        assert_eq!(unassigned, 1);
     }
 
     #[test]

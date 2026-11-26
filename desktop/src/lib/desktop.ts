@@ -34,15 +34,20 @@ window.beBossDesktop = Object.freeze({
   }),
   getDeviceId: () => nativeInvoke<string>("get_device_id"),
   local: Object.freeze({
-    load: () => nativeInvoke<Record<string, unknown> | null>("local_load"),
-    queue: (operation: string, payload: any, deviceId: string, expectedUpdatedAt: number, requiresActiveSubscription: boolean, subscriptionExpiresAt: number, subscriptionStatus: string) =>
+    load: (shopSyncKey: string) => nativeInvoke<Record<string, unknown> | null>("local_load", { shopSyncKey }),
+    saveBaseline: async (shopSyncKey: string, snapshot: Record<string, unknown>, snapshotUpdatedAt: number) => {
+      await nativeInvoke("local_save_baseline", { shopSyncKey, snapshot, snapshotUpdatedAt });
+      return true;
+    },
+    queue: (shopSyncKey: string, operation: string, payload: any, deviceId: string, expectedUpdatedAt: number, requiresActiveSubscription: boolean, subscriptionExpiresAt: number, subscriptionStatus: string) =>
       nativeInvoke<{ id: string; payload: any; hlc: number; expectedUpdatedAt: number }>("local_queue", {
-        operation, payload, deviceId, expectedUpdatedAt, requiresActiveSubscription, subscriptionExpiresAt, subscriptionStatus
+        shopSyncKey, operation, payload, deviceId, expectedUpdatedAt, requiresActiveSubscription, subscriptionExpiresAt, subscriptionStatus
       }).then((t) => ({ ...t, queued: true })),
-    outboxCount: () => nativeInvoke<number>("local_outbox_count"),
-    pending: () => nativeInvoke<PendingTransaction[]>("local_pending"),
-    acknowledge: async (ids: string[]) => {
-      await nativeInvoke("local_ack", { ids });
+    outboxCount: (shopSyncKey?: string) => nativeInvoke<number>("local_outbox_count", { shopSyncKey }),
+    unassignedOutboxCount: () => nativeInvoke<number>("local_unassigned_outbox_count"),
+    pending: (shopSyncKey: string) => nativeInvoke<PendingTransaction[]>("local_pending", { shopSyncKey }),
+    acknowledge: async (shopSyncKey: string, ids: string[]) => {
+      await nativeInvoke("local_ack", { shopSyncKey, ids });
       return true;
     }
   }),

@@ -19,6 +19,7 @@ export function SyncHubPage({ cloud, deviceId, offline, snapshot, shopSyncKey, o
   const [manualIp, setManualIp] = useState("");
   const [lanNotice, setLanNotice] = useState("");
   const [outbox, setOutbox] = useState(0);
+  const [unassignedOutbox, setUnassignedOutbox] = useState(0);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
@@ -26,16 +27,19 @@ export function SyncHubPage({ cloud, deviceId, offline, snapshot, shopSyncKey, o
   const loadStatus = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [count, list] = await Promise.all([
-        window.beBossDesktop.local.outboxCount().catch(() => 0),
-        window.beBossDesktop.local.pending().catch(() => [] as Pending[])
+      if (!shopSyncKey) throw new Error("The active shop identity is unavailable; local queue records were not read.");
+      const [count, list, unassigned] = await Promise.all([
+        window.beBossDesktop.local.outboxCount(shopSyncKey).catch(() => 0),
+        window.beBossDesktop.local.pending(shopSyncKey).catch(() => [] as Pending[]),
+        window.beBossDesktop.local.unassignedOutboxCount().catch(() => 0)
       ]);
       setOutbox(n(count));
       setPending(Array.isArray(list) ? list : []);
+      setUnassignedOutbox(n(unassigned));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not read the local sync queue.");
     } finally { setLoading(false); }
-  }, []);
+  }, [shopSyncKey]);
 
   useEffect(() => { void loadStatus(); }, [loadStatus]);
 
@@ -99,6 +103,11 @@ export function SyncHubPage({ cloud, deviceId, offline, snapshot, shopSyncKey, o
       <StatCard label="Verified chunks" value={String(cloud.verifiedChunks || 0)} sub="Signed snapshot integrity" icon={ShieldCheck} tone="purple" />
       <StatCard label="Last cloud sync" value={cloud.snapshotUpdatedAt ? "Synced" : "Never"} sub={lastSync} icon={CloudDownload} tone="blue" />
     </div>
+
+    {unassignedOutbox > 0 && <div className="global-alert error" role="alert">
+      <AlertTriangle size={16} />
+      <span>{unassignedOutbox.toLocaleString()} older offline transaction(s) were created before BeBoss added shop-scoped local storage. They have been quarantined and will not be uploaded to this account automatically. Contact BeBoss support or export a trusted recovery backup to identify their original shop before migration.</span>
+    </div>}
 
     {error && <div className="global-alert error"><AlertTriangle size={16} /><span>{error}</span><button onClick={() => void loadStatus()}>Retry</button></div>}
 
