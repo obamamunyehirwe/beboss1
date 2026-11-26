@@ -73,3 +73,42 @@ The following additional source changes are prepared on the current release-read
 - Complete isolated staging and independent security review before calling the system production-certified.
 
 CI is the gate for source-level build and regression evidence; a green CI run does not itself certify merchant onboarding, live settlement, production signatures, or physical-device operation.
+
+
+## 2026-11-26 Android and desktop application audit follow-up
+
+This section records the additional mobile/desktop source review and fixes applied directly to `main` after the baseline audit above.
+
+### Source defects fixed
+
+1. **Android POS transaction validation.** `SalesManager.processSale` now rejects non-finite or non-positive quantities, invalid prices/costs, invalid discounts and tenders, discounts above the subtotal, zero-value checkouts, overpayment values, and unpaid amounts without a valid customer. It verifies that selected products belong to the active branch. This validation occurs at the transaction boundary rather than relying only on Compose input controls.
+2. **Cross-terminal catalogue freshness.** Inside the Room checkout transaction, Android reloads persisted product rows, rejects deleted products and unconfirmed price changes, and calculates cost/profit from current catalogue values. This prevents a cart left open while another terminal changes a product from silently using the old price. Existing conditional stock decrement and atomic sale/item/stock/debt/outbox writes remain in place.
+3. **Receipt identity.** Android receipt numbers now include a sale-ID suffix in addition to the timestamp, avoiding same-second duplicate receipt identifiers across active terminals.
+4. **Desktop cloud request integrity.** Desktop feature payloads can no longer override the requested Edge Function action or the owner username/phone fields supplied by the call site. Added focused regression tests.
+5. **Desktop CI coverage.** The Windows verification workflow now executes `npm test`; the new cloud-request test is part of the normal desktop test command.
+6. **Android crash reporting.** The previous Sentry placeholder only wrote a Logcat message. Android now initializes the real Sentry Android SDK (8.62.0) when `SENTRY_DSN` is configured. Default PII, screenshot, view-hierarchy and performance tracing collection are disabled. BeBoss diagnostic logs now redact BB2/BB3 activation codes, both BBSHARE token formats, and legacy/current PBKDF2 hash encodings.
+
+### Core implementation confirmed during this pass
+
+- Android checkout persists the sale, sale items, conditional inventory decrements, customer debt changes and sync-queue item within the Room transaction when the production database is supplied.
+- Android's data layer uses Room with SQLCipher, durable sync queue/tombstone records, scheduled WorkManager sync and device-bound authorization paths.
+- Desktop's native Tauri layer uses SQLCipher for its local database, keeps the database encryption key and installation identity in the operating-system credential vault, and has a durable tenant-scoped offline outbox and guarded snapshot baseline replacement.
+- Desktop restore and snapshot-merge logic have dedicated regression tests; the app uses narrow Tauri capabilities rather than granting the renderer unrestricted filesystem or shell access.
+- Merchant authorization and shop data operations are still intended to be enforced by the Supabase Edge Function and database policies. The desktop renderer and its local encrypted cache are not the authoritative cloud ledger.
+
+### Release blockers remain open
+
+- **Critical — extractable Android compatibility values.** `BEBOSS_DATASHARE_HMAC_SECRET` and `BEBOSS_SECURITY_PEPPER` remain in Android BuildConfig for legacy BBSHARE1 and PBKDF2 v1 compatibility. APK constants can be extracted. Do not ship these as confidential secrets or remove them until legacy share and credential migration, old-client retirement and offline-import compatibility have been completed and tested.
+- **Critical — historic release signing material.** Prior public Git history contained a release keystore. Key replacement and installed-app upgrade compatibility must be handled through the actual Play App Signing/upload-key process. A repository cleanup does not rotate the exposed key.
+- **High — production signatures.** This source audit did not create a production-signed Android AAB/APK, Authenticode-signed Windows installer or Developer ID-signed/notarized macOS release. Certificates and owner-controlled signing secrets are required.
+- **High — cloud configuration and live acceptance.** Current Supabase project settings, deployed migration/function versions, leaked-password protection, real MTN/Airtel settlement and payout reconciliation were not verified from this source-only session. Use an isolated staging project and execute the documented provider-backed and tenant-isolation acceptance tests.
+- **High — offline and recovery acceptance.** CI and source tests are not substitutes for multi-device offline conflict drills, backup restore drills, Android Keystore/key-loss recovery testing, real printer/scanner/cash-drawer tests and physical Android device acceptance.
+- **High — desktop distribution.** The desktop CSP still permits `'unsafe-inline'` styles and macOS signing identity remains unset. The native Windows build is a CI smoke build, not a signed customer release.
+- **Medium — desktop production telemetry.** The desktop frontend error hook still targets the Lovable preview integration; no independent production desktop crash-reporting service was configured in this pass. Android Sentry reporting is optional and remains disabled when `SENTRY_DSN` is blank.
+- **Medium — audit atomicity.** Sensitive admin mutations and their audit records still need a database transaction/RPC where atomic audit guarantees are required.
+
+### Verification status
+
+The source changes are committed to `main`. GitHub Actions is running against the latest source revision; results must be taken from the linked workflow run, not inferred from commit success. No production deployment, production signature, provider settlement, independent penetration test or physical-device acceptance is claimed by this audit.
+
+**Release decision:** the mobile and desktop source has received additional hardening, but the product is not yet fully production-accepted or enterprise-certified. Close the critical secret/signing gates and complete staged, provider, security and device acceptance before making that claim.
