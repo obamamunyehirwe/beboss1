@@ -951,6 +951,10 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         syncCoordinator.exportFullBranchPackage(context, branchIdFilter, onReady)
     fun importBranchShareToken(tokenOrJson: String, onDone: (Boolean, String) -> Unit = { _, _ -> }) =
         syncCoordinator.importBranchShareToken(tokenOrJson, onDone)
+    fun requestLegacyBranchShareOtp(onDone: (Boolean, String) -> Unit = { _, _ -> }) =
+        syncCoordinator.requestLegacyBranchShareOtp(onDone)
+    fun importLegacyBranchShareToken(token: String, otp: String, onDone: (Boolean, String) -> Unit = { _, _ -> }) =
+        syncCoordinator.importLegacyBranchShareToken(token, otp, onDone)
     fun importShopPackage(summary: ShopImportSummary) = syncCoordinator.importShopPackage(summary)
     fun refreshShopDeviceTelemetry() = syncCoordinator.refreshShopTelemetry()
     fun requeueDeadLetter(id: String) = syncCoordinator.requeueDeadLetter(id)
