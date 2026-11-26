@@ -95,6 +95,9 @@ jobs:
       - name: Verify desktop owner identity mapping is tenant-safe
         run: node ../.github/scripts/check-desktop-owner-identity.mjs
 
+      - name: Verify owner portal tenant scoping and cutover compatibility
+        run: node ../.github/scripts/check-owner-portal-tenant-scope.mjs
+
       - name: Verify Supabase migration versions are unique
         run: npm run check:migrations
 
