@@ -1334,3 +1334,37 @@ select option { background: var(--panel-bg); color: var(--text); }
   .brand-row .brand-mark.brand-logo-mark { flex-basis: 49px; width: 49px; height: 49px; }
   .breadcrumb-brand-icon { flex-basis: 21px; width: 21px; height: 21px; }
 }
+
+
+/* Large, responsive BeBoss product identity in the native desktop chrome. */
+.brand-row { min-height: 84px; gap: 14px; }
+.brand-row .brand-mark.brand-logo-mark {
+  flex: 0 0 68px;
+  width: 68px;
+  height: 68px;
+  border-radius: 20px;
+}
+.brand-row .brand-mark.brand-logo-mark img { width: 100%; height: 100%; object-fit: contain; padding: 2px; }
+.brand-row>div strong { font-size: 21px; }
+.breadcrumb { gap: 10px; }
+.breadcrumb-brand-icon {
+  display: block;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  padding: 1px;
+  border: 1px solid rgba(255, 157, 100, .38);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(243,111,33,.18), rgba(12,30,53,.86));
+  object-fit: contain;
+  box-shadow: 0 5px 14px rgba(243,111,33,.16);
+}
+@media (max-width: 760px) {
+  .brand-row { min-height: 76px; }
+  .brand-row .brand-mark.brand-logo-mark { flex-basis: 58px; width: 58px; height: 58px; border-radius: 17px; }
+  .breadcrumb-brand-icon { flex-basis: 29px; width: 29px; height: 29px; border-radius: 9px; }
+}
+@media (max-width: 460px) {
+  .brand-row .brand-mark.brand-logo-mark { flex-basis: 52px; width: 52px; height: 52px; }
+  .breadcrumb-brand-icon { flex-basis: 25px; width: 25px; height: 25px; }
+}
