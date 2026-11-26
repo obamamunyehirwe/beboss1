@@ -203,12 +203,14 @@ export function matchesMtnMomoSettlement(
   status: MtnMomoStatus,
   expected: { externalId: string; amountRwf: number; payerMsisdn: string },
 ): boolean {
+  const payerId = status.payer?.partyId ?? "";
+  const payerType = status.payer?.partyIdType ?? "";
   return status.status === "SUCCESSFUL" &&
     status.currency.toUpperCase() === "RWF" &&
     Number(status.amount) === expected.amountRwf &&
     status.externalId === expected.externalId &&
     Boolean(status.financialTransactionId) &&
-    status.payer?.partyIdType === "MSISDN" &&
-    Boolean(status.payer.partyId) &&
-    status.payer.partyId.replace(/\D/g, "").slice(-9) === expected.payerMsisdn.slice(-9);
+    payerType === "MSISDN" &&
+    payerId.length > 0 &&
+    payerId.replace(/\D/g, "").slice(-9) === expected.payerMsisdn.slice(-9);
 }
