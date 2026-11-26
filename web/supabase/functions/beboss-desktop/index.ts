@@ -306,6 +306,12 @@ function getVersion(row: Row, fallback: number) {
 function mergeParts(parts: Row[]): Snapshot {
   const maps = Object.fromEntries(DATA_KEYS.map((key) => [key, new Map<string, Row>()])) as Record<DataKey, Map<string, Row>>;
   const tombstones = new Map<string, Row>();
+  // Room tombstones use SQL table names, while snapshots use camelCase collection keys.
+  const tombstoneTable: Partial<Record<DataKey, string>> = {
+    saleItems: "sale_items",
+    customerPayments: "customer_payments",
+    stockTransfers: "stock_transfers",
+  };
   let shopProfile: Row = {};
   let metadata: Row = {};
   let exportedAt = 0;
@@ -333,13 +339,6 @@ function mergeParts(parts: Row[]): Snapshot {
       }
     }
 
-    // Tombstones are named after Android Room table names, while snapshot
-    // collections use their JSON keys. Normalize both to the same canonical key.
-    const tombstoneTable: Partial<Record<DataKey, string>> = {
-      saleItems: "sale_items",
-      customerPayments: "customer_payments",
-      stockTransfers: "stock_transfers",
-    };
     for (const key of DATA_KEYS) {
       const rows = arrayRows(part[alias[key] ?? key]);
       for (const row of rows) {
