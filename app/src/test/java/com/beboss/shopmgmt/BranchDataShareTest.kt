@@ -24,6 +24,7 @@ import com.beboss.shopmgmt.util.ShopImportSummary
 import com.beboss.shopmgmt.util.SyncPayloadValidator
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -722,6 +723,86 @@ class BranchDataShareTest {
             assertEquals(10.0, db.productDao().getProductById("p_coffee")!!.quantityInStock, 0.001)
             assertEquals(5.0, db.customerDao().getCustomerById("c_alice")!!.debtBalance, 0.001)
             assertTrue(repo.getAllTombstonesList().any { it.tableName == "sales" && it.recordId == sale.id })
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `sale domain rejects invalid quantities overpayment and debt without a customer`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+
+        try {
+            val repo = BeBossRepository(db)
+            val product = Product(
+                id = "p_guarded",
+                name = "Guarded product",
+                costPrice = 5.0,
+                sellingPrice = 20.0,
+                quantityInStock = 10.0
+            )
+            db.productDao().insertProduct(product)
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repo.processSale(
+                        items = listOf(CartItem(product = product, quantity = -2.0)),
+                        customerId = null,
+                        customerName = "Walk-in",
+                        discountAmount = 0.0,
+                        paymentMethod = "CASH",
+                        amountPaid = 0.0,
+                        notes = "Invalid negative quantity"
+                    )
+                }
+            }
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repo.processSale(
+                        items = listOf(CartItem(product = product, quantity = 1.0)),
+                        customerId = null,
+                        customerName = "Walk-in",
+                        discountAmount = 0.0,
+                        paymentMethod = "PARTIAL",
+                        amountPaid = 5.0,
+                        notes = "Unassigned debt"
+                    )
+                }
+            }
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repo.processSale(
+                        items = listOf(CartItem(product = product, quantity = 1.0)),
+                        customerId = null,
+                        customerName = "Walk-in",
+                        discountAmount = 0.0,
+                        paymentMethod = "CASH",
+                        amountPaid = 25.0,
+                        notes = "Overpayment"
+                    )
+                }
+            }
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repo.processSale(
+                        items = listOf(CartItem(product = product, quantity = 1.0)),
+                        customerId = null,
+                        customerName = "Walk-in",
+                        discountAmount = 25.0,
+                        paymentMethod = "CASH",
+                        amountPaid = 0.0,
+                        notes = "Discount above subtotal"
+                    )
+                }
+            }
+
+            assertEquals(10.0, db.productDao().getProductById("p_guarded")!!.quantityInStock, 0.001)
         } finally {
             db.close()
         }
