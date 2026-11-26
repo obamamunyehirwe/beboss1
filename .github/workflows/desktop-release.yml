@@ -1,58 +1,140 @@
 name: BeBoss Desktop release
+
 on:
   push:
-    tags: ["desktop-v*"]
+    tags:
+      - "desktop-v*"
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: beboss-desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  windows-installer:
-    runs-on: windows-2022
-    env:
-      VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+  build:
+    name: Build ${{ matrix.platform }} desktop installer
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-2022
+            script: dist:win
+            bundle: nsis
+            asset_name: BeBoss-Windows-x64-Setup.exe
+          - platform: macos
+            runner: macos-15
+            script: dist:mac
+            bundle: dmg
+            asset_name: BeBoss-macOS.dmg
+          - platform: linux
+            runner: ubuntu-22.04
+            script: dist:linux
+            bundle: appimage
+            asset_name: BeBoss-Linux-x64.AppImage
     defaults:
       run:
         working-directory: desktop
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      RUSTUP_TOOLCHAIN: stable
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Verify release configuration
-        shell: pwsh
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Verify production desktop configuration
+        shell: bash
         run: |
-          if (-not $env:VITE_SUPABASE_URL -or -not $env:VITE_SUPABASE_PUBLISHABLE_KEY) {
-            throw "Configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY repository secrets before building the production desktop installer."
-          }
-      - uses: actions/setup-node@v4
+          if [[ -z "$VITE_SUPABASE_URL" || -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ]]; then
+            echo "::error::Configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY GitHub Actions secrets before building desktop installers."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/package-lock.json
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: shogo82148/actions-setup-perl@v1
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux Tauri prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Set up Perl for Windows SQLCipher build
+        if: runner.os == 'Windows'
+        uses: shogo82148/actions-setup-perl@v1
         with:
           perl-version: "5.40"
-      - name: Install dependencies
+
+      - name: Validate macOS signing configuration
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          configured=0
+          for value in "$APPLE_CERTIFICATE" "$APPLE_CERTIFICATE_PASSWORD" "$APPLE_SIGNING_IDENTITY" "$APPLE_ID" "$APPLE_PASSWORD" "$APPLE_TEAM_ID"; do
+            [[ -n "$value" ]] && configured=$((configured + 1))
+          done
+          if [[ "$configured" -ne 0 && "$configured" -ne 6 ]]; then
+            echo "::error::Configure all six Apple signing/notarization secrets together, or leave all of them empty."
+            exit 1
+          fi
+          if [[ "$configured" -eq 0 ]]; then
+            echo "::warning::Apple signing credentials are not configured. The DMG will be built, but macOS may show an unidentified-developer warning."
+          fi
+
+      - name: Install pinned desktop dependencies
         run: npm ci --no-audit --no-fund
-      - name: Verify desktop package, Tauri and Rust versions are identical
+
+      - name: Verify package, Tauri and Rust versions
         run: npm run check:versions
-      - name: Type-check and build renderer
+
+      - name: Type-check and build desktop renderer
         run: |
           npm run check:types
           npm run build
-      - name: Test native encrypted database and lifecycle primitives
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
-      - name: Build Windows installer
-        run: npm run dist:win
-      - name: Sign Windows installer
+
+      - name: Test native desktop database and lifecycle primitives
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Build native platform installer
+        run: npm run ${{ matrix.script }}
+
+      - name: Sign and verify Windows installer
+        if: runner.os == 'Windows'
         shell: pwsh
         env:
           WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
           WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
         run: |
           if (-not $env:WINDOWS_CODESIGN_PFX_BASE64 -or -not $env:WINDOWS_CODESIGN_PFX_PASSWORD) {
-            throw "Configure WINDOWS_CODESIGN_PFX_BASE64 and WINDOWS_CODESIGN_PFX_PASSWORD repository secrets before releasing."
+            throw "Configure WINDOWS_CODESIGN_PFX_BASE64 and WINDOWS_CODESIGN_PFX_PASSWORD GitHub Actions secrets before publishing a Windows release."
           }
           $certificatePath = Join-Path $env:RUNNER_TEMP "beboss-release-signing.pfx"
           try {
@@ -66,20 +148,93 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw "Signing failed for $($installer.Name)." }
               & $signTool verify /pa /v $installer.FullName
               if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $($installer.Name)." }
+              $signature = Get-AuthenticodeSignature -FilePath $installer.FullName
+              if ($signature.Status -ne "Valid") { throw "Invalid Authenticode signature for $($installer.Name): $($signature.StatusMessage)" }
             }
           } finally {
             if (Test-Path $certificatePath) { Remove-Item $certificatePath -Force }
           }
-      - name: Upload installer artifact
+
+      - name: Prepare stable installer filename
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          case "${{ matrix.platform }}" in
+            windows)
+              package_dir="src-tauri/target/release/bundle/nsis"
+              package_pattern="*.exe"
+              ;;
+            macos)
+              package_dir="src-tauri/target/release/bundle/dmg"
+              package_pattern="*.dmg"
+              ;;
+            linux)
+              package_dir="src-tauri/target/release/bundle/appimage"
+              package_pattern="*.AppImage"
+              ;;
+          esac
+          package_path="$(find "$package_dir" -maxdepth 1 -type f -iname "$package_pattern" -size +1M -print -quit)"
+          if [[ -z "$package_path" ]]; then
+            echo "::error::No installable package matching $package_pattern was produced in $package_dir."
+            exit 1
+          fi
+          cp "$package_path" "release-assets/${{ matrix.asset_name }}"
+          test -s "release-assets/${{ matrix.asset_name }}"
+          ls -lh release-assets
+
+      - name: Upload platform installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BeBoss-Desktop-Windows-${{ github.sha }}
-          path: desktop/src-tauri/target/release/bundle/nsis/*.exe
+          name: BeBoss-desktop-${{ matrix.platform }}-${{ github.sha }}
+          path: desktop/release-assets/*
           if-no-files-found: error
           retention-days: 30
-      - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/')
+
+  publish:
+    name: Publish one multi-platform desktop release
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download all platform installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: BeBoss-desktop-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Require all three installable packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release-assets/BeBoss-Windows-x64-Setup.exe
+          test -s release-assets/BeBoss-macOS.dmg
+          test -s release-assets/BeBoss-Linux-x64.AppImage
+
+      - name: Generate one SHA-256 manifest for every installer
+        run: node desktop/scripts/generate-bundle-checksums.mjs release-assets
+
+      - name: Publish BeBoss desktop release
         uses: softprops/action-gh-release@v2
         with:
-          files: desktop/src-tauri/target/release/bundle/nsis/*.exe
+          name: BeBoss Desktop ${{ github.ref_name }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/BeBoss-Windows-x64-Setup.exe
+            release-assets/BeBoss-macOS.dmg
+            release-assets/BeBoss-Linux-x64.AppImage
+            release-assets/SHA256SUMS.txt
+          body: |
+            Official BeBoss native desktop installers for Windows, macOS and Linux.
+
+            The Windows installer is published only after Authenticode signing and signature verification. macOS signing and notarization are applied when the Apple release credentials are configured for this repository. Verify downloaded packages with the attached SHA-256 manifest.
