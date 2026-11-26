@@ -98,6 +98,11 @@ export function mergeSnapshots(remote: Row, local: Row): { snapshot: Row; confli
     snapshot[table] = [...map.values()];
   }
 
+  // Sale line items are immutable, but their parent sale can be deleted on
+  // another device. A sale tombstone must remove the orphaned lines as well.
+  const liveSaleIds = new Set(rows(snapshot.sales).map((sale) => text(sale.id)));
+  snapshot.saleItems = rows(snapshot.saleItems).filter((item) => liveSaleIds.has(text(item.saleId)));
+
   const localProfile = local.shopProfile && typeof local.shopProfile === "object" ? local.shopProfile : {};
   const remoteProfile = remote.shopProfile && typeof remote.shopProfile === "object" ? remote.shopProfile : {};
   const profileWinner = compareVersions(remoteProfile, localProfile) > 0 ? localProfile : remoteProfile;
