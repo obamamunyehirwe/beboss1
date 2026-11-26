@@ -110,6 +110,8 @@ declare global {
       };
       getDeviceId(): Promise<string>;
       recoverLocalDatabase(): Promise<LocalDatabaseRecoveryResult>;
+      setupPreflight(): Promise<SetupPreflight>;
+      testCredentialVault(): Promise<void>;
       local: {
         load(shopSyncKey: string): Promise<any | null>;
         saveBaseline(shopSyncKey: string, snapshot: Record<string, unknown>, snapshotUpdatedAt: number): Promise<boolean>;
