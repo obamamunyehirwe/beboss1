@@ -76,6 +76,13 @@ function base64ToBytes(value: string) {
 function bytesToHex(bytes: Uint8Array) {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+/** Copy views into a concrete ArrayBuffer for Deno/WebCrypto BufferSource typings. */
+function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const output = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(output).set(bytes);
+  return output;
+}
 /** Constant-time comparison to avoid a timing oracle on snapshot signatures. */
 function constantTimeEq(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -86,12 +93,12 @@ function constantTimeEq(a: string, b: string): boolean {
 async function hmacBytesHex(payload: string, keyBytes: Uint8Array) {
   const key = await crypto.subtle.importKey(
     "raw",
-    keyBytes,
+    asArrayBuffer(keyBytes),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  const signature = await crypto.subtle.sign("HMAC", key, asArrayBuffer(new TextEncoder().encode(payload)));
   return bytesToHex(new Uint8Array(signature)).toUpperCase();
 }
 async function hmacHex(payload: string, secret: string) {
@@ -111,22 +118,22 @@ async function deriveShopShareKey(shopSecret: string): Promise<Uint8Array> {
   }
   const masterKey = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(clean),
+    asArrayBuffer(new TextEncoder().encode(clean)),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
-  const info = new Uint8Array([
-    ...new TextEncoder().encode("BeBoss_BBSHARE2_HMAC_v1"),
-    0x01
-  ]);
-  return new Uint8Array(await crypto.subtle.sign("HMAC", masterKey, info));
+  const domain = new TextEncoder().encode("BeBoss_BBSHARE2_HMAC_v1");
+  const info = new Uint8Array(domain.length + 1);
+  info.set(domain);
+  info[domain.length] = 0x01;
+  return new Uint8Array(await crypto.subtle.sign("HMAC", masterKey, asArrayBuffer(info)));
 }
 async function shopShareHmacHex(payload: string, shopSecret: string) {
   return hmacBytesHex(payload, await deriveShopShareKey(shopSecret));
 }
 async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  const digest = await crypto.subtle.digest("SHA-256", asArrayBuffer(new TextEncoder().encode(value)));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -713,7 +720,7 @@ async function issueDeviceInvitationV2(
 ) {
   const random = crypto.getRandomValues(new Uint8Array(16));
   const joinCode = "BB-" + Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(joinCode));
+  const hash = await crypto.subtle.digest("SHA-256", asArrayBuffer(new TextEncoder().encode(joinCode)));
   const codeHash = bytesToHex(new Uint8Array(hash));
   const now = Date.now();
   const tenantAdmin = createClient(config.url, config.serviceKey, {
