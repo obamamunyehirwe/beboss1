@@ -708,6 +708,7 @@ class BranchDataShareTest {
                 notes = "Test atomic checkout"
             )
 
+            assertTrue(sale.receiptNumber.matches(Regex("""REC-\\d{6}-\\d{6}-[A-F0-9]{8}""")))
             assertEquals(59.00, sale.totalAmount, 0.001)
             assertEquals(37.02, sale.totalCost, 0.001)
             assertEquals(21.98, sale.totalProfit, 0.001)
@@ -798,6 +799,22 @@ class BranchDataShareTest {
                         paymentMethod = "CASH",
                         amountPaid = 0.0,
                         notes = "Discount above subtotal"
+                    )
+                }
+            }
+
+            // Another terminal changes the product after it was placed in the cart.
+            db.productDao().updateProduct(product.copy(sellingPrice = 25.0, updatedAt = System.currentTimeMillis()))
+            assertThrows(IllegalStateException::class.java) {
+                runBlocking {
+                    repo.processSale(
+                        items = listOf(CartItem(product = product, quantity = 1.0)),
+                        customerId = null,
+                        customerName = "Walk-in",
+                        discountAmount = 0.0,
+                        paymentMethod = "CASH",
+                        amountPaid = 20.0,
+                        notes = "Stale cart price"
                     )
                 }
             }
