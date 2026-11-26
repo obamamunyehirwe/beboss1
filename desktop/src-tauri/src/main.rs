@@ -1462,6 +1462,81 @@ fn lan_discover_hubs(shop_sync_key: String, timeout_ms: Option<u64>) -> Result<V
 }
 
 #[tauri::command(rename_all = "camelCase")]
+fn lan_pull_from_hub(
+    shop_sync_key: String,
+    ip_address: String,
+    port: u16,
+) -> Result<LanSyncResult, String> {
+    let started = Instant::now();
+    let shop_secret = read_lan_pairing_secret(&shop_sync_key)?;
+    if port != 8989 { return Err("BeBoss Android LAN hubs use TCP port 8989.".into()); }
+    let ip: IpAddr = ip_address.trim().parse().map_err(|_| "Enter a valid local IP address.")?;
+    validate_private_lan_ip(ip)?;
+
+    // Recovery mode is deliberately pull-only: it never sends a desktop snapshot
+    // to the phone. This is the safe path when this installation has no local shop
+    // snapshot yet, or when the phone is the only authoritative source available.
+    let pull_timestamp = now_millis()?.to_string();
+    let pull_nonce = Uuid::new_v4().to_string();
+    let pull_payload = format!("GET|/api/sync/pull|{pull_timestamp}|{pull_nonce}|");
+    let pull_signature = lan_signature(&shop_secret, &pull_payload);
+    let pull = lan_http_request(
+        ip, port, "GET", "/api/sync/pull", &pull_timestamp, &pull_nonce, &pull_signature, ""
+    )?;
+    if !(200..300).contains(&pull.status_code) {
+        return Err(format!("The Android hub rejected the read-only recovery request (HTTP {}).", pull.status_code));
+    }
+
+    let response_signature = pull.headers.get("x-beboss-signature").map(String::as_str).unwrap_or_default();
+    if !constant_time_string_eq(response_signature, &lan_signature(&shop_secret, &pull.body)) {
+        return Err("The Android hub's downloaded snapshot failed its HMAC check.".into());
+    }
+    let envelope: Value = serde_json::from_str(&pull.body)
+        .map_err(|_| "The Android hub returned an invalid encrypted snapshot envelope.")?;
+    let encrypted = envelope.get("enc").and_then(Value::as_str)
+        .ok_or_else(|| "The Android hub omitted its encrypted snapshot.".to_string())?;
+    let echoed_timestamp = envelope.get("ts").and_then(Value::as_str).unwrap_or_default();
+    let echoed_nonce = envelope.get("nonce").and_then(Value::as_str).unwrap_or_default();
+    if echoed_timestamp != pull_timestamp || echoed_nonce != pull_nonce {
+        return Err("The Android hub's snapshot response does not match this request.".into());
+    }
+
+    let pulled_json = decrypt_lan_body(encrypted, &shop_secret, &pull_timestamp, &pull_nonce)?;
+    let pulled_snapshot: Value = serde_json::from_str(&pulled_json)
+        .map_err(|_| "The Android hub snapshot is not valid JSON.")?;
+    if !pulled_snapshot.is_object() || !pulled_snapshot.get("metadata").is_some_and(Value::is_object) {
+        return Err("The Android hub returned an incomplete business snapshot.".into());
+    }
+    let schema_version = pulled_snapshot["metadata"].get("schemaVersion")
+        .and_then(Value::as_u64).unwrap_or(0);
+    if !(1..=3).contains(&schema_version) {
+        return Err(format!("The Android hub snapshot schema version {schema_version} is not supported by this desktop."));
+    }
+    for key in ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users", "tombstones"] {
+        if !pulled_snapshot.get(key).is_some_and(Value::is_array) {
+            return Err(format!("The Android hub snapshot is missing its {key} collection. No data was imported."));
+        }
+    }
+
+    let pulled_records = [
+        "products", "customers", "sales", "saleItems", "customerPayments",
+        "purchases", "stockTransfers", "branches", "users"
+    ].iter().map(|key| pulled_snapshot.get(key).and_then(Value::as_array).map(Vec::len).unwrap_or(0)).sum();
+
+    Ok(LanSyncResult {
+        success: true,
+        peer_ip: ip.to_string(),
+        pushed_records: 0,
+        pulled_records,
+        conflicts_available_for_merge: true,
+        pulled_snapshot,
+        latency_ms: started.elapsed().as_millis() as u64,
+        message: format!("Read-only recovery preview received {pulled_records} records from Android hub {ip}. Nothing was sent to or changed on the phone."),
+    })
+}
+
+
+#[tauri::command(rename_all = "camelCase")]
 fn lan_sync_with_hub(
     shop_sync_key: String,
     ip_address: String,
@@ -1555,7 +1630,7 @@ fn main() {
             secure_get, secure_set, secure_remove, get_device_id, recover_local_database,
             local_load, local_save_baseline, local_queue, local_pending, local_outbox_count, local_unassigned_outbox_count, local_ack,
             system_diagnostics, network_ping, print_escpos_thermal,
-            export_backup_file, lan_store_shop_secret, lan_discover_hubs, lan_sync_with_hub
+            export_backup_file, lan_store_shop_secret, lan_discover_hubs, lan_pull_from_hub, lan_sync_with_hub
         ])
         .run(tauri::generate_context!())
         .expect("error while running BeBoss Desktop");
