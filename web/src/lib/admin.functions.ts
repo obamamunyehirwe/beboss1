@@ -1204,7 +1204,7 @@ export const updateRelease = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; version_name: string; version_code: number; min_android: string; release_notes: string }) =>
     z.object({
       id: z.string().uuid(),
-      version_name: z.string().trim().regex(/^[0-9]+(\\.[0-9]+){0,3}$/).max(40),
+      version_name: z.string().trim().regex(/^[0-9]+([.][0-9]+){0,3}$/).max(40),
       version_code: z.number().int().min(1).max(1_000_000),
       min_android: z.string().trim().min(1).max(40),
       release_notes: z.string().max(5000),
