@@ -47,13 +47,24 @@ Build the frontend only for UI preview/testing (native operating-system checks w
 npm run dev:ui
 ```
 
-Build a native Windows installer:
+Build and verify the release locally on the matching operating system:
 
 ```powershell
-npm run dist:win
+npm run check:versions
+npm run check:types
+npm run build
+cargo test --locked --manifest-path src-tauri/Cargo.toml
 ```
 
-Use `npm run dist:mac` on macOS and `npm run dist:linux` on Linux. Outputs are created under `src-tauri/target/release/bundle/nsis`, `dmg` and `appimage`. Push a tag such as `desktop-v1.3.1` to run the multi-platform release workflow. It builds the Windows NSIS installer, macOS DMG and Linux AppImage, then publishes all three stable-named assets and one `SHA256SUMS.txt` manifest to the same GitHub Release. The website `/download?platform=desktop` page reads the published release metadata and only enables links for installers that exist. Windows publication requires the configured Authenticode certificate and successful signature verification. macOS signing and notarization use the six `APPLE_*` release secrets; without them, the workflow clearly marks the DMG build as unsigned. A manual workflow run builds test artifacts but does not publish a GitHub Release.
+Use the platform-specific build command:
+
+- **Windows:** `npm run release:win:local` — produces the signed NSIS installer in `src-tauri/target/release/bundle/nsis` and writes SHA-256 checksum output. Configure the replacement Authenticode PFX outside the repository using `WINDOWS_CODESIGN_PFX_PATH` and `WINDOWS_CODESIGN_PFX_PASSWORD`. The script rejects the old exposed certificate.
+- **macOS:** `npm run dist:mac` — produces a DMG in `src-tauri/target/release/bundle/dmg`. Sign and notarize with your Apple Developer ID before customer distribution.
+- **Linux:** `npm run dist:linux` — produces an AppImage in `src-tauri/target/release/bundle/appimage`. Test it on the supported Linux distributions before distribution.
+
+After building, sign in to the BeBoss Admin Center and open **App releases → Desktop releases**. Select the matching platform, choose the installer from the local output folder, enter the release version and notes, and upload it. The Admin page computes SHA-256, sends the selected file to private Supabase release storage, and can publish that platform independently from the other desktop platforms and Android.
+
+**Customer release binaries are never built or published by GitHub Actions.** The GitHub workflows are CI/inspection checks only; they do not create an official desktop release for the website. Do not push a `desktop-v*` tag to publish an installer. Official desktop downloads are distributed by the Admin manual-upload flow through short-lived signed URLs.
 
 ## Local recovery, credentials and uninstall
 
@@ -69,8 +80,8 @@ From the `desktop` directory:
 npm run check:versions
 npm run check:types
 npm run build
-cargo test --manifest-path src-tauri/Cargo.toml --locked
-npm run dist:win
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+npm run release:win:local
 ```
 
-GitHub Actions validates the desktop TypeScript build, native Rust checks/tests and Windows NSIS installer. A produced CI installer is an unsigned test artifact; production distribution should use the protected Authenticode signing workflow and verified release credentials.
+GitHub Actions runs source checks and may produce CI inspection artifacts for testing. Those files are not official customer releases. Build the production installer locally and use the platform's signing/verification process before uploading it through the Admin page.
