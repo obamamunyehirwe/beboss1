@@ -6,6 +6,9 @@ import com.beboss.shopmgmt.util.BeBossNotificationManager
 import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.CloudSyncScheduler
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
+import io.sentry.Sentry
+import io.sentry.SentryLevel
+import io.sentry.android.core.SentryAndroid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,27 +42,45 @@ class BeBossApplication : Application() {
     }
 
     /**
-     * Initialize Sentry crash reporting if Sentry DSN is configured.
-     * Uses BuildConfig.SENTRY_DSN from .env file.
+     * Initializes the real Sentry Android SDK only when a DSN is configured.
+     * Default PII, screenshots, and view-hierarchy attachments remain disabled.
+     * Sentry also installs its uncaught-exception and ANR integrations.
      */
     private fun initializeCrashReporting() {
+        val sentryDsn = BuildConfig.SENTRY_DSN?.trim()?.takeIf { it.isNotEmpty() }
+        if (sentryDsn == null) {
+            BeBossLogger.i("CrashReporting", "Crash reporting is disabled because no Sentry DSN is configured.")
+            return
+        }
+
         try {
-            val sentryDsn = BuildConfig.SENTRY_DSN?.takeIf { it.isNotBlank() }
-            if (sentryDsn != null) {
-                // Initialize Sentry crash reporter hook
-                BeBossLogger.SentryCrashReporter = { tag, message, throwable ->
-                    try {
-                        // Sentry will capture the exception when added as dependency
-                        // For now, we prepare the hook for future Sentry integration
-                        BeBossLogger.i("Sentry", "Crash reported: $tag - $message")
-                    } catch (_: Throwable) {
-                        // Sentry not available - ignore
-                    }
-                }
-                BeBossLogger.i("CrashReporting", "Sentry DSN configured - ready for crash reporting")
+            SentryAndroid.init(this) { options ->
+                options.dsn = sentryDsn
+                options.environment = if (BuildConfig.DEBUG) "development" else "production"
+                options.release = "${BuildConfig.APPLICATION_ID}@${BuildConfig.VERSION_NAME}+${BuildConfig.VERSION_CODE}"
+                options.isSendDefaultPii = false
+                options.isAttachScreenshot = false
+                options.isAttachViewHierarchy = false
+                options.tracesSampleRate = 0.0
+                options.isDebug = BuildConfig.DEBUG
             }
+
+            BeBossLogger.SentryCrashReporter = { tag, message, _ ->
+                try {
+                    Sentry.withScope { scope ->
+                        scope.setTag("component", tag.take(64))
+                        Sentry.captureMessage(
+                            BeBossLogger.scrub(message).take(1_000),
+                            SentryLevel.ERROR
+                        )
+                    }
+                } catch (_: Throwable) {
+                    // Diagnostics must never crash the POS or interrupt a business operation.
+                }
+            }
+            BeBossLogger.i("CrashReporting", "Sentry Android SDK initialized.")
         } catch (e: Exception) {
-            BeBossLogger.w("CrashReporting", "Failed to initialize crash reporting", e)
+            BeBossLogger.w("CrashReporting", "Sentry initialization failed; local logging remains active.", e)
         }
     }
 }
