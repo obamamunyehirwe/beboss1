@@ -72,7 +72,9 @@ object DeviceTelemetryUploader {
                 clockTamper = clockTamper,
                 location = location,
                 unsyncedMessagesCount = pendingRecords.size,
-                permissionsSummary = PermissionManager.summarizePermissionsStatus(appContext) + ";location_sharing=" + if (locationSharingEnabled) "enabled" else "disabled",
+                permissionsSummary = PermissionManager.summarizePermissionsStatus(appContext) +
+                    ";location_sharing=" + if (locationSharingEnabled) "enabled" else "disabled" +
+                    ";legacy_credential_key_migration=" + LegacyCredentialPepperStore.migrationStatus(),
                 messageSummaryJson = MessageAuditManager.buildCloudSummaryJson(appContext)
             )
 
