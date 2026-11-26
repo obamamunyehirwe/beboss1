@@ -279,8 +279,13 @@ export function CustomersPage({ snapshot, onCommit, offline, query, onReceipt }:
   function sendDebtReminder(customer: Row) {
     const rawPhone = s(customer.phone).trim();
     let phone = Array.from(rawPhone).filter((character) => character >= "0" && character <= "9").join("");
-    else if (phone.startsWith("00")) phone = phone.slice(2);
-    else if (phone.startsWith("0")) phone = "250" + phone.slice(1);
+    if (rawPhone.startsWith("+")) {
+      // Keep the international country code and remove presentation characters.
+    } else if (phone.startsWith("00")) {
+      phone = phone.slice(2);
+    } else if (phone.startsWith("0")) {
+      phone = "250" + phone.slice(1);
+    }
     if (phone.length < 8 || phone.length > 15) {
       setError("Add a valid international phone number before sending a WhatsApp reminder.");
       return;
