@@ -136,6 +136,7 @@ declare global {
       lan: {
         storeShopSecret(shopSyncKey: string, secret: string): Promise<void>;
         discoverHubs(shopSyncKey: string, timeoutMs?: number): Promise<LanHub[]>;
+        pullFromHub(shopSyncKey: string, ipAddress: string, port?: number): Promise<LanSyncResult>;
         syncWithHub(shopSyncKey: string, ipAddress: string, port: number, snapshot: Record<string, unknown>): Promise<LanSyncResult>;
       };
       printReceipt(lines?: string[]): Promise<void>;

@@ -49,6 +49,15 @@ function hasBusinessData(value: unknown) {
   return ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users"]
     .some((key) => Array.isArray(data[key]) && (data[key] as unknown[]).length > 0);
 }
+function createEmptySnapshot(): Snapshot {
+  return {
+    metadata: { schemaVersion: 3, timestamp: 0, exportedBy: "BeBoss Desktop" },
+    shopProfile: {},
+    products: [], customers: [], sales: [], saleItems: [], customerPayments: [],
+    purchases: [], stockTransfers: [], branches: [], users: [], tombstones: []
+  };
+}
+
 function desktopStorageScope(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, "-").slice(0, 100) || "default";
 }
@@ -175,10 +184,14 @@ function NativeDesktopApp() {
       }
       const pending = await window.beBossDesktop.local.pending(shopSyncKey);
       let next = { ...response, snapshot: ensureSnapshot(response.snapshot) } as CloudState;
-      if (pending.length && next.snapshot) {
+      if (pending.length) {
+        // A phone-to-desktop LAN recovery can be queued while the cloud is
+        // unreachable and the cloud has never received a snapshot. Merge that
+        // full-shop payload against an empty tenant snapshot, then use the same
+        // optimistic server write as every other desktop snapshot.
         const latest = ensureSnapshot(pending[pending.length - 1].payload as Snapshot);
         if (latest) {
-          const merge = mergeSnapshots(next.snapshot, latest);
+          const merge = mergeSnapshots(next.snapshot ?? createEmptySnapshot(), latest);
           const merged = await callDesktopApi<{ ok: true; uploadedAt: number; snapshot: Snapshot }>("save_snapshot", credentials, {
             deviceId: installationId, expectedUpdatedAt: next.snapshotUpdatedAt, snapshot: merge.snapshot
           });
@@ -736,9 +749,68 @@ function NativeDesktopApp() {
   }
 
   async function mergeLanSnapshot(remoteSnapshot: Snapshot) {
-    if (!cloud?.snapshot) throw new Error("The desktop has no local business snapshot to merge.");
-    const merged = mergeSnapshots(cloud.snapshot, remoteSnapshot).snapshot as Snapshot;
-    await commitSnapshot((next) => { Object.assign(next, merged); }, "LAN_SYNC");
+    if (!owner || !cloud) throw new Error("Sign in to the registered shop owner before importing phone data.");
+    const shopSyncKey = s(cloud.shop?.id);
+    if (!shopSyncKey) throw new Error("The current shop identity is unavailable. The phone data was not imported.");
+    if (!remoteSnapshot || typeof remoteSnapshot !== "object" || !remoteSnapshot.metadata ||
+        !Array.isArray(remoteSnapshot.products) || !Array.isArray(remoteSnapshot.sales)) {
+      throw new Error("The phone returned an incomplete shop snapshot. No local or cloud records were changed.");
+    }
+
+    // The LAN pull is signed by the shop-only pairing key. Merge the phone
+    // snapshot with the latest local baseline AND any queued full-snapshot work.
+    // Every outbox item is tenant-scoped; pending local changes must survive an
+    // import even when this desktop has not yet received its first cloud snapshot.
+    const pendingBeforeImport = await window.beBossDesktop.local.pending(shopSyncKey);
+    const cloudBase = ensureSnapshot(cloud.snapshot);
+    const queuedBase = pendingBeforeImport.length
+      ? ensureSnapshot(pendingBeforeImport[pendingBeforeImport.length - 1].payload as Snapshot)
+      : null;
+    const base = cloudBase && queuedBase
+      ? mergeSnapshots(cloudBase, queuedBase).snapshot as Snapshot
+      : cloudBase ?? queuedBase ?? createEmptySnapshot();
+    const merged = mergeSnapshots(base, remoteSnapshot).snapshot as Snapshot;
+    merged.metadata = {
+      ...merged.metadata,
+      schemaVersion: 3,
+      timestamp: Math.max(Date.now(), n(merged.metadata?.timestamp)),
+      exportedBy: "BeBoss Desktop · Android LAN recovery"
+    };
+
+    const subscriptionStatus = s(cloud.shop.subscription_status || merged.shopProfile.subscriptionStatus).toUpperCase();
+    const subscriptionExpiresAt = n(cloud.shop.subscription_expires_at || merged.shopProfile.subscriptionExpiresAt);
+    if (offline) {
+      const transaction = await window.beBossDesktop.local.queue(
+        shopSyncKey, "LAN_IMPORT", merged, deviceId, cloud.snapshotUpdatedAt,
+        false, subscriptionExpiresAt, subscriptionStatus
+      );
+      const next = { ...cloud, snapshot: ensureSnapshot(transaction.payload as Snapshot) };
+      setCloud(next);
+      await saveCache(owner, next);
+      setNotice("Phone records were merged into this desktop's encrypted local queue. Nothing was sent to the phone. The merge will upload when BeBoss Cloud is reachable.");
+      return;
+    }
+
+    const saved = await callDesktopApi<{ ok: true; uploadedAt: number; snapshot: Snapshot }>(
+      "save_snapshot", owner, {
+        deviceId,
+        expectedUpdatedAt: cloud.snapshotUpdatedAt,
+        snapshot: merged
+      }
+    );
+    const updated = { ...cloud, snapshot: ensureSnapshot(saved.snapshot), snapshotUpdatedAt: saved.uploadedAt };
+    setCloud(updated);
+    setOffline(false);
+    if (pendingBeforeImport.length) {
+      await window.beBossDesktop.local.acknowledge(
+        shopSyncKey, pendingBeforeImport.map((item) => item.id)
+      );
+    }
+    await window.beBossDesktop.local.saveBaseline(
+      shopSyncKey, saved.snapshot as unknown as Record<string, unknown>, saved.uploadedAt
+    ).catch((error) => console.warn("LAN recovery was cloud-accepted, but the local baseline refresh failed.", error));
+    await saveCache(owner, updated);
+    setNotice("Phone records were merged with this desktop and accepted by BeBoss Cloud. The phone was only read; its original records remain intact.");
   }
 
   async function refreshManagement() {
