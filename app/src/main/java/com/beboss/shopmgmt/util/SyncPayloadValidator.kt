@@ -72,16 +72,30 @@ object SyncPayloadValidator {
         val salesArr = root.optJSONArray("sales")
         val saleItemsArr = root.optJSONArray("saleItems")
         if (salesArr != null && saleItemsArr != null) {
-            val saleIds = HashSet<String>(salesArr.length())
+            val metadata = root.optJSONObject("metadata")
+            val continuationSaleIds = metadata?.optJSONArray("continuationSaleIds")
+            val saleIds = HashSet<String>((salesArr.length()) + (continuationSaleIds?.length() ?: 0))
             for (i in 0 until salesArr.length()) {
                 val id = salesArr.optJSONObject(i)?.optCleanString("id", "").orEmpty().trim()
                 if (id.isNotEmpty()) saleIds.add(id)
+            }
+            // Overflow sale-line packets are signed independently. Their parent sales
+            // are supplied by the preceding primary packet in the same ordered generation.
+            // Only the explicit signed metadata field can satisfy the foreign-key check.
+            if (continuationSaleIds != null) {
+                for (i in 0 until continuationSaleIds.length()) {
+                    val id = continuationSaleIds.optString(i).trim()
+                    require(id.isNotEmpty() && id.length <= 128) {
+                        "Invalid continuation sale id at metadata.continuationSaleIds[$i]."
+                    }
+                    saleIds.add(id)
+                }
             }
             for (i in 0 until saleItemsArr.length()) {
                 val item = saleItemsArr.optJSONObject(i) ?: continue
                 val fkSaleId = item.optCleanString("saleId", "").trim()
                 require(fkSaleId.isNotEmpty() && fkSaleId in saleIds) {
-                    "Orphan foreign key at saleItems[$i]: saleId '$fkSaleId' missing from sales."
+                    "Orphan foreign key at saleItems[$i]: saleId '$fkSaleId' missing from sales or signed continuationSaleIds."
                 }
             }
         }

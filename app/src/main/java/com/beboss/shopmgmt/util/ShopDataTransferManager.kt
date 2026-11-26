@@ -558,6 +558,16 @@ object ShopDataTransferManager {
                     sinceUpdatedAt = sinceUpdatedAt,
                     tombstones = if (isPrimaryPacket) tombstoneChunks.getOrElse(idx) { emptyList() } else emptyList()
                 )
+                if (!isPrimaryPacket && saleIds.isNotEmpty()) {
+                    // The signed continuation packet deliberately omits duplicate sale rows.
+                    // Carry the parent ids in its authenticated metadata so the strict parser
+                    // can validate each foreign key while the preceding primary packet supplies
+                    // the corresponding sale rows to the ordered merge.
+                    json.optJSONObject("metadata")?.put(
+                        "continuationSaleIds",
+                        JSONArray(saleIds.toList())
+                    )
+                }
                 tokens.add(createShopScopedShareToken(json, shopSecret))
             }
         }
