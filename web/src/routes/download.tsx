@@ -603,178 +603,182 @@ function DesktopDownloads({
         </section>
         {detailsExpanded ? (
           <div id="download-desktop-expanded-details" className="download-desktop-expanded-details">
-          <div id="desktop-download-options" className="download-desktop-download border-t border-border bg-surface/60 p-6 sm:p-9">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">Selected installer</p>
-                <h3 className="mt-2 text-2xl font-bold">{labels[selectedOs]}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">{options.find((item) => item.os === selectedOs)?.subtitle}</p>
-              </div>
-              {asset ? (
-                <Button type="button" variant="hero" size="xl" className="w-full sm:w-auto" onClick={() => void downloadSelectedInstaller()} disabled={isDownloading}>
-                  {isDownloading ? <><FileDown className="animate-pulse" /> Preparing secure download…</> : <><Download /> Download for {labels[selectedOs]} <ArrowRight /></>}
-                </Button>
-              ) : (
-                <Button type="button" variant="hero" size="xl" className="w-full sm:w-auto" disabled>
-                  <Download /> Installer not available yet
-                </Button>
-              )}
-            </div>
-  
-            {asset ? (
-              <>
-                <dl className="mt-6 grid gap-3 sm:grid-cols-3">
-                  <Meta label="Desktop version" value={version} />
-                  <Meta label="Package size" value={asset.sizeBytes > 0 ? formatBytes(asset.sizeBytes) : "Provided by release"} />
-                  <Meta label="Downloads" value={asset.downloadCount.toLocaleString()} />
-                </dl>
-  
-                <section className="mt-6 rounded-2xl border border-border bg-background/70 p-4 sm:p-5" aria-labelledby="desktop-checksum-title">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p id="desktop-checksum-title" className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                      <ShieldCheck className="size-4 text-success" />
-                      Installer SHA-256 integrity
-                    </p>
-                    {expectedChecksum ? (
-                      <Button size="sm" variant="ghost" onClick={copyChecksum}>
-                        {checksumCopied ? <Check className="text-success" /> : <Copy />}
-                        {checksumCopied ? "Copied" : "Copy checksum"}
-                      </Button>
-                    ) : null}
-                  </div>
-                  {expectedChecksum ? (
-                    <>
-                      <p className="mt-3 break-all rounded-xl bg-surface px-3 py-3 font-mono text-xs leading-6 text-foreground">
-                        {expectedChecksum}
-                      </p>
-                      <div className="mt-4 border-t border-border pt-4">
-                        <label htmlFor="desktop-checksum-input" className="mb-2 block text-xs font-semibold text-foreground">
-                          Verify the installer you downloaded
-                        </label>
-                        <input
-                          id="desktop-checksum-input"
-                          value={checksumInput}
-                          onChange={(event) => setChecksumInput(event.target.value)}
-                          placeholder="Paste the calculated 64-character SHA-256 hash"
-                          autoComplete="off"
-                          spellCheck={false}
-                          className="h-11 w-full rounded-xl border border-border bg-surface px-3 font-mono text-xs text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                        />
-                        {normalizedChecksumInput.length > 0 ? (
-                          <p className="mt-2 flex items-center gap-2 text-xs font-medium" role="status">
-                            {checksumMatches ? (
-                              <><CheckCircle2 className="size-4 text-success" /> The downloaded installer matches the official release checksum.</>
-                            ) : checksumMismatch ? (
-                              <><ShieldCheck className="size-4 text-destructive" /> Hash mismatch. Do not install this file until its origin is confirmed.</>
-                            ) : (
-                              <><FileCheck2 className="size-4 text-muted-foreground" /> Enter all 64 hexadecimal characters to complete the comparison.</>
-                            )}
-                          </p>
-                        ) : null}
-                      </div>
-                    </>
-                  ) : (
-                    <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                      The selected release does not contain a valid checksum entry in its SHA256SUMS.txt manifest. Download only from the official BeBoss release page.
-                    </p>
-                  )}
-                </section>
-              </>
-            ) : (
-              <div className="mt-6 rounded-2xl border border-warning/30 bg-warning/5 p-4 text-sm leading-6 text-muted-foreground" role="status">
-                {release.unavailable
-                  ? "The release service could not be reached. The download page is still available; retry later or open the official release history."
-                  : release.published
-                    ? `The latest published set does not contain a ${labels[selectedOs]} installer yet.`
-                    : "No desktop installer has been uploaded yet. BeBoss releases are built locally by the release administrator and uploaded individually; each platform becomes available when its installer is published."}
-              </div>
-            )}
-  
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
-              <p className="text-xs text-muted-foreground">
-                {release.publishedAt ? `Published ${formatDate(release.publishedAt)}` : "Official BeBoss desktop distribution"}
-              </p>
-              <a
-                href="#desktop-release-history"
-                className="inline-flex items-center gap-2 text-sm font-semibold text-primary underline-offset-4 hover:underline"
-              >
-                Previous versions <ArrowRight className="size-4" />
-              </a>
-            </div>
-          </div>
-        </section>
-  
-        <section id="desktop-release-history" className="mt-7 rounded-3xl border border-border bg-card p-5 sm:p-7" aria-labelledby="desktop-history-heading">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">Release archive</p>
-              <h3 id="desktop-history-heading" className="mt-1 text-xl font-bold">Previous {labels[selectedOs]} versions</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Older builds are available only when the release administrator has enabled public visibility.</p>
-            </div>
-            <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-muted-foreground">{previousReleases.length} public version(s)</span>
-          </div>
-          {previousReleases.length ? (
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {previousReleases.map((item) => (
-                <article key={item.id} className="min-w-0 rounded-2xl border border-border bg-background/70 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <strong className="text-sm">BeBoss Desktop v{item.versionName}</strong>
-                    <span className="text-xs text-muted-foreground">{formatDate(item.publishedAt)}</span>
-                  </div>
-                  <p className="mt-2 break-all text-xs text-muted-foreground">{item.name} · {formatBytes(item.sizeBytes)} · {item.downloadCount.toLocaleString()} downloads</p>
-                  <details className="mt-3">
-                    <summary className="cursor-pointer text-xs font-semibold text-primary">Show checksum and release notes</summary>
-                    <p className="mt-2 break-all rounded-lg bg-muted/50 p-2 font-mono text-[10px] leading-5">SHA-256 {item.sha256}</p>
-                    {item.releaseNotes ? <p className="mt-2 whitespace-pre-line text-xs leading-5 text-muted-foreground">{item.releaseNotes}</p> : null}
-                  </details>
-                  <Button type="button" size="sm" variant="outline" className="mt-3 w-full" disabled={archiveDownloadId === item.id || archiveDownloadId !== null}
-                    onClick={() => void downloadArchivedInstaller(item)}>
-                    {archiveDownloadId === item.id ? <FileDown className="animate-pulse" /> : <Download />}
-                    {archiveDownloadId === item.id ? "Preparing secure download…" : "Download this version"}
+  <div id="desktop-download-options" className="download-desktop-download border-t border-border bg-surface/60 p-6 sm:p-9">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">Selected installer</p>
+                  <h3 className="mt-2 text-2xl font-bold">{labels[selectedOs]}</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">{options.find((item) => item.os === selectedOs)?.subtitle}</p>
+                </div>
+                {asset ? (
+                  <Button type="button" variant="hero" size="xl" className="w-full sm:w-auto" onClick={() => void downloadSelectedInstaller()} disabled={isDownloading}>
+                    {isDownloading ? <><FileDown className="animate-pulse" /> Preparing secure download…</> : <><Download /> Download for {labels[selectedOs]} <ArrowRight /></>}
                   </Button>
-                </article>
-              ))}
+                ) : (
+                  <Button type="button" variant="hero" size="xl" className="w-full sm:w-auto" disabled>
+                    <Download /> Installer not available yet
+                  </Button>
+                )}
+              </div>
+    
+              {asset ? (
+                <>
+                  <dl className="mt-6 grid gap-3 sm:grid-cols-3">
+                    <Meta label="Desktop version" value={version} />
+                    <Meta label="Package size" value={asset.sizeBytes > 0 ? formatBytes(asset.sizeBytes) : "Provided by release"} />
+                    <Meta label="Downloads" value={asset.downloadCount.toLocaleString()} />
+                  </dl>
+    
+                  <section className="mt-6 rounded-2xl border border-border bg-background/70 p-4 sm:p-5" aria-labelledby="desktop-checksum-title">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p id="desktop-checksum-title" className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                        <ShieldCheck className="size-4 text-success" />
+                        Installer SHA-256 integrity
+                      </p>
+                      {expectedChecksum ? (
+                        <Button size="sm" variant="ghost" onClick={copyChecksum}>
+                          {checksumCopied ? <Check className="text-success" /> : <Copy />}
+                          {checksumCopied ? "Copied" : "Copy checksum"}
+                        </Button>
+                      ) : null}
+                    </div>
+                    {expectedChecksum ? (
+                      <>
+                        <p className="mt-3 break-all rounded-xl bg-surface px-3 py-3 font-mono text-xs leading-6 text-foreground">
+                          {expectedChecksum}
+                        </p>
+                        <div className="mt-4 border-t border-border pt-4">
+                          <label htmlFor="desktop-checksum-input" className="mb-2 block text-xs font-semibold text-foreground">
+                            Verify the installer you downloaded
+                          </label>
+                          <input
+                            id="desktop-checksum-input"
+                            value={checksumInput}
+                            onChange={(event) => setChecksumInput(event.target.value)}
+                            placeholder="Paste the calculated 64-character SHA-256 hash"
+                            autoComplete="off"
+                            spellCheck={false}
+                            className="h-11 w-full rounded-xl border border-border bg-surface px-3 font-mono text-xs text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          />
+                          {normalizedChecksumInput.length > 0 ? (
+                            <p className="mt-2 flex items-center gap-2 text-xs font-medium" role="status">
+                              {checksumMatches ? (
+                                <><CheckCircle2 className="size-4 text-success" /> The downloaded installer matches the official release checksum.</>
+                              ) : checksumMismatch ? (
+                                <><ShieldCheck className="size-4 text-destructive" /> Hash mismatch. Do not install this file until its origin is confirmed.</>
+                              ) : (
+                                <><FileCheck2 className="size-4 text-muted-foreground" /> Enter all 64 hexadecimal characters to complete the comparison.</>
+                              )}
+                            </p>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                        The selected release does not contain a valid checksum entry in its SHA256SUMS.txt manifest. Download only from the official BeBoss release page.
+                      </p>
+                    )}
+                  </section>
+                </>
+              ) : (
+                <div className="mt-6 rounded-2xl border border-warning/30 bg-warning/5 p-4 text-sm leading-6 text-muted-foreground" role="status">
+                  {release.unavailable
+                    ? "The release service could not be reached. The download page is still available; retry later or open the official release history."
+                    : release.published
+                      ? `The latest published set does not contain a ${labels[selectedOs]} installer yet.`
+                      : "No desktop installer has been uploaded yet. BeBoss releases are built locally by the release administrator and uploaded individually; each platform becomes available when its installer is published."}
+                </div>
+              )}
+    
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+                <p className="text-xs text-muted-foreground">
+                  {release.publishedAt ? `Published ${formatDate(release.publishedAt)}` : "Official BeBoss desktop distribution"}
+                </p>
+                <a
+                  href="#desktop-release-history"
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-primary underline-offset-4 hover:underline"
+                >
+                  Previous versions <ArrowRight className="size-4" />
+                </a>
+              </div>
             </div>
-          ) : (
-            <p className="mt-4 rounded-xl bg-muted/30 p-4 text-sm leading-6 text-muted-foreground">There are no previous public {labels[selectedOs]} versions. Older releases hidden by the administrator remain in the private archive.</p>
-          )}
-        </section>
-  
-        <section className="mt-7 grid gap-4 md:grid-cols-3">
-          <article className="download-os-guide">
-            <Monitor className="size-5 text-primary" />
-            <h3 className="mt-3 font-semibold">Windows setup</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">Run the NSIS setup file, follow the installer and launch BeBoss from the Start Menu. Use the production-signed Windows setup file supplied by BeBoss. Check its SHA-256 value before installation.</p>
-          </article>
-          <article className="download-os-guide">
-            <Apple className="size-5 text-primary" />
-            <h3 className="mt-3 font-semibold">macOS installation</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">Open the DMG and move BeBoss to Applications. Whether Gatekeeper accepts the app without an additional confirmation depends on the Apple signing and notarization credentials used for that release.</p>
-          </article>
-          <article className="download-os-guide">
-            <Laptop className="size-5 text-primary" />
-            <h3 className="mt-3 font-semibold">Linux installation</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">Download the AppImage, make it executable with <code>chmod +x BeBoss-Linux-x64.AppImage</code>, then run it. Your distribution must provide the Tauri WebKit runtime dependencies.</p>
-          </article>
-        </section>
-  
-        <section className="mt-7 rounded-3xl border border-border bg-card p-6 sm:p-8">
-          <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-success" />
-            <div>
-              <h3 className="font-semibold">Official packages and integrity</h3>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Desktop installers are built and verified locally by BeBoss maintainers, then uploaded to private BeBoss release storage. Downloads are issued through short-lived secure links, and each published installer includes a SHA-256 checksum so you can verify the file before installation. Never install a package from an unofficial mirror.
-              </p>
-              <a href={release.releaseUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
-                Review published desktop installers and SHA-256 checksums <ExternalLink className="size-4" />
-              </a>
-            </div>
-          </div>
-        </section>
           </div>
         ) : null}
-
+      </section>
+      {detailsExpanded ? (
+        <>
+        <section id="desktop-release-history" className="mt-7 rounded-3xl border border-border bg-card p-5 sm:p-7" aria-labelledby="desktop-history-heading">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">Release archive</p>
+                      <h3 id="desktop-history-heading" className="mt-1 text-xl font-bold">Previous {labels[selectedOs]} versions</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">Older builds are available only when the release administrator has enabled public visibility.</p>
+                    </div>
+                    <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-muted-foreground">{previousReleases.length} public version(s)</span>
+                  </div>
+                  {previousReleases.length ? (
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      {previousReleases.map((item) => (
+                        <article key={item.id} className="min-w-0 rounded-2xl border border-border bg-background/70 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <strong className="text-sm">BeBoss Desktop v{item.versionName}</strong>
+                            <span className="text-xs text-muted-foreground">{formatDate(item.publishedAt)}</span>
+                          </div>
+                          <p className="mt-2 break-all text-xs text-muted-foreground">{item.name} · {formatBytes(item.sizeBytes)} · {item.downloadCount.toLocaleString()} downloads</p>
+                          <details className="mt-3">
+                            <summary className="cursor-pointer text-xs font-semibold text-primary">Show checksum and release notes</summary>
+                            <p className="mt-2 break-all rounded-lg bg-muted/50 p-2 font-mono text-[10px] leading-5">SHA-256 {item.sha256}</p>
+                            {item.releaseNotes ? <p className="mt-2 whitespace-pre-line text-xs leading-5 text-muted-foreground">{item.releaseNotes}</p> : null}
+                          </details>
+                          <Button type="button" size="sm" variant="outline" className="mt-3 w-full" disabled={archiveDownloadId === item.id || archiveDownloadId !== null}
+                            onClick={() => void downloadArchivedInstaller(item)}>
+                            {archiveDownloadId === item.id ? <FileDown className="animate-pulse" /> : <Download />}
+                            {archiveDownloadId === item.id ? "Preparing secure download…" : "Download this version"}
+                          </Button>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-4 rounded-xl bg-muted/30 p-4 text-sm leading-6 text-muted-foreground">There are no previous public {labels[selectedOs]} versions. Older releases hidden by the administrator remain in the private archive.</p>
+                  )}
+                </section>
+          
+                <section className="mt-7 grid gap-4 md:grid-cols-3">
+                  <article className="download-os-guide">
+                    <Monitor className="size-5 text-primary" />
+                    <h3 className="mt-3 font-semibold">Windows setup</h3>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">Run the NSIS setup file, follow the installer and launch BeBoss from the Start Menu. Use the production-signed Windows setup file supplied by BeBoss. Check its SHA-256 value before installation.</p>
+                  </article>
+                  <article className="download-os-guide">
+                    <Apple className="size-5 text-primary" />
+                    <h3 className="mt-3 font-semibold">macOS installation</h3>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">Open the DMG and move BeBoss to Applications. Whether Gatekeeper accepts the app without an additional confirmation depends on the Apple signing and notarization credentials used for that release.</p>
+                  </article>
+                  <article className="download-os-guide">
+                    <Laptop className="size-5 text-primary" />
+                    <h3 className="mt-3 font-semibold">Linux installation</h3>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">Download the AppImage, make it executable with <code>chmod +x BeBoss-Linux-x64.AppImage</code>, then run it. Your distribution must provide the Tauri WebKit runtime dependencies.</p>
+                  </article>
+                </section>
+          
+                <section className="mt-7 rounded-3xl border border-border bg-card p-6 sm:p-8">
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck className="mt-0.5 size-5 shrink-0 text-success" />
+                    <div>
+                      <h3 className="font-semibold">Official packages and integrity</h3>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        Desktop installers are built and verified locally by BeBoss maintainers, then uploaded to private BeBoss release storage. Downloads are issued through short-lived secure links, and each published installer includes a SHA-256 checksum so you can verify the file before installation. Never install a package from an unofficial mirror.
+                      </p>
+                      <a href={release.releaseUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
+                        Review published desktop installers and SHA-256 checksums <ExternalLink className="size-4" />
+                      </a>
+                    </div>
+                  </div>
+                </section>
+                  </div>
+                ) : null}
+        </>
+      ) : null}
     </section>
   );
 }
