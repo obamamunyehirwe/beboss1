@@ -145,6 +145,8 @@ function ReleasesPage() {
     if (!manifestFile) return;
     if (manifestFile.name.toLowerCase() !== "package.json" || manifestFile.size > 1024 * 1024) {
       setDesktopManifestFile(null);
+      const manifestInput = document.getElementById("desktop-source-manifest") as HTMLInputElement | null;
+      if (manifestInput) manifestInput.value = "";
       toast.error("Choose the small package.json file from your local desktop project folder.");
       return;
     }
@@ -159,6 +161,8 @@ function ReleasesPage() {
       toast.success(`Local desktop source version v${version} loaded.`);
     } catch (error) {
       setDesktopManifestFile(null);
+      const manifestInput = document.getElementById("desktop-source-manifest") as HTMLInputElement | null;
+      if (manifestInput) manifestInput.value = "";
       toast.error(error instanceof Error ? error.message : "Could not read the local desktop package.json.");
     }
   };
@@ -647,7 +651,12 @@ function ReleasesPage() {
               const current = desktopRows.find((release) => release.platform === id && release.is_current && release.is_public);
               const platformDownloads = desktopRows.filter((release) => release.platform === id).reduce((sum, release) => sum + Number(release.download_count || 0), 0);
               return (
-                <button key={id} type="button" aria-pressed={desktopPlatform === id} onClick={() => setDesktopPlatform(id)}
+                <button key={id} type="button" aria-pressed={desktopPlatform === id} onClick={() => {
+                    setDesktopPlatform(id);
+                    setDesktopFile(null);
+                    const input = document.getElementById("desktop-artifact") as HTMLInputElement | null;
+                    if (input) input.value = "";
+                  }}
                   className={desktopPlatform === id
                     ? "rounded-2xl border-2 border-primary bg-primary/5 p-4 text-left shadow-sm ring-2 ring-primary/10"
                     : "rounded-2xl border border-border bg-card p-4 text-left transition hover:border-primary/50 hover:bg-muted/20"}>
@@ -719,7 +728,12 @@ function ReleasesPage() {
                     { id: "macos", name: "macOS", ext: ".dmg", Icon: Apple },
                     { id: "linux", name: "Linux", ext: ".AppImage", Icon: Laptop },
                   ] as const).map(({ id, name, ext, Icon }) => (
-                    <button key={id} type="button" aria-pressed={desktopPlatform === id} onClick={() => { setDesktopPlatform(id); setDesktopFile(null); const input = document.getElementById("desktop-artifact") as HTMLInputElement | null; if (input) input.value = ""; }}
+                    <button key={id} type="button" aria-pressed={desktopPlatform === id} onClick={() => {
+                        setDesktopPlatform(id);
+                        setDesktopFile(null);
+                        const input = document.getElementById("desktop-artifact") as HTMLInputElement | null;
+                        if (input) input.value = "";
+                      }}
                       className={desktopPlatform === id
                         ? "rounded-xl border-2 border-primary bg-primary/5 px-2 py-3 text-center shadow-sm"
                         : "rounded-xl border border-border bg-background px-2 py-3 text-center transition hover:border-primary/50"}>
