@@ -17,6 +17,9 @@ dist-ssr
 *.local
 
 # Tauri build artifacts (never track compiled binaries)
+# Signing credentials are supplied only through protected CI secrets.
+*.pfx
+*.p12
 src-tauri/target/
 target/
 
