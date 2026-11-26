@@ -1,7 +1,5 @@
 package com.beboss.shopmgmt
 
-private const val TEST_SHOP_SHARE_SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -30,6 +28,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+
+private const val TEST_SHOP_SHARE_SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
