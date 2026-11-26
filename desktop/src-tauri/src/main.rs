@@ -559,6 +559,7 @@ fn database_storage_bytes(db_path: &std::path::Path) -> u64 {
     .fold(0u64, u64::saturating_add)
 }
 
+#[tauri::command]
 fn system_diagnostics(app: tauri::AppHandle) -> Result<SystemDiagnostics, String> {
     let db_path = database_path(&app)?;
     let connection = open_database(&app)?;
