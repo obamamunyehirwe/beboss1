@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@/lib/use-server-fn";
 import { Apple, CheckCircle2, Download, FileCheck2, Laptop, Loader2, Monitor, Pencil, Smartphone, Star, Trash2, UploadCloud } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -152,7 +152,7 @@ function ReleasesPage() {
       toast.error("Desktop release version must match the current source version " + sourceVersion + ". Update the desktop version manifests and rebuild first.");
       return;
     }
-    if (!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
       toast.error("Enter a valid semantic version.");
       return;
     }
