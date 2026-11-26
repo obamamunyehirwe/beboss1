@@ -4,7 +4,7 @@ import {
   DEVICE_ACCESS_TTL_MS,
   DEVICE_REFRESH_TTL_MS,
 } from "../_shared/device-credentials.ts";
-import { monthlyShopFeeRwf } from "../_shared/shop-management.ts";
+import { EXTRA_DEVICE_MONTHLY_FEE_RWF, monthlyShopFeeRwf } from "../_shared/shop-management.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -770,6 +770,14 @@ Deno.serve(async (req: Request) => {
       if (!existingDevice && (!authTime || Date.now() / 1000 - authTime > 15 * 60 || authTime > Date.now() / 1000 + 60)) {
         return json(403, { ok: false, message: "A fresh owner SMS verification is required to register this new desktop installation." });
       }
+      if (!existingDevice && body.confirmDeviceFee !== true) {
+        return json(402, {
+          ok: false,
+          requiresDeviceFeeConfirmation: true,
+          monthlyAddonRwf: EXTRA_DEVICE_MONTHLY_FEE_RWF,
+          message: `This new desktop adds FRw ${EXTRA_DEVICE_MONTHLY_FEE_RWF.toLocaleString("en-US")} per month to the shop subscription. Confirm to register this device.`
+        });
+      }
       const { data: mainBranch, error: mainBranchError } = await admin.from("shop_branches")
         .select("id,name").eq("shop_sync_key", owner.shopId).eq("is_active", true)
         .eq("is_main_branch", true).maybeSingle();
@@ -810,7 +818,7 @@ Deno.serve(async (req: Request) => {
           assigned_user_id: ownerUser.user_id, assigned_username: ownerUser.username,
           assigned_user_name: ownerUser.full_name, role: "OWNER",
           branch_id: registrationBranch.id, branch_name: registrationBranch.name,
-          is_owner_primary: false, is_active: true, monthly_fee_addon_rwf: 2000,
+          is_owner_primary: false, is_active: true, monthly_fee_addon_rwf: EXTRA_DEVICE_MONTHLY_FEE_RWF,
           last_synced_at: now, created_at: now, updated_at: now
         }).select("id,device_name,device_id,role,branch_name,branch_id,is_active,is_owner_primary,assigned_user_id,assigned_username,assigned_user_name,last_synced_at,created_at,updated_at,monthly_fee_addon_rwf").single();
         if (error || !data) throw new Error("Could not register this desktop as an additional billable device: " + (error?.message || "No row returned."));
@@ -1431,14 +1439,14 @@ if (action === "submit_payment_proof") {
         assigned_user_id: staff.user_id, assigned_username: staff.username,
         assigned_user_name: staff.full_name, role: staff.role,
         branch_id: branch.id, branch_name: branch.name, is_owner_primary: false,
-        is_active: true, monthly_fee_addon_rwf: 2000, last_synced_at: 0,
+        is_active: true, monthly_fee_addon_rwf: EXTRA_DEVICE_MONTHLY_FEE_RWF, last_synced_at: 0,
         created_at: now, updated_at: now
       }).select("id,device_name,device_id,role,branch_name,branch_id,is_active,is_owner_primary,assigned_user_id,assigned_username,assigned_user_name,last_synced_at,created_at,updated_at,monthly_fee_addon_rwf").single();
       if (slotError || !slot) throw new Error("Could not create the secure device slot: " + (slotError?.message || "No row returned."));
       try {
         const invite = await issueDeviceInvitationV2(config, owner.shopId, newId, branch.id, actor.actorDeviceId, actor.ownerUser.user_id);
         const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
-        return json(200, { ok: true, ...slot, joinCode: invite.joinCode, expiresAt: invite.expiresAt, monthlyAddonRwf: 2000, shopUsage });
+        return json(200, { ok: true, ...slot, joinCode: invite.joinCode, expiresAt: invite.expiresAt, monthlyAddonRwf: EXTRA_DEVICE_MONTHLY_FEE_RWF, shopUsage });
       } catch (error) {
         await admin.from("shop_devices").delete().eq("id", newId).eq("shop_sync_key", owner.shopId);
         throw error;
