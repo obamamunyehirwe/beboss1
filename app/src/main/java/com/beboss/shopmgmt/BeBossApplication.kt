@@ -9,6 +9,7 @@ import com.beboss.shopmgmt.util.OfflineSubscriptionManager
 import com.beboss.shopmgmt.util.LegacyCredentialPepperStore
 import io.sentry.Sentry
 import io.sentry.SentryLevel
+import io.sentry.SentryOptions
 import io.sentry.android.core.SentryAndroid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -73,6 +74,23 @@ class BeBossApplication : Application() {
                 options.isAttachViewHierarchy = false
                 options.tracesSampleRate = 0.0
                 options.isDebug = BuildConfig.DEBUG
+
+                // POS/network breadcrumbs may contain sale references, customer
+                // details, local file paths or request metadata. Keep stack traces,
+                // release/environment and sanitized component messages; discard
+                // automatic breadcrumbs and request/user/extra context.
+                options.beforeBreadcrumb = SentryOptions.BeforeBreadcrumbCallback { _, _ -> null }
+                options.beforeSend = SentryOptions.BeforeSendCallback { event, _ ->
+                    event.setUser(null)
+                    event.setRequest(null)
+                    event.setExtras(emptyMap())
+                    event.setBreadcrumbs(null)
+                    event.exceptions?.forEach { exception ->
+                        exception.value = "Exception details redacted."
+                        exception.setUnknown(null)
+                    }
+                    event
+                }
             }
 
             BeBossLogger.SentryCrashReporter = { tag, message, throwable ->
