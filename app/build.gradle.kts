@@ -25,6 +25,20 @@ abstract class ValidateCredentialPepperTask : org.gradle.api.DefaultTask() {
   }
 }
 
+abstract class ValidateSecureMigrationApprovalTask : org.gradle.api.DefaultTask() {
+  @get:org.gradle.api.tasks.Input
+  abstract val approved: org.gradle.api.provider.Property<Boolean>
+
+  @org.gradle.api.tasks.TaskAction
+  fun validate() {
+    if (!approved.get()) {
+      throw org.gradle.api.GradleException(
+        "Secure Android release is blocked. First install Transition 2.4.1 on every active Android terminal and verify that each device reports its legacy credential pepper secured in Android Keystore. Then set SECURE_CREDENTIAL_MIGRATION_APPROVED=true."
+      )
+    }
+  }
+}
+
 abstract class ValidateSentryDsnTask : org.gradle.api.DefaultTask() {
   @get:org.gradle.api.tasks.Input
   abstract val hasValidDsn: org.gradle.api.provider.Property<Boolean>
@@ -45,11 +59,19 @@ abstract class ValidateReleaseSigningTask : org.gradle.api.DefaultTask() {
   @get:org.gradle.api.tasks.Input
   abstract val hasCredentials: org.gradle.api.provider.Property<Boolean>
 
+  @get:org.gradle.api.tasks.Input
+  abstract val hasVerifiedCertificate: org.gradle.api.provider.Property<Boolean>
+
   @org.gradle.api.tasks.TaskAction
   fun validate() {
     if (!hasKeystore.get() || !hasCredentials.get()) {
       throw org.gradle.api.GradleException(
         "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD, KEY_PASSWORD and KEY_ALIAS in the ignored root .env file or protected CI secrets. A debug keystore is never accepted for release builds."
+      )
+    }
+    if (!hasVerifiedCertificate.get()) {
+      throw org.gradle.api.GradleException(
+        "The configured Android release keystore does not match ANDROID_UPLOAD_CERT_SHA256. Rotate the exposed signing material, register the new upload certificate with Google Play, and update the ignored root .env before building a release."
       )
     }
   }
@@ -70,6 +92,31 @@ val releaseKeystoreFile = releaseKeystorePath?.let { rootProject.file(it) }
 val releaseStorePassword = signingSecret("STORE_PASSWORD")
 val releaseKeyPassword = signingSecret("KEY_PASSWORD")
 val releaseKeyAlias = signingSecret("KEY_ALIAS")
+val expectedUploadCertificateSha256 = signingSecret("ANDROID_UPLOAD_CERT_SHA256")
+  .orEmpty().filter { it.isLetterOrDigit() }.uppercase()
+
+fun actualReleaseCertificateSha256(): String? {
+  val file = releaseKeystoreFile ?: return null
+  val password = releaseStorePassword ?: return null
+  val alias = releaseKeyAlias ?: return null
+  if (!file.isFile) return null
+  return runCatching {
+    val store = sequenceOf("PKCS12", "JKS").mapNotNull { type ->
+      runCatching {
+        java.security.KeyStore.getInstance(type).apply {
+          file.inputStream().use { load(it, password.toCharArray()) }
+        }
+      }.getOrNull()
+    }.firstOrNull() ?: return null
+    val certificate = store.getCertificate(alias) ?: return null
+    java.security.MessageDigest.getInstance("SHA-256")
+      .digest(certificate.encoded)
+      .joinToString("") { "%02X".format(it) }
+  }.getOrNull()
+}
+val configuredUploadCertificateMatches =
+  expectedUploadCertificateSha256.matches(Regex("[A-F0-9]{64}")) &&
+    actualReleaseCertificateSha256() == expectedUploadCertificateSha256
 
 android {
   namespace = "com.beboss.shopmgmt"
@@ -234,6 +281,9 @@ val validateSentryDsnConfiguration = tasks.register<ValidateSentryDsnTask>("vali
       configuredSentryDsn.substringAfter("@").contains("/")
   )
 }
+val validateSecureMigrationApproval = tasks.register<ValidateSecureMigrationApprovalTask>("validateSecureMigrationApproval") {
+  approved.set(signingSecret("SECURE_CREDENTIAL_MIGRATION_APPROVED").equals("true", ignoreCase = true))
+}
 val configuredSecurityPepper = signingSecret("BEBOSS_SECURITY_PEPPER").orEmpty()
 val validateCredentialPepperConfiguration = tasks.register<ValidateCredentialPepperTask>("validateCredentialPepperConfiguration") {
   // Only a boolean enters the task; never serialize the pepper into Gradle cache.
@@ -259,6 +309,8 @@ val releaseCredentialsConfigured =
 val validateReleaseSigningConfiguration = tasks.register<ValidateReleaseSigningTask>("validateReleaseSigningConfiguration") {
   hasKeystore.set(releaseKeystoreConfigured)
   hasCredentials.set(releaseCredentialsConfigured)
+  // Only a boolean enters the task; the keystore passwords and key material are not cached.
+  hasVerifiedCertificate.set(configuredUploadCertificateMatches)
 }
 
 tasks.configureEach {
@@ -272,6 +324,9 @@ tasks.configureEach {
   if (releaseTask && releasePackagingTask) {
     dependsOn(validateReleaseSigningConfiguration)
     dependsOn(validateSentryDsnConfiguration)
+    if (name.contains("Secure", ignoreCase = true)) {
+      dependsOn(validateSecureMigrationApproval)
+    }
     if (name.contains("Transition", ignoreCase = true)) {
       dependsOn(validateCredentialPepperConfiguration)
     }
