@@ -14,7 +14,7 @@ import { liveConfigured } from '@/lib/live-config';
 import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
-import { addMyShopDevice, claimMyShopOwner, confirmMyShopStockTransfer, createGatewayCheckout, deleteMyShopBranch, lookupMyShop, requestMyShopOwnerOtp, requestMyShopStockTransferCancellation, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
+import { addMyShopDevice, claimMyShopOwner, checkGatewayPaymentStatus, confirmMyShopStockTransfer, createGatewayCheckout, deleteMyShopBranch, lookupMyShop, requestMyShopOwnerOtp, requestMyShopStockTransferCancellation, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
 import { AnnouncementCard } from "@/components/site/AnnouncementBanner";
 import { calculateSubscriptionFee, effectiveShopStatus } from "@/lib/pricing";
 import { daysLeft, formatDateTime, formatRwf, relativeTime } from "@/lib/format";
@@ -1192,6 +1192,7 @@ function BranchManager({
 function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
   const { t } = useI18n();
   const startCheckout = useServerFn(createGatewayCheckout);
+  const checkPaymentStatus = useServerFn(checkGatewayPaymentStatus);
   const sendOwnerOtp = useServerFn(requestMyShopOwnerOtp);
   const enrollOwner = useServerFn(claimMyShopOwner);
   const [otpSent, setOtpSent] = useState(false);
@@ -1201,7 +1202,7 @@ function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
     shopName: "",
     username: "",
     phone: "",
-    gateway: "flutterwave" as "flutterwave" | "stripe",
+    gateway: "flutterwave" as "flutterwave" | "stripe" | "mtn_momo",
     payerPhone: "",
     payerName: "",
     payerEmail: "",
@@ -1211,6 +1212,9 @@ function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
     devices: initial.d ?? 1,
   });
   const [sending, setSending] = useState(false);
+  const [pendingPaymentId, setPendingPaymentId] = useState("");
+  const [pendingPaymentMessage, setPendingPaymentMessage] = useState("");
+  const [paymentStatusBusy, setPaymentStatusBusy] = useState(false);
   const calc = calculateSubscriptionFee(f.branches, f.workers, f.months, f.devices, 2_000);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
 
@@ -1248,6 +1252,13 @@ function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
       }
 
       const checkout = await startCheckout({ data: f });
+      if (checkout.pending) {
+        setPendingPaymentId(checkout.paymentRequestId);
+        setPendingPaymentMessage(checkout.message);
+        setSending(false);
+        toast.info("MTN MoMo prompt sent. Approve it on the payer phone; BeBoss verifies the final wallet status.");
+        return;
+      }
       window.location.assign(checkout.checkoutUrl);
     } catch (err) {
       console.error(err);
@@ -1281,6 +1292,7 @@ function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="flutterwave">Flutterwave — MTN MoMo, Airtel Money and card</SelectItem>
+              <SelectItem value="mtn_momo">Direct MTN MoMo — Rwanda wallet prompt</SelectItem>
               <SelectItem value="stripe">Stripe — bank cards (eligible merchant account required)</SelectItem>
             </SelectContent>
           </Select>
@@ -1320,7 +1332,7 @@ function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
             Flutterwave supports RWF card and Rwanda Mobile Money, subject to merchant payment-method activation. Stripe requires an active merchant account in a supported country.
           </p>
         </div>
-        <Button type="submit" variant="hero" size="lg" className="mt-auto" disabled={sending}>
+        <Button type="submit" variant="hero" size="lg" className="mt-auto" disabled={sending || Boolean(pendingPaymentId)}>
           {sending ? <Loader2 className="animate-spin" /> : <Send />}
           {ownerVerified ? "Continue to secure payment" : otpSent ? "Verify owner & continue" : "Verify owner and pay"}
         </Button>
