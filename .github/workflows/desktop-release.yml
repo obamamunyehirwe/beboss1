@@ -155,7 +155,17 @@ jobs:
           } else {
             $env:RELEASE_REF_NAME -replace "^desktop-v", ""
           }
-          if ($requestedVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?      - name: Verify package, Tauri and Rust versions
+          if ($requestedVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
+            throw "The desktop release tag must contain a valid semantic version."
+          }
+          $manifest = Get-Content "package.json" -Raw | ConvertFrom-Json
+          $sourceVersion = [string]$manifest.version
+          if ($requestedVersion -ne $sourceVersion) {
+            throw "Requested release version $requestedVersion does not match desktop/package.json version $sourceVersion. Update all desktop version manifests together before publishing."
+          }
+          Write-Host "Release version $requestedVersion matches the desktop app binary version."
+
+      - name: Verify package, Tauri and Rust versions
         run: npm run check:versions
 
       - name: Type-check and build desktop renderer
