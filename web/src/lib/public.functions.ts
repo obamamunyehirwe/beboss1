@@ -56,7 +56,7 @@ async function requireOwnerSession(context: OwnerAuthContext, username: string, 
  */
 async function requireOwnerTenantAdmin(context: OwnerAuthContext, username: string, phone: string) {
   const key = await requireOwnerSession(context, username, phone);
-  const { createShopAdminClient } = await import("@/integrations/supabase/client.server");
+  const { createShopAdminClient } = await import("@/lib/owner-tenant.server");
   const supabase = createShopAdminClient(key);
   const { data: shop, error } = await supabase
     .from("shop_accounts")
