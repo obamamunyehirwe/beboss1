@@ -56,6 +56,38 @@ function createSupabaseAdminClient() {
   });
 }
 
+/**
+ * Creates an isolated service-role client for a single, already-verified shop request.
+ * The legacy tenant header is set only server-side for SQL RPCs that still use the
+ * transitional tenant context. Never share this client between tenants or expose it.
+ */
+export function createShopAdminClient(shopSyncKey: string) {
+  const tenantKey = shopSyncKey.trim();
+  if (!tenantKey) throw new Error("A verified shop tenant is required.");
+
+  const SUPABASE_URL = process.env["SUPABASE_URL"];
+  const rawServiceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
+  const SUPABASE_SERVICE_ROLE_KEY = rawServiceRoleKey
+    ? normalizeSupabaseApiKey(rawServiceRoleKey, "SUPABASE_SERVICE_ROLE_KEY")
+    : undefined;
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("The secure shop data service is not configured.");
+  }
+
+  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    global: {
+      fetch: createSupabaseFetch(SUPABASE_SERVICE_ROLE_KEY),
+      headers: { "X-Shop-Sync-Key": tenantKey },
+    },
+    auth: {
+      storage: undefined,
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
 let _supabaseAdmin: ReturnType<typeof createSupabaseAdminClient> | undefined;
 
 // Server-side Supabase client with service role - bypasses RLS
