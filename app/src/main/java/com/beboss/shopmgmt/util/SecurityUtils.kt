@@ -1,6 +1,5 @@
 package com.beboss.shopmgmt.util
 
-import com.beboss.shopmgmt.BuildConfig
 import java.security.SecureRandom
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
@@ -10,24 +9,20 @@ import javax.crypto.spec.PBEKeySpec
  * cryptographically secure salt generation, and timing-attack-safe verification.
  *
  * New credentials use versioned PBKDF2-HMAC-SHA256 hashes with independent random salts.
- * The old BuildConfig pepper is read-only compatibility for existing v1 hashes and is
+ * The old credential pepper is read-only compatibility for existing v1 hashes and is
  * intentionally not used to create new credentials.
  */
 object SecurityUtils {
 
     private const val PBKDF2_ALGORITHM = "PBKDF2WithHmacSHA256"
     private const val ITERATIONS = 210000
-    private const val LEGACY_RUNTIME_PEPPER = "BeBossRuntimeHardwarePepperV2"
     private const val KEY_LENGTH = 256 // in bits
     private const val SALT_BYTES = 16
 
-    private fun configuredPepper(): String? {
-        val value = try { BuildConfig.BEBOSS_SECURITY_PEPPER.trim() } catch (_: Throwable) { "" }
-        return value.takeIf { it.length >= 32 && it != "DEFAULT_PEPPER_PLACEHOLDER" && it != LEGACY_RUNTIME_PEPPER }
-    }
+    private fun configuredPepper(): String? = LegacyCredentialPepperStore.getLegacyPepper()
 
     /**
-     * The compile-time pepper is retained only to read old v1 hashes during migration.
+     * The transition APK copies the old pepper into Android Keystore; the final APK has no compile-time pepper.
      * New hashes never depend on a value embedded in the APK. Once telemetry confirms
      * v1 credential hashes have been migrated on supported devices, this field and its
      * legacy verifier can be removed in a later release.
@@ -127,10 +122,9 @@ object SecurityUtils {
             } else {
                 // v1 compatibility is read-only. A successful authentication causes
                 // existing call sites to re-hash the credential using the v2 format.
-                val peppers = buildList {
-                    configuredPepper()?.let(::add)
-                    if (iterations < ITERATIONS || BuildConfig.DEBUG) add(LEGACY_RUNTIME_PEPPER)
-                }.distinct()
+                // The old project pepper is supplied only by the one-time transition build
+                // or its Android Keystore envelope. Secure APKs contain no shared fallback.
+                val peppers = listOfNotNull(configuredPepper())
                 peppers.any { pepper ->
                     val actualHash = pbkdf2("$enteredSecret:$pepper".toCharArray(), salt, iterations, expectedHash.size * 8)
                     java.security.MessageDigest.isEqual(expectedHash, actualHash)
