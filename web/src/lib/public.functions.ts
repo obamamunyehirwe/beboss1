@@ -846,8 +846,8 @@ export const createGatewayCheckout = createServerFn({ method: "POST" })
         reference: String(body.reference),
         amountRwf: Number(body.amountRwf),
         currency: "RWF" as const,
-        status: String(body.status ?? "PENDING"),
-        message: String(body.message ?? "Payment request is pending approval on the mobile wallet."),
+        status: String(body.status === null || body.status === undefined ? "PENDING" : body.status),
+        message: String(body.message === null || body.message === undefined ? "Payment request is pending approval on the mobile wallet." : body.message),
       };
     }
     if (typeof body.checkoutUrl !== "string") throw new Error("The payment provider returned no checkout destination.");
