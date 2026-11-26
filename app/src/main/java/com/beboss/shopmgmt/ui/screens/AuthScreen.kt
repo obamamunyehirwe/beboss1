@@ -378,7 +378,7 @@ fun AuthLockScreen(
                                         Text(
                                             text = "${Localization.userRoleLabel(user.role, language).substringBefore(" (")} • ${user.assignedBranchName.ifBlank { "HQ" }}",
                                             fontFamily = GopherFontFamily,
-                                            fontSize = 11.sp,
+                                            fontSize = 13.sp,
                                             color = if (isSelected) OrangePrimary else textSecondary
                                         )
                                     }
@@ -1484,7 +1484,7 @@ fun ShopRegistrationScreen(
                                                 ) {
                                                     Column(modifier = Modifier.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                                         Text(sym, fontFamily = GopherFontFamily, fontSize = 15.sp, fontWeight = FontWeight.Black, color = if (isSelected) Color.White else OrangePrimary)
-                                                        Text(code, fontFamily = GopherFontFamily, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = if (isSelected) Color.White.copy(alpha = 0.9f) else textSecondary)
+                                                        Text(code, fontFamily = GopherFontFamily, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isSelected) Color.White.copy(alpha = 0.9f) else textSecondary)
                                                     }
                                                 }
                                             }
@@ -1559,7 +1559,7 @@ fun ShopRegistrationScreen(
                                                 Text(
                                                     text = Localization.get("reg_trial_card_desc", language),
                                                     fontFamily = GopherFontFamily,
-                                                    fontSize = 12.sp,
+                                                    fontSize = 14.sp,
                                                     color = textSecondary
                                                 )
                                             }
@@ -1619,7 +1619,7 @@ fun ShopRegistrationScreen(
                                         leadingIcon = { Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = OrangePrimary) },
                                         supportingText = {
                                             if (normalizedUsername.isNotEmpty()) {
-                                                Text("${Localization.get("reg_account_handle", language)}: @$normalizedUsername", fontSize = 12.sp, color = OrangePrimary)
+                                                Text("${Localization.get("reg_account_handle", language)}: @$normalizedUsername", fontSize = 14.sp, color = OrangePrimary)
                                             }
                                         },
                                         singleLine = true,
@@ -1736,7 +1736,7 @@ fun ShopRegistrationScreen(
                                                     color = strengthColor,
                                                     trackColor = cardBorder
                                                 )
-                                                Text(strengthLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = strengthColor)
+                                                Text(strengthLabel, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = strengthColor)
                                             }
                                         }
                                     }
@@ -1896,9 +1896,9 @@ fun ShopRegistrationScreen(
                 .background(
                     Brush.verticalGradient(
                         0.0f to Color.Transparent,
-                        0.30f to bgColors[0].copy(alpha = 0.30f),
-                        0.62f to bgColors[0].copy(alpha = 0.86f),
-                        1.0f to bgColors[0]
+                        0.22f to bgColors[0].copy(alpha = 0.12f),
+                        0.50f to bgColors[0].copy(alpha = 0.34f),
+                        1.0f to bgColors[0].copy(alpha = 0.50f)
                     )
                 )
         )
@@ -1920,8 +1920,8 @@ fun ShopRegistrationScreen(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(24.dp),
-                        color = Color(0xFF0F172A).copy(alpha = 0.55f),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                        color = Color(0xFF0F172A).copy(alpha = 0.42f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.30f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
