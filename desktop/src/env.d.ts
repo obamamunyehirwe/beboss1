@@ -14,6 +14,7 @@ export interface SystemDiagnostics {
   databaseCipherVersion: string;
   databaseIntegrity: string;
   journalMode: string;
+  defaultPrinterName: string | null;
 }
 
 export interface NetworkPingResult {
@@ -55,6 +56,8 @@ export interface EscposPrintResult {
   success: boolean;
   base64Bytes: string;
   spoolPath: string;
+  printerName: string;
+  jobId: string;
   message: string;
 }
 

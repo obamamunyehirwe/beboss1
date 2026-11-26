@@ -9,8 +9,11 @@ use serde_json::{Number, Value};
 use sha2::{Digest, Sha256};
 use std::{
     env, fs,
+    io::Write,
     net::{TcpStream, ToSocketAddrs},
     path::PathBuf,
+    process::{Command, Stdio},
+    ptr::null_mut,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::Manager;
@@ -321,6 +324,8 @@ struct SystemDiagnostics {
     database_integrity: String,
     #[serde(rename = "journalMode")]
     journal_mode: String,
+    #[serde(rename = "defaultPrinterName")]
+    default_printer_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -374,6 +379,10 @@ struct EscposPrintResult {
     base64_bytes: String,
     #[serde(rename = "spoolPath")]
     spool_path: String,
+    #[serde(rename = "printerName")]
+    printer_name: String,
+    #[serde(rename = "jobId")]
+    job_id: String,
     message: String,
 }
 
@@ -594,6 +603,7 @@ fn system_diagnostics(app: tauri::AppHandle) -> Result<SystemDiagnostics, String
         database_cipher_version,
         database_integrity,
         journal_mode,
+        default_printer_name: default_printer_name().ok(),
     })
 }
 
@@ -623,41 +633,205 @@ fn network_ping(target_host: Option<String>) -> Result<NetworkPingResult, String
     }
 }
 
-#[tauri::command]
-fn print_escpos_thermal(app: tauri::AppHandle, payload: ReceiptPrintPayload) -> Result<EscposPrintResult, String> {
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct DocInfo1W {
+    document_name: *const u16,
+    output_file: *const u16,
+    data_type: *const u16,
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "winspool")]
+unsafe extern "system" {
+    fn GetDefaultPrinterW(printer_name: *mut u16, buffer_chars: *mut u32) -> i32;
+    fn OpenPrinterW(printer_name: *const u16, printer_handle: *mut *mut std::ffi::c_void, defaults: *mut std::ffi::c_void) -> i32;
+    fn StartDocPrinterW(printer_handle: *mut std::ffi::c_void, level: u32, document_info: *const DocInfo1W) -> u32;
+    fn StartPagePrinter(printer_handle: *mut std::ffi::c_void) -> i32;
+    fn WritePrinter(printer_handle: *mut std::ffi::c_void, buffer: *const std::ffi::c_void, bytes: u32, written: *mut u32) -> i32;
+    fn EndPagePrinter(printer_handle: *mut std::ffi::c_void) -> i32;
+    fn EndDocPrinter(printer_handle: *mut std::ffi::c_void) -> i32;
+    fn AbortPrinter(printer_handle: *mut std::ffi::c_void) -> i32;
+    fn ClosePrinter(printer_handle: *mut std::ffi::c_void) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+fn default_printer_name() -> Result<String, String> {
+    let mut required_chars = 0u32;
+    unsafe {
+        // The first call intentionally obtains the required buffer length.
+        let _ = GetDefaultPrinterW(null_mut(), &mut required_chars);
+    }
+    if required_chars == 0 {
+        return Err("Windows has no default printer configured. Set an ESC/POS printer as the default in Settings > Bluetooth & devices > Printers & scanners.".into());
+    }
+
+    let mut buffer = vec![0u16; required_chars as usize];
+    let ok = unsafe { GetDefaultPrinterW(buffer.as_mut_ptr(), &mut required_chars) };
+    if ok == 0 {
+        return Err(format!("Windows could not read the default printer: {}", std::io::Error::last_os_error()));
+    }
+    let end = buffer.iter().position(|value| *value == 0).unwrap_or(buffer.len());
+    let name = String::from_utf16(&buffer[..end])
+        .map_err(|error| format!("The default printer name is invalid UTF-16: {error}"))?;
+    if name.trim().is_empty() {
+        return Err("Windows returned an empty default printer name.".into());
+    }
+    Ok(name)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn default_printer_name() -> Result<String, String> {
+    let output = Command::new("lpstat")
+        .arg("-d")
+        .output()
+        .map_err(|error| format!("CUPS lpstat is unavailable. Install and configure a system printer first: {error}"))?;
+    if !output.status.success() {
+        return Err(format!("CUPS could not read the default printer: {}", String::from_utf8_lossy(&output.stderr).trim()));
+    }
+    let response = String::from_utf8_lossy(&output.stdout);
+    let name = response
+        .lines()
+        .find_map(|line| line.strip_prefix("system default destination:"))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "No default system printer is configured. Add an ESC/POS printer in the operating system's printer settings.".to_string())?;
+    Ok(name.to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn submit_raw_escpos(printer_name: &str, bytes: &[u8]) -> Result<String, String> {
+    if bytes.is_empty() || bytes.len() > u32::MAX as usize {
+        return Err("The ESC/POS receipt payload is empty or too large for the Windows print spooler.".into());
+    }
+
+    let printer_name_wide: Vec<u16> = printer_name.encode_utf16().chain(std::iter::once(0)).collect();
+    let document_name: Vec<u16> = "BeBoss POS receipt".encode_utf16().chain(std::iter::once(0)).collect();
+    let raw_type: Vec<u16> = "RAW".encode_utf16().chain(std::iter::once(0)).collect();
+    let document = DocInfo1W {
+        document_name: document_name.as_ptr(),
+        output_file: null_mut(),
+        data_type: raw_type.as_ptr(),
+    };
+
+    let mut printer_handle: *mut std::ffi::c_void = null_mut();
+    let opened = unsafe { OpenPrinterW(printer_name_wide.as_ptr(), &mut printer_handle, null_mut()) };
+    if opened == 0 {
+        return Err(format!("Windows could not open printer '{printer_name}': {}", std::io::Error::last_os_error()));
+    }
+
+    let job_id = unsafe {
+        StartDocPrinterW(printer_handle, 1, &document)
+    };
+    if job_id == 0 {
+        let error = std::io::Error::last_os_error();
+        unsafe { ClosePrinter(printer_handle); }
+        return Err(format!("Windows could not create a RAW print job for '{printer_name}': {error}"));
+    }
+
+    let mut page_started = false;
+    let mut document_started = true;
+    let result = (|| -> Result<String, String> {
+        if unsafe { StartPagePrinter(printer_handle) } == 0 {
+            return Err(format!("Windows could not start the receipt page: {}", std::io::Error::last_os_error()));
+        }
+        page_started = true;
+
+        let mut offset = 0usize;
+        while offset < bytes.len() {
+            let mut written = 0u32;
+            let remaining = (bytes.len() - offset) as u32;
+            let ok = unsafe {
+                WritePrinter(
+                    printer_handle,
+                    bytes[offset..].as_ptr() as *const std::ffi::c_void,
+                    remaining,
+                    &mut written,
+                )
+            };
+            if ok == 0 || written == 0 {
+                return Err(format!("Windows stopped accepting receipt bytes after {offset} of {} bytes: {}", bytes.len(), std::io::Error::last_os_error()));
+            }
+            offset += written as usize;
+        }
+
+        if unsafe { EndPagePrinter(printer_handle) } == 0 {
+            return Err(format!("Windows could not finish the receipt page: {}", std::io::Error::last_os_error()));
+        }
+        page_started = false;
+
+        if unsafe { EndDocPrinter(printer_handle) } == 0 {
+            return Err(format!("Windows could not submit the receipt job: {}", std::io::Error::last_os_error()));
+        }
+        document_started = false;
+        Ok(job_id.to_string())
+    })();
+
+    if result.is_err() && document_started {
+        unsafe {
+            if page_started { let _ = EndPagePrinter(printer_handle); }
+            let _ = AbortPrinter(printer_handle);
+        }
+    }
+    unsafe { ClosePrinter(printer_handle); }
+    result
+}
+
+#[cfg(not(target_os = "windows"))]
+fn submit_raw_escpos(printer_name: &str, bytes: &[u8]) -> Result<String, String> {
+    if bytes.is_empty() {
+        return Err("The ESC/POS receipt payload is empty.".into());
+    }
+    let mut child = Command::new("lp")
+        .arg("-d")
+        .arg(printer_name)
+        .arg("-o")
+        .arg("raw")
+        .arg("-t")
+        .arg("BeBoss POS receipt")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("CUPS lp is unavailable. Install a supported printer queue first: {error}"))?;
+
+    let write_result = child.stdin.take()
+        .ok_or_else(|| "Could not open the CUPS print-job input stream.".to_string())?
+        .write_all(bytes);
+    if let Err(error) = write_result {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("Could not send the ESC/POS receipt to CUPS: {error}"));
+    }
+    let output = child.wait_with_output()
+        .map_err(|error| format!("Could not collect the CUPS print-job result: {error}"))?;
+    if !output.status.success() {
+        return Err(format!("CUPS rejected the ESC/POS print job: {}", String::from_utf8_lossy(&output.stderr).trim()));
+    }
+    let request = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if request.is_empty() {
+        return Err("CUPS accepted the print command but did not return a job identifier.".into());
+    }
+    Ok(request)
+}
+
+fn encode_escpos_receipt(payload: ReceiptPrintPayload) -> Vec<u8> {
     let mut bytes = Vec::new();
 
     // ESC @ - Initialize printer
     bytes.extend_from_slice(&[0x1B, 0x40]);
-
-    // Center alignment
     bytes.extend_from_slice(&[0x1B, 0x61, 0x01]);
-
-    // Double height & width for shop title
     bytes.extend_from_slice(&[0x1D, 0x21, 0x11]);
     bytes.extend_from_slice(payload.shop_name.as_bytes());
     bytes.push(0x0A);
 
-    // Normal text
     bytes.extend_from_slice(&[0x1D, 0x21, 0x00]);
-    if !payload.header.is_empty() {
-        bytes.extend_from_slice(payload.header.as_bytes());
-        bytes.push(0x0A);
-    }
-    if !payload.address.is_empty() {
-        bytes.extend_from_slice(payload.address.as_bytes());
-        bytes.push(0x0A);
-    }
-    if !payload.phone.is_empty() {
-        bytes.extend_from_slice(format!("Tel: {}\n", payload.phone).as_bytes());
-    }
-    if !payload.tin.is_empty() {
-        bytes.extend_from_slice(format!("TIN: {}\n", payload.tin).as_bytes());
-    }
+    if !payload.header.is_empty() { bytes.extend_from_slice(payload.header.as_bytes()); bytes.push(0x0A); }
+    if !payload.address.is_empty() { bytes.extend_from_slice(payload.address.as_bytes()); bytes.push(0x0A); }
+    if !payload.phone.is_empty() { bytes.extend_from_slice(format!("Tel: {}\n", payload.phone).as_bytes()); }
+    if !payload.tin.is_empty() { bytes.extend_from_slice(format!("TIN: {}\n", payload.tin).as_bytes()); }
 
-    // Divider
     bytes.extend_from_slice(b"--------------------------------\n");
-    // Left alignment
     bytes.extend_from_slice(&[0x1B, 0x61, 0x00]);
     bytes.extend_from_slice(format!("Receipt: {}\n", payload.receipt_number).as_bytes());
     bytes.extend_from_slice(format!("Date: {}\n", payload.date).as_bytes());
@@ -665,56 +839,58 @@ fn print_escpos_thermal(app: tauri::AppHandle, payload: ReceiptPrintPayload) -> 
     bytes.extend_from_slice(format!("Customer: {}\n", payload.customer).as_bytes());
     bytes.extend_from_slice(format!("Payment: {}\n", payload.payment_method).as_bytes());
     bytes.extend_from_slice(b"--------------------------------\n");
-
-    // Items table
     bytes.extend_from_slice(format!("{:<16} {:>4} {:>10}\n", "Item", "Qty", "Total (FRw)").as_bytes());
     for item in payload.items {
-        let name_trimmed = if item.name.len() > 16 { &item.name[..16] } else { &item.name };
-        bytes.extend_from_slice(format!("{:<16} {:>4} {:>10.0}\n", name_trimmed, item.quantity, item.subtotal).as_bytes());
+        let name = item.name.chars().take(16).collect::<String>();
+        bytes.extend_from_slice(format!("{:<16} {:>4} {:>10.0}\n", name, item.quantity, item.subtotal).as_bytes());
     }
     bytes.extend_from_slice(b"--------------------------------\n");
-
-    // Totals
-    // Right align
     bytes.extend_from_slice(&[0x1B, 0x61, 0x02]);
     if payload.discount > 0.0 {
         bytes.extend_from_slice(format!("Subtotal: FRw {:.0}\n", payload.subtotal).as_bytes());
         bytes.extend_from_slice(format!("Discount: -FRw {:.0}\n", payload.discount).as_bytes());
     }
-    // Bold total
     bytes.extend_from_slice(&[0x1B, 0x45, 0x01]);
     bytes.extend_from_slice(format!("TOTAL: FRw {:.0}\n", payload.total).as_bytes());
     bytes.extend_from_slice(&[0x1B, 0x45, 0x00]);
     bytes.extend_from_slice(format!("Paid: FRw {:.0}\n", payload.paid).as_bytes());
-    if payload.balance > 0.0 {
-        bytes.extend_from_slice(format!("Balance Due: FRw {:.0}\n", payload.balance).as_bytes());
-    }
+    if payload.balance > 0.0 { bytes.extend_from_slice(format!("Balance Due: FRw {:.0}\n", payload.balance).as_bytes()); }
 
-    // Center alignment for footer
     bytes.extend_from_slice(&[0x1B, 0x61, 0x01]);
     bytes.extend_from_slice(b"--------------------------------\n");
-    if !payload.footer.is_empty() {
-        bytes.extend_from_slice(payload.footer.as_bytes());
-        bytes.push(0x0A);
-    }
+    if !payload.footer.is_empty() { bytes.extend_from_slice(payload.footer.as_bytes()); bytes.push(0x0A); }
     bytes.extend_from_slice(format!("Seal: {}\n", payload.seal).as_bytes());
     bytes.extend_from_slice(b"*** Thank you for your business ***\n");
     bytes.extend_from_slice(b"Powered by BeBoss Retail Operations\n\n\n");
-
-    // Cut paper (GS V 66 0)
     bytes.extend_from_slice(&[0x1D, 0x56, 0x42, 0x00]);
-    // Kick cash drawer (ESC p 0 25 250)
     bytes.extend_from_slice(&[0x1B, 0x70, 0x00, 0x19, 0xFA]);
 
+
+    bytes
+}
+
+#[tauri::command]
+fn print_escpos_thermal(app: tauri::AppHandle, payload: ReceiptPrintPayload) -> Result<EscposPrintResult, String> {
+    let bytes = encode_escpos_receipt(payload);
     let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let spool_file = app_dir.join("thermal_receipt_spool.bin");
-    fs::write(&spool_file, &bytes).map_err(|e| e.to_string())?;
+    fs::write(&spool_file, &bytes)
+        .map_err(|error| format!("Could not preserve the ESC/POS spool artifact: {error}"))?;
+
+    let printer_name = default_printer_name().map_err(|error| {
+        format!("{error} The generated receipt bytes were preserved at {}.", spool_file.display())
+    })?;
+    let job_id = submit_raw_escpos(&printer_name, &bytes).map_err(|error| {
+        format!("{error} The generated receipt bytes were preserved at {}.", spool_file.display())
+    })?;
 
     Ok(EscposPrintResult {
         success: true,
         base64_bytes: BASE64_STANDARD.encode(&bytes),
         spool_path: spool_file.to_string_lossy().to_string(),
-        message: "ESC/POS receipt sequence successfully generated and spooled".to_string(),
+        printer_name: printer_name.clone(),
+        job_id: job_id.clone(),
+        message: format!("RAW ESC/POS receipt job {job_id} was submitted to '{printer_name}'. The operating-system queue accepted the job; verify paper output on the printer."),
     })
 }
 
@@ -839,6 +1015,46 @@ mod database_encryption_tests {
         assert_eq!(database_storage_bytes(&path), 224);
         let directory = path.parent().expect("test path has a parent");
         let _ = fs::remove_dir_all(directory);
+    }
+
+    fn printer_test_payload() -> ReceiptPrintPayload {
+        ReceiptPrintPayload {
+            shop_name: "BeBoss - PRINTER TEST".into(),
+            receipt_number: "TEST-0001".into(),
+            date: "2026-11-26 10:00".into(),
+            cashier: "SYSTEM TEST".into(),
+            customer: "NOT A SALE".into(),
+            items: vec![ReceiptItemPayload {
+                name: "Printer test".into(),
+                quantity: 1.0,
+                unit_price: 0.0,
+                subtotal: 0.0,
+            }],
+            subtotal: 0.0,
+            discount: 0.0,
+            total: 0.0,
+            paid: 0.0,
+            balance: 0.0,
+            payment_method: "TEST ONLY".into(),
+            tin: "".into(),
+            address: "".into(),
+            phone: "".into(),
+            header: "TEST PRINT - NOT A SALE".into(),
+            footer: "No sale, stock or payment was recorded.".into(),
+            seal: "DIAGNOSTIC ONLY".into(),
+        }
+    }
+
+    #[test]
+    fn escpos_test_receipt_contains_initialize_cut_and_no_sale_marker() {
+        let bytes = encode_escpos_receipt(printer_test_payload());
+        assert!(bytes.starts_with(&[0x1B, 0x40]), "ESC/POS job must initialize the printer");
+        assert!(
+            bytes.windows(b"TEST PRINT - NOT A SALE".len()).any(|w| w == b"TEST PRINT - NOT A SALE"),
+            "printer diagnostics must be clearly marked as a test, not a sale"
+        );
+        assert!(bytes.ends_with(&[0x1D, 0x56, 0x42, 0x00, 0x1B, 0x70, 0x00, 0x19, 0xFA]),
+            "receipt must include paper cut and cash drawer command sequence");
     }
 
     #[test]
