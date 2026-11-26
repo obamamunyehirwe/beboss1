@@ -329,7 +329,7 @@ function ReleasesPage() {
                 <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">sha256 {r.sha256}</p>
                 {r.release_notes ? <p className="mt-2 line-clamp-2 whitespace-pre-line text-sm text-muted-foreground">{r.release_notes}</p> : null}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="mr-2 text-sm">
                   <span className="font-display text-xl font-bold">{r.download_count}</span> <span className="text-muted-foreground">{a("downloads")}</span>
                 </span>
@@ -349,7 +349,9 @@ function ReleasesPage() {
                   <>
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="soft"
+                      title={r.is_current ? a("Edit the current APK release details") : a("Edit this previous APK release")}
+                      aria-label={r.is_current ? a("Edit current version") : a("Edit previous version")}
                       onClick={() => {
                         setEditingRelease(r);
                         setEditForm({
@@ -360,7 +362,8 @@ function ReleasesPage() {
                         });
                       }}
                     >
-                      <Pencil /> {a("Edit")}
+                      <Pencil className="size-4" />
+                      {r.is_current ? a("Edit current version") : a("Edit previous version")}
                     </Button>
                     {!r.is_current ? (
                       <Button size="sm" variant="soft" onClick={() => setCurrent.mutate({ id: r.id, public_download_url: downloadUrl })}>
