@@ -108,6 +108,8 @@ echo "Running admin device-credential rollout regression tests."
 psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/android_device_credential_rollout_admin.sql
 echo "Running role-separated RLS policy regression tests."
 psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/rls_role_policy_consolidation.sql
+echo "Running authenticated admin SECURITY DEFINER permission regression tests."
+psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/admin_release_definer_permissions.sql
 echo "Running owner OTP destination-throttle regression tests."
 psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/owner_otp_phone_throttle.sql
 echo "Running payment gateway state-transition regression tests."

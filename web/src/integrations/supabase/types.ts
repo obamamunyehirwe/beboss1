@@ -265,6 +265,57 @@ export type Database = {
         }
         Relationships: []
       }
+      desktop_app_releases: {
+        Row: {
+          created_at: string
+          created_by: string
+          download_count: number
+          file_name: string
+          file_path: string
+          id: string
+          is_current: boolean
+          is_public: boolean
+          platform: "windows" | "macos" | "linux"
+          published_at: string
+          release_notes: string
+          sha256: string
+          size_bytes: number
+          version_name: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          download_count?: number
+          file_name: string
+          file_path: string
+          id?: string
+          is_current?: boolean
+          is_public?: boolean
+          platform: "windows" | "macos" | "linux"
+          published_at?: string
+          release_notes?: string
+          sha256: string
+          size_bytes: number
+          version_name: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          download_count?: number
+          file_name?: string
+          file_path?: string
+          id?: string
+          is_current?: boolean
+          is_public?: boolean
+          platform?: "windows" | "macos" | "linux"
+          published_at?: string
+          release_notes?: string
+          sha256?: string
+          size_bytes?: number
+          version_name?: string
+        }
+        Relationships: []
+      }
       app_secrets: {
         Row: {
           name: string
@@ -1293,6 +1344,18 @@ export type Database = {
           p_min_android: string
           p_release_notes: string
         }
+        Returns: undefined
+      }
+      admin_set_current_desktop_release: {
+        Args: { p_release_id: string }
+        Returns: undefined
+      }
+      admin_set_desktop_release_visibility: {
+        Args: { p_is_public: boolean; p_release_id: string }
+        Returns: undefined
+      }
+      record_desktop_release_download: {
+        Args: { p_release_id: string }
         Returns: undefined
       }
       current_shop_sync_key: { Args: never; Returns: string }

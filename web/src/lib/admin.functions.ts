@@ -1413,160 +1413,217 @@ export const managePaymentGatewayRefund = createServerFn({ method: "POST" })
 
 
 
-// ---------------- Native desktop releases ----------------
-const desktopReleaseDispatchSchema = z.object({
-  version: z.string().trim().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "Use a semantic version such as 1.3.1."),
-  release_notes: z.string().trim().max(4000).default(""),
+// ---------------- Local desktop releases ----------------
+const desktopPlatformSchema = z.enum(["windows", "macos", "linux"]);
+
+const desktopReleaseUploadSchema = z.object({
+  platform: desktopPlatformSchema,
+  version_name: z.string().trim().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "Use a semantic version such as 1.3.1.").max(40),
+  file_path: z.string().trim().min(1).max(500),
+  file_name: z.string().trim().min(1).max(200),
+  size_bytes: z.number().int().positive().max(536870912),
+  sha256: z.string().trim().regex(/^[a-f0-9]{64}$/i),
+  release_notes: z.string().max(5000).default(""),
+  make_current: z.boolean().default(true),
 });
 
-const GITHUB_RELEASE_REPOSITORY = "obamamunyehirwe/beboss1";
-const GITHUB_DESKTOP_RELEASE_WORKFLOW = "desktop-release.yml";
-const DESKTOP_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-
-async function getDesktopSourceVersion(): Promise<string> {
-  const response = await fetch(
-    `https://raw.githubusercontent.com/${GITHUB_RELEASE_REPOSITORY}/main/desktop/package.json`,
-    { cache: "no-store", headers: { "User-Agent": "BeBoss-Admin-Desktop-Releases" } },
-  );
-  if (!response.ok) {
-    throw new Error(`Could not read the desktop source version from GitHub (HTTP ${response.status}).`);
-  }
-  const manifest = await response.json() as { version?: unknown };
-  const version = typeof manifest.version === "string" ? manifest.version.trim() : "";
-  if (!DESKTOP_VERSION_PATTERN.test(version)) {
-    throw new Error("The desktop package.json does not contain a valid semantic version.");
-  }
-  return version;
-}
-const GITHUB_API_HEADERS = (token: string) => ({
-  Accept: "application/vnd.github+json",
-  Authorization: `Bearer ${token}`,
-  "X-GitHub-Api-Version": "2022-11-28",
-  "User-Agent": "BeBoss-Admin-Desktop-Releases",
-});
-
-export const dispatchDesktopRelease = createServerFn({ method: "POST" })
+export const getAdminDesktopReleases = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof desktopReleaseDispatchSchema>) => desktopReleaseDispatchSchema.parse(d))
+  .handler(async ({ context }) => {
+    const ctx = context as unknown as Ctx;
+    await requirePermission(ctx, "releases.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("desktop_app_releases")
+      .select("*")
+      .order("published_at", { ascending: false })
+      .limit(120);
+    if (error) throw new Error("Could not load desktop release history: " + error.message);
+    return data ?? [];
+  });
+
+export const publishDesktopRelease = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: z.infer<typeof desktopReleaseUploadSchema>) => desktopReleaseUploadSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
     const token = String(process.env["GITHUB_RELEASE_TOKEN"] ?? "").trim();
     if (!token) {
       throw new Error("Desktop publishing is not configured on this server. Add GITHUB_RELEASE_TOKEN as a server-only secret with Actions write and Contents read access to obamamunyehirwe/beboss1.");
+    const expectedExtension = data.platform === "windows" ? ".exe" : data.platform === "macos" ? ".dmg" : ".appimage";
+    if (!data.file_name.toLowerCase().endsWith(expectedExtension)) {
+      throw new Error(`The ${data.platform} release must be a ${expectedExtension} file.`);
     }
 
-    const sourceVersion = await getDesktopSourceVersion();
-    if (data.version !== sourceVersion) {
-      throw new Error(
-        `Desktop release version must match the source version (${sourceVersion}). Update desktop/package.json, package-lock.json, src-tauri/tauri.conf.json, Cargo.toml and Cargo.lock together, then push the version bump before publishing.`,
-      );
+    const expectedPrefix = `desktop/${data.platform}/v${data.version_name}/`;
+    const pathParts = data.file_path.split("/");
+    if (!data.file_path.startsWith(expectedPrefix) || pathParts.length !== 4 ||
+        pathParts.some((part) => !part || part === "." || part === "..") ||
+        !pathParts[3].endsWith("-" + data.file_name)) {
+      throw new Error("The uploaded file path does not match this platform and version. Re-select the local installer and upload again.");
     }
 
-    const tagName = `desktop-v${data.version}`;
-    const headers = GITHUB_API_HEADERS(token);
-    const tagResponse = await fetch(
-      `https://api.github.com/repos/${GITHUB_RELEASE_REPOSITORY}/git/ref/tags/${encodeURIComponent(tagName)}`,
-      { headers, cache: "no-store" },
-    );
-    if (tagResponse.ok) throw new Error(`The release tag ${tagName} already exists. Choose a new version instead of overwriting a published build.`);
-    if (tagResponse.status !== 404) {
-      throw new Error(`Could not check the desktop release tag (GitHub HTTP ${tagResponse.status}). Verify the server token permissions.`);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const folder = pathParts.slice(0, 3).join("/");
+    const { data: storedFiles, error: storageError } = await supabaseAdmin.storage
+      .from("releases")
+      .list(folder, { limit: 100, search: pathParts[3] });
+    if (storageError) throw new Error("Could not verify the uploaded installer in private storage: " + storageError.message);
+    const storedFile = (storedFiles ?? []).find((item) => item.name === pathParts[3]);
+    if (!storedFile) throw new Error("The uploaded installer was not found in private release storage.");
+    const storedSize = Number((storedFile.metadata as Record<string, unknown> | null)?.size);
+    if (Number.isFinite(storedSize) && storedSize > 0 && storedSize !== data.size_bytes) {
+      await supabaseAdmin.storage.from("releases").remove([data.file_path]);
+      throw new Error("The uploaded file size does not match the file selected in the admin page.");
     }
 
-    const dispatchResponse = await fetch(
-      `https://api.github.com/repos/${GITHUB_RELEASE_REPOSITORY}/actions/workflows/${GITHUB_DESKTOP_RELEASE_WORKFLOW}/dispatches`,
-      {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ref: "main",
-          inputs: { version: data.version, release_notes: data.release_notes },
-        }),
-        cache: "no-store",
-      },
-    );
-    if (dispatchResponse.status !== 204) {
-      const detail = await dispatchResponse.text().catch(() => "");
-      throw new Error(`GitHub did not accept the desktop release workflow (HTTP ${dispatchResponse.status}). ${detail.slice(0, 500)}`);
+    const { data: row, error } = await supabaseAdmin
+      .from("desktop_app_releases")
+      .insert({
+        platform: data.platform,
+        version_name: data.version_name,
+        file_path: data.file_path,
+        file_name: data.file_name,
+        size_bytes: data.size_bytes,
+        sha256: data.sha256.toLowerCase(),
+        release_notes: data.release_notes,
+        is_current: false,
+        is_public: false,
+        created_by: admin.email,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      if (error.code === "23505") {
+        throw new Error(`A ${data.platform} installer for version ${data.version_name} already exists. Use a new version or remove the draft after reviewing it.`);
+      }
+      throw new Error("Could not save desktop release metadata: " + error.message);
     }
 
-    await audit(ctx, admin.email, "DISPATCH_DESKTOP_RELEASE", tagName, "Started native Windows, macOS and Linux build/release workflow.")
-      .catch(() => console.warn("[BeBoss audit] Desktop release dispatch succeeded, but its audit event could not be recorded."));
-    return {
-      ok: true,
-      tagName,
-      workflowUrl: `https://github.com/${GITHUB_RELEASE_REPOSITORY}/actions/workflows/${GITHUB_DESKTOP_RELEASE_WORKFLOW}`,
-      releaseUrl: `https://github.com/${GITHUB_RELEASE_REPOSITORY}/releases/tag/${tagName}`,
-    };
+    if (data.make_current) {
+      const { error: currentError } = await ctx.supabase.rpc("admin_set_current_desktop_release", {
+        p_release_id: row.id,
+      });
+      if (currentError) {
+        await supabaseAdmin.from("desktop_app_releases").delete().eq("id", row.id);
+        await supabaseAdmin.storage.from("releases").remove([data.file_path]);
+        throw new Error(currentError.message);
+      }
+    }
+
+    await audit(
+      ctx,
+      admin.email,
+      "PUBLISH_DESKTOP_RELEASE",
+      `${data.platform} v${data.version_name}`,
+      `${data.file_name} (${data.size_bytes} bytes, SHA-256 ${data.sha256.toLowerCase()})${data.make_current ? " — now current and public" : " — saved as an unpublished archive"}`,
+    ).catch(() => console.warn("[BeBoss audit] Desktop installer published, but its audit event could not be recorded."));
+    return { id: row.id as string };
   });
 
-export const getDesktopReleaseStatus = createServerFn({ method: "GET" })
+export const cleanupDesktopReleaseUpload = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((d: { file_path: string }) => z.object({ file_path: z.string().trim().min(1).max(500) }).parse(d))
+  .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     await requirePermission(ctx, "releases.manage");
-    const token = String(process.env["GITHUB_RELEASE_TOKEN"] ?? "").trim();
-    const workflowUrl = `https://github.com/${GITHUB_RELEASE_REPOSITORY}/actions/workflows/${GITHUB_DESKTOP_RELEASE_WORKFLOW}`;
-    const releasesUrl = `https://github.com/${GITHUB_RELEASE_REPOSITORY}/releases`;
-    const sourceVersion = await getDesktopSourceVersion();
-    if (!token) {
-      return {
-        configured: false,
-        sourceVersion,
-        workflowUrl,
-        releasesUrl,
-        latestRun: null,
-        latestRelease: null,
-      };
+    if (!data.file_path.startsWith("desktop/") || data.file_path.split("/").length !== 4) {
+      throw new Error("Only an unpublished desktop upload can be cleaned up here.");
     }
-
-    const headers = GITHUB_API_HEADERS(token);
-    const [runResponse, releaseResponse] = await Promise.all([
-      fetch(`https://api.github.com/repos/${GITHUB_RELEASE_REPOSITORY}/actions/workflows/${GITHUB_DESKTOP_RELEASE_WORKFLOW}/runs?per_page=10&branch=main`, { headers, cache: "no-store" }),
-      fetch(`https://api.github.com/repos/${GITHUB_RELEASE_REPOSITORY}/releases?per_page=30`, { headers, cache: "no-store" }),
-    ]);
-    if (!runResponse.ok) {
-      throw new Error(`Could not read desktop workflow status (GitHub HTTP ${runResponse.status}). Check GITHUB_RELEASE_TOKEN permissions.`);
-    }
-    if (!releaseResponse.ok) {
-      throw new Error(`Could not read official desktop releases (GitHub HTTP ${releaseResponse.status}).`);
-    }
-
-    const runPayload = await runResponse.json() as { workflow_runs?: Array<Record<string, unknown>> };
-    const releasePayload = await releaseResponse.json() as Array<Record<string, unknown>>;
-    const latestRun = (runPayload.workflow_runs ?? []).map((run) => ({
-      id: Number(run.id) || 0,
-      status: String(run.status ?? ""),
-      conclusion: run.conclusion ? String(run.conclusion) : null,
-      event: String(run.event ?? ""),
-      createdAt: String(run.created_at ?? ""),
-      updatedAt: String(run.updated_at ?? ""),
-      htmlUrl: String(run.html_url ?? workflowUrl),
-      runNumber: Number(run.run_number) || 0,
-      headSha: String(run.head_sha ?? ""),
-    })).sort((a, b) => b.id - a.id)[0] ?? null;
-
-    const release = releasePayload.find((item) =>
-      typeof item.tag_name === "string" &&
-      item.tag_name.startsWith("desktop-v") &&
-      item.draft !== true &&
-      item.prerelease !== true
-    );
-    const latestRelease = release ? {
-      tagName: String(release.tag_name),
-      name: String(release.name ?? release.tag_name),
-      publishedAt: release.published_at ? String(release.published_at) : null,
-      htmlUrl: String(release.html_url ?? releasesUrl),
-      assets: Array.isArray(release.assets)
-        ? (release.assets as Array<Record<string, unknown>>).map((asset) => ({
-            name: String(asset.name ?? ""),
-            sizeBytes: Number(asset.size) || 0,
-            downloadCount: Number(asset.download_count) || 0,
-            downloadUrl: String(asset.browser_download_url ?? ""),
-          })).filter((asset) => asset.name && asset.downloadUrl.startsWith("https://github.com/"))
-        : [],
-    } : null;
-
-    return { configured: true, sourceVersion, workflowUrl, releasesUrl, latestRun, latestRelease };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: existing, error: lookupError } = await supabaseAdmin
+      .from("desktop_app_releases")
+      .select("id")
+      .eq("file_path", data.file_path)
+      .maybeSingle();
+    if (lookupError) throw new Error("Could not verify whether this upload is already published.");
+    if (existing) return { removed: false, alreadyPublished: true };
+    const { error } = await supabaseAdmin.storage.from("releases").remove([data.file_path]);
+    if (error) throw new Error("Could not remove the incomplete desktop upload: " + error.message);
+    return { removed: true, alreadyPublished: false };
   });
+
+export const setCurrentDesktopRelease = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requirePermission(ctx, "releases.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: release, error: readError } = await supabaseAdmin
+      .from("desktop_app_releases")
+      .select("platform,version_name")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (readError || !release) throw new Error(readError?.message ?? "Desktop release not found.");
+    const { error } = await ctx.supabase.rpc("admin_set_current_desktop_release", { p_release_id: data.id });
+    if (error) throw new Error(error.message);
+    await audit(ctx, admin.email, "SET_CURRENT_DESKTOP_RELEASE", `${release.platform} v${release.version_name}`, "Made this installer the current public download.")
+      .catch(() => console.warn("[BeBoss audit] Current desktop release changed, but its audit event could not be recorded."));
+    return { ok: true };
+  });
+
+export const setDesktopReleaseVisibility = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string; isPublic: boolean }) =>
+    z.object({ id: z.string().uuid(), isPublic: z.boolean() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requirePermission(ctx, "releases.manage");
+    const { error } = await ctx.supabase.rpc("admin_set_desktop_release_visibility", {
+      p_release_id: data.id,
+      p_is_public: data.isPublic,
+    });
+    if (error) throw new Error(error.message);
+    await audit(ctx, admin.email, data.isPublic ? "SHOW_DESKTOP_RELEASE" : "HIDE_DESKTOP_RELEASE", data.id,
+      "Updated desktop installer public visibility.")
+      .catch(() => console.warn("[BeBoss audit] Desktop release visibility changed, but its audit event could not be recorded."));
+    return { ok: true };
+  });
+
+export const getAdminDesktopReleaseDownload = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    await requirePermission(ctx, "releases.manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: release, error: readError } = await supabaseAdmin
+      .from("desktop_app_releases")
+      .select("file_path,file_name")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (readError || !release) throw new Error(readError?.message ?? "Desktop release not found.");
+    const { data: signed, error } = await supabaseAdmin.storage.from("releases")
+      .createSignedUrl(release.file_path, 10 * 60, { download: release.file_name });
+    if (error || !signed?.signedUrl) throw new Error(error?.message ?? "Could not create a private installer download link.");
+    return { url: signed.signedUrl, expiresInSeconds: 600, fileName: release.file_name };
+  });
+
+export const deleteDesktopRelease = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const ctx = context as unknown as Ctx;
+    const admin = await requireAdmin(ctx);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: release, error: readError } = await supabaseAdmin
+      .from("desktop_app_releases")
+      .select("platform,version_name,file_path,file_name,is_current")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (readError || !release) throw new Error(readError?.message ?? "Desktop release not found.");
+    if (release.is_current) throw new Error("Publish another installer for this platform before deleting the current one.");
+    const { error: deleteError } = await supabaseAdmin.from("desktop_app_releases").delete().eq("id", data.id);
+    if (deleteError) throw new Error("Could not delete desktop release metadata: " + deleteError.message);
+    const { error: storageError } = await supabaseAdmin.storage.from("releases").remove([release.file_path]);
+    if (storageError) {
+      console.error("[BeBoss release cleanup] Metadata deleted but stored installer cleanup failed.", storageError);
+      throw new Error("Release metadata was removed, but the stored installer could not be cleaned up. Contact an administrator.");
+    }
+    await audit(ctx, admin.email, "DELETE_DESKTOP_RELEASE", `${release.platform} v${release.version_name}`, release.file_name)
+      .catch(() => console.warn("[BeBoss audit] Desktop release deleted, but its audit event could not be recorded."));
+    return { ok: true };
+  });
+
