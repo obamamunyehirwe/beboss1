@@ -745,3 +745,140 @@ export const createGatewayCheckout = createServerFn({ method: "POST" })
       checkoutUrl: checkoutUrl.toString(),
     };
   });
+
+
+/**
+ * Public, read-only desktop release metadata. Only published BeBoss desktop
+ * tags and an explicit installer allow-list are exposed to the download page.
+ * Binary downloads remain on GitHub Releases; no storage credentials are used.
+ */
+export type PublicDesktopAsset = {
+  name: string;
+  downloadUrl: string;
+  sizeBytes: number;
+  downloadCount: number;
+};
+
+export type PublicDesktopRelease = {
+  published: boolean;
+  unavailable: boolean;
+  tagName: string | null;
+  publishedAt: string | null;
+  releaseUrl: string;
+  assets: {
+    windows: PublicDesktopAsset | null;
+    macos: PublicDesktopAsset | null;
+    linux: PublicDesktopAsset | null;
+  };
+};
+
+type GithubReleaseAsset = {
+  name?: string;
+  browser_download_url?: string;
+  size?: number;
+  download_count?: number;
+};
+
+type GithubRelease = {
+  tag_name?: string;
+  html_url?: string;
+  published_at?: string;
+  draft?: boolean;
+  prerelease?: boolean;
+  assets?: GithubReleaseAsset[];
+};
+
+const DESKTOP_RELEASE_URL = "https://github.com/obamamunyehirwe/beboss1/releases";
+const DESKTOP_RELEASE_ASSET_NAMES = {
+  windows: "BeBoss-Windows-x64-Setup.exe",
+  macos: "BeBoss-macOS.dmg",
+  linux: "BeBoss-Linux-x64.AppImage",
+} as const;
+
+export const getPublicDesktopRelease = createServerFn({ method: "GET" }).handler(
+  async (): Promise<PublicDesktopRelease> => {
+    const empty: PublicDesktopRelease = {
+      published: false,
+      unavailable: false,
+      tagName: null,
+      publishedAt: null,
+      releaseUrl: DESKTOP_RELEASE_URL,
+      assets: { windows: null, macos: null, linux: null },
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6_000);
+    try {
+      const response = await fetch(
+        "https://api.github.com/repos/obamamunyehirwe/beboss1/releases?per_page=30",
+        {
+          headers: {
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "BeBoss-Download-Page",
+          },
+          signal: controller.signal,
+          cache: "no-store",
+        },
+      );
+
+      if (!response.ok) {
+        if (response.status === 404) return empty;
+        console.warn("[BeBoss desktop releases] GitHub returned", response.status);
+        return { ...empty, unavailable: true };
+      }
+
+      const releases = (await response.json()) as GithubRelease[];
+      const release = releases.find(
+        (item) =>
+          typeof item.tag_name === "string" &&
+          item.tag_name.startsWith("desktop-v") &&
+          item.draft !== true &&
+          item.prerelease !== true,
+      );
+      if (!release) return empty;
+
+      const findAsset = (expectedName: string): PublicDesktopAsset | null => {
+        const asset = release.assets?.find((item) => item.name === expectedName);
+        if (!asset || typeof asset.browser_download_url !== "string") return null;
+        try {
+          const url = new URL(asset.browser_download_url);
+          if (url.protocol !== "https:" || url.hostname !== "github.com") return null;
+          return {
+            name: expectedName,
+            downloadUrl: url.toString(),
+            sizeBytes: Number.isFinite(asset.size) ? Number(asset.size) : 0,
+            downloadCount: Number.isFinite(asset.download_count) ? Number(asset.download_count) : 0,
+          };
+        } catch {
+          return null;
+        }
+      };
+
+      const assets = {
+        windows: findAsset(DESKTOP_RELEASE_ASSET_NAMES.windows),
+        macos: findAsset(DESKTOP_RELEASE_ASSET_NAMES.macos),
+        linux: findAsset(DESKTOP_RELEASE_ASSET_NAMES.linux),
+      };
+      const releaseUrl =
+        typeof release.html_url === "string" &&
+        new URL(release.html_url).hostname === "github.com"
+          ? release.html_url
+          : DESKTOP_RELEASE_URL;
+
+      return {
+        published: Object.values(assets).some(Boolean),
+        unavailable: false,
+        tagName: release.tag_name ?? null,
+        publishedAt: release.published_at ?? null,
+        releaseUrl,
+        assets,
+      };
+    } catch (error) {
+      console.warn("[BeBoss desktop releases] Could not load release metadata", error);
+      return { ...empty, unavailable: true };
+    } finally {
+      clearTimeout(timeout);
+    }
+  },
+);

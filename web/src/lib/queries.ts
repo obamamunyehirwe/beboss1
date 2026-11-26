@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { getPublicSite } from "./public.functions";
+import { getPublicSite, getPublicDesktopRelease } from "./public.functions";
 
 export const publicSiteQuery = queryOptions({
   queryKey: ["public-site"],
@@ -16,4 +16,11 @@ export const platformStatsQuery = queryOptions({
   queryFn: () => getPlatformStats(),
   staleTime: 15_000,
   refetchInterval: 30_000,
+});
+
+ 
+export const desktopReleaseQuery = queryOptions({
+  queryKey: ["public-desktop-release"],
+  queryFn: () => getPublicDesktopRelease(),
+  staleTime: 5 * 60_000,
 });
