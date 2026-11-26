@@ -442,3 +442,78 @@
 .setup-wizard[data-theme="system"] .setup-step.active {
   background: linear-gradient(110deg, rgba(249, 128, 74, .11), rgba(255,255,255,.6));
 }
+
+
+/* Refined first-run experience: clear typography, live accent, page motion and focus */
+.setup-wizard {
+  --setup-accent: #f18a58;
+  --setup-accent-soft: rgba(241,138,88,.15);
+  font-family: "Segoe UI Variable", "Segoe UI", Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.setup-wizard[data-accent="blue"] { --setup-accent:#5ba6f4; --setup-accent-soft:rgba(91,166,244,.16); }
+.setup-wizard[data-accent="green"] { --setup-accent:#32b98b; --setup-accent-soft:rgba(50,185,139,.15); }
+.setup-brand strong { font-size: 20px; letter-spacing: -.75px; }
+.setup-brand small { font-size: 9px; letter-spacing: 1.25px; }
+.setup-step strong { font-size: 13px; }
+.setup-step small { font-size: 9px; }
+.setup-topline > span { font-size: 11px; }
+.setup-content { animation: beboss-wizard-enter .38s cubic-bezier(.2,.75,.2,1) both; }
+@keyframes beboss-wizard-enter {
+  from { opacity:0; transform:translateY(10px) scale(.995); filter:blur(2px); }
+  to { opacity:1; transform:translateY(0) scale(1); filter:blur(0); }
+}
+.setup-icon { color:var(--setup-accent); background:linear-gradient(145deg,var(--setup-accent-soft),rgba(255,255,255,.035)); }
+.setup-content h1 { font-family:"Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif; font-weight:750; letter-spacing:-1.25px; }
+.setup-content > p { font-size:14px; line-height:1.75; }
+.setup-feature-grid strong, .setup-language-grid button strong, .setup-setting-row strong,
+.setup-check strong { font-size:13px; }
+.setup-feature-grid span, .setup-setting-row small, .setup-check small { font-size:11px; line-height:1.6; }
+.setup-field-label { display:flex; align-items:center; gap:8px; font-size:12px; }
+.setup-choice-row button, .setup-language-grid button { font-family:inherit; font-size:12px; }
+.setup-choice-row button.selected, .setup-language-grid button.selected {
+  border-color:color-mix(in srgb,var(--setup-accent) 68%,transparent);
+  box-shadow:0 0 0 3px var(--setup-accent-soft),0 10px 24px rgba(0,0,0,.08);
+}
+.setup-accent-row button { justify-content:flex-start; }
+.setup-accent-dot { display:inline-block; width:12px; height:12px; border-radius:50%; box-shadow:0 0 0 3px rgba(125,145,170,.12); }
+.setup-accent-dot.orange { background:#f18a58; }
+.setup-accent-dot.blue { background:#5ba6f4; }
+.setup-accent-dot.green { background:#32b98b; }
+.setup-actions .primary-btn { background:linear-gradient(110deg,var(--setup-accent),color-mix(in srgb,var(--setup-accent) 75%,white)); box-shadow:0 10px 26px var(--setup-accent-soft); font-size:12px; }
+.setup-step.active { box-shadow:inset 3px 0 0 var(--setup-accent),0 12px 28px rgba(0,0,0,.13); }
+.setup-check.active { border-color:var(--setup-accent); box-shadow:0 0 0 3px var(--setup-accent-soft); }
+.setup-check b, .setup-privacy-accept { font-size:10px; }
+.setup-log-panel { font-size:10px; }
+.setup-summary-list > div > span { font-size:11px; }
+.setup-summary-list strong, .setup-summary-list code { font-size:11px; }
+.setup-wizard[data-density="compact"] .setup-feature-grid article,
+.setup-wizard[data-density="compact"] .setup-setting-row,
+.setup-wizard[data-density="compact"] .setup-check { min-height:0; padding:10px 13px; }
+.setup-wizard[data-density="compact"] .setup-feature-grid { gap:8px; margin:18px 0; }
+.setup-wizard[data-density="compact"] .setup-setting-list { gap:7px; }
+.setup-wizard[data-motion="reduced"] .setup-content { animation:none; }
+.setup-wizard :where(button,input,select) { font-family:inherit; }
+.setup-wizard button:focus-visible, .setup-wizard input:focus-visible, .setup-wizard select:focus-visible {
+  outline:2px solid var(--setup-accent);
+  outline-offset:3px;
+}
+@media(max-width:620px) {
+  .setup-content > p { font-size:13px; }
+  .setup-feature-grid strong, .setup-language-grid button strong, .setup-setting-row strong,
+  .setup-check strong { font-size:12px; }
+  .setup-feature-grid span, .setup-setting-row small, .setup-check small { font-size:10.5px; }
+}
+/* The real BeBoss icon remains the source of identity; animation is ornamental only. */
+.setup-brand { position:relative; }
+.setup-brand img {
+  object-fit:contain;
+  animation:beboss-logo-breathe 4.8s ease-in-out infinite;
+  box-shadow:0 12px 34px var(--setup-accent-soft), inset 0 1px 0 rgba(255,255,255,.18);
+}
+@keyframes beboss-logo-breathe {
+  0%,100% { transform:translateY(0) scale(1); filter:drop-shadow(0 0 0 transparent); }
+  50% { transform:translateY(-2px) scale(1.035); filter:drop-shadow(0 7px 13px var(--setup-accent-soft)); }
+}
+.setup-wizard[data-motion="reduced"] .setup-brand img { animation:none; }
