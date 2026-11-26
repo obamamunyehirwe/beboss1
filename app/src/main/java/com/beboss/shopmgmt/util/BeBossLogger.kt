@@ -57,7 +57,7 @@ object BeBossLogger {
         // Forward to global crash telemetry hook if registered
         crashReporter?.invoke(tag, summary, throwable)
 
-        // Forward to Sentry if available (optional dependency)
+        // Forward sanitized diagnostics to the configured Sentry SDK, if enabled.
         try {
             // Sentry integration hook - will be initialized if Sentry is added as dependency
             SentryCrashReporter?.invoke(tag, summary, throwable)
