@@ -1,6 +1,6 @@
 [package]
 name = "beboss-desktop"
-version = "1.4.1"
+version = "1.4.2"
 description = "BeBoss retail operations desktop"
 authors = ["BeBoss"]
 edition = "2021"
