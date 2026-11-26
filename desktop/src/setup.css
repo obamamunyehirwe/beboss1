@@ -506,3 +506,23 @@
   .setup-brand img { width: 50px; height: 50px; flex-basis: 50px; border-radius: 15px; }
   .setup-icon { width: 58px; height: 58px; }
 }
+
+
+/* Larger responsive product mark for the first-run wizard. */
+.setup-brand img {
+  width: 70px;
+  height: 70px;
+  flex: 0 0 70px;
+  border-radius: 20px;
+  object-fit: contain;
+}
+.setup-brand strong { font-size: 21px; }
+.setup-icon { width: 68px; height: 68px; border-radius: 20px; }
+@media (max-width: 900px) {
+  .setup-brand img { width: 58px; height: 58px; flex-basis: 58px; border-radius: 17px; }
+  .setup-icon { width: 62px; height: 62px; }
+}
+@media (max-width: 560px) {
+  .setup-brand img { width: 52px; height: 52px; flex-basis: 52px; border-radius: 16px; }
+  .setup-icon { width: 56px; height: 56px; }
+}
