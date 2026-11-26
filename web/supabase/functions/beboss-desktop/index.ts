@@ -976,9 +976,11 @@ Deno.serve(async (req: Request) => {
       if (!isUuid(installationId)) {
         return json(403, { ok: false, message: "This desktop installation has no valid persistent device identity. Reopen the application and try again." });
       }
+      // shop_users.user_id is the Android Room user UUID, not the Supabase Auth UUID.
+      // requireOwner already verified this Auth UUID through shop_owner_memberships.
       const { data: ownerUser, error: ownerUserError } = await admin.from("shop_users")
         .select("user_id,username,full_name,role,is_active")
-        .eq("shop_sync_key", owner.shopId).eq("user_id", owner.user.id)
+        .eq("shop_sync_key", owner.shopId).eq("username", owner.username)
         .eq("role", "OWNER").eq("is_active", true).maybeSingle();
       if (ownerUserError || !ownerUser) {
         return json(403, { ok: false, message: "This verified account is not an active owner in the shop staff directory." });
