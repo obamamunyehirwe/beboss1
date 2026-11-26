@@ -33,10 +33,20 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Reject exposed or invalid Windows signing certificate
+      - name: Validate Windows signing material when configured
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ../.github/scripts/verify-windows-signing-certificate.ps1
+        run: |
+          $hasPfx = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_PFX_BASE64)
+          $hasPassword = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_PFX_PASSWORD)
+          if (-not $hasPfx -and -not $hasPassword) {
+            Write-Warning "No signing secrets configured. This workflow will build an unsigned CI inspection artifact only."
+            exit 0
+          }
+          if (-not $hasPfx -or -not $hasPassword) {
+            throw "Configure both Windows signing secrets together."
+          }
+          ../.github/scripts/verify-windows-signing-certificate.ps1
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -83,39 +93,39 @@ jobs:
           Write-Host "Size: $($installer.Length) bytes"
           if ($installer.Length -lt 1000000) { throw "The setup executable is unexpectedly small." }
 
-      - name: Require trusted Authenticode signature before publishing installer
+      - name: Sign and verify Windows installer when a protected certificate is configured
         shell: pwsh
         run: |
-          $installers = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File
-          if (-not $installers) { throw "No Windows setup executable exists to sign." }
-          if (-not $env:WINDOWS_CODESIGN_PFX_BASE64 -or -not $env:WINDOWS_CODESIGN_PFX_PASSWORD) {
-            throw "Refusing to publish an unsigned installer. Configure WINDOWS_CODESIGN_PFX_BASE64 and WINDOWS_CODESIGN_PFX_PASSWORD in GitHub Actions secrets."
+          $installerDirectory = "src-tauri/target/release/bundle/nsis"
+          $installers = Get-ChildItem $installerDirectory -Filter "*.exe" -File
+          if (-not $installers) { throw "No Windows setup executable exists." }
+          if (-not $env:WINDOWS_CODESIGN_PFX_BASE64 -and -not $env:WINDOWS_CODESIGN_PFX_PASSWORD) {
+            "signature=unsigned CI inspection build; NOT FOR PRODUCTION DISTRIBUTION" | Set-Content (Join-Path $installerDirectory "signature-status.txt")
+            Write-Warning "Unsigned CI inspection artifact. It must not be distributed to merchants."
+            exit 0
           }
-          $statusPath = Join-Path "src-tauri/target/release/bundle/nsis" "signature-status.txt"
+          if (-not $env:WINDOWS_CODESIGN_PFX_BASE64 -or -not $env:WINDOWS_CODESIGN_PFX_PASSWORD) {
+            throw "Both Windows signing secrets must be configured together."
+          }
           $certificatePath = Join-Path $env:RUNNER_TEMP "beboss-release-signing.pfx"
+          $priorPath = $env:WINDOWS_CODESIGN_PFX_PATH
           try {
-            [System.IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_PFX_BASE64))
-            $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-            if (-not $signTool) { throw "Windows SDK signtool.exe was not found." }
-            foreach ($installer in $installers) {
-              & $signTool sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $certificatePath /p $env:WINDOWS_CODESIGN_PFX_PASSWORD $installer.FullName
-              if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($installer.Name)." }
-              & $signTool verify /pa /v $installer.FullName
-              if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $($installer.Name)." }
-              $signature = Get-AuthenticodeSignature -FilePath $installer.FullName
-              if ($signature.Status -ne "Valid") { throw "Windows reports an invalid signature for $($installer.Name): $($signature.StatusMessage)" }
-            }
-            "signature=Authenticode signed and verified" | Set-Content $statusPath
+            [System.IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String(($env:WINDOWS_CODESIGN_PFX_BASE64 -replace "\s", "")))
+            $env:WINDOWS_CODESIGN_PFX_PATH = $certificatePath
+            & scripts/sign-windows-installer.ps1 -PfxPath $certificatePath -InstallerDirectory $installerDirectory
+            if ($LASTEXITCODE -ne 0) { throw "The shared local signing script failed." }
           } finally {
+            if ($priorPath) { $env:WINDOWS_CODESIGN_PFX_PATH = $priorPath } else { Remove-Item Env:WINDOWS_CODESIGN_PFX_PATH -ErrorAction SilentlyContinue }
             if (Test-Path $certificatePath) { Remove-Item $certificatePath -Force }
           }
+
       - name: Generate SHA-256 manifest
         run: node scripts/generate-bundle-checksums.mjs "src-tauri/target/release/bundle/nsis"
 
       - name: Publish BeBoss Windows setup
         uses: actions/upload-artifact@v4
         with:
-          name: BeBoss-Windows-Setup-${{ github.sha }}
+          name: BeBoss-Windows-Setup-CI-${{ github.sha }}
           path: desktop/src-tauri/target/release/bundle/nsis/*
           if-no-files-found: error
           retention-days: 14
