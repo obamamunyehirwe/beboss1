@@ -18,7 +18,9 @@
     "dist:linux": "tauri build --bundles appimage",
     "check:versions": "node scripts/check-version-coherence.mjs",
     "check:types": "tsc --noEmit -p tsconfig.desktop.json",
-    "test": "node --experimental-strip-types --test src/lib/device-restore.test.ts"
+    "test": "node --experimental-strip-types --test src/lib/device-restore.test.ts",
+    "sign:win:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-windows-installer.ps1",
+    "release:win:local": "npm run dist:win && npm run sign:win:local && node scripts/generate-bundle-checksums.mjs src-tauri/target/release/bundle/nsis"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.2",
