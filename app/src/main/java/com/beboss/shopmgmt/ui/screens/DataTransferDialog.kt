@@ -97,6 +97,8 @@ fun DataTransferDialog(
     onExportFullPackage: (((File) -> Unit) -> Unit)? = null,
     onCreateShareToken: (((String) -> Unit) -> Unit)? = null,
     onImportBranchToken: ((String, (Boolean, String) -> Unit) -> Unit)? = null,
+    onRequestLegacyShareOtp: (((Boolean, String) -> Unit) -> Unit)? = null,
+    onImportLegacyShareToken: ((String, String, (Boolean, String) -> Unit) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -104,6 +106,9 @@ fun DataTransferDialog(
     var selectedBackupForPreview by remember { mutableStateOf<ShopImportSummary?>(null) }
     var showManualJsonInput by remember { mutableStateOf(false) }
     var manualJsonText by remember { mutableStateOf("") }
+    var pendingLegacyShareToken by remember { mutableStateOf<String?>(null) }
+    var legacyOwnerOtp by remember { mutableStateOf("") }
+    var legacyOtpRequested by remember { mutableStateOf(false) }
     var latestExportedFile by remember { mutableStateOf<File?>(null) }
 
     fun refreshBackups() {
@@ -451,11 +456,20 @@ fun DataTransferDialog(
     // Manual Token or JSON Import Dialog
     if (showManualJsonInput) {
         AlertDialog(
-            onDismissRequest = { showManualJsonInput = false },
+            onDismissRequest = {
+                showManualJsonInput = false
+                pendingLegacyShareToken = null
+                legacyOwnerOtp = ""
+                legacyOtpRequested = false
+            },
             title = { Text("Paste Branch Share Token or JSON", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
             text = {
                 Column {
-                    Text("Paste a shop-scoped BBSHARE2 token, a legacy BBSHARE1 token, or raw JSON from a .beboss file:", fontSize = 12.sp, color = InkMedium)
+                    Text(
+                        "Paste a current shop-scoped BBSHARE2 token, an older signed token, or raw JSON from a .beboss file. Older project-signed tokens require registered-owner SMS verification.",
+                        fontSize = 12.sp,
+                        color = InkMedium
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = manualJsonText,
@@ -468,21 +482,109 @@ fun DataTransferDialog(
                             .testTag("manual_import_token_field"),
                         shape = RoundedCornerShape(8.dp)
                     )
+
+                    pendingLegacyShareToken?.let { legacyToken ->
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider()
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            "Legacy signature detected. BeBoss will verify it on its secure server. The old signing key is never downloaded to this phone.",
+                            fontSize = 12.sp,
+                            color = InkMedium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (legacyOtpRequested) {
+                            OutlinedTextField(
+                                value = legacyOwnerOtp,
+                                onValueChange = { value ->
+                                    legacyOwnerOtp = value.filter(Char::isDigit).take(8)
+                                },
+                                label = { Text("Shop owner's SMS verification code") },
+                                placeholder = { Text("6–8 digits") },
+                                modifier = Modifier.fillMaxWidth().testTag("legacy_share_owner_otp_field"),
+                                shape = RoundedCornerShape(8.dp),
+                                singleLine = true
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    val importer = onImportLegacyShareToken
+                                    if (importer == null) {
+                                        Toast.makeText(context, "Owner-verified migration is not available in this app build.", Toast.LENGTH_LONG).show()
+                                    } else if (legacyOwnerOtp.length !in 6..8) {
+                                        Toast.makeText(context, "Enter the 6–8 digit SMS code.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        importer(legacyToken, legacyOwnerOtp) { success, message ->
+                                            if (success) {
+                                                showManualJsonInput = false
+                                                manualJsonText = ""
+                                                pendingLegacyShareToken = null
+                                                legacyOwnerOtp = ""
+                                                legacyOtpRequested = false
+                                            }
+                                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                enabled = legacyOwnerOtp.length in 6..8,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
+                            ) {
+                                Text("Verify Owner & Import Legacy Data")
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    val requester = onRequestLegacyShareOtp
+                                    if (requester == null) {
+                                        Toast.makeText(context, "Owner SMS migration is not available in this app build.", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        requester { success, message ->
+                                            legacyOtpRequested = success
+                                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
+                            ) {
+                                Text("Send SMS Code to Registered Owner")
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         val candidate = manualJsonText.trim()
-                        if (candidate.startsWith("BBSHARE2:") || candidate.startsWith("BBSHARE1:")) {
+                        if (candidate.startsWith("BBSHARE1:")) {
+                            pendingLegacyShareToken = candidate
+                            legacyOwnerOtp = ""
+                            legacyOtpRequested = false
+                            val requester = onRequestLegacyShareOtp
+                            if (requester == null) {
+                                Toast.makeText(context, "Legacy token migration requires the registered shop owner.", Toast.LENGTH_LONG).show()
+                            } else {
+                                requester { success, message ->
+                                    legacyOtpRequested = success
+                                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        } else if (candidate.startsWith("BBSHARE2:")) {
                             val importer = onImportBranchToken
                             if (importer == null) {
-                                Toast.makeText(context, "Signed DataShare import requires the authenticated shop flow. Open Sync Hub and retry.", Toast.LENGTH_LONG).show()
+                                pendingLegacyShareToken = candidate
+                                Toast.makeText(context, "If this token was created by an older BeBoss release, request owner SMS verification below.", Toast.LENGTH_LONG).show()
                             } else {
                                 importer(candidate) { success, message ->
                                     if (success) {
                                         showManualJsonInput = false
                                         manualJsonText = ""
+                                    } else {
+                                        pendingLegacyShareToken = candidate
+                                        legacyOwnerOtp = ""
+                                        legacyOtpRequested = false
                                     }
                                     Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                                 }
@@ -506,7 +608,12 @@ fun DataTransferDialog(
             },
             dismissButton = {
                 OutlinedButton(
-                    onClick = { showManualJsonInput = false },
+                    onClick = {
+                        showManualJsonInput = false
+                        pendingLegacyShareToken = null
+                        legacyOwnerOtp = ""
+                        legacyOtpRequested = false
+                    },
                     modifier = Modifier.heightIn(min = 48.dp)
                 ) {
                     Text("Cancel")
@@ -514,4 +621,5 @@ fun DataTransferDialog(
             }
         )
     }
+
 }
