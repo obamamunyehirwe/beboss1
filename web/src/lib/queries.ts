@@ -22,5 +22,5 @@ export const platformStatsQuery = queryOptions({
 export const desktopReleaseQuery = queryOptions({
   queryKey: ["public-desktop-release"],
   queryFn: () => getPublicDesktopRelease(),
-  staleTime: 5 * 60_000,
+  staleTime: 30_000,
 });

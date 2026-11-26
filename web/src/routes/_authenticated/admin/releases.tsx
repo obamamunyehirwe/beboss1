@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ConfirmAction, EmptyState, LoadingBlock, PageHeader, StatCard, useAdminAction } from "@/components/admin/ui";
 import { supabase } from "@/integrations/supabase/client";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
-import { cleanupDesktopReleaseUpload, deleteDesktopRelease, deleteRelease, getAdminDesktopReleaseDownload, getAdminDesktopReleases, getAdminDesktopSourceVersion, getAdminReleaseDownload, publishDesktopRelease, publishRelease, setArchivedReleaseVisibility, setCurrentDesktopRelease, setCurrentRelease, setDesktopReleaseVisibility, setReleaseVisibility, updateRelease } from "@/lib/admin.functions";
+import { cleanupDesktopReleaseUpload, deleteDesktopRelease, deleteRelease, getAdminDesktopReleaseDownload, getAdminDesktopReleases, getAdminReleaseDownload, publishDesktopRelease, publishRelease, setArchivedReleaseVisibility, setCurrentDesktopRelease, setCurrentRelease, setDesktopReleaseVisibility, setReleaseVisibility, updateRelease } from "@/lib/admin.functions";
 import { downloadsQuery, releasesQuery } from "@/lib/admin-queries";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
@@ -50,14 +50,6 @@ function ReleasesPage() {
   const publish = useServerFn(publishRelease);
   const getPrivateDownload = useServerFn(getAdminReleaseDownload);
   const getDesktopReleases = useServerFn(getAdminDesktopReleases);
-  const getDesktopSourceVersion = useServerFn(getAdminDesktopSourceVersion);
-  const desktopSourceVersionQuery = useQuery({
-    queryKey: ["admin", "desktop-source-version"],
-    queryFn: () => getDesktopSourceVersion(),
-    enabled: canManageReleases,
-    staleTime: 60_000,
-    refetchInterval: 5 * 60_000,
-  });
   const uploadDesktopRelease = useServerFn(publishDesktopRelease);
   const removePendingDesktopUpload = useServerFn(cleanupDesktopReleaseUpload);
   const getDesktopPrivateDownload = useServerFn(getAdminDesktopReleaseDownload);
@@ -94,17 +86,12 @@ function ReleasesPage() {
   const [stage, setStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
   const [desktopPlatform, setDesktopPlatform] = useState<DesktopPlatform>("windows");
   const [desktopFile, setDesktopFile] = useState<File | null>(null);
-  const [desktopVersion, setDesktopVersion] = useState("");
+  const [desktopVersion, setDesktopVersion] = useState("1.3.0");
   const [desktopNotes, setDesktopNotes] = useState("");
   const [desktopMakeCurrent, setDesktopMakeCurrent] = useState(true);
   const [desktopStage, setDesktopStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
   const [editingRelease, setEditingRelease] = useState<ReleaseWithVisibility | null>(null);
   const [editForm, setEditForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "" });
-  useEffect(() => {
-    const sourceVersion = desktopSourceVersionQuery.data;
-    if (sourceVersion) setDesktopVersion((current) => current.trim() ? current : sourceVersion);
-  }, [desktopSourceVersionQuery.data]);
-
   const editReleaseAction = useAdminAction(useServerFn(updateRelease), { success: "Release updated", invalidate: [["admin", "releases"], ["public-site"]] });
 
   const downloadUrl = `https://beboss.rw${DOWNLOAD_PATH}`;
@@ -142,15 +129,6 @@ function ReleasesPage() {
     if (!canManageReleases || desktopStage || !desktopFile) return;
 
     const version = desktopVersion.trim();
-    const sourceVersion = desktopSourceVersionQuery.data;
-    if (!sourceVersion) {
-      toast.error("The current desktop source version could not be verified. Refresh and try again.");
-      return;
-    }
-    if (version !== sourceVersion) {
-      toast.error("Desktop release version must match the current source version " + sourceVersion + ". Update the desktop version manifests and rebuild first.");
-      return;
-    }
     if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
       toast.error("Enter a valid semantic version.");
       return;
@@ -627,8 +605,7 @@ function ReleasesPage() {
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,170px)_1fr]">
                   <div className="space-y-1.5">
                     <Label htmlFor="desktop-version">Desktop version</Label>
-                    <p className="text-xs text-muted-foreground">Must match the app version embedded in desktop/package.json: {desktopSourceVersionQuery.data ?? "checking source…"}.</p>
-                    <Input id="desktop-version" value={desktopVersion} onChange={(event) => setDesktopVersion(event.target.value)} required maxLength={40} pattern="^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$" placeholder={desktopSourceVersionQuery.data ?? "Checking desktop/package.json…"} disabled={!desktopSourceVersionQuery.data || !!desktopStage} />
+                    <Input id="desktop-version" value={desktopVersion} onChange={(event) => setDesktopVersion(event.target.value)} required maxLength={40} pattern="^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$" placeholder="1.3.0" disabled={!!desktopStage} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="desktop-notes">Release notes</Label>
