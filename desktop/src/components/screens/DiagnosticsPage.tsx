@@ -153,7 +153,7 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
       <div className="cap-grid">
         <div className="cap-item"><MemoryStick size={16} /><div><strong>Local persistence</strong><small>SQLCipher + OS keyring</small></div><StatusPill value={diag?.databaseEncrypted ? "ACTIVE" : "PENDING"} /></div>
         <div className="cap-item"><Cpu size={16} /><div><strong>Barcode input</strong><small>USB keyboard-wedge scanners</small></div><StatusPill value="ACTIVE" /></div>
-        <div className="cap-item"><Printer size={16} /><div><strong>Receipt printing</strong><small>RAW ESC/POS via the OS default printer queue; system print/PDF remains available</small></div><StatusPill value={diag?.defaultPrinterName ? "READY" : "NOT_CONFIGURED"} /></div>
+        <div className="cap-item"><Printer size={16} /><div><strong>Receipt printing</strong><small>RAW ESC/POS via the OS default printer queue; system print/PDF remains available</small></div><StatusPill value={diag?.defaultPrinterName ? "ACTIVE" : "PENDING"} /></div>
         <div className="cap-item"><ShieldCheck size={16} /><div><strong>Owner verification</strong><small>SMS OTP + active membership</small></div><StatusPill value={s(cloud.owner?.user_id) ? "ACTIVE" : "PENDING"} /></div>
       </div>
     </section>
