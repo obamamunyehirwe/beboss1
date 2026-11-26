@@ -87,7 +87,7 @@ internal fun readLanHttpRequestHead(input: InputStream): LanHttpRequestHead {
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
                 .decode(ByteBuffer.wrap(current, 0, current.size - 4))
                 .toString()
-            val lines = text.split("\\r\\n")
+            val lines = text.split("\r\n")
             val requestLine = lines.firstOrNull().orEmpty()
             require(requestLine.length <= 4096) { "The LAN HTTP request line is too large." }
             val requestParts = requestLine.split(' ')
