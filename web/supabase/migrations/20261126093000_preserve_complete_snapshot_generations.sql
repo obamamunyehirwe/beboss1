@@ -145,8 +145,8 @@ begin
       raise exception 'The authenticated BeBoss device cannot prune another shop''s snapshots.';
     end if;
     v_actor_device_id := public.current_shop_device_id();
-    if v_actor_device_id is not null and v_actor_device_id <> p_device_id then
-      raise exception 'A device can only prune its own snapshot generations.';
+    if v_actor_device_id is null or v_actor_device_id <> p_device_id then
+      raise exception 'A verified device identity is required and a device can only prune its own snapshot generations.';
     end if;
   end if;
 
@@ -207,8 +207,18 @@ begin
 end;
 $function$;
 
+-- The desktop Edge Function invokes this RPC with its server-only service role.
+-- No public client should be able to call the snapshot writer directly.
+revoke all on function public.write_beboss_desktop_snapshot(text, text, text, text, text, text, text, text, text, bigint)
+  from public, anon, authenticated;
+grant execute on function public.write_beboss_desktop_snapshot(text, text, text, text, text, text, text, text, text, bigint)
+  to service_role;
+
+-- Android sync uses signed per-device headers (the PostgREST role may be anon).
+-- The function itself validates shop context AND requires the resolved device ID,
+-- so legacy shop-key-only requests cannot prune another installation's generations.
 revoke all on function public.prune_branch_sync_snapshot_generations(text, text, text, integer)
-  from public;
+  from public, anon, authenticated;
 grant execute on function public.prune_branch_sync_snapshot_generations(text, text, text, integer)
   to anon, authenticated, service_role;
 
