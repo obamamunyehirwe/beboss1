@@ -754,11 +754,14 @@ export const createGatewayCheckout = createServerFn({ method: "POST" })
  */
 export type PublicDesktopAsset = {
   id: string;
+  platform: "windows" | "macos" | "linux";
   versionName: string;
   name: string;
   sizeBytes: number;
   downloadCount: number;
   sha256: string;
+  publishedAt: string;
+  releaseNotes: string;
 };
 
 export type PublicDesktopRelease = {
@@ -772,6 +775,7 @@ export type PublicDesktopRelease = {
     macos: PublicDesktopAsset | null;
     linux: PublicDesktopAsset | null;
   };
+  history: PublicDesktopAsset[];
 };
 
 const DESKTOP_RELEASE_PAGE = "/download?platform=desktop";
@@ -789,16 +793,16 @@ export const getPublicDesktopRelease = createServerFn({ method: "GET" }).handler
       publishedAt: null,
       releaseUrl: DESKTOP_RELEASE_PAGE,
       assets: { windows: null, macos: null, linux: null },
+      history: [],
     };
     try {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const { data, error } = await supabaseAdmin
         .from("desktop_app_releases")
-        .select("id,platform,version_name,file_name,size_bytes,sha256,download_count,published_at")
-        .eq("is_current", true)
+        .select("id,platform,version_name,file_name,size_bytes,sha256,download_count,published_at,release_notes,is_current")
         .eq("is_public", true)
         .order("published_at", { ascending: false })
-        .limit(3);
+        .limit(90);
       if (error) throw new Error(error.message);
 
       const assets: PublicDesktopRelease["assets"] = {
@@ -806,28 +810,40 @@ export const getPublicDesktopRelease = createServerFn({ method: "GET" }).handler
         macos: null,
         linux: null,
       };
+      const history: PublicDesktopAsset[] = [];
       for (const row of data ?? []) {
         if (row.platform !== "windows" && row.platform !== "macos" && row.platform !== "linux") continue;
-        if (assets[row.platform]) continue;
-        assets[row.platform] = {
+        const asset: PublicDesktopAsset = {
           id: row.id,
+          platform: row.platform,
           versionName: row.version_name,
           name: row.file_name,
           sizeBytes: Number(row.size_bytes) || 0,
           downloadCount: Number(row.download_count) || 0,
           sha256: row.sha256,
+          publishedAt: row.published_at,
+          releaseNotes: row.release_notes ?? "",
         };
+        if (row.is_current && !assets[row.platform]) {
+          assets[row.platform] = asset;
+        } else if (!row.is_current) {
+          history.push(asset);
+        }
       }
-      const newest = (data ?? [])[0];
+
+      const newestCurrent = Object.values(assets)
+        .filter((asset): asset is PublicDesktopAsset => Boolean(asset))
+        .sort((left, right) => new Date(right.publishedAt).getTime() - new Date(left.publishedAt).getTime())[0];
       const value: PublicDesktopRelease = {
         published: Object.values(assets).some(Boolean),
         unavailable: false,
-        tagName: newest?.version_name ?? null,
-        publishedAt: newest?.published_at ?? null,
+        tagName: newestCurrent?.versionName ?? null,
+        publishedAt: newestCurrent?.publishedAt ?? null,
         releaseUrl: DESKTOP_RELEASE_PAGE,
         assets,
+        history,
       };
-      desktopReleaseCache = { expiresAt: Date.now() + 60_000, value };
+      desktopReleaseCache = { expiresAt: Date.now() + 30_000, value };
       return value;
     } catch (error) {
       console.warn("[BeBoss desktop releases] Could not load local-build release metadata", error);
@@ -848,11 +864,10 @@ export const createPublicDesktopDownload = createServerFn({ method: "POST" })
       .from("desktop_app_releases")
       .select("id,file_path,file_name")
       .eq("id", data.id)
-      .eq("is_current", true)
       .eq("is_public", true)
       .maybeSingle();
     if (readError || !release) {
-      throw new Error("This desktop installer is no longer the current public release. Refresh the page and choose the latest version.");
+      throw new Error("This desktop installer is no longer publicly available. Refresh the page and choose an available version.");
     }
 
     const { data: signed, error: signingError } = await supabaseAdmin.storage
