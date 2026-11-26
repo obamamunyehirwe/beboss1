@@ -2,59 +2,27 @@
 
 BeBoss Desktop is the native Windows/macOS/Linux retail client built with **Tauri 2**. It installs as a real desktop application with an operating-system window, native printing, secure credential storage and file export. The installed computer runs the frontend and device integrations; **Supabase PostgreSQL is the authoritative business database** shared by the shop's mobile and desktop devices.
 
-## Cloud-first data architecture
+## Local desktop builds and manual release uploads
 
-- Products, customers, sales, sale items, customer payments, purchases, stock, branches and staff business snapshots are committed to the shop's Supabase PostgreSQL project. The current sync service stores signed, compressed snapshot generations in `public.branch_sync_snapshots`; management, subscriptions, device enrollment, payment and branch-control records use their respective cloud tables and protected server functions.
-- The desktop application authenticates the registered shop owner using Supabase Auth SMS verification. Business reads and writes go through the authenticated `beboss-desktop` Edge Function. Server-side tenant checks, device enrollment and snapshot-generation checks run before accepting a write.
-- Supabase Row Level Security and the server's owner/device authorization constrain tenant access. The desktop bundle contains only the Supabase URL and publishable key. **Never ship a service-role key, HMAC secret, SMS-provider key or payment-provider credential in the frontend or installer.**
-- The cloud database is the source of truth. A successful local queue operation is not a successful business commit: the desktop marks a change synchronized only after Supabase accepts the new snapshot generation.
-- SQLCipher on the device protects a temporary last-known cache, durable retry queue, non-business preferences and secure values. The cache supports continuity during a network interruption; it is not the canonical database and cannot override a newer cloud generation. When connectivity returns, queued changes are reconciled against the latest cloud version and conflicts are handled before the queue is acknowledged.
-- The operating-system credential vault protects local key material and persisted authentication sessions. Device identity, native printer integration and exported backup files remain device-scoped.
+Desktop installers are built locally on the operating system they target. The Admin → App Releases → Desktop releases workspace does not dispatch GitHub Actions, fetch source files from GitHub, or download installer binaries from GitHub Releases. The administrator selects the locally built installer and the matching local `desktop/package.json`; the version is read from that manifest before the upload can proceed.
 
-A first-time installation must be able to reach the actual Supabase PostgreSQL Data API before setup completes. A TCP connection to port 443 alone is not treated as proof that the cloud database is reachable. After sign-in, the backend performs the real owner-membership, device-enrollment and tenant authorization checks.
-
-## Installation
-
-1. **Windows installer:** run the generated NSIS `.exe`. The installer provides the standard Windows installation pages, a selectable application folder, Start Menu and desktop shortcuts, and a Launch BeBoss Desktop option. The current-user installer does not require administrator elevation.
-2. **First launch:** the in-app wizard checks the native runtime, persistent device identity, encrypted on-device recovery store, operating-system credential vault and live Supabase PostgreSQL Data API. Owner access is still granted only after the registered shop owner completes SMS verification.
-
-The setup wizard must run inside the installed BeBoss Desktop application window. Opening the Vite preview or a browser URL intentionally shows a browser-runtime notice instead; browsers do not have access to BeBoss's native printing, secure credential vault or device services.
-
-## Development
-
-Use Node.js 22, npm, the Rust stable toolchain and the platform build prerequisites for Tauri. From this directory:
+Run the checks from this directory before packaging:
 
 ```powershell
 npm ci
+npm run check:versions
+npm run check:types
+npm run build
+cargo test --locked --manifest-path src-tauri/Cargo.toml
 ```
 
-Create `.env.local` using the values from `.env.example` and set only the public desktop client configuration:
+| Platform | Build command | Output directory |
+| --- | --- | --- |
+| Windows | `npm run release:win:local` | `src-tauri/target/release/bundle/nsis` |
+| macOS | `npm run dist:mac` | `src-tauri/target/release/bundle/dmg` |
+| Linux | `npm run dist:linux` | `src-tauri/target/release/bundle/appimage` |
 
-```dotenv
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
-```
-
-Run the **native app** (including the in-app setup wizard):
-
-```powershell
-npm run dev
-```
-
-Build the frontend only for UI preview/testing (native operating-system checks will intentionally be unavailable):
-
-```powershell
-npm run dev:ui
-```
-
-Build a native Windows installer:
-
-```powershell
-npm run dist:win
-```
-
-Use `npm run dist:mac` on macOS and `npm run dist:linux` on Linux. Outputs are created under `src-tauri/target/release/bundle/nsis`, `dmg` and `appimage`. Push a tag such as `desktop-v1.3.1` to run the multi-platform release workflow. It builds the Windows NSIS installer, macOS DMG and Linux AppImage, then publishes all three stable-named assets and one `SHA256SUMS.txt` manifest to the same GitHub Release. The website `/download?platform=desktop` page reads the published release metadata and only enables links for installers that exist. Windows publication requires the configured Authenticode certificate and successful signature verification. macOS signing and notarization use the six `APPLE_*` release secrets; without them, the workflow clearly marks the DMG build as unsigned. A manual workflow run builds test artifacts but does not publish a GitHub Release.
-
+Build on the target operating system. Complete the required Windows Authenticode signing, macOS signing/notarization and Linux runtime checks before distribution. Then upload the finished artifact manually in the Admin release workspace. SHA-256 is calculated in the browser and retained with the private release metadata.
 ## Local recovery, credentials and uninstall
 
 The local SQLCipher database is a protected recovery/cache store, not the primary shop database. It keeps the encrypted last-known view, pending cloud-write queue, minimal desktop preferences and secure values needed for continuity and retry. It does not replace Supabase PostgreSQL as the authoritative source of business records.
