@@ -3788,3 +3788,44 @@ a:hover .brand-mark {
 .announcement-card-dismiss{color:var(--muted-foreground)}
 @media(max-width:720px){.announcement-card-grid{grid-template-columns:1fr}.announcement-section-heading{align-items:flex-start;flex-direction:column;gap:10px}}
 @media(prefers-reduced-motion:reduce){.announcement-card,.announcement-card-cta{transition:none!important;transform:none!important}}
+
+/* BeBoss public header — clearer brand hierarchy and refined responsive controls. */
+.site-header-shell {
+  border-bottom-color: color-mix(in srgb, var(--header-border) 82%, var(--header-orange) 18%);
+  box-shadow: 0 18px 42px -34px rgba(25,31,25,.42);
+}
+.site-header-shell::after {
+  position:absolute;right:0;bottom:-1px;left:0;height:1px;
+  content:"";pointer-events:none;
+  background:linear-gradient(90deg,transparent 0%,#e9a06e 22%,#e7c6a8 52%,#a9c2a1 82%,transparent 100%);
+  opacity:.65;
+}
+.site-header-shell .site-nav-inner { min-height:82px;height:82px;gap:clamp(10px,1.25vw,20px); }
+.site-header-shell .site-brand-wrap .brand-mark { width:48px;height:48px;border-radius:15px; }
+.site-header-shell .site-brand-wrap a > span:last-child { font-size:27px; }
+.site-header-shell .site-desktop-nav { gap:clamp(2px,.42vw,7px); }
+.site-header-shell .site-nav-home,
+.site-header-shell .site-nav-direct,
+.site-header-shell .site-nav-trigger { min-height:44px;font-size:12.5px; }
+.site-header-shell .site-nav-actions { gap:9px; }
+.site-header-shell .site-search-trigger { min-height:42px;border-radius:13px!important; }
+.site-header-shell .site-header-main { min-height:82px; }
+.site-header-shell .site-download-cta { min-height:45px;border-radius:13px!important;padding-inline:16px!important;font-size:12px!important; }
+.site-header-shell .site-download-cta:focus-visible,
+.site-header-shell .site-search-trigger:focus-visible,
+.site-header-shell .site-menu-trigger:focus-visible,
+.site-header-shell .site-nav-home:focus-visible,
+.site-header-shell .site-nav-direct:focus-visible,
+.site-header-shell .site-nav-trigger:focus-visible { outline:3px solid color-mix(in srgb,var(--header-orange) 48%,transparent);outline-offset:3px; }
+.site-header-shell .site-utility-inner { height:33px;font-size:10.5px; }
+.site-header-shell .site-utility-bar { height:33px; }
+@media(max-width:1279px) { .site-header-shell .site-nav-inner,.site-header-shell .site-header-main { min-height:76px;height:76px; } }
+@media(max-width:850px) { .site-header-shell .site-nav-inner,.site-header-shell .site-header-main { min-height:72px;height:72px; } }
+@media(max-width:620px) {
+  .site-header-shell .site-nav-inner,.site-header-shell .site-header-main { min-height:70px;height:70px; }
+  .site-header-shell .site-brand-wrap .brand-mark { width:43px;height:43px; }
+  .site-header-shell .site-brand-wrap a > span:last-child { font-size:24px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .site-header-shell *, .site-header-shell *::before, .site-header-shell *::after { transition:none!important;animation:none!important; }
+}

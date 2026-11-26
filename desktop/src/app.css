@@ -1740,3 +1740,47 @@ select option { background: var(--panel-bg); color: var(--text); }
 .auth-shell .auth-form input{min-height:48px;font-size:16px}
 .auth-shell .auth-form button{min-height:46px;font-size:14px}
 .auth-shell .auth-secure{font-size:12px;line-height:1.5}
+
+/* Desktop workspace header — prominent shop context, accessible controls, direct POS action. */
+.topbar {
+  min-height:82px;padding:0 clamp(16px,2.2vw,34px);gap:18px;
+  border-bottom-color:color-mix(in srgb,var(--border) 70%,rgba(255,151,92,.24));
+  background:color-mix(in srgb,var(--panel-bg) 94%,transparent);
+  box-shadow:0 12px 34px -30px rgba(0,0,0,.7);backdrop-filter:blur(22px) saturate(145%);
+}
+.topbar-left { gap:13px; }
+.topbar-brand { display:flex;align-items:center;gap:8px;flex:0 0 auto; }
+.topbar-brand img { width:42px;height:42px;padding:2px;border:1px solid rgba(255,157,100,.34);border-radius:13px;background:linear-gradient(145deg,rgba(243,111,33,.2),rgba(12,30,53,.92));object-fit:contain;box-shadow:0 8px 20px rgba(243,111,33,.12); }
+.topbar-brand span { color:var(--text);font-size:17px;font-weight:900;letter-spacing:-.06em; }
+.topbar-context { display:flex;min-width:0;flex-direction:column;gap:2px;padding-left:14px;border-left:1px solid var(--border); }
+.topbar-context .topbar-kicker { color:#f0a16f;font-size:8px;font-weight:900;letter-spacing:.17em; }
+.topbar-context strong { overflow:hidden;color:var(--text);font-size:16px;font-weight:850;letter-spacing:-.025em;text-overflow:ellipsis;white-space:nowrap; }
+.topbar-context small { overflow:hidden;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap; }
+.topbar-right { gap:9px; }
+.topbar-right .command-btn,.topbar-right .connection-chip { min-height:39px;border-radius:11px; }
+.topbar-right .command-btn { padding-inline:13px;background:var(--panel-soft);font-size:11px; }
+.topbar-right .global-search { min-width:210px;height:39px;border-radius:11px; }
+.topbar-right .global-search input { font-size:12px; }
+.topbar-quick-action { display:inline-flex;min-height:41px;align-items:center;justify-content:center;gap:8px;border:1px solid rgba(255,156,102,.42);border-radius:12px;padding:0 15px;background:linear-gradient(120deg,#b44718,#ed7b3d);color:#fff;font-size:11px;font-weight:850;box-shadow:0 11px 23px -17px rgba(237,123,61,.9);transition:transform 150ms ease,box-shadow 150ms ease,filter 150ms ease;white-space:nowrap; }
+.topbar-quick-action:hover { transform:translateY(-1px);filter:saturate(1.08);box-shadow:0 15px 26px -16px rgba(237,123,61,.8); }
+.topbar-quick-action:focus-visible,.topbar-right button:focus-visible { outline:3px solid rgba(255,156,102,.55);outline-offset:3px; }
+.topbar-refresh { width:40px;height:40px;border-radius:11px; }
+@media(max-width:1100px) { .topbar { min-height:72px;padding-inline:15px;gap:10px; } .topbar-right { gap:6px; } .topbar-right .global-search { display:none; } .topbar-quick-action { min-height:38px;padding-inline:11px; } }
+@media(max-width:760px) {
+  .topbar { min-height:66px;padding-inline:10px; }
+  .topbar-brand img { width:36px;height:36px; } .topbar-brand span { display:none; }
+  .topbar-context { padding-left:9px; } .topbar-context strong { font-size:13px;max-width:30vw; }
+  .topbar-context small { max-width:30vw;font-size:9px; } .topbar-context .topbar-kicker { display:none; }
+  .topbar-right .command-btn { width:38px;min-height:38px;padding:0; }
+  .topbar-right .command-btn span,.topbar-right .command-btn kbd,.topbar-right .desktop-language-control { display:none; }
+  .topbar-quick-action { min-height:38px;padding-inline:9px;font-size:10px; }
+  .topbar-right .connection-chip { min-width:30px;width:30px;min-height:30px;padding:0;font-size:0; }
+  .topbar-right .connection-chip .connection-dot { width:8px;height:8px; }
+  .topbar-refresh { width:34px;height:34px; }
+}
+@media(max-width:430px) {
+  .topbar { gap:5px; } .topbar-left { gap:5px; }
+  .topbar-brand img { display:none; } .topbar-context { border-left:0;padding-left:0; }
+  .topbar-context strong,.topbar-context small { max-width:28vw; }
+  .topbar-quick-action span { display:none; } .topbar-quick-action { width:36px;padding:0; }
+}

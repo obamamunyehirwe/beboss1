@@ -266,3 +266,27 @@
     border-radius: 23px;
   }
 }
+
+/* Desktop download landing: selected setup first; release metadata opens on request. */
+.download-desktop-summary {
+  display:flex;align-items:center;justify-content:space-between;gap:22px;
+  margin-top:26px;padding:22px 24px;
+  border:1px solid color-mix(in srgb,var(--primary) 28%,var(--border));
+  border-radius:22px;
+  background:radial-gradient(ellipse at 90% 0%,color-mix(in srgb,var(--primary) 12%,transparent),transparent 48%),color-mix(in srgb,var(--card) 94%,var(--surface));
+  box-shadow:0 20px 46px -38px color-mix(in srgb,var(--primary) 44%,transparent);
+}
+.download-desktop-summary-copy { min-width:0; }
+.download-desktop-summary-eyebrow { display:block;color:var(--primary);font-size:10px;font-weight:900;letter-spacing:.17em; }
+.download-desktop-summary h3 { margin-top:7px;font-size:clamp(20px,2.1vw,27px);font-weight:850;letter-spacing:-.035em; }
+.download-desktop-summary p { margin-top:5px;color:var(--muted-foreground);font-size:13px;line-height:1.6;overflow-wrap:anywhere; }
+.download-desktop-summary-actions { display:flex;flex:0 0 auto;align-items:center;gap:9px;flex-wrap:wrap; }
+.download-desktop-details-toggle { min-height:48px; }
+.download-desktop-expanded-details { margin-top:18px;animation:desktop-details-in 180ms ease both; }
+@keyframes desktop-details-in { from {opacity:0;transform:translateY(7px)} to {opacity:1;transform:translateY(0)} }
+@media(max-width:760px) {
+  .download-desktop-summary { align-items:stretch;flex-direction:column;padding:19px; }
+  .download-desktop-summary-actions { display:grid;grid-template-columns:1fr; }
+  .download-desktop-summary-actions > * { width:100%; }
+}
+@media(prefers-reduced-motion:reduce) { .download-desktop-expanded-details { animation:none; } }

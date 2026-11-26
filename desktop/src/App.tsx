@@ -1162,15 +1162,24 @@ function NativeDesktopApp() {
 
     <main className="main-area">
       <header className="topbar">
-        <div className="topbar-left"><button type="button" className="mobile-menu icon-btn" aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"} aria-expanded={menuOpen} aria-controls="desktop-navigation" onClick={() => setMenuOpen((v) => !v)}><Menu size={20} /></button><div className="breadcrumb"><img className="breadcrumb-brand-icon" src="/beboss-app-icon.png" alt="" /><span>BeBoss</span><b>/</b><strong>{pageTitle}</strong></div></div>
+        <div className="topbar-left">
+          <button type="button" className="mobile-menu icon-btn" aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"} aria-expanded={menuOpen} aria-controls="desktop-navigation" onClick={() => setMenuOpen((v) => !v)}><Menu size={20} /></button>
+          <div className="topbar-brand"><img src="/beboss-app-icon.png" alt="" /><span>BeBoss</span></div>
+          <div className="topbar-context">
+            <span className="topbar-kicker">SHOP WORKSPACE</span>
+            <strong>{pageTitle}</strong>
+            <small>{s(cloud.shop.shop_name) || "Retail operations"}</small>
+          </div>
+        </div>
         <div className="topbar-right">
-          <button className="command-btn" onClick={() => setPaletteOpen(true)} title="Command menu (Ctrl+K)"><Search size={15} /><span>Command</span><kbd>Ctrl K</kbd></button>
-          <label className="desktop-language-control"><Languages size={15} /><select aria-label="Interface language" value={preferences.language} onChange={(event) => void saveDesktopPreferences({ ...preferences, language: event.target.value as DesktopPreferences["language"] })}>{DESKTOP_LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.short}</option>)}</select></label>
-          <label className="global-search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products, sales, customers…" /></label>
-          <button className={"connection-chip " + (offline ? "offline" : "online")} onClick={refresh} title="Refresh cloud data"><span className="connection-dot" />{offline ? "Offline cache" : "Cloud synced"}</button>
-          <button className="icon-btn" onClick={refresh} title="Refresh"><RefreshCw size={17} className={busy ? "spin" : ""} /></button>
+          <button className="command-btn" onClick={() => setPaletteOpen(true)} title="Command menu (Ctrl+K)" aria-label="Open command menu"><Search size={16} /><span>Search commands</span><kbd>Ctrl K</kbd></button>
+          <label className="desktop-language-control"><Languages size={16} /><select aria-label="Interface language" value={preferences.language} onChange={(event) => void saveDesktopPreferences({ ...preferences, language: event.target.value as DesktopPreferences["language"] })}>{DESKTOP_LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.short}</option>)}</select></label>
+          <label className="global-search"><Search size={17} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products, sales, customers…" /></label>
+          <button type="button" className="topbar-quick-action" onClick={() => { setView("checkout"); setMenuOpen(false); }} title="Open point of sale checkout"><ShoppingCart size={17} /><span>New sale</span></button>
+          <button type="button" className={"connection-chip " + (offline ? "offline" : "online")} onClick={refresh} title="Refresh verified cloud data"><span className="connection-dot" /><span>{offline ? "Offline cache" : "Cloud connected"}</span></button>
+          <button className="icon-btn topbar-refresh" onClick={refresh} title="Refresh workspace data" aria-label="Refresh workspace data"><RefreshCw size={17} className={busy ? "spin" : ""} /></button>
           <NotificationBell />
-          <button className="icon-btn" onClick={() => setView("billing")} title="Announcements and billing"><Bell size={17} /></button>
+          <button className="icon-btn" onClick={() => setView("billing")} title="Announcements and billing" aria-label="Open announcements and billing"><Bell size={17} /></button>
         </div>
       </header>
 
