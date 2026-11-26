@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 const source = read("web/src/lib/public.functions.ts");
-const serverClient = read("web/src/integrations/supabase/client.server.ts");
+const serverClient = read("web/src/lib/owner-tenant.server.ts");
 const migration = read("web/supabase/migrations/20261126123000_server_owner_portal_invite_context.sql");
 const sqlTest = read("web/supabase/tests/android_device_credentials.sql");
 
