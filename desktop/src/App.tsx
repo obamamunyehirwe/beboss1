@@ -835,6 +835,7 @@ function NativeDesktopApp() {
   if (setupRequired) {
     return <SetupWizard
       initialPreferences={preferences}
+      onRecoverLocalDatabase={() => window.beBossDesktop.recoverLocalDatabase()}
       onComplete={async (nextPreferences, privacyAccepted) => {
         if (!privacyAccepted) throw new Error("Privacy and device-access acknowledgement is required.");
         await saveDesktopPreferences(nextPreferences);
