@@ -394,6 +394,6 @@ export function SetupWizard({initialPreferences,onComplete,onRecoverLocalDatabas
   </div>
   <footer className="setup-actions"><span className="setup-action-hint">{page==="preferences"&&!privacyAccepted?t.privacyError:page==="verification"&&!completed?t.setupError:"You can change these preferences later in Settings."}</span><button type="button" className="primary-btn" onClick={()=>void next()} disabled={running||finishing||(page==="finish"&&!completed)||(page==="preferences"&&!privacyAccepted)}>{running||finishing?<RefreshCw size={16} className="spin"/>:page==="finish"?<Check size={16}/>:<ArrowRight size={16}/>} {running?t.checking:finishing?t.working:page==="finish"?t.finish:page==="verification"?(completed?t.next:t.runChecks):t.next}</button>{page==="verification"&&failure&&!running&&<button type="button" className="setup-retry-btn" onClick={()=>void runChecks()}>{t.retry}</button>}</footer>
  </section></main>
- <footer className="setup-global-foot"><span>BeBoss Desktop <b>1.4.1</b></span><span>Protected local recovery · Supabase cloud data</span></footer>
+ <footer className="setup-global-foot"><span>BeBoss Desktop <b>1.4.2</b></span><span>Protected local recovery · Supabase cloud data</span></footer>
  </div>;
 }
