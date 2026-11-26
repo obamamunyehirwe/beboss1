@@ -11,20 +11,6 @@ plugins {
 // Configuration-cache-safe signing gates. These tasks receive booleans only:
 // no signing secret, password, key bytes, or Gradle script object is serialized
 // into the task action or Gradle configuration cache.
-abstract class ValidateDataShareSigningTask : org.gradle.api.DefaultTask() {
-  @get:org.gradle.api.tasks.Input
-  abstract val hasValidSecret: org.gradle.api.provider.Property<Boolean>
-
-  @org.gradle.api.tasks.TaskAction
-  fun validate() {
-    if (!hasValidSecret.get()) {
-      throw org.gradle.api.GradleException(
-        "Android DataShare signing is not configured. Set BEBOSS_DATASHARE_HMAC_SECRET to the same protected 32+ character key stored as BEBOSS_DATASHARE_HMAC_SECRET in Supabase. The public fallback key is not accepted for production releases."
-      )
-    }
-  }
-}
-
 abstract class ValidateCredentialPepperTask : org.gradle.api.DefaultTask() {
   @get:org.gradle.api.tasks.Input
   abstract val hasValidPepper: org.gradle.api.provider.Property<Boolean>
@@ -33,12 +19,25 @@ abstract class ValidateCredentialPepperTask : org.gradle.api.DefaultTask() {
   fun validate() {
     if (!hasValidPepper.get()) {
       throw org.gradle.api.GradleException(
-        "Android release credentials require BEBOSS_SECURITY_PEPPER to be a protected, unique value of at least 32 characters. Do not use the legacy runtime fallback."
+        "The one-time Android transition release requires the existing credential pepper so it can move legacy offline PIN/password verification into Android Keystore. Never use this setting for the final secure release."
       )
     }
   }
 }
 
+abstract class ValidateSentryDsnTask : org.gradle.api.DefaultTask() {
+  @get:org.gradle.api.tasks.Input
+  abstract val hasValidDsn: org.gradle.api.provider.Property<Boolean>
+
+  @org.gradle.api.tasks.TaskAction
+  fun validate() {
+    if (!hasValidDsn.get()) {
+      throw org.gradle.api.GradleException(
+        "Production crash reporting is not configured. Add the public SENTRY_DSN to the ignored root .env file and GitHub Actions secret SENTRY_DSN before building a customer release."
+      )
+    }
+  }
+}
 abstract class ValidateReleaseSigningTask : org.gradle.api.DefaultTask() {
   @get:org.gradle.api.tasks.Input
   abstract val hasKeystore: org.gradle.api.provider.Property<Boolean>
@@ -75,13 +74,15 @@ val releaseKeyAlias = signingSecret("KEY_ALIAS")
 android {
   namespace = "com.beboss.shopmgmt"
   compileSdk = 36
+  flavorDimensions += "credentialCompatibility"
 
   defaultConfig {
     applicationId = "com.beboss.shopmgmt"
     minSdk = 24
     targetSdk = 36
-    versionCode = 17
-    versionName = "2.4.0"
+    // Migration build 18 must be installed before secure build 19 on every device.
+    versionCode = 19
+    versionName = "2.5.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -141,6 +142,20 @@ android {
     return "\"$escaped\""
   }
 
+  productFlavors {
+    create("transition") {
+      dimension = "credentialCompatibility"
+      versionCode = 18
+      versionName = "2.4.1"
+      // One-time migration release: move the old pepper into Android Keystore at first launch.
+    }
+    create("secure") {
+      dimension = "credentialCompatibility"
+      versionCode = 19
+      versionName = "2.5.0"
+      // No global DataShare HMAC or credential pepper is packaged in the final secure APK.
+    }
+  }
   buildTypes {
     release {
       isCrunchPngs = true
@@ -150,8 +165,6 @@ android {
       signingConfig = signingConfigs.getByName("release")
       buildConfigField("String", "BEBOSS_ADMIN_URL", envConfigString("BEBOSS_ADMIN_URL"))
       buildConfigField("String", "BEBOSS_ADMIN_WHATSAPP", envConfigString("BEBOSS_ADMIN_WHATSAPP"))
-      buildConfigField("String", "BEBOSS_DATASHARE_HMAC_SECRET", envConfigString("BEBOSS_DATASHARE_HMAC_SECRET"))
-      buildConfigField("String", "BEBOSS_SECURITY_PEPPER", envConfigString("BEBOSS_SECURITY_PEPPER"))
       buildConfigField("String", "SENTRY_DSN", envConfigString("SENTRY_DSN"))
       buildConfigField("String", "SUPABASE_ANON_KEY", envConfigString("SUPABASE_ANON_KEY"))
       buildConfigField("String", "SUPABASE_CERT_PINS", envConfigString("SUPABASE_CERT_PINS"))
@@ -162,8 +175,6 @@ android {
       signingConfig = signingConfigs.getByName("debugConfig") 
       buildConfigField("String", "BEBOSS_ADMIN_URL", envConfigString("BEBOSS_ADMIN_URL"))
       buildConfigField("String", "BEBOSS_ADMIN_WHATSAPP", envConfigString("BEBOSS_ADMIN_WHATSAPP"))
-      buildConfigField("String", "BEBOSS_DATASHARE_HMAC_SECRET", envConfigString("BEBOSS_DATASHARE_HMAC_SECRET"))
-      buildConfigField("String", "BEBOSS_SECURITY_PEPPER", envConfigString("BEBOSS_SECURITY_PEPPER"))
       buildConfigField("String", "SENTRY_DSN", envConfigString("SENTRY_DSN"))
       buildConfigField("String", "SUPABASE_ANON_KEY", envConfigString("SUPABASE_ANON_KEY"))
       buildConfigField("String", "SUPABASE_CERT_PINS", envConfigString("SUPABASE_CERT_PINS"))
@@ -209,23 +220,14 @@ ksp {
 }
 
 
-// Release signing and cross-platform data-share signing are independent gates.
-val dataShareEnvProperties = Properties().apply {
-  val envFile = rootProject.file(".env")
-  if (envFile.isFile) envFile.inputStream().use { load(it) }
-}
-val configuredDataShareHmacSecret = (
-  dataShareEnvProperties.getProperty("BEBOSS_DATASHARE_HMAC_SECRET")?.takeIf { it.isNotBlank() }
-    ?: (findProperty("BEBOSS_DATASHARE_HMAC_SECRET") as? String)?.takeIf { it.isNotBlank() }
-    ?: providers.environmentVariable("BEBOSS_DATASHARE_HMAC_SECRET").orNull?.takeIf { it.isNotBlank() }
-    ?: ""
-  ).trim().removeSurrounding("\"")
-
-val validateDataShareSigningConfiguration = tasks.register<ValidateDataShareSigningTask>("validateDataShareSigningConfiguration") {
-  // Pass a boolean only: never capture or serialize the HMAC key itself.
-  hasValidSecret.set(
-    configuredDataShareHmacSecret.length >= 32 &&
-      configuredDataShareHmacSecret != "BeBossDefaultDataShareHmacKeyV2"
+// The project-wide DataShare HMAC stays server-side. Android signs new shares with
+// each registered shop random key protected by the platform Keystore.
+val configuredSentryDsn = signingSecret("SENTRY_DSN").orEmpty()
+val validateSentryDsnConfiguration = tasks.register<ValidateSentryDsnTask>("validateSentryDsnConfiguration") {
+  hasValidDsn.set(
+    configuredSentryDsn.startsWith("https://") &&
+      configuredSentryDsn.contains("@") &&
+      configuredSentryDsn.substringAfter("@").contains("/")
   )
 }
 val configuredSecurityPepper = signingSecret("BEBOSS_SECURITY_PEPPER").orEmpty()
@@ -256,16 +258,19 @@ val validateReleaseSigningConfiguration = tasks.register<ValidateReleaseSigningT
 }
 
 tasks.configureEach {
-  if (
-    name.startsWith("validateSigningRelease") ||
-    name.startsWith("packageRelease") ||
-    name.startsWith("bundleRelease") ||
-    name.startsWith("assembleRelease") ||
-    name.startsWith("signRelease")
-  ) {
+  val releaseTask = name.contains("Release")
+  val releasePackagingTask =
+    name.startsWith("validateSigning") ||
+      name.startsWith("package") ||
+      name.startsWith("bundle") ||
+      name.startsWith("assemble") ||
+      name.startsWith("sign")
+  if (releaseTask && releasePackagingTask) {
     dependsOn(validateReleaseSigningConfiguration)
-    dependsOn(validateDataShareSigningConfiguration)
-    dependsOn(validateCredentialPepperConfiguration)
+    dependsOn(validateSentryDsnConfiguration)
+    if (name.contains("Transition", ignoreCase = true)) {
+      dependsOn(validateCredentialPepperConfiguration)
+    }
   }
 }
 
