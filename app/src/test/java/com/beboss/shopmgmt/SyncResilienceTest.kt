@@ -175,7 +175,9 @@ class SyncResilienceTest {
     @Test
     fun `BeBossLogger scrubs secrets, PINs, passwords, and tokens from logs`() {
         val raw = "Auth failed for pin=4829 password='SuperSecret2026' apikey=sb_live_abc123 " +
-            "Bearer eyJhbGciOi.test.sig token=BB2-ALPHA-9999 pbkdf2:120000:deadbeef:cafebabe BBSHARE1:ABCD:payload123"
+            "Bearer eyJhbGciOi.test.sig token=BB2-ALPHA-9999 BB3-UNLOCK-SECRET " +
+            "pbkdf2:120000:deadbeef:cafebabe pbkdf2v2:210000:deadbeef:cafebabe " +
+            "BBSHARE1:ABCD:payload123 BBSHARE2:EFGH:payload456"
         val clean = BeBossLogger.scrub(raw)
 
         assertFalse(clean.contains("4829"))
@@ -183,8 +185,10 @@ class SyncResilienceTest {
         assertFalse(clean.contains("sb_live_abc123"))
         assertFalse(clean.contains("eyJhbGciOi"))
         assertFalse(clean.contains("BB2-ALPHA-9999"))
+        assertFalse(clean.contains("BB3-UNLOCK-SECRET"))
         assertFalse(clean.contains("deadbeef"))
         assertFalse(clean.contains("payload123"))
+        assertFalse(clean.contains("payload456"))
         assertTrue(clean.contains("[REDACTED]"))
     }
 
