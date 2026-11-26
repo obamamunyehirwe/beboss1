@@ -247,16 +247,25 @@ export const lookupMyShop = createServerFn({ method: "POST" })
     let decodedRecords: ShopRecords | null = null;
     let snapshotUploadedAt = 0;
     const snapRows = snaps.data ?? [];
-    const shareSecret = process.env["BEBOSS_DATASHARE_HMAC_SECRET"];
+    // The shop key is read server-side under the already verified owner tenant.
+    // Never include this field in the response returned to the browser.
+    const shareKeyResult = await sb.from("shop_accounts")
+      .select("lan_sync_secret")
+      .eq("id", key)
+      .maybeSingle();
+    const shopShareSecret = String(shareKeyResult.data?.lan_sync_secret ?? "").trim().toLowerCase();
+    const legacyShareSecret = process.env["BEBOSS_DATASHARE_HMAC_SECRET"];
     if (snapRows.length > 0) {
       try {
         const set = pickLatestDeviceChunkSet(snapRows);
         if (set.length > 0) {
           snapshotUploadedAt = Math.max(...set.map((r) => Number(r.updated_at)));
-          if (!shareSecret) {
-            console.warn("BEBOSS_DATASHARE_HMAC_SECRET is not configured; skipping unverified snapshot decode for shop", key);
+          if (!shopShareSecret && !legacyShareSecret) {
+            console.warn("No server-side snapshot verification key is configured for shop", key);
           } else {
-            const parts = await Promise.all(set.map((r) => verifyAndDecodeToken(r.payload_token, shareSecret)));
+            const parts = await Promise.all(set.map((r) =>
+              verifyAndDecodeToken(r.payload_token, legacyShareSecret, shopShareSecret)
+            ));
             decodedRecords = extractShopRecords(mergeShareJson(parts));
           }
         }
