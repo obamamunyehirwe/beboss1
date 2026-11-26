@@ -1,55 +1,54 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - TanStack devtools (dev-only, first), tanstackStart, viteReact, tailwindcss, tsConfigPaths,
-//     nitro (build-only using cloudflare as a default target), VITE_* env injection, @ path alias,
-//     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
-// Never set ssr.external or resolve.external: the Worker has no runtime module resolution, so
-// the build fails. Never add compression (compressPublicAssets, vite-plugin-compression): hosting
-// already compresses at the edge.
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
-import { loadEnv } from "vite";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cloudflare } from "@cloudflare/vite-plugin";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import { defineConfig, loadEnv } from "vite";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 const webRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(webRoot, "..");
 const mode = process.env.NODE_ENV === "production" ? "production" : "development";
 
-// Vite is launched from web/, while BeBoss keeps its documented environment
-// file at the repository root. Load root and web-local env files for the Node
-// server process. Only explicitly public values are passed to Vite's define
-// object below; secret keys are never made available to browser code.
+// Keep repository-root .env support for public build-time configuration.
+// Worker secrets are loaded at runtime from Cloudflare bindings / .dev.vars.
 const loadedEnv = {
   ...loadEnv(mode, repositoryRoot, ""),
   ...loadEnv(mode, webRoot, ""),
 };
 
-const serverOnlyEnvNames = [
-  "SUPABASE_URL",
-  "SUPABASE_PUBLISHABLE_KEY",
-  "SUPABASE_ANON_KEY",
-  "SUPABASE_SECRET_KEY",
-  "SUPABASE_SERVICE_ROLE_KEY",
-] as const;
+// This file contains public Supabase client configuration only. Never place
+// SUPABASE_SECRET_KEY, service-role keys or any other private credential here.
+const wranglerConfig = JSON.parse(
+  readFileSync(resolve(webRoot, "wrangler.jsonc"), "utf8"),
+) as { vars?: Record<string, string> };
+const workerVars = wranglerConfig.vars ?? {};
 
-for (const name of serverOnlyEnvNames) {
-  if (!process.env[name] && loadedEnv[name]) {
-    process.env[name] = loadedEnv[name];
-  }
+function firstConfiguredValue(...values: Array<string | undefined>): string | undefined {
+  return values.find((value) => typeof value === "string" && value.length > 0);
 }
 
-const publicSupabaseUrl =
-  process.env["VITE_SUPABASE_URL"] ||
-  loadedEnv["VITE_SUPABASE_URL"] ||
-  process.env["SUPABASE_URL"] ||
-  loadedEnv["SUPABASE_URL"];
-const publicSupabaseKey =
-  process.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
-  loadedEnv["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
-  process.env["SUPABASE_PUBLISHABLE_KEY"] ||
-  loadedEnv["SUPABASE_PUBLISHABLE_KEY"] ||
-  process.env["SUPABASE_ANON_KEY"] ||
-  loadedEnv["SUPABASE_ANON_KEY"];
+const publicSupabaseUrl = firstConfiguredValue(
+  process.env["VITE_SUPABASE_URL"],
+  loadedEnv["VITE_SUPABASE_URL"],
+  workerVars["VITE_SUPABASE_URL"],
+  process.env["SUPABASE_URL"],
+  loadedEnv["SUPABASE_URL"],
+  workerVars["SUPABASE_URL"],
+);
+const publicSupabaseKey = firstConfiguredValue(
+  process.env["VITE_SUPABASE_PUBLISHABLE_KEY"],
+  loadedEnv["VITE_SUPABASE_PUBLISHABLE_KEY"],
+  workerVars["VITE_SUPABASE_PUBLISHABLE_KEY"],
+  process.env["SUPABASE_PUBLISHABLE_KEY"],
+  loadedEnv["SUPABASE_PUBLISHABLE_KEY"],
+  workerVars["SUPABASE_PUBLISHABLE_KEY"],
+  process.env["SUPABASE_ANON_KEY"],
+  loadedEnv["SUPABASE_ANON_KEY"],
+  workerVars["SUPABASE_ANON_KEY"],
+);
 
 const publicSupabaseDefine: Record<string, string> = {};
 if (publicSupabaseUrl) {
@@ -59,31 +58,20 @@ if (publicSupabaseKey) {
   publicSupabaseDefine["import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY"] = JSON.stringify(publicSupabaseKey);
 }
 
-// Vercel sets VERCEL=1 during its build. The Lovable wrapper otherwise keeps
-// its preview-oriented Cloudflare Nitro target, which cannot serve this app's
-// TanStack server functions as Vercel Functions. Emit Vercel's server and static
-// output directories explicitly while leaving the Lovable preview target alone.
-const isVercelBuild = process.env["VERCEL"] === "1";
-
 export default defineConfig({
-  ...(isVercelBuild
-    ? {
-        nitro: {
-          preset: "vercel",
-          output: {
-            dir: ".vercel/output",
-            serverDir: ".vercel/output/functions/__server.func",
-            publicDir: ".vercel/output/static",
-          },
-        },
-      }
-    : {}),
-  vite: {
-    ...(Object.keys(publicSupabaseDefine).length ? { define: publicSupabaseDefine } : {}),
-    server: { allowedHosts: ["workspace-zkvm7tks-8b08c7aa60177527.v0.build"] },
+  plugins: [
+    cloudflare({ viteEnvironment: { name: "ssr" } }),
+    tanstackStart({ server: { entry: "server" } }),
+    react(),
+    tailwindcss(),
+    tsconfigPaths(),
+  ],
+  define: Object.keys(publicSupabaseDefine).length ? publicSupabaseDefine : undefined,
+  resolve: {
+    alias: { "@": resolve(webRoot, "src") },
+    dedupe: ["react", "react-dom"],
   },
-  tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    server: { entry: "server" },
+  server: {
+    allowedHosts: ["workspace-zkvm7tks-8b08c7aa60177527.v0.build"],
   },
 });

@@ -26,6 +26,53 @@ Vite loads the repository-root environment file for local web development. After
 
 ---
 
+## Local web environment
+
+The web application runs as a full-stack **Cloudflare Worker with Static Assets**. Both the React frontend and TanStack Start server functions / API routes are served by the same Worker. The existing Supabase project remains the data backend for Auth, PostgreSQL, Storage and Supabase Edge Functions.
+
+For local development, keep public Supabase configuration in the repository-root `.env` or `.env.local`, and put Worker-only secrets in `web/.dev.vars`. Start from the examples:
+
+```powershell
+Copy-Item .env.example .env
+Copy-Item web/.dev.vars.example web/.dev.vars
+cd web
+npm install
+npm run dev
+```
+
+The checked-in Wrangler configuration contains only the Supabase project URL and publishable key. Those values are public client configuration. Never put `SUPABASE_SECRET_KEY`, legacy `SUPABASE_SERVICE_ROLE_KEY`, payment credentials, signing keys or other privileged values in `wrangler.jsonc`, a `VITE_*` variable, Android resources or a desktop bundle.
+
+Cloudflare's Workers runtime exposes configured variables and secrets through `process.env` for this application because the Worker compatibility date enables Node.js compatibility. Local Worker secrets belong in the ignored `.dev.vars` file; production secrets belong in Cloudflare Worker secrets.
+
+## Cloudflare Workers deployment
+
+BeBoss uses the official Cloudflare Vite plugin for TanStack Start. This is **not a static-only Pages export**: SSR, TanStack server functions, the public download API route and frontend assets are deployed together to Cloudflare Workers. Browser requests to TanStack server functions stay same-origin with the BeBoss website; Supabase client requests continue to use the project's public URL and publishable key.
+
+From `web/`:
+
+```powershell
+npm install
+npm run cf-typegen
+npm run build
+npm run preview
+npm run deploy
+```
+
+The deployment script builds the Worker and runs Wrangler. The first deployment requires a Cloudflare account and an API token with permission to edit Workers. The GitHub deployment workflow expects repository secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; deploys can then run from the `main` branch or be started manually from GitHub Actions. The API token is never committed to the repository.
+
+After the first Worker is created, configure the required server-only secret in Cloudflare:
+
+```powershell
+cd web
+npx wrangler secret put SUPABASE_SECRET_KEY
+```
+
+Paste the Supabase secret API key when Wrangler prompts for it. Do not put the key in a command-line argument, source file, `wrangler.jsonc`, or GitHub commit. If the BeBoss AI copilot is enabled, also set `LOVABLE_API_KEY` as a Worker secret. Other optional credentials should only be added when the corresponding integration is intentionally enabled.
+
+Before directing customers to the new host, update the Supabase Edge Function secret `BEBOSS_PUBLIC_URL` to the deployed Worker URL, and add the Worker URL to Supabase Auth's Site URL / allowed redirect URLs. This keeps checkout return links and email authentication redirects on the active host. Test sign-in, recovery, merchant portal, admin operations, public downloads and all payment callbacks on the `workers.dev` URL before switching a custom domain.
+
+Start with the included `workers.dev` hostname. A custom domain can be attached later when its DNS zone is on the Cloudflare account. Keep the previous Vercel deployment available as a rollback until the Cloudflare Worker and every external redirect have been verified. Cloudflare's Free Workers plan has a 10 ms CPU budget per request; monitor Worker metrics and logs because unusually CPU-heavy server rendering may require optimization or a higher plan.
+
 ## What BeBoss helps a business run
 
 | Business area | Capabilities |
@@ -77,7 +124,7 @@ The first-launch desktop wizard configures and validates the local installation.
 
 ### Web platform and merchant portal
 
-The web application combines the public BeBoss product site with merchant self-service and platform administration.
+The web application combines the public BeBoss product site with merchant self-service and platform administration. It is served by Cloudflare Workers, including its SSR routes and TanStack server functions.
 
 - Public product information, features, pricing and support contact, plus official Android APK and native Windows/macOS/Linux desktop downloads with release integrity details.
 - Interactive subscription and device-fee calculations.
@@ -217,7 +264,7 @@ BeBoss does not promise that every provider integration is automatically active 
 | --- | --- |
 | Android | Kotlin, Jetpack Compose, Room, SQLCipher, WorkManager, CameraX, Android Keystore |
 | Desktop | Tauri 2, Rust, React, TypeScript, Vite, SQLite/SQLCipher |
-| Web | TanStack Start, TanStack Router, React, TypeScript, Tailwind CSS |
+| Web | TanStack Start, TanStack Router, React, TypeScript, Tailwind CSS, Cloudflare Workers |
 | Cloud | Supabase Auth, PostgreSQL, Row Level Security, Storage, Edge Functions |
 | Testing | Vitest, ESLint, TypeScript checks, Android unit tests, Rust tests and CI build jobs |
 
@@ -268,7 +315,7 @@ For Android production builds, configure the release keystore and protected secu
 
 ```powershell
 cd web
-npm ci
+npm install
 npm run dev
 ```
 
