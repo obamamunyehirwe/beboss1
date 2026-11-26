@@ -29,7 +29,7 @@ import { useI18n } from "@/lib/i18n";
 import { DOWNLOAD_PATH } from "@/lib/download-path";
 import { buildDownloadHref, detectDesktopOS, type DesktopOS, type DownloadPlatform } from "@/lib/download-routing";
 import { desktopReleaseQuery, publicSiteQuery } from "@/lib/queries";
-import type { PublicDesktopRelease } from "@/lib/public.functions";
+import { createPublicDesktopDownload, type PublicDesktopRelease } from "@/lib/public.functions";
 import { formatBytes, formatDate } from "@/lib/format";
 import "./download-page.css";
 
@@ -84,7 +84,7 @@ function DownloadPage() {
     unavailable: false,
     tagName: null,
     publishedAt: null,
-    releaseUrl: "https://github.com/obamamunyehirwe/beboss1/releases",
+    releaseUrl: "/download?platform=desktop",
     assets: { windows: null, macos: null, linux: null },
   };
   const [detectedOs, setDetectedOs] = useState<DesktopOS>("windows");
@@ -451,10 +451,11 @@ function DesktopDownloads({
     macos: "macOS",
     linux: "Linux",
   };
-  const version = release.tagName?.replace(/^desktop-/, "") ?? "Latest";
+  const version = asset?.versionName ?? release.tagName ?? "Latest";
   const expectedChecksum = asset?.sha256?.toLowerCase() ?? "";
   const [checksumInput, setChecksumInput] = useState("");
   const [checksumCopied, setChecksumCopied] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const normalizedChecksumInput = checksumInput.trim().toLowerCase();
   const checksumMatches = Boolean(
     expectedChecksum && /^[a-f0-9]{64}$/.test(normalizedChecksumInput) &&
@@ -469,6 +470,20 @@ function DesktopDownloads({
     setChecksumInput("");
     setChecksumCopied(false);
   }, [selectedOs, expectedChecksum]);
+
+  const downloadSelectedInstaller = async () => {
+    if (!asset || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const result = await createPublicDesktopDownload({ data: { id: asset.id } });
+      window.location.assign(result.url);
+      toast.success(`${labels[selectedOs]} installer download is ready.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not prepare the desktop installer download.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const copyChecksum = async () => {
     if (!expectedChecksum) return;
@@ -556,10 +571,8 @@ function DesktopDownloads({
               <p className="mt-1 text-sm text-muted-foreground">{options.find((item) => item.os === selectedOs)?.subtitle}</p>
             </div>
             {asset ? (
-              <Button asChild variant="hero" size="xl" className="w-full sm:w-auto">
-                <a href={asset.downloadUrl}>
-                  <Download /> Download for {labels[selectedOs]} <ArrowRight />
-                </a>
+              <Button type="button" variant="hero" size="xl" className="w-full sm:w-auto" onClick={() => void downloadSelectedInstaller()} disabled={isDownloading}>
+                {isDownloading ? <><FileDown className="animate-pulse" /> Preparing secure download…</> : <><Download /> Download for {labels[selectedOs]} <ArrowRight /></>}
               </Button>
             ) : (
               <Button type="button" variant="hero" size="xl" className="w-full sm:w-auto" disabled>
@@ -632,8 +645,8 @@ function DesktopDownloads({
               {release.unavailable
                 ? "The release service could not be reached. The download page is still available; retry later or open the official release history."
                 : release.published
-                  ? `The latest desktop release does not contain a ${labels[selectedOs]} installer yet.`
-                  : "No desktop installer has been published yet. The Windows, macOS and Linux download buttons will activate automatically after the first verified desktop release is published."}
+                  ? `The latest published set does not contain a ${labels[selectedOs]} installer yet.`
+                  : "No desktop installer has been uploaded yet. BeBoss releases are built locally by the release administrator and uploaded individually; each platform becomes available when its installer is published."}
             </div>
           )}
 
@@ -657,7 +670,7 @@ function DesktopDownloads({
         <article className="download-os-guide">
           <Monitor className="size-5 text-primary" />
           <h3 className="mt-3 font-semibold">Windows setup</h3>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">Run the NSIS setup file, follow the installer and launch BeBoss from the Start Menu. The production Windows release is only published after Authenticode signature verification.</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">Run the NSIS setup file, follow the installer and launch BeBoss from the Start Menu. Use the production-signed Windows setup file supplied by BeBoss. Check its SHA-256 value before installation.</p>
         </article>
         <article className="download-os-guide">
           <Apple className="size-5 text-primary" />
@@ -677,10 +690,10 @@ function DesktopDownloads({
           <div>
             <h3 className="font-semibold">Official packages and integrity</h3>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Desktop installers are built from the BeBoss repository by GitHub Actions. A SHA-256 manifest is attached to each published desktop release so the downloaded package can be checked before installation. Never install a package from an unofficial mirror.
+              Desktop installers are built and verified locally by BeBoss maintainers, then uploaded to private BeBoss release storage. Downloads are issued through short-lived secure links, and each published installer includes a SHA-256 checksum so you can verify the file before installation. Never install a package from an unofficial mirror.
             </p>
             <a href={release.releaseUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
-              Open signed release assets and SHA-256 manifest <ExternalLink className="size-4" />
+              Review published desktop installers and SHA-256 checksums <ExternalLink className="size-4" />
             </a>
           </div>
         </div>

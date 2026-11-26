@@ -110,18 +110,22 @@ A role name is not a security boundary by itself: server functions call the data
 
 ### Release management
 
-The Admin → App Releases workspace controls what customers can discover and download.
+The Admin → App Releases workspace has two separate interactive tabs: **Mobile releases** and **Desktop releases**. They maintain separate version histories and public download pointers.
 
-- Upload signed Android APKs with version, version code, minimum Android version, release notes and SHA-256 metadata.
-- Select the current public build.
-- Hide or show archived builds without deleting them.
-- Keep old packages and metadata in the admin archive for traceability.
-- Review download totals and channel activity.
-- Delete an archived package only as a separate destructive Super Admin action.
+**Mobile**
+- Upload signed Android APKs with version name, monotonically increasing version code, minimum Android version, release notes and SHA-256 metadata.
+- Select the current APK, manage public visibility of archived releases, and review download totals and channel activity.
+- Edit release metadata without replacing the immutable APK binary. Destructive archive deletion remains a Super Admin action.
 
-The release visibility flag controls public release listings and the public APK download endpoint. The current release cannot be hidden while it remains the current build. Existing release records are initially retained as public when the migration is applied; an administrator can then hide the versions that should no longer be advertised.
+**Desktop**
+- Build Windows, macOS and Linux installers locally on the matching operating systems. The Admin page does not dispatch GitHub Actions or fetch binaries from GitHub Releases.
+- Choose one platform, select the local `.exe`, `.dmg` or `.AppImage` artifact, calculate SHA-256 in the browser, upload it to the private Supabase release bucket and publish it.
+- Publish platforms independently. Making a new Windows build current does not change macOS, Linux or Android.
+- Review per-platform current versions, archive history, checksums and download counts; change the public current build, hide an archived version, or delete an old package (Super Admin only).
 
-Production Android distribution still requires the real upload keystore, signing passwords, package validation and a tested update path. A debug APK is for internal testing and must not replace an already installed production-signed build.
+Desktop installer binaries stay in private storage. The public download page receives only metadata for each current public platform build; the server issues a short-lived signed download link after rechecking the release state and increments the associated download counter. The storage service key and private object paths are never exposed to the browser.
+
+Production Android distribution still requires the real upload keystore, signing passwords, package validation and a tested update path. A debug APK is for internal testing and must not replace an already installed production-signed build. Windows customer installers must pass local Authenticode signing and verification; macOS signing/notarization and Linux compatibility must be tested on their corresponding platforms before broad distribution.
 
 ### In-app announcements
 
@@ -290,9 +294,15 @@ A debug build is intended for local validation. Use the protected production sig
 
 Apply migrations in order using the Supabase CLI or your project's migration workflow. Review the SQL and Row Level Security policy changes before applying them to production. Deploy Edge Functions from `web/supabase/functions/` using the configured Supabase project and keep all privileged environment variables in Supabase Function Secrets.
 
-The delegated admin roles and release-visibility controls require the migration:
+The delegated admin roles and Android release-visibility controls require the migration:
 
-`20261125190000_enterprise_admin_roles_public_release_visibility.sql`
+`20261125211854_enterprise_admin_roles_public_release_visibility.sql`
+
+The platform-specific locally uploaded desktop release workspace requires:
+
+`20261126103000_admin_local_desktop_releases.sql`
+
+Apply every pending migration in chronological order before enabling the new Admin upload experience. This migration creates the private desktop release metadata table, extends the private release bucket limit and installs the permission-checked current-release, visibility and download-counter functions.
 
 The public APK Edge Function must also be deployed from `web/supabase/functions/public-apk-download/` for the public download endpoint to enforce the visibility flag.
 
