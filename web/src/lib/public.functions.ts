@@ -231,30 +231,80 @@ export const lookupMyShop = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
     const key = await requireOwnerSession(ownerContext, data.username, data.phone);
-    if (normalizePhoneLast9(data.phone).length < 9) throw new Error("Enter the full phone number registered in the app.");
-    const sb = ownerContext.supabase;
-    const [shop, pays, codes, devices, news, snaps, branchRows, transferRows, staffRows] = await Promise.all([
-      sb.from("shop_accounts").select("shop_name, owner_name, owner_username, business_type, branch_count, worker_count, device_count, device_limit, monthly_fee_rwf, subscription_status, subscription_expires_at, remote_kill_switch, updated_at").eq("id", key).maybeSingle(),
-      sb.from("payment_requests").select("id, provider, amount_rwf, duration_months, payment_time_ms, payment_note, status, approval_mode, generated_unlock_code, rejection_reason, created_at, updated_at, gateway_provider, gateway_reference, gateway_transaction_id, gateway_amount_rwf, gateway_currency, gateway_verified_at").order("created_at", { ascending: false }).limit(20),
-      sb.from("unlock_codes").select("unlock_code, tier_code, plan_days, status, issued_at, redeemed_at").order("issued_at", { ascending: false }).limit(20),
-      sb.from("shop_devices").select("id, device_name, device_id, role, branch_name, branch_id, is_active, is_owner_primary, assigned_user_id, assigned_user_name, last_synced_at, monthly_fee_addon_rwf").eq("shop_sync_key", key).order("last_synced_at", { ascending: false }).limit(50),
-      sb.from("announcements").select("*").in("audience", ["ALL", "APP"]).order("starts_at", { ascending: false }).limit(5),
-      sb.from("branch_sync_snapshots").select("id, device_id, branch_name, records_summary, payload_token, updated_at, sync_generation, chunk_index, chunk_count").eq("shop_sync_key", key).order("updated_at", { ascending: false }).limit(20),
-      sb.from("shop_branches").select("id, name, code, address, phone, manager_user_id, manager_name, is_main_branch, is_active, color_hex, daily_sales_target_rwf, monthly_target_rwf, opening_cash_float, stock_value_rwf, product_count, operational_status, email, notes, updated_at, hlc_timestamp").eq("shop_sync_key", key).eq("is_active", true).order("is_main_branch", { ascending: false }).limit(200),
-      sb.from("shop_stock_transfers").select("id, transfer_number, product_name, from_branch_name, to_branch_name, quantity, unit, cost_value_rwf, transfer_date, status, transferred_by, received_by, received_at, updated_at").eq("shop_sync_key", key).order("updated_at", { ascending: false }).limit(500),
-      sb.from("shop_users").select("user_id, full_name, username, role, assigned_branch_id, assigned_branch_name, is_active").eq("shop_sync_key", key).eq("is_active", true).order("full_name", { ascending: true }).limit(500),
+    const ownerUsername = data.username.trim().toLowerCase();
+    const ownerPhone = ownerPhoneE164(data.phone);
+    const ownerPhoneLast9 = normalizePhoneLast9(ownerPhone);
+    if (ownerPhoneLast9.length !== 9) throw new Error("Enter the full phone number registered in the app.");
+
+    // My Shop has already verified the signed-in phone and active owner membership.
+    // Its normal user client does not carry an Android device credential header, so
+    // tenant RLS intentionally returns no shop rows. Use the service client only
+    // after that membership check, then scope every read to the exact tenant identity.
+    const { supabaseAdmin: sb } = await import("@/integrations/supabase/client.server");
+    const shopResult = await sb
+      .from("shop_accounts")
+      .select("id,shop_name,owner_name,owner_username,owner_phone,business_type,branch_count,worker_count,device_count,device_limit,monthly_fee_rwf,subscription_status,subscription_expires_at,remote_kill_switch,updated_at,lan_sync_secret")
+      .eq("id", key)
+      .maybeSingle();
+    if (shopResult.error || !shopResult.data ||
+        String(shopResult.data.owner_username ?? "").trim().toLowerCase() !== ownerUsername ||
+        normalizePhoneLast9(String(shopResult.data.owner_phone ?? "")) !== ownerPhoneLast9) {
+      throw new Error("The verified owner account does not match this registered shop.");
+    }
+    const registeredShop = shopResult.data;
+    const nowIso = new Date().toISOString();
+    const [
+      pays, codes, devices, globalNews, shopNews, snaps,
+      branchRows, transferRows, staffRows
+    ] = await Promise.all([
+      sb.from("payment_requests")
+        .select("id,provider,amount_rwf,duration_months,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,rejection_reason,created_at,updated_at,gateway_provider,gateway_reference,gateway_transaction_id,gateway_amount_rwf,gateway_currency,gateway_verified_at")
+        .eq("owner_username", String(registeredShop.owner_username))
+        .eq("owner_phone", String(registeredShop.owner_phone))
+        .order("created_at", { ascending: false }).limit(20),
+      sb.from("unlock_codes")
+        .select("unlock_code,tier_code,plan_days,status,issued_at,redeemed_at")
+        .eq("shop_username", String(registeredShop.owner_username))
+        .eq("shop_phone", String(registeredShop.owner_phone))
+        .order("issued_at", { ascending: false }).limit(20),
+      sb.from("shop_devices")
+        .select("id,device_name,device_id,role,branch_name,branch_id,is_active,is_owner_primary,assigned_user_id,assigned_user_name,last_synced_at,monthly_fee_addon_rwf")
+        .eq("shop_sync_key", key).order("last_synced_at", { ascending: false }).limit(50),
+      sb.from("announcements").select("*")
+        .eq("is_active", true).in("audience", ["ALL", "APP"])
+        .eq("target_shop_key", "")
+        .lte("starts_at", nowIso).or("ends_at.is.null,ends_at.gt." + nowIso)
+        .order("starts_at", { ascending: false }).limit(5),
+      sb.from("announcements").select("*")
+        .eq("is_active", true).in("audience", ["ALL", "APP"])
+        .eq("target_shop_key", key)
+        .lte("starts_at", nowIso).or("ends_at.is.null,ends_at.gt." + nowIso)
+        .order("starts_at", { ascending: false }).limit(5),
+      sb.from("branch_sync_snapshots")
+        .select("id,device_id,branch_name,records_summary,payload_token,updated_at,sync_generation,chunk_index,chunk_count")
+        .eq("shop_sync_key", key).order("updated_at", { ascending: false }).limit(20),
+      sb.from("shop_branches")
+        .select("id,name,code,address,phone,manager_user_id,manager_name,is_main_branch,is_active,color_hex,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,stock_value_rwf,product_count,operational_status,email,notes,updated_at,hlc_timestamp")
+        .eq("shop_sync_key", key).eq("is_active", true)
+        .order("is_main_branch", { ascending: false }).limit(200),
+      sb.from("shop_stock_transfers")
+        .select("id,transfer_number,product_name,from_branch_name,to_branch_name,quantity,unit,cost_value_rwf,transfer_date,status,transferred_by,received_by,received_at,updated_at")
+        .eq("shop_sync_key", key).order("updated_at", { ascending: false }).limit(500),
+      sb.from("shop_users")
+        .select("user_id,full_name,username,role,assigned_branch_id,assigned_branch_name,is_active")
+        .eq("shop_sync_key", key).eq("is_active", true)
+        .order("full_name", { ascending: true }).limit(500),
     ]);
+
+    for (const result of [pays, codes, devices, globalNews, shopNews, snaps, branchRows, transferRows, staffRows]) {
+      if (result.error) throw new Error("Could not load the verified shop workspace. Please retry.");
+    }
 
     let decodedRecords: ShopRecords | null = null;
     let snapshotUploadedAt = 0;
     const snapRows = snaps.data ?? [];
-    // The shop key is read server-side under the already verified owner tenant.
-    // Never include this field in the response returned to the browser.
-    const shareKeyResult = await sb.from("shop_accounts")
-      .select("lan_sync_secret")
-      .eq("id", key)
-      .maybeSingle();
-    const shopShareSecret = String(shareKeyResult.data?.lan_sync_secret ?? "").trim().toLowerCase();
+    // The per-shop HMAC key is fetched only server-side and is never returned.
+    const shopShareSecret = String(registeredShop.lan_sync_secret ?? "").trim().toLowerCase();
     const legacyShareSecret = process.env["BEBOSS_DATASHARE_HMAC_SECRET"];
     if (snapRows.length > 0) {
       try {
@@ -275,12 +325,17 @@ export const lookupMyShop = createServerFn({ method: "POST" })
       }
     }
 
+    const { owner_phone: _ownerPhone, lan_sync_secret: _shopSecret, ...publicShop } = registeredShop;
+    const announcements = [...(globalNews.data ?? []), ...(shopNews.data ?? [])]
+      .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime())
+      .slice(0, 5);
+
     return {
-      shop: shop.data ?? null,
+      shop: publicShop,
       payments: pays.data ?? [],
       codes: codes.data ?? [],
       devices: devices.data ?? [],
-      announcements: news.data ?? [],
+      announcements,
       snapshots: snapRows.map((s) => ({
         id: s.id,
         branch_name: s.branch_name,
@@ -305,7 +360,6 @@ export const lookupMyShop = createServerFn({ method: "POST" })
 
 
 
-// ---------------------------------------------------------------------------
 // Owner portal device registration. Uses the same cloud-authorized, single-use
 // invite registry as Android. Plaintext codes are returned once and never stored.
 // ---------------------------------------------------------------------------
