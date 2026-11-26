@@ -6,7 +6,7 @@
   text-rendering: optimizeLegibility;
 }
 * { box-sizing: border-box; }
-html, body, #root { width: 100%; min-width: 360px; min-height: 100%; margin: 0; }
+html, body, #root { width: 100%; min-width: 0; max-width: 100%; min-height: 100%; margin: 0; }
 body { background: #0a1120; color: #e8eef8; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -584,3 +584,237 @@ select option { background: var(--panel-bg); color: var(--text); }
 /* Public entry to the separately authenticated Master Admin workspace */
 .landing-admin-entry{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:0 10px;border:1px solid rgba(82,153,226,.3);border-radius:8px;background:rgba(50,126,205,.09);color:#89bdf2;font-size:9px;font-weight:850;white-space:nowrap}
 .landing-admin-entry:hover{border-color:rgba(90,167,241,.55);background:rgba(50,126,205,.16);color:#acd3ff}
+
+
+/* Enterprise admin and operations layouts must shrink before content wraps or clips.
+   Data tables remain scrollable so every column/action stays reachable on small screens. */
+.app-shell,
+.main-area,
+.page-content,
+.page-stack,
+.page-stack > *,
+.panel,
+.panel-heading,
+.page-heading,
+.heading-actions,
+.table-wrap,
+.admin-login-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+.app-shell { width: 100%; overflow-x: clip; }
+.main-area { width: 100%; min-width: 0; max-width: 100%; }
+.page-content { width: 100%; overflow-wrap: anywhere; }
+.page-stack > *,
+.panel > *,
+.panel-heading > *,
+.heading-actions > * { min-width: 0; }
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.table-wrap table { width: 100%; max-width: 100%; }
+.admin-workspace-tabs {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  gap: 6px;
+  padding: 2px 2px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.admin-workspace-tab { flex: 0 0 auto; white-space: nowrap; }
+.admin-list-heading,
+.panel-heading,
+.page-heading { flex-wrap: wrap; }
+.admin-list-heading > div,
+.page-heading > div,
+.panel-heading > div { min-width: 0; max-width: 100%; }
+.panel-heading .heading-actions,
+.admin-list-heading .heading-actions { max-width: 100%; flex-wrap: wrap; }
+
+@media(max-width:1250px) {
+  .app-shell { grid-template-columns: minmax(205px,226px) minmax(0,1fr); }
+  .main-area { min-width: 0; width: 100%; }
+}
+@media(max-width:980px) {
+  .page-content { min-width: 0; padding-inline: clamp(12px,2.5vw,20px); }
+  .admin-workspace-tabs { gap: 5px; }
+  .admin-workspace-tab { min-height: 36px; padding-inline: 10px; }
+}
+@media(max-width:760px) {
+  html, body, #root { min-width: 0; width: 100%; max-width: 100%; }
+  body { overflow-x: hidden; }
+  .app-shell { display: block; width: 100%; min-width: 0; overflow-x: clip; }
+  .main-area { display: flex; width: 100%; min-width: 0; max-width: 100%; }
+  .page-content { width: 100%; min-width: 0; max-width: 100%; padding-inline: 12px; }
+  .page-stack { width: 100%; min-width: 0; }
+  .page-heading, .panel-heading { align-items: stretch; }
+  .page-heading > *, .panel-heading > * { max-width: 100%; }
+  .heading-actions { justify-content: flex-start; width: 100%; }
+  .admin-workspace-tabs { margin-inline: -2px; width: calc(100% + 4px); }
+  .admin-workspace-tab { min-height: 40px; padding-inline: 11px; }
+  .table-wrap { width: 100%; max-width: 100%; }
+  .form-grid > *, .field-pair > *, .checkout-fields > * { min-width: 0; max-width: 100%; }
+}
+@media(max-width:460px) {
+  .page-content { padding-inline: 9px; }
+  .page-heading h1 { overflow-wrap: anywhere; }
+  .heading-actions > button,
+  .heading-actions > a { flex: 1 1 auto; }
+  .admin-workspace-tabs { gap: 4px; }
+  .admin-workspace-tab { padding-inline: 9px; font-size: 8px; }
+  .panel { max-width: 100%; }
+}
+
+
+/* Desktop Master Admin team management. */
+.admin-team-console { display: grid; gap: 16px; min-width: 0; }
+.admin-team-metrics {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 10px;
+}
+.admin-team-metrics > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+.admin-team-metrics strong { color: var(--text); font-size: 20px; font-weight: 900; }
+.admin-team-metrics span { color: var(--muted); font-size: 9px; }
+.admin-team-form {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(190px,260px) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--panel-soft);
+}
+.admin-team-form label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+}
+.admin-team-form input,
+.admin-team-form select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--input);
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--text);
+  font-size: 9px;
+}
+.admin-team-directory-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.admin-team-directory-toolbar > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.admin-team-directory-toolbar > div strong { color: var(--text); font-size: 11px; }
+.admin-team-directory-toolbar > div small { color: var(--muted); font-size: 8px; }
+.admin-team-directory-toolbar .global-search { width: min(100%,320px); }
+.admin-team-cards {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 11px;
+}
+.admin-team-member {
+  display: grid;
+  min-width: 0;
+  gap: 11px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--panel-soft);
+}
+.admin-team-member-head {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+}
+.admin-team-avatar {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 900;
+}
+.admin-team-member-identity { display: grid; min-width: 0; flex: 1; gap: 3px; }
+.admin-team-member-identity strong { overflow-wrap: anywhere; color: var(--text); font-size: 10px; }
+.admin-team-member-identity small { overflow-wrap: anywhere; color: var(--muted); font-size: 7px; }
+.admin-team-member-status { display: flex; max-width: 45%; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.admin-team-permissions { display: flex; min-width: 0; flex-wrap: wrap; gap: 5px; }
+.admin-team-permission {
+  max-width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--muted);
+  font-family: ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size: 7px;
+  overflow-wrap: anywhere;
+}
+.admin-team-member-foot {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+}
+.admin-team-member-foot small { color: var(--muted); font-size: 7px; line-height: 1.5; }
+@media(max-width:980px) {
+  .admin-team-cards { grid-template-columns: minmax(0,1fr); }
+  .admin-team-form { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .admin-team-form button { grid-column: 1/-1; }
+}
+@media(max-width:760px) {
+  .admin-team-form { grid-template-columns: minmax(0,1fr); }
+  .admin-team-form button { width: 100%; grid-column: auto; }
+  .admin-team-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
+  .admin-team-metrics > div { padding: 9px; }
+  .admin-team-metrics strong { font-size: 16px; }
+  .admin-team-directory-toolbar { align-items: stretch; flex-direction: column; }
+  .admin-team-directory-toolbar .global-search { width: 100%; max-width: 100%; }
+  .admin-team-member-status { max-width: 48%; }
+}
+@media(max-width:460px) {
+  .admin-team-metrics { grid-template-columns: minmax(0,1fr); }
+  .admin-team-member-head { flex-wrap: wrap; }
+  .admin-team-member-status { max-width: 100%; justify-content: flex-start; width: 100%; padding-left: 46px; }
+}

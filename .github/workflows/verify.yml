@@ -56,6 +56,7 @@ jobs:
           deno check --no-lock supabase/functions/android-device-auth/index.ts
           deno check --no-lock supabase/functions/send-auth-sms/index.ts
           deno check --no-lock supabase/functions/public-apk-download/index.ts
+          deno check --no-lock supabase/functions/admin-team/index.ts
 
       - name: Test payment gateway primitives
         run: deno test --allow-env supabase/functions/_shared/payment-gateway.test.ts

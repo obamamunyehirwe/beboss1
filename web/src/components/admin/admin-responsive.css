@@ -146,3 +146,163 @@
     transition-duration: .01ms !important;
   }
 }
+
+
+/* Shared responsive safeguards for every admin route. */
+.admin-workspace,
+.admin-workspace * {
+  box-sizing: border-box;
+}
+.admin-workspace,
+.admin-main-column,
+.admin-main-content,
+.admin-main-content > *,
+.admin-main-content section,
+.admin-main-content article,
+.admin-main-content form,
+.admin-main-content [class*="grid"],
+.admin-main-content [class*="flex"] {
+  min-width: 0;
+  max-width: 100%;
+}
+.admin-main-column {
+  flex: 1 1 0%;
+}
+.admin-main-content {
+  overflow-wrap: anywhere;
+  container-type: inline-size;
+}
+.admin-main-content :where(h1,h2,h3,h4,p,span,code,strong,small) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.admin-main-content :where(input,select,textarea) {
+  min-width: 0;
+  max-width: 100%;
+}
+.admin-main-content :where(button,a) { max-width: 100%; }
+.admin-main-content :where(table) { max-width: 100%; }
+.admin-main-content :where(td,th) { overflow-wrap: anywhere; }
+
+.admin-team-grant-form {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(190px,240px) auto;
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+}
+.admin-team-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.admin-team-metric {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--card);
+}
+.admin-team-metric-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--secondary);
+  color: var(--primary);
+}
+.admin-team-metric > div { display: grid; min-width: 0; gap: 2px; }
+.admin-team-metric strong { font-size: 20px; font-weight: 800; line-height: 1.1; }
+.admin-team-metric span:last-child { color: var(--muted-foreground); font-size: 12px; }
+.admin-team-filters {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(160px,220px) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.admin-team-search {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding-left: 11px;
+  border: 1px solid var(--input);
+  border-radius: 10px;
+}
+.admin-team-search input { border: 0 !important; box-shadow: none !important; }
+.admin-team-role-filter { width: 100%; min-width: 0; }
+.admin-team-result-count { color: var(--muted-foreground); font-size: 12px; white-space: nowrap; }
+.admin-team-member-grid {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.admin-team-member-card {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--card);
+}
+.admin-team-member-main { display: flex; min-width: 0; align-items: flex-start; gap: 11px; }
+.admin-team-avatar {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--secondary);
+  color: var(--primary);
+  font-weight: 800;
+}
+.admin-team-member-meta,
+.admin-team-permissions { display: flex; min-width: 0; flex-wrap: wrap; gap: 6px; }
+
+@media (max-width: 1100px) {
+  .admin-team-member-grid { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 900px) {
+  .admin-team-grant-form { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .admin-team-grant-button { grid-column: 1/-1; width: 100%; }
+}
+@media (max-width: 640px) {
+  .admin-main-content { width: 100%; padding-inline: 10px !important; }
+  .admin-topbar {
+    display: flex;
+    flex-wrap: wrap;
+    width: calc(100% - 12px);
+    max-width: calc(100% - 12px);
+    min-height: 54px;
+    height: auto;
+  }
+  .admin-topbar > div:last-child { display: flex; min-width: 0; flex-wrap: wrap; }
+  .admin-topbar > div:last-child > * { flex: 0 0 auto; }
+  .admin-heading > div,
+  .admin-heading > div:last-child { width: 100%; min-width: 0; }
+  .admin-team-grant-form,
+  .admin-team-filters { grid-template-columns: minmax(0,1fr); }
+  .admin-team-grant-button,
+  .admin-team-role-filter { width: 100%; }
+  .admin-team-result-count { justify-self: start; }
+  .admin-team-member-card { padding: 12px; }
+  .admin-team-member-main { align-items: flex-start; }
+  .admin-workspace main .overflow-x-auto,
+  .admin-workspace main [data-overflow-container] {
+    width: 100%;
+    max-width: 100%;
+    margin-inline: 0;
+  }
+}

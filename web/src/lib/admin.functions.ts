@@ -23,16 +23,7 @@ async function requirePermission(context: Ctx, permission: string) {
   return { email, label: `BeBoss Admin (${email})` };
 }
 
-const TEAM_ROLE_PERMISSIONS: Record<string, string[]> = {
-  RELEASE_MANAGER: ["releases.manage"],
-  ANNOUNCEMENT_MANAGER: ["announcements.manage"],
-  DEVICE_AUDITOR: ["devices.audit", "sync.view", "shops.view"],
-  SUPPORT: ["inbox.manage", "shops.view"],
-  FINANCE_REVIEWER: ["payments.review", "billing.view", "shops.view"],
-  ANALYST: ["analytics.view", "shops.view", "sync.view"],
-  OPERATIONS_MANAGER: ["shops.view", "devices.audit", "sync.view"],
-  STAFF_MANAGER: ["users.manage", "shops.view"],
-};
+
 
 async function audit(context: Ctx, email: string, action: string, target: string, details: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -1268,35 +1259,16 @@ export const deleteContactMessage = createServerFn({ method: "POST" })
   });
 
 // ---------------- Team ----------------
+// Auth Admin directory operations run inside Supabase, not inside Vercel's
+// TanStack runtime. The Edge Function independently verifies the caller.
 export const listTeam = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const ctx = context as unknown as Ctx;
     await requireAdmin(ctx);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const [{ data: roles, error }, { data: grants, error: grantError }, { data: profiles, error: profileError }] = await Promise.all([
-      supabaseAdmin.from("user_roles").select("user_id, role, created_at"),
-      (supabaseAdmin as any).from("admin_role_grants").select("user_id, role_key, permissions, is_active, expires_at, granted_at"),
-      supabaseAdmin.from("admin_profiles").select("user_id, role, is_active"),
-    ]);
-    if (error || grantError || profileError) throw new Error(error?.message ?? grantError?.message ?? profileError?.message ?? "Could not load the admin team.");
-    const members = await Promise.all((roles ?? []).map(async (r) => {
-      const grant = (grants ?? []).find((g) => g.user_id === r.user_id);
-      const profile = (profiles ?? []).find((p) => p.user_id === r.user_id);
-      const { data: u } = await supabaseAdmin.auth.admin.getUserById(r.user_id);
-      return {
-        userId: r.user_id,
-        role: r.role,
-        roleKey: String(grant?.role_key ?? profile?.role ?? (r.role === "admin" ? "SUPER_ADMIN" : "SUPPORT")),
-        permissions: Array.isArray(grant?.permissions) ? grant.permissions : [],
-        active: profile?.is_active !== false && grant?.is_active !== false,
-        expiresAt: grant?.expires_at ?? null,
-        since: grant?.granted_at ?? r.created_at,
-        email: u?.user?.email ?? "unknown",
-        lastSignIn: u?.user?.last_sign_in_at ?? null,
-      };
-    }));
-    return { members, me: ctx.userId };
+    return invokeSupabaseEdgeFunction<{ members: Array<Record<string, unknown>>; me: string }>(
+      ctx, "admin-team", { action: "list" },
+    );
   });
 
 export const grantTeamRole = createServerFn({ method: "POST" })
@@ -1307,62 +1279,11 @@ export const grantTeamRole = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    const admin = await requireAdmin(ctx);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const target = data.email.trim().toLowerCase();
-    let found: { id: string; email?: string } | undefined;
-
-    for (let page = 1; page <= 20 && !found; page++) {
-      const { data: list, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
-      if (error) throw new Error(error.message);
-      found = list.users.find((user) => (user.email ?? "").toLowerCase() === target);
-      if (list.users.length < 200) break;
-    }
-
-    let invited = false;
-    if (!found) {
-      const redirectTo = process.env["BEBOSS_ADMIN_URL"]?.trim();
-      if (!redirectTo) throw new Error("Team invitations are not configured. Set BEBOSS_ADMIN_URL to the production /reset-password?invite=1 URL first.");
-      const { data: invitation, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(target, { redirectTo });
-      if (error) throw new Error(`Could not invite this team member: ${error.message}`);
-      if (!invitation.user?.id) throw new Error("Supabase did not return the invited account.");
-      found = { id: invitation.user.id, email: invitation.user.email ?? target };
-      invited = true;
-    }
-
-    if (data.role === "SUPER_ADMIN") {
-      const { error: roleError } = await supabaseAdmin.from("user_roles").upsert({ user_id: found.id, role: "admin" }, { onConflict: "user_id,role" });
-      if (roleError) throw new Error(`Could not grant master admin access: ${roleError.message}`);
-      const { error: supportDeleteError } = await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "support");
-      if (supportDeleteError) throw new Error(supportDeleteError.message);
-      const { error: grantDeleteError } = await (supabaseAdmin as any).from("admin_role_grants").delete().eq("user_id", found.id);
-      if (grantDeleteError) throw new Error(grantDeleteError.message);
-      const { error: profileError } = await supabaseAdmin.from("admin_profiles").upsert({ user_id: found.id, email: target, full_name: target, role: "SUPER_ADMIN", is_active: true }, { onConflict: "user_id" });
-      if (profileError) throw new Error(profileError.message);
-      await audit(ctx, admin.email, invited ? "INVITE_SUPER_ADMIN" : "GRANT_SUPER_ADMIN", target, "Full Master Admin access granted.");
-      return { ok: true, invited, email: target, role: data.role, permissions: ["*"] };
-    }
-
-    const permissions = TEAM_ROLE_PERMISSIONS[data.role];
-    if (!permissions?.length) throw new Error("The requested team role has no configured permissions.");
-    const { count: masterCount } = await supabaseAdmin.from("user_roles").select("*", { count: "exact", head: true }).eq("role", "admin");
-    const { data: currentMaster } = await supabaseAdmin.from("user_roles").select("user_id").eq("user_id", found.id).eq("role", "admin").maybeSingle();
-    if (currentMaster && (masterCount ?? 0) <= 1) throw new Error("You cannot downgrade the last Master Admin. Promote another Master Admin first.");
-    const { error: roleError } = await supabaseAdmin.from("user_roles").upsert({ user_id: found.id, role: "support" }, { onConflict: "user_id,role" });
-    if (roleError) throw new Error(`Could not authorize the invited account: ${roleError.message}`);
-    const { error: demoteError } = await supabaseAdmin.from("user_roles").delete().eq("user_id", found.id).eq("role", "admin");
-    if (demoteError) throw new Error(demoteError.message);
-    const { error: profileError } = await supabaseAdmin.from("admin_profiles").upsert({
-      user_id: found.id, email: target, full_name: target, role: data.role, is_active: true,
-    }, { onConflict: "user_id" });
-    if (profileError) throw new Error(`Could not create the admin profile: ${profileError.message}`);
-    const { error: grantError } = await supabaseAdmin.from("admin_role_grants").upsert({
-      user_id: found.id, role_key: data.role, permissions, is_active: true,
-      granted_by: ctx.userId, granted_at: Date.now(), expires_at: null,
-    }, { onConflict: "user_id" });
-    if (grantError) throw new Error(`Could not store the assigned permissions: ${grantError.message}`);
-    await audit(ctx, admin.email, invited ? "INVITE_TEAM_MEMBER" : "ASSIGN_ADMIN_ROLE", target, `${data.role}: ${permissions.join(", ")}`);
-    return { ok: true, invited, email: target, role: data.role, permissions };
+    await requireAdmin(ctx);
+    return invokeSupabaseEdgeFunction<{
+      ok: boolean; invited: boolean; email: string; role: string;
+      permissions: string[]; auditWarning?: string;
+    }>(ctx, "admin-team", { action: "grant", email: data.email, role: data.role });
   });
 
 export const revokeTeamRole = createServerFn({ method: "POST" })
@@ -1370,20 +1291,10 @@ export const revokeTeamRole = createServerFn({ method: "POST" })
   .inputValidator((d: { userId: string }) => z.object({ userId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
-    const admin = await requireAdmin(ctx);
-    if (data.userId === ctx.userId) throw new Error("You cannot revoke your own admin access from this session.");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { count } = await supabaseAdmin.from("user_roles").select("*", { count: "exact", head: true }).eq("role", "admin");
-    const { data: targetRoles } = await supabaseAdmin.from("user_roles").select("role").eq("user_id", data.userId);
-    if (targetRoles?.some((r) => r.role === "admin") && (count ?? 0) <= 1) throw new Error("You can't remove the last master admin.");
-    const { error } = await supabaseAdmin.from("user_roles").delete().eq("user_id", data.userId);
-    if (error) throw new Error(error.message);
-    const { error: grantsError } = await (supabaseAdmin as any).from("admin_role_grants").delete().eq("user_id", data.userId);
-    if (grantsError) throw new Error(grantsError.message);
-    const { error: profileError } = await supabaseAdmin.from("admin_profiles").update({ is_active: false }).eq("user_id", data.userId);
-    if (profileError) throw new Error(profileError.message);
-    await audit(ctx, admin.email, "REVOKE_TEAM_ACCESS", data.userId, "Removed all BeBoss admin-team roles and permissions.");
-    return { ok: true };
+    await requireAdmin(ctx);
+    return invokeSupabaseEdgeFunction<{ ok: boolean; auditWarning?: string }>(
+      ctx, "admin-team", { action: "revoke", userId: data.userId },
+    );
   });
 
 /**

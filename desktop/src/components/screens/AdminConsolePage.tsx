@@ -2,7 +2,7 @@ import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import {
   Activity, ArrowLeft, Check, Download, KeyRound, LogOut, RefreshCw,
-  Search, Settings, ShieldAlert, ShieldCheck, Smartphone, Store, Trash2, Users, Wallet, X
+  Search, Settings, ShieldAlert, ShieldCheck, Smartphone, Store, Trash2, UserPlus, UserX, Users, UsersRound, Wallet, X
 } from "lucide-react";
 import { masterAdminAuthClient } from "../../lib/cloud";
 import { dateTime, downloadCsv, errorText, id, money, n, s } from "../../lib/format";
@@ -13,7 +13,11 @@ type AdminData = {
   shops: Row[]; payments: Row[]; devices: Row[]; users: Row[]; codes: Row[];
   snapshots: Row[]; audit: Row[]; telemetry: Row[]; config: Row | null;
 };
-type AdminTab = "overview" | "payments" | "shops" | "devices" | "users" | "codes" | "branches" | "audit" | "telemetry" | "settings";
+type AdminTab = "overview" | "payments" | "shops" | "devices" | "users" | "codes" | "branches" | "audit" | "telemetry" | "team" | "settings";
+type AdminTeamMember = {
+  userId: string; email: string; roleKey: string; permissions: string[];
+  active: boolean; expiresAt: number | string | null; since: string | number; lastSignIn: string | null;
+};
 type PaymentDecision = { request: Row; mode: "APPROVE" | "REJECT" };
 type ShopDraft = {
   id: string; name: string; branches: number; workers: number; devices: number;
@@ -39,6 +43,7 @@ const TABS: { id: AdminTab; label: string; icon: typeof Activity }[] = [
   { id: "branches", label: "Branch snapshots", icon: Download },
   { id: "audit", label: "Audit trail", icon: ShieldCheck },
   { id: "telemetry", label: "Security telemetry", icon: ShieldAlert },
+  { id: "team", label: "Admin team", icon: UsersRound },
   { id: "settings", label: "App configuration", icon: Settings }
 ];
 
@@ -122,6 +127,43 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
   const [decisionNote, setDecisionNote] = useState("");
   const [shopDraft, setShopDraft] = useState<ShopDraft | null>(null);
   const [configDraft, setConfigDraft] = useState<ConfigDraft>(EMPTY_CONFIG);
+  const [teamMembers, setTeamMembers] = useState<AdminTeamMember[]>([]);
+  const [teamMe, setTeamMe] = useState("");
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamBusy, setTeamBusy] = useState(false);
+  const [teamEmail, setTeamEmail] = useState("");
+  const [teamRole, setTeamRole] = useState("SUPPORT");
+  const [teamQuery, setTeamQuery] = useState("");
+  const [teamError, setTeamError] = useState("");
+  const [teamNotice, setTeamNotice] = useState("");
+
+  const invokeAdminTeam = useCallback(async (body: Record<string, unknown>) => {
+    const { data: result, error: invokeError } = await masterAdminAuthClient.functions.invoke("admin-team", { body });
+    if (invokeError) {
+      const context = (invokeError as { context?: Response }).context;
+      const message = context
+        ? await context.clone().json().then((payload) => s(payload?.message)).catch(() => "")
+        : "";
+      throw new Error(message || invokeError.message || "The secure admin-team service failed.");
+    }
+    if (!result || typeof result !== "object") throw new Error("Supabase returned an invalid administrator-team response.");
+    return result as Record<string, unknown>;
+  }, []);
+
+  const refreshTeam = useCallback(async () => {
+    setTeamLoading(true);
+    setTeamError("");
+    try {
+      const result = await invokeAdminTeam({ action: "list" });
+      if (!Array.isArray(result.members)) throw new Error("The administrator-team response did not contain a member list.");
+      setTeamMembers(result.members as AdminTeamMember[]);
+      setTeamMe(s(result.me));
+    } catch (e) {
+      setTeamError(errorText(e));
+    } finally {
+      setTeamLoading(false);
+    }
+  }, [invokeAdminTeam]);
 
   const refreshData = useCallback(async () => {
     setLoadingData(true);
@@ -200,6 +242,7 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
     const { data: listener } = masterAdminAuthClient.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") {
         setVerified(false); setAdminEmail(""); setAdminName(""); setData(null);
+        setTeamMembers([]); setTeamMe(""); setTeamError(""); setTeamNotice("");
       }
     });
     return () => { mounted = false; listener.subscription.unsubscribe(); };
@@ -210,6 +253,43 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
     const timer = window.setInterval(() => { void refreshData(); }, 30000);
     return () => window.clearInterval(timer);
   }, [verified, refreshData]);
+
+  useEffect(() => {
+    if (verified && tab === "team") void refreshTeam();
+  }, [verified, tab, refreshTeam]);
+
+  async function grantDesktopTeamRole(event: React.FormEvent) {
+    event.preventDefault();
+    if (teamBusy || !teamEmail.trim()) return;
+    setTeamBusy(true); setTeamError(""); setTeamNotice("");
+    try {
+      const result = await invokeAdminTeam({ action: "grant", email: teamEmail.trim(), role: teamRole });
+      setTeamEmail("");
+      setTeamNotice((result.invited ? "Invitation sent to " : "Access granted to ") + s(result.email) +
+        (result.auditWarning ? " · " + s(result.auditWarning) : ""));
+      await refreshTeam();
+    } catch (e) {
+      setTeamError(errorText(e));
+    } finally {
+      setTeamBusy(false);
+    }
+  }
+
+  async function revokeDesktopTeamMember(member: AdminTeamMember) {
+    if (teamBusy || member.userId === teamMe) return;
+    if (!window.confirm("Remove all BeBoss platform-admin roles and delegated permissions from " + member.email + "? Their shop account will remain.")) return;
+    setTeamBusy(true); setTeamError(""); setTeamNotice("");
+    try {
+      const result = await invokeAdminTeam({ action: "revoke", userId: member.userId });
+      setTeamNotice("Administrator access removed from " + member.email +
+        (result.auditWarning ? " · " + s(result.auditWarning) : ""));
+      await refreshTeam();
+    } catch (e) {
+      setTeamError(errorText(e));
+    } finally {
+      setTeamBusy(false);
+    }
+  }
 
   async function signIn(event: React.FormEvent) {
     event.preventDefault();
@@ -606,6 +686,107 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
     {notice && <div className="global-alert success"><Check size={16} /><span>{notice}</span><button onClick={() => setNotice("")}><X size={15} /></button></div>}
     {loadingData && !data && <div className="panel"><Empty title="Loading live administrator records" description="Connecting to Supabase with the verified Master Admin session." /></div>}
 
+    {tab === "team" && <section className="panel admin-team-console">
+      <div className="panel-heading">
+        <div>
+          <span className="eyebrow muted">PLATFORM ACCESS CONTROL</span>
+          <h3>Administrator team</h3>
+          <p>Invite Master Admins or assign scoped roles. Supabase verifies every operation and records the audit event.</p>
+        </div>
+        <div className="heading-actions">
+          <button className="btn-outline" onClick={() => void refreshTeam()} disabled={teamLoading || teamBusy}>
+            <RefreshCw size={14} className={teamLoading ? "spin" : ""} /> Refresh team
+          </button>
+          <button className="btn-outline" disabled={!teamMembers.length} onClick={() => downloadCsv(
+            "beboss-admin-team-" + Date.now() + ".csv",
+            ["userId", "email", "roleKey", "active", "permissions", "since", "lastSignIn"],
+            teamMembers.map((member) => ({
+              userId: member.userId,
+              email: member.email,
+              roleKey: member.roleKey,
+              active: member.active,
+              permissions: (member.permissions ?? []).join(" | "),
+              since: member.since,
+              lastSignIn: member.lastSignIn ?? "",
+            })) as unknown as Row[],
+          )}>
+            <Download size={14} /> Export team
+          </button>
+        </div>
+      </div>
+
+      {teamError && <div className="global-alert error" role="alert"><ShieldAlert size={15}/><span>{teamError}</span><button onClick={() => setTeamError("")}><X size={14}/></button></div>}
+      {teamNotice && <div className="global-alert success" role="status"><Check size={15}/><span>{teamNotice}</span><button onClick={() => setTeamNotice("")}><X size={14}/></button></div>}
+
+      <div className="admin-team-metrics">
+        <div><strong>{teamError && !teamMembers.length ? "—" : teamLoading && !teamMembers.length ? "…" : teamMembers.length}</strong><span>Team members</span></div>
+        <div><strong>{teamError && !teamMembers.length ? "—" : teamMembers.filter((member) => member.active).length}</strong><span>Active access</span></div>
+        <div><strong>{teamError && !teamMembers.length ? "—" : teamMembers.filter((member) => !member.active).length}</strong><span>Suspended access</span></div>
+      </div>
+
+      <form className="admin-team-form" onSubmit={(event) => void grantDesktopTeamRole(event)}>
+        <label>Administrator email
+          <input type="email" required maxLength={200} autoComplete="email" value={teamEmail} onChange={(event) => setTeamEmail(event.target.value)} placeholder="teammate@example.com" />
+        </label>
+        <label>Platform role
+          <select value={teamRole} onChange={(event) => setTeamRole(event.target.value)}>
+            <option value="SUPPORT">Support</option>
+            <option value="RELEASE_MANAGER">Release manager</option>
+            <option value="ANNOUNCEMENT_MANAGER">Announcement manager</option>
+            <option value="DEVICE_AUDITOR">Device and sync auditor</option>
+            <option value="FINANCE_REVIEWER">Finance reviewer</option>
+            <option value="ANALYST">Business analyst</option>
+            <option value="OPERATIONS_MANAGER">Operations manager</option>
+            <option value="STAFF_MANAGER">Staff manager</option>
+            <option value="SUPER_ADMIN">Master Admin · full access</option>
+          </select>
+        </label>
+        <button className="btn-primary" type="submit" disabled={teamBusy || !teamEmail.trim()}>
+          {teamBusy ? "Saving…" : <><UserPlus size={14}/> Invite / assign role</>}
+        </button>
+      </form>
+
+      <div className="admin-team-directory-toolbar">
+        <div><strong>Live team directory</strong><small>{teamMembers.length} platform accounts · signed-in master admin cannot revoke their own access</small></div>
+        <label className="global-search"><Search size={14}/><input value={teamQuery} onChange={(event) => setTeamQuery(event.target.value)} placeholder="Filter email, role or permission…"/></label>
+      </div>
+
+      {teamLoading && !teamMembers.length ? <Empty title="Loading administrator team" description="Verifying the current Master Admin session and loading Auth users, grants and profiles from Supabase."/> :
+       teamError && !teamMembers.length ? <div className="global-alert error" role="alert"><ShieldAlert size={15}/><span>Administrator team could not be loaded: {teamError}</span><button className="btn-outline" onClick={() => void refreshTeam()} disabled={teamLoading}><RefreshCw size={14}/> Retry</button></div> :
+       teamMembers.filter((member) => {
+         const term = teamQuery.trim().toLowerCase();
+         return !term || [member.email, member.userId, member.roleKey, ...(member.permissions ?? [])].some((value) => String(value ?? "").toLowerCase().includes(term));
+       }).length === 0 ? <Empty title={teamMembers.length ? "No matching team members" : "No administrator accounts"} description={teamMembers.length ? "Change the search to see other team members." : "No Supabase Auth users currently have a BeBoss platform role."}/> :
+       <div className="admin-team-cards">
+        {teamMembers.filter((member) => {
+          const term = teamQuery.trim().toLowerCase();
+          return !term || [member.email, member.userId, member.roleKey, ...(member.permissions ?? [])].some((value) => String(value ?? "").toLowerCase().includes(term));
+        }).map((member) => <article className="admin-team-member" key={member.userId}>
+          <div className="admin-team-member-head">
+            <div className="admin-team-avatar">{(member.email || "?").slice(0, 1).toUpperCase()}</div>
+            <div className="admin-team-member-identity">
+              <strong>{member.email || "Unknown email"}</strong>
+              <small className="mono">{member.userId}</small>
+            </div>
+            <div className="admin-team-member-status">
+              <StatusPill value={member.active ? "ACTIVE" : "SUSPENDED"}/>
+              <StatusPill value={member.roleKey}/>
+            </div>
+          </div>
+          <div className="admin-team-permissions">
+            {member.roleKey === "SUPER_ADMIN" ? <span className="admin-team-permission">Full platform access</span> :
+              (member.permissions ?? []).map((permission) => <span className="admin-team-permission" key={permission}>{permission}</span>)}
+          </div>
+          <div className="admin-team-member-foot">
+            <small>Assigned {member.since ? dateTime(member.since) : "—"} · Last sign-in {member.lastSignIn ? dateTime(member.lastSignIn) : "never"}</small>
+            <button className="btn-outline danger-icon" disabled={teamBusy || member.userId === teamMe} onClick={() => void revokeDesktopTeamMember(member)} title={member.userId === teamMe ? "You cannot revoke your own access" : "Remove all administrator roles"}>
+              <UserX size={14}/> Revoke access
+            </button>
+          </div>
+        </article>)}
+       </div>}
+    </section>}
+
     {tab === "overview" && data && <>
       <div className="stat-grid four">
         <StatCard label="Registered shops" value={data.shops.length.toLocaleString()} icon={Store} />
@@ -623,7 +804,7 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
       <p className="panel-hint">All lists below come from Supabase; they are not demonstration records. Dashboard refresh runs every 30 seconds while this console is open. Actions are checked by Supabase row-level security and written to the administrator audit log.</p>
     </>}
 
-    {tab !== "overview" && tab !== "settings" && <div className="panel-heading admin-list-heading"><div><span className="eyebrow muted">LIVE SUPABASE RECORDS</span><h3>{TABS.find((item) => item.id === tab)?.label}</h3></div><div className="heading-actions"><label className="global-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter records…" /></label><button className="btn-outline" onClick={() => downloadCsv("beboss-admin-" + tab + "-" + Date.now() + ".csv", exportColumns, exportRows)} disabled={!data || exportRows.length === 0}> <Download size={15} /> Export CSV</button></div></div>}
+    {tab !== "overview" && tab !== "settings" && tab !== "team" && <div className="panel-heading admin-list-heading"><div><span className="eyebrow muted">LIVE SUPABASE RECORDS</span><h3>{TABS.find((item) => item.id === tab)?.label}</h3></div><div className="heading-actions"><label className="global-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter records…" /></label><button className="btn-outline" onClick={() => downloadCsv("beboss-admin-" + tab + "-" + Date.now() + ".csv", exportColumns, exportRows)} disabled={!data || exportRows.length === 0}> <Download size={15} /> Export CSV</button></div></div>}
 
     {tab === "payments" && data && <section className="panel">
       {filteredPayments.length ? <div className="table-wrap"><table><thead><tr><th>Shop / owner</th><th>Provider & payer</th><th>Plan</th><th>Amount</th><th>Gateway evidence</th><th>Submitted</th><th>State</th><th>Actions</th></tr></thead><tbody>{filteredPayments.map((payment) => <tr key={s(payment.id)}>
