@@ -800,7 +800,7 @@ export const requestMyShopStockTransferCancellation = createServerFn({ method: "
 
 
 const gatewayCheckoutSchema = z.object({
-  gateway: z.enum(["flutterwave", "stripe"]),
+  gateway: z.enum(["flutterwave", "stripe", "mtn_momo"]),
   shopName: z.string().trim().min(2).max(120),
   username: z.string().trim().min(2).max(80),
   phone: z.string().trim().min(9).max(30),
@@ -825,7 +825,7 @@ export const createGatewayCheckout = createServerFn({ method: "POST" })
       throw new Error("The BeBoss online payment service is not configured.");
     }
 
-    const response = await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/create-payment-checkout`, {
+    const response = await fetch(`${supabaseUrl.replace(/\\/+$/, "")}/functions/v1/create-payment-checkout`, {
       method: "POST",
       headers: {
         apikey: publishableKey,
@@ -835,20 +835,72 @@ export const createGatewayCheckout = createServerFn({ method: "POST" })
       body: JSON.stringify(data),
     });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok || body?.ok !== true || typeof body?.checkoutUrl !== "string") {
+    if (!response.ok || body?.ok !== true) {
       throw new Error(String(body?.message ?? "The payment provider could not start checkout."));
     }
+    if (body.pending === true) {
+      return {
+        pending: true as const,
+        paymentRequestId: String(body.paymentRequestId),
+        provider: String(body.provider),
+        reference: String(body.reference),
+        amountRwf: Number(body.amountRwf),
+        currency: "RWF" as const,
+        status: String(body.status ?? "PENDING"),
+        message: String(body.message ?? "Payment request is pending approval on the mobile wallet."),
+      };
+    }
+    if (typeof body.checkoutUrl !== "string") throw new Error("The payment provider returned no checkout destination.");
     const checkoutUrl = new URL(body.checkoutUrl);
     if (checkoutUrl.protocol !== "https:" || !["checkout.flutterwave.com", "checkout.stripe.com"].includes(checkoutUrl.hostname)) {
       throw new Error("The payment provider returned an unsafe checkout destination.");
     }
     return {
+      pending: false as const,
       paymentRequestId: String(body.paymentRequestId),
       provider: String(body.provider),
       reference: String(body.reference),
       amountRwf: Number(body.amountRwf),
       currency: "RWF" as const,
       checkoutUrl: checkoutUrl.toString(),
+    };
+  });
+
+
+const gatewayPaymentStatusSchema = z.object({
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+  paymentRequestId: z.string().trim().min(3).max(200),
+});
+
+export const checkGatewayPaymentStatus = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: z.infer<typeof gatewayPaymentStatusSchema>) => gatewayPaymentStatusSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const ownerContext = context as unknown as OwnerAuthContext;
+    await requireOwnerSession(ownerContext, data.username, data.phone);
+    const supabaseUrl = process.env["SUPABASE_URL"] || import.meta.env["VITE_SUPABASE_URL"];
+    const publishableKey = process.env["SUPABASE_PUBLISHABLE_KEY"] || import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"];
+    if (!supabaseUrl || !publishableKey) throw new Error("The BeBoss online payment service is not configured.");
+
+    const response = await fetch(`${supabaseUrl.replace(/\\/+$/, "")}/functions/v1/create-payment-checkout`, {
+      method: "POST",
+      headers: {
+        apikey: publishableKey,
+        Authorization: `Bearer ${ownerContext.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "status", ...data }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || body?.ok !== true) {
+      throw new Error(String(body?.message ?? "The MTN MoMo status could not be retrieved."));
+    }
+    return {
+      pending: body.pending === true,
+      verified: body.verified === true,
+      status: String(body.status ?? "UNKNOWN"),
+      message: String(body.message ?? "Payment status retrieved."),
     };
   });
 

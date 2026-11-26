@@ -98,6 +98,9 @@ jobs:
       - name: Verify owner portal tenant scoping and cutover compatibility
         run: node ../.github/scripts/check-owner-portal-tenant-scope.mjs
 
+      - name: Verify Android and desktop shop-scoped DataShare protocol alignment
+        run: node ../.github/scripts/check-datashare-protocol.mjs
+
       - name: Verify Supabase migration versions are unique
         run: npm run check:migrations
 
