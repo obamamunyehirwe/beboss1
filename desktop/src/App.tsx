@@ -757,9 +757,18 @@ function NativeDesktopApp() {
       throw new Error("The phone returned an incomplete shop snapshot. No local or cloud records were changed.");
     }
 
-    // The LAN pull is signed by the shop-only pairing key. Merge phone records
-    // with any desktop data and tombstones; never replace an existing snapshot.
-    const base = ensureSnapshot(cloud.snapshot) ?? createEmptySnapshot();
+    // The LAN pull is signed by the shop-only pairing key. Merge the phone
+    // snapshot with the latest local baseline AND any queued full-snapshot work.
+    // Every outbox item is tenant-scoped; pending local changes must survive an
+    // import even when this desktop has not yet received its first cloud snapshot.
+    const pendingBeforeImport = await window.beBossDesktop.local.pending(shopSyncKey);
+    const cloudBase = ensureSnapshot(cloud.snapshot);
+    const queuedBase = pendingBeforeImport.length
+      ? ensureSnapshot(pendingBeforeImport[pendingBeforeImport.length - 1].payload as Snapshot)
+      : null;
+    const base = cloudBase && queuedBase
+      ? mergeSnapshots(cloudBase, queuedBase).snapshot as Snapshot
+      : cloudBase ?? queuedBase ?? createEmptySnapshot();
     const merged = mergeSnapshots(base, remoteSnapshot).snapshot as Snapshot;
     merged.metadata = {
       ...merged.metadata,
@@ -792,6 +801,11 @@ function NativeDesktopApp() {
     const updated = { ...cloud, snapshot: ensureSnapshot(saved.snapshot), snapshotUpdatedAt: saved.uploadedAt };
     setCloud(updated);
     setOffline(false);
+    if (pendingBeforeImport.length) {
+      await window.beBossDesktop.local.acknowledge(
+        shopSyncKey, pendingBeforeImport.map((item) => item.id)
+      );
+    }
     await window.beBossDesktop.local.saveBaseline(
       shopSyncKey, saved.snapshot as unknown as Record<string, unknown>, saved.uploadedAt
     ).catch((error) => console.warn("LAN recovery was cloud-accepted, but the local baseline refresh failed.", error));
