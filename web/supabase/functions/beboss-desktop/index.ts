@@ -779,6 +779,78 @@ Deno.serve(async (req: Request) => {
       }
       config.hmacSecret = storedSecret;
     }
+    if (action === "verify_device_branch_share") {
+      const deviceId = text(req.headers.get("X-BeBoss-Device-ID")).trim();
+      const deviceToken = text(req.headers.get("X-BeBoss-Device-Token")).trim();
+      if (deviceId.length < 4 || deviceId.length > 120 || !/^[a-f0-9]{64}$/i.test(deviceToken)) {
+        return json(401, { ok: false, message: "A valid enrolled Android device credential is required." });
+      }
+
+      // PostgREST resolves this tenant only after the database validates the
+      // per-device token digest, expiry, device assignment, active state and
+      // shop kill switch through current_shop_sync_key().
+      const deviceClient = createClient(config.url, config.publishableKey, {
+        global: {
+          headers: {
+            "X-BeBoss-Device-ID": deviceId,
+            "X-BeBoss-Device-Token": deviceToken
+          }
+        },
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+      const { data: shop, error: shopError } = await deviceClient
+        .from("shop_accounts")
+        .select("id,shop_name,owner_name,owner_username,owner_phone,remote_kill_switch")
+        .maybeSingle();
+      if (shopError || !shop || shop.remote_kill_switch === true) {
+        return json(401, { ok: false, message: "This Android device is not authenticated for an active BeBoss shop." });
+      }
+
+      const token = text(body.token).trim();
+      let shopSecret: string | undefined;
+      const { data: shareSettings, error: shareSettingsError } = await admin
+        .from("shop_accounts")
+        .select("lan_sync_secret")
+        .eq("id", text(shop.id))
+        .maybeSingle();
+      const storedShopSecret = text(shareSettings?.lan_sync_secret).trim().toLowerCase();
+      if (!shareSettingsError && /^[a-f0-9]{64}$/.test(storedShopSecret)) {
+        shopSecret = storedShopSecret;
+      }
+
+      const decoded = await verifyAndDecodeToken(token, config.hmacSecret, shopSecret);
+      const metadata = decoded.metadata && typeof decoded.metadata === "object" ? decoded.metadata as Row : {};
+      if (text(metadata.format) !== "beboss_branch_datashare_v3") {
+        throw new Error("This is not a supported BeBoss branch data-share package.");
+      }
+      const issuedAt = number(metadata.issuedAt ?? metadata.timestamp);
+      const expiresAt = number(metadata.expiresAt);
+      const now = Date.now();
+      if (!issuedAt || issuedAt > now + 5 * 60 * 1000 || !expiresAt || expiresAt <= now ||
+          expiresAt - issuedAt > 30 * 24 * 60 * 60 * 1000) {
+        throw new Error("The branch share package is expired or has an invalid issue time.");
+      }
+      const importedProfile = decoded.shopProfile && typeof decoded.shopProfile === "object" ? decoded.shopProfile as Row : {};
+      if (text(importedProfile.shopName).trim().toLowerCase() !== text(shop.shop_name).trim().toLowerCase()) {
+        throw new Error("The branch share package belongs to a different shop.");
+      }
+      for (const key of DATA_KEYS) {
+        if (!Array.isArray(decoded[key]) || (decoded[key] as unknown[]).length > 25_000) {
+          throw new Error("The " + key + " collection exceeds the Android DataShare record limit.");
+        }
+      }
+      const sanitized = sanitizeSnapshot(decoded, { username: text(shop.owner_username), shop });
+      sanitized.metadata = metadata;
+      return json(200, {
+        ok: true,
+        snapshot: sanitized,
+        scope: text(metadata.branchScopeName) || "All branches",
+        legacyFormat: token.startsWith("BBSHARE1:") ||
+          (token.startsWith("BBSHARE2:") && !shopSecret),
+        expiresAt
+      });
+    }
+
     const owner = await requireOwner(
       req,
       admin,
