@@ -605,7 +605,7 @@ function ReleasesPage() {
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,170px)_1fr]">
                   <div className="space-y-1.5">
                     <Label htmlFor="desktop-version">Desktop version</Label>
-                    <Input id="desktop-version" value={desktopVersion} onChange={(event) => setDesktopVersion(event.target.value)} required maxLength={40} pattern="^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$" placeholder={desktopSourceVersionQuery.data ?? "Checking desktop/package.json…"} disabled={!desktopSourceVersionQuery.data || !!desktopStage} />
+                    <Input id="desktop-version" value={desktopVersion} onChange={(event) => setDesktopVersion(event.target.value)} required maxLength={40} pattern="^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$" placeholder="1.3.0" disabled={!!desktopStage} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="desktop-notes">Release notes</Label>
