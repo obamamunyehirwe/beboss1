@@ -172,9 +172,11 @@ jobs:
       - name: Install desktop dependencies from the committed npm lockfile
         run: npm ci --no-audit --no-fund
 
-      - name: Check desktop TypeScript types
+      - name: Verify desktop package, Tauri and Rust versions are identical
+        run: npm run check:versions
 
-        run: npx tsc --noEmit -p tsconfig.desktop.json
+      - name: Check desktop TypeScript types
+        run: npm run check:types
       - name: Build desktop client
         run: npm run build
 
@@ -209,6 +211,42 @@ jobs:
           foreach ($installer in $installers) {
             if ($installer.Length -lt 1MB) { throw "Windows installer is unexpectedly small: $($installer.Name)" }
           }
+
+      - name: Install, launch-target check, and uninstall the native Windows app
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File | Select-Object -First 1
+          if (-not $installer) { throw "No BeBoss NSIS installer is available for the install smoke test." }
+          $installRoot = Join-Path $env:RUNNER_TEMP "beboss-installer-smoke"
+          if (Test-Path $installRoot) { Remove-Item $installRoot -Recurse -Force }
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList @("/S", "/D=$installRoot") -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "BeBoss installer returned exit code $($install.ExitCode)." }
+
+          $appExe = Join-Path $installRoot "BeBoss.exe"
+          $uninstaller = Join-Path $installRoot "Uninstall.exe"
+          if (-not (Test-Path $appExe -PathType Leaf)) { throw "The installed BeBoss.exe launch target is missing." }
+          if (-not (Test-Path $uninstaller -PathType Leaf)) { throw "The registered BeBoss uninstaller is missing." }
+
+          $startMenuLink = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\BeBoss\BeBoss.lnk"
+          if (-not (Test-Path $startMenuLink -PathType Leaf)) {
+            $startMenuLink = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\BeBoss\BeBoss Desktop.lnk"
+          }
+          if (-not (Test-Path $startMenuLink -PathType Leaf)) { throw "The BeBoss Start Menu application shortcut is missing." }
+
+          # Place a sentinel in the app's official per-user data location. A proper
+          # uninstall removes binaries and shortcuts but must retain this data.
+          $appData = Join-Path $env:APPDATA "com.beboss.desktop"
+          New-Item -ItemType Directory -Force -Path $appData | Out-Null
+          $sentinel = Join-Path $appData "installer-uninstall-preservation-test.txt"
+          Set-Content -Path $sentinel -Value "preserve-shop-data" -NoNewline
+
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @("/S") -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "BeBoss uninstaller returned exit code $($uninstall.ExitCode)." }
+          if (Test-Path $appExe) { throw "BeBoss application files were not removed by uninstall." }
+          if (-not (Test-Path $sentinel)) { throw "Uninstall removed the per-user app-data directory; shop data would be lost." }
+
+          Remove-Item $sentinel -Force
+          Write-Host "NSIS install/uninstall passed; Start Menu shortcut created and user data preserved."
 
       - name: Publish unsigned Windows installer for CI inspection
         uses: actions/upload-artifact@v4
