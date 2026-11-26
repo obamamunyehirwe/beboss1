@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+export interface SetupPreflight { osPlatform:string; osArch:string; appVersion:string; databaseState:"ready"|"locked"; databaseMessage:string; databasePath:string; databaseSizeBytes:number; pendingOutboxCount:number|null; recoveryArchiveCount:number; dpapiBackupAvailable:boolean; }
 export interface SystemDiagnostics {
   osPlatform: string;
   osArch: string;
