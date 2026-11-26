@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - "desktop/**"
+      - ".github/scripts/**"
       - ".github/workflows/tauri-multiplatform.yml"
   push:
     branches: [main]
     paths:
       - "desktop/**"
+      - ".github/scripts/**"
       - ".github/workflows/tauri-multiplatform.yml"
   workflow_dispatch:
 
