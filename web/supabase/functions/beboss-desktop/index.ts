@@ -840,6 +840,7 @@ Deno.serve(async (req: Request) => {
       });
       return json(200, {
         ok: true,
+        shopSyncKey: owner.shopId,
         restoreAvailable: !!snapshot && totalRecords > 0,
         snapshotUpdatedAt: snapshotResult.uploadedAt,
         verifiedChunks: snapshotResult.verifiedChunks,
