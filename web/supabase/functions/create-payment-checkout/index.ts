@@ -288,7 +288,7 @@ Deno.serve(async (request: Request) => {
       owner_username: username,
       owner_phone: ownerPhone,
       device_challenge: shop.device_challenge ?? "",
-      provider: gateway === "flutterwave" ? "Flutterwave" : gateway === "stripe" ? "Stripe" : "MTN MoMo",
+      provider: gateway.toUpperCase(),
       gateway_reference: txRef,
       ussd_code: "ONLINE_CHECKOUT",
       payer_phone: payerPhone,
