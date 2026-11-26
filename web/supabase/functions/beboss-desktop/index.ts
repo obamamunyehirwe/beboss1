@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { isCompleteSnapshotGeneration, snapshotDeviceBaseId } from "../_shared/snapshot-generations.ts";
 import {
   createDeviceToken,
   DEVICE_ACCESS_TTL_MS,
@@ -414,7 +415,7 @@ async function latestVerifiedSnapshot(admin: SupabaseClient, shopId: string, sec
   const latest = allRows.reduce((max, row) => Math.max(max, number(row.updated_at)), 0);
   const grouped = new Map<string, Row[]>();
   for (const row of allRows) {
-    const device = text(row.device_id).replace(/#c\\d+$/, "");
+    const device = snapshotDeviceBaseId(text(row.device_id));
     const generation = text(row.sync_generation) || "legacy";
     const key = device + "::" + generation;
     const list = grouped.get(key) ?? [];
@@ -425,10 +426,11 @@ async function latestVerifiedSnapshot(admin: SupabaseClient, shopId: string, sec
   const newestByDevice = new Map<string, { updated: number; rows: Row[] }>();
   for (const list of grouped.values()) {
     const head = list[0]!;
-    const baseDevice = text(head.device_id).replace(/#c\\d+$/, "");
-    const expectedCount = Math.max(1, number(head.chunk_count) || 1);
-    const indexes = new Set(list.map((row) => number(row.chunk_index)));
-    const complete = indexes.size >= expectedCount && Array.from({ length: expectedCount }, (_, i) => indexes.has(i)).every(Boolean);
+    const baseDevice = snapshotDeviceBaseId(text(head.device_id));
+    const complete = isCompleteSnapshotGeneration(list.map((row) => ({
+      chunkIndex: number(row.chunk_index),
+      chunkCount: number(row.chunk_count) || 1
+    })));
     if (!complete) continue;
     const candidate = { updated: Math.max(...list.map((row) => number(row.updated_at))), rows: list };
     const previous = newestByDevice.get(baseDevice);
@@ -695,11 +697,6 @@ Deno.serve(async (req: Request) => {
     if (action === "restore_preview") {
       const installationId = text(body.deviceId).trim();
       if (!isUuid(installationId)) return json(403, { ok: false, message: "This desktop installation has no valid persistent device identity. Reopen BeBoss and try again." });
-      const { data: ownerUser, error: ownerUserError } = await admin.from("shop_users")
-        .select("user_id,username,full_name,role,is_active")
-        .eq("shop_sync_key", owner.shopId).eq("user_id", owner.user.id)
-        .eq("role", "OWNER").eq("is_active", true).maybeSingle();
-      if (ownerUserError || !ownerUser) return json(403, { ok: false, message: "This verified account is not an active owner in the shop staff directory." });
       const [snapshotResult, devicesResult] = await Promise.all([
         latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret),
         admin.from("shop_devices")
