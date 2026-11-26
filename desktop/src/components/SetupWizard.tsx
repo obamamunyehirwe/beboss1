@@ -15,7 +15,8 @@ interface SetupStep {
 }
 interface SetupDiagnostics {
   osPlatform: string; osArch: string; appVersion: string; dbPath: string;
-  databaseEncrypted: boolean; databaseCipherVersion: string; pendingOutboxCount: number;
+  databaseEncrypted: boolean; databaseCipherVersion: string; databaseIntegrity: string;
+  journalMode: string; pendingOutboxCount: number;
 }
 type WizardCopy = {
   stepNames: string[]; welcomeTag: string; welcomeTitle: string; welcomeBody: string;
@@ -268,8 +269,14 @@ export function SetupWizard({
       if (!system.databaseEncrypted || !system.databaseCipherVersion) {
         throw new Error("SQLCipher could not confirm that the local database is encrypted.");
       }
-      updateStep(active, "complete", "SQLCipher " + system.databaseCipherVersion + " · " + (localSnapshot ? "existing shop data found" : "new workspace") + " · " + pending + " queued item(s)");
-      log("Encrypted database integrity and durable outbox verified.");
+      if (system.databaseIntegrity !== "ok") {
+        throw new Error("The local SQLCipher database did not pass its integrity check. Do not continue writing shop data until it is recovered from a verified backup.");
+      }
+      if (system.journalMode.toLowerCase() !== "wal") {
+        throw new Error("The local SQLCipher database is not using WAL mode. Close other BeBoss instances and rerun setup diagnostics.");
+      }
+      updateStep(active, "complete", "SQLCipher " + system.databaseCipherVersion + " · integrity OK · WAL mode · " + (localSnapshot ? "existing shop data found" : "new workspace") + " · " + pending + " queued item(s)");
+      log("SQLCipher quick_check passed, WAL mode verified, and durable outbox inspected.");
 
       active = "security"; setActiveStep(active);
       updateStep(active, "running", "Testing operating-system credential storage…");
@@ -315,7 +322,8 @@ export function SetupWizard({
       setDiagnostics({
         osPlatform: system.osPlatform, osArch: system.osArch, appVersion: system.appVersion,
         dbPath: system.dbPath, databaseEncrypted: Boolean(system.databaseEncrypted),
-        databaseCipherVersion: system.databaseCipherVersion, pendingOutboxCount: pending
+        databaseCipherVersion: system.databaseCipherVersion, databaseIntegrity: system.databaseIntegrity,
+        journalMode: system.journalMode, pendingOutboxCount: pending
       });
       setCompleted(true); setActiveStep(null);
       if (cloudWarning) log("Local checks passed with a cloud connectivity warning.");
