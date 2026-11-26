@@ -856,7 +856,9 @@ Deno.serve(async (req: Request) => {
       admin,
       config.publishableKey,
       body,
-      action === "bootstrap" || action === "register_desktop" || action === "restore_preview" || action === "redeem_unlock_code" || action === "device_enroll" || action === "device_retire_legacy"
+      action === "bootstrap" || action === "register_desktop" || action === "restore_preview" ||
+        action === "redeem_unlock_code" || action === "device_enroll" ||
+        action === "device_retire_legacy" || action === "verify_branch_share"
     );
 
     if (action === "lan_pairing_credentials") {
