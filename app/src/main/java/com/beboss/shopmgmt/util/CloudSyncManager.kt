@@ -583,10 +583,24 @@ class CloudSyncManager(private val database: AppDatabase) {
 
                 for (snap in peerSnapshots) {
                     try {
-                        val decoded = ShopDataTransferManager.parseShopPackageString(
-                            snap.payloadToken,
-                            shopSecret = tokenShopSecret
-                        )
+                        val decoded = try {
+                            // Current shop-scoped BBSHARE2 remains fully offline-verifiable.
+                            ShopDataTransferManager.parseShopPackageString(
+                                snap.payloadToken,
+                                shopSecret = tokenShopSecret
+                            )
+                        } catch (localVerificationError: Exception) {
+                            val legacySigned = snap.payloadToken.startsWith("BBSHARE1:") ||
+                                snap.payloadToken.startsWith("BBSHARE2:")
+                            if (!legacySigned) throw localVerificationError
+
+                            // Old project-wide signatures are verified by the server using
+                            // the per-device credential. The old project HMAC never returns
+                            // to the APK, and invalid or revoked device credentials fail closed.
+                            SupabaseAdminClient.verifyLegacyBranchShareWithDeviceCredential(
+                                snap.payloadToken
+                            ).getOrElse { throw it }
+                        }
                         val mergeRes = mergeRemoteSummary?.invoke(decoded)
                             ?: ConflictResolutionEngine.mergePackage(database, decoded, "CLOUD:${snap.deviceId}")
                         itemsPulledCount += mergeRes.totalMergedCount
