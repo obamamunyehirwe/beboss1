@@ -130,12 +130,6 @@ internal object LocalizationAdminOps {
             "Alerte d'intégrité : %s",
             "Onyo la uadilifu: %s"
         ),
-        "vm_sample_seeded" to locEntry(
-            "Demo retail catalog loaded!",
-            "Ibicuruzwa by'icyitegererezo byashyizwemo!",
-            "Catalogue de démonstration chargé !",
-            "Orodha ya bidhaa ya mfano imepakiwa!"
-        ),
         "vm_sync_cloud_pushed_fmt" to locEntry(
             "Synced %d items to cloud!",
             "Amakuru %d yoherejwe kuri Cloud neza!",

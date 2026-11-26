@@ -1,0 +1,10 @@
+{
+  "kid": "beboss-receipts-1",
+  "alg": "EdDSA",
+  "use": "sig",
+  "publicKey": {
+    "crv": "Ed25519",
+    "x": "T8xrzWsf2BQj9YHfJv3PUfT2sSH79orvMHCuKER5lP0",
+    "kty": "OKP"
+  }
+}

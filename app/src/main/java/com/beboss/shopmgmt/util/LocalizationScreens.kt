@@ -83,6 +83,84 @@ internal object LocalizationScreens {
             "Appairer & Synchroniser",
             "Unganisha Kifaa & Sawazisha"
         ),
+        "join_otp_title" to locEntry(
+            "Verify Owner Phone (SMS Code)",
+            "Emeza Terefone ya Nyir'ububiko (Kode SMS)",
+            "Vérifier le téléphone du propriétaire (code SMS)",
+            "Thibitisha Simu ya Mmiliki (Msimbo SMS)"
+        ),
+        "join_otp_hint" to locEntry(
+            "We automatically send a one-time code to the registered owner phone when you pair this device.",
+            "Tuzihweza kode ihise kuri terefone ya nyir'ububiko iyo uhize iyi telefoni.",
+            "Nous envoyons automatiquement un code unique au téléphone du propriétaire lors de l'appairage.",
+            "Tunatuma msimbo wa muda kwa simu ya mmiliki unapounganisha kifaa hiki."
+        ),
+        "join_otp_sending" to locEntry(
+            "Sending the owner verification code…",
+            "Tuzihweza kode yo kemeza…",
+            "Envoi du code de vérification…",
+            "Inatuma msimbo wa uthibitisho…"
+        ),
+        "join_otp_sent" to locEntry(
+            "A verification code was sent by SMS to the registered owner phone.",
+            "Kode yo kemeza yoherejwe kuri terefone ya nyir'ububiko.",
+            "Un code de vérification a été envoyé par SMS au téléphone du propriétaire.",
+            "Msimbo wa uthibitisho umetumwa kwa SMS kwa simu ya mmiliki."
+        ),
+        "join_otp_failed" to locEntry(
+            "The verification code could not be sent. Check the owner phone and try again.",
+            "Kode yo kemeza itashoboye koherezwa. Reba terefone ya nyir'ububiko hanyuma wongere ugerageze.",
+            "Le code n'a pas pu être envoyé. Vérifiez le téléphone du propriétaire et réessayez.",
+            "Msimbo hauweza kutumwa. Angalia simu ya mmiliki kisha ujaribu tena."
+        ),
+        "join_otp_verifying" to locEntry(
+            "Verifying the owner code…",
+            "Tuzigenzura kode ya nyir'ububiko…",
+            "Vérification du code propriétaire…",
+            "Inathibitisha msimbo wa mmiliki…"
+        ),
+        "join_otp_verified" to locEntry(
+            "Owner phone verified. Pairing this terminal…",
+            "Terefone ya nyir'ububiko yemejwe. Tuzihuza iyi telefoni…",
+            "Téléphone du propriétaire vérifié. Appairage en cours…",
+            "Simu ya mmiliki imethibitishwa. Inaunganisha kifaa hiki…"
+        ),
+        "join_otp_invalid" to locEntry(
+            "Enter the valid 6–8 digit code sent to the owner phone.",
+            "Injiza kode y'ukuri y'imibare 6–8 yoherejwe kuri terefone ya nyir'ububiko.",
+            "Saisissez le code valide à 6–8 chiffres envoyé au téléphone du propriétaire.",
+            "Weka msimbo sahihi wa tarakimu 6–8 uliotumwa kwa simu ya mmiliki."
+        ),
+        "join_otp_label" to locEntry(
+            "SMS verification code *",
+            "Kode yo kemeza kuri SMS *",
+            "Code de vérification SMS *",
+            "Msimbo wa uthibitisho SMS *"
+        ),
+        "join_otp_placeholder" to locEntry(
+            "6–8 digits",
+            "Imibare 6–8",
+            "6–8 chiffres",
+            "Tarakimu 6–8"
+        ),
+        "join_otp_send" to locEntry(
+            "Send Owner Code",
+            "Ohereza Kode ya Nyir'ububiko",
+            "Envoyer le code propriétaire",
+            "Tuma Msimbo wa Mmiliki"
+        ),
+        "join_otp_resend" to locEntry(
+            "Resend Code",
+            "Ohereza Kode Ukundi",
+            "Renvoyer le code",
+            "Tuma Msimbo Tena"
+        ),
+        "join_otp_verify" to locEntry(
+            "Verify & Pair",
+            "Emeza & Huza",
+            "Vérifier & Appairer",
+            "Thibitisha & Unganisha"
+        ),
         "auth_cloud_autosave_note" to locEntry(
             "Saves automatically to Supabase Cloud & syncs in background whenever internet connects.",
             "Bibikwa byikora kuri Cloud kandi bigahuzwa igihe cyose interineti ibonetse.",

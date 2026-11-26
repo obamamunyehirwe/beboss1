@@ -45,6 +45,28 @@ async function audit(context: Ctx, email: string, action: string, target: string
   }
 }
 
+/**
+ * Critical audit write for sensitive administrative mutations. Throws when the
+ * audit record cannot be persisted so the caller treats the mutation as
+ * incomplete instead of proceeding without an audit trail. Used for shop
+ * deletion, payment approval/rejection, code revocation, shop status changes
+ * and owner membership revocation.
+ */
+async function auditCritical(context: Ctx, email: string, action: string, target: string, details: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error } = await supabaseAdmin.from("admin_audit_logs").insert({
+    id: crypto.randomUUID(),
+    admin_email: email,
+    action,
+    target_id: target,
+    details,
+    created_at: Date.now(),
+  });
+  if (error) {
+    throw new Error("Critical audit record could not be persisted: " + error.message);
+  }
+}
+
 type Bb3Input = {
   requestId: string;
   username: string;
@@ -355,7 +377,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
     }
 
     const expiresAt = await activateShop(ctx, shopId, { addDays: calc.days, branches: req.branch_count, workers: req.worker_count, devices: req.device_count || 1, monthly: calc.monthly });
-    await audit(ctx, admin.email, "APPROVE_PAYMENT", `@${req.owner_username}`, `Provider verification evidence: ${verificationNote}. Customer SMS: ${paymentNote || "not supplied"}. ${payerFullName || payerPhone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. Unique BB3 code issued for ${req.id}.`);
+    await auditCritical(ctx, admin.email, "APPROVE_PAYMENT", `@${req.owner_username}`, `Provider verification evidence: ${verificationNote}. Customer SMS: ${paymentNote || "not supplied"}. ${payerFullName || payerPhone}; ${req.provider}; ${calc.total} FRw; ${req.duration_months} months / ${req.branch_count} branches / ${req.worker_count} staff / ${req.device_count || 1} devices. Unique BB3 code issued for ${req.id}.`);
     return { code: codeToUse, days: calc.days, tier: calc.tier, total: calc.total, expiresAt, shopName: req.shop_name, username: req.owner_username, phone: payerPhone, alreadyApproved: false };
   });
 
@@ -503,7 +525,7 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
       throw new Error(`Payment was verified, but direct shop activation did not complete. The claim was returned for retry: ${activationError instanceof Error ? activationError.message : "activation failed"}`);
     }
 
-    await audit(
+    await auditCritical(
       ctx,
       admin.email,
       "DIRECT_AUTO_UNLOCK_PAYMENT",
@@ -567,7 +589,7 @@ export const rejectPayment = createServerFn({ method: "POST" })
       const latestStatus = String(latest?.status ?? "UNKNOWN").toLowerCase().replaceAll("_", " ");
       throw new Error("This payment is now " + latestStatus + ". Refresh the payment queue before taking another action.");
     }
-    await audit(ctx, admin.email, "REJECT_PAYMENT", `@${req.owner_username ?? data.requestId}`, reason);
+    await auditCritical(ctx, admin.email, "REJECT_PAYMENT", `@${req.owner_username ?? data.requestId}`, reason);
     return { ok: true, alreadyRejected: false };
   });
 
@@ -844,7 +866,7 @@ export const revokeCode = createServerFn({ method: "POST" })
     const { data: row } = await ctx.supabase.from("unlock_codes").select("unlock_code, shop_username").eq("id", data.id).maybeSingle();
     const { error } = await ctx.supabase.from("unlock_codes").update({ status: "REVOKED" }).eq("id", data.id);
     if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, "REVOKE_CODE", `@${row?.shop_username ?? ""}`, `Revoked ${row?.unlock_code ?? data.id}`);
+    await auditCritical(ctx, admin.email, "REVOKE_CODE", `@${row?.shop_username ?? ""}`, `Revoked ${row?.unlock_code ?? data.id}`);
     return { ok: true };
   });
 
@@ -891,7 +913,7 @@ export const setShopStatus = createServerFn({ method: "POST" })
     if (data.status === "EXPIRED") patch["subscription_expires_at"] = Math.min(Number(shop.subscription_expires_at), Date.now() - 1000);
     const { error } = await ctx.supabase.from("shop_accounts").update(patch).eq("id", data.shopId);
     if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, "SET_SHOP_STATUS", `@${shop.owner_username}`, `${shop.shop_name} -> ${data.status}`);
+    await auditCritical(ctx, admin.email, "SET_SHOP_STATUS", `@${shop.owner_username}`, `${shop.shop_name} -> ${data.status}`);
     return { ok: true };
   });
 
@@ -951,7 +973,7 @@ export const deleteShop = createServerFn({ method: "POST" })
     }
     const { error } = await ctx.supabase.from("shop_accounts").delete().eq("id", data.shopId);
     if (error) throw new Error(error.message);
-    await audit(ctx, admin.email, "DELETE_SHOP", `@${shop.owner_username}`, `Deleted ${shop.shop_name}${data.cascade ? " with devices, users and snapshots" : ""}`);
+    await auditCritical(ctx, admin.email, "DELETE_SHOP", `@${shop.owner_username}`, `Deleted ${shop.shop_name}${data.cascade ? " with devices, users and snapshots" : ""}`);
     return { ok: true };
   });
 
@@ -1099,7 +1121,7 @@ export const setSigningSecret = createServerFn({ method: "POST" })
       { action: "bb3_save", value: data.value },
     );
     if (result.ok !== true) throw new Error(result.message || "The BB3 private key could not be saved.");
-    await audit(ctx, admin.email, "SET_BB3_PRIVATE_KEY", "BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM", "Android-matching BB3 private key verified and stored in Supabase (value never logged)");
+    await auditCritical(ctx, admin.email, "SET_BB3_PRIVATE_KEY", "BEBOSS_UNLOCK_ECDSA_PRIVATE_KEY_PEM", "Android-matching BB3 private key verified and stored in Supabase (value never logged)");
     return { ok: true };
   });
 
@@ -1371,7 +1393,7 @@ export const revokeShopOwnerMembership = createServerFn({ method: "POST" })
       .maybeSingle();
     if (membershipError) throw new Error("Could not revoke the owner session.");
     if (!membership) throw new Error("No active owner membership was found for this user and shop.");
-    await audit(ctx, admin.email, "REVOKE_SHOP_OWNER", data.shopId, `Revoked owner user ${data.userId}; membership ${membership.id}.`);
+    await auditCritical(ctx, admin.email, "REVOKE_SHOP_OWNER", data.shopId, `Revoked owner user ${data.userId}; membership ${membership.id}.`);
     return { ok: true, revokedAt: now };
   });
 

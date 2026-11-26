@@ -35,6 +35,27 @@ export async function writeAudit(context: AdminCtx, email: string, action: strin
   }
 }
 
+/**
+ * Critical audit write for sensitive administrative mutations. Unlike
+ * `writeAudit`, this throws when the audit record cannot be persisted so the
+ * caller can treat the mutation as incomplete and roll back or surface the
+ * failure instead of silently proceeding without an audit trail.
+ */
+export async function writeAuditCritical(context: AdminCtx, email: string, action: string, target: string, details: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error } = await supabaseAdmin.from("admin_audit_logs").insert({
+    id: crypto.randomUUID(),
+    admin_email: email,
+    action,
+    target_id: target,
+    details: details.slice(0, 1000),
+    created_at: Date.now(),
+  });
+  if (error) {
+    throw new Error("Critical audit record could not be persisted: " + error.message);
+  }
+}
+
 /** Invoke a Supabase Edge Function using the current user's verified JWT.
  * Privileged secrets stay inside Supabase Edge Functions, never in Vercel or the browser.
  */

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -87,6 +88,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -119,6 +121,8 @@ import com.beboss.shopmgmt.ui.theme.WarningAmber
 import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.Localization
 import com.beboss.shopmgmt.util.SecurityUtils
+import com.beboss.shopmgmt.util.SupabaseAdminClient
+import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 @Composable
@@ -212,7 +216,7 @@ fun AuthLockScreen(
                                     text = langOption.flag,
                                     fontFamily = GopherFontFamily,
                                     color = if (isSelected) Color.White else topPillText,
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                             }
@@ -291,7 +295,7 @@ fun AuthLockScreen(
                                 Localization.get("offline_branch_pos_badge", language)
                             },
                             fontFamily = GopherFontFamily,
-                            fontSize = 10.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = OrangePrimary,
                             letterSpacing = 0.7.sp
@@ -311,7 +315,7 @@ fun AuthLockScreen(
                     Text(
                         text = Localization.get("operator_terminal_header", language),
                         fontFamily = GopherFontFamily,
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = textSecondary,
                         letterSpacing = 1.sp,
@@ -356,7 +360,7 @@ fun AuthLockScreen(
                                         Text(
                                             text = user.name.take(1).uppercase(),
                                             fontFamily = GopherFontFamily,
-                                            fontSize = 14.sp,
+                                            fontSize = 16.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White
                                         )
@@ -366,14 +370,14 @@ fun AuthLockScreen(
                                         Text(
                                             text = user.name.split(" ").firstOrNull() ?: user.name,
                                             fontFamily = GopherFontFamily,
-                                            fontSize = 12.5.sp,
+                                            fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = textPrimary
                                         )
                                         Text(
                                             text = "${Localization.userRoleLabel(user.role, language).substringBefore(" (")} • ${user.assignedBranchName.ifBlank { "HQ" }}",
                                             fontFamily = GopherFontFamily,
-                                            fontSize = 9.5.sp,
+                                            fontSize = 11.sp,
                                             color = if (isSelected) OrangePrimary else textSecondary
                                         )
                                     }
@@ -412,7 +416,7 @@ fun AuthLockScreen(
                                 Text(
                                     text = Localization.get("fast_pin_tab", language),
                                     fontFamily = GopherFontFamily,
-                                    fontSize = 12.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (selectedTab == 0) OrangePrimary else textSecondary
                                 )
@@ -425,7 +429,7 @@ fun AuthLockScreen(
                                 Text(
                                     text = Localization.get("credentials_tab", language),
                                     fontFamily = GopherFontFamily,
-                                    fontSize = 12.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (selectedTab == 1) OrangePrimary else textSecondary
                                 )
@@ -448,7 +452,7 @@ fun AuthLockScreen(
                                 Text(
                                     text = authError,
                                     fontFamily = GopherFontFamily,
-                                    fontSize = 12.sp,
+                                    fontSize = 14.sp,
                                     color = LossRed,
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center,
@@ -581,7 +585,7 @@ fun AuthLockScreen(
                         ) {
                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(Localization.get("unlock", language), fontFamily = GopherFontFamily, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(Localization.get("unlock", language), fontFamily = GopherFontFamily, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
                     }
                 }
@@ -605,7 +609,7 @@ fun AuthLockScreen(
                 Text(
                     text = Localization.get("create_store_account", language),
                     fontFamily = GopherFontFamily,
-                    fontSize = 13.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -656,6 +660,88 @@ fun ShopRegistrationScreen(
     var joinPassword by remember { mutableStateOf("") }
     var showJoinPassword by remember { mutableStateOf(false) }
 
+    // Real SMS OTP verification (Supabase Auth -> Africa's Talking) proving the
+    // person pairing this terminal controls the registered owner phone.
+    var joinOtp by remember { mutableStateOf("") }
+    var joinOtpSent by remember { mutableStateOf(false) }
+    var joinOtpVerified by remember { mutableStateOf(false) }
+    var joinOtpBusy by remember { mutableStateOf(false) }
+    var joinOtpMessage by remember { mutableStateOf("") }
+    val joinScope = rememberCoroutineScope()
+
+    fun resetJoinOtpState() {
+        joinOtp = ""
+        joinOtpSent = false
+        joinOtpVerified = false
+        joinOtpBusy = false
+        joinOtpMessage = ""
+    }
+
+    fun sendJoinOwnerOtp() {
+        if (joinOtpBusy) return
+        if (joinOwnerUsername.isBlank()) {
+            errorMessage = Localization.get("reg_err_username", language)
+            return
+        }
+        if (joinOwnerPhone.filter { it.isDigit() }.length < 9) {
+            errorMessage = Localization.get("reg_err_phone", language)
+            return
+        }
+        errorMessage = null
+        onClearError()
+        joinOtpBusy = true
+        joinOtpVerified = false
+        joinOtp = ""
+        joinOtpMessage = Localization.get("join_otp_sending", language)
+        joinScope.launch {
+            val result = SupabaseAdminClient.requestOwnerDeviceCredentialOtp(
+                joinOwnerUsername.trim().lowercase().replace(" ", ""),
+                joinOwnerPhone.trim()
+            )
+            joinOtpBusy = false
+            if (result.isSuccess) {
+                joinOtpSent = true
+                joinOtpMessage = Localization.get("join_otp_sent", language)
+            } else {
+                joinOtpSent = false
+                joinOtpMessage = result.exceptionOrNull()?.message
+                    ?: Localization.get("join_otp_failed", language)
+            }
+        }
+    }
+
+    fun verifyJoinOwnerOtpAndPair() {
+        if (joinOtpBusy) return
+        if (joinOtp.length !in 6..8) {
+            errorMessage = Localization.get("join_otp_invalid", language)
+            return
+        }
+        errorMessage = null
+        onClearError()
+        joinOtpBusy = true
+        joinOtpMessage = Localization.get("join_otp_verifying", language)
+        joinScope.launch {
+            val result = SupabaseAdminClient.verifyOwnerSmsOtp(joinOwnerPhone.trim(), joinOtp)
+            joinOtpBusy = false
+            if (result.isSuccess) {
+                joinOtpVerified = true
+                joinOtpMessage = Localization.get("join_otp_verified", language)
+                onJoinExistingShop(
+                    joinOwnerUsername.trim().lowercase().replace(" ", ""),
+                    joinOwnerPhone.trim(),
+                    joinCode.trim().uppercase(),
+                    joinDeviceName.trim(),
+                    joinPin.trim(),
+                    joinPassword.trim()
+                )
+            } else {
+                joinOtpVerified = false
+                joinOtpMessage = result.exceptionOrNull()?.message
+                    ?: Localization.get("join_otp_invalid", language)
+            }
+        }
+    }
+
     val displayError = errorMessage ?: authError
 
     val categories = listOf(
@@ -695,21 +781,10 @@ fun ShopRegistrationScreen(
         Localization.get("reg_step_3", language)
     )
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(colors = bgColors))
-            .windowInsetsPadding(WindowInsets.safeDrawing),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .widthIn(max = 560.dp)
-                .padding(horizontal = 20.dp, vertical = 14.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+    // Shared wizard body. Rendered inside a light "glass" surface so the brand
+    // photo stays visible (left rail on wide screens, top banner on phones)
+    // instead of being deeply covered by an opaque form.
+    val formBody: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {
             // Top Controls: 1-Tap 4-Language Selector + Theme Toggle
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -741,7 +816,7 @@ fun ShopRegistrationScreen(
                                     text = langOption.flag,
                                     fontFamily = GopherFontFamily,
                                     color = if (isSelected) Color.White else topPillText,
-                                    fontSize = 11.5.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                             }
@@ -767,44 +842,7 @@ fun ShopRegistrationScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = if (isDarkTheme) Color(0xFF0F172A) else Color.White,
-                border = BorderStroke(2.dp, Brush.linearGradient(listOf(OrangePrimary, Color(0xFFFFB74D)))),
-                modifier = Modifier.size(64.dp),
-                shadowElevation = if (isDarkTheme) 8.dp else 4.dp
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.beboss_app_icon),
-                    contentDescription = "BeBoss Logo",
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(20.dp)),
-                    contentScale = ContentScale.Fit
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = Localization.get("create_store_account", language),
-                fontFamily = GopherFontFamily,
-                fontSize = 21.sp,
-                fontWeight = FontWeight.Black,
-                color = textPrimary,
-                textAlign = TextAlign.Center
-            )
-            Text(
-                text = Localization.get("reg_subtitle", language),
-                fontFamily = GopherFontFamily,
-                fontSize = 11.sp,
-                color = textSecondary,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // 2-Tab Selector: Create New Shop vs Join Existing Shop (Add Device)
             Row(
@@ -840,7 +878,7 @@ fun ShopRegistrationScreen(
                         Text(
                             text = Localization.get("create_new_shop", language),
                             fontFamily = GopherFontFamily,
-                            fontSize = 11.5.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (registrationMode == 0) Color.White else textPrimary,
                             maxLines = 1
@@ -877,7 +915,7 @@ fun ShopRegistrationScreen(
                         Text(
                             text = Localization.get("join_existing_shop", language),
                             fontFamily = GopherFontFamily,
-                            fontSize = 11.5.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (registrationMode == 1) Color.White else textPrimary,
                             maxLines = 1
@@ -927,7 +965,7 @@ fun ShopRegistrationScreen(
                                 Text(
                                     text = label,
                                     fontFamily = GopherFontFamily,
-                                    fontSize = 11.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = when {
                                         isCurrent -> Color.White
@@ -956,7 +994,7 @@ fun ShopRegistrationScreen(
                         Text(
                             text = displayError,
                             fontFamily = GopherFontFamily,
-                            fontSize = 12.sp,
+                            fontSize = 14.sp,
                             color = LossRed,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
@@ -993,7 +1031,7 @@ fun ShopRegistrationScreen(
                                 Text(
                                     text = Localization.get("device_fee_addon_note", language),
                                     fontFamily = GopherFontFamily,
-                                    fontSize = 11.sp,
+                                    fontSize = 13.sp,
                                     color = textPrimary,
                                     lineHeight = 15.sp
                                 )
@@ -1002,7 +1040,7 @@ fun ShopRegistrationScreen(
 
                         OutlinedTextField(
                             value = joinOwnerUsername,
-                            onValueChange = { joinOwnerUsername = it; errorMessage = null; onClearError() },
+                            onValueChange = { joinOwnerUsername = it; errorMessage = null; onClearError(); resetJoinOtpState() },
                             label = { Text(Localization.get("reg_username_label", language), fontFamily = GopherFontFamily) },
                             placeholder = { Text(Localization.get("auth_join_owner_placeholder", language)) },
                             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = OrangePrimary) },
@@ -1023,7 +1061,7 @@ fun ShopRegistrationScreen(
 
                         OutlinedTextField(
                             value = joinOwnerPhone,
-                            onValueChange = { joinOwnerPhone = it; errorMessage = null; onClearError() },
+                            onValueChange = { joinOwnerPhone = it; errorMessage = null; onClearError(); resetJoinOtpState() },
                             label = { Text(Localization.get("reg_phone_label", language), fontFamily = GopherFontFamily) },
                             placeholder = { Text("+250 788 123 456") },
                             leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = OrangePrimary) },
@@ -1130,7 +1168,7 @@ fun ShopRegistrationScreen(
                                         Text(
                                             text = Localization.get("reg_gen_pin", language),
                                             fontFamily = GopherFontFamily,
-                                            fontSize = 11.sp,
+                                            fontSize = 13.sp,
                                             color = OrangePrimary,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -1169,6 +1207,115 @@ fun ShopRegistrationScreen(
                             )
                         )
 
+                        // Real owner-phone SMS verification (Africa's Talking via Supabase).
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (joinOtpVerified) ProfitGreen.copy(alpha = 0.1f) else OrangePrimary.copy(alpha = 0.08f),
+                            border = BorderStroke(
+                                1.dp,
+                                if (joinOtpVerified) ProfitGreen.copy(alpha = 0.4f) else OrangePrimary.copy(alpha = 0.3f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        if (joinOtpVerified) Icons.Default.VerifiedUser else Icons.Default.Phone,
+                                        contentDescription = null,
+                                        tint = if (joinOtpVerified) ProfitGreen else OrangePrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = Localization.get("join_otp_title", language),
+                                        fontFamily = GopherFontFamily,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = textPrimary
+                                    )
+                                }
+                                Text(
+                                    text = joinOtpMessage.ifBlank { Localization.get("join_otp_hint", language) },
+                                    fontFamily = GopherFontFamily,
+                                    fontSize = 14.sp,
+                                    color = if (joinOtpVerified) ProfitGreen else textSecondary
+                                )
+                                if (joinOtpSent && !joinOtpVerified) {
+                                    OutlinedTextField(
+                                        value = joinOtp,
+                                        onValueChange = { joinOtp = it.filter(Char::isDigit).take(8); errorMessage = null },
+                                        label = { Text(Localization.get("join_otp_label", language), fontFamily = GopherFontFamily) },
+                                        placeholder = { Text(Localization.get("join_otp_placeholder", language)) },
+                                        leadingIcon = { Icon(Icons.Default.Shield, contentDescription = null, tint = OrangePrimary) },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                        visualTransformation = PasswordVisualTransformation(),
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("join_owner_otp_input"),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedContainerColor = fieldBg,
+                                            unfocusedContainerColor = fieldBg,
+                                            focusedTextColor = textPrimary,
+                                            unfocusedTextColor = textPrimary,
+                                            focusedBorderColor = OrangePrimary,
+                                            unfocusedBorderColor = cardBorder
+                                        )
+                                    )
+                                }
+                                if (!joinOtpVerified) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { sendJoinOwnerOtp() },
+                                            enabled = !joinOtpBusy,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .heightIn(min = 46.dp)
+                                                .testTag("join_send_otp_btn"),
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, OrangePrimary.copy(alpha = 0.5f))
+                                        ) {
+                                            Text(
+                                                text = if (joinOtpSent) Localization.get("join_otp_resend", language) else Localization.get("join_otp_send", language),
+                                                fontFamily = GopherFontFamily,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = OrangePrimary
+                                            )
+                                        }
+                                        if (joinOtpSent) {
+                                            Button(
+                                                onClick = { verifyJoinOwnerOtpAndPair() },
+                                                enabled = !joinOtpBusy && joinOtp.length in 6..8,
+                                                modifier = Modifier
+                                                    .weight(1.2f)
+                                                    .heightIn(min = 46.dp)
+                                                    .testTag("join_verify_otp_btn"),
+                                                colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ) {
+                                                Text(
+                                                    text = Localization.get("join_otp_verify", language),
+                                                    fontFamily = GopherFontFamily,
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -1197,6 +1344,14 @@ fun ShopRegistrationScreen(
                                         errorMessage = Localization.get("reg_err_pin", language)
                                     } else if (joinPassword.length < 6) {
                                         errorMessage = Localization.get("reg_err_password", language)
+                                    } else if (!joinOtpVerified) {
+                                        // Owner identity gate: the registered phone must be
+                                        // proven by a real SMS code before this terminal pairs.
+                                        if (joinOtpSent && joinOtp.length in 6..8) {
+                                            verifyJoinOwnerOtpAndPair()
+                                        } else {
+                                            sendJoinOwnerOtp()
+                                        }
                                     } else {
                                         errorMessage = null
                                         onJoinExistingShop(
@@ -1209,6 +1364,7 @@ fun ShopRegistrationScreen(
                                         )
                                     }
                                 },
+                                enabled = !joinOtpBusy,
                                 modifier = Modifier
                                     .weight(1.6f)
                                     .heightIn(min = 50.dp)
@@ -1219,9 +1375,14 @@ fun ShopRegistrationScreen(
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = Localization.get("auth_pair_device_cta", language),
+                                    text = when {
+                                        joinOtpBusy -> Localization.get("join_otp_verifying", language)
+                                        joinOtpVerified -> Localization.get("auth_pair_device_cta", language)
+                                        joinOtpSent -> Localization.get("join_otp_verify", language)
+                                        else -> Localization.get("join_otp_send", language)
+                                    },
                                     fontFamily = GopherFontFamily,
-                                    fontSize = 13.sp,
+                                    fontSize = 13.5.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -1270,7 +1431,7 @@ fun ShopRegistrationScreen(
                                     )
 
                                     Column {
-                                        Text(Localization.get("reg_sector_label", language), fontFamily = GopherFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textSecondary)
+                                        Text(Localization.get("reg_sector_label", language), fontFamily = GopherFontFamily, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = textSecondary)
                                         Spacer(modifier = Modifier.height(6.dp))
                                         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                             items(categories) { (catKey, catIcon) ->
@@ -1292,7 +1453,7 @@ fun ShopRegistrationScreen(
                                                         Text(
                                                             text = catLabel,
                                                             fontFamily = GopherFontFamily,
-                                                            fontSize = 11.5.sp,
+                                                            fontSize = 13.sp,
                                                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                                             color = if (selected) textPrimary else textSecondary
                                                         )
@@ -1303,7 +1464,7 @@ fun ShopRegistrationScreen(
                                     }
 
                                     Column {
-                                        Text(Localization.get("reg_currency_label", language), fontFamily = GopherFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textSecondary)
+                                        Text(Localization.get("reg_currency_label", language), fontFamily = GopherFontFamily, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = textSecondary)
                                         Spacer(modifier = Modifier.height(6.dp))
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                             currencies.forEach { (sym, code, _) ->
@@ -1321,8 +1482,8 @@ fun ShopRegistrationScreen(
                                                         .heightIn(min = 48.dp)
                                                 ) {
                                                     Column(modifier = Modifier.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                                        Text(sym, fontFamily = GopherFontFamily, fontSize = 13.sp, fontWeight = FontWeight.Black, color = if (isSelected) Color.White else OrangePrimary)
-                                                        Text(code, fontFamily = GopherFontFamily, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = if (isSelected) Color.White.copy(alpha = 0.9f) else textSecondary)
+                                                        Text(sym, fontFamily = GopherFontFamily, fontSize = 15.sp, fontWeight = FontWeight.Black, color = if (isSelected) Color.White else OrangePrimary)
+                                                        Text(code, fontFamily = GopherFontFamily, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = if (isSelected) Color.White.copy(alpha = 0.9f) else textSecondary)
                                                     }
                                                 }
                                             }
@@ -1390,14 +1551,14 @@ fun ShopRegistrationScreen(
                                                 Text(
                                                     text = Localization.get("reg_trial_card_title", language),
                                                     fontFamily = GopherFontFamily,
-                                                    fontSize = 12.sp,
+                                                    fontSize = 14.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = ProfitGreen
                                                 )
                                                 Text(
                                                     text = Localization.get("reg_trial_card_desc", language),
                                                     fontFamily = GopherFontFamily,
-                                                    fontSize = 10.5.sp,
+                                                    fontSize = 12.sp,
                                                     color = textSecondary
                                                 )
                                             }
@@ -1457,7 +1618,7 @@ fun ShopRegistrationScreen(
                                         leadingIcon = { Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = OrangePrimary) },
                                         supportingText = {
                                             if (normalizedUsername.isNotEmpty()) {
-                                                Text("${Localization.get("reg_account_handle", language)}: @$normalizedUsername", fontSize = 10.5.sp, color = OrangePrimary)
+                                                Text("${Localization.get("reg_account_handle", language)}: @$normalizedUsername", fontSize = 12.sp, color = OrangePrimary)
                                             }
                                         },
                                         singleLine = true,
@@ -1520,7 +1681,7 @@ fun ShopRegistrationScreen(
                                                     Text(
                                                         text = Localization.get("reg_gen_pin", language),
                                                         fontFamily = GopherFontFamily,
-                                                        fontSize = 11.sp,
+                                                        fontSize = 13.sp,
                                                         color = OrangePrimary,
                                                         fontWeight = FontWeight.Bold
                                                     )
@@ -1574,7 +1735,7 @@ fun ShopRegistrationScreen(
                                                     color = strengthColor,
                                                     trackColor = cardBorder
                                                 )
-                                                Text(strengthLabel, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = strengthColor)
+                                                Text(strengthLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = strengthColor)
                                             }
                                         }
                                     }
@@ -1594,7 +1755,7 @@ fun ShopRegistrationScreen(
                                             Text(
                                                 text = Localization.get("auth_cloud_autosave_note", language),
                                                 fontFamily = GopherFontFamily,
-                                                fontSize = 10.5.sp,
+                                                fontSize = 12.sp,
                                                 color = textSecondary
                                             )
                                         }
@@ -1702,7 +1863,7 @@ fun ShopRegistrationScreen(
                                 Text(
                                     text = Localization.get("reg_create_launch", language),
                                     fontFamily = GopherFontFamily,
-                                    fontSize = 14.sp,
+                                    fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -1710,6 +1871,187 @@ fun ShopRegistrationScreen(
                     }
                 }
             }
+            }
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgColors[0])
+    ) {
+        val isWide = maxWidth >= 620.dp
+
+        // Brand photo, full-bleed. The scrim keeps it visible at the left/top
+        // while the form floats on a light translucent surface.
+        Image(
+            painter = painterResource(id = R.drawable.beboss_app_logo_1787833759468),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0.0f to Color.Transparent,
+                        0.30f to bgColors[0].copy(alpha = 0.30f),
+                        0.62f to bgColors[0].copy(alpha = 0.86f),
+                        1.0f to bgColors[0]
+                    )
+                )
+        )
+
+        if (isWide) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(horizontal = 28.dp, vertical = 22.dp),
+                horizontalArrangement = Arrangement.spacedBy(26.dp)
+            ) {
+                // Left brand rail: the photo stays fully visible here.
+                Column(
+                    modifier = Modifier
+                        .weight(0.8f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.Bottom
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = Color(0xFF0F172A).copy(alpha = 0.55f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.beboss_app_icon),
+                                    contentDescription = "BeBoss",
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(RoundedCornerShape(14.dp)),
+                                    contentScale = ContentScale.Fit
+                                )
+                                Column {
+                                    Text(
+                                        text = "BeBoss",
+                                        fontFamily = GopherFontFamily,
+                                        fontSize = 26.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = Localization.get("create_store_account", language),
+                                        fontFamily = GopherFontFamily,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFFD166)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = Localization.get("reg_subtitle", language),
+                                fontFamily = GopherFontFamily,
+                                fontSize = 15.sp,
+                                color = Color.White.copy(alpha = 0.85f)
+                            )
+                        }
+                    }
+                }
+
+                // Right form panel: light, modern, translucent.
+                Surface(
+                    modifier = Modifier
+                        .weight(1.2f)
+                        .fillMaxHeight()
+                        .widthIn(max = 640.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    color = Color.White.copy(alpha = 0.95f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.65f)),
+                    shadowElevation = 14.dp
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 26.dp, vertical = 22.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        content = formBody
+                    )
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Compact brand header over the photo.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color.White.copy(alpha = 0.92f),
+                        border = BorderStroke(1.5.dp, OrangePrimary.copy(alpha = 0.55f)),
+                        modifier = Modifier.size(58.dp),
+                        shadowElevation = 6.dp
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.beboss_app_icon),
+                            contentDescription = "BeBoss Logo",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(18.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = Localization.get("create_store_account", language),
+                            fontFamily = GopherFontFamily,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Black,
+                            color = textPrimary
+                        )
+                        Text(
+                            text = Localization.get("reg_subtitle", language),
+                            fontFamily = GopherFontFamily,
+                            fontSize = 14.sp,
+                            color = textSecondary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(26.dp),
+                    color = Color.White.copy(alpha = 0.95f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.65f)),
+                    shadowElevation = 10.dp
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp, vertical = 18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        content = formBody
+                    )
+                }
             }
         }
     }

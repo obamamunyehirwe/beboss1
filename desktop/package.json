@@ -18,7 +18,7 @@
     "dist:linux": "npm run validate:telemetry && tauri build --bundles appimage",
     "check:versions": "node scripts/check-version-coherence.mjs",
     "check:types": "tsc --noEmit -p tsconfig.desktop.json",
-    "test": "node --experimental-strip-types --test src/lib/device-restore.test.ts src/lib/snapshot-merge.test.ts src/lib/cloud-request.test.ts",
+    "test": "node --experimental-strip-types --test src/lib/device-restore.test.ts src/lib/snapshot-merge.test.ts src/lib/snapshot-merge.conflicts.test.ts src/lib/snapshot-merge.fuzz.test.ts src/lib/cloud-request.test.ts",
     "sign:win:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-windows-installer.ps1",
     "release:win:local": "npm run check:versions && npm run check:installer && npm run check:types && npm test && cargo test --locked --manifest-path src-tauri/Cargo.toml && npm run dist:win && npm run sign:win:local && node scripts/generate-bundle-checksums.mjs src-tauri/target/release/bundle/nsis",
     "check:installer": "node scripts/check-installer-config.mjs",

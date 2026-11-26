@@ -15,12 +15,15 @@ function compareVersions(local: Row, remote: Row): number {
   const localVersion = number(local.syncVersion);
   const remoteVersion = number(remote.syncVersion);
 
+  // Total order (antisymmetric + transitive) so every device converges to the
+  // same winner regardless of merge order. When both records carry a real HLC,
+  // the higher HLC wins causally. Otherwise (legacy HLC=0 records, or an HLC
+  // tie) fall back to wall-clock updatedAt, then per-record version, then a
+  // deterministic device-id tie-break. The previous version-based special case
+  // for HLC=0 records was asymmetric and could pick a different winner
+  // depending on which side was "local", diverging peers; it is intentionally
+  // removed.
   if (localHlc > 0 && remoteHlc > 0 && localHlc !== remoteHlc) return remoteHlc > localHlc ? 1 : -1;
-  if (remoteVersion !== localVersion && (localHlc === 0 || remoteHlc === 0)) {
-    if (remoteUpdatedAt >= localUpdatedAt || remoteVersion > localVersion + 1) {
-      return remoteVersion > localVersion ? 1 : -1;
-    }
-  }
   if (remoteUpdatedAt !== localUpdatedAt) return remoteUpdatedAt > localUpdatedAt ? 1 : -1;
   if (remoteVersion !== localVersion) return remoteVersion > localVersion ? 1 : -1;
   return text(remote.lastModifiedDeviceId).localeCompare(text(local.lastModifiedDeviceId));

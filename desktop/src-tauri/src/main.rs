@@ -1723,44 +1723,43 @@ fn main() {
         .map(str::trim)
         .filter(|dsn| !dsn.is_empty())
         .map(|dsn| {
-            sentry::init((
-                dsn,
-                sentry::ClientOptions {
-                    release: sentry::release_name!(),
-                    environment: Some(
-                        if cfg!(debug_assertions) { "development" } else { "production" }.into()
-                    ),
-                    send_default_pii: false,
-                    before_send: Some(std::sync::Arc::new(|mut event| {
-                        // Native panic messages and request metadata can contain POS
-                        // records, local paths, phone numbers or credentials. Keep the
-                        // stack frames and release but remove user/request/breadcrumb
-                        // context and replace all free-form exception text.
-                        event.user = None;
-                        event.request = None;
-                        event.server_name = None;
-                        event.transaction = None;
-                        event.culprit = None;
-                        event.contexts.clear();
-                        event.extra.clear();
-                        event.breadcrumbs.values.clear();
-                        event.tags.retain(|key, _| {
-                            matches!(key.as_str(), "application" | "platform")
-                        });
-                        event.message = Some("A BeBoss Desktop native error occurred (details redacted).".to_string());
-                        if let Some(logentry) = event.logentry.as_mut() {
-                            logentry.message = "A BeBoss Desktop native error occurred (details redacted).".to_string();
-                            logentry.params.clear();
-                        }
-                        for exception in event.exception.values.iter_mut() {
-                            exception.ty = "NativeException".to_string();
-                            exception.value = Some("Native exception details redacted.".to_string());
-                        }
-                        Some(event)
-                    })),
-                    ..Default::default()
-                },
-            ))
+            // `ClientOptions` is `#[non_exhaustive]`, so it cannot be built with a
+            // struct literal (even with `..Default::default()`). Start from the
+            // default and assign the public fields instead.
+            let mut options = sentry::ClientOptions::default();
+            options.release = sentry::release_name!();
+            options.environment = Some(
+                if cfg!(debug_assertions) { "development" } else { "production" }.into()
+            );
+            options.send_default_pii = false;
+            options.before_send = Some(std::sync::Arc::new(|mut event| {
+                // Native panic messages and request metadata can contain POS
+                // records, local paths, phone numbers or credentials. Keep the
+                // stack frames and release but remove user/request/breadcrumb
+                // context and replace all free-form exception text.
+                event.user = None;
+                event.request = None;
+                event.server_name = None;
+                event.transaction = None;
+                event.culprit = None;
+                event.contexts.clear();
+                event.extra.clear();
+                event.breadcrumbs.values.clear();
+                event.tags.retain(|key, _| {
+                    matches!(key.as_str(), "application" | "platform")
+                });
+                event.message = Some("A BeBoss Desktop native error occurred (details redacted).".to_string());
+                if let Some(logentry) = event.logentry.as_mut() {
+                    logentry.message = "A BeBoss Desktop native error occurred (details redacted).".to_string();
+                    logentry.params.clear();
+                }
+                for exception in event.exception.values.iter_mut() {
+                    exception.ty = "NativeException".to_string();
+                    exception.value = Some("Native exception details redacted.".to_string());
+                }
+                Some(event)
+            }));
+            sentry::init((dsn, options))
         });
 
     tauri::Builder::default()

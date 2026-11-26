@@ -77,15 +77,16 @@ object HlcClock {
         remoteUpdatedAt: Long,
         remoteDeviceId: String
     ): Int {
-        // If both records carry real HLC clocks, compare causally
+        // Total order (antisymmetric + transitive) so every device converges to
+        // the same winner regardless of merge order. When both records carry a
+        // real HLC, the higher HLC wins causally. Otherwise (legacy HLC=0
+        // records, or an HLC tie) fall back to wall-clock updatedAt, then
+        // per-record version, then a deterministic device-id tie-break. A
+        // previous version-based special case for HLC=0 records was asymmetric
+        // and could pick a different winner depending on which side was
+        // "local", diverging peers; it is intentionally removed.
         if (localHlc > 0L && remoteHlc > 0L && localHlc != remoteHlc) {
             return remoteHlc.compareTo(localHlc)
-        }
-        // Monotonic per-record version comparison when timestamps tie or clocks drift
-        if (remoteVersion != localVersion && (localHlc == 0L || remoteHlc == 0L)) {
-            if (remoteUpdatedAt >= localUpdatedAt || remoteVersion > localVersion + 1) {
-                return remoteVersion.compareTo(localVersion)
-            }
         }
         // Wall-clock timestamp comparison
         if (remoteUpdatedAt != localUpdatedAt) {

@@ -583,6 +583,23 @@ object SupabaseAdminClient {
         }
 
     /**
+     * Verifies the SMS OTP sent to the registered shop-owner phone through the
+     * real provider chain (Supabase Auth -> send-auth-sms hook -> Africa's Talking).
+     * Used by the "Join Existing Shop" wizard so a new terminal only pairs after
+     * the owner proves control of the registered phone.
+     */
+    suspend fun verifyOwnerSmsOtp(ownerPhone: String, otp: String): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext Result.failure(IllegalStateException("Supabase is not configured."))
+        try {
+            val phone = normalizeOwnerPhoneE164(ownerPhone)
+            verifyOwnerPhoneOtp(phone, otp)
+            Result.success(Unit)
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    /**
      * Online-only compatibility route for customer-held BBSHARE1 and older
      * project-signed BBSHARE2 exports. The global signing key stays in Supabase;
      * the owner proves control of the registered phone and receives sanitized JSON.

@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { computeRetailInsights, decodeShareToken, extractShopRecords, mergeShareJson, parseShareToken, pickLatestChunkSet, type RetailInsights, type ShopRecords } from "./snapshot-analytics";
-import { invokeSupabaseEdgeFunction, requireAdminPermission, requireStaffRole, writeAudit, type AdminCtx } from "./admin-guard.server";
+import { invokeSupabaseEdgeFunction, requireAdminPermission, requireStaffRole, writeAudit, writeAuditCritical, type AdminCtx } from "./admin-guard.server";
 
 const DATASHARE_SECRET = "BEBOSS_DATASHARE_HMAC_SECRET";
 const SNAPSHOT_PAGE_SIZE = 1000;
@@ -115,7 +115,7 @@ export const setDatashareKey = createServerFn({ method: "POST" })
       "manage-app-secrets",
       { action: "snapshot_save", value: data.value },
     );
-    await writeAudit(ctx, admin.email, "SET_DATASHARE_KEY", DATASHARE_SECRET, "Snapshot verification key updated (value not logged)");
+    await writeAuditCritical(ctx, admin.email, "SET_DATASHARE_KEY", DATASHARE_SECRET, "Snapshot verification key updated (value not logged)");
     return { ok: true };
   });
 

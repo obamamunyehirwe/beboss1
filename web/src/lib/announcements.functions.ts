@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { requireAdminPermission, writeAudit, type AdminCtx } from "./admin-guard.server";
+import { requireAdminPermission, writeAudit, writeAuditCritical, type AdminCtx } from "./admin-guard.server";
 
 const schema = z.object({
   id: z.string().uuid().optional(),
@@ -66,6 +66,6 @@ export const deleteAnnouncement = createServerFn({ method: "POST" })
     const admin = await requireAdminPermission(ctx, "announcements.manage");
     const { error } = await ctx.supabase.from("announcements").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
-    await writeAudit(ctx, admin.email, "DELETE_ANNOUNCEMENT", data.id, "Removed announcement");
+    await writeAuditCritical(ctx, admin.email, "DELETE_ANNOUNCEMENT", data.id, "Removed announcement");
     return { ok: true };
   });
