@@ -1,5 +1,15 @@
 export type MtnMomoEnvironment = "sandbox" | "production";
 
+export class MtnMomoRequestRejectedError extends Error {
+  readonly httpStatus: number;
+  constructor(httpStatus: number, detail: string) {
+    super("MTN MoMo rejected the Request-to-Pay request (HTTP " + httpStatus + ")" + (detail ? ": " + detail : "") + ".");
+    this.name = "MtnMomoRequestRejectedError";
+    this.httpStatus = httpStatus;
+  }
+}
+
+
 export type MtnMomoConfiguration = {
   environment: MtnMomoEnvironment;
   baseUrl: string;
@@ -98,13 +108,14 @@ export async function requestMtnMomoPayment(
     payerMessage: string;
   },
   fetcher: typeof fetch = fetch,
+  existingAccessToken?: string,
 ): Promise<{ accepted: boolean; referenceId: string }> {
   if (!/^[0-9a-f-]{36}$/i.test(input.referenceId)) throw new Error("MTN MoMo reference ID must be a UUID.");
   if (!Number.isSafeInteger(input.amountRwf) || input.amountRwf < 1) throw new Error("MTN MoMo amount must be a positive whole-RWF value.");
   if (!/^2507\d{8}$/.test(input.payerMsisdn)) throw new Error("MTN MoMo payer must be a Rwanda mobile MSISDN.");
   if (!/^[A-Za-z0-9._-]{1,100}$/.test(input.externalId)) throw new Error("MTN MoMo external ID is invalid.");
 
-  const accessToken = await getMtnMomoAccessToken(config, fetcher);
+  const accessToken = existingAccessToken || await getMtnMomoAccessToken(config, fetcher);
   const headers = new Headers({
     Authorization: `Bearer ${accessToken}`,
     "Ocp-Apim-Subscription-Key": config.collectionsSubscriptionKey,
@@ -128,7 +139,7 @@ export async function requestMtnMomoPayment(
   });
   if (response.status !== 202) {
     const detail = (await response.text().catch(() => "")).slice(0, 240);
-    throw new Error(`MTN MoMo did not accept the Request-to-Pay request (HTTP ${response.status})${detail ? `: ${detail}` : ""}.`);
+    throw new MtnMomoRequestRejectedError(response.status, detail);
   }
   return { accepted: true, referenceId: input.referenceId };
 }
