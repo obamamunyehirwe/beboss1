@@ -27,6 +27,12 @@ After the operating-system installer completes and the native application opens,
 
 The wizard blocks completion if the encrypted database integrity check or WAL-mode check fails. Cloud unavailability is shown as an offline warning; it is not misreported as successful cloud authentication.
 
+## Desktop thermal printer transport
+
+The native desktop ESC/POS command now submits a RAW print job to the operating system's configured default printer queue. Windows uses the native Windows Print Spooler RAW job API; macOS and Linux use the CUPS `lp` RAW queue. The Diagnostics screen shows the detected default printer and includes a clearly marked **test receipt** that does not create a sale, deduct stock or collect payment.
+
+For a thermal printer, install the manufacturer's driver/queue and set the ESC/POS-compatible printer as the operating-system default before printing. The spool artifact is also preserved under the BeBoss application-data directory for diagnostics. A queue accepting the job does not prove the paper output, paper width, cutter, cash drawer, firmware and character encoding are correct; those still require a print on each supported physical model.
+
 ## Local data and uninstall
 
 The application database is held in the native per-user application-data directory and encrypted with SQLCipher. Its key seed is stored through the operating-system credential vault. The user database, secure credential values and local backup files are outside the installer directory.
