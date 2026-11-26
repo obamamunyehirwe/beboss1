@@ -214,14 +214,16 @@ class BeBossRepository(private val database: AppDatabase) {
         activeBranchId: String = "main_branch",
         deviceId: String = "DEV-LOCAL",
         context: Context? = null,
-        retryDeadLetters: Boolean = false
+        retryDeadLetters: Boolean = false,
+        shopShareSecret: String? = null
     ): CloudSyncReport =
         cloudSyncManager.syncAllDataToCloud(
             activeBranchId = activeBranchId,
             deviceId = deviceId,
             context = context,
             retryDeadLetters = retryDeadLetters,
-            mergeRemoteSummary = { summary -> mergeShopDataPackageLww(summary) }
+            mergeRemoteSummary = { summary -> mergeShopDataPackageLww(summary) },
+            shopShareSecret = shopShareSecret
         )
 
     // -------------------------------------------------------------
