@@ -8,7 +8,7 @@ import {
   restRows,
   restRequest,
 } from "../_shared/payment-gateway.ts";
-import { getMtnMomoPaymentStatus, matchesMtnMomoSettlement, readMtnMomoConfiguration, requestMtnMomoPayment } from "../_shared/mtn-momo.ts";
+import { getMtnMomoAccessToken, getMtnMomoPaymentStatus, matchesMtnMomoSettlement, MtnMomoRequestRejectedError, readMtnMomoConfiguration, requestMtnMomoPayment } from "../_shared/mtn-momo.ts";
 
 type ShopRow = {
   id: string;
@@ -20,6 +20,18 @@ type ShopRow = {
   branch_count: number;
   worker_count: number;
   device_count: number;
+};
+
+type GatewayRow = {
+  payment_request_id: string;
+  provider: string;
+  provider_reference: string;
+  provider_checkout_id: string | null;
+  provider_transaction_id?: string | null;
+  amount_rwf: number;
+  currency: string;
+  status: string;
+  verified_at?: number | null;
 };
 
 function requiredText(value: unknown, label: string, min: number, max: number): string {
@@ -70,7 +82,7 @@ async function checkMtnPaymentStatus(request: Request, input: Record<string, unk
   const username = requiredText(input?.username, "Registered shop username", 2, 80).toLowerCase();
   const ownerPhone = requiredText(input?.phone, "Registered owner phone", 9, 30);
   const filters = new URLSearchParams({
-    select: "id,owner_username,owner_phone,status,amount_rwf,payer_phone",
+    select: "id,owner_username,owner_phone,status,amount_rwf,payer_phone,gateway_reference,gateway_transaction_id,gateway_amount_rwf,gateway_currency,gateway_verified_at",
     id: `eq.${requestId}`,
     owner_username: `eq.${username}`,
     limit: "1",
@@ -88,7 +100,7 @@ async function checkMtnPaymentStatus(request: Request, input: Record<string, unk
     return jsonResponse(403, { ok: false, message: "A verified owner session for this shop is required to check payment status." });
   }
   const ledgerFilters = new URLSearchParams({
-    select: "payment_request_id,provider,provider_reference,provider_checkout_id,amount_rwf,currency,status",
+    select: "payment_request_id,provider,provider_reference,provider_checkout_id,provider_transaction_id,amount_rwf,currency,status,verified_at",
     payment_request_id: `eq.${requestId}`,
     provider: "eq.MTN_MOMO",
     limit: "1",
@@ -98,7 +110,23 @@ async function checkMtnPaymentStatus(request: Request, input: Record<string, unk
   if (!row || !row.provider_checkout_id) {
     return jsonResponse(404, { ok: false, message: "This payment has no MTN MoMo request to reconcile." });
   }
-  if (row.status === "VERIFIED") {
+  if (row.status === "VERIFIED" && row.provider_transaction_id && Number(row.verified_at) > 0) {
+    // Repair the second half of settlement persistence if the original process
+    // crashed after committing the private ledger but before updating the payment projection.
+    if (Number(payment.gateway_verified_at) !== Number(row.verified_at) ||
+        String(payment.gateway_reference ?? "") !== row.provider_reference ||
+        String(payment.gateway_transaction_id ?? "") !== row.provider_transaction_id ||
+        Number(payment.gateway_amount_rwf) !== Number(row.amount_rwf) ||
+        String(payment.gateway_currency ?? "") !== "RWF") {
+      await restPatch(`payment_requests?${new URLSearchParams({ id: `eq.${requestId}` }).toString()}`, {
+        gateway_reference: row.provider_reference,
+        gateway_transaction_id: row.provider_transaction_id,
+        gateway_amount_rwf: Number(row.amount_rwf),
+        gateway_currency: "RWF",
+        gateway_verified_at: Number(row.verified_at),
+        updated_at: Date.now(),
+      });
+    }
     return jsonResponse(200, { ok: true, pending: false, verified: true, status: "SUCCESSFUL", message: "MTN MoMo confirmed the payment. BeBoss will show it in the payment review queue." });
   }
   if (row.status === "FAILED") {
@@ -130,6 +158,11 @@ async function checkMtnPaymentStatus(request: Request, input: Record<string, unk
       status: "FAILED",
       provider_transaction_id: status.financialTransactionId ?? "",
       failure_reason: status.reason?.message ?? status.reason?.code ?? "MTN MoMo payment failed.",
+      updated_at: Date.now(),
+    });
+    await restPatch(`payment_requests?${new URLSearchParams({ id: `eq.${requestId}` }).toString()}`, {
+      status: "REJECTED",
+      rejection_reason: "MTN MoMo reported a failed wallet payment. Start a new payment request.",
       updated_at: Date.now(),
     });
     return jsonResponse(200, { ok: true, pending: false, verified: false, status: "FAILED", message: "MTN MoMo marked this payment as failed. No subscription has been activated." });
@@ -323,24 +356,37 @@ Deno.serve(async (request: Request) => {
 
     if (gateway === "mtn_momo") {
       const mtnConfig = readMtnMomoConfiguration();
+      // Acquire the API token before marking the provider request as started.
+      const accessToken = await getMtnMomoAccessToken(mtnConfig);
       const referenceId = crypto.randomUUID();
-      // RequestToPay is asynchronous. HTTP 202 proves only that the wallet prompt
-      // was accepted, never that the customer approved or settled the payment.
-      providerRequestStarted = true;
-      await requestMtnMomoPayment(mtnConfig, {
-        referenceId,
-        externalId: txRef,
-        amountRwf,
-        payerMsisdn: "250" + normalizePhone(payerPhone),
-        payerMessage: `BeBoss subscription ${months} month(s)`,
-      });
       checkoutId = referenceId;
       const ledgerQuery = new URLSearchParams({
         payment_request_id: `eq.${paymentRequestId}`,
         provider_reference: `eq.${txRef}`,
       });
+      // Persist the unique provider reference before the network POST so an uncertain
+      // response can still be reconciled with a later status query.
       await restPatch(`payment_gateway_transactions?${ledgerQuery.toString()}`, {
         provider_checkout_id: checkoutId,
+        status: "INITIATED",
+        updated_at: Date.now(),
+      });
+      // RequestToPay is asynchronous. HTTP 202 proves only that the wallet prompt
+      // was accepted, never that the customer approved or settled the payment.
+      providerRequestStarted = true;
+      try {
+        await requestMtnMomoPayment(mtnConfig, {
+          referenceId,
+          externalId: txRef,
+          amountRwf,
+          payerMsisdn: "250" + normalizePhone(payerPhone),
+          payerMessage: `BeBoss subscription ${months} month(s)`,
+        }, fetch, accessToken);
+      } catch (error) {
+        if (error instanceof MtnMomoRequestRejectedError) providerRejected = true;
+        throw error;
+      }
+      await restPatch(`payment_gateway_transactions?${ledgerQuery.toString()}`, {
         status: "PENDING",
         updated_at: Date.now(),
       });
