@@ -173,7 +173,7 @@ function NativeDesktopApp() {
       }
       setCloud(next); setOwner(credentials); setOffline(false);
       await saveCache(credentials, next);
-      setNotice("Shop data and this licensed desktop installation are synchronized with BeBoss Cloud.");
+      setNotice("Shop data was loaded from BeBoss Cloud and this licensed desktop installation is synchronized.");
       window.setTimeout(() => setNotice(""), 5000);
       return true;
     } catch (e) {
@@ -200,7 +200,7 @@ function NativeDesktopApp() {
             const localSnapshot = await window.beBossDesktop.local.load().catch(() => null);
             setCloud({ ...stored, snapshot: ensureSnapshot(localSnapshot || stored.snapshot) });
             setOwner(credentials); setOffline(true);
-            setError("Cloud unavailable: using the encrypted local SQLite snapshot. Changes will sync when online. " + message);
+            setError("BeBoss Cloud is unavailable. Showing the last encrypted device cache; pending changes remain local until the cloud confirms them. " + message);
             return true;
           }
         } catch { /* ignore corrupt cache */ }
@@ -209,7 +209,7 @@ function NativeDesktopApp() {
         const localSnapshot = await window.beBossDesktop.local.load().catch(() => null);
         setCloud({ ...cloud, snapshot: ensureSnapshot(localSnapshot || cloud.snapshot) });
         setOwner(credentials); setOffline(true);
-        setError("Cloud unavailable: using the encrypted local SQLite snapshot. Changes will sync when online. " + message);
+        setError("BeBoss Cloud is unavailable. Showing the last encrypted device cache; pending changes remain local until the cloud confirms them. " + message);
         return true;
       }
       setError(message);
@@ -495,7 +495,7 @@ function NativeDesktopApp() {
     if (offline) {
       const localTransaction = await window.beBossDesktop.local.queue(operation, next, deviceId, cloud.snapshotUpdatedAt, requiresActiveSubscription, subscriptionExpiresAt, subscriptionStatus);
       setCloud({ ...cloud, snapshot: ensureSnapshot(localTransaction.payload as Snapshot) });
-      setNotice("Saved securely on this device. It will sync automatically when the connection returns.");
+      setNotice("Saved to the encrypted retry queue on this device. It is not cloud-committed yet and will retry when the connection returns.");
       return;
     }
     const localTransaction = await window.beBossDesktop.local.queue(operation, next, deviceId, cloud.snapshotUpdatedAt, requiresActiveSubscription, subscriptionExpiresAt, subscriptionStatus);
@@ -508,7 +508,7 @@ function NativeDesktopApp() {
       setCloud(updated);
       await window.beBossDesktop.local.acknowledge([localTransaction.id]);
       await saveCache(owner, updated);
-      setNotice("Changes saved to the shared BeBoss shop snapshot.");
+      setNotice("Changes were accepted by BeBoss Cloud and saved to the shared shop snapshot.");
       setTimeout(() => setNotice(""), 4500);
     } catch (e) {
       const message = errorText(e);
@@ -518,7 +518,7 @@ function NativeDesktopApp() {
       }
       if (!navigator.onLine || /failed to fetch|network|timeout|connection|offline/i.test(message)) {
         setCloud({ ...cloud, snapshot: ensureSnapshot(localTransaction.payload as Snapshot) }); setOffline(true); setError("");
-        setNotice("Saved securely on this device. It will sync automatically when the connection returns."); return;
+        setNotice("Saved to the encrypted retry queue on this device. It is not cloud-committed yet and will retry when the connection returns."); return;
       }
       if (/newer shop data|snapshot/i.test(message)) {
         setCloud({ ...cloud, snapshot: ensureSnapshot(localTransaction.payload as Snapshot) });
