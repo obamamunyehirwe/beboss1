@@ -1081,7 +1081,7 @@ fn decrypt_lan_body(envelope: &str, shop_secret: &str, timestamp: &str, nonce_te
     let aad = format!("{timestamp}|{nonce_text}");
     let plain = cipher.decrypt(nonce, Payload { msg: &ciphertext, aad: aad.as_bytes() })
         .map_err(|_| "The Android hub payload failed AES-GCM authentication.")?;
-    String::from_utf8(plain).map_err(|_| "The Android hub payload is not valid UTF-8.")
+    String::from_utf8(plain).map_err(|_| "The Android hub payload is not valid UTF-8.".to_string())
 }
 
 fn lan_http_request(
