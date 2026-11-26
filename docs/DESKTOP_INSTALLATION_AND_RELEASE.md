@@ -21,11 +21,11 @@ After the operating-system installer completes and the native application opens,
 
 1. Reads the operating system, architecture, desktop version and local database location.
 2. Creates or reads the persistent native desktop installation identity.
-3. Opens SQLCipher, confirms the cipher is active, runs `PRAGMA quick_check(1)`, confirms WAL journal mode, and inspects the durable synchronization outbox.
+3. Opens the encrypted on-device recovery store, confirms SQLCipher is active, runs `PRAGMA quick_check(1)`, confirms WAL journal mode, and inspects the durable retry queue. This local store is not the primary business database.
 4. Writes, reads and removes a temporary value through encrypted local storage backed by the OS credential vault.
-5. Checks HTTPS TCP reachability of the configured Supabase host. Owner SMS authentication and tenant authorization are tested during the real sign-in flow, not inferred from a TCP connection.
+5. Makes a real HTTPS request to the configured Supabase PostgreSQL Data API using the publishable project key. A TCP handshake alone is not considered database connectivity. Owner SMS authentication, device enrollment and tenant authorization are then checked during the real sign-in flow.
 
-The wizard blocks completion if the encrypted database integrity check or WAL-mode check fails. Cloud unavailability is shown as an offline warning; it is not misreported as successful cloud authentication.
+The wizard blocks completion if the encrypted recovery-store integrity check, WAL-mode check or Supabase PostgreSQL Data API check fails. First-time setup cannot finish while the cloud database is unreachable. The subsequent sign-in still performs the real owner and tenant authorization checks.
 
 ## Desktop thermal printer transport
 
@@ -33,11 +33,13 @@ The native desktop ESC/POS command now submits a RAW print job to the operating 
 
 For a thermal printer, install the manufacturer's driver/queue and set the ESC/POS-compatible printer as the operating-system default before printing. The spool artifact is also preserved under the BeBoss application-data directory for diagnostics. A queue accepting the job does not prove the paper output, paper width, cutter, cash drawer, firmware and character encoding are correct; those still require a print on each supported physical model.
 
-## Local data and uninstall
+## Cloud data, local recovery and uninstall
 
-The application database is held in the native per-user application-data directory and encrypted with SQLCipher. Its key seed is stored through the operating-system credential vault. The user database, secure credential values and local backup files are outside the installer directory.
+Supabase PostgreSQL is the source of truth for shop business records. The current desktop/mobile sync path stores signed, compressed shop snapshot generations in `public.branch_sync_snapshots`, while account, branch, device, staff, payment and management records use protected cloud tables and server-side functions. Authenticated owner/device checks and tenant-scoped authorization run before business writes are accepted.
 
-The supported uninstall removes the installed binaries and BeBoss shortcuts but deliberately preserves the BeBoss application-data directory. This avoids silently deleting a shop's local database, encrypted credentials and backups. Owners should first export a portable encrypted backup and confirm that the cloud snapshot has synchronized before removing the application.
+The native per-user SQLCipher database is only a protected recovery store for the last-known cache, pending retry queue, minimal preferences and secure values. Its key seed is stored through the operating-system credential vault. A locally queued or cached change is not represented as a confirmed cloud commit until Supabase accepts the relevant snapshot generation. Reconnect to the cloud and confirm the pending queue is empty before migrating or uninstalling.
+
+The supported uninstall removes the installed binaries and BeBoss shortcuts but deliberately preserves the BeBoss application-data directory. This avoids silently deleting pending recovery data, encrypted credentials and exported local backups. Owners should first export a portable encrypted backup and confirm that all business changes have synchronized to Supabase.
 
 ## Build and verify locally
 

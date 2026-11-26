@@ -46,6 +46,9 @@ jobs:
     env:
       VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      # Always use the runner's native host toolchain (not a Windows cross-target
+      # toolchain left in the environment) for each OS package build.
+      RUSTUP_TOOLCHAIN: stable
 
     steps:
       - name: Check out source
