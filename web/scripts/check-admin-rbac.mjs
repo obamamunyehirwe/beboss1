@@ -82,7 +82,7 @@ for (const module of modules) {
             fail(module.file + " :: " + action + " is missing required permission guard " + pattern);
           }
         }
-      } else if (!/\\b(?:requireAdmin|requirePermission|requireAdminPermission)\\s*\\(/.test(block)) {
+      } else if (!/\b(?:requireAdmin|requirePermission|requireAdminPermission)\s*\(/.test(block)) {
         fail(module.file + " :: " + action + " is missing a server-side role/permission check");
       }
     }
