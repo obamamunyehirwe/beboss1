@@ -79,7 +79,7 @@ const msgSchema = z.object({
 
 export const askCopilot = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof msgSchema>) => msgSchema.parse(d))
+  .validator((d: z.infer<typeof msgSchema>) => msgSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as AdminCtx;
     await requireStaffRole(ctx, false);
@@ -90,7 +90,7 @@ export const askCopilot = createServerFn({ method: "POST" })
 
 export const draftInboxReply = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { messageId: string; tone: "friendly" | "formal" }) => z.object({ messageId: z.string().uuid(), tone: z.enum(["friendly", "formal"]) }).parse(d))
+  .validator((d: { messageId: string; tone: "friendly" | "formal" }) => z.object({ messageId: z.string().uuid(), tone: z.enum(["friendly", "formal"]) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as AdminCtx;
     await requireStaffRole(ctx, false);

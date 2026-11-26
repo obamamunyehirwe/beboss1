@@ -42,7 +42,7 @@ async function translateAnnouncement(row: { title: string; body: string; cta_lab
 
 export const saveAnnouncement = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: AnnouncementInput) => schema.parse(d))
+  .validator((d: AnnouncementInput) => schema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as AdminCtx;
     const admin = await requireAdminPermission(ctx, "announcements.manage");
@@ -60,7 +60,7 @@ export const saveAnnouncement = createServerFn({ method: "POST" })
 
 export const deleteAnnouncement = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as AdminCtx;
     const admin = await requireAdminPermission(ctx, "announcements.manage");

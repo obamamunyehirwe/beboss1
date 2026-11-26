@@ -46,7 +46,7 @@ export interface ShopInsightsResult {
 
 export const getShopInsights = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shopId: string }) => z.object({ shopId: z.string().min(1).max(200) }).parse(d))
+  .validator((d: { shopId: string }) => z.object({ shopId: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }): Promise<ShopInsightsResult> => {
     const ctx = context as unknown as AdminCtx;
     await requireStaffRole(ctx, false);
@@ -105,7 +105,7 @@ export const getDatashareKeyStatus = createServerFn({ method: "POST" })
 
 export const setDatashareKey = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { value: string }) => z.object({ value: z.string().trim().min(8, "Use at least 8 characters").max(500) }).parse(d))
+  .validator((d: { value: string }) => z.object({ value: z.string().trim().min(8, "Use at least 8 characters").max(500) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as AdminCtx;
     const admin = await requireStaffRole(ctx, true);
@@ -120,7 +120,7 @@ export const setDatashareKey = createServerFn({ method: "POST" })
 
 export const getShopRecords = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shopId: string }) => z.object({ shopId: z.string().min(1).max(200) }).parse(d))
+  .validator((d: { shopId: string }) => z.object({ shopId: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }): Promise<{ records: ShopRecords | null; uploadedAt: number; error: string | null }> => {
     const ctx = context as unknown as AdminCtx;
     await requireStaffRole(ctx, false);

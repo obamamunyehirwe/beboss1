@@ -58,7 +58,7 @@ const ownerEnrollmentSchema = z.object({
  * Responses intentionally do not reveal whether the shop or username exists.
  */
 export const requestMyShopOwnerOtp = createServerFn({ method: "POST" })
-  .inputValidator((d: z.infer<typeof ownerEnrollmentSchema>) => ownerEnrollmentSchema.parse(d))
+  .validator((d: z.infer<typeof ownerEnrollmentSchema>) => ownerEnrollmentSchema.parse(d))
   .handler(async ({ data }) => {
     const accepted = { accepted: true };
     const key = computeShopKey(data.username, data.phone);
@@ -128,7 +128,7 @@ export const requestMyShopOwnerOtp = createServerFn({ method: "POST" })
 
 export const claimMyShopOwner = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof ownerEnrollmentSchema>) => ownerEnrollmentSchema.parse(d))
+  .validator((d: z.infer<typeof ownerEnrollmentSchema>) => ownerEnrollmentSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as OwnerAuthContext;
     const { data: authData, error: authError } = await ctx.supabase.auth.getUser(ctx.accessToken);
@@ -227,7 +227,7 @@ const lookupSchema = z.object({
 
 export const lookupMyShop = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof lookupSchema>) => lookupSchema.parse(d))
+  .validator((d: z.infer<typeof lookupSchema>) => lookupSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
     const key = await requireOwnerSession(ownerContext, data.username, data.phone);
@@ -320,7 +320,7 @@ const addShopDeviceSchema = z.object({
 
 export const addMyShopDevice = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof addShopDeviceSchema>) => addShopDeviceSchema.parse(d))
+  .validator((d: z.infer<typeof addShopDeviceSchema>) => addShopDeviceSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
     const key = await requireOwnerSession(ownerContext, data.username, data.phone);
@@ -459,7 +459,7 @@ const branchSchema = z.object({
 
 export const upsertMyShopBranch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof branchSchema>) => branchSchema.parse(d))
+  .validator((d: z.infer<typeof branchSchema>) => branchSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
     const key = await requireOwnerSession(ownerContext, data.username, data.phone);
@@ -506,7 +506,7 @@ const branchIdSchema = z.object({
 
 export const deleteMyShopBranch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof branchIdSchema>) => branchIdSchema.parse(d))
+  .validator((d: z.infer<typeof branchIdSchema>) => branchIdSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
     const key = await requireOwnerSession(ownerContext, data.username, data.phone);
@@ -542,7 +542,7 @@ const transferSchema = z.object({
 
 export const upsertMyShopStockTransfer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof transferSchema>) => transferSchema.parse(d))
+  .validator((d: z.infer<typeof transferSchema>) => transferSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
     const key = await requireOwnerSession(ownerContext, data.username, data.phone);
@@ -606,7 +606,7 @@ const confirmTransferSchema = z.object({
 
 export const confirmMyShopStockTransfer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof confirmTransferSchema>) => confirmTransferSchema.parse(d))
+  .validator((d: z.infer<typeof confirmTransferSchema>) => confirmTransferSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
     const key = await requireOwnerSession(ownerContext, data.username, data.phone);
@@ -653,7 +653,7 @@ const cancelTransferSchema = z.object({
 
 export const requestMyShopStockTransferCancellation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof cancelTransferSchema>) => cancelTransferSchema.parse(d))
+  .validator((d: z.infer<typeof cancelTransferSchema>) => cancelTransferSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
     const key = await requireOwnerSession(ownerContext, data.username, data.phone);
@@ -709,7 +709,7 @@ const gatewayCheckoutSchema = z.object({
 
 export const createGatewayCheckout = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof gatewayCheckoutSchema>) => gatewayCheckoutSchema.parse(d))
+  .validator((d: z.infer<typeof gatewayCheckoutSchema>) => gatewayCheckoutSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
     await requireOwnerSession(ownerContext, data.username, data.phone);
@@ -858,7 +858,7 @@ const publicDesktopDownloadSchema = z.object({
 });
 
 export const createPublicDesktopDownload = createServerFn({ method: "POST" })
-  .inputValidator((d: z.infer<typeof publicDesktopDownloadSchema>) => publicDesktopDownloadSchema.parse(d))
+  .validator((d: z.infer<typeof publicDesktopDownloadSchema>) => publicDesktopDownloadSchema.parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: release, error: readError } = await supabaseAdmin

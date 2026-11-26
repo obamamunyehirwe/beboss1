@@ -187,7 +187,7 @@ export const getAdminContext = createServerFn({ method: "POST" })
 // ---------------- Payments ----------------
 export const approvePaymentWithCode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { requestId: string; providerVerified: true; verificationNote?: string }) =>
+  .validator((d: { requestId: string; providerVerified: true; verificationNote?: string }) =>
     z.object({ requestId: z.string().min(1).max(200), providerVerified: z.literal(true), verificationNote: z.string().trim().max(500).default("") }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
@@ -361,7 +361,7 @@ export const approvePaymentWithCode = createServerFn({ method: "POST" })
 
 export const directAutoUnlock = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { requestId: string; providerVerified: true; verificationNote?: string }) =>
+  .validator((d: { requestId: string; providerVerified: true; verificationNote?: string }) =>
     z.object({
       requestId: z.string().min(1).max(200),
       providerVerified: z.literal(true),
@@ -525,7 +525,7 @@ export const directAutoUnlock = createServerFn({ method: "POST" })
 
 export const rejectPayment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { requestId: string; reason: string }) => z.object({ requestId: z.string().min(1).max(200), reason: z.string().max(500) }).parse(d))
+  .validator((d: { requestId: string; reason: string }) => z.object({ requestId: z.string().min(1).max(200), reason: z.string().max(500) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -588,7 +588,7 @@ const whatsappClaimSchema = z.object({
 
 export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof whatsappClaimSchema>) => whatsappClaimSchema.parse(d))
+  .validator((d: z.infer<typeof whatsappClaimSchema>) => whatsappClaimSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -650,7 +650,7 @@ export const createWhatsAppPaymentClaim = createServerFn({ method: "POST" })
 
 export const deletePaymentRequest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { requestId: string }) => z.object({ requestId: z.string().min(1).max(200) }).parse(d))
+  .validator((d: { requestId: string }) => z.object({ requestId: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -696,7 +696,7 @@ const manualCodeSchema = z.object({
 
 export const issueManualCode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof manualCodeSchema>) => manualCodeSchema.parse(d))
+  .validator((d: z.infer<typeof manualCodeSchema>) => manualCodeSchema.parse(d))
   .handler(async ({ context }) => {
     const ctx = context as unknown as Ctx;
     await requireAdmin(ctx);
@@ -725,7 +725,7 @@ export type UnlockCodeLookupResult = {
 
 export const lookupUnlockCode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { code: string }) =>
+  .validator((d: { code: string }) =>
     z.object({ code: z.string().trim().min(8).max(512) }).parse(d),
   )
   .handler(async ({ data, context }): Promise<UnlockCodeLookupResult> => {
@@ -837,7 +837,7 @@ export const lookupUnlockCode = createServerFn({ method: "POST" })
 
 export const revokeCode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().min(1).max(200) }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -853,7 +853,7 @@ const shopId = z.string().min(1).max(200);
 
 export const extendShop = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shopId: string; days: number; autoUnlock: boolean }) => z.object({ shopId, days: z.number().int().min(1).max(1000), autoUnlock: z.boolean() }).parse(d))
+  .validator((d: { shopId: string; days: number; autoUnlock: boolean }) => z.object({ shopId, days: z.number().int().min(1).max(1000), autoUnlock: z.boolean() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -866,7 +866,7 @@ export const extendShop = createServerFn({ method: "POST" })
 
 export const resetShopTrial = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shopId: string }) => z.object({ shopId }).parse(d))
+  .validator((d: { shopId: string }) => z.object({ shopId }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -881,7 +881,7 @@ export const resetShopTrial = createServerFn({ method: "POST" })
 
 export const setShopStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shopId: string; status: string }) => z.object({ shopId, status: z.enum(["ACTIVE", "TRIAL", "EXPIRED", "SUSPENDED"]) }).parse(d))
+  .validator((d: { shopId: string; status: string }) => z.object({ shopId, status: z.enum(["ACTIVE", "TRIAL", "EXPIRED", "SUSPENDED"]) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -897,7 +897,7 @@ export const setShopStatus = createServerFn({ method: "POST" })
 
 export const updateShopLimits = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shopId: string; branches: number; workers: number; devices: number }) =>
+  .validator((d: { shopId: string; branches: number; workers: number; devices: number }) =>
     z.object({ shopId, branches: z.number().int().min(1).max(100), workers: z.number().int().min(1).max(500), devices: z.number().int().min(1).max(100) }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -917,7 +917,7 @@ export const updateShopLimits = createServerFn({ method: "POST" })
 
 export const updateShopControls = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shopId: string; killSwitch: boolean; minAppVersion: string; notes: string; adminWhatsapp: string }) =>
+  .validator((d: { shopId: string; killSwitch: boolean; minAppVersion: string; notes: string; adminWhatsapp: string }) =>
     z
       .object({ shopId, killSwitch: z.boolean(), minAppVersion: z.string().trim().regex(/^\d+(\.\d+){0,3}$/, "Version like 2.1.0").max(20), notes: z.string().max(2000), adminWhatsapp: z.string().max(30) })
       .parse(d),
@@ -938,7 +938,7 @@ export const updateShopControls = createServerFn({ method: "POST" })
 
 export const deleteShop = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shopId: string; cascade: boolean }) => z.object({ shopId, cascade: z.boolean() }).parse(d))
+  .validator((d: { shopId: string; cascade: boolean }) => z.object({ shopId, cascade: z.boolean() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -958,7 +958,7 @@ export const deleteShop = createServerFn({ method: "POST" })
 // ---------------- Devices / users / snapshots ----------------
 export const setDeviceActive = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; active: boolean }) => z.object({ id: z.string().min(1).max(200), active: z.boolean() }).parse(d))
+  .validator((d: { id: string; active: boolean }) => z.object({ id: z.string().min(1).max(200), active: z.boolean() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -971,7 +971,7 @@ export const setDeviceActive = createServerFn({ method: "POST" })
 
 export const deleteDevice = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().min(1).max(200) }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -984,7 +984,7 @@ export const deleteDevice = createServerFn({ method: "POST" })
 
 export const updateShopUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; role?: string; isActive?: boolean }) =>
+  .validator((d: { id: string; role?: string; isActive?: boolean }) =>
     z.object({ id: z.string().min(1).max(200), role: z.enum(["OWNER", "MANAGER", "CASHIER"]).optional(), isActive: z.boolean().optional() }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -1005,7 +1005,7 @@ export const updateShopUser = createServerFn({ method: "POST" })
 
 export const deleteShopUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().min(1).max(200) }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "users.manage");
@@ -1020,7 +1020,7 @@ export const deleteShopUser = createServerFn({ method: "POST" })
   });
 export const deleteSnapshot = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().min(1).max(300) }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().min(1).max(300) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -1056,7 +1056,7 @@ const configSchema = z.object({
 
 export const saveAppConfig = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof configSchema>) => configSchema.parse(d))
+  .validator((d: z.infer<typeof configSchema>) => configSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -1089,7 +1089,7 @@ export const getBb3SigningStatus = createServerFn({ method: "POST" })
 
 export const setSigningSecret = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { value: string }) => z.object({ value: z.string().trim().min(120, "Paste a complete PKCS#8 P-256 private key PEM").max(2000) }).parse(d))
+  .validator((d: { value: string }) => z.object({ value: z.string().trim().min(120, "Paste a complete PKCS#8 P-256 private key PEM").max(2000) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -1119,7 +1119,7 @@ const releaseSchema = z.object({
 
 export const publishRelease = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof releaseSchema>) => releaseSchema.parse(d))
+  .validator((d: z.infer<typeof releaseSchema>) => releaseSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
@@ -1159,7 +1159,7 @@ export const publishRelease = createServerFn({ method: "POST" })
 
 export const setCurrentRelease = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; public_download_url: string }) => z.object({ id: z.string().uuid(), public_download_url: z.string().url().max(500) }).parse(d))
+  .validator((d: { id: string; public_download_url: string }) => z.object({ id: z.string().uuid(), public_download_url: z.string().url().max(500) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
@@ -1177,7 +1177,7 @@ export const setCurrentRelease = createServerFn({ method: "POST" })
 
 export const deleteRelease = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
@@ -1194,7 +1194,7 @@ export const deleteRelease = createServerFn({ method: "POST" })
 
 export const getAdminReleaseDownload = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     await requirePermission(ctx, "releases.manage");
@@ -1209,7 +1209,7 @@ export const getAdminReleaseDownload = createServerFn({ method: "POST" })
 
 export const updateRelease = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; version_name: string; version_code: number; min_android: string; release_notes: string }) =>
+  .validator((d: { id: string; version_name: string; version_code: number; min_android: string; release_notes: string }) =>
     z.object({
       id: z.string().uuid(),
       version_name: z.string().trim().regex(/^[0-9]+([.][0-9]+){0,3}$/).max(40),
@@ -1238,7 +1238,7 @@ export const updateRelease = createServerFn({ method: "POST" })
 
 export const setArchivedReleaseVisibility = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { isPublic: boolean }) => z.object({ isPublic: z.boolean() }).parse(d))
+  .validator((d: { isPublic: boolean }) => z.object({ isPublic: z.boolean() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
@@ -1258,7 +1258,7 @@ export const setArchivedReleaseVisibility = createServerFn({ method: "POST" })
 
 export const setReleaseVisibility = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; isPublic: boolean }) => z.object({ id: z.string().uuid(), isPublic: z.boolean() }).parse(d))
+  .validator((d: { id: string; isPublic: boolean }) => z.object({ id: z.string().uuid(), isPublic: z.boolean() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
@@ -1280,7 +1280,7 @@ export const setReleaseVisibility = createServerFn({ method: "POST" })
 // ---------------- Inbox ----------------
 export const updateContactMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; status: string; note: string }) =>
+  .validator((d: { id: string; status: string; note: string }) =>
     z.object({ id: z.string().uuid(), status: z.enum(["NEW", "IN_PROGRESS", "RESOLVED", "SPAM"]), note: z.string().max(4000) }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -1294,7 +1294,7 @@ export const updateContactMessage = createServerFn({ method: "POST" })
 
 export const deleteContactMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "inbox.manage");
@@ -1322,7 +1322,7 @@ export const listTeam = createServerFn({ method: "POST" })
 
 export const grantTeamRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email: string; role: string }) => z.object({
+  .validator((d: { email: string; role: string }) => z.object({
     email: z.string().trim().email().max(200),
     role: z.enum(["SUPER_ADMIN", "RELEASE_MANAGER", "ANNOUNCEMENT_MANAGER", "DEVICE_AUDITOR", "SUPPORT", "FINANCE_REVIEWER", "ANALYST", "OPERATIONS_MANAGER", "STAFF_MANAGER"]),
   }).parse(d))
@@ -1337,7 +1337,7 @@ export const grantTeamRole = createServerFn({ method: "POST" })
 
 export const revokeTeamRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { userId: string }) => z.object({ userId: z.string().uuid() }).parse(d))
+  .validator((d: { userId: string }) => z.object({ userId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     await requireAdmin(ctx);
@@ -1353,7 +1353,7 @@ export const revokeTeamRole = createServerFn({ method: "POST" })
  */
 export const revokeShopOwnerMembership = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { userId: string; shopId: string }) =>
+  .validator((d: { userId: string; shopId: string }) =>
     z.object({ userId: z.string().uuid(), shopId: z.string().trim().min(3).max(160) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
@@ -1378,7 +1378,7 @@ export const revokeShopOwnerMembership = createServerFn({ method: "POST" })
 
 export const listShopOwnerMemberships = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { shopId: string }) => z.object({ shopId: z.string().trim().min(3).max(160) }).parse(d))
+  .validator((d: { shopId: string }) => z.object({ shopId: z.string().trim().min(3).max(160) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     await requireAdmin(ctx);
@@ -1403,7 +1403,7 @@ const gatewayRefundSchema = z.object({
 
 export const managePaymentGatewayRefund = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof gatewayRefundSchema>) => gatewayRefundSchema.parse(d))
+  .validator((d: z.infer<typeof gatewayRefundSchema>) => gatewayRefundSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     await requireAdmin(ctx);
@@ -1456,7 +1456,7 @@ export const getAdminDesktopReleases = createServerFn({ method: "GET" })
 
 export const publishDesktopRelease = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: z.infer<typeof desktopReleaseUploadSchema>) => desktopReleaseUploadSchema.parse(d))
+  .validator((d: z.infer<typeof desktopReleaseUploadSchema>) => desktopReleaseUploadSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
@@ -1533,7 +1533,7 @@ export const publishDesktopRelease = createServerFn({ method: "POST" })
 
 export const cleanupDesktopReleaseUpload = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { file_path: string }) => z.object({ file_path: z.string().trim().min(1).max(500) }).parse(d))
+  .validator((d: { file_path: string }) => z.object({ file_path: z.string().trim().min(1).max(500) }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     await requirePermission(ctx, "releases.manage");
@@ -1555,7 +1555,7 @@ export const cleanupDesktopReleaseUpload = createServerFn({ method: "POST" })
 
 export const setCurrentDesktopRelease = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
@@ -1575,7 +1575,7 @@ export const setCurrentDesktopRelease = createServerFn({ method: "POST" })
 
 export const setDesktopReleaseVisibility = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; isPublic: boolean }) =>
+  .validator((d: { id: string; isPublic: boolean }) =>
     z.object({ id: z.string().uuid(), isPublic: z.boolean() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
@@ -1593,7 +1593,7 @@ export const setDesktopReleaseVisibility = createServerFn({ method: "POST" })
 
 export const getAdminDesktopReleaseDownload = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     await requirePermission(ctx, "releases.manage");
@@ -1612,7 +1612,7 @@ export const getAdminDesktopReleaseDownload = createServerFn({ method: "POST" })
 
 export const deleteDesktopRelease = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requireAdmin(ctx);
