@@ -116,4 +116,6 @@ echo "Running owner OTP destination-throttle regression tests."
 psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/owner_otp_phone_throttle.sql
 echo "Running payment gateway state-transition regression tests."
 psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/payment_gateway_state_transitions.sql
+echo "Running MTN MoMo server-only provider ledger regression tests."
+psql -X -v ON_ERROR_STOP=1 -f web/supabase/tests/mtn_momo_collection_provider.sql
 echo "Tenant-isolation database regression tests passed."

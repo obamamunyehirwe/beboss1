@@ -51,3 +51,25 @@ The repository contains server-side admin authentication and delegated permissio
 This was a GitHub source review and repository edit, not a local checkout or device lab run. The code changes are submitted on a separate branch so GitHub Actions can validate the web lint/tests/build, PostgreSQL migration and tenant-isolation suite, Windows desktop type/native/test/installer checks, and Android JVM/build checks. Until those checks complete successfully, the changes must be treated as pending CI verification. Production signing, provider settlement, live Supabase settings, physical hardware, staged migration rollout and independent security testing remain outside this source-only verification.
 
 **Release decision:** do not mark this revision fully production-accepted or enterprise-certified until the critical signing/client-secret migration and the high-severity staging, platform, provider and independent-security gates are closed with recorded evidence.
+
+## 2026-11-26 enterprise-readiness follow-up
+
+The following additional source changes are prepared on the current release-readiness branch (pending its new CI run and review):
+
+- The owner portal now uses a per-request server-only Supabase service client with a tenant header and owner/phone membership re-checks; branch/transfer operations remain constrained to that tenant. The implementation entered main through merged PR #160.
+- The desktop share page now validates the current server-emitted shop-scoped BBSHARE2 token; Android Data Transfer manual signed-token imports are routed through the same authenticated shop-owner import flow. Legacy BBSHARE1 remains read-only migration compatibility.
+- The new SQL migration revokes anon and authenticated grants on public.app_secrets and public.admin_bootstrap_emails, with regression coverage. The live schema inspection found those two residual table grants despite RLS being enabled without policies.
+- Direct MTN MoMo Collections Request-to-Pay is implemented server-side with separate sandbox and migrated Rwanda production configuration. The server stores the provider reference before the request, treats HTTP 202 as pending only, polls the provider transaction-status endpoint, matches the exact RWF amount, external reference, payer MSISDN and financial transaction ID, and routes verified payments to the existing admin review/BB3 issuance flow. New tests cover sandbox configuration, production User ID/Credential Token, mtnrwanda, and settlement mismatch rejection.
+- The MTN ledger migration extends the existing provider constraints and checkout throttle to include MTN_MOMO; it does not grant new client table access. CI now runs the provider adapter tests and SQL grant/constraint assertions.
+- Direct Airtel Money API collection is intentionally not enabled. The supported Flutterwave hosted flow remains available for activated Rwanda MTN/Airtel methods. Airtel's developer portal requires app/product registration and production approval before its direct contract can be wired safely.
+
+### Release gates still open
+
+- The Android APK still carries the legacy DataShare HMAC and credential-hash compatibility fields required to read old BBSHARE and PBKDF2 records. New branch exchanges use the shop-scoped key and new credential hashes are portable PBKDF2v2, but removing the old fields before migration coverage/old-client retirement would break existing businesses.
+- A release keystore was previously committed to public history. Key rotation and upgrade compatibility must be performed with your actual Play App Signing/upload-key process; a repository-only delete does not rotate a signing key.
+- Configure the new MTN production secrets in Supabase Edge Function secrets, not only in a local .env: MTN_MOMO_USER_ID, MTN_MOMO_CREDENTIAL_TOKEN, the production Collections key, MTN_MOMO_ENV=production, MTN_MOMO_BASE_URL=https://momoapi.momo.africa, and MTN_MOMO_TARGET_ENVIRONMENT=mtnrwanda. Complete a real RWF collection and reconciliation before live customer use.
+- Supabase leaked-password protection still needs to be enabled in Auth settings. The source changes cannot modify that dashboard setting.
+- Build/sign the release artifacts using your local certificates; test Android on your hardware and exercise the printer, scanner, cash drawer, Bluetooth/LAN sync, offline outbox recovery and real-world multi-device conflicts.
+- Complete isolated staging and independent security review before calling the system production-certified.
+
+CI is the gate for source-level build and regression evidence; a green CI run does not itself certify merchant onboarding, live settlement, production signatures, or physical-device operation.

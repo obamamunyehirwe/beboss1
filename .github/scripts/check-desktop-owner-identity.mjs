@@ -24,7 +24,7 @@ if (!/\.eq\("shop_sync_key",\s*shopId\)/.test(helper) ||
     !/\.eq\("is_active",\s*true\)/.test(helper)) {
   failures.push("The shop owner lookup must be tenant-scoped, username-bound, active and OWNER-only.");
 }
-if (!/actorDevice\.data\.assigned_user_id\s*!==\s*text\(ownerUser\.data\.user_id\)/.test(helper)) {
+if (!/text\(actorDevice\.data\.assigned_user_id\)\s*!==\s*text\(ownerUser\.data\.user_id\)/.test(helper)) {
   failures.push("The registered desktop must be checked against the resolved Room owner user_id.");
 }
 if (/ownerUserId|owner\.user\.id/.test(helper)) {

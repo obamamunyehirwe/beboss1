@@ -401,7 +401,15 @@ function PaymentsPage() {
                         </a>
                       </Button>
                     ) : null}
-                    {Number(r.gateway_verified_at) > 0 && ["APPROVED", "REDEEMED"].includes(r.status) &&
+                    {Number(r.gateway_verified_at) > 0 && r.gateway_provider === "MTN_MOMO" &&
+                     ["APPROVED", "REDEEMED"].includes(r.status) &&
+                     Number(r.gateway_refunded_amount_rwf || 0) < Number(r.gateway_amount_rwf || r.amount_rwf) ? (
+                      <p className="max-w-sm text-xs text-muted-foreground">
+                        Direct MTN MoMo refunds are not automated in this release. Contact the merchant and record/reconcile any manual reversal separately.
+                      </p>
+                    ) : null}
+                    {Number(r.gateway_verified_at) > 0 && r.gateway_provider !== "MTN_MOMO" &&
+                     ["APPROVED", "REDEEMED"].includes(r.status) &&
                      Number(r.gateway_refunded_amount_rwf || 0) < Number(r.gateway_amount_rwf || r.amount_rwf) ? (
                       <Button size="sm" variant="outline" onClick={() => {
                         setRefundTarget(r);

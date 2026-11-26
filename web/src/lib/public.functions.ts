@@ -825,7 +825,7 @@ export const createGatewayCheckout = createServerFn({ method: "POST" })
       throw new Error("The BeBoss online payment service is not configured.");
     }
 
-    const response = await fetch(`${supabaseUrl.replace(/\\/+$/, "")}/functions/v1/create-payment-checkout`, {
+    const response = await fetch(new URL("/functions/v1/create-payment-checkout", supabaseUrl).toString(), {
       method: "POST",
       headers: {
         apikey: publishableKey,
@@ -883,7 +883,7 @@ export const checkGatewayPaymentStatus = createServerFn({ method: "POST" })
     const publishableKey = process.env["SUPABASE_PUBLISHABLE_KEY"] || import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"];
     if (!supabaseUrl || !publishableKey) throw new Error("The BeBoss online payment service is not configured.");
 
-    const response = await fetch(`${supabaseUrl.replace(/\\/+$/, "")}/functions/v1/create-payment-checkout`, {
+    const response = await fetch(new URL("/functions/v1/create-payment-checkout", supabaseUrl).toString(), {
       method: "POST",
       headers: {
         apikey: publishableKey,
