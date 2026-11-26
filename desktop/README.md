@@ -53,7 +53,7 @@ Build a native Windows installer:
 npm run dist:win
 ```
 
-Use `npm run dist:mac` on macOS and `npm run dist:linux` on Linux. Outputs are created under `src-tauri/target/release/bundle/nsis`, `dmg` and `appimage`. GitHub Actions also builds unsigned packages for all three platforms and publishes SHA-256 manifests for integrity verification.
+Use `npm run dist:mac` on macOS and `npm run dist:linux` on Linux. Outputs are created under `src-tauri/target/release/bundle/nsis`, `dmg` and `appimage`. Push a tag such as `desktop-v1.3.1` to run the multi-platform release workflow. It builds the Windows NSIS installer, macOS DMG and Linux AppImage, then publishes all three stable-named assets and one `SHA256SUMS.txt` manifest to the same GitHub Release. The website `/download?platform=desktop` page reads the published release metadata and only enables links for installers that exist. Windows publication requires the configured Authenticode certificate and successful signature verification. macOS signing and notarization use the six `APPLE_*` release secrets; without them, the workflow clearly marks the DMG build as unsigned. A manual workflow run builds test artifacts but does not publish a GitHub Release.
 
 ## Local recovery, credentials and uninstall
 

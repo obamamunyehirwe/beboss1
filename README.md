@@ -65,7 +65,7 @@ The first-launch desktop wizard configures and validates the local installation.
 
 The web application combines the public BeBoss product site with merchant self-service and platform administration.
 
-- Public product information, features, pricing, downloads and support contact.
+- Public product information, features, pricing and support contact, plus official Android APK and native Windows/macOS/Linux desktop downloads with release integrity details.
 - Interactive subscription and device-fee calculations.
 - Merchant shop portal for account information, branches, transfers, staff and device operations available to the authenticated owner.
 - Secure owner sign-in and shop membership checks.

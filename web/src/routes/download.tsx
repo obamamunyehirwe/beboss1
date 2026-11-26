@@ -434,7 +434,7 @@ function DesktopDownloads({
   ];
 
   return (
-    <main className="download-desktop-layout mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14">
+    <section className="download-desktop-layout mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14">
       <section className="download-desktop-card overflow-hidden rounded-[2rem] border border-border bg-card shadow-soft">
         <div className="download-desktop-intro p-6 sm:p-9 lg:p-11">
           <div className="flex flex-wrap items-center gap-4">
@@ -578,7 +578,7 @@ function DesktopDownloads({
           </div>
         </div>
       </section>
-    </main>
+    </section>
   );
 }
 
