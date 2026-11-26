@@ -222,6 +222,90 @@ class BranchDataShareTest {
     }
 
     @Test
+    fun `BBSHARE2 cloud chunking preserves high volume sale lines products and purchases`() {
+        val shopSecret = "d".repeat(64)
+        val profile = ShopProfile(
+            id = 1,
+            name = "Owner",
+            shopName = "BeBoss Kigali",
+            phone = "+250788111222"
+        )
+        val sale = Sale(
+            id = "sale_high_volume",
+            receiptNumber = "RC-HIGH-001",
+            totalAmount = 600_000.0,
+            totalCost = 300_000.0,
+            totalProfit = 300_000.0
+        )
+        val products = (1..205).map { index ->
+            Product(
+                id = "product_$index",
+                name = "Product $index",
+                costPrice = 100.0,
+                sellingPrice = 150.0,
+                quantityInStock = 20.0
+            )
+        }
+        val saleItems = (1..601).map { index ->
+            SaleItem(
+                id = "sale_line_$index",
+                saleId = sale.id,
+                productId = products[(index - 1) % products.size].id,
+                productName = products[(index - 1) % products.size].name,
+                quantitySold = 1.0,
+                unitPriceAtSale = 150.0,
+                costPriceAtSale = 100.0,
+                subtotal = 150.0,
+                profit = 50.0
+            )
+        }
+        val purchases = (1..205).map { index ->
+            PurchaseRecord(
+                id = "purchase_$index",
+                productId = products[(index - 1) % products.size].id,
+                productName = products[(index - 1) % products.size].name,
+                quantityPurchased = 10.0,
+                unitCostPrice = 100.0,
+                totalPurchaseCost = 1_000.0,
+                supplierName = "Supplier $index"
+            )
+        }
+
+        val tokens = ShopDataTransferManager.exportChunkedTokens(
+            profile = profile,
+            users = emptyList(),
+            products = products,
+            customers = emptyList(),
+            sales = listOf(sale),
+            saleItems = saleItems,
+            payments = emptyList(),
+            exportedByUser = null,
+            purchases = purchases,
+            maxRecordsPerChunk = 100,
+            shopSecret = shopSecret
+        )
+
+        assertTrue("Large snapshots must be split into multiple signed packets.", tokens.size > 3)
+        assertTrue(tokens.all { it.startsWith("BBSHARE2:") })
+
+        val packets = tokens.map { token ->
+            ShopDataTransferManager.parseShopPackageString(token, shopSecret = shopSecret)
+        }
+        assertEquals(sale.id, packets.first().sales.single().id)
+        assertTrue(
+            "The first sale packet must precede its overflow sale-line packets.",
+            packets.drop(1).take(6).all { it.sales.isEmpty() && it.saleItems.isNotEmpty() }
+        )
+        assertEquals(products.size, packets.sumOf { it.products.size })
+        assertEquals(purchases.size, packets.sumOf { it.purchases.size })
+        assertEquals(saleItems.size, packets.sumOf { it.saleItems.size })
+        assertEquals(
+            saleItems.map { it.id }.toSet().size,
+            packets.flatMap { it.saleItems }.map { it.id }.toSet().size
+        )
+    }
+
+    @Test
     fun `BBSHARE2 is shop scoped and rejects a wrong shop key`() {
         val profile = ShopProfile(id = 1, name = "Owner", shopName = "BeBoss Kigali", phone = "+250788111222")
         val json = ShopDataTransferManager.createExportJson(
