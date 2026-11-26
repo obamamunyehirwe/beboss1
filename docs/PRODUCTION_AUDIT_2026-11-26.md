@@ -1,5 +1,7 @@
 # BeBoss cross-platform source audit — 26 November 2026
 
+> **Status correction — 26 November 2026:** The baseline findings below describe the code at the start of this audit. The Android global DataShare HMAC and credential pepper have since been removed from the final `secure` flavor. The current staged architecture and its remaining rollout gates are recorded in **[ANDROID_DESKTOP_SECURITY_MIGRATION.md](ANDROID_DESKTOP_SECURITY_MIGRATION.md)** and the "Android and desktop security migration superseding update" section at the end of this document. Do not use the earlier statements below as instructions for the current build.
+
 **Repository:** `obamamunyehirwe/beboss1`  
 **Audited baseline:** `86ab2a41e40a7f97a0b56a4e2ffa3232bbf4ffd6` (`main`)  
 **Scope:** repository inventory and targeted source review of the TanStack web application, merchant and Master Admin routes, Supabase Edge Functions and SQL migrations, Tauri/Rust desktop client, Android/Kotlin application, build configuration, tests and CI.
@@ -112,3 +114,15 @@ This section records the additional mobile/desktop source review and fixes appli
 The source changes are committed to `main`. GitHub Actions is running against the latest source revision; results must be taken from the linked workflow run, not inferred from commit success. No production deployment, production signature, provider settlement, independent penetration test or physical-device acceptance is claimed by this audit.
 
 **Release decision:** the mobile and desktop source has received additional hardening, but the product is not yet fully production-accepted or enterprise-certified. Close the critical secret/signing gates and complete staged, provider, security and device acceptance before making that claim.
+
+## Android and desktop security migration superseding update — 26 November 2026
+
+The older "Critical — Android client secrets and signing history" and subsequent "Release blockers remain open" paragraphs above are a record of the original audit baseline; they are superseded for current source status by these later commits:
+
+- The `secure` Android flavor (version 2.5.0 / versionCode 19) contains neither `BEBOSS_DATASHARE_HMAC_SECRET` nor `BEBOSS_SECURITY_PEPPER`.
+- A separate one-time `transition` flavor (version 2.4.1 / versionCode 18) temporarily contains only the historical credential pepper so existing PBKDF2-v1 hashes can be migrated to a device-local Android Keystore envelope before updating to Secure. The final Secure APK has no compile-time fallback. Existing v2 credentials remain offline-capable.
+- Current shop-scoped BBSHARE2 creation/verification remains offline. Legacy BBSHARE1 and older global-key BBSHARE2 are verified by Supabase using an enrolled device credential or registered owner SMS OTP; the legacy key is never returned to Android. Raw .beboss backup files remain offline-importable.
+- Android now initializes the Sentry Android SDK 8.64.0 when a configured DSN exists. Desktop renderer and native Rust host have Sentry event/panic integration with privacy filtering. Release bundle commands/build gates require DSN configuration; successful event delivery still needs the owner to configure DSNs and send test events.
+- Android release signing now checks a configured certificate SHA-256 fingerprint and includes local key generation/verification helpers. The previously exposed key has **not** been reset in Play Console in this source-only session. Actual upload-key reset and existing-device upgrade acceptance remain open.
+
+Automated verification on the latest source revision is tracked here: [GitHub Actions](https://github.com/obamamunyehirwe/beboss1/actions). The completed web and tenant-isolation database jobs passed; Android unit/emulator and native desktop Rust/installer results must be read from the latest run before release. Production DSN delivery, Play Console key reset, per-device transition rollout, production signatures and hardware acceptance remain external gates.
