@@ -65,16 +65,40 @@ Build the artifact on the corresponding operating system:
 
 The Windows local release script builds the NSIS installer, validates the replacement Authenticode PFX (private key, validity and Code Signing EKU), signs with an RFC 3161 timestamp, verifies the signature chain, and writes SHA-256 checksum output. Store the replacement PFX outside the repository. Set `WINDOWS_CODESIGN_PFX_PATH` and enter `WINDOWS_CODESIGN_PFX_PASSWORD` only in the current PowerShell session. Clear the password when finished with `Remove-Item Env:WINDOWS_CODESIGN_PFX_PASSWORD`. It rejects the old PFX that was previously committed to the public repository.
 
+For a local PowerShell build, set the path to a **new CA-issued code-signing certificate** outside the repository and read its password as a secure prompt:
+
+```powershell
+$env:WINDOWS_CODESIGN_PFX_PATH = "C:\BeBossSigning\replacement-code-signing.pfx"
+$securePassword = Read-Host "PFX password" -AsSecureString
+$env:WINDOWS_CODESIGN_PFX_PASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Password
+npm run release:win:local
+Remove-Item Env:WINDOWS_CODESIGN_PFX_PASSWORD
+Remove-Item Env:WINDOWS_CODESIGN_PFX_PATH
+```
+
 **Certificate rotation notice:** deleting the old PFX from the current source tree does not erase earlier public Git history. The old certificate must be revoked or invalidated by its issuer; do not reuse it for production distribution. Never commit a PFX, private key or signing password.
 
 For macOS, run the DMG build on macOS; complete signing and notarization with your Apple Developer credentials before customer distribution. For Linux, build and test the AppImage on a supported Linux environment and verify its runtime dependencies on the distributions used by customers. A package being assembled is not proof that it has passed physical-device or clean-machine acceptance.
+
+### Apply the desktop release database migration
+
+Before opening the Admin desktop release workspace, apply the private release table and Storage configuration to the **intended Supabase project**. From the repository's `web` directory, link the target project, inspect pending migrations and only then apply them:
+
+```powershell
+cd web
+supabase link --project-ref YOUR_SUPABASE_PROJECT_REF
+supabase migration list
+supabase db push
+```
+
+The relevant migration is `web/supabase/migrations/20261126103000_admin_local_desktop_releases.sql`. It creates the private `desktop_app_releases` metadata table, configures the private installer bucket and adds permission-checked publication/download functions. Confirm the project ref and review every pending migration before running `db push` against production.
 
 ### Upload a local artifact
 
 1. Sign in to the BeBoss Admin Center with the `releases.manage` permission.
 2. Open **App releases → Desktop releases** and choose Windows, macOS or Linux.
 3. Follow the build instructions for that platform and complete its signing and verification steps. Select the `package.json` file from the same local `desktop` source checkout used for the build; the Admin page reads its version locally and does not contact GitHub.
-4. Select the actual output `.exe`, `.dmg` or `.AppImage` file from your local filesystem and enter release notes. The version must match the selected local manifest. The browser checks the platform file signature and calculates SHA-256 before uploading the binary to the private Supabase `releases` bucket.
+4. Select the actual output `.exe`, `.dmg` or `.AppImage` file from your local filesystem and enter release notes. The version must match the selected local manifest. The browser checks the platform file structure (Windows PE `MZ` header, Linux ELF header or macOS UDIF trailer) and calculates SHA-256 before uploading the binary to the private Supabase `releases` bucket. These format checks are not a substitute for a trusted Authenticode signature, Apple Developer ID signing/notarization or a platform-specific clean-machine test; complete and verify those steps locally before upload.
 5. Choose whether the build should immediately become the current public installer. Publishing a new current version archives the previous release for that platform only; switching platforms never changes another platform's current installer.
 6. Verify the resulting public download page, release notes and checksum. The Mobile and Desktop release histories are separate; a desktop upload never changes the Android APK or its update configuration.
 
