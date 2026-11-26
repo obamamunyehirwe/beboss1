@@ -73,10 +73,10 @@ For macOS, run the DMG build on macOS; complete signing and notarization with yo
 
 1. Sign in to the BeBoss Admin Center with the `releases.manage` permission.
 2. Open **App releases → Desktop releases** and choose Windows, macOS or Linux.
-3. Follow the build instructions for that platform. Select the actual output `.exe`, `.dmg` or `.AppImage` file from your local filesystem.
-4. Set the release version and notes. The browser calculates the SHA-256 hash, then uploads the selected binary to the private Supabase `releases` bucket.
-5. Review the selected platform and choose whether this build should immediately become the current public installer. Publishing a new current version archives the previous release for that platform only.
-6. Verify the resulting public download page and checksum. The Mobile and Desktop release histories are separate; a desktop upload never changes the Android APK or its update configuration.
+3. Follow the build instructions for that platform and complete its signing and verification steps. Select the `package.json` file from the same local `desktop` source checkout used for the build; the Admin page reads its version locally and does not contact GitHub.
+4. Select the actual output `.exe`, `.dmg` or `.AppImage` file from your local filesystem and enter release notes. The version must match the selected local manifest. The browser checks the expected package format/header and calculates SHA-256 before uploading the binary to the private Supabase `releases` bucket. These format checks are not operating-system code-signature verification: Windows must pass the local Authenticode signing/verification script, and macOS must be signed and notarized on macOS before publication.
+5. Choose whether the build should immediately become the current public installer. Publishing a new current version archives the previous release for that platform only; switching platforms never changes another platform's current installer.
+6. Verify the resulting public download page, release notes and checksum. The Mobile and Desktop release histories are separate; a desktop upload never changes the Android APK or its update configuration.
 
 The bucket is private. Public downloads are issued from a server-controlled, short-lived signed URL only after the server confirms that the release is marked public. That covers the current build and any archived version the release administrator has explicitly made public. The browser never receives a storage service key, a permanent public object URL or the underlying private object path. Download counts are incremented by the server-side release-download function.
 

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@/lib/use-server-fn";
-import { Apple, CheckCircle2, Download, FileCheck2, Laptop, Loader2, Monitor, Pencil, Smartphone, Star, Trash2, UploadCloud } from "lucide-react";
+import { Apple, CheckCircle2, Download, Eye, EyeOff, FileCheck2, FileText, HardDrive, Laptop, Loader2, Monitor, PackageCheck, Pencil, Search, ShieldCheck, Smartphone, Star, Trash2, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -86,10 +86,14 @@ function ReleasesPage() {
   const [stage, setStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
   const [desktopPlatform, setDesktopPlatform] = useState<DesktopPlatform>("windows");
   const [desktopFile, setDesktopFile] = useState<File | null>(null);
-  const [desktopVersion, setDesktopVersion] = useState("1.3.0");
+  const [desktopManifestFile, setDesktopManifestFile] = useState<File | null>(null);
+  const [desktopManifestVersion, setDesktopManifestVersion] = useState("");
+  const [desktopVersion, setDesktopVersion] = useState("");
   const [desktopNotes, setDesktopNotes] = useState("");
   const [desktopMakeCurrent, setDesktopMakeCurrent] = useState(true);
   const [desktopStage, setDesktopStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
+  const [desktopArchivePlatform, setDesktopArchivePlatform] = useState<"all" | DesktopPlatform>("all");
+  const [desktopArchiveSearch, setDesktopArchiveSearch] = useState("");
   const [editingRelease, setEditingRelease] = useState<ReleaseWithVisibility | null>(null);
   const [editForm, setEditForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "" });
   const editReleaseAction = useAdminAction(useServerFn(updateRelease), { success: "Release updated", invalidate: [["admin", "releases"], ["public-site"]] });
@@ -123,14 +127,58 @@ function ReleasesPage() {
     (downloads.data ?? []).forEach((d) => (m[d.channel] = (m[d.channel] ?? 0) + 1));
     return m;
   }, [downloads.data]);
+  const desktopArchiveRows = useMemo(() => {
+    const query = desktopArchiveSearch.trim().toLowerCase();
+    return desktopRows.filter((release) => desktopArchivePlatform === "all" || release.platform === desktopArchivePlatform)
+      .filter((release) => !query || [
+        release.version_name,
+        release.file_name,
+        release.platform,
+        release.release_notes ?? "",
+      ].some((value) => String(value).toLowerCase().includes(query)));
+  }, [desktopRows, desktopArchivePlatform, desktopArchiveSearch]);
+
+  const handleDesktopManifestChange = async (manifestFile: File | null) => {
+    setDesktopManifestFile(manifestFile);
+    setDesktopManifestVersion("");
+    setDesktopVersion("");
+    if (!manifestFile) return;
+    if (manifestFile.name.toLowerCase() !== "package.json" || manifestFile.size > 1024 * 1024) {
+      setDesktopManifestFile(null);
+      const manifestInput = document.getElementById("desktop-source-manifest") as HTMLInputElement | null;
+      if (manifestInput) manifestInput.value = "";
+      toast.error("Choose the small package.json file from your local desktop project folder.");
+      return;
+    }
+    try {
+      const parsed = JSON.parse(await manifestFile.text()) as { version?: unknown };
+      const version = typeof parsed.version === "string" ? parsed.version.trim() : "";
+      if (!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+        throw new Error("The selected package.json does not contain a valid semantic version.");
+      }
+      setDesktopManifestVersion(version);
+      setDesktopVersion(version);
+      toast.success(`Local desktop source version v${version} loaded.`);
+    } catch (error) {
+      setDesktopManifestFile(null);
+      const manifestInput = document.getElementById("desktop-source-manifest") as HTMLInputElement | null;
+      if (manifestInput) manifestInput.value = "";
+      toast.error(error instanceof Error ? error.message : "Could not read the local desktop package.json.");
+    }
+  };
 
   const submitDesktopRelease = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canManageReleases || desktopStage || !desktopFile) return;
 
+    if (!desktopManifestFile || !desktopManifestVersion) {
+      toast.error("Select the local desktop/package.json file first so the release version can be checked against your working copy.");
+      return;
+    }
+
     const version = desktopVersion.trim();
-    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-      toast.error("Enter a valid semantic version.");
+    if (!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(version) || version !== desktopManifestVersion) {
+      toast.error("The release version must match the version read from your selected local desktop/package.json.");
       return;
     }
 
@@ -143,10 +191,24 @@ function ReleasesPage() {
       toast.error("Desktop installer must be larger than 0 bytes and no larger than 512 MB.");
       return;
     }
+
     if (desktopPlatform === "windows") {
       const header = new Uint8Array(await desktopFile.slice(0, 2).arrayBuffer());
       if (header[0] !== 0x4d || header[1] !== 0x5a) {
         toast.error("The selected Windows installer does not have a valid PE executable header.");
+        return;
+      }
+    } else if (desktopPlatform === "linux") {
+      const header = new Uint8Array(await desktopFile.slice(0, 4).arrayBuffer());
+      if (header[0] !== 0x7f || header[1] !== 0x45 || header[2] !== 0x4c || header[3] !== 0x46) {
+        toast.error("The selected Linux AppImage does not have a valid ELF executable header.");
+        return;
+      }
+    } else {
+      const trailerStart = Math.max(0, desktopFile.size - 512);
+      const trailer = new TextDecoder("ascii").decode(await desktopFile.slice(trailerStart).arrayBuffer());
+      if (!trailer.startsWith("koly")) {
+        toast.error("The selected macOS disk image does not contain the expected UDIF/DMG trailer.");
         return;
       }
     }
@@ -172,6 +234,7 @@ function ReleasesPage() {
         data: {
           platform: desktopPlatform,
           version_name: version,
+          source_manifest_version: desktopManifestVersion,
           file_path: path,
           file_name: safeName,
           size_bytes: desktopFile.size,
@@ -181,9 +244,16 @@ function ReleasesPage() {
         },
       });
 
-      toast.success(`${desktopPlatform} v${version} uploaded and ${desktopMakeCurrent ? "published as current" : "saved to the archive"}.`);
+      toast.success(`${desktopPlatform} v${version} uploaded and ${desktopMakeCurrent ? "published as current" : "saved to the private archive"}.`);
       setDesktopFile(null);
+      setDesktopManifestFile(null);
+      setDesktopManifestVersion("");
+      setDesktopVersion("");
       setDesktopNotes("");
+      const input = document.getElementById("desktop-artifact") as HTMLInputElement | null;
+      if (input) input.value = "";
+      const manifestInput = document.getElementById("desktop-source-manifest") as HTMLInputElement | null;
+      if (manifestInput) manifestInput.value = "";
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["admin", "desktop-releases"] }),
         qc.invalidateQueries({ queryKey: ["public-desktop-release"] }),
@@ -253,20 +323,34 @@ function ReleasesPage() {
     <div className="space-y-6">
       <PageHeader
         title="App releases"
-        sub="Manage Android and desktop releases independently. Build locally, upload verified files, control public versions and review download activity."
+        sub="Manage Android and desktop distribution separately. Build signed artifacts on your computer, upload them manually, and control public versions and release history."
       />
-      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-border bg-muted/30 p-1.5" role="tablist" aria-label="Release type">
-        <button type="button" role="tab" aria-selected={activeTab === "mobile"} onClick={() => setActiveTab("mobile")}
-          className={activeTab === "mobile" ? "flex min-h-14 items-center justify-center gap-2 rounded-xl bg-background px-3 py-3 text-sm font-semibold text-foreground shadow-sm ring-1 ring-border" : "flex min-h-14 items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-medium text-muted-foreground transition hover:bg-background/70"}>
-          <Smartphone className="size-5" /> Mobile releases <Badge variant="secondary">{rows.length}</Badge>
+      <div className="grid gap-3 sm:grid-cols-2" role="tablist" aria-label="Choose mobile or desktop releases">
+        <button type="button" role="tab" id="mobile-release-tab" aria-controls="mobile-release-panel" aria-selected={activeTab === "mobile"} onClick={() => setActiveTab("mobile")}
+          className={activeTab === "mobile"
+            ? "flex min-h-20 items-center gap-4 rounded-2xl border-2 border-primary bg-primary/5 p-4 text-left shadow-sm ring-2 ring-primary/10"
+            : "flex min-h-20 items-center gap-4 rounded-2xl border border-border bg-card p-4 text-left transition hover:border-primary/50 hover:bg-muted/30"}>
+          <span className={activeTab === "mobile" ? "grid size-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground" : "grid size-11 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground"}><Smartphone className="size-5" /></span>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-2 text-sm font-bold">Mobile releases <Badge variant="secondary">{rows.length}</Badge></span>
+            <span className="mt-1 block text-xs leading-5 text-muted-foreground">Android APKs, app updates and mobile download activity</span>
+          </span>
+          <span className={activeTab === "mobile" ? "text-xs font-semibold text-primary" : "text-xs text-muted-foreground"}>{activeTab === "mobile" ? "Selected" : "Open"}</span>
         </button>
-        <button type="button" role="tab" aria-selected={activeTab === "desktop"} onClick={() => setActiveTab("desktop")}
-          className={activeTab === "desktop" ? "flex min-h-14 items-center justify-center gap-2 rounded-xl bg-background px-3 py-3 text-sm font-semibold text-foreground shadow-sm ring-1 ring-border" : "flex min-h-14 items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-medium text-muted-foreground transition hover:bg-background/70"}>
-          <Laptop className="size-5" /> Desktop releases <Badge variant="secondary">{desktopRows.length}</Badge>
+        <button type="button" role="tab" id="desktop-release-tab" aria-controls="desktop-release-panel" aria-selected={activeTab === "desktop"} onClick={() => setActiveTab("desktop")}
+          className={activeTab === "desktop"
+            ? "flex min-h-20 items-center gap-4 rounded-2xl border-2 border-primary bg-primary/5 p-4 text-left shadow-sm ring-2 ring-primary/10"
+            : "flex min-h-20 items-center gap-4 rounded-2xl border border-border bg-card p-4 text-left transition hover:border-primary/50 hover:bg-muted/30"}>
+          <span className={activeTab === "desktop" ? "grid size-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground" : "grid size-11 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground"}><Laptop className="size-5" /></span>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-2 text-sm font-bold">Desktop releases <Badge variant="secondary">{desktopRows.length}</Badge></span>
+            <span className="mt-1 block text-xs leading-5 text-muted-foreground">Windows, macOS and Linux installers built on your computer</span>
+          </span>
+          <span className={activeTab === "desktop" ? "text-xs font-semibold text-primary" : "text-xs text-muted-foreground"}>{activeTab === "desktop" ? "Selected" : "Open"}</span>
         </button>
       </div>
       {activeTab === "mobile" ? (
-        <section role="tabpanel" className="space-y-6">
+        <section role="tabpanel" id="mobile-release-panel" aria-labelledby="mobile-release-tab" className="space-y-6">
       {canManageReleases && archivedCount > 0 ? (
         <div className="flex flex-wrap justify-end gap-2">
           {visibleArchivedCount > 0 ? <ConfirmAction
@@ -381,6 +465,17 @@ function ReleasesPage() {
       </div>
 
       {canManageReleases ? (
+        <div className="rounded-2xl border border-border bg-muted/20 p-4 sm:p-5">
+          <div className="flex items-start gap-3">
+            <HardDrive className="mt-0.5 size-5 shrink-0 text-primary" />
+            <div className="min-w-0">
+              <h3 className="font-semibold">Build the Android release locally</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">From the repository root, build the production-signed APK on your own computer, then select that output below. Do not upload a debug APK.</p>
+              <code className="mt-3 block overflow-x-auto rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs">.\\gradlew.bat :app:assembleRelease</code>
+              <p className="mt-2 text-xs text-muted-foreground">Expected output: <code>app\\build\\outputs\\apk\\release\\app-release.apk</code>. The release keystore and passwords must already be configured locally and kept outside source control.</p>
+            </div>
+          </div>
+        </div>
         <form onSubmit={submit} className="grid gap-4 rounded-2xl border border-border bg-card p-5 lg:grid-cols-2">
           <div className="space-y-4">
             <h2 className="flex items-center gap-2 font-semibold">
@@ -522,192 +617,287 @@ function ReleasesPage() {
       )}
         </section>
       ) : (
-        <section role="tabpanel" className="space-y-6">
-        <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm" aria-labelledby="desktop-release-heading">
-          <div className="border-b border-border p-5 sm:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex min-w-0 items-start gap-3">
-                <span className="grid size-12 shrink-0 place-items-center rounded-2xl border border-primary/20 bg-primary/10 text-primary"><Laptop className="size-6" /></span>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 id="desktop-release-heading" className="text-lg font-bold">Desktop installers</h2>
-                    <Badge variant="secondary">Local build · manual upload</Badge>
-                  </div>
-                  <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-                    Build each installer on your own computer, select the finished artifact below, verify its checksum, then publish it to the public download page. No GitHub Actions or GitHub Releases are used.
-                  </p>
+        <section role="tabpanel" id="desktop-release-panel" aria-labelledby="desktop-release-tab" className="space-y-5">
+          <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-border bg-card p-5 sm:p-6">
+            <div className="flex min-w-0 items-start gap-4">
+              <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary"><Laptop className="size-6" /></span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 id="desktop-release-heading" className="text-lg font-bold">Desktop release workspace</h2>
+                  <Badge variant="secondary">Local build · manual upload</Badge>
+                  <Badge variant="outline"><ShieldCheck className="mr-1 size-3" /> Private storage</Badge>
                 </div>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+                  Build the installer on the matching operating system, choose the local package and its local package.json, then upload it here. This release workflow does not trigger GitHub Actions or download installers from GitHub.
+                </p>
               </div>
-              <Button type="button" size="sm" variant="outline" onClick={() => void desktopReleases.refetch()} disabled={desktopReleases.isFetching}>
-                {desktopReleases.isFetching ? <Loader2 className="animate-spin" /> : <FileCheck2 />} Refresh archive
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => void desktopReleases.refetch()} disabled={desktopReleases.isFetching}>
+                {desktopReleases.isFetching ? <Loader2 className="animate-spin" /> : <FileCheck2 />} Refresh releases
+              </Button>
+              <Button type="button" variant="outline" size="sm" asChild>
+                <a href="/download?platform=desktop" target="_blank" rel="noreferrer">View public page</a>
               </Button>
             </div>
+          </header>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            {([
+              { id: "windows", label: "Windows", detail: "NSIS installer · .exe", Icon: Monitor },
+              { id: "macos", label: "macOS", detail: "Disk image · .dmg", Icon: Apple },
+              { id: "linux", label: "Linux", detail: "AppImage · .AppImage", Icon: Laptop },
+            ] as const).map(({ id, label, detail, Icon }) => {
+              const current = desktopRows.find((release) => release.platform === id && release.is_current && release.is_public);
+              const platformDownloads = desktopRows.filter((release) => release.platform === id).reduce((sum, release) => sum + Number(release.download_count || 0), 0);
+              return (
+                <button key={id} type="button" aria-pressed={desktopPlatform === id} onClick={() => {
+                    setDesktopPlatform(id);
+                    setDesktopFile(null);
+                    const input = document.getElementById("desktop-artifact") as HTMLInputElement | null;
+                    if (input) input.value = "";
+                  }}
+                  className={desktopPlatform === id
+                    ? "rounded-2xl border-2 border-primary bg-primary/5 p-4 text-left shadow-sm ring-2 ring-primary/10"
+                    : "rounded-2xl border border-border bg-card p-4 text-left transition hover:border-primary/50 hover:bg-muted/20"}>
+                  <div className="flex items-start justify-between gap-3">
+                    <span className={desktopPlatform === id ? "grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground" : "grid size-10 place-items-center rounded-xl bg-muted text-muted-foreground"}><Icon className="size-5" /></span>
+                    {current ? <Badge variant="success">Live</Badge> : <Badge variant="secondary">Not published</Badge>}
+                  </div>
+                  <p className="mt-3 font-semibold">{label}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+                    <span className="text-sm font-bold">{current ? `v${current.version_name}` : "No current build"}</span>
+                    <span className="text-xs text-muted-foreground">{platformDownloads.toLocaleString()} downloads</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="grid gap-5 p-5 sm:p-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,.95fr)]">
-            <div className="min-w-0 space-y-5">
+          <div className="grid items-start gap-5 xl:grid-cols-[minmax(280px,.82fr)_minmax(0,1.18fr)]">
+            <section className="overflow-hidden rounded-2xl border border-border bg-card">
+              <div className="border-b border-border p-5">
+                <p className="text-xs font-bold uppercase tracking-[.14em] text-primary">Step 1 · Local build</p>
+                <h3 className="mt-1 text-lg font-bold">Build on your computer</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">Run the checks and native build in the <code>desktop</code> directory on the operating system you are packaging for.</p>
+              </div>
+              <div className="space-y-4 p-5">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Common validation · PowerShell or terminal</p>
+                  <pre className="mt-2 overflow-x-auto rounded-xl border border-border bg-muted/30 p-3 font-mono text-xs leading-6">npm ci{"\n"}npm run check:versions{"\n"}npm run check:types{"\n"}npm run build{"\n"}cargo test --locked --manifest-path src-tauri/Cargo.toml</pre>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {desktopPlatform === "windows" ? "Windows · signed NSIS package" : desktopPlatform === "macos" ? "macOS · DMG package" : "Linux · AppImage package"}
+                  </p>
+                  <pre className="mt-2 overflow-x-auto rounded-xl border border-primary/20 bg-primary/5 p-3 font-mono text-sm font-semibold leading-6">
+                    {desktopPlatform === "windows" ? "npm run release:win:local" : desktopPlatform === "macos" ? "npm run dist:mac" : "npm run dist:linux"}
+                  </pre>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">Output folder</p>
+                  <code className="mt-1 block break-all rounded-lg bg-muted/40 px-3 py-2 text-xs">
+                    {desktopPlatform === "windows"
+                      ? "src-tauri/target/release/bundle/nsis"
+                      : desktopPlatform === "macos"
+                        ? "src-tauri/target/release/bundle/dmg"
+                        : "src-tauri/target/release/bundle/appimage"}
+                  </code>
+                </div>
+                <div className="rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs leading-5 text-muted-foreground">
+                  <strong className="text-foreground">Release safety:</strong> browser checks confirm the package format, not publisher identity. Windows must pass local Authenticode signing and verification; macOS must be signed/notarized on macOS; Linux must pass runtime checks. Do not distribute an unsigned or unverified package.
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">The admin page never runs these commands and never builds source code for you. It only receives the local files you select.</p>
+              </div>
+            </section>
+
+            <form onSubmit={(event) => void submitDesktopRelease(event)} className="space-y-5 rounded-2xl border border-border bg-card p-5 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[.14em] text-primary">Step 2 · Upload</p>
+                  <h3 className="mt-1 text-lg font-bold">Publish a desktop installer</h3>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">Choose the platform, local version manifest and the installer built from that same source checkout.</p>
+                </div>
+                <Badge variant="outline">{desktopPlatform === "windows" ? "Windows EXE" : desktopPlatform === "macos" ? "macOS DMG" : "Linux AppImage"}</Badge>
+              </div>
+
               <div className="space-y-2">
-                <h3 className="font-semibold">1. Select the installer platform</h3>
-                <div className="grid grid-cols-3 gap-2" role="group" aria-label="Desktop installer platform">
+                <Label>Target platform</Label>
+                <div className="grid grid-cols-3 gap-2" role="group" aria-label="Choose desktop release platform">
                   {([
-                    { id: "windows", name: "Windows", detail: ".exe", Icon: Monitor },
-                    { id: "macos", name: "macOS", detail: ".dmg", Icon: Apple },
-                    { id: "linux", name: "Linux", detail: ".AppImage", Icon: Laptop },
-                  ] as const).map(({ id, name, detail, Icon }) => (
-                    <button key={id} type="button" aria-pressed={desktopPlatform === id} onClick={() => { setDesktopPlatform(id); setDesktopFile(null); }}
+                    { id: "windows", name: "Windows", ext: ".exe", Icon: Monitor },
+                    { id: "macos", name: "macOS", ext: ".dmg", Icon: Apple },
+                    { id: "linux", name: "Linux", ext: ".AppImage", Icon: Laptop },
+                  ] as const).map(({ id, name, ext, Icon }) => (
+                    <button key={id} type="button" aria-pressed={desktopPlatform === id} onClick={() => {
+                        setDesktopPlatform(id);
+                        setDesktopFile(null);
+                        const input = document.getElementById("desktop-artifact") as HTMLInputElement | null;
+                        if (input) input.value = "";
+                      }}
                       className={desktopPlatform === id
-                        ? "rounded-xl border-2 border-primary bg-primary/5 p-3 text-left shadow-sm outline-none ring-2 ring-primary/10"
-                        : "rounded-xl border border-border bg-background p-3 text-left transition hover:border-primary/50"}>
-                      <Icon className={desktopPlatform === id ? "size-5 text-primary" : "size-5 text-muted-foreground"} />
-                      <span className="mt-2 block text-sm font-semibold">{name}</span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">{detail} installer</span>
-                      {desktopRows.some((row) => row.platform === id && row.is_current && row.is_public)
-                        ? <Badge className="mt-2" variant="success">Live</Badge>
-                        : <Badge className="mt-2" variant="secondary">No current build</Badge>}
+                        ? "rounded-xl border-2 border-primary bg-primary/5 px-2 py-3 text-center shadow-sm"
+                        : "rounded-xl border border-border bg-background px-2 py-3 text-center transition hover:border-primary/50"}>
+                      <Icon className={desktopPlatform === id ? "mx-auto size-5 text-primary" : "mx-auto size-5 text-muted-foreground"} />
+                      <span className="mt-1.5 block text-xs font-semibold">{name}</span>
+                      <span className="mt-0.5 block text-[10px] text-muted-foreground">{ext}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="rounded-xl border border-border bg-background/70 p-4">
-                <h3 className="font-semibold">2. Build locally on the matching operating system</h3>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">Open a terminal in the <code>desktop</code> project folder. Run the matching commands on the machine for that operating system:</p>
-                <div className="mt-3 rounded-lg border border-border bg-muted/40 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Common verification</p>
-                  <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-6">npm ci{"\n"}npm run check:versions{"\n"}npm run check:types{"\n"}npm run build{"\n"}cargo test --locked --manifest-path src-tauri/Cargo.toml</pre>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="desktop-source-manifest">Local source manifest</Label>
+                  <label htmlFor="desktop-source-manifest" className="flex min-h-[112px] cursor-pointer flex-col justify-center rounded-xl border border-dashed border-border bg-muted/20 p-3 transition hover:border-primary/50 hover:bg-primary/5">
+                    <span className="flex items-center gap-2 text-sm font-semibold">
+                      {desktopManifestVersion ? <PackageCheck className="size-5 text-success" /> : <FileText className="size-5 text-muted-foreground" />}
+                      {desktopManifestVersion ? "Local version verified" : "Choose desktop/package.json"}
+                    </span>
+                    <span className="mt-1 break-all text-xs text-muted-foreground">{desktopManifestFile?.name ?? "Select package.json from your local desktop folder"}</span>
+                    {desktopManifestVersion ? <Badge className="mt-2 w-fit" variant="success">Source version v{desktopManifestVersion}</Badge> : <span className="mt-2 text-[11px] text-muted-foreground">Version is read from this file. No GitHub lookup is made.</span>}
+                    <input id="desktop-source-manifest" type="file" accept=".json,application/json" className="sr-only" disabled={!!desktopStage}
+                      onChange={(event) => void handleDesktopManifestChange(event.target.files?.[0] ?? null)} />
+                  </label>
+                  <p className="text-[11px] leading-5 text-muted-foreground">Select the same local source checkout used to produce the installer. Run <code>npm run check:versions</code> before building.</p>
                 </div>
-                <div className="mt-3 rounded-lg border border-border bg-muted/40 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {desktopPlatform === "windows" ? "Windows · signed NSIS installer" : desktopPlatform === "macos" ? "macOS · DMG package" : "Linux · AppImage package"}
-                  </p>
-                  <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-6">
-                    {desktopPlatform === "windows"
-                      ? "npm run release:win:local"
-                      : desktopPlatform === "macos"
-                        ? "npm run dist:mac"
-                        : "npm run dist:linux"}
-                  </pre>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                    Output folder: <code>{desktopPlatform === "windows"
-                      ? "src-tauri/target/release/bundle/nsis"
-                      : desktopPlatform === "macos"
-                        ? "src-tauri/target/release/bundle/dmg"
-                        : "src-tauri/target/release/bundle/appimage"}</code>
-                  </p>
+                <div className="space-y-2">
+                  <Label htmlFor="desktop-version">Release version</Label>
+                  <Input id="desktop-version" value={desktopVersion} readOnly placeholder="Loaded from local package.json" disabled={!!desktopStage} />
+                  <p className="text-[11px] leading-5 text-muted-foreground">The publish API checks this value against the selected local manifest version.</p>
+                  <Label htmlFor="desktop-notes" className="pt-1">Release notes</Label>
+                  <Textarea id="desktop-notes" rows={3} value={desktopNotes} onChange={(event) => setDesktopNotes(event.target.value)} maxLength={5000} placeholder="Improvements, fixes and compatibility notes" disabled={!!desktopStage} />
+                  <p className="text-right text-[11px] text-muted-foreground">{desktopNotes.length}/5000</p>
                 </div>
               </div>
 
-              <form className="space-y-4 rounded-xl border border-border p-4" onSubmit={(event) => void submitDesktopRelease(event)}>
-                <div>
-                  <h3 className="font-semibold">3. Upload and publish the local build</h3>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">The file is uploaded from this browser to private BeBoss release storage. Its SHA-256 is calculated locally before upload.</p>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-[minmax(0,170px)_1fr]">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="desktop-version">Desktop version</Label>
-                    <Input id="desktop-version" value={desktopVersion} onChange={(event) => setDesktopVersion(event.target.value)} required maxLength={40} pattern="^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$" placeholder="1.3.0" disabled={!!desktopStage} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="desktop-notes">Release notes</Label>
-                    <Textarea id="desktop-notes" rows={2} value={desktopNotes} onChange={(event) => setDesktopNotes(event.target.value)} maxLength={5000} placeholder="Improvements, fixes and compatibility notes" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="desktop-artifact">Local {desktopPlatform === "windows" ? "Windows EXE" : desktopPlatform === "macos" ? "macOS DMG" : "Linux AppImage"} file</Label>
-                  <label htmlFor="desktop-artifact" className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-muted/20 px-4 py-6 text-center transition hover:border-primary/50 hover:bg-primary/5">
-                    {desktopFile ? <FileCheck2 className="size-8 text-success" /> : <UploadCloud className="size-8 text-muted-foreground" />}
-                    <span className="break-all text-sm font-semibold">{desktopFile ? desktopFile.name : `Choose .${desktopPlatform === "windows" ? "exe" : desktopPlatform === "macos" ? "dmg" : "AppImage"} installer`}</span>
-                    <span className="text-xs text-muted-foreground">{desktopFile ? `${formatBytes(desktopFile.size)} · ready to verify` : "Up to 512 MB · only the selected platform format is accepted"}</span>
-                    <input id="desktop-artifact" type="file" className="sr-only"
-                      accept={desktopPlatform === "windows" ? ".exe,application/vnd.microsoft.portable-executable,application/octet-stream" : desktopPlatform === "macos" ? ".dmg,application/x-apple-diskimage,application/octet-stream" : ".AppImage,.appimage,application/octet-stream"}
-                      onChange={(event) => setDesktopFile(event.target.files?.[0] ?? null)} />
-                  </label>
-                </div>
-                <label className="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
-                  <Switch checked={desktopMakeCurrent} onCheckedChange={setDesktopMakeCurrent} />
-                  <span><strong className="block">Publish as the current {desktopPlatform} download</strong><span className="mt-0.5 block text-xs leading-5 text-muted-foreground">When enabled, this platform's public download link switches to the uploaded version. Other platforms are unchanged.</span></span>
+              <div className="space-y-2">
+                <Label htmlFor="desktop-artifact">Locally built installer</Label>
+                <label htmlFor="desktop-artifact" className="flex min-h-[132px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 px-4 py-5 text-center transition hover:border-primary/50 hover:bg-primary/5">
+                  {desktopFile ? <FileCheck2 className="size-8 text-success" /> : <UploadCloud className="size-8 text-muted-foreground" />}
+                  <span className="mt-2 max-w-full break-all text-sm font-semibold">{desktopFile ? desktopFile.name : `Choose local ${desktopPlatform === "windows" ? ".exe" : desktopPlatform === "macos" ? ".dmg" : ".AppImage"} installer`}</span>
+                  <span className="mt-1 text-xs text-muted-foreground">{desktopFile ? `${formatBytes(desktopFile.size)} · ready for validation` : "Maximum 512 MB · file stays local until you start the upload"}</span>
+                  <input id="desktop-artifact" type="file" className="sr-only"
+                    accept={desktopPlatform === "windows" ? ".exe,application/vnd.microsoft.portable-executable,application/octet-stream" : desktopPlatform === "macos" ? ".dmg,application/x-apple-diskimage,application/octet-stream" : ".AppImage,.appimage,application/octet-stream"}
+                    disabled={!!desktopStage}
+                    onChange={(event) => setDesktopFile(event.target.files?.[0] ?? null)} />
                 </label>
-                <Button type="submit" variant="hero" className="w-full" disabled={!canManageReleases || !!desktopStage || !desktopFile}>
+              </div>
+
+              <label className="flex items-start gap-3 rounded-xl border border-border bg-muted/20 p-3 text-sm">
+                <Switch checked={desktopMakeCurrent} onCheckedChange={setDesktopMakeCurrent} disabled={!!desktopStage} />
+                <span className="min-w-0">
+                  <strong className="block">Make this the current public {desktopPlatform} installer</strong>
+                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">When enabled, the selected platform's public download changes to this version. Other platforms are not changed. Turn it off to upload into the private archive first.</span>
+                </span>
+              </label>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+                <p className="flex min-w-0 items-center gap-2 text-xs leading-5 text-muted-foreground"><ShieldCheck className="size-4 shrink-0 text-success" /> SHA-256 is calculated in your browser before the file is uploaded.</p>
+                <Button type="submit" variant="hero" disabled={!canManageReleases || !!desktopStage || !desktopFile || !desktopManifestVersion}>
                   {desktopStage ? <Loader2 className="animate-spin" /> : <UploadCloud />}
                   {desktopStage === "hashing" ? "Calculating SHA-256…" : desktopStage === "uploading" ? "Uploading local installer…" : desktopStage === "publishing" ? "Publishing release…" : "Verify, upload and publish"}
                 </Button>
-                <p className="text-xs leading-5 text-muted-foreground">Publishing a new current version automatically archives the previous build for this platform. A current release cannot be hidden or deleted.</p>
-              </form>
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">Publishing a new current build automatically archives the previous current version for this platform. Current releases cannot be hidden or deleted.</p>
+            </form>
+          </div>
+
+          <section className="space-y-4 rounded-2xl border border-border bg-card p-5 sm:p-6" aria-labelledby="desktop-archive-heading">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[.14em] text-primary">Step 3 · Manage</p>
+                <h3 id="desktop-archive-heading" className="mt-1 text-lg font-bold">Desktop release archive</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Review every uploaded installer, change public availability, restore a previous version or remove an archived build.</p>
+              </div>
+              <div className="rounded-xl bg-muted/40 px-3 py-2 text-right">
+                <p className="text-lg font-bold tabular-nums">{desktopRows.length}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Stored builds</p>
+              </div>
             </div>
 
-            <div className="min-w-0 space-y-4">
-              <div className="rounded-xl border border-border p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="font-semibold">Current platform releases</h3>
-                  <Badge variant="secondary">{desktopRows.filter((row) => row.is_current && row.is_public).length}/3 live</Badge>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {(["windows", "macos", "linux"] as const).map((platform) => {
-                    const current = desktopRows.find((row) => row.platform === platform && row.is_current && row.is_public);
-                    const platformName = platform === "windows" ? "Windows" : platform === "macos" ? "macOS" : "Linux";
-                    return <div key={platform} className="flex items-center justify-between gap-3 rounded-lg bg-muted/30 px-3 py-2 text-sm">
-                      <span className="font-medium">{platformName}</span>
-                      {current ? <span className="text-right"><Badge variant="success">v{current.version_name}</Badge><span className="mt-1 block text-[11px] text-muted-foreground">{formatBytes(Number(current.size_bytes))} · {current.download_count.toLocaleString()} downloads</span></span> : <Badge variant="secondary">Not published</Badge>}
-                    </div>;
-                  })}
-                </div>
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input value={desktopArchiveSearch} onChange={(event) => setDesktopArchiveSearch(event.target.value)} placeholder="Search version, filename or release notes…" className="pl-9" aria-label="Search desktop release archive" />
               </div>
+              <select value={desktopArchivePlatform} onChange={(event) => setDesktopArchivePlatform(event.target.value as "all" | DesktopPlatform)} className="h-10 rounded-md border border-input bg-background px-3 text-sm" aria-label="Filter desktop archive by platform">
+                <option value="all">All platforms</option>
+                <option value="windows">Windows</option>
+                <option value="macos">macOS</option>
+                <option value="linux">Linux</option>
+              </select>
+            </div>
 
-              <div className="rounded-xl border border-border p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="font-semibold">Release archive</h3>
-                  <span className="text-xs text-muted-foreground">{desktopRows.length} stored installer(s)</span>
-                </div>
-                {desktopReleases.isLoading ? <LoadingBlock /> : desktopReleases.isError ? (
-                  <p className="mt-3 text-sm text-destructive" role="alert">{desktopReleases.error instanceof Error ? desktopReleases.error.message : "Could not load desktop releases."}</p>
-                ) : desktopRows.length === 0 ? (
-                  <p className="mt-3 text-sm leading-6 text-muted-foreground">No desktop installers have been uploaded. Build locally, then upload the artifact using the form.</p>
-                ) : (
-                  <div className="mt-3 max-h-[740px] space-y-3 overflow-y-auto pr-1">
-                    {desktopRows.map((release) => {
-                      const platformName = release.platform === "windows" ? "Windows" : release.platform === "macos" ? "macOS" : "Linux";
-                      return <article key={release.id} className="rounded-xl border border-border p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <strong className="text-sm">{platformName} · v{release.version_name}</strong>
-                            {release.is_current ? <Badge variant="success">Current</Badge> : <Badge variant="secondary">Archived</Badge>}
-                            <Badge variant={release.is_public ? "outline" : "secondary"}>{release.is_public ? "Public" : "Private"}</Badge>
+            {desktopReleases.isLoading ? <LoadingBlock /> : desktopReleases.isError ? (
+              <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive" role="alert">{desktopReleases.error instanceof Error ? desktopReleases.error.message : "Could not load desktop releases."}</p>
+            ) : desktopArchiveRows.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-9 text-center">
+                <PackageCheck className="mx-auto size-8 text-muted-foreground" />
+                <p className="mt-2 font-semibold">{desktopRows.length ? "No releases match these filters" : "No desktop installers uploaded yet"}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{desktopRows.length ? "Try another platform or search term." : "Build an installer locally and upload it using the workspace above."}</p>
+              </div>
+            ) : (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {desktopArchiveRows.map((release) => {
+                  const platformName = release.platform === "windows" ? "Windows" : release.platform === "macos" ? "macOS" : "Linux";
+                  const PlatformIcon = release.platform === "windows" ? Monitor : release.platform === "macos" ? Apple : Laptop;
+                  return (
+                    <article key={release.id} className="min-w-0 rounded-xl border border-border bg-background p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground"><PlatformIcon className="size-4" /></span>
+                          <div className="min-w-0">
+                            <h4 className="break-words font-semibold">{platformName} · v{release.version_name}</h4>
+                            <p className="mt-1 break-all text-xs text-muted-foreground">{release.file_name}</p>
                           </div>
-                          <span className="text-xs text-muted-foreground">{release.download_count.toLocaleString()} downloads</span>
                         </div>
-                        <p className="mt-2 break-all text-xs text-muted-foreground">{release.file_name} · {formatBytes(Number(release.size_bytes))} · {formatDateTime(release.published_at)}</p>
-                        <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">SHA-256 {release.sha256}</p>
-                        {release.release_notes ? <p className="mt-2 line-clamp-3 whitespace-pre-line text-xs leading-5 text-muted-foreground">{release.release_notes}</p> : null}
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Button size="sm" variant="outline" onClick={async () => {
-                            try {
-                              const signed = await getDesktopPrivateDownload({ data: { id: release.id } });
-                              window.location.assign(signed.url);
-                            } catch (error) { toast.error(error instanceof Error ? error.message : "Could not download the stored installer."); }
-                          }}><Download className="size-3.5" /> Admin download</Button>
-                          {!release.is_current ? <Button size="sm" variant="soft" onClick={() => setDesktopCurrent.mutate({ id: release.id })}><Star className="size-3.5" /> Make current</Button> : null}
-                          {!release.is_current ? <Button size="sm" variant="outline" onClick={() => setDesktopVisibility.mutate({ id: release.id, isPublic: !release.is_public })}>{release.is_public ? "Hide publicly" : "Show publicly"}</Button> : null}
-                          {isAdmin && !release.is_current ? <ConfirmAction
-                            trigger={<Button size="sm" variant="ghost"><Trash2 className="size-3.5" /> Delete</Button>}
-                            title={`Delete ${platformName} v${release.version_name}?`}
-                            description="This permanently removes the installer and its release history record."
-                            destructive confirmLabel="Delete installer"
-                            onConfirm={() => removeDesktopRelease.mutate({ id: release.id })}
-                          /> : null}
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          {release.is_current ? <Badge variant="success">Current</Badge> : <Badge variant="secondary">Archived</Badge>}
+                          <Badge variant={release.is_public ? "outline" : "secondary"}>{release.is_public ? "Public" : "Private"}</Badge>
                         </div>
-                      </article>;
-                    })}
-                  </div>
-                )}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-lg bg-muted/40 px-3 py-2">
+                          <p className="text-muted-foreground">Package size</p>
+                          <p className="mt-1 font-semibold">{formatBytes(Number(release.size_bytes))}</p>
+                        </div>
+                        <div className="rounded-lg bg-muted/40 px-3 py-2">
+                          <p className="text-muted-foreground">Downloads · Published</p>
+                          <p className="mt-1 font-semibold">{Number(release.download_count).toLocaleString()} · {formatDateTime(release.published_at)}</p>
+                        </div>
+                      </div>
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-xs font-semibold text-primary">View SHA-256 and release notes</summary>
+                        <p className="mt-2 break-all rounded-lg bg-muted/40 p-2 font-mono text-[10px] leading-5">SHA-256 {release.sha256}</p>
+                        {release.release_notes ? <p className="mt-2 whitespace-pre-line text-xs leading-5 text-muted-foreground">{release.release_notes}</p> : <p className="mt-2 text-xs text-muted-foreground">No release notes supplied.</p>}
+                      </details>
+                      <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-3">
+                        <Button size="sm" variant="outline" onClick={async () => {
+                          try {
+                            const signed = await getDesktopPrivateDownload({ data: { id: release.id } });
+                            window.location.assign(signed.url);
+                          } catch (error) {
+                            toast.error(error instanceof Error ? error.message : "Could not download the stored installer.");
+                          }
+                        }}><Download className="size-3.5" /> Admin download</Button>
+                        {!release.is_current ? <Button size="sm" variant="soft" onClick={() => setDesktopCurrent.mutate({ id: release.id })}><Star className="size-3.5" /> Make current</Button> : null}
+                        {!release.is_current ? <Button size="sm" variant="outline" onClick={() => setDesktopVisibility.mutate({ id: release.id, isPublic: !release.is_public })}>
+                          {release.is_public ? <><EyeOff className="size-3.5" /> Hide publicly</> : <><Eye className="size-3.5" /> Show publicly</>}
+                        </Button> : null}
+                        {isAdmin && !release.is_current ? <ConfirmAction
+                          trigger={<Button size="sm" variant="ghost"><Trash2 className="size-3.5" /> Delete</Button>}
+                          title={`Delete ${platformName} v${release.version_name}?`}
+                          description="This permanently removes the installer and its release history record. Current releases must be replaced before deletion."
+                          destructive confirmLabel="Delete installer"
+                          onConfirm={() => removeDesktopRelease.mutate({ id: release.id })}
+                        /> : null}
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
-            </div>
-          </div>
-          <div className="grid gap-3 border-t border-border bg-muted/20 p-4 sm:grid-cols-3 sm:p-5">
-            <div className="flex items-center gap-2 text-sm"><Monitor className="size-4 text-primary" /><span>Windows · NSIS EXE</span></div>
-            <div className="flex items-center gap-2 text-sm"><Apple className="size-4 text-primary" /><span>macOS · DMG</span></div>
-            <div className="flex items-center gap-2 text-sm"><Laptop className="size-4 text-primary" /><span>Linux · AppImage</span></div>
-          </div>
-        </section>
+            )}
+          </section>
         </section>
       )}
     </div>

@@ -1427,6 +1427,10 @@ const desktopReleaseUploadSchema = z.object({
   make_current: z.boolean().default(true),
 });
 
+// Desktop versions are verified against the package.json selected from the
+// administrator's local working copy. Publishing never fetches source files
+// or installer binaries from GitHub.
+
 export const getAdminDesktopReleases = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
