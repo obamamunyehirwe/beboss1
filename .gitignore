@@ -24,3 +24,9 @@ release.keystore
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
 desktop/target/
+
+# Android production signing material must never enter source control.
+/.secrets/android/
+*.jks
+*.p12
+*.pfx
