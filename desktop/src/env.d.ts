@@ -103,8 +103,10 @@ declare global {
       };
       getDeviceId(): Promise<string>;
       local: {
-        load(): Promise<any | null>;
+        load(shopSyncKey: string): Promise<any | null>;
+        saveBaseline(shopSyncKey: string, snapshot: Record<string, unknown>, snapshotUpdatedAt: number): Promise<boolean>;
         queue(
+          shopSyncKey: string,
           operation: string,
           payload: any,
           deviceId: string,
@@ -113,9 +115,10 @@ declare global {
           subscriptionExpiresAt: number,
           subscriptionStatus: string
         ): Promise<{ id: string; payload: any; hlc: number; expectedUpdatedAt: number; queued: boolean }>;
-        outboxCount(): Promise<number>;
-        pending(): Promise<{ id: string; payload: any; hlc: number; expectedUpdatedAt: number }[]>;
-        acknowledge(ids: string[]): Promise<boolean>;
+        outboxCount(shopSyncKey?: string): Promise<number>;
+        unassignedOutboxCount(): Promise<number>;
+        pending(shopSyncKey: string): Promise<{ id: string; payload: any; hlc: number; expectedUpdatedAt: number }[]>;
+        acknowledge(shopSyncKey: string, ids: string[]): Promise<boolean>;
       };
       openExternal(url: string): Promise<void>;
       printReceipt(lines: string[]): Promise<void>;
