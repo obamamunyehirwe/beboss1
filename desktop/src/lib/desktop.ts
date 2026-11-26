@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { captureDesktopException } from "./telemetry";
 
 type PendingTransaction = { id: string; payload: any; hlc: number; expectedUpdatedAt: number };
 type TauriWindow = Window & { __TAURI_INTERNALS__?: { invoke?: (...args: unknown[]) => Promise<unknown> } };
@@ -16,7 +17,10 @@ function nativeInvoke<T>(command: string, args?: Record<string, unknown>): Promi
   if (!isNativeDesktopRuntime()) {
     return Promise.reject(new Error(NATIVE_RUNTIME_REQUIRED));
   }
-  return invoke<T>(command, args);
+  return invoke<T>(command, args).catch((error: unknown) => {
+    captureDesktopException(error, { source: "tauri_command", command });
+    throw error;
+  });
 }
 
 window.beBossDesktop = Object.freeze({
