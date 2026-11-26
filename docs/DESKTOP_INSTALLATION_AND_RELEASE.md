@@ -41,26 +41,11 @@ The native per-user SQLCipher database is only a protected recovery store for th
 
 The supported uninstall removes the installed binaries and BeBoss shortcuts but deliberately preserves the BeBoss application-data directory. This avoids silently deleting pending recovery data, encrypted credentials and exported local backups. Owners should first export a portable encrypted backup and confirm that all business changes have synchronized to Supabase.
 
-## Build and verify locally
+## Build locally and publish through the Admin page
 
-From the `desktop` directory:
+Desktop installers are produced on your own computer. The Admin → App Releases → Desktop releases workspace does not start GitHub Actions, read GitHub Release assets or build from a remote branch. It accepts only the completed installer that you select from the local build output.
 
-```powershell
-npm ci
-npm run check:versions
-npm run check:types
-npm run build
-cargo test --manifest-path src-tauri/Cargo.toml --locked
-npm run dist:win
-```
-
-The repository's Windows CI additionally builds the NSIS installer, performs a silent install, checks the executable and Start Menu shortcut, silently uninstalls it, and asserts that a per-user app-data sentinel survives uninstall.
-
-**Certificate rotation notice:** the repository previously tracked `desktop/codesign.pfx` while the repository was public. That file has been removed from the current source tree and `*.pfx` / `*.p12` are now ignored. Removing a file does not erase older public Git history, so the old certificate must be revoked or invalidated by its issuer. CI explicitly rejects the exact exposed PFX and validates that the replacement contains a valid private key and the Code Signing extended key usage before invoking SignTool. Store only the newly issued PFX (base64) and its password in GitHub Actions secrets; never put either value or a PFX file in Git.
-
-## Build and sign a Windows installer locally
-
-From the `desktop` directory in Windows PowerShell:
+From the `desktop` directory, first validate the source and dependencies:
 
 ```powershell
 npm ci
@@ -68,35 +53,32 @@ npm run check:versions
 npm run check:types
 npm run build
 cargo test --locked --manifest-path src-tauri/Cargo.toml
-npm run dist:win
 ```
 
-For local Authenticode signing, put the replacement PFX somewhere outside the repository. Set the password only in the current PowerShell session, then run:
+Build the artifact on the corresponding operating system:
 
-```powershell
-$env:WINDOWS_CODESIGN_PFX_PASSWORD = Read-Host "PFX password" -AsSecureString |
-  ForEach-Object { [System.Net.NetworkCredential]::new("", $_).Password }
-$env:WINDOWS_CODESIGN_PFX_PATH = "C:/BeBossSigning/new-codesign.pfx"
-npm run sign:win:local
-```
+| Platform | Local build command | Output directory |
+| --- | --- | --- |
+| Windows | `npm run release:win:local` | `src-tauri/target/release/bundle/nsis` |
+| macOS | `npm run dist:mac` | `src-tauri/target/release/bundle/dmg` |
+| Linux | `npm run dist:linux` | `src-tauri/target/release/bundle/appimage` |
 
-Or run the entire native Windows installer build, signing and checksum generation with `npm run release:win:local`. The script validates the PFX (private key, validity and Code Signing EKU), uses SignTool with an RFC 3161 timestamp, verifies the Authenticode chain, and writes a SHA-256 manifest beside the installer. It explicitly rejects the PFX that was previously committed to the public repository. A self-signed or otherwise untrusted certificate will fail SignTool trust verification and is not suitable for production distribution. Clear the password from your current shell when finished with `Remove-Item Env:WINDOWS_CODESIGN_PFX_PASSWORD`.
+The Windows local release script builds the NSIS installer, validates the replacement Authenticode PFX (private key, validity and Code Signing EKU), signs with an RFC 3161 timestamp, verifies the signature chain, and writes SHA-256 checksum output. Store the replacement PFX outside the repository. Set `WINDOWS_CODESIGN_PFX_PATH` and enter `WINDOWS_CODESIGN_PFX_PASSWORD` only in the current PowerShell session. Clear the password when finished with `Remove-Item Env:WINDOWS_CODESIGN_PFX_PASSWORD`. It rejects the old PFX that was previously committed to the public repository.
 
-The local build does not upload files or publish a GitHub Release. Publishing a public release is a separate authenticated workflow action and requires the server-only `GITHUB_RELEASE_TOKEN` plus the protected platform signing credentials.
+**Certificate rotation notice:** deleting the old PFX from the current source tree does not erase earlier public Git history. The old certificate must be revoked or invalidated by its issuer; do not reuse it for production distribution. Never commit a PFX, private key or signing password.
 
-For the Admin → App releases → Native desktop releases panel, configure `GITHUB_RELEASE_TOKEN` in the web server environment (locally in the ignored `web/.env.local`; in production, the hosting provider's server-only environment variables). Use a fine-grained token restricted to this repository with **Actions: Read and write** and **Contents: Read-only**. Never prefix it with `VITE_`. GitHub Actions must separately receive `WINDOWS_CODESIGN_PFX_BASE64` and `WINDOWS_CODESIGN_PFX_PASSWORD`, as well as all six Apple signing/notarization secrets before the public workflow can publish all three trusted installers. The Admin panel dispatches and monitors the workflow; it does not upload arbitrary local binaries or bypass signing checks.
+For macOS, run the DMG build on macOS; complete signing and notarization with your Apple Developer credentials before customer distribution. For Linux, build and test the AppImage on a supported Linux environment and verify its runtime dependencies on the distributions used by customers. A package being assembled is not proof that it has passed physical-device or clean-machine acceptance.
 
-## Production signing and distribution
+### Upload a local artifact
 
-A production Windows installer is not considered release-ready until Authenticode signing and signature verification succeed. The release workflow requires the protected GitHub Actions secrets:
+1. Sign in to the BeBoss Admin Center with the `releases.manage` permission.
+2. Open **App releases → Desktop releases** and choose Windows, macOS or Linux.
+3. Follow the build instructions for that platform. Select the actual output `.exe`, `.dmg` or `.AppImage` file from your local filesystem.
+4. Set the release version and notes. The browser calculates the SHA-256 hash, then uploads the selected binary to the private Supabase `releases` bucket.
+5. Review the selected platform and choose whether this build should immediately become the current public installer. Publishing a new current version archives the previous release for that platform only.
+6. Verify the resulting public download page and checksum. The Mobile and Desktop release histories are separate; a desktop upload never changes the Android APK or its update configuration.
 
-- `WINDOWS_CODESIGN_PFX_BASE64`
-- `WINDOWS_CODESIGN_PFX_PASSWORD`
-- `SUPABASE_URL`
-- `SUPABASE_PUBLISHABLE_KEY`
+The bucket is private. Public downloads are issued from a server-controlled, short-lived signed URL only after the server confirms that the platform release remains current and public. The browser never receives a storage service key, a permanent public object URL or the underlying private object path. Download counts are incremented by the server-side release-download function.
 
-When the certificate or password is missing, production release fails closed rather than publishing an unsigned executable as a trusted production installer. CI artifacts produced by ordinary pull requests are explicitly unsigned inspection builds and must not be distributed to merchants.
+A failed or interrupted upload is not made public. The Admin page attempts to remove incomplete uploads; check the release archive before retrying in case the network connection was interrupted after a successful publication.
 
-## Enterprise controls not enabled without protected signing material
-
-Tauri's in-app updater requires a separately generated updater signing keypair: the public key is embedded into the app, and every updater package must be signed with the private key. This repository's current desktop installer uses Authenticode signing for Windows setup distribution; a Tauri signed auto-update channel must not be advertised or enabled until its dedicated updater keypair and protected CI secrets have been provisioned and tested. Windows Authenticode and Tauri updater signatures are separate trust systems.
