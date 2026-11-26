@@ -61,7 +61,6 @@ if (dsn && /^https:\/\/.+@[^/]+\/[^/]+$/.test(dsn)) {
     dsn,
     environment: import.meta.env.MODE || "production",
     release: "beboss-desktop@1.4.2",
-    sendDefaultPii: false,
     tracesSampleRate: 0,
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: 0,
