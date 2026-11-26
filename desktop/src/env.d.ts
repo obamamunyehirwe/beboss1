@@ -17,6 +17,12 @@ export interface SystemDiagnostics {
   defaultPrinterName: string | null;
 }
 
+export interface LocalDatabaseRecoveryResult {
+  backupPath: string;
+  archivedFiles: string[];
+  recoveryKeyReference: string | null;
+}
+
 export interface NetworkPingResult {
   host: string;
   latencyMs: number;
@@ -102,6 +108,7 @@ declare global {
         remove(key: string): Promise<boolean>;
       };
       getDeviceId(): Promise<string>;
+      recoverLocalDatabase(): Promise<LocalDatabaseRecoveryResult>;
       local: {
         load(shopSyncKey: string): Promise<any | null>;
         saveBaseline(shopSyncKey: string, snapshot: Record<string, unknown>, snapshotUpdatedAt: number): Promise<boolean>;
