@@ -72,12 +72,38 @@ fn database_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(directory.join("beboss-local.sqlite"))
 }
 
-fn database_key() -> Result<String, String> {
+fn is_readable_legacy_plaintext_database(path: &std::path::Path) -> bool {
+    Connection::open(path)
+        .and_then(|legacy| {
+            legacy.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0))
+        })
+        .is_ok()
+}
+
+/// A missing key may be generated only for a new database or a readable legacy
+/// plaintext SQLite file that can be migrated. Never replace a lost key for an
+/// existing encrypted/corrupt database: doing so would strand its cache and outbox.
+fn may_generate_database_key(path: &std::path::Path) -> bool {
+    match fs::metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+        Err(_) => false,
+        Ok(metadata) if metadata.len() == 0 => true,
+        Ok(_) => is_readable_legacy_plaintext_database(path),
+    }
+}
+
+fn database_key(path: &std::path::Path) -> Result<String, String> {
     let entry = Entry::new(KEYRING_SERVICE, KEYRING_DATABASE_KEY)
         .map_err(|error| format!("Could not open the operating-system credential vault: {error}"))?;
     match entry.get_password() {
         Ok(key) => Ok(key),
         Err(keyring::Error::NoEntry) => {
+            if !may_generate_database_key(path) {
+                return Err(
+                    "BeBoss found an existing encrypted local database, but its matching key is missing from the operating-system credential vault. No replacement key was generated and the original database and pending sync queue were not modified. Restore the original Windows credential profile or a trusted BeBoss recovery backup, then restart BeBoss."
+                        .into()
+                );
+            }
             let key = Uuid::new_v4().simple().to_string() + &Uuid::new_v4().simple().to_string();
             entry.set_password(&key)
                 .map_err(|error| format!("Could not persist the database key in the operating-system credential vault: {error}"))?;
@@ -222,7 +248,7 @@ fn stamp_desktop_records(value: &mut Value, hlc: i64, updated_since: i64, device
 
 fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
     let path = database_path(app)?;
-    let key_seed = database_key()?;
+    let key_seed = database_key(&path)?;
     let has_existing_file = path.metadata().map(|metadata| metadata.len() > 0).unwrap_or(false);
 
     let connection = if has_existing_file {
@@ -232,9 +258,7 @@ fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
                 // Old desktop versions used ordinary SQLite. Only migrate when the
                 // existing file can be read without a key; never overwrite an
                 // encrypted/corrupt database after a failed key check.
-                let is_legacy_plaintext = Connection::open(&path)
-                    .and_then(|legacy| legacy.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get::<_, i64>(0)))
-                    .is_ok();
+                let is_legacy_plaintext = is_readable_legacy_plaintext_database(&path);
                 if !is_legacy_plaintext {
                     return Err(format!(
                         "BeBoss could not unlock its local SQLCipher database. The original data has not been changed. Check the operating-system credential vault or restore a trusted backup. ({encrypted_error})"
@@ -1311,6 +1335,46 @@ mod database_encryption_tests {
         ));
         fs::create_dir_all(&directory).expect("test directory should be created");
         directory.join("beboss-local.sqlite")
+    }
+
+    #[test]
+    fn does_not_generate_a_replacement_key_for_an_existing_encrypted_database() {
+        let path = test_path("missing-key-encrypted");
+        let connection = open_keyed_database(&path, "original-key")
+            .expect("encrypted database should initialize");
+        connection.execute_batch("CREATE TABLE retained_records (value TEXT NOT NULL);")
+            .expect("fixture table should be created");
+        drop(connection);
+
+        assert!(!may_generate_database_key(&path),
+            "an encrypted database must never receive a newly generated replacement key");
+        let directory = path.parent().expect("test path has a parent");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn permits_key_initialization_for_a_readable_legacy_sqlite_database() {
+        let path = test_path("missing-key-legacy");
+        let legacy = Connection::open(&path).expect("legacy database should initialize");
+        legacy.execute_batch("CREATE TABLE retained_records (value TEXT NOT NULL);")
+            .expect("fixture table should be created");
+        drop(legacy);
+
+        assert!(may_generate_database_key(&path),
+            "a readable legacy SQLite database must be eligible for safe encryption migration");
+        let directory = path.parent().expect("test path has a parent");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn refuses_key_initialization_for_unrecognized_existing_bytes() {
+        let path = test_path("missing-key-invalid");
+        fs::write(&path, b"not a sqlite database").expect("fixture bytes should be written");
+
+        assert!(!may_generate_database_key(&path),
+            "unrecognized existing bytes must be preserved for recovery");
+        let directory = path.parent().expect("test path has a parent");
+        let _ = fs::remove_dir_all(directory);
     }
 
     #[test]
