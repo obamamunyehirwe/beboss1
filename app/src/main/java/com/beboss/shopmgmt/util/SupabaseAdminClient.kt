@@ -2640,7 +2640,7 @@ object SupabaseAdminClient {
             request.gatewayAmountRwf == request.amountRwf &&
             request.gatewayReference.isNotBlank() &&
             request.gatewayTransactionId.isNotBlank() &&
-            request.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE")
+            request.gatewayProvider in setOf("FLUTTERWAVE", "STRIPE", "MTN_MOMO")
         val effectiveVerificationNote = if (gatewayVerified) {
             "Automated ${request.gatewayProvider} settlement verified: reference ${request.gatewayReference}; transaction ${request.gatewayTransactionId}; amount ${request.gatewayAmountRwf} RWF; verified ${request.gatewayVerifiedAt}."
         } else {
