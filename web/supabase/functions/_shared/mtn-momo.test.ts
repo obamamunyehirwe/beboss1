@@ -61,6 +61,28 @@ Deno.test("MTN sandbox and production use their matching hosts, targets and cred
   }
 });
 
+Deno.test("Rwanda production token exchange uses User ID, Credential Token and mtnrwanda", async () => {
+  const production: MtnMomoConfiguration = {
+    environment: "production",
+    baseUrl: "https://momoapi.momo.africa",
+    targetEnvironment: "mtnrwanda",
+    collectionsSubscriptionKey: "production-subscription",
+    apiUser: "production-user-id",
+    apiKey: "production-credential-token",
+    credentialKind: "production_user_id_token",
+  };
+  let tokenRequest: Request | undefined;
+  const fetcher: typeof fetch = async (input, init) => {
+    tokenRequest = new Request(input, init);
+    return Response.json({ access_token: "production-access-token" }, { status: 200 });
+  };
+  const token = await getMtnMomoAccessToken(production, fetcher);
+  if (token !== "production-access-token") throw new Error("Production access token was not returned.");
+  if (!tokenRequest?.url.startsWith("https://momoapi.momo.africa/collection/token/")) throw new Error("Production token host mismatch.");
+  if (tokenRequest.headers.get("Authorization") !== "Basic " + btoa("production-user-id:production-credential-token")) throw new Error("The migrated production credential pair was not used.");
+  if (tokenRequest.headers.get("X-Target-Environment") !== "mtnrwanda") throw new Error("The Rwanda target environment header is missing.");
+});
+
 Deno.test("Request-to-Pay uses server credentials, RWF and the owner-approved MSISDN", async () => {
   const calls: Request[] = [];
   const fetcher: typeof fetch = async (input, init) => {
