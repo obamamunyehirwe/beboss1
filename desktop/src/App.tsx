@@ -302,7 +302,7 @@ function NativeDesktopApp() {
     let disposed = false;
     const probeAndSync = async () => {
       const current = syncProbeRef.current;
-      if (disposed || current.inFlight || busy || !navigator.onLine || document.visibilityState === "hidden") return;
+      // Keep cross-device sync active while the desktop window is minimized.\n      // The OS may throttle background timers, but focus/online events still trigger an immediate probe.\n      if (disposed || current.inFlight || busy || !navigator.onLine) return;
       current.inFlight = true;
       try {
         const probe = await callDesktopApi<{
