@@ -65,9 +65,33 @@ Build the artifact on the corresponding operating system:
 
 The Windows local release script builds the NSIS installer, validates the replacement Authenticode PFX (private key, validity and Code Signing EKU), signs with an RFC 3161 timestamp, verifies the signature chain, and writes SHA-256 checksum output. Store the replacement PFX outside the repository. Set `WINDOWS_CODESIGN_PFX_PATH` and enter `WINDOWS_CODESIGN_PFX_PASSWORD` only in the current PowerShell session. Clear the password when finished with `Remove-Item Env:WINDOWS_CODESIGN_PFX_PASSWORD`. It rejects the old PFX that was previously committed to the public repository.
 
+For a local PowerShell build, set the path to a **new CA-issued certificate** outside the repository and enter its password without placing it in a command history:
+
+```powershell
+$env:WINDOWS_CODESIGN_PFX_PATH = "C:\BeBossSigning\replacement-code-signing.pfx"
+$securePassword = Read-Host "PFX password" -AsSecureString
+$env:WINDOWS_CODESIGN_PFX_PASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Password
+npm run release:win:local
+Remove-Item Env:WINDOWS_CODESIGN_PFX_PASSWORD
+Remove-Item Env:WINDOWS_CODESIGN_PFX_PATH
+```
+
 **Certificate rotation notice:** deleting the old PFX from the current source tree does not erase earlier public Git history. The old certificate must be revoked or invalidated by its issuer; do not reuse it for production distribution. Never commit a PFX, private key or signing password.
 
 For macOS, run the DMG build on macOS; complete signing and notarization with your Apple Developer credentials before customer distribution. For Linux, build and test the AppImage on a supported Linux environment and verify its runtime dependencies on the distributions used by customers. A package being assembled is not proof that it has passed physical-device or clean-machine acceptance.
+
+### Apply the desktop release database migration
+
+Before using the Admin desktop release workspace, apply the new private release-table and Storage configuration migration to the **intended Supabase project**. From the repository's `web` directory, link the project once, inspect the pending migration list, then apply it:
+
+```powershell
+cd web
+supabase link --project-ref YOUR_SUPABASE_PROJECT_REF
+supabase migration list
+supabase db push
+```
+
+The migration is `web/supabase/migrations/20261126103000_admin_local_desktop_releases.sql`. It creates the private `desktop_app_releases` metadata table, the private installer bucket configuration and permission-checked publication/download functions. Do not run `db push` against a production project until you have confirmed the linked project and reviewed pending migrations.
 
 ### Upload a local artifact
 
