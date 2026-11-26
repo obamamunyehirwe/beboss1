@@ -25,6 +25,7 @@ This document tracks the remediation work based on the 22 findings in the suppli
 - Standardized web dependency installation on the committed npm lockfile used by CI: removed `web/bun.lock`; CI continues to use `npm ci`.
 - Aligned the checked-in migration file prefixes with the exact migration versions recorded in the live Supabase project.
 - Removed `BEBOSS_LAN_SYNC_SECRET` from Android `BuildConfig`, the example environment file, and the LAN service's legacy global-key fallback. New app builds now use only the per-shop 256-bit key issued by Supabase and sealed with the installation's Android Keystore. A device must complete a successful owner cloud sync before enabling offline LAN pairing.
+- Introduced versioned `pbkdf2v2` credential hashes for all new PIN/password values. The v2 format uses a random per-credential salt and the 210,000-iteration PBKDF2 work factor without an APK-embedded pepper. Existing v1 peppered hashes remain readable and are transparently upgraded after successful authentication; the old BuildConfig pepper cannot be removed until existing v1 hashes are migrated and the staged rollout is verified.
 - Added an explicit stale-admin-bundle recovery path for the reported `DOWNLOAD_PATH is not defined` browser exception and a regression test that the admin release route imports the canonical download-path module.
 
 ## Remaining release blockers and follow-up work
