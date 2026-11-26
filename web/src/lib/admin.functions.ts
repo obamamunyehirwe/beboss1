@@ -1427,7 +1427,7 @@ const desktopReleaseUploadSchema = z.object({
   make_current: z.boolean().default(true),
 });
 
-const DESKTOP_SOURCE_VERSION_PATTERN = /^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/;
+const DESKTOP_SOURCE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 async function readDesktopSourceVersion(): Promise<string> {
   const response = await fetch(
