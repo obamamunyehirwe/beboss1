@@ -74,17 +74,17 @@ for (const module of modules) {
       fail(module.file + " :: " + action + " is missing requireSupabaseAuth middleware");
     }
 
-    if (module.exceptions?.has(action)) continue;
-
-    const explicit = module.explicitChecks?.[action];
-    if (explicit) {
-      for (const pattern of explicit) {
-        if (!pattern.test(block)) {
-          fail(module.file + " :: " + action + " is missing required permission guard " + pattern);
+    if (!module.exceptions?.has(action)) {
+      const explicit = module.explicitChecks?.[action];
+      if (explicit) {
+        for (const pattern of explicit) {
+          if (!pattern.test(block)) {
+            fail(module.file + " :: " + action + " is missing required permission guard " + pattern);
+          }
         }
+      } else if (!/\\b(?:requireAdmin|requirePermission|requireAdminPermission)\\s*\\(/.test(block)) {
+        fail(module.file + " :: " + action + " is missing a server-side role/permission check");
       }
-    } else if (!/\b(?:requireAdmin|requirePermission|requireAdminPermission)\s*\(/.test(block)) {
-      fail(module.file + " :: " + action + " is missing a server-side role/permission check");
     }
 
     if (action === "getAdminContext" &&
