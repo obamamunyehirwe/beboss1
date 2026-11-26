@@ -1,5 +1,7 @@
 # BeBoss security audit remediation — 25 November 2026
 
+> **Status correction — 26 November 2026:** The findings below record the remediation state as of their original date. Android now has a server-verified legacy DataShare compatibility path and a Transition 2.4.1 → Secure 2.5.0 Keystore migration. The final Secure APK has no global DataShare HMAC or credential-pepper BuildConfig field. See **[ANDROID_DESKTOP_SECURITY_MIGRATION.md](ANDROID_DESKTOP_SECURITY_MIGRATION.md)** for the current sequence and external release gates; do not re-add the global HMAC to Android.
+
 This document tracks the remediation work based on the 22 findings in the supplied audit. The production Supabase changes in this document have already been applied to project `beboss`; repository code changes are on the remediation branch and must pass CI/review before merge.
 
 ## Applied to production
