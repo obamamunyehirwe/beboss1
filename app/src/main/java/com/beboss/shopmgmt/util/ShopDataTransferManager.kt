@@ -63,6 +63,7 @@ data class ShopImportSummary(
 object ShopDataTransferManager {
 
     private const val SHARE_TOKEN_PREFIX = "BBSHARE1:"
+    private const val SHOP_SHARE_TOKEN_PREFIX = "BBSHARE2:"
     private const val CURRENT_SCHEMA_VERSION = 3
     private const val DEFAULT_TOKEN_TTL_MS = 30L * 24L * 60L * 60L * 1000L
 
@@ -541,6 +542,81 @@ object ShopDataTransferManager {
         return "$SHARE_TOKEN_PREFIX$sig16:$b64Payload"
     }
 
+    /**
+     * Creates a per-shop authenticated share token. The shop key is already provisioned
+     * by the owner through Supabase and stored in the platform keystore; the derived
+     * BBSHARE2 key is domain separated from LAN encryption and authentication keys.
+     */
+    fun createShopScopedShareToken(json: JSONObject, shopSecret: String): String {
+        val key = shopShareHmacKey(shopSecret)
+        val rawBytes = json.toString().toByteArray(StandardCharsets.UTF_8)
+        val baos = ByteArrayOutputStream()
+        GZIPOutputStream(baos).use { gzip -> gzip.write(rawBytes) }
+        val payload = Base64.getEncoder().encodeToString(baos.toByteArray())
+        val signature = computeHmacHex(key, payload).take(32).uppercase(Locale.ROOT)
+        return "$SHOP_SHARE_TOKEN_PREFIX$signature:$payload"
+    }
+
+    private fun shopShareHmacKey(shopSecret: String): ByteArray {
+        val clean = shopSecret.trim().lowercase(Locale.ROOT)
+        require(clean.matches(Regex("[a-f0-9]{64}"))) {
+            "This shop has not provisioned its secure DataShare credential. Connect the owner phone to BeBoss Cloud and retry."
+        }
+        return CryptoKeyManager.deriveSubkey(
+            clean.toByteArray(StandardCharsets.UTF_8),
+            "BeBoss_BBSHARE2_HMAC_v1"
+        )
+    }
+
+    private fun computeHmacHex(key: ByteArray, data: String): String {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(key, "HmacSHA256"))
+        return SecurityUtils.bytesToHex(mac.doFinal(data.toByteArray(StandardCharsets.UTF_8)))
+    }
+
+    fun decodeShopScopedShareToken(token: String, shopSecret: String): String {
+        val trimmed = token.trim()
+        require(trimmed.length <= SyncPayloadValidator.MAX_TOKEN_LENGTH) {
+            "BeBoss Share Token exceeds safe size limit."
+        }
+        require(trimmed.startsWith(SHOP_SHARE_TOKEN_PREFIX)) {
+            "Invalid shop-scoped BeBoss Share Token prefix."
+        }
+        val remainder = trimmed.removePrefix(SHOP_SHARE_TOKEN_PREFIX)
+        val separator = remainder.indexOf(':')
+        require(separator > 0) { "Malformed BBSHARE2 token structure." }
+        val providedSignature = remainder.substring(0, separator).uppercase(Locale.ROOT)
+        val payload = remainder.substring(separator + 1)
+        require(providedSignature.matches(Regex("[A-F0-9]{32}"))) {
+            "Malformed BBSHARE2 signature."
+        }
+        val expectedSignature = computeHmacHex(shopShareHmacKey(shopSecret), payload)
+            .take(32).uppercase(Locale.ROOT)
+        require(constantTimeEquals(providedSignature, expectedSignature)) {
+            "Shop-scoped branch token integrity check failed. Confirm this token belongs to the signed-in shop."
+        }
+        return decompressSharePayload(payload)
+    }
+
+    private fun decompressSharePayload(payload: String): String {
+        val compressed = Base64.getDecoder().decode(payload)
+        GZIPInputStream(ByteArrayInputStream(compressed)).bufferedReader(StandardCharsets.UTF_8).use { reader ->
+            val result = StringBuilder()
+            val buffer = CharArray(8192)
+            var total = 0
+            while (true) {
+                val read = reader.read(buffer)
+                if (read < 0) break
+                total += read
+                require(total <= SyncPayloadValidator.MAX_RAW_PAYLOAD_BYTES) {
+                    "Decompressed share payload exceeds safe 5 MB limit."
+                }
+                result.append(buffer, 0, read)
+            }
+            return result.toString()
+        }
+    }
+
     fun decodeCompressedSyncToken(token: String): String {
         val trimmed = token.trim()
         require(trimmed.length <= SyncPayloadValidator.MAX_TOKEN_LENGTH) {
@@ -561,22 +637,7 @@ object ShopDataTransferManager {
             "Branch Share Token integrity check failed (truncated or tampered)."
         }
 
-        val compressed = Base64.getDecoder().decode(b64Payload)
-        GZIPInputStream(ByteArrayInputStream(compressed)).bufferedReader(StandardCharsets.UTF_8).use { reader ->
-            val sb = StringBuilder()
-            val buf = CharArray(8192)
-            var total = 0
-            while (true) {
-                val read = reader.read(buf)
-                if (read < 0) break
-                total += read
-                require(total <= SyncPayloadValidator.MAX_RAW_PAYLOAD_BYTES) {
-                    "Decompressed share payload exceeds safe 5 MB limit."
-                }
-                sb.append(buf, 0, read)
-            }
-            return sb.toString()
-        }
+        return decompressSharePayload(b64Payload)
     }
 
     /**
@@ -641,14 +702,22 @@ object ShopDataTransferManager {
      */
     fun parseShopPackageString(
         input: String,
-        enforceReplayProtection: Boolean = false
+        enforceReplayProtection: Boolean = false,
+        shopSecret: String? = null
     ): ShopImportSummary {
         val trimmed = input.trim()
-        val isToken = trimmed.startsWith(SHARE_TOKEN_PREFIX)
-        val jsonString = if (isToken) {
-            decodeCompressedSyncToken(trimmed)
-        } else {
-            trimmed
+        val isLegacyToken = trimmed.startsWith(SHARE_TOKEN_PREFIX)
+        val isShopScopedToken = trimmed.startsWith(SHOP_SHARE_TOKEN_PREFIX)
+        val isToken = isLegacyToken || isShopScopedToken
+        val jsonString = when {
+            isShopScopedToken -> decodeShopScopedShareToken(
+                trimmed,
+                shopSecret ?: throw SecurityException(
+                    "BBSHARE2 tokens require the matching signed-in shop's protected pairing credential."
+                )
+            )
+            isLegacyToken -> decodeCompressedSyncToken(trimmed)
+            else -> trimmed
         }
 
         val root = SyncPayloadValidator.validateAndParseRoot(jsonString)
