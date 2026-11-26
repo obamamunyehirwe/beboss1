@@ -702,6 +702,33 @@ Deno.serve(async (req: Request) => {
       action === "bootstrap" || action === "restore_preview" || action === "redeem_unlock_code" || action === "device_enroll" || action === "device_retire_legacy"
     );
 
+    if (action === "lan_pairing_credentials") {
+      const installationId = text(body.deviceId).trim();
+      if (!isUuid(installationId)) return json(403, { ok: false, message: "This desktop installation has no valid device identity." });
+      const desktopId = "DESKTOP:" + installationId;
+      const { data: device, error: deviceError } = await admin
+        .from("shop_devices")
+        .select("device_id,role,is_active,is_owner_primary,assigned_username")
+        .eq("shop_sync_key", owner.shopId)
+        .eq("device_id", desktopId)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (deviceError || !device || device.role !== "OWNER" || device.is_owner_primary ||
+          text(device.assigned_username).trim().toLowerCase() !== owner.username) {
+        return json(403, { ok: false, message: "This desktop must be an active, owner-assigned device before LAN pairing credentials can be issued." });
+      }
+      const { data: shopSecret, error: secretError } = await admin
+        .from("shop_accounts")
+        .select("lan_sync_secret")
+        .eq("id", owner.shopId)
+        .maybeSingle();
+      const secret = text(shopSecret?.lan_sync_secret).trim().toLowerCase();
+      if (secretError || !/^[a-f0-9]{64}$/.test(secret)) {
+        return json(409, { ok: false, message: "The shop LAN pairing key is not provisioned. Complete a successful owner cloud sync on the primary Android terminal and retry." });
+      }
+      return json(200, { ok: true, shopSyncKey: owner.shopId, secret });
+    }
+
     if (action === "restore_preview") {
       const installationId = text(body.deviceId).trim();
       if (!isUuid(installationId)) return json(403, { ok: false, message: "This desktop installation has no valid persistent device identity. Reopen BeBoss and try again." });
