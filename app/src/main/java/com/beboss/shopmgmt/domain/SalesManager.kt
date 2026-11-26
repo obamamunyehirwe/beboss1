@@ -72,6 +72,26 @@ class SalesManager(
         enforceCreditLimit: Boolean = true
     ): Sale = withContext(Dispatchers.IO) {
         require(items.isNotEmpty()) { "Cannot checkout an empty cart." }
+        require(discountAmount.isFinite() && discountAmount >= 0.0) {
+            "The sale discount must be a valid non-negative amount."
+        }
+        require(amountPaid.isFinite() && amountPaid >= 0.0) {
+            "The amount paid must be a valid non-negative amount."
+        }
+        items.forEach { item ->
+            require(item.quantity.isFinite() && item.quantity > 0.0) {
+                "Every sale item must have a positive, finite quantity."
+            }
+            require(item.effectiveUnitPrice.isFinite() && item.effectiveUnitPrice >= 0.0) {
+                "Every sale item must have a valid non-negative selling price."
+            }
+            require(item.product.costPrice.isFinite() && item.product.costPrice >= 0.0) {
+                "Every sale item must have a valid non-negative cost price."
+            }
+            require(item.product.branchId.isBlank() || item.product.branchId == branchId) {
+                "A sale cannot include products assigned to another branch."
+            }
+        }
         ensureSufficientStorage()
 
         DbWriteMutex.withLock {
@@ -80,16 +100,24 @@ class SalesManager(
                 val hlc = HlcClock.tick(now)
                 val saleId = UUID.randomUUID().toString()
 
-                val rawTotalCents = items.sumOf {
-                    MoneyUtils.multiplyPriceQuantityCents(it.effectiveUnitPrice, it.quantity)
+                val rawTotalCents = items.fold(0L) { total, item ->
+                    Math.addExact(total, MoneyUtils.multiplyPriceQuantityCents(item.effectiveUnitPrice, item.quantity))
                 }
-                val discountCents = MoneyUtils.toCents(discountAmount).coerceAtMost(rawTotalCents)
-                val netTotalCents = (rawTotalCents - discountCents).coerceAtLeast(0L)
-                val totalCostCents = items.sumOf {
-                    MoneyUtils.multiplyPriceQuantityCents(it.product.costPrice, it.quantity)
+                require(rawTotalCents > 0L) { "The sale total must be greater than zero." }
+                val discountCents = MoneyUtils.toCents(discountAmount)
+                require(discountCents <= rawTotalCents) {
+                    "The discount cannot be greater than the sale subtotal."
                 }
-                val profitCents = netTotalCents - totalCostCents
+                val netTotalCents = Math.subtractExact(rawTotalCents, discountCents)
+                require(netTotalCents > 0L) { "The sale total must be greater than zero after discount." }
+                val totalCostCents = items.fold(0L) { total, item ->
+                    Math.addExact(total, MoneyUtils.multiplyPriceQuantityCents(item.product.costPrice, item.quantity))
+                }
+                val profitCents = Math.subtractExact(netTotalCents, totalCostCents)
                 val paidCents = MoneyUtils.toCents(amountPaid)
+                require(paidCents <= netTotalCents) {
+                    "The amount paid cannot exceed the sale total. Enter the amount applied to this sale."
+                }
 
                 val netTotal = MoneyUtils.centsToDouble(netTotalCents)
                 val effectiveDiscount = MoneyUtils.centsToDouble(discountCents)
@@ -105,15 +133,21 @@ class SalesManager(
                 val unpaidDebtCents = (netTotalCents - paidCents).coerceAtLeast(0L)
                 val unpaidDebt = MoneyUtils.centsToDouble(unpaidDebtCents)
 
-                if (enforceCreditLimit && customerId != null && unpaidDebt > 0.0) {
-                    val customer = customerDao.getCustomerById(customerId)
-                    if (customer != null && customer.creditLimit > 0.0) {
-                        val projectedDebt = customer.debtBalance + unpaidDebt
-                        if (projectedDebt > customer.creditLimit + 0.01) {
-                            throw IllegalStateException(
-                                "Credit limit exceeded for ${customer.name}: current debt ${customer.debtBalance.toLong()} + new credit ${unpaidDebt.toLong()} exceeds limit ${customer.creditLimit.toLong()}."
-                            )
-                        }
+                if (unpaidDebtCents > 0L) {
+                    require(!customerId.isNullOrBlank()) {
+                        "Select a customer before recording an unpaid or partially paid sale."
+                    }
+                }
+                val customer = customerId?.let { id ->
+                    customerDao.getCustomerById(id)
+                        ?: throw IllegalStateException("The selected customer no longer exists. Refresh customers and retry.")
+                }
+                if (enforceCreditLimit && customer != null && unpaidDebtCents > 0L && customer.creditLimit > 0.0) {
+                    val projectedDebt = customer.debtBalance + unpaidDebt
+                    if (projectedDebt > customer.creditLimit + 0.01) {
+                        throw IllegalStateException(
+                            "Credit limit exceeded for ${customer.name}: current debt ${customer.debtBalance.toLong()} + new credit ${unpaidDebt.toLong()} exceeds limit ${customer.creditLimit.toLong()}."
+                        )
                     }
                 }
 
