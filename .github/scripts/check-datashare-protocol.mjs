@@ -15,7 +15,7 @@ const checks = [
   ["desktop branch-share creation requires BBSHARE2", /if \(!token\.startsWith\("BBSHARE2:"\)\)/.test(desktop)],
   ["desktop import accepts BBSHARE2 and migration-era BBSHARE1", /startsWith\("BBSHARE2:"\).*startsWith\("BBSHARE1:"\)/.test(desktop)],
   ["server emits shop-scoped BBSHARE2", /const token = "BBSHARE2:" \+ signature/.test(desktopApi)],
-  ["server verifies imports in the authenticated shop context", /if \(action === "verify_branch_share"\)[\s\S]*?getShopDataShareSecret\(admin, owner\.shopId\)/.test(desktopApi)],
+  ["server verifies legacy imports for the authenticated owner even before shop-key provisioning", /if \(action === "verify_branch_share"\)[\s\S]*?eq\("id", owner\.shopId\)[\s\S]*?verifyAndDecodeToken\(token, config\.hmacSecret, shopShareSecret\)/.test(desktopApi)],
   ["Android emits BBSHARE2 from the shop-scoped key", /fun createShopScopedShareToken[\s\S]*?SHOP_SHARE_TOKEN_PREFIX/.test(androidManager)],
   ["Android package contains no global DataShare HMAC or BuildConfig secret reader", !/BuildConfig|BEBOSS_DATASHARE_HMAC_SECRET|getShareHmacSecret|computeShareHmac/.test(androidManager)],
   ["Android legacy imports request owner SMS verification", /candidate\.startsWith\("BBSHARE1:"\)[\s\S]*?onRequestLegacyShareOtp/.test(androidDialog)],
