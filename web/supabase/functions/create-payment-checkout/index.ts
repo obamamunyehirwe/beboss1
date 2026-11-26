@@ -214,10 +214,11 @@ Deno.serve(async (request: Request) => {
   let txRef = "";
   let providerRequestStarted = false;
   let providerRejected = false;
+  let gateway = "";
   try {
     const input = await request.json();
     if (String(input?.action ?? "") === "status") return await checkMtnPaymentStatus(request, input);
-    const gateway = String(input?.gateway ?? "").toLowerCase();
+    gateway = String(input?.gateway ?? "").toLowerCase();
     if (gateway !== "flutterwave" && gateway !== "stripe" && gateway !== "mtn_momo") {
       return jsonResponse(400, { message: "Select Flutterwave, Stripe or direct MTN MoMo checkout." });
     }
