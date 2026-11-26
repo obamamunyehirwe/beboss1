@@ -28,7 +28,7 @@
   ; A same-path install is an in-place application upgrade / repair. The
   ; installer replaces program files, never the user's encrypted business DB.
   IfFileExists "$INSTDIR\BeBoss.exe" 0 beboss_fresh_install
-    MessageBox MB_ICONINFORMATION|MB_OKCANCEL "An existing BeBoss Desktop installation was found.$\r$\n$\r$\nContinue to replace the installed application files with this version? Your encrypted local database, protected credentials, pending sync queue and recovery archives will be preserved.$\r$\n$\r$\nBeBoss will verify the database key on its next launch." IDOK beboss_upgrade_confirmed
+    MessageBox MB_ICONINFORMATION|MB_OKCANCEL "An existing BeBoss Desktop installation was found.$\r$\n$\r$\nContinue to replace the installed application files with this version? Your encrypted local database, protected credentials, pending sync queue and recovery archives will be preserved.$\r$\n$\r$\nBeBoss will verify the database key on its next launch." /SD IDOK IDOK beboss_upgrade_confirmed
     Abort
   beboss_upgrade_confirmed:
     DetailPrint "Existing installation detected. Starting a safe in-place upgrade."
@@ -74,7 +74,7 @@
 
 !macro NSIS_HOOK_PREUNINSTALL
   DetailPrint "Preparing to remove BeBoss Desktop application files..."
-  MessageBox MB_ICONINFORMATION|MB_OKCANCEL "This removes the BeBoss Desktop program and shortcuts only.$\r$\n$\r$\nYour encrypted shop database, protected credentials, pending sync queue and recovery backups will remain on this Windows user account." IDOK beboss_uninstall_confirmed
+  MessageBox MB_ICONINFORMATION|MB_OKCANCEL "This removes the BeBoss Desktop program and shortcuts only.$\r$\n$\r$\nYour encrypted shop database, protected credentials, pending sync queue and recovery backups will remain on this Windows user account." /SD IDOK IDOK beboss_uninstall_confirmed
   Abort
   beboss_uninstall_confirmed:
 
