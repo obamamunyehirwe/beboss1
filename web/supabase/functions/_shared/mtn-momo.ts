@@ -107,7 +107,7 @@ export async function getMtnMomoAccessToken(
   const body = await response.json().catch(() => ({}));
   const token = String(body?.access_token ?? "");
   if (!response.ok || !token) {
-    throw new Error(`MTN MoMo access-token request failed (HTTP ${response.status}). Check the Collections subscription key, API user and API key.`);
+    throw new Error(`MTN MoMo access-token request failed (HTTP ${response.status}). Check the Collections subscription key and the credential pair for the selected environment.`);
   }
   return token;
 }
@@ -138,7 +138,6 @@ export async function requestMtnMomoPayment(
     "Content-Type": "application/json",
     Accept: "application/json",
   });
-  if (config.callbackUrl) headers.set("X-Callback-Url", config.callbackUrl);
   const response = await fetcher(`${config.baseUrl}/collection/v1_0/requesttopay`, {
     method: "POST",
     headers,
