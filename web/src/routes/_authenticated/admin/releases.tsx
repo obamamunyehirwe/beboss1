@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@/lib/use-server-fn";
 import { Apple, CheckCircle2, Download, FileCheck2, Laptop, Loader2, Monitor, Pencil, Smartphone, Star, Trash2, UploadCloud } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -94,6 +94,7 @@ function ReleasesPage() {
   const [stage, setStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
   const [desktopPlatform, setDesktopPlatform] = useState<DesktopPlatform>("windows");
   const [desktopFile, setDesktopFile] = useState<File | null>(null);
+  const desktopFileInputRef = useRef<HTMLInputElement>(null);
   const [desktopVersion, setDesktopVersion] = useState("");
   const [desktopNotes, setDesktopNotes] = useState("");
   const [desktopMakeCurrent, setDesktopMakeCurrent] = useState(true);
@@ -205,6 +206,7 @@ function ReleasesPage() {
 
       toast.success(`${desktopPlatform} v${version} uploaded and ${desktopMakeCurrent ? "published as current" : "saved to the archive"}.`);
       setDesktopFile(null);
+      if (desktopFileInputRef.current) desktopFileInputRef.current.value = "";
       setDesktopNotes("");
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["admin", "desktop-releases"] }),
@@ -576,7 +578,7 @@ function ReleasesPage() {
                     { id: "macos", name: "macOS", detail: ".dmg", Icon: Apple },
                     { id: "linux", name: "Linux", detail: ".AppImage", Icon: Laptop },
                   ] as const).map(({ id, name, detail, Icon }) => (
-                    <button key={id} type="button" aria-pressed={desktopPlatform === id} onClick={() => { setDesktopPlatform(id); setDesktopFile(null); }}
+                    <button key={id} type="button" aria-pressed={desktopPlatform === id} onClick={() => { setDesktopPlatform(id); setDesktopFile(null); if (desktopFileInputRef.current) desktopFileInputRef.current.value = ""; }}
                       className={desktopPlatform === id
                         ? "rounded-xl border-2 border-primary bg-primary/5 p-3 text-left shadow-sm outline-none ring-2 ring-primary/10"
                         : "rounded-xl border border-border bg-background p-3 text-left transition hover:border-primary/50"}>
@@ -620,6 +622,12 @@ function ReleasesPage() {
               </div>
 
               <form className="space-y-4 rounded-xl border border-border p-4" onSubmit={(event) => void submitDesktopRelease(event)}>
+                {desktopSourceVersionQuery.isError ? (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert">
+                    {desktopSourceVersionQuery.error instanceof Error ? desktopSourceVersionQuery.error.message : "Could not verify the current desktop source version."}
+                    <Button type="button" variant="outline" size="sm" className="ml-2" onClick={() => void desktopSourceVersionQuery.refetch()}>Retry</Button>
+                  </div>
+                ) : null}
                 <div>
                   <h3 className="font-semibold">3. Upload and publish the local build</h3>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">The file is uploaded from this browser to private BeBoss release storage. Its SHA-256 is calculated locally before upload.</p>
@@ -641,7 +649,7 @@ function ReleasesPage() {
                     {desktopFile ? <FileCheck2 className="size-8 text-success" /> : <UploadCloud className="size-8 text-muted-foreground" />}
                     <span className="break-all text-sm font-semibold">{desktopFile ? desktopFile.name : `Choose .${desktopPlatform === "windows" ? "exe" : desktopPlatform === "macos" ? "dmg" : "AppImage"} installer`}</span>
                     <span className="text-xs text-muted-foreground">{desktopFile ? `${formatBytes(desktopFile.size)} · ready to verify` : "Up to 512 MB · only the selected platform format is accepted"}</span>
-                    <input id="desktop-artifact" type="file" className="sr-only"
+                    <input id="desktop-artifact" ref={desktopFileInputRef} type="file" className="sr-only"
                       accept={desktopPlatform === "windows" ? ".exe,application/vnd.microsoft.portable-executable,application/octet-stream" : desktopPlatform === "macos" ? ".dmg,application/x-apple-diskimage,application/octet-stream" : ".AppImage,.appimage,application/octet-stream"}
                       onChange={(event) => setDesktopFile(event.target.files?.[0] ?? null)} />
                   </label>
