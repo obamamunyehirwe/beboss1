@@ -727,14 +727,31 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "redeem_unlock_code") {
+      const rateKey = await sha256Hex(owner.shopId + ":" + owner.user.id);
+      const rateResponse = await admin.rpc("consume_rate_limit", {
+        p_scope: "desktop_unlock",
+        p_key_hash: rateKey,
+        p_max_hits: 8,
+        p_window_seconds: 900
+      });
+      const rate = Array.isArray(rateResponse.data) ? rateResponse.data[0] : rateResponse.data;
+      if (rateResponse.error || typeof rate?.allowed !== "boolean") {
+        return json(503, { ok: false, message: "Secure activation-code verification is temporarily unavailable." });
+      }
+      if (!rate.allowed) {
+        return json(429, { ok: false, message: "Too many activation attempts. Wait 15 minutes and try again." });
+      }
       const rawCode = text(body.code).trim();
       if (rawCode.length < 8 || rawCode.length > 512) {
         return json(400, { ok: false, message: "Enter a complete BeBoss activation code." });
       }
       const rawParts = rawCode.split("-");
       const format = String(rawParts[0] ?? "").toUpperCase();
-      // BB3 Base64 signatures are case-sensitive; normalize only its prefix.
-      const code = format === "BB3" ? ["BB3", ...rawParts.slice(1)].join("-") : rawCode.toUpperCase();
+      // Normalize BB3 metadata fields only; its Base64 ECDSA signature is case-sensitive.
+      const code = format === "BB3"
+        ? ["BB3", String(rawParts[1] ?? "").toUpperCase(), rawParts[2], String(rawParts[3] ?? "").toUpperCase(),
+          String(rawParts[4] ?? "").toUpperCase(), String(rawParts[5] ?? "").toUpperCase(), rawParts[6]].join("-")
+        : rawCode.toUpperCase();
       const parts = code.split("-");
       const isBb3 = format === "BB3" && parts.length === 7;
       const isBb2 = format === "BB2" && parts.length === 6;
