@@ -40,7 +40,7 @@ if (!helper.includes('createShopAdminClient(key)') || !helper.includes('.eq("id"
 if (!helper.includes("normalizePhoneLast9") || !helper.includes("owner_username")) {
   fail("The helper must re-check registered owner username and phone against the shop record.");
 }
-if (!/headers:\s*\{\s*["']X-Shop-Sync-Key["']:\s*tenantKey\s*\}/.test(serverClient)) {
+if (!/headers:\s*\{\s*["']X-Shop-Sync-Key["']:\s*tenantKey\s*,?\s*\}/.test(serverClient)) {
   fail("The tenant header must be isolated in a newly-created per-request client.");
 }
 if (!serverClient.includes("resolveSupabaseSecretKey(process.env)")) {
