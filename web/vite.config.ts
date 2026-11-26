@@ -13,78 +13,77 @@ import { fileURLToPath } from "node:url";
 
 const webRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(webRoot, "..");
+const mode = process.env.NODE_ENV === "production" ? "production" : "development";
 
-export default defineConfig(({ mode }) => {
-  // Keep the documented repository-root .env/.env.local workflow working when
-  // Vite is launched from web/. Also support web-local env files for deployments.
-  // Only server variables are copied into Node's process.env; they are never
-  // added to the Vite define object or exposed to a browser bundle.
-  const loadedEnv = {
-    ...loadEnv(mode, repositoryRoot, ""),
-    ...loadEnv(mode, webRoot, ""),
-  };
-  const serverOnlyEnvNames = [
-    "SUPABASE_URL",
-    "SUPABASE_PUBLISHABLE_KEY",
-    "SUPABASE_ANON_KEY",
-    "SUPABASE_SECRET_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
-  ] as const;
-  for (const name of serverOnlyEnvNames) {
-    if (!process.env[name] && loadedEnv[name]) {
-      process.env[name] = loadedEnv[name];
-    }
+// Vite is launched from web/, while BeBoss keeps its documented environment
+// file at the repository root. Load root and web-local env files for the Node
+// server process. Only explicitly public values are passed to Vite's define
+// object below; secret keys are never made available to browser code.
+const loadedEnv = {
+  ...loadEnv(mode, repositoryRoot, ""),
+  ...loadEnv(mode, webRoot, ""),
+};
+
+const serverOnlyEnvNames = [
+  "SUPABASE_URL",
+  "SUPABASE_PUBLISHABLE_KEY",
+  "SUPABASE_ANON_KEY",
+  "SUPABASE_SECRET_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+] as const;
+
+for (const name of serverOnlyEnvNames) {
+  if (!process.env[name] && loadedEnv[name]) {
+    process.env[name] = loadedEnv[name];
   }
+}
 
-  // Only the URL and publishable/anon key may be injected into the browser.
-  // Never expose SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY.
-  const publicSupabaseUrl =
-    process.env["VITE_SUPABASE_URL"] ||
-    loadedEnv["VITE_SUPABASE_URL"] ||
-    process.env["SUPABASE_URL"] ||
-    loadedEnv["SUPABASE_URL"];
-  const publicSupabaseKey =
-    process.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
-    loadedEnv["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
-    process.env["SUPABASE_PUBLISHABLE_KEY"] ||
-    loadedEnv["SUPABASE_PUBLISHABLE_KEY"] ||
-    process.env["SUPABASE_ANON_KEY"] ||
-    loadedEnv["SUPABASE_ANON_KEY"];
+const publicSupabaseUrl =
+  process.env["VITE_SUPABASE_URL"] ||
+  loadedEnv["VITE_SUPABASE_URL"] ||
+  process.env["SUPABASE_URL"] ||
+  loadedEnv["SUPABASE_URL"];
+const publicSupabaseKey =
+  process.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
+  loadedEnv["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
+  process.env["SUPABASE_PUBLISHABLE_KEY"] ||
+  loadedEnv["SUPABASE_PUBLISHABLE_KEY"] ||
+  process.env["SUPABASE_ANON_KEY"] ||
+  loadedEnv["SUPABASE_ANON_KEY"];
 
-  const publicSupabaseDefine: Record<string, string> = {};
-  if (publicSupabaseUrl) {
-    publicSupabaseDefine["import.meta.env.VITE_SUPABASE_URL"] = JSON.stringify(publicSupabaseUrl);
-  }
-  if (publicSupabaseKey) {
-    publicSupabaseDefine["import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY"] = JSON.stringify(publicSupabaseKey);
-  }
+const publicSupabaseDefine: Record<string, string> = {};
+if (publicSupabaseUrl) {
+  publicSupabaseDefine["import.meta.env.VITE_SUPABASE_URL"] = JSON.stringify(publicSupabaseUrl);
+}
+if (publicSupabaseKey) {
+  publicSupabaseDefine["import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY"] = JSON.stringify(publicSupabaseKey);
+}
 
-  // Vercel sets VERCEL=1 during its build. The Lovable wrapper otherwise keeps
-  // its preview-oriented Cloudflare Nitro target, which cannot serve this app's
-  // TanStack server functions as Vercel Functions. Emit Vercel's server and static
-  // output directories explicitly while leaving the Lovable preview target alone.
-  const isVercelBuild = process.env["VERCEL"] === "1";
+// Vercel sets VERCEL=1 during its build. The Lovable wrapper otherwise keeps
+// its preview-oriented Cloudflare Nitro target, which cannot serve this app's
+// TanStack server functions as Vercel Functions. Emit Vercel's server and static
+// output directories explicitly while leaving the Lovable preview target alone.
+const isVercelBuild = process.env["VERCEL"] === "1";
 
-  return {
-    ...(isVercelBuild
-      ? {
-          nitro: {
-            preset: "vercel",
-            output: {
-              dir: ".vercel/output",
-              serverDir: ".vercel/output/functions/__server.func",
-              publicDir: ".vercel/output/static",
-            },
+export default defineConfig({
+  ...(isVercelBuild
+    ? {
+        nitro: {
+          preset: "vercel",
+          output: {
+            dir: ".vercel/output",
+            serverDir: ".vercel/output/functions/__server.func",
+            publicDir: ".vercel/output/static",
           },
-        }
-      : {}),
-    vite: {
-      ...(Object.keys(publicSupabaseDefine).length ? { define: publicSupabaseDefine } : {}),
-      server: { allowedHosts: ["workspace-zkvm7tks-8b08c7aa60177527.v0.build"] },
-    },
-    tanstackStart: {
-      // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-      server: { entry: "server" },
-    },
-  };
+        },
+      }
+    : {}),
+  vite: {
+    ...(Object.keys(publicSupabaseDefine).length ? { define: publicSupabaseDefine } : {}),
+    server: { allowedHosts: ["workspace-zkvm7tks-8b08c7aa60177527.v0.build"] },
+  },
+  tanstackStart: {
+    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
+    server: { entry: "server" },
+  },
 });
