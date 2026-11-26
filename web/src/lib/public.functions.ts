@@ -229,9 +229,10 @@ export const lookupMyShop = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof lookupSchema>) => lookupSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
+    const ownerContext = context as unknown as OwnerAuthContext;
+    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
     if (normalizePhoneLast9(data.phone).length < 9) throw new Error("Enter the full phone number registered in the app.");
-    const sb = createPublicClient(key);
+    const sb = ownerContext.supabase;
     const [shop, pays, codes, devices, news, snaps, branchRows, transferRows, staffRows] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, owner_name, owner_username, business_type, branch_count, worker_count, device_count, device_limit, monthly_fee_rwf, subscription_status, subscription_expires_at, remote_kill_switch, updated_at").eq("id", key).maybeSingle(),
       sb.from("payment_requests").select("id, provider, amount_rwf, duration_months, payment_time_ms, payment_note, status, approval_mode, generated_unlock_code, rejection_reason, created_at, updated_at, gateway_provider, gateway_reference, gateway_transaction_id, gateway_amount_rwf, gateway_currency, gateway_verified_at").order("created_at", { ascending: false }).limit(20),
@@ -321,8 +322,9 @@ export const addMyShopDevice = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof addShopDeviceSchema>) => addShopDeviceSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
-    const sb = createPublicClient(key);
+    const ownerContext = context as unknown as OwnerAuthContext;
+    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
+    const sb = ownerContext.supabase;
     const [shopResult, ownerResult, primaryResult, userResult, branchResult, devicesResult, usersResult, branchesResult, configResult] = await Promise.all([
       sb.from("shop_accounts").select("shop_name, device_count, device_limit, branch_count, worker_count, remote_kill_switch").eq("id", key).maybeSingle(),
       sb.from("shop_users").select("user_id, username, full_name, role, is_active").eq("shop_sync_key", key).eq("role", "OWNER").eq("is_active", true).maybeSingle(),
@@ -459,8 +461,9 @@ export const upsertMyShopBranch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof branchSchema>) => branchSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
-    const sb = createPublicClient(key);
+    const ownerContext = context as unknown as OwnerAuthContext;
+    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
+    const sb = ownerContext.supabase;
     const now = Date.now();
     const { error } = await sb.from("shop_branches").upsert(
       {
@@ -505,8 +508,9 @@ export const deleteMyShopBranch = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof branchIdSchema>) => branchIdSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
-    const sb = createPublicClient(key);
+    const ownerContext = context as unknown as OwnerAuthContext;
+    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
+    const sb = ownerContext.supabase;
     const now = Date.now();
     // RLS allows tenant update but not delete; soft-delete via is_active=false + fresh HLC.
     const { error } = await sb
@@ -540,9 +544,10 @@ export const upsertMyShopStockTransfer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof transferSchema>) => transferSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
+    const ownerContext = context as unknown as OwnerAuthContext;
+    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
     if (data.fromBranchId === data.toBranchId) throw new Error("Source and destination branches must differ.");
-    const sb = createPublicClient(key);
+    const sb = ownerContext.supabase;
     const { data: existing, error: readError } = await sb
       .from("shop_stock_transfers")
       .select("id,status")
@@ -603,8 +608,9 @@ export const confirmMyShopStockTransfer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof confirmTransferSchema>) => confirmTransferSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
-    const sb = createPublicClient(key);
+    const ownerContext = context as unknown as OwnerAuthContext;
+    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
+    const sb = ownerContext.supabase;
     const now = Date.now();
     const { data: updated, error } = await sb
       .from("shop_stock_transfers")
@@ -649,8 +655,9 @@ export const requestMyShopStockTransferCancellation = createServerFn({ method: "
   .middleware([requireSupabaseAuth])
   .inputValidator((d: z.infer<typeof cancelTransferSchema>) => cancelTransferSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const key = await requireOwnerSession(context as unknown as OwnerAuthContext, data.username, data.phone);
-    const sb = createPublicClient(key);
+    const ownerContext = context as unknown as OwnerAuthContext;
+    const key = await requireOwnerSession(ownerContext, data.username, data.phone);
+    const sb = ownerContext.supabase;
     const now = Date.now();
     const { data: updated, error } = await sb
       .from("shop_stock_transfers")
