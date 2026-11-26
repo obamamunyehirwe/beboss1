@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  Activity, ArrowLeft, ArrowRight, Check, CheckCircle2, Cloud, Database,
+  Activity, ArrowRight, Check, CheckCircle2, Cloud, Database,
   Languages, LockKeyhole, Monitor, Moon, RefreshCw, ShieldCheck, Smartphone,
   Sun, Wifi, X, Zap
 } from "lucide-react";
@@ -67,9 +67,9 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     back: "Back", next: "Next", finish: "Finish setup", working: "Saving preferences…",
     setupError: "Setup could not be completed. Resolve the failed check and retry.",
     recoverLocalTitle: "Recover this desktop from BeBoss Cloud",
-    recoverLocalBody: "BeBoss will move the unreadable SQLCipher database and retry queue into a timestamped recovery folder, preserve the old key in the operating-system vault when available, and create a new encrypted cache. After setup, sign in with the registered shop account and restore the verified cloud snapshot. Changes that existed only in an unreadable offline queue may not be recoverable.",
+    recoverLocalBody: "Only use this after the live cloud check passes. BeBoss will preserve the locked SQLCipher database and its sidecar files in a timestamped recovery folder, create a fresh encrypted cache and keep the original archive for later recovery. Then sign in and restore the verified shop snapshot from Cloud or a linked phone. Records that existed only in the locked offline queue may not be recoverable.",
     recoverLocalButton: "Quarantine local cache and recover",
-    recoverLocalConfirm: "BeBoss will move the unreadable database and retry queue into a recovery folder and create a fresh encrypted cache. The old files will be preserved, not deleted. Changes that existed only in the locked local queue may not be recoverable. Continue?",
+    recoverLocalConfirm: "The cloud and Windows Credential Manager checks have passed. BeBoss will move the locked database, WAL and SHM files into a recovery archive and create a fresh encrypted cache. The archived files will not be deleted. Any changes stored only in the locked offline queue may be unrecoverable. Continue?",
     recoverLocalComplete: "Old local database files were preserved for recovery at",
     statuses: { pending: "Pending", running: "Checking", complete: "Verified", warning: "Attention", failed: "Failed" },
     steps: [
@@ -227,316 +227,173 @@ const INITIAL_STEPS: SetupStep[] = [
 
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
 
-export function SetupWizard({
-  initialPreferences, onComplete, onRecoverLocalDatabase
-}: {
-  initialPreferences: DesktopPreferences;
-  onComplete: (preferences: DesktopPreferences, privacyAccepted: boolean) => Promise<void>;
-  onRecoverLocalDatabase: () => Promise<{ backupPath: string; archivedFiles: string[]; recoveryKeyReference: string | null }>;
+export function SetupWizard({initialPreferences,onComplete,onRecoverLocalDatabase}:{
+ initialPreferences:DesktopPreferences;
+ onComplete:(preferences:DesktopPreferences,privacyAccepted:boolean)=>Promise<void>;
+ onRecoverLocalDatabase:()=>Promise<{backupPath:string;archivedFiles:string[];recoveryKeyReference:string|null}>;
 }) {
-  const [preferences, setPreferences] = useState<DesktopPreferences>(initialPreferences);
-  const [privacyAccepted, setPrivacyAccepted] = useState(false);
-  const [page, setPage] = useState<PageId>("welcome");
-  const [running, setRunning] = useState(false);
-  const [finishing, setFinishing] = useState(false);
-  const [completed, setCompleted] = useState(false);
-  const [recoveryCompleted, setRecoveryCompleted] = useState(false);
-  const [steps, setSteps] = useState<SetupStep[]>(INITIAL_STEPS);
-  const [activeStep, setActiveStep] = useState<StepId | null>(null);
-  const [diagnostics, setDiagnostics] = useState<SetupDiagnostics | null>(null);
-  const [failure, setFailure] = useState("");
-  const [logs, setLogs] = useState<string[]>([]);
-  const t = TEXT[preferences.language];
+ const [preferences,setPreferences]=useState<DesktopPreferences>(initialPreferences);
+ const [privacyAccepted,setPrivacyAccepted]=useState(false);
+ const [page,setPage]=useState<PageId>("welcome");
+ const [running,setRunning]=useState(false);
+ const [finishing,setFinishing]=useState(false);
+ const [completed,setCompleted]=useState(false);
+ const [recoveryCompleted,setRecoveryCompleted]=useState(false);
+ const [databaseLocked,setDatabaseLocked]=useState(false);
+ const [cloudReachable,setCloudReachable]=useState(false);
+ const [vaultReady,setVaultReady]=useState(false);
+ const [deviceReady,setDeviceReady]=useState(false);
+ const [databaseMessage,setDatabaseMessage]=useState("");
+ const [recoveryArchiveCount,setRecoveryArchiveCount]=useState(0);
+ const [dpapiBackupAvailable,setDpapiBackupAvailable]=useState(false);
+ const [steps,setSteps]=useState<SetupStep[]>(INITIAL_STEPS);
+ const [,setActiveStep]=useState<StepId|null>(null);
+ const [diagnostics,setDiagnostics]=useState<SetupDiagnostics|null>(null);
+ const [failure,setFailure]=useState("");
+ const [logs,setLogs]=useState<string[]>([]);
+ const [logsExpanded,setLogsExpanded]=useState(false);
+ const t=TEXT[preferences.language];
+ const pageIndex=(["welcome","preferences","verification","finish"] as PageId[]).indexOf(page);
+ const log=(message:string)=>setLogs(prev=>[...prev.slice(-9),new Date().toLocaleTimeString()+"  "+message]);
+ const updateStep=(id:StepId,status:CheckStatus,details:string)=>setSteps(prev=>prev.map(step=>step.id===id?{...step,status,details}:step));
+ const translatedSteps=steps.map((step,index)=>({...step,title:t.steps[index].title,description:t.steps[index].description}));
+ const recoveryReady=databaseLocked&&cloudReachable&&vaultReady&&deviceReady&&!running&&!finishing&&!recoveryCompleted;
 
-  const pageIndex = (["welcome", "preferences", "verification", "finish"] as PageId[]).indexOf(page);
-  const log = (message: string) => setLogs((previous) => [...previous.slice(-11), new Date().toLocaleTimeString() + "  " + message]);
-  const updateStep = (id: StepId, status: CheckStatus, details: string) => {
-    setSteps((previous) => previous.map((step) => step.id === id ? { ...step, status, details } : step));
-  };
-  const translatedSteps = steps.map((step, index) => ({ ...step, title: t.steps[index].title, description: t.steps[index].description }));
-
-  async function runChecks(allowWhileRunning = false): Promise<boolean> {
-    if (running && !allowWhileRunning) return false;
-    if (!window.beBossDesktop?.isNative) {
-      const message = "This is a browser preview. Install and launch BeBoss Desktop to run native Windows, SQLCipher and Credential Manager checks.";
-      setFailure(message);
-      setSteps((current) => current.map((step) => ({ ...step, status: "failed", details: message })));
-      log("Native validation is unavailable in a browser preview.");
-      return false;
-    }
-    setRunning(true); setFailure(""); setCompleted(false); setDiagnostics(null);
-    setSteps(INITIAL_STEPS); setLogs([]);
-    let active: StepId = "system";
-    try {
-      setActiveStep(active);
-      updateStep(active, "running", "Reading native desktop runtime diagnostics…");
-      log("Collecting native operating-system diagnostics.");
-      const system = await window.beBossDesktop.systemDiagnostics();
-      if (!system.osPlatform || !system.osArch || !system.dbPath || !system.appVersion) {
-        throw new Error("The native runtime did not return complete operating-system diagnostics.");
-      }
-      updateStep(active, "complete", system.osPlatform + " · " + system.osArch + " · BeBoss " + system.appVersion);
-      log("Native system information verified.");
-
-      active = "device"; setActiveStep(active);
-      updateStep(active, "running", "Provisioning a persistent local device identity…");
-      const deviceId = await window.beBossDesktop.getDeviceId();
-      if (!deviceId || deviceId.length < 16) throw new Error("The desktop host returned an invalid device identity.");
-      updateStep(active, "complete", "Persistent identity ready · " + deviceId.slice(0, 8) + "…" + deviceId.slice(-6));
-      log("Persistent desktop identity verified.");
-
-      active = "database"; setActiveStep(active);
-      updateStep(active, "running", "Verifying the encrypted recovery store and pending cloud-write queue…");
-      const pending = await window.beBossDesktop.local.outboxCount();
-      if (!system.databaseEncrypted || !system.databaseCipherVersion) {
-        throw new Error("SQLCipher could not confirm that the local recovery store is encrypted.");
-      }
-      if (system.databaseIntegrity !== "ok") {
-        throw new Error("The encrypted local recovery store failed its integrity check. Do not discard it until any pending cloud writes have been recovered or a verified backup is available.");
-      }
-      if (system.journalMode.toLowerCase() !== "wal") {
-        throw new Error("The local recovery store is not using WAL mode. Close other BeBoss instances and rerun setup diagnostics.");
-      }
-      updateStep(active, "complete", "Protected cache/retry store verified · SQLCipher " + system.databaseCipherVersion + " · integrity OK · WAL mode · " + pending + " pending cloud write(s)");
-      log("The encrypted on-device recovery store passed integrity checks; shop data remains cloud-authoritative.");
-
-      active = "security"; setActiveStep(active);
-      updateStep(active, "running", "Testing operating-system credential storage…");
-      const probeKey = "setup-probe-" + crypto.randomUUID();
-      const probeValue = crypto.randomUUID();
-      try {
-        await window.beBossDesktop.secureStore.set(probeKey, probeValue);
-        const storedValue = await window.beBossDesktop.secureStore.get(probeKey);
-        if (storedValue !== probeValue) throw new Error("The credential vault did not return the value it stored.");
-        log("Credential vault write/read test passed.");
-      } finally {
-        await window.beBossDesktop.secureStore.remove(probeKey).catch(() => false);
-      }
-      updateStep(active, "complete", "Credential vault write/read verified; temporary secret removed.");
-
-      active = "cloud"; setActiveStep(active);
-      updateStep(active, "running", "Sending a real request to the Supabase PostgreSQL Data API…");
-      log("Verifying the live Supabase database API rather than a TCP-only connection.");
-      const cloudProbe = await checkCloudDatabase();
-      updateStep(active, "complete", "Supabase PostgreSQL Data API reachable · " + cloudProbe.latencyMs + " ms · " + cloudProbe.host);
-      log("The cloud database API responded successfully. Owner identity and tenant permissions will be checked during SMS sign-in.");
-      setDiagnostics({
-        osPlatform: system.osPlatform, osArch: system.osArch, appVersion: system.appVersion,
-        dbPath: system.dbPath, databaseEncrypted: Boolean(system.databaseEncrypted),
-        databaseCipherVersion: system.databaseCipherVersion, databaseIntegrity: system.databaseIntegrity,
-        journalMode: system.journalMode, pendingOutboxCount: pending
-      });
-      setCompleted(true); setActiveStep(null);
-      log("Cloud database connectivity and all required native security checks passed.");
-      return true;
-    } catch (error) {
-      const message = errorMessage(error);
-      setFailure(message); updateStep(active, "failed", message);
-      log("Setup stopped: " + message);
-      return false;
-    } finally { setRunning(false); }
+ async function runChecks(allowWhileRunning=false):Promise<boolean>{
+  if(running&&!allowWhileRunning)return false;
+  if(!window.beBossDesktop?.isNative){
+   const message="This is a browser preview. Launch the installed BeBoss Desktop app to validate Windows, SQLCipher and Credential Manager.";
+   setFailure(message);setSteps(current=>current.map(step=>({...step,status:"failed",details:message})));
+   log("Native validation is unavailable in a browser preview.");return false;
   }
+  setRunning(true);setFailure("");setCompleted(false);setDiagnostics(null);
+  setCloudReachable(false);setVaultReady(false);setDeviceReady(false);setSteps(INITIAL_STEPS);setLogs([]);
+  const failures:string[]=[];
+  try{
+   let active:StepId="system";setActiveStep(active);
+   updateStep(active,"running","Inspecting the native runtime and local recovery state without replacing existing encrypted data…");
+   log("Checking native desktop runtime and local recovery state.");
+   const preflight=await window.beBossDesktop.setupPreflight();
+   if(!preflight.osPlatform||!preflight.osArch||!preflight.databasePath||!preflight.appVersion)throw new Error("The native runtime did not return complete installation diagnostics.");
+   setRecoveryArchiveCount(preflight.recoveryArchiveCount);setDpapiBackupAvailable(preflight.dpapiBackupAvailable);
+   let localReady=preflight.databaseState==="ready";setDatabaseLocked(!localReady);setDatabaseMessage(preflight.databaseMessage||"");
+   updateStep(active,"complete",preflight.osPlatform+" · "+preflight.osArch+" · BeBoss "+preflight.appVersion);
+   log("Native runtime responded; existing local files were not reset.");
 
-  async function recoverLocalCache() {
-    if (running || finishing || recoveryCompleted) return;
-    if (!window.beBossDesktop?.isNative) {
-      setFailure("Local database recovery is available only inside the installed BeBoss Desktop application.");
-      return;
-    }
-    if (!window.confirm(t.recoverLocalConfirm)) return;
+   active="device";setActiveStep(active);updateStep(active,"running","Checking this installation's persistent device identity…");
+   try{
+    const id=await window.beBossDesktop.getDeviceId();
+    if(!id||id.length<16)throw new Error("The native runtime returned an invalid device identity.");
+    setDeviceReady(true);updateStep(active,"complete","Persistent identity ready · "+id.slice(0,8)+"…"+id.slice(-6));
+    log("Persistent desktop identity verified.");
+   }catch(error){const message=errorMessage(error);failures.push(message);updateStep(active,"failed",message);log("Device identity check failed: "+message);}
 
-    setRunning(true);
-    setFailure("");
-    try {
-      const recovered = await onRecoverLocalDatabase();
-      setRecoveryCompleted(true);
-      const checksPassed = await runChecks(true);
-      log(t.recoverLocalComplete + ": " + recovered.backupPath);
-      if (!checksPassed) {
-        setFailure((current) => current || "The old local files are preserved. Resolve the remaining setup check before signing in and restoring cloud data.");
-      }
-    } catch (error) {
-      const message = errorMessage(error);
-      setFailure(message);
-      log("Local recovery did not complete: " + message);
-    } finally {
-      setRunning(false);
+   active="database";setActiveStep(active);
+   if(localReady){
+    updateStep(active,"running","Verifying SQLCipher encryption, integrity and the durable retry queue…");
+    try{
+     const system=await window.beBossDesktop.systemDiagnostics();
+     if(!system.databaseEncrypted||!system.databaseCipherVersion)throw new Error("SQLCipher could not confirm local encryption.");
+     if(system.databaseIntegrity!=="ok")throw new Error("The local encrypted recovery store failed its integrity check. Preserve original files before recovery.");
+     if(system.journalMode.toLowerCase()!=="wal")throw new Error("The local recovery store is not using WAL mode.");
+     updateStep(active,"complete","SQLCipher "+system.databaseCipherVersion+" · integrity OK · WAL · "+system.pendingOutboxCount+" pending write(s)");
+     setDiagnostics({osPlatform:system.osPlatform,osArch:system.osArch,appVersion:system.appVersion,dbPath:system.dbPath,databaseEncrypted:!!system.databaseEncrypted,databaseCipherVersion:system.databaseCipherVersion,databaseIntegrity:system.databaseIntegrity,journalMode:system.journalMode,pendingOutboxCount:system.pendingOutboxCount});
+     log("Encrypted local cache and retry queue passed integrity checks.");
+    }catch(error){
+     const message=errorMessage(error);failures.push(message);localReady=false;setDatabaseLocked(true);setDatabaseMessage(message);
+     updateStep(active,"warning",message);log("Local store needs attention: "+message);
     }
+   }else{
+    updateStep(active,"warning","Local cache is locked; original database files and queue remain unchanged. "+(preflight.databaseMessage||""));
+    log("Local cache is locked; continuing with independent credential and cloud checks.");
+   }
+
+   active="security";setActiveStep(active);updateStep(active,"running","Testing the operating-system credential vault independently of the local database…");
+   try{
+    await window.beBossDesktop.testCredentialVault();setVaultReady(true);
+    updateStep(active,"complete","Credential Manager write/read/delete passed with a temporary isolated entry.");
+    log("Operating-system credential vault passed.");
+   }catch(error){const message=errorMessage(error);failures.push(message);updateStep(active,"failed",message);log("Credential vault failed: "+message);}
+
+   active="cloud";setActiveStep(active);updateStep(active,"running","Sending a real request to Supabase PostgreSQL Data API…");
+   try{
+    const probe=await checkCloudDatabase();setCloudReachable(true);
+    updateStep(active,"complete","Supabase PostgreSQL Data API reachable · "+probe.latencyMs+" ms · "+probe.host);
+    log("Cloud database is reachable; owner and tenant access are verified during SMS sign-in.");
+   }catch(error){const message=errorMessage(error);failures.push(message);updateStep(active,"failed",message);log("Cloud connectivity failed: "+message);}
+   setActiveStep(null);
+
+   if(!localReady){
+    setDatabaseLocked(true);
+    setFailure("The existing local cache is locked. BeBoss has not deleted or overwritten it. Recovery is enabled only after device identity, Credential Manager and live Supabase checks all pass. Then archive the old files and restore shop data from Cloud or a linked phone."+(failures.length?" Details: "+failures.join(" · "):""));
+    return false;
+   }
+   if(failures.length){setFailure("Some installation checks need attention: "+failures.join(" · "));return false;}
+   setCompleted(true);log("All required local security and cloud checks passed.");return true;
+  }catch(error){
+   const message=errorMessage(error);setFailure(message);
+   setSteps(current=>current.map(step=>step.id==="system"?{...step,status:"failed",details:message}:step));
+   log("Setup preflight failed: "+message);return false;
+  }finally{setRunning(false);}
+ }
+
+ async function recoverLocalCache(){
+  if(running||finishing||recoveryCompleted)return;
+  if(!window.beBossDesktop?.isNative){setFailure("Local recovery is available only inside the installed BeBoss Desktop application.");return;}
+  if(!databaseLocked||!cloudReachable||!vaultReady||!deviceReady){
+   setFailure("Recovery is disabled until device identity, Credential Manager and live Supabase checks all pass. Run the checks again after fixing any failed item.");return;
   }
+  if(!window.confirm(t.recoverLocalConfirm))return;
+  setRunning(true);setFailure("");
+  try{
+   const result=await onRecoverLocalDatabase();setRecoveryCompleted(true);setDatabaseLocked(false);
+   log(t.recoverLocalComplete+": "+result.backupPath);
+   const ok=await runChecks(true);if(!ok)setFailure(current=>current||"The original files remain preserved. Resolve the remaining check before signing in and restoring the shop snapshot.");
+  }catch(error){const message=errorMessage(error);setFailure(message);log("Local recovery did not complete: "+message);}
+  finally{setRunning(false);}
+ }
 
-  async function next() {
-    if (page === "preferences" && !privacyAccepted) {
-      setFailure(t.privacyError);
-      return;
-    }
-    if (page === "verification") {
-      if (!completed) {
-        const ok = await runChecks();
-        if (!ok) return;
-      }
-      setPage("finish");
-      return;
-    }
-    if (page === "finish") {
-      if (!completed || !diagnostics) return;
-      setFinishing(true); setFailure("");
-      try { await onComplete(preferences, privacyAccepted); }
-      catch (error) { setFailure(errorMessage(error)); }
-      finally { setFinishing(false); }
-      return;
-    }
-    setPage(page === "welcome" ? "preferences" : "verification");
-  }
+ async function next(){
+  if(page==="preferences"&&!privacyAccepted){setFailure(t.privacyError);return;}
+  if(page==="verification"){if(!completed){const ok=await runChecks();if(!ok)return;}setPage("finish");return;}
+  if(page==="finish"){if(!completed||!diagnostics)return;setFinishing(true);setFailure("");try{await onComplete(preferences,privacyAccepted);}catch(error){setFailure(errorMessage(error));}finally{setFinishing(false);}return;}
+  setPage(page==="welcome"?"preferences":"verification");setFailure("");
+ }
+ const statusIcon=(status:CheckStatus)=>status==="running"?<RefreshCw size={14} className="spin"/>:status==="complete"?<Check size={14}/>:status==="warning"?<Wifi size={14}/>:status==="failed"?<X size={14}/>:<span className="setup-status-pending"/>;
+ const update=<K extends keyof DesktopPreferences>(key:K,value:DesktopPreferences[K])=>setPreferences(current=>({...current,[key]:value}));
 
-  const statusIcon = (status: CheckStatus) => {
-    if (status === "running") return <RefreshCw size={15} className="spin" />;
-    if (status === "complete") return <Check size={15} />;
-    if (status === "warning") return <Wifi size={15} />;
-    if (status === "failed") return <X size={15} />;
-    return <span className="setup-status-pending" />;
-  };
-  const update = <K extends keyof DesktopPreferences>(key: K, value: DesktopPreferences[K]) =>
-    setPreferences((current) => ({ ...current, [key]: value }));
-
-  return (
-    <div className="setup-wizard" data-theme={preferences.theme} data-motion={preferences.reducedMotion ? "reduced" : "full"}>
-      <aside className="setup-rail">
-        <div className="setup-brand">
-          <img src="/beboss-app-icon.png" alt="BeBoss" />
-          <div><strong>BeBoss Desktop</strong><small>RETAIL OPERATIONS PLATFORM</small></div>
-        </div>
-        <div className="setup-progress" aria-label="Setup progress">
-          {t.stepNames.map((name, index) => (
-            <button key={name} type="button" className={"setup-step " + (pageIndex === index ? "active" : index < pageIndex ? "complete" : "")}
-              onClick={() => { if (!running && !finishing && index < pageIndex) setPage((["welcome", "preferences", "verification", "finish"] as PageId[])[index]); }}
-              disabled={running || finishing || index > pageIndex}>
-              <span>{index < pageIndex ? <Check size={15} /> : <b>{index + 1}</b>}</span>
-              <div><small>STEP 0{index + 1}</small><strong>{name}</strong></div>
-            </button>
-          ))}
-        </div>
-        <div className="setup-security"><LockKeyhole size={17} /><div><strong>{t.features[0].title}</strong><small>{t.features[0].body}</small></div></div>
-      </aside>
-
-      <main className="setup-main">
-        <section className="setup-content">
-          <div className="setup-topline"><span>0{pageIndex + 1} / 04</span><div><i style={{ width: ((pageIndex + 1) * 25) + "%" }} /></div></div>
-
-          {page === "welcome" && <>
-            <div className="setup-icon"><Zap size={25} /></div>
-            <small className="eyebrow muted">{t.welcomeTag}</small>
-            <h1>{t.welcomeTitle}</h1><p>{t.welcomeBody}</p>
-            <div className="setup-feature-grid">
-              <article><Database size={21} /><div><strong>{t.features[0].title}</strong><span>{t.features[0].body}</span></div></article>
-              <article><ShieldCheck size={21} /><div><strong>{t.features[1].title}</strong><span>{t.features[1].body}</span></div></article>
-              <article><Smartphone size={21} /><div><strong>{t.features[2].title}</strong><span>{t.features[2].body}</span></div></article>
-              <article><Cloud size={21} /><div><strong>{t.features[3].title}</strong><span>{t.features[3].body}</span></div></article>
-            </div>
-            <div className="setup-install-note"><Monitor size={18} /><div><strong>{t.installTitle}</strong><span>{t.installBody}</span></div></div>
-          </>}
-
-          {page === "preferences" && <>
-            <div className="setup-icon"><Languages size={25} /></div>
-            <small className="eyebrow muted">{t.preferencesTag}</small>
-            <h1>{t.preferencesTitle}</h1><p>{t.preferencesBody}</p>
-            <div className="setup-preference-section">
-              <label className="setup-field-label">{t.language}</label>
-              <div className="setup-language-grid">
-                {DESKTOP_LANGUAGES.map((item) => <button key={item.code} type="button" className={preferences.language === item.code ? "selected" : ""}
-                  onClick={() => update("language", item.code)}>
-                  <span>{item.short}</span><strong>{item.label}</strong>{preferences.language === item.code && <Check size={16} />}
-                </button>)}
-              </div>
-            </div>
-            <div className="setup-preference-section">
-              <label className="setup-field-label">{t.appearance}</label>
-              <div className="setup-choice-row">
-                <button type="button" className={preferences.theme === "dark" ? "selected" : ""} onClick={() => update("theme", "dark")}><Moon size={17} />{t.dark}</button>
-                <button type="button" className={preferences.theme === "light" ? "selected" : ""} onClick={() => update("theme", "light")}><Sun size={17} />{t.light}</button>
-                <button type="button" className={preferences.theme === "system" ? "selected" : ""} onClick={() => update("theme", "system")}><Monitor size={17} />{t.system}</button>
-              </div>
-            </div>
-            <div className="setup-setting-list">
-              <label className="setup-setting-row"><span><strong>{t.sync}</strong><small>{t.syncBody}</small></span><input type="checkbox" checked={preferences.autoSync} onChange={(event) => update("autoSync", event.target.checked)} /></label>
-              <label className="setup-setting-row"><span><strong>{t.frequency}</strong><small>{t.syncBody}</small></span>
-                <select value={preferences.refreshMinutes} onChange={(event) => update("refreshMinutes", Number(event.target.value) as DesktopPreferences["refreshMinutes"])}>
-                  <option value={0}>Manual</option><option value={1}>1 minute</option><option value={5}>5 minutes</option><option value={15}>15 minutes</option>
-                </select>
-              </label>
-              <label className="setup-setting-row"><span><strong>{t.motion}</strong><small>{t.motionBody}</small></span><input type="checkbox" checked={preferences.reducedMotion} onChange={(event) => update("reducedMotion", event.target.checked)} /></label>
-              <label className="setup-setting-row"><span><strong>{t.startPage}</strong><small>Choose the desktop page opened after sign-in.</small></span>
-                <select value={preferences.defaultView} onChange={(event) => update("defaultView", event.target.value as DesktopPreferences["defaultView"])}>
-                  <option value="welcome">Welcome</option><option value="overview">Overview</option><option value="management">Management center</option>
-                </select>
-              </label>
-            </div>
-          </>}
-
-          {page === "preferences" && <>
-            <section className="setup-privacy-notice" aria-labelledby="setup-privacy-title">
-              <div className="setup-privacy-icon"><ShieldCheck size={18}/></div>
-              <div><strong id="setup-privacy-title">{t.privacyTitle}</strong><p>{t.privacyBody}</p></div>
-              <label className="setup-privacy-accept">
-                <input type="checkbox" checked={privacyAccepted} onChange={(event) => { setPrivacyAccepted(event.target.checked); if (event.target.checked) setFailure(""); }}/>
-                <span>{t.privacyCheck}</span>
-              </label>
-            </section>
-            {failure && <p className="setup-error" role="alert">{failure}</p>}
-          </>}
-          {page === "verification" && <>
-            <div className="setup-icon">{completed ? <CheckCircle2 size={25} /> : <Activity size={25} />}</div>
-            <small className="eyebrow muted">{t.verificationTag}</small>
-            <h1>{completed ? t.finishTitle : t.verificationTitle}</h1><p>{t.verificationBody}</p>
-            <div className="setup-checks" aria-live="polite">
-              {translatedSteps.map((step) => (
-                <div className="setup-check" key={step.id}>
-                  <span className={"setup-check-icon " + (step.status === "failed" ? "failed" : step.status === "warning" ? "warning" : step.status === "complete" ? "ready" : "")}>{statusIcon(step.status)}</span>
-                  <div><strong>{step.title}</strong><small>{step.details}</small></div>
-                  <b className={step.status === "complete" ? "ready" : step.status === "warning" ? "warning" : step.status === "failed" ? "failed" : ""}>{t.statuses[step.status]}</b>
-                </div>
-              ))}
-            </div>
-            {logs.length > 0 && <div className="setup-log-panel"><div><strong>Installation log</strong><span>{logs.length} events</span></div>{logs.map((entry, index) => <p key={index}>{entry}</p>)}</div>}
-            {failure && <p className="setup-error" role="alert">{t.setupError} {failure}</p>}
-            {failure && !recoveryCompleted && /SQLCipher|local database|database could not be authenticated|credential vault/i.test(failure) && (
-              <section className="setup-install-note" aria-label={t.recoverLocalTitle}>
-                <Database size={18} />
-                <div>
-                  <strong>{t.recoverLocalTitle}</strong>
-                  <span>{t.recoverLocalBody}</span>
-                  <button type="button" className="setup-retry-btn" disabled={running || finishing} onClick={() => void recoverLocalCache()}>
-                    <RefreshCw size={15} />{running ? t.checking : t.recoverLocalButton}
-                  </button>
-                </div>
-              </section>
-            )}
-            {completed && steps.find((step) => step.id === "cloud")?.status === "warning" && <p className="setup-offline-note">{t.cloudWarning}</p>}
-          </>}
-
-          {page === "finish" && <>
-            <div className="setup-icon setup-icon-success"><CheckCircle2 size={26} /></div>
-            <small className="eyebrow muted">{t.finishTag}</small>
-            <h1>{t.finishTitle}</h1><p>{t.finishBody}</p>
-            {diagnostics && <div className="setup-summary-list">
-              <div><span><Database size={16} />{t.localDatabase}</span><strong>SQLCipher {diagnostics.databaseCipherVersion}</strong></div>
-              <div><span><ShieldCheck size={16} />Database integrity</span><strong>{diagnostics.databaseIntegrity === "ok" ? "Passed" : "Attention required"}</strong></div>
-              <div><span><Activity size={16} />Database journal</span><strong>{diagnostics.journalMode.toUpperCase()}</strong></div>
-              <div><span><Monitor size={16} />{t.installPath}</span><code>{diagnostics.dbPath}</code></div>
-              <div><span><RefreshCw size={16} />{t.pending}</span><strong>{diagnostics.pendingOutboxCount}</strong></div>
-            </div>}
-            {failure && <p className="setup-error" role="alert">{failure}</p>}
-          </>}
-
-          <div className="setup-actions">
-            {pageIndex > 0 && <button type="button" className="setup-back-btn" onClick={() => setPage((["welcome", "preferences", "verification", "finish"] as PageId[])[pageIndex - 1])} disabled={running || finishing}><ArrowLeft size={16} />{t.back}</button>}
-            <button type="button" className="primary-btn" onClick={() => void next()} disabled={running || finishing || (page === "finish" && !completed) || (page === "preferences" && !privacyAccepted)}>
-              {running ? <RefreshCw size={16} className="spin" /> : finishing ? <RefreshCw size={16} className="spin" /> : page === "finish" ? <Check size={16} /> : <ArrowRight size={16} />}
-              {running ? t.checking : finishing ? t.working : page === "finish" ? t.finish : page === "verification" && !completed ? t.runChecks : page === "verification" ? t.next : t.next}
-            </button>
-            {page === "verification" && failure && !running && <button type="button" className="setup-retry-btn" onClick={() => void runChecks()}>{t.retry}</button>}
-          </div>
-        </section>
-      </main>
-    </div>
-  );
+ return <div className="setup-wizard" data-theme={preferences.theme} data-motion={preferences.reducedMotion?"reduced":"full"}>
+  <header className="setup-header"><div className="setup-brand"><img src="/beboss-app-icon.png" alt="BeBoss"/><div><strong>BeBoss Desktop</strong><small>RETAIL OPERATIONS PLATFORM</small></div></div><div className="setup-header-status"><span><LockKeyhole size={14}/> PRIVATE CLOUD WORKSPACE</span><b>STEP 0{pageIndex+1} <i>/ 04</i></b></div></header>
+  <nav className="setup-stepper" aria-label="Setup progress">{t.stepNames.map((name,index)=><div key={name} className={"setup-stepper-item "+(pageIndex===index?"active":pageIndex>index?"complete":"")} aria-current={pageIndex===index?"step":undefined}><span>{pageIndex>index?<Check size={13}/>:index+1}</span><strong>{name}</strong></div>)}</nav>
+  <main className="setup-main"><section className="setup-card"><div className="setup-content" key={page}>
+   {page==="welcome"&&<>
+    <div className="setup-heading"><span className="setup-icon"><Zap size={22}/></span><div><small className="eyebrow muted">{t.welcomeTag}</small><h1>{t.welcomeTitle}</h1><p>{t.welcomeBody}</p></div></div>
+    <div className="setup-feature-grid"><article><Database size={20}/><div><strong>{t.features[0].title}</strong><span>{t.features[0].body}</span></div></article><article><ShieldCheck size={20}/><div><strong>{t.features[1].title}</strong><span>{t.features[1].body}</span></div></article><article><Smartphone size={20}/><div><strong>{t.features[2].title}</strong><span>{t.features[2].body}</span></div></article><article><Cloud size={20}/><div><strong>{t.features[3].title}</strong><span>{t.features[3].body}</span></div></article></div>
+    <div className="setup-install-note"><Monitor size={17}/><div><strong>{t.installTitle}</strong><span>{t.installBody}</span></div></div>
+   </>}
+   {page==="preferences"&&<>
+    <div className="setup-heading"><span className="setup-icon"><Languages size={22}/></span><div><small className="eyebrow muted">{t.preferencesTag}</small><h1>{t.preferencesTitle}</h1><p>{t.preferencesBody}</p></div></div>
+    <div className="setup-settings-grid"><div className="setup-settings-panel">
+     <div className="setup-preference-section"><label className="setup-field-label">{t.language}</label><div className="setup-language-grid">{DESKTOP_LANGUAGES.map(item=><button key={item.code} type="button" className={preferences.language===item.code?"selected":""} onClick={()=>update("language",item.code)}><span>{item.short}</span><strong>{item.label}</strong>{preferences.language===item.code&&<Check size={15}/>}</button>)}</div></div>
+     <div className="setup-preference-section"><label className="setup-field-label">{t.appearance}</label><div className="setup-choice-row"><button type="button" className={preferences.theme==="dark"?"selected":""} onClick={()=>update("theme","dark")}><Moon size={16}/>{t.dark}</button><button type="button" className={preferences.theme==="light"?"selected":""} onClick={()=>update("theme","light")}><Sun size={16}/>{t.light}</button><button type="button" className={preferences.theme==="system"?"selected":""} onClick={()=>update("theme","system")}><Monitor size={16}/>{t.system}</button></div></div>
+     <div className="setup-setting-list"><label className="setup-setting-row"><span><strong>{t.sync}</strong><small>{t.syncBody}</small></span><input type="checkbox" checked={preferences.autoSync} onChange={e=>update("autoSync",e.target.checked)}/></label><label className="setup-setting-row"><span><strong>{t.frequency}</strong><small>{t.syncBody}</small></span><select value={preferences.refreshMinutes} onChange={e=>update("refreshMinutes",Number(e.target.value) as DesktopPreferences["refreshMinutes"])}><option value={0}>Manual</option><option value={1}>1 minute</option><option value={5}>5 minutes</option><option value={15}>15 minutes</option></select></label><label className="setup-setting-row"><span><strong>{t.motion}</strong><small>{t.motionBody}</small></span><input type="checkbox" checked={preferences.reducedMotion} onChange={e=>update("reducedMotion",e.target.checked)}/></label><label className="setup-setting-row"><span><strong>{t.startPage}</strong><small>Choose the desktop page opened after sign-in.</small></span><select value={preferences.defaultView} onChange={e=>update("defaultView",e.target.value as DesktopPreferences["defaultView"])}><option value="welcome">Welcome</option><option value="overview">Overview</option><option value="management">Management center</option></select></label></div>
+    </div><section className="setup-privacy-notice" aria-labelledby="setup-privacy-title"><div className="setup-privacy-icon"><ShieldCheck size={19}/></div><div><strong id="setup-privacy-title">{t.privacyTitle}</strong><p>{t.privacyBody}</p></div><label className="setup-privacy-accept"><input type="checkbox" checked={privacyAccepted} onChange={e=>{setPrivacyAccepted(e.target.checked);if(e.target.checked)setFailure("");}}/><span>{t.privacyCheck}</span></label>{failure&&<p className="setup-error" role="alert">{failure}</p>}</section></div>
+   </>}
+   {page==="verification"&&<>
+    <div className="setup-heading compact"><span className={"setup-icon "+(completed?"setup-icon-success":"")}>{completed?<CheckCircle2 size={22}/>:<Activity size={22}/>}</span><div><small className="eyebrow muted">{t.verificationTag}</small><h1>{completed?t.finishTitle:t.verificationTitle}</h1><p>{t.verificationBody}</p></div></div>
+    <div className="setup-checks" aria-live="polite">{translatedSteps.map(step=><div className="setup-check" key={step.id}><span className={"setup-check-icon "+(step.status==="failed"?"failed":step.status==="warning"?"warning":step.status==="complete"?"ready":"")}>{statusIcon(step.status)}</span><div><strong>{step.title}</strong><small>{step.details}</small></div><b className={step.status==="complete"?"ready":step.status==="warning"?"warning":step.status==="failed"?"failed":""}>{t.statuses[step.status]}</b></div>)}</div>
+    {databaseLocked&&<section className="setup-recovery-panel" aria-label={t.recoverLocalTitle}><div className="setup-recovery-icon"><Database size={19}/></div><div className="setup-recovery-copy"><strong>{t.recoverLocalTitle}</strong><p>{t.recoverLocalBody}</p>{databaseMessage&&<small className="setup-database-message">{databaseMessage}</small>}<small>{recoveryArchiveCount} recovery archive(s) · Windows DPAPI backup {dpapiBackupAvailable?"available":"not found"}</small><button type="button" className="setup-retry-btn" disabled={!recoveryReady} onClick={()=>void recoverLocalCache()}><RefreshCw size={14}/>{running?t.checking:t.recoverLocalButton}</button>{!cloudReachable&&<em>Cloud access must pass before replacing the local cache. Original files remain untouched.</em>}{cloudReachable&&(!vaultReady||!deviceReady)&&<em>Device identity and Credential Manager checks must pass before recovery is enabled.</em>}</div></section>}
+    {failure&&<p className="setup-error" role="alert">{failure}</p>}
+    <details className="setup-log-panel" open={logsExpanded} onToggle={e=>setLogsExpanded(e.currentTarget.open)}><summary><strong>Installation log</strong><span>{logs.length} events</span></summary><div>{logs.map((entry,index)=><p key={index}>{entry}</p>)}</div></details>
+   </>}
+   {page==="finish"&&<>
+    <div className="setup-finish"><span className="setup-finish-icon"><CheckCircle2 size={28}/></span><small className="eyebrow muted">{t.finishTag}</small><h1>{t.finishTitle}</h1><p>{t.finishBody}</p></div>
+    {diagnostics&&<div className="setup-summary-list"><div><span><Database size={15}/>{t.localDatabase}</span><strong>SQLCipher {diagnostics.databaseCipherVersion}</strong></div><div><span><ShieldCheck size={15}/>Database integrity</span><strong>{diagnostics.databaseIntegrity==="ok"?"Passed":"Attention required"}</strong></div><div><span><Activity size={15}/>Database journal</span><strong>{diagnostics.journalMode.toUpperCase()}</strong></div><div><span><Monitor size={15}/>{t.installPath}</span><code>{diagnostics.dbPath}</code></div><div><span><RefreshCw size={15}/>{t.pending}</span><strong>{diagnostics.pendingOutboxCount}</strong></div></div>}
+    {failure&&<p className="setup-error" role="alert">{failure}</p>}
+   </>}
+  </div>
+  <footer className="setup-actions"><span className="setup-action-hint">{page==="preferences"&&!privacyAccepted?t.privacyError:page==="verification"&&!completed?t.setupError:"You can change these preferences later in Settings."}</span><button type="button" className="primary-btn" onClick={()=>void next()} disabled={running||finishing||(page==="finish"&&!completed)||(page==="preferences"&&!privacyAccepted)}>{running||finishing?<RefreshCw size={16} className="spin"/>:page==="finish"?<Check size={16}/>:<ArrowRight size={16}/>} {running?t.checking:finishing?t.working:page==="finish"?t.finish:page==="verification"?(completed?t.next:t.runChecks):t.next}</button>{page==="verification"&&failure&&!running&&<button type="button" className="setup-retry-btn" onClick={()=>void runChecks()}>{t.retry}</button>}</footer>
+ </section></main>
+ <footer className="setup-global-foot"><span>BeBoss Desktop <b>1.4.1</b></span><span>Protected local recovery · Supabase cloud data</span></footer>
+ </div>;
 }
