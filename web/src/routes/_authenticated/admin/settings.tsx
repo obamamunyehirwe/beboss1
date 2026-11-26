@@ -13,7 +13,7 @@ import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { getBb3SigningStatus, saveAppConfig, setSigningSecret } from "@/lib/admin.functions";
 import { configQuery } from "@/lib/admin-queries";
 import { getDatashareKeyStatus, setDatashareKey } from "@/lib/insights.functions";
-import { DOWNLOAD_PATH } from "@/lib/queries";
+import { DOWNLOAD_PATH } from "@/lib/download-path";
 import { useAdminText } from "@/lib/admin-copy";
 import { buildAirtelUssd, buildMtnUssd } from "@/lib/pricing";
 

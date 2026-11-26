@@ -19,7 +19,7 @@ import { deleteRelease, getAdminReleaseDownload, publishRelease, setArchivedRele
 import { downloadsQuery, releasesQuery } from "@/lib/admin-queries";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
-import { DOWNLOAD_PATH } from "@/lib/queries";
+import { DOWNLOAD_PATH } from "@/lib/download-path";
 
 export const Route = createFileRoute("/_authenticated/admin/releases")({
   component: ReleasesPage,

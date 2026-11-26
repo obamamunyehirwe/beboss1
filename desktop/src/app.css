@@ -818,3 +818,69 @@ select option { background: var(--panel-bg); color: var(--text); }
   .admin-team-member-head { flex-wrap: wrap; }
   .admin-team-member-status { max-width: 100%; justify-content: flex-start; width: 100%; padding-left: 46px; }
 }
+
+
+/* First-run multi-device cloud recovery */
+.device-restore-shell {
+  min-height: 100vh; display: grid; place-items: center; padding: 36px 20px; color: #172235;
+  background: radial-gradient(circle at 12% 8%, rgba(255,128,75,.16), transparent 34%),
+    radial-gradient(circle at 88% 92%, rgba(58,132,230,.13), transparent 34%), #f3f6fb;
+}
+.device-restore-shell[data-theme="dark"] {
+  color:#edf2fa; background:radial-gradient(circle at 12% 8%,rgba(255,128,75,.14),transparent 34%),
+    radial-gradient(circle at 88% 92%,rgba(58,132,230,.13),transparent 34%),#0c1422;
+}
+.device-restore-card { width:min(100%,820px); padding:clamp(22px,4vw,40px); border:1px solid rgba(115,133,162,.22);
+  border-radius:28px; background:rgba(255,255,255,.94); box-shadow:0 26px 80px rgba(30,48,78,.14); backdrop-filter:blur(18px); }
+[data-theme="dark"] .device-restore-card { border-color:rgba(143,164,194,.18); background:rgba(20,31,49,.96); box-shadow:0 26px 80px rgba(0,0,0,.3); }
+.device-restore-brand { display:flex; align-items:center; gap:12px; color:#738096; font-size:10px; font-weight:800; letter-spacing:.16em; }
+.device-restore-brand img { width:42px; height:42px; object-fit:contain; border-radius:12px; }
+.device-restore-icon { display:grid; place-items:center; width:54px; height:54px; margin-top:28px; border-radius:17px; color:#fff; background:linear-gradient(135deg,#ff7b45,#f04f28); box-shadow:0 12px 28px rgba(240,79,40,.24); }
+.device-restore-eyebrow { margin:22px 0 8px; color:#e66b3d; font-size:10px; font-weight:800; letter-spacing:.16em; }
+.device-restore-card h1 { margin:0; font-size:clamp(27px,4vw,38px); line-height:1.12; letter-spacing:-.04em; font-weight:800; }
+.device-restore-lead { max-width:650px; margin:12px 0 0; color:#69778c; font-size:14px; line-height:1.7; }
+[data-theme="dark"] .device-restore-lead,[data-theme="dark"] .device-restore-billing,[data-theme="dark"] .device-restore-foot { color:#9eacc0; }
+.device-restore-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:24px 0; }
+.device-restore-summary>div { display:grid; gap:3px; padding:15px 16px; border:1px solid #e4e9f1; border-radius:16px; background:#f8fafd; }
+[data-theme="dark"] .device-restore-summary>div { border-color:#2c3b52; background:#17243a; }
+.device-restore-summary strong { font-size:25px; line-height:1.1; letter-spacing:-.03em; }
+.device-restore-summary span { color:#7a8799; font-size:11px; }
+.device-restore-section { margin-top:20px; }
+.device-restore-section-title { display:flex; align-items:center; gap:9px; margin-bottom:11px; font-size:13px; }
+.device-restore-section-title svg { color:#ee7647; }
+.device-restore-counts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.device-restore-counts>div { display:flex; justify-content:space-between; gap:8px; padding:10px 12px; border:1px solid #e8edf3; border-radius:11px; font-size:11px; }
+[data-theme="dark"] .device-restore-counts>div { border-color:#2c3b52; }
+.device-restore-counts span { color:#78869a; }
+.device-restore-sources { display:grid; gap:8px; }
+.device-restore-source { display:flex; align-items:center; gap:11px; padding:11px 12px; border:1px solid #e8edf3; border-radius:13px; }
+[data-theme="dark"] .device-restore-source { border-color:#2c3b52; }
+.device-restore-source-icon { display:grid; place-items:center; width:34px; height:34px; flex:none; border-radius:10px; color:#d86a3c; background:rgba(239,112,64,.11); }
+.device-restore-source-copy { display:grid; gap:2px; min-width:0; flex:1; }
+.device-restore-source-copy strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+.device-restore-source-copy small { color:#8793a4; font-size:10px; }
+.device-restore-source-time { display:flex; align-items:center; gap:5px; color:#7e8a9b; font-size:10px; text-align:right; }
+.device-restore-integrity { display:flex; gap:10px; align-items:flex-start; margin-top:20px; padding:12px 14px; border-radius:12px; color:#23815a; background:rgba(46,169,111,.09); font-size:11px; line-height:1.55; }
+.device-restore-integrity svg { flex:none; }
+.device-restore-error { margin-top:14px; padding:11px 13px; border:1px solid rgba(211,67,67,.24); border-radius:11px; color:#c13d3d; background:rgba(211,67,67,.07); font-size:12px; }
+.device-restore-actions { display:grid; gap:9px; margin-top:22px; }
+.device-restore-primary,.device-restore-secondary { display:flex; align-items:center; justify-content:center; gap:10px; min-height:48px; border-radius:13px; font-weight:750; font-size:13px; transition:transform .16s ease,opacity .16s ease,box-shadow .16s ease; }
+.device-restore-primary { color:#fff; background:linear-gradient(110deg,#f97845,#e94d28); box-shadow:0 9px 24px rgba(233,77,40,.2); }
+.device-restore-secondary { color:#758198; background:transparent; }
+.device-restore-primary:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 13px 30px rgba(233,77,40,.28); }
+.device-restore-primary:disabled,.device-restore-secondary:disabled { opacity:.55; cursor:wait; }
+.device-restore-billing { margin:13px auto 0; max-width:660px; color:#7e8a9b; font-size:10px; line-height:1.6; text-align:center; }
+.device-restore-foot { margin:18px 0 0; color:#9aa4b2; font-size:10px; text-align:center; }
+@media(max-width:620px) {
+  .device-restore-shell { padding:16px 12px; align-items:start; }
+  .device-restore-card { border-radius:20px; padding:20px 16px; }
+  .device-restore-summary { gap:7px; }
+  .device-restore-summary>div { padding:12px 10px; }
+  .device-restore-summary strong { font-size:21px; }
+  .device-restore-counts { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .device-restore-source-time { display:none; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .device-restore-primary,.device-restore-secondary { transition:none; }
+  .device-restore-primary:hover:not(:disabled) { transform:none; }
+}
