@@ -96,13 +96,67 @@ function constantTimeEq(a: string, b: string): boolean {
  * Rejects missing, short, malformed or tampered signatures. This is the single verifier shared by
  * web server functions and the desktop Edge Function. Fail-closed: any integrity failure throws.
  */
-export async function verifyAndDecodeToken(token: string, secret: string): Promise<Row> {
+/**
+ * Derive the BBSHARE2 key exactly as Android CryptoKeyManager.deriveSubkey:
+ * HMAC-SHA256(shopSecret ASCII-hex, UTF8(domain) || 0x01).
+ */
+export async function shopShareSignature(payload: string, shopSecret: string): Promise<string> {
+  const clean = shopSecret.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(clean)) throw new Error("A valid shop-scoped DataShare key is required.");
+  const enc = new TextEncoder();
+  const master = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(clean),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const domain = enc.encode("BeBoss_BBSHARE2_HMAC_v1");
+  const info = new Uint8Array(domain.length + 1);
+  info.set(domain);
+  info[domain.length] = 0x01;
+  const derived = new Uint8Array(await crypto.subtle.sign("HMAC", master, info));
+  const shopKey = await crypto.subtle.importKey(
+    "raw",
+    derived,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", shopKey, enc.encode(payload)));
+  return Array.from(mac, (b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+/**
+ * Verifies the server-issued shop-scoped BBSHARE2 format. The project-wide secret
+ * is accepted only as a read-only compatibility fallback for old mobile/desktop
+ * generations; new Android and desktop writers use the shop-derived key.
+ */
+export async function verifyAndDecodeToken(
+  token: string,
+  legacySecret?: string,
+  shopSecret?: string,
+): Promise<Row> {
   const { version, sig, payload } = parseShareToken(token);
-  const expected = await shareSignature(payload, secret);
-  const expectedSig = version === 1 ? expected.slice(0, V1_TAG_LEN) : expected;
-  const validLen = version === 1 ? sig.length === V1_TAG_LEN : sig.length === V2_TAG_LEN;
+  const validLen = version === 1 ? sig.length >= 8 && sig.length <= V1_TAG_LEN : sig.length === V2_TAG_LEN;
   if (!validLen || !/^[A-F0-9]+$/.test(sig)) throw new Error("A snapshot signature has an invalid format.");
-  if (!constantTimeEq(sig, expectedSig)) throw new Error("A BeBoss snapshot failed its HMAC integrity check.");
+
+  let verified = false;
+  if (version === 2 && shopSecret) {
+    try {
+      verified = constantTimeEq(sig, await shopShareSignature(payload, shopSecret));
+    } catch {
+      verified = false;
+    }
+  }
+  // BBSHARE1 and older desktop BBSHARE2 generations were signed with the
+  // legacy project key. Keep this verification read-only during migration.
+  if (!verified && legacySecret) {
+    const legacy = await shareSignature(payload, legacySecret);
+    const expected = version === 1 ? legacy.slice(0, sig.length) : legacy;
+    verified = constantTimeEq(sig, expected);
+  }
+  if (!verified) throw new Error("A BeBoss snapshot failed its HMAC integrity check.");
   return decodePayload(payload);
 }
 
@@ -111,8 +165,8 @@ export async function verifyAndDecodeToken(token: string, secret: string): Promi
  * decompression (F-03). Without a secret it performs legacy unverified decode for backwards
  * compatibility with callers that cannot access the server secret.
  */
-export async function decodeShareToken(token: string, secret?: string): Promise<Row> {
-  if (secret) return verifyAndDecodeToken(token, secret);
+export async function decodeShareToken(token: string, legacySecret?: string, shopSecret?: string): Promise<Row> {
+  if (legacySecret || shopSecret) return verifyAndDecodeToken(token, legacySecret, shopSecret);
   const { payload } = parseShareToken(token);
   return decodePayload(payload);
 }
