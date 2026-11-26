@@ -40,35 +40,45 @@ Do not clear app data as a routine credential recovery step. That can remove the
 
 ## Keys and release configuration
 
+The Android secure APK must never contain the project-wide DataShare HMAC or the credential migration pepper.
+
 ### Local developer machine
 
-Put the following in the ignored repository-root .env file. Do not commit it or paste values into chat.
+Put signing material in the ignored repository-root .env file. Do not commit it or paste values into chat.
 
 - KEYSTORE_PATH
 - STORE_PASSWORD
 - KEY_PASSWORD
 - KEY_ALIAS
-- BEBOSS_DATASHARE_HMAC_SECRET
+- ANDROID_UPLOAD_CERT_SHA256
 - SUPABASE_URL
 - SUPABASE_PUBLISHABLE_KEY
 - SUPABASE_CERT_PINS (optional)
+- SENTRY_DSN (required for Android customer release builds)
 
-Use a repository-relative path or an absolute path with forward slashes for KEYSTORE_PATH.
+The one-time Transition 2.4.1 build additionally requires the exact historical BEBOSS_SECURITY_PEPPER value used to produce installed PBKDF2-v1 credentials. That field is compiled only into Transition; it is migrated into Android Keystore on each terminal. The final Secure 2.5.0 build does not contain it. Secure release is gated by SECURE_CREDENTIAL_MIGRATION_APPROVED=true after every active Android terminal has reported a successful migration.
+
+Use the scripts/rotate-android-upload-key.ps1 helper to generate a new upload key outside the repository and scripts/verify-android-release-signing.ps1 to verify the final artifact certificate. Follow the Play App Signing process in docs/ANDROID_DESKTOP_SECURITY_MIGRATION.md; a repository-only key replacement does not rotate the Play upload certificate.
 
 ### GitHub Actions
 
-For signed Android release tags configure:
+Configure protected signing values for signed Android release workflows, including:
 
-- ANDROID_UPLOAD_KEYSTORE_B64
+- ANDROID_UPLOAD_KEYSTORE_B64 (if the release workflow uses a base64-uploaded key)
 - ANDROID_UPLOAD_STORE_PASSWORD
 - ANDROID_UPLOAD_KEY_PASSWORD
 - ANDROID_UPLOAD_KEY_ALIAS
-- BEBOSS_DATASHARE_HMAC_SECRET
+- ANDROID_UPLOAD_CERT_SHA256
+- SENTRY_DSN or ANDROID_SENTRY_DSN
 - SUPABASE_URL
 - SUPABASE_PUBLISHABLE_KEY
 - SUPABASE_CERT_PINS (optional)
 
-The CI workflow validates the certificate and verifies the APK and AAB signatures before publishing artifacts.
+For the one-time Transition release only, provide BEBOSS_SECURITY_PEPPER as a protected secret. Do not provide it to Secure builds. Do not provide BEBOSS_DATASHARE_HMAC_SECRET to Android builds.
+
+The legacy DataShare HMAC is a server-side compatibility key. Configure it only in protected Supabase Edge Function/server secret storage for verification of customer-held BBSHARE1/old globally signed BBSHARE2 exports and retained legacy cloud snapshots. New BBSHARE2 uses each shop's random protected pairing key, so new tokens can still be created and verified offline on registered devices.
+
+The CI workflow inspects generated BuildConfig files and rejects either legacy secret in the secure Android variant. The release workflow validates the configured upload certificate fingerprint; Play Console registration and installed-device upgrade acceptance remain separate owner-controlled steps.
 
 For signed Windows NSIS installers configure:
 
@@ -90,9 +100,15 @@ A local .env file does not configure the deployed Supabase Edge Function environ
 
 Never expose the Supabase service-role key or provider secret keys to Android, desktop-renderer JavaScript, Vite client variables, or public source control.
 
-## DataShare HMAC limitation
+## DataShare compatibility and offline behavior
 
-The existing cross-platform BBSHARE token format uses a shared HMAC value consumed by Android code. A value compiled into an Android APK can be extracted by a sufficiently motivated client; GitHub secret storage protects the value before release but cannot make a client-embedded HMAC secret confidential. Treat the current HMAC as compatibility/integrity material, not as a high-assurance private signing key. A future protocol version should move to asymmetric server signatures (server-held private key, application-held public verification key) or per-device keys before relying on DataShare signatures as proof of a trusted publisher.
+The final Secure Android APK has no global DataShare HMAC field and no client-side legacy HMAC fallback.
+
+- New BBSHARE2 tokens are signed with a key derived from the registered shop's random 256-bit pairing credential, which is protected with Android Keystore. Current tokens remain verifiable offline on registered devices.
+- Legacy BBSHARE1 and earlier globally signed BBSHARE2 tokens are verified by the Supabase Edge Function, not by a key embedded in Android. Automatic cloud restore uses a revocable per-device credential. Manual import uses the registered shop owner's SMS OTP. The server returns sanitized shop-bound data; the old signing key is never returned to the app.
+- Raw .beboss backup files remain available for offline export, import and recovery.
+
+The project-wide BEBOSS_DATASHARE_HMAC_SECRET remains a server-only read-compatibility key while legacy signed exports and retained snapshots still exist. It must never be added back to Android BuildConfig. Rotate or retire the server-side value only after retained legacy snapshots and customer-held BBSHARE1 exports have an accepted migration path.
 
 ## Required acceptance evidence
 
