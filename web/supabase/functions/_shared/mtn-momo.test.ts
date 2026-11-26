@@ -99,7 +99,7 @@ Deno.test("A 202 Request-to-Pay is accepted but never treated as a paid settleme
 
 Deno.test("Only exact successful RWF, matching reference and amount can settle", () => {
   const expected = { externalId: "BEBOSS-GW-123", amountRwf: 5000, payerMsisdn: "250788123456" };
-  const valid = { status: "SUCCESSFUL" as const, amount: "5000", currency: "RWF", externalId: "BEBOSS-GW-123", payer: { partyId: "250788123456" } };
+  const valid = { status: "SUCCESSFUL" as const, amount: "5000", currency: "RWF", externalId: "BEBOSS-GW-123", financialTransactionId: "FT-123", payer: { partyIdType: "MSISDN", partyId: "250788123456" } };
   if (!matchesMtnMomoSettlement(valid, expected)) throw new Error("Valid settlement rejected.");
   for (const invalid of [
     { ...valid, status: "FAILED" as const },
