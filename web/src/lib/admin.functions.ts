@@ -1427,6 +1427,32 @@ const desktopReleaseUploadSchema = z.object({
   make_current: z.boolean().default(true),
 });
 
+const DESKTOP_SOURCE_VERSION_PATTERN = /^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/;
+
+async function readDesktopSourceVersion(): Promise<string> {
+  const response = await fetch(
+    "https://raw.githubusercontent.com/obamamunyehirwe/beboss1/main/desktop/package.json",
+    { cache: "no-store", headers: { "User-Agent": "BeBoss-Admin-Desktop-Releases" } },
+  );
+  if (!response.ok) {
+    throw new Error(`Could not read desktop/package.json from GitHub (HTTP ${response.status}).`);
+  }
+  const manifest = await response.json() as { version?: unknown };
+  const version = typeof manifest.version === "string" ? manifest.version.trim() : "";
+  if (!DESKTOP_SOURCE_VERSION_PATTERN.test(version)) {
+    throw new Error("desktop/package.json does not contain a valid semantic version.");
+  }
+  return version;
+}
+
+export const getAdminDesktopSourceVersion = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const ctx = context as unknown as Ctx;
+    await requirePermission(ctx, "releases.manage");
+    return readDesktopSourceVersion();
+  });
+
 export const getAdminDesktopReleases = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -1448,9 +1474,12 @@ export const publishDesktopRelease = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
-    const token = String(process.env["GITHUB_RELEASE_TOKEN"] ?? "").trim();
-    if (!token) {
-      throw new Error("Desktop publishing is not configured on this server. Add GITHUB_RELEASE_TOKEN as a server-only secret with Actions write and Contents read access to obamamunyehirwe/beboss1.");
+    const sourceVersion = await readDesktopSourceVersion();
+    if (data.version_name !== sourceVersion) {
+      throw new Error(
+        `Desktop release version must exactly match the source version (${sourceVersion}) in desktop/package.json. Update all desktop version manifests and rebuild before uploading.`,
+      );
+    }
     const expectedExtension = data.platform === "windows" ? ".exe" : data.platform === "macos" ? ".dmg" : ".appimage";
     if (!data.file_name.toLowerCase().endsWith(expectedExtension)) {
       throw new Error(`The ${data.platform} release must be a ${expectedExtension} file.`);
