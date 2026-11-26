@@ -1,0 +1,82 @@
+name: BeBoss Windows setup installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/windows-installer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beboss-windows-setup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-setup:
+    name: Build Windows NSIS setup executable
+    runs-on: windows-2022
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_SFUKqYETliLdgqluQBQ2xg_XJNudcvM
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Perl for bundled SQLCipher OpenSSL
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: "5.40"
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
+      - name: Install locked desktop dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Check native package versions
+        run: npm run check:versions
+
+      - name: Build production desktop frontend
+        run: npm run build
+
+      - name: Build actual Windows NSIS installer
+        run: npm run dist:win
+
+      - name: Verify setup executable exists
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File | Select-Object -First 1
+          if ($null -eq $installer) { throw "Tauri did not produce a Windows NSIS setup executable." }
+          Write-Host "Built installer: $($installer.FullName)"
+          Write-Host "Size: $($installer.Length) bytes"
+          if ($installer.Length -lt 1000000) { throw "The setup executable is unexpectedly small." }
+
+      - name: Generate SHA-256 manifest
+        run: node scripts/generate-bundle-checksums.mjs "src-tauri/target/release/bundle/nsis"
+
+      - name: Publish BeBoss Windows setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeBoss-Windows-Setup-${{ github.sha }}
+          path: desktop/src-tauri/target/release/bundle/nsis/*
+          if-no-files-found: error
+          retention-days: 14
