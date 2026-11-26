@@ -109,8 +109,8 @@ Deno.test("Request-to-Pay uses server credentials, RWF and the owner-approved MS
 });
 
 Deno.test("A 202 Request-to-Pay is accepted but never treated as a paid settlement", async () => {
-  const accepted: typeof fetch = async (_input, init) => {
-    const request = new Request("https://sandbox.momodeveloper.mtn.com/collection/token/", init);
+  const accepted: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
     return request.url.endsWith("/collection/token/")
       ? Response.json({ access_token: "token" }, { status: 200 })
       : new Response(null, { status: 202 });
