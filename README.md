@@ -123,7 +123,7 @@ The Admin → App Releases workspace has two separate interactive tabs: **Mobile
 - Publish platforms independently. Making a new Windows build current does not change macOS, Linux or Android.
 - Review per-platform current versions, archive history, checksums and download counts; change the public current build, hide an archived version, or delete an old package (Super Admin only).
 
-Desktop installer binaries stay in private storage. The public download page receives only metadata for each current public platform build; the server issues a short-lived signed download link after rechecking the release state and increments the associated download counter. The storage service key and private object paths are never exposed to the browser.
+Desktop installer binaries stay in private storage. The public download page exposes metadata for each current platform build and for archived versions that an administrator has explicitly made public. The server issues a short-lived signed download link only after rechecking the selected release's public visibility, and increments its associated download counter. The storage service key and private object paths are never exposed to the browser.
 
 Production Android distribution still requires the real upload keystore, signing passwords, package validation and a tested update path. A debug APK is for internal testing and must not replace an already installed production-signed build. Windows customer installers must pass local Authenticode signing and verification; macOS signing/notarization and Linux compatibility must be tested on their corresponding platforms before broad distribution.
 
