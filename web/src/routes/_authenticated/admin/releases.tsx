@@ -167,7 +167,7 @@ function ReleasesPage() {
       <Dialog open={!!editingRelease} onOpenChange={(open) => { if (!open) setEditingRelease(null); }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>{a("Edit APK release")}{editingRelease ? \` — v\${editingRelease.version_name}\` : ""}</DialogTitle>
+            <DialogTitle>{a("Edit APK release")}{editingRelease ? ` — v${editingRelease.version_name}` : ""}</DialogTitle>
             <DialogDescription>
               {a("Update the stored release metadata and public update information. Changes to the current release are synchronized to the global app version in the same database transaction. The APK binary itself remains immutable; publish a new version to replace the file.")}
             </DialogDescription>
