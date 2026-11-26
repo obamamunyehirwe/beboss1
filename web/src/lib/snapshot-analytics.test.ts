@@ -8,6 +8,7 @@ import {
   pickLatestDeviceChunkSet,
   shareSignature,
   shareSignatureV1,
+  shopShareSignature,
   SHARE_PREFIX,
   SHARE_PREFIX_V1,
   SHARE_PREFIX_V2,
@@ -64,6 +65,31 @@ describe("snapshot tokens", () => {
     const token = `${SHARE_PREFIX_V2}${sig}:${b64}`;
     const json = await verifyAndDecodeToken(token, "server-secret");
     expect((json["shopProfile"] as { shopName: string }).shopName).toBe("Mama Shop");
+  });
+
+  it("verifies Android BBSHARE2 using the per-shop derived key", async () => {
+    const b64 = await gzipB64(JSON.stringify({ shopProfile: { shopName: "Shop-scoped" } }));
+    const shopSecret = "a".repeat(64);
+    const signature = await shopShareSignature(b64, shopSecret);
+    expect(signature).toHaveLength(64);
+    const token = `${SHARE_PREFIX_V2}${signature}:${b64}`;
+    const decoded = await verifyAndDecodeToken(token, undefined, shopSecret);
+    expect((decoded["shopProfile"] as { shopName: string }).shopName).toBe("Shop-scoped");
+  });
+
+  it("rejects a BBSHARE2 token signed for a different shop", async () => {
+    const b64 = await gzipB64(JSON.stringify({ shopProfile: { shopName: "Shop A" } }));
+    const signature = await shopShareSignature(b64, "a".repeat(64));
+    const token = `${SHARE_PREFIX_V2}${signature}:${b64}`;
+    await expect(verifyAndDecodeToken(token, undefined, "b".repeat(64))).rejects.toThrow(/HMAC integrity check/);
+  });
+
+  it("keeps reading earlier globally signed BBSHARE2 rows during migration", async () => {
+    const b64 = await gzipB64(JSON.stringify({ shopProfile: { shopName: "Legacy Desktop" } }));
+    const signature = await shareSignature(b64, "legacy-global-secret");
+    const token = `${SHARE_PREFIX_V2}${signature}:${b64}`;
+    const decoded = await verifyAndDecodeToken(token, "legacy-global-secret", "c".repeat(64));
+    expect((decoded["shopProfile"] as { shopName: string }).shopName).toBe("Legacy Desktop");
   });
 
   it("verifies and decodes a valid legacy BBSHARE1 token during migration", async () => {
