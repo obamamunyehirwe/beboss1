@@ -264,6 +264,28 @@ fn scoped_hlc_key(shop_sync_key: &str) -> Result<String, String> {
     Ok(format!("last-hlc:{}", validate_shop_scope(shop_sync_key)?))
 }
 
+fn ensure_sync_outbox_tenant_column(connection: &Connection) -> Result<(), String> {
+    // Old outbox rows receive tenant_id='' and stay quarantined: they are never
+    // replayed into an arbitrary account after an owner switches shops.
+    let has_tenant_id = {
+        let mut statement = connection.prepare("PRAGMA table_info(sync_outbox)")
+            .map_err(|error| error.to_string())?;
+        let columns = statement.query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        columns.iter().any(|column| column == "tenant_id")
+    };
+    if !has_tenant_id {
+        connection.execute_batch("ALTER TABLE sync_outbox ADD COLUMN tenant_id TEXT NOT NULL DEFAULT '';")
+            .map_err(|error| format!("Could not safely add shop-scoped offline queue metadata: {error}"))?;
+    }
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS sync_outbox_tenant_ready ON sync_outbox(tenant_id, status, created_at);"
+    ).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
     let path = database_path(app)?;
     let key_seed = database_key(&path)?;
@@ -325,25 +347,7 @@ fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
          CREATE INDEX IF NOT EXISTS sync_outbox_ready ON sync_outbox(status, created_at);"
     ).map_err(|error| error.to_string())?;
 
-    // Upgrade existing encrypted installations in place. Old outbox rows receive
-    // tenant_id='' and stay quarantined: they are never replayed into an arbitrary
-    // account after an owner switches shops on the same desktop.
-    let has_tenant_id = {
-        let mut statement = connection.prepare("PRAGMA table_info(sync_outbox)")
-            .map_err(|error| error.to_string())?;
-        let columns = statement.query_map([], |row| row.get::<_, String>(1))
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        columns.iter().any(|column| column == "tenant_id")
-    };
-    if !has_tenant_id {
-        connection.execute_batch("ALTER TABLE sync_outbox ADD COLUMN tenant_id TEXT NOT NULL DEFAULT '';")
-            .map_err(|error| format!("Could not safely add shop-scoped offline queue metadata: {error}"))?;
-    }
-    connection.execute_batch(
-        "CREATE INDEX IF NOT EXISTS sync_outbox_tenant_ready ON sync_outbox(tenant_id, status, created_at);"
-    ).map_err(|error| error.to_string())?;
+    ensure_sync_outbox_tenant_column(&connection)?;
     Ok(connection)
 }
 
@@ -1521,6 +1525,88 @@ mod database_encryption_tests {
         );
         let directory = path.parent().expect("test path has a parent");
         let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn shop_scope_rejects_invalid_keys_and_namespaces_local_state() {
+        assert_eq!(scoped_snapshot_key("shop_123456").unwrap(), "snapshot:shop_123456");
+        assert_eq!(scoped_hlc_key("shop_123456").unwrap(), "last-hlc:shop_123456");
+        assert!(scoped_snapshot_key("").is_err());
+        assert!(scoped_snapshot_key("shop:one").is_err());
+        assert!(scoped_hlc_key("shop with spaces").is_err());
+    }
+
+    #[test]
+    fn legacy_outbox_rows_are_quarantined_by_tenant_column_migration() {
+        let connection = Connection::open_in_memory().expect("SQLite should open");
+        connection.execute_batch(
+            "CREATE TABLE sync_outbox (
+                id TEXT PRIMARY KEY NOT NULL,
+                operation TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                hlc INTEGER NOT NULL,
+                device_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT NOT NULL DEFAULT '',
+                expected_updated_at INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+             );
+             INSERT INTO sync_outbox(id, operation, payload, hlc, device_id, created_at)
+             VALUES ('legacy-1', 'SALE', '{}', 1, 'old-device', 10);"
+        ).expect("legacy outbox schema should be created");
+
+        ensure_sync_outbox_tenant_column(&connection)
+            .expect("tenant column migration should succeed");
+        let tenant: String = connection.query_row(
+            "SELECT tenant_id FROM sync_outbox WHERE id = 'legacy-1'",
+            [],
+            |row| row.get(0)
+        ).expect("legacy row should remain present");
+        assert_eq!(tenant, "", "old rows must not be assigned to an arbitrary shop");
+
+        let tenant_columns: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sync_outbox') WHERE name = 'tenant_id'",
+            [],
+            |row| row.get(0)
+        ).expect("tenant column should exist");
+        assert_eq!(tenant_columns, 1);
+
+        let directory = env::temp_dir().join(format!("unused-tenant-test-{}", Uuid::new_v4()));
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn pending_outbox_queries_are_isolated_by_registered_shop() {
+        let connection = Connection::open_in_memory().expect("SQLite should open");
+        connection.execute_batch(
+            "CREATE TABLE sync_outbox (
+                id TEXT PRIMARY KEY NOT NULL,
+                tenant_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+             );
+             INSERT INTO sync_outbox(id, tenant_id, status, created_at) VALUES
+               ('shop-a-1', 'shop_A_123', 'PENDING', 1),
+               ('shop-b-1', 'shop_B_123', 'PENDING', 2),
+               ('legacy-1', '', 'PENDING', 3);"
+        ).expect("outbox fixture should be created");
+
+        let shop_a: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sync_outbox WHERE status='PENDING' AND tenant_id='shop_A_123'",
+            [], |row| row.get(0)
+        ).expect("shop A count should be readable");
+        let shop_b: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sync_outbox WHERE status='PENDING' AND tenant_id='shop_B_123'",
+            [], |row| row.get(0)
+        ).expect("shop B count should be readable");
+        let unassigned: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM sync_outbox WHERE status='PENDING' AND tenant_id=''",
+            [], |row| row.get(0)
+        ).expect("legacy count should be readable");
+        assert_eq!(shop_a, 1);
+        assert_eq!(shop_b, 1);
+        assert_eq!(unassigned, 1);
     }
 
     #[test]
