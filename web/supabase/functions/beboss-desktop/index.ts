@@ -12,6 +12,11 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json"
 };
+const BB3_ANDROID_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEnH8Qg10M7lur8WocoKgklEJ98F6
+UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
+-----END PUBLIC KEY-----`;
+
 const DATA_KEYS = ["products", "customers", "sales", "saleItems", "customerPayments", "purchases", "stockTransfers", "branches", "users"] as const;
 type DataKey = typeof DATA_KEYS[number];
 type Row = Record<string, unknown>;
@@ -92,6 +97,76 @@ async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+
+function derEcdsaToRawSignature(input: Uint8Array): Uint8Array {
+  let offset = 0;
+  if (input[offset++] !== 0x30) throw new Error("Invalid BB3 signature encoding.");
+  const sequenceLength = input[offset++];
+  if (sequenceLength !== input.length - 2 || input[offset++] !== 0x02) {
+    throw new Error("Invalid BB3 signature sequence.");
+  }
+  const readInteger = () => {
+    if (input[offset++] !== 0x02) throw new Error("Invalid BB3 signature integer.");
+    const length = input[offset++];
+    if (!length || length > 33 || offset + length > input.length) throw new Error("Invalid BB3 signature integer length.");
+    let value = input.slice(offset, offset + length);
+    offset += length;
+    while (value.length > 32 && value[0] === 0) value = value.slice(1);
+    if (value.length > 32) throw new Error("Invalid BB3 signature integer size.");
+    const padded = new Uint8Array(32);
+    padded.set(value, 32 - value.length);
+    return padded;
+  };
+  // The first INTEGER tag has already been consumed above.
+  const readR = () => {
+    const length = input[offset++];
+    if (!length || length > 33 || offset + length > input.length) throw new Error("Invalid BB3 signature integer length.");
+    let value = input.slice(offset, offset + length);
+    offset += length;
+    while (value.length > 32 && value[0] === 0) value = value.slice(1);
+    if (value.length > 32) throw new Error("Invalid BB3 signature integer size.");
+    const padded = new Uint8Array(32);
+    padded.set(value, 32 - value.length);
+    return padded;
+  };
+  const r = readR();
+  const s = readInteger();
+  if (offset !== input.length) throw new Error("Unexpected BB3 signature data.");
+  const raw = new Uint8Array(64);
+  raw.set(r, 0);
+  raw.set(s, 32);
+  return raw;
+}
+
+async function verifyBb3CodeSignature(code: string, username: string, phone: string, planDigest: string): Promise<boolean> {
+  const parts = code.split("-");
+  if (parts.length !== 7 || parts[0] !== "BB3") return false;
+  const [kind, tier, dayText, expiryText, accountText, nonce, signatureText] = parts;
+  const days = Number(dayText);
+  const expiryDay = /^[A-F0-9]{3,8}$/.test(expiryText ?? "") ? Number.parseInt(expiryText, 16) : Number.NaN;
+  if (kind !== "BB3" || !/^[A-Z]{2,12}$/.test(tier ?? "") ||
+      !/^\d{1,3}$/.test(dayText ?? "") || !Number.isInteger(days) || days < 1 || days > 800 ||
+      !Number.isFinite(expiryDay) || Math.floor(Date.now() / 86_400_000) > expiryDay ||
+      !/^[A-F0-9]{6}$/.test(accountText ?? "") ||
+      !/^[A-F0-9]{24}$/.test(nonce ?? "") ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(signatureText ?? "")) return false;
+  const accountHash = (await sha256Hex(username.trim().toLowerCase() + ":" + normalizePhone(phone))).slice(0, 6).toUpperCase();
+  if (accountText !== accountHash || nonce !== planDigest.slice(0, 24).toUpperCase()) return false;
+  try {
+    const publicKey = await crypto.subtle.importKey(
+      "spki", base64ToBytes(BB3_ANDROID_PUBLIC_KEY_PEM.replace(/-----BEGIN PUBLIC KEY-----|-----END PUBLIC KEY-----|\s/g, "")),
+      { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]
+    );
+    const signature = derEcdsaToRawSignature(base64ToBytes(signatureText));
+    const payload = "BB3:" + tier + ":" + dayText + ":" + expiryText + ":" + accountText + ":" + nonce;
+    return await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" }, publicKey, signature, new TextEncoder().encode(payload)
+    );
+  } catch {
+    return false;
+  }
+}
+
 
 async function streamToBytes(stream: ReadableStream<Uint8Array>, limit: number) {
   const reader = stream.getReader();
@@ -603,7 +678,7 @@ Deno.serve(async (req: Request) => {
       admin,
       config.publishableKey,
       body,
-      action === "bootstrap" || action === "restore_preview" || action === "device_enroll" || action === "device_retire_legacy"
+      action === "bootstrap" || action === "restore_preview" || action === "redeem_unlock_code" || action === "device_enroll" || action === "device_retire_legacy"
     );
 
     if (action === "restore_preview") {
@@ -648,6 +723,84 @@ Deno.serve(async (req: Request) => {
         totalRecords,
         counts,
         sourceDevices
+      });
+    }
+
+    if (action === "redeem_unlock_code") {
+      const rawCode = text(body.code).trim();
+      if (rawCode.length < 8 || rawCode.length > 512) {
+        return json(400, { ok: false, message: "Enter a complete BeBoss activation code." });
+      }
+      const rawParts = rawCode.split("-");
+      const format = String(rawParts[0] ?? "").toUpperCase();
+      // BB3 Base64 signatures are case-sensitive; normalize only its prefix.
+      const code = format === "BB3" ? ["BB3", ...rawParts.slice(1)].join("-") : rawCode.toUpperCase();
+      const parts = code.split("-");
+      const isBb3 = format === "BB3" && parts.length === 7;
+      const isBb2 = format === "BB2" && parts.length === 6;
+      if (!isBb3 && !isBb2) {
+        return json(400, { ok: false, message: "Desktop accepts server-issued BB3 or registered legacy BB2 codes. Android-only hardware vouchers cannot be transferred to another device." });
+      }
+      const { data: codeRow, error: codeError } = await admin.from("unlock_codes")
+        .select("id,unlock_code,shop_username,shop_phone,tier_code,plan_days,status,plan_digest,amount_rwf,issued_at")
+        .eq("unlock_code", code)
+        .eq("shop_username", owner.username)
+        .maybeSingle();
+      if (codeError) throw new Error("Could not verify the activation code against the BeBoss registry.");
+      if (!codeRow || normalizePhone(text(codeRow.shop_phone)) !== normalizePhone(owner.phone)) {
+        return json(404, { ok: false, message: "This activation code was not issued for the signed-in shop owner." });
+      }
+      if (text(codeRow.status).toUpperCase() !== "ISSUED") {
+        return json(409, { ok: false, message: "This activation code is already redeemed or revoked and cannot be used again." });
+      }
+      const tier = text(codeRow.tier_code).trim().toUpperCase();
+      const days = number(codeRow.plan_days);
+      const codeTier = text(parts[1]).toUpperCase();
+      const codeDays = Number(parts[2]);
+      const expiryText = text(parts[3]).toUpperCase();
+      const expiryDay = /^[A-F0-9]{3,8}$/.test(expiryText) ? Number.parseInt(expiryText, 16) : Number.NaN;
+      const accountHash = (await sha256Hex(owner.username.toLowerCase() + ":" + normalizePhone(owner.phone))).slice(0, 6).toUpperCase();
+      const embeddedAccount = text(parts[4]).toUpperCase();
+      if (!/^[A-Z]{2,12}$/.test(tier) || !Number.isInteger(days) || days < 1 || days > 800 ||
+          codeTier !== tier || codeDays !== days || !Number.isFinite(expiryDay) ||
+          Math.floor(Date.now() / 86_400_000) > expiryDay || embeddedAccount !== accountHash) {
+        return json(403, { ok: false, message: "The activation code does not match the issued account, plan or expiry details." });
+      }
+      if (isBb3) {
+        if (!/^[A-F0-9]{64}$/i.test(text(codeRow.plan_digest)) ||
+            !(await verifyBb3CodeSignature(code, owner.username, owner.phone, text(codeRow.plan_digest)))) {
+          return json(403, { ok: false, message: "The BB3 cryptographic signature or payment-plan binding could not be verified." });
+        }
+      } else {
+        if (!/^[A-F0-9]{8}$/.test(text(parts[5]).toUpperCase())) {
+          return json(403, { ok: false, message: "The legacy BB2 code format is invalid." });
+        }
+      }
+      const now = Date.now();
+      const { data: claimed, error: claimError } = await admin.from("unlock_codes")
+        .update({ status: "REDEEMED", redeemed_at: now })
+        .eq("id", codeRow.id).eq("status", "ISSUED")
+        .select("id").maybeSingle();
+      if (claimError) throw new Error("Could not securely reserve this activation code. Retry while online.");
+      if (!claimed) {
+        return json(409, { ok: false, message: "Another device redeemed this activation code first. It cannot be reused." });
+      }
+      const { error: paymentUpdateError } = await admin.from("payment_requests")
+        .update({ status: "REDEEMED", updated_at: now })
+        .eq("generated_unlock_code", code)
+        .eq("owner_username", owner.username);
+      if (paymentUpdateError) {
+        console.error("[beboss-desktop] Activation code was claimed, but payment history status could not be updated.");
+      }
+      return json(200, {
+        ok: true,
+        redeemed: true,
+        format: isBb3 ? "BB3" : "BB2",
+        tier,
+        days,
+        amountRwf: number(codeRow.amount_rwf),
+        redeemedAt: now,
+        subscriptionExpiresAt: number(owner.shop.subscription_expires_at)
       });
     }
 
