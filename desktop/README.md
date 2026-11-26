@@ -37,8 +37,8 @@ From the `desktop` directory:
 npm run check:versions
 npm run check:types
 npm run build
-cargo test --manifest-path src-tauri/Cargo.toml --locked
-npm run dist:win
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+npm run release:win:local
 ```
 
-GitHub Actions validates the desktop TypeScript build, native Rust checks/tests and Windows NSIS installer. A produced CI installer is an unsigned test artifact; production distribution should use the protected Authenticode signing workflow and verified release credentials.
+GitHub Actions may run source validation and native tests as CI checks, but it is not the desktop release publisher. Customer installers are built on the target computer and uploaded manually through the Admin release workspace. For Windows distribution, use the local `release:win:local` script with a valid, trusted Authenticode certificate; macOS signing/notarization and Linux runtime validation must be completed on their corresponding platforms.

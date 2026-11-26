@@ -1336,7 +1336,7 @@ select option { background: var(--panel-bg); color: var(--text); }
 }
 
 
-/* Large, responsive BeBoss product identity in the native desktop chrome. */
+/* Larger, responsive BeBoss identity across the desktop workspace and title breadcrumb. */
 .brand-row { min-height: 84px; gap: 14px; }
 .brand-row .brand-mark.brand-logo-mark {
   flex: 0 0 68px;
