@@ -22,4 +22,9 @@ describe("BeBoss download routing", () => {
   it("does not classify Android browsers as desktop Linux", () => {
     expect(detectDesktopOS("Mozilla/5.0 (Linux; Android 15; Pixel)")).toBe("windows");
   });
+
+  it("does not classify iOS and iPadOS browser tokens as macOS", () => {
+    expect(detectDesktopOS("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)")).toBe("windows");
+    expect(detectDesktopOS("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) Mobile/15E148")).toBe("windows");
+  });
 });
