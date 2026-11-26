@@ -1233,16 +1233,19 @@ object SupabaseAdminClient {
     ): Boolean {
         if (snapshots.isEmpty()) return false
 
-        val latestGenerationByDevice = snapshots
+        val latestSnapshotByDevice = snapshots
             .groupBy { snapshotDeviceBase(it.deviceId) }
-            .mapValues { (_, rows) -> rows.maxByOrNull { it.updatedAt }?.syncGeneration }
+            .mapValues { (_, rows) -> rows.maxByOrNull { it.updatedAt } }
 
-        val completeGenerationByDevice = completeSnapshots
+        val completeSnapshotByDevice = completeSnapshots
             .groupBy { snapshotDeviceBase(it.deviceId) }
-            .mapValues { (_, rows) -> rows.firstOrNull()?.syncGeneration }
+            .mapValues { (_, rows) -> rows.maxByOrNull { it.updatedAt } }
 
-        return latestGenerationByDevice.any { (deviceId, generation) ->
-            generation == null || completeGenerationByDevice[deviceId] != generation
+        return latestSnapshotByDevice.any { (deviceId, latest) ->
+            val complete = completeSnapshotByDevice[deviceId]
+            complete == null ||
+                complete.syncGeneration != latest?.syncGeneration ||
+                complete.updatedAt < (latest?.updatedAt ?: 0L)
         }
     }
 
