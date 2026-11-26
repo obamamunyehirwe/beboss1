@@ -141,6 +141,20 @@ function CodesPage() {
       </div>
       {codes.isLoading ? (
         <LoadingBlock />
+      ) : codes.isError ? (
+        <section role="alert" className="rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="font-semibold text-destructive">Unlock codes could not be loaded</h2>
+              <p className="mt-1 break-words text-sm text-muted-foreground">
+                {codes.error instanceof Error ? codes.error.message : "The unlock-code registry request failed. Check the connection and your payments.review permission."}
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => void codes.refetch()} disabled={codes.isFetching}>
+              {codes.isFetching ? "Retrying…" : "Retry"}
+            </Button>
+          </div>
+        </section>
       ) : !rows.length ? (
         <EmptyState title="No codes yet" />
       ) : (
