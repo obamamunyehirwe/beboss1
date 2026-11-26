@@ -74,7 +74,7 @@ export const getShopInsights = createServerFn({ method: "POST" })
         const verification = await invokeSupabaseEdgeFunction<{ configured: boolean; verified: boolean }>(
           ctx,
           "manage-app-secrets",
-          { action: "verify_snapshot", checks },
+          { action: "verify_snapshot", shopId: data.shopId, checks },
         );
         if (verification.configured) signature = verification.verified ? "VERIFIED" : "MISMATCH";
       } catch (verificationError) {
