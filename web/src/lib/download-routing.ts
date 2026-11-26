@@ -12,7 +12,7 @@ export function detectDesktopOS(userAgent: string): DesktopOS {
   const value = userAgent.toLowerCase();
   // Mobile browsers can expose desktop-like platform tokens (Android/Linux,
   // iPadOS/Macintosh). Do not recommend a desktop installer from those tokens.
-  if (/(android|iphone|ipad|ipod)/.test(value)) return "windows";
+  if (/(android|iphone|ipad|ipod|mobile)/.test(value)) return "windows";
   if (value.includes("mac")) return "macos";
   if (value.includes("windows")) return "windows";
   if (value.includes("linux")) return "linux";
