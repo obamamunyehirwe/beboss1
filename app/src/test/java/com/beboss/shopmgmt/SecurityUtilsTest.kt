@@ -1,5 +1,6 @@
 package com.beboss.shopmgmt
 
+import com.beboss.shopmgmt.util.LegacyCredentialPepperStore
 import com.beboss.shopmgmt.util.SecurityUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -93,17 +94,42 @@ class SecurityUtilsTest {
     }
 
     @Test
-    fun testLegacyRuntimePepperHashRemainsReadableOnlyForMigration() {
-        val salt = ByteArray(16) { (it + 1).toByte() }
-        val legacyInput = "4829:BeBossRuntimeHardwarePepperV2".toCharArray()
-        val spec = PBEKeySpec(legacyInput, salt, 60000, 256)
+    fun testLegacyCredentialPepperIsReadOnlyMigrationMaterial() {
+        val migrationPepper = "MigrationTestPepper_2026_OnlyForTests"
+        LegacyCredentialPepperStore.setForTests(migrationPepper)
+        try {
+            val salt = ByteArray(16) { (it + 1).toByte() }
+            val legacyInput = "4829:$migrationPepper".toCharArray()
+            val spec = PBEKeySpec(legacyInput, salt, 120000, 256)
+            val hashBytes = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+                .generateSecret(spec).encoded
+            val legacyHash = "pbkdf2:120000:${SecurityUtils.bytesToHex(salt)}:${SecurityUtils.bytesToHex(hashBytes)}"
+
+            assertTrue(SecurityUtils.verifyPin("4829", legacyHash))
+            assertFalse(SecurityUtils.verifyPin("9999", legacyHash))
+            assertTrue(SecurityUtils.needsUpgrade(legacyHash))
+
+            // A successful legacy sign-in is rehashed without the migration pepper.
+            val upgraded = SecurityUtils.hashPin("4829")
+            assertTrue(upgraded.startsWith("pbkdf2v2:"))
+            assertTrue(SecurityUtils.verifyPin("4829", upgraded))
+        } finally {
+            LegacyCredentialPepperStore.setForTests(null)
+        }
+    }
+
+    @Test
+    fun testVersionOneCredentialFailsClosedWhenMigrationPepperIsUnavailable() {
+        val salt = ByteArray(16) { (it + 3).toByte() }
+        val legacyPepper = "MigrationTestPepper_2026_OnlyForTests"
+        val spec = PBEKeySpec("4829:$legacyPepper".toCharArray(), salt, 120000, 256)
         val hashBytes = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
             .generateSecret(spec).encoded
-        val legacyHash = "pbkdf2:60000:${SecurityUtils.bytesToHex(salt)}:${SecurityUtils.bytesToHex(hashBytes)}"
+        val hash = "pbkdf2:120000:${SecurityUtils.bytesToHex(salt)}:${SecurityUtils.bytesToHex(hashBytes)}"
 
-        assertTrue(SecurityUtils.verifyPin("4829", legacyHash))
-        assertFalse(SecurityUtils.verifyPin("9999", legacyHash))
-        assertTrue(SecurityUtils.needsUpgrade(legacyHash))
+        LegacyCredentialPepperStore.setForTests(null)
+        assertFalse(SecurityUtils.verifyPin("4829", hash))
+        assertFalse(SecurityUtils.verifyPin("9999", hash))
     }
 
     @Test
