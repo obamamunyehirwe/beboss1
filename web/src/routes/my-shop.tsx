@@ -491,7 +491,7 @@ function LookupPanel() {
             <Smartphone className="size-4 text-primary" /> {t("myDevices")}
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            Android terminals and BeBoss Desktop installations share this shop's registered device fleet, staff assignments and recurring subscription add-ons.
+            {t("deviceFleetDescription")}
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3">
