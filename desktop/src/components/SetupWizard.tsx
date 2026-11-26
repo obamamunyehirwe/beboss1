@@ -479,7 +479,9 @@ export function SetupWizard({
             <small className="eyebrow muted">{t.finishTag}</small>
             <h1>{t.finishTitle}</h1><p>{t.finishBody}</p>
             {diagnostics && <div className="setup-summary-list">
-              <div><span><Database size={16} />{t.localDatabase}</span><strong>{diagnostics.databaseCipherVersion}</strong></div>
+              <div><span><Database size={16} />{t.localDatabase}</span><strong>SQLCipher {diagnostics.databaseCipherVersion}</strong></div>
+              <div><span><ShieldCheck size={16} />Database integrity</span><strong>{diagnostics.databaseIntegrity === "ok" ? "Passed" : "Attention required"}</strong></div>
+              <div><span><Activity size={16} />Database journal</span><strong>{diagnostics.journalMode.toUpperCase()}</strong></div>
               <div><span><Monitor size={16} />{t.installPath}</span><code>{diagnostics.dbPath}</code></div>
               <div><span><RefreshCw size={16} />{t.pending}</span><strong>{diagnostics.pendingOutboxCount}</strong></div>
             </div>}

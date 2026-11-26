@@ -19,8 +19,9 @@ function readCargoPackageVersion(path, packageName) {
 }
 function readCargoTomlVersion(path) {
   const source = readFileSync(resolve(root, path), "utf8");
-  const packageSection = /^\[package\]([\s\S]*?)(?=^\[|$)/m.exec(source)?.[1] ?? "";
-  const version = /^version\s*=\s*"([^"]+)"\s*$/m.exec(packageSection)?.[1];
+  // The package version is the first top-level version assignment in this
+  // manifest; dependency versions are inline and cannot match this expression.
+  const version = /^version\s*=\s*"([^"]+)"\s*$/m.exec(source)?.[1];
   if (!version) throw new Error(`Could not read package version from ${path}`);
   return version;
 }
