@@ -179,10 +179,11 @@ export function CustomersPage({ snapshot, onCommit, offline, query, onReceipt }:
       throw new Error("Choose a .csv file exported from a spreadsheet or contact manager.");
     }
     if (file.size > 5 * 1024 * 1024) throw new Error("Customer import is limited to 5 MB per file.");
-    const matrix = parseCsv((await file.text()).replace(/^\\uFEFF/, ""));
+    const csvText = await file.text();
+    const matrix = parseCsv(csvText.charCodeAt(0) === 0xfeff ? csvText.slice(1) : csvText);
     if (matrix.length < 2) throw new Error("The CSV must contain a header row and at least one customer.");
     if (matrix.length > 10001) throw new Error("Import up to 10,000 customer rows per file.");
-    const headers = matrix[0].map((value) => value.trim().toLowerCase().replace(/^\\uFEFF/, "").replace(/[^a-z0-9]/g, ""));
+    const headers = matrix[0].map((value) => { const clean = value.charCodeAt(0) === 0xfeff ? value.slice(1) : value; return clean.trim().toLowerCase().replace(/[^a-z0-9]/g, ""); });
     const aliases: Record<keyof CustomerDraft, string[]> = {
       name: ["name", "customer", "customername", "customerbusinessname", "businessname"],
       phone: ["phone", "phonenumber", "mobile", "mobilephone", "contact", "contactnumber"],
@@ -211,12 +212,14 @@ export function CustomersPage({ snapshot, onCommit, offline, query, onReceipt }:
       const name = cell(row, "name");
       const phone = cell(row, "phone");
       const email = cell(row, "email");
+      const emailParts = email.split("@");
+      const validEmail = !email || (emailParts.length === 2 && !!emailParts[0] && emailParts[1].includes(".") && !email.includes(" "));
       const limitText = cell(row, "creditLimit");
       const creditLimit = limitText === "" ? 500000 : Number(limitText.replace(/[, ]/g, ""));
       const normalizedPhone = normalizeCustomerPhone(phone);
       let issue = "";
       if (!name) issue = "Customer name is missing.";
-      else if (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) issue = "Email address is invalid.";
+      else if (!validEmail) issue = "Email address is invalid.";
       else if (!Number.isFinite(creditLimit) || creditLimit < 0) issue = "Credit limit must be zero or greater.";
       else if (normalizedPhone && (knownPhones.has(normalizedPhone) || seenPhones.has(normalizedPhone))) issue = "Phone number already exists in the shop or this file.";
       if (issue) {
@@ -275,8 +278,7 @@ export function CustomersPage({ snapshot, onCommit, offline, query, onReceipt }:
 
   function sendDebtReminder(customer: Row) {
     const rawPhone = s(customer.phone).trim();
-    let phone = rawPhone.replace(/\\D/g, "");
-    if (rawPhone.startsWith("+")) phone = rawPhone.replace(/\\D/g, "");
+    let phone = Array.from(rawPhone).filter((character) => character >= "0" && character <= "9").join("");
     else if (phone.startsWith("00")) phone = phone.slice(2);
     else if (phone.startsWith("0")) phone = "250" + phone.slice(1);
     if (phone.length < 8 || phone.length > 15) {

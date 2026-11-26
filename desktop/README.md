@@ -54,28 +54,3 @@ Use `npm run dist:mac` on macOS and `npm run dist:linux` on Linux. The correspon
 ## Verification
 
 The repository's GitHub Actions workflow validates the desktop TypeScript build, native Rust checks/tests and Windows NSIS installer. A produced CI installer is an unsigned test artifact; production distribution should use the protected Authenticode signing workflow and verified release credentials.
-
-
-## Mobile-to-desktop workflow coverage
-
-The Android and desktop clients share the shop snapshot and the same cloud-backed business records. Desktop pages provide the matching workflows for the core shop operations:
-
-| Android workflow | BeBoss Desktop equivalent |
-| --- | --- |
-| Dashboard and business KPIs | Welcome, Overview and Reports |
-| Product catalogue, stock updates and low-stock review | Inventory |
-| Checkout, held carts, split tenders, discounts, customer credit and quick custom sale | Point of sale |
-| Sale history and receipts | Sales ledger and receipt preview |
-| Customer profiles, debt collection and payment receipts | Customers & Credit |
-| Customer contact import and debt reminders | Reviewed CSV customer import and prefilled WhatsApp reminders |
-| Purchases and suppliers | Purchasing |
-| Profit/loss, demand, customer aging, staff and branch analytics | Reports & Insights |
-| Branch setup, staff roles and granular permissions | Branches and Staff Access |
-| Paired device management and branch stock transfer | POS Terminals and Stock Transfers |
-| Subscription, payment claims and unlock-code administration | Subscription and Master Admin Console |
-| Cloud sync, offline queue, signed backups and branch data exchange | Sync Hub and Backup & Recovery |
-| Shop, security and terminal preferences | Shop Settings and native Diagnostics |
-
-Desktop intentionally uses platform-appropriate capabilities rather than pretending Android-only APIs exist: USB/Bluetooth keyboard-wedge scanners feed the POS search field, native desktop printing is used instead of Android Bluetooth APIs, and the desktop owner-authentication flow is not the Android staff PIN/biometric lock screen. Android Contacts-provider access is not available in the desktop sandbox; the Customers page accepts a user-selected CSV file instead and never reads unrelated address-book data.
-
-The desktop Sync Hub currently exposes cloud synchronization and the encrypted local outbox. It does **not** claim to host or discover the Android local Wi-Fi/LAN peer-sync service. Use the signed branch package workflow for controlled offline branch exchange until a native desktop peer-sync transport is implemented and validated. CameraX, Android biometric prompts, Android push-notification delivery, and Android-only permission dialogs remain phone-native functions; desktop equivalents must use corresponding OS-native APIs before they are advertised as available.

@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Activity, ArrowLeft, ArrowRight, Check, CheckCircle2, Cloud, Database,
   Languages, LockKeyhole, Monitor, Moon, RefreshCw, ShieldCheck, Smartphone,
-  Sun, Wifi, X, Zap, Palette, LayoutGrid
+  Sun, Wifi, X, Zap
 } from "lucide-react";
 import { DESKTOP_LANGUAGES, type DesktopLanguage } from "../lib/i18n";
 import type { DesktopPreferences } from "../lib/types";
@@ -23,8 +23,7 @@ type WizardCopy = {
   preferencesTag: string; preferencesTitle: string; preferencesBody: string;
   language: string; appearance: string; dark: string; light: string; system: string;
   sync: string; syncBody: string; frequency: string; motion: string; motionBody: string;
-  startPage: string; accent: string; orange: string; blue: string; green: string;
-  density: string; comfortable: string; compact: string;
+  startPage: string;
   privacyTitle: string; privacyBody: string; privacyCheck: string; privacyError: string;
   verificationTag: string; verificationTitle: string; verificationBody: string;
   runChecks: string; retry: string; checking: string; finishTag: string; finishTitle: string;
@@ -52,7 +51,6 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     sync: "Automatic cloud synchronization", syncBody: "Retry queued changes when the network returns and refresh cloud data on the selected interval.",
     frequency: "Cloud refresh interval", motion: "Reduce interface motion", motionBody: "Respect reduced-motion preference and keep transitions minimal.",
     startPage: "Start page after owner sign-in",
-    accent: "Accent colour", orange: "Orange", blue: "Blue", green: "Green", density: "Workspace density", comfortable: "Comfortable", compact: "Compact",
     privacyTitle: "Privacy and device access",
     privacyBody: "BeBoss stores business records in its protected application-data workspace, uses the operating system's secure credential vault, and connects to BeBoss Cloud for owner sign-in and synchronization. Printer and file-export access is used when you choose Print, Save or Export. Setup does not request access to unrelated personal files or media.",
     privacyCheck: "I have read and accept this device and data-use notice.",
@@ -93,7 +91,6 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     sync: "Guhuza amakuru na Cloud byikora", syncBody: "Ongera ugerageze kohereza impinduka igihe internet igarutse kandi wongere usome amakuru ku gihe wahisemo.",
     frequency: "Igihe cyo kongera gusoma amakuru", motion: "Gabanya animasiyo", motionBody: "Kurikiza ihitamo ryo kugabanya imigendere y'amashusho.",
     startPage: "Ipaji ibanza nyuma yo kwinjira",
-    accent: "Ibara ry’ingenzi", orange: "Oranje", blue: "Ubururu", green: "Icyatsi", density: "Ubucucike bw’imigaragarire", comfortable: "Bisanzwe", compact: "Bito",
     privacyTitle: "Ibanga n'uburenganzira bwa mudasobwa",
     privacyBody: "BeBoss ibika amakuru y'ubucuruzi mu bubiko bwayo burinzwe, ikoresha ububiko bw'ibanga bwa sisitemu, kandi ihuza na BeBoss Cloud mu kwinjira no guhererekanya amakuru. Printer n'ububiko bwa dosiye bikoreshwa igihe uhisemo Gucapa, Kubika cyangwa Kohereza. Iyi setup ntisaba kugera ku mafoto cyangwa izindi dosiye zawe zitari iz'akazi.",
     privacyCheck: "Nasomye kandi nemeye aya mabwiriza yo gukoresha mudasobwa n'amakuru.",
@@ -134,7 +131,6 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     sync: "Synchronisation cloud automatique", syncBody: "Réessayez les changements en attente au retour du réseau et actualisez les données selon l'intervalle choisi.",
     frequency: "Intervalle d'actualisation", motion: "Réduire les animations", motionBody: "Respecter la préférence de réduction des mouvements.",
     startPage: "Page d'accueil après connexion",
-    accent: "Couleur d’accent", orange: "Orange", blue: "Bleu", green: "Vert", density: "Densité de l’espace", comfortable: "Confortable", compact: "Compact",
     privacyTitle: "Confidentialité et accès à l'appareil",
     privacyBody: "BeBoss conserve les données professionnelles dans son espace applicatif protégé, utilise le coffre sécurisé du système et se connecte à BeBoss Cloud pour la connexion du propriétaire et la synchronisation. L'accès à l'imprimante et aux fichiers est utilisé lorsque vous choisissez Imprimer, Enregistrer ou Exporter. L'installation ne demande pas l'accès aux fichiers personnels ou médias sans rapport avec ces fonctions.",
     privacyCheck: "J'ai lu et j'accepte cette notice d'utilisation de l'appareil et des données.",
@@ -175,7 +171,6 @@ const TEXT: Record<DesktopLanguage, WizardCopy> = {
     sync: "Usawazishaji wa mtandao wa kiotomatiki", syncBody: "Jaribu tena mabadiliko yaliyosubiri mtandao unaporudi na usasishe data kwa muda uliochagua.",
     frequency: "Muda wa kusasisha data", motion: "Punguza mwendo", motionBody: "Heshimu upendeleo wa kupunguza uhuishaji.",
     startPage: "Ukurasa wa kuanza baada ya mmiliki kuingia",
-    accent: "Rangi kuu", orange: "Machungwa", blue: "Bluu", green: "Kijani", density: "Msongamano wa nafasi", comfortable: "Wastani", compact: "Fupi",
     privacyTitle: "Faragha na ufikiaji wa kifaa",
     privacyBody: "BeBoss huhifadhi rekodi za biashara kwenye eneo lake salama la programu, hutumia hifadhi salama ya mfumo, na huunganisha BeBoss Cloud kwa kuingia kwa mmiliki na kusawazisha data. Ufikiaji wa kichapishi na faili hutumika unapochagua Chapisha, Hifadhi au Hamisha. Usakinishaji hauhitaji ufikiaji wa faili binafsi au midia isiyohusiana na kazi hizo.",
     privacyCheck: "Nimesoma na kukubali taarifa hii ya matumizi ya kifaa na data.",
@@ -369,7 +364,7 @@ export function SetupWizard({
     setPreferences((current) => ({ ...current, [key]: value }));
 
   return (
-    <div className="setup-wizard" data-theme={preferences.theme} data-motion={preferences.reducedMotion ? "reduced" : "full"} data-accent={preferences.accent} data-density={preferences.density}>
+    <div className="setup-wizard" data-theme={preferences.theme} data-motion={preferences.reducedMotion ? "reduced" : "full"}>
       <aside className="setup-rail">
         <div className="setup-brand">
           <img src="/beboss-app-icon.png" alt="BeBoss" />
@@ -378,7 +373,6 @@ export function SetupWizard({
         <div className="setup-progress" aria-label="Setup progress">
           {t.stepNames.map((name, index) => (
             <button key={name} type="button" className={"setup-step " + (pageIndex === index ? "active" : index < pageIndex ? "complete" : "")}
-              aria-current={pageIndex === index ? "step" : undefined}
               onClick={() => { if (!running && !finishing && index < pageIndex) setPage((["welcome", "preferences", "verification", "finish"] as PageId[])[index]); }}
               disabled={running || finishing || index > pageIndex}>
               <span>{index < pageIndex ? <Check size={15} /> : <b>{index + 1}</b>}</span>
@@ -390,7 +384,7 @@ export function SetupWizard({
       </aside>
 
       <main className="setup-main">
-        <section key={page} className="setup-content" aria-live="polite" aria-busy={running}>
+        <section className="setup-content">
           <div className="setup-topline"><span>0{pageIndex + 1} / 04</span><div><i style={{ width: ((pageIndex + 1) * 25) + "%" }} /></div></div>
 
           {page === "welcome" && <>
@@ -427,21 +421,6 @@ export function SetupWizard({
                 <button type="button" className={preferences.theme === "system" ? "selected" : ""} onClick={() => update("theme", "system")}><Monitor size={17} />{t.system}</button>
               </div>
             </div>
-            <div className="setup-preference-section">
-              <label className="setup-field-label"><Palette size={14}/>{t.accent}</label>
-              <div className="setup-choice-row setup-accent-row">
-                <button type="button" className={preferences.accent === "orange" ? "selected" : ""} onClick={() => update("accent", "orange")}><i className="setup-accent-dot orange"/> {t.orange}</button>
-                <button type="button" className={preferences.accent === "blue" ? "selected" : ""} onClick={() => update("accent", "blue")}><i className="setup-accent-dot blue"/> {t.blue}</button>
-                <button type="button" className={preferences.accent === "green" ? "selected" : ""} onClick={() => update("accent", "green")}><i className="setup-accent-dot green"/> {t.green}</button>
-              </div>
-            </div>
-            <div className="setup-preference-section">
-              <label className="setup-field-label"><LayoutGrid size={14}/>{t.density}</label>
-              <div className="setup-choice-row">
-                <button type="button" className={preferences.density === "comfortable" ? "selected" : ""} onClick={() => update("density", "comfortable")}>{t.comfortable}</button>
-                <button type="button" className={preferences.density === "compact" ? "selected" : ""} onClick={() => update("density", "compact")}>{t.compact}</button>
-              </div>
-            </div>
             <div className="setup-setting-list">
               <label className="setup-setting-row"><span><strong>{t.sync}</strong><small>{t.syncBody}</small></span><input type="checkbox" checked={preferences.autoSync} onChange={(event) => update("autoSync", event.target.checked)} /></label>
               <label className="setup-setting-row"><span><strong>{t.frequency}</strong><small>{t.syncBody}</small></span>
@@ -475,7 +454,7 @@ export function SetupWizard({
             <h1>{completed ? t.finishTitle : t.verificationTitle}</h1><p>{t.verificationBody}</p>
             <div className="setup-checks" aria-live="polite">
               {translatedSteps.map((step) => (
-                <div className={"setup-check " + (activeStep === step.id ? "active" : "")} key={step.id}>
+                <div className="setup-check" key={step.id}>
                   <span className={"setup-check-icon " + (step.status === "failed" ? "failed" : step.status === "warning" ? "warning" : step.status === "complete" ? "ready" : "")}>{statusIcon(step.status)}</span>
                   <div><strong>{step.title}</strong><small>{step.details}</small></div>
                   <b className={step.status === "complete" ? "ready" : step.status === "warning" ? "warning" : step.status === "failed" ? "failed" : ""}>{t.statuses[step.status]}</b>
@@ -492,7 +471,6 @@ export function SetupWizard({
             <small className="eyebrow muted">{t.finishTag}</small>
             <h1>{t.finishTitle}</h1><p>{t.finishBody}</p>
             {diagnostics && <div className="setup-summary-list">
-              <div><span><Monitor size={16} />Device</span><strong>{diagnostics.osPlatform} · {diagnostics.osArch} · BeBoss {diagnostics.appVersion}</strong></div>
               <div><span><Database size={16} />{t.localDatabase}</span><strong>{diagnostics.databaseCipherVersion}</strong></div>
               <div><span><Monitor size={16} />{t.installPath}</span><code>{diagnostics.dbPath}</code></div>
               <div><span><RefreshCw size={16} />{t.pending}</span><strong>{diagnostics.pendingOutboxCount}</strong></div>
