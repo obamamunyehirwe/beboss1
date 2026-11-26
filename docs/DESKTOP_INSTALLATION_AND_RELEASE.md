@@ -78,7 +78,10 @@ For macOS, run the DMG build on macOS; complete signing and notarization with yo
 5. Review the selected platform and choose whether this build should immediately become the current public installer. Publishing a new current version archives the previous release for that platform only.
 6. Verify the resulting public download page and checksum. The Mobile and Desktop release histories are separate; a desktop upload never changes the Android APK or its update configuration.
 
-The bucket is private. Public downloads are issued from a server-controlled, short-lived signed URL only after the server confirms that the platform release remains current and public. The browser never receives a storage service key, a permanent public object URL or the underlying private object path. Download counts are incremented by the server-side release-download function.
+The bucket is private. Public downloads are issued from a server-controlled, short-lived signed URL only after the server confirms that the release is marked public. That covers the current build and any archived version the release administrator has explicitly made public. The browser never receives a storage service key, a permanent public object URL or the underlying private object path. Download counts are incremented by the server-side release-download function.
 
 A failed or interrupted upload is not made public. The Admin page attempts to remove incomplete uploads; check the release archive before retrying in case the network connection was interrupted after a successful publication.
 
+## In-app updater boundary
+
+Publishing a desktop installer through the Admin page is a manual installer distribution process; it does not enable silent in-app updates. Tauri's updater requires a separate keypair: the public key is embedded in the app and each update package must be signed with the matching private key. Do not advertise or enable an automatic update channel until that keypair and its verification path have been provisioned and tested. Windows Authenticode signatures and Tauri updater signatures are separate trust systems.
