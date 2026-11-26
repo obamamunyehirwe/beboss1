@@ -19,7 +19,7 @@ export async function requireAdminPermission(context: AdminCtx, permission: stri
 
 export async function writeAudit(context: AdminCtx, email: string, action: string, target: string, details: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  await supabaseAdmin.from("admin_audit_logs").insert({
+  const { error } = await supabaseAdmin.from("admin_audit_logs").insert({
     id: crypto.randomUUID(),
     admin_email: email,
     action,
@@ -27,6 +27,12 @@ export async function writeAudit(context: AdminCtx, email: string, action: strin
     details: details.slice(0, 1000),
     created_at: Date.now(),
   });
+  if (error) {
+    console.error("[BeBoss audit] Could not persist an admin action.", {
+      action,
+      error: error.message,
+    });
+  }
 }
 
 /** Invoke a Supabase Edge Function using the current user's verified JWT.

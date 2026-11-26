@@ -27,7 +27,7 @@ async function requirePermission(context: Ctx, permission: string) {
 
 async function audit(context: Ctx, email: string, action: string, target: string, details: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  await supabaseAdmin.from("admin_audit_logs").insert({
+  const { error } = await supabaseAdmin.from("admin_audit_logs").insert({
     id: crypto.randomUUID(),
     admin_email: email,
     action,
@@ -35,6 +35,14 @@ async function audit(context: Ctx, email: string, action: string, target: string
     details,
     created_at: Date.now(),
   });
+  if (error) {
+    // Do not make a completed payment or release mutation look rolled back.
+    // Record the failure for operators without logging audit details or secrets.
+    console.error("[BeBoss audit] Could not persist an admin action.", {
+      action,
+      error: error.message,
+    });
+  }
 }
 
 type Bb3Input = {
