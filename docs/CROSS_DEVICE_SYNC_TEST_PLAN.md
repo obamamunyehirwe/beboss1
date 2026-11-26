@@ -15,7 +15,7 @@ This checklist verifies the live Android ↔ Supabase ↔ desktop data path. It 
 
 - Android saves to its local Room database first. Data remains available offline.
 - Android schedules an immediate sync after business changes and also has a network-constrained WorkManager cycle scheduled every 15 minutes. Android's operating system may defer periodic work because of power, network, and background-execution policies.
-- Android uploads a complete, chunked, signed shop snapshot and pulls the latest complete generations from peer devices. Merges use the shared conflict-resolution engine and deletion tombstones.
+- Android uploads a complete, chunked, signed shop snapshot and pulls the latest complete generations from peer devices. Every upload gets generation-specific row IDs, so an interrupted upload cannot overwrite the last complete generation. After all chunks are accepted, the device asks the database to retain the five newest generations for that installation. Merges use the shared conflict-resolution engine and deletion tombstones.
 - Desktop stores offline changes in its encrypted SQLCipher outbox. When online, it sends version-checked snapshots to the authenticated desktop Edge Function. It polls the server for changes about every 30 seconds and performs a full refresh at the configured interval (default five minutes).
 - A successful upload alone is not a completed Android sync. Peer snapshot download and merge must also succeed before Android clears its durable sync queue.
 
@@ -49,7 +49,7 @@ This checklist verifies the live Android ↔ Supabase ↔ desktop data path. It 
 1. Disconnect a device from the network and create a sale, customer payment, stock change, and customer update.
 2. Confirm the data remains visible locally and the outbox remains pending.
 3. Reconnect. Confirm the device retries automatically, then verify the same business records from another device.
-4. Interrupt connectivity during a large snapshot upload. After reconnecting, confirm the incomplete generation is not treated as a completed sync and the queued work remains retryable.
+4. Interrupt connectivity during a large snapshot upload. Confirm the previous complete generation remains readable and the new incomplete generation is not treated as a completed sync. After reconnecting, confirm the queued work retries and the previous generation is pruned only after a later generation completes.
 5. Verify that a bad/incomplete peer snapshot does not cause a successful-sync message or clear the Android outbox.
 
 ### 5. Deletion and device security

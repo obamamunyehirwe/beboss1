@@ -12,6 +12,7 @@ import com.beboss.shopmgmt.data.model.StockTransfer
 import com.beboss.shopmgmt.data.model.Branch
 import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.data.model.UserRole
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.CertificatePinner
@@ -999,6 +1000,19 @@ object SupabaseAdminClient {
     // -------------------------------------------------------------------------
     // SYNCHRONOUS MULTI-BRANCH AUTO-SYNC SNAPSHOTS (`branch_sync_snapshots`)
     // -------------------------------------------------------------------------
+    internal fun snapshotGenerationRowId(
+        shopSyncKey: String,
+        deviceId: String,
+        syncGeneration: String,
+        chunkIndex: Int
+    ): String {
+        require(shopSyncKey.isNotBlank()) { "A shop key is required for a snapshot row." }
+        require(deviceId.isNotBlank()) { "A device ID is required for a snapshot row." }
+        require(syncGeneration.isNotBlank()) { "A generation ID is required for a snapshot row." }
+        require(chunkIndex >= 0) { "A snapshot chunk index cannot be negative." }
+        return "${shopSyncKey}::${deviceId}::${syncGeneration}::chunk-$chunkIndex"
+    }
+
     suspend fun upsertBranchSyncSnapshot(
         shopSyncKey: String,
         deviceId: String,
@@ -1013,28 +1027,19 @@ object SupabaseAdminClient {
         recordsSummary: String
     ): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || payloadToken.isBlank()) return@withContext false
-        
-        // Try with new columns first (sync_generation, chunk_index, chunk_count)
-        // If columns don't exist (schema cache stale), fall back to legacy format
-        return@withContext try {
+        try {
             upsertSnapshotWithNewColumns(
                 shopSyncKey, deviceId, syncGeneration, chunkIndex, chunkCount,
                 branchId, branchName, shopName, ownerUsername, payloadToken, recordsSummary
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            // Check if error is about missing columns (PGRST204 = column not found)
-            if (e.message?.contains("PGRST204") == true || 
-                e.message?.contains("Could not find") == true ||
-                e.message?.contains("column") == true) {
-                Log.w(TAG, "New snapshot columns not found, falling back to legacy format")
-                upsertSnapshotLegacy(
-                    shopSyncKey, deviceId, branchId, branchName, shopName, 
-                    ownerUsername, payloadToken, recordsSummary
-                )
-            } else {
-                Log.e(TAG, "upsertBranchSyncSnapshot error: ${e.message}")
-                false
-            }
+            // A schema without generation columns is unsafe for chunked sync: it
+            // cannot distinguish an interrupted upload from a complete snapshot.
+            // Fail closed and keep the durable outbox pending until migrations run.
+            Log.e(TAG, "Snapshot upload failed; generation-aware schema is required: ${e.message}")
+            false
         }
     }
 
@@ -1052,7 +1057,7 @@ object SupabaseAdminClient {
         recordsSummary: String
     ): Boolean = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        val snapshotId = "${shopSyncKey}::${deviceId}"
+        val snapshotId = snapshotGenerationRowId(shopSyncKey, deviceId, syncGeneration, chunkIndex)
         val body = JSONObject().apply {
             put("id", snapshotId)
             put("shop_sync_key", shopSyncKey)
@@ -1084,39 +1089,39 @@ object SupabaseAdminClient {
         }
     }
 
-    private suspend fun upsertSnapshotLegacy(
+    suspend fun pruneUploadedSnapshotGenerations(
         shopSyncKey: String,
         deviceId: String,
-        branchId: String,
-        branchName: String,
-        shopName: String,
-        ownerUsername: String,
-        payloadToken: String,
-        recordsSummary: String
+        syncGeneration: String,
+        keepGenerations: Int = 5
     ): Boolean = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val snapshotId = "${shopSyncKey}::${deviceId}"
-        val body = JSONObject().apply {
-            put("id", snapshotId)
-            put("shop_sync_key", shopSyncKey)
-            put("device_id", deviceId)
-            put("branch_id", branchId)
-            put("branch_name", branchName)
-            put("shop_name", shopName)
-            put("owner_username", ownerUsername.trim().lowercase(Locale.ROOT))
-            put("payload_token", payloadToken)
-            put("records_summary", recordsSummary)
-            put("updated_at", now)
+        if (!isConfigured() || shopSyncKey.isBlank() || deviceId.isBlank() || syncGeneration.isBlank()) {
+            return@withContext false
         }
-        val req = buildRestRequest("branch_sync_snapshots?on_conflict=id", tenantSyncKey = shopSyncKey)
-            .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
-            .post(body.toString().toRequestBody(jsonMediaType))
-            .build()
-        client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) {
-                Log.w(TAG, "upsertSnapshotLegacy HTTP ${resp.code}: ${resp.body?.string()}")
+        try {
+            val payload = JSONObject()
+                .put("p_shop_sync_key", shopSyncKey)
+                .put("p_device_id", deviceId)
+                .put("p_sync_generation", syncGeneration)
+                .put("p_keep_generations", keepGenerations.coerceIn(2, 10))
+            val req = buildRestRequest(
+                "rpc/prune_branch_sync_snapshot_generations",
+                tenantSyncKey = shopSyncKey
+            )
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(req).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Snapshot generation retention was deferred (HTTP ${response.code}): $body")
+                }
+                response.isSuccessful
             }
-            resp.isSuccessful
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Snapshot generation retention was deferred: ${e.message}")
+            false
         }
     }
 

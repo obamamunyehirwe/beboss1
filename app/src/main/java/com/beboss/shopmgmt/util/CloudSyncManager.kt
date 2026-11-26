@@ -507,6 +507,19 @@ class CloudSyncManager(private val database: AppDatabase) {
                     }
                     if (!ok) allChunksUploaded = false
                 }
+                if (allChunksUploaded) {
+                    val retentionApplied = SupabaseAdminClient.pruneUploadedSnapshotGenerations(
+                        shopSyncKey = shopSyncKey,
+                        deviceId = deviceId,
+                        syncGeneration = syncGeneration,
+                        keepGenerations = 5
+                    )
+                    if (!retentionApplied) {
+                        // Retention is best-effort and must never invalidate a complete upload.
+                        // The server keeps previous generations until this cleanup succeeds.
+                        Log.w(TAG, "Cloud snapshot generation retention is pending; the current complete upload remains available.")
+                    }
+                }
 
                 val accountUploaded = SupabaseAdminClient.upsertShopAccount(
                     shopProfile = profile,
