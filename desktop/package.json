@@ -12,16 +12,17 @@
     "build": "npm run build:web",
     "preview": "vite preview --host 127.0.0.1",
     "desktop": "tauri dev",
-    "dist": "tauri build",
-    "dist:win": "tauri build --bundles nsis",
-    "dist:mac": "tauri build --bundles dmg",
-    "dist:linux": "tauri build --bundles appimage",
+    "dist": "npm run validate:telemetry && tauri build",
+    "dist:win": "npm run validate:telemetry && tauri build --bundles nsis",
+    "dist:mac": "npm run validate:telemetry && tauri build --bundles dmg",
+    "dist:linux": "npm run validate:telemetry && tauri build --bundles appimage",
     "check:versions": "node scripts/check-version-coherence.mjs",
     "check:types": "tsc --noEmit -p tsconfig.desktop.json",
     "test": "node --experimental-strip-types --test src/lib/device-restore.test.ts src/lib/snapshot-merge.test.ts src/lib/cloud-request.test.ts",
     "sign:win:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-windows-installer.ps1",
     "release:win:local": "npm run check:versions && npm run check:installer && npm run check:types && npm test && cargo test --locked --manifest-path src-tauri/Cargo.toml && npm run dist:win && npm run sign:win:local && node scripts/generate-bundle-checksums.mjs src-tauri/target/release/bundle/nsis",
-    "check:installer": "node scripts/check-installer-config.mjs"
+    "check:installer": "node scripts/check-installer-config.mjs",
+    "validate:telemetry": "node scripts/validate-production-telemetry.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.2",
