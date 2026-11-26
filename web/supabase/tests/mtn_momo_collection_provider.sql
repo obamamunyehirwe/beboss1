@@ -43,6 +43,20 @@ begin
      or has_table_privilege('authenticated','public.payment_gateway_checkout_attempts','SELECT') then
     raise exception 'Client roles must not read checkout throttle attempts.';
   end if;
+
+  if exists (
+    select 1
+    from public.payment_requests p
+    join public.payment_gateway_transactions t on t.payment_request_id = p.id
+    where lower(trim(p.provider)) in ('flutterwave', 'stripe')
+      and t.provider = case lower(trim(p.provider))
+        when 'flutterwave' then 'FLUTTERWAVE'
+        when 'stripe' then 'STRIPE'
+        else ''
+      end
+  ) then
+    raise exception 'Legacy hosted-checkout provider identifiers must be normalized to their matching uppercase ledger provider.';
+  end if;
 end
 $test$;
 
