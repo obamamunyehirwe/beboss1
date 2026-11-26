@@ -76,13 +76,15 @@ For local Authenticode signing, put the replacement PFX somewhere outside the re
 ```powershell
 $env:WINDOWS_CODESIGN_PFX_PASSWORD = Read-Host "PFX password" -AsSecureString |
   ForEach-Object { [System.Net.NetworkCredential]::new("", $_).Password }
-$env:WINDOWS_CODESIGN_PFX_PATH = "C:\\BeBossSigning\\new-codesign.pfx"
+$env:WINDOWS_CODESIGN_PFX_PATH = "C:/BeBossSigning/new-codesign.pfx"
 npm run sign:win:local
 ```
 
 Or run the entire native Windows installer build, signing and checksum generation with `npm run release:win:local`. The script validates the PFX (private key, validity and Code Signing EKU), uses SignTool with an RFC 3161 timestamp, verifies the Authenticode chain, and writes a SHA-256 manifest beside the installer. It explicitly rejects the PFX that was previously committed to the public repository. A self-signed or otherwise untrusted certificate will fail SignTool trust verification and is not suitable for production distribution. Clear the password from your current shell when finished with `Remove-Item Env:WINDOWS_CODESIGN_PFX_PASSWORD`.
 
 The local build does not upload files or publish a GitHub Release. Publishing a public release is a separate authenticated workflow action and requires the server-only `GITHUB_RELEASE_TOKEN` plus the protected platform signing credentials.
+
+For the Admin → App releases → Native desktop releases panel, configure `GITHUB_RELEASE_TOKEN` in the web server environment (locally in the ignored `web/.env.local`; in production, the hosting provider's server-only environment variables). Use a fine-grained token restricted to this repository with **Actions: Read and write** and **Contents: Read-only**. Never prefix it with `VITE_`. GitHub Actions must separately receive `WINDOWS_CODESIGN_PFX_BASE64` and `WINDOWS_CODESIGN_PFX_PASSWORD`, as well as all six Apple signing/notarization secrets before the public workflow can publish all three trusted installers. The Admin panel dispatches and monitors the workflow; it does not upload arbitrary local binaries or bypass signing checks.
 
 ## Production signing and distribution
 
