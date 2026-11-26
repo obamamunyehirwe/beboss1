@@ -27,14 +27,16 @@ import { ServiceUnavailable } from "@/components/site/ServiceUnavailable";
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
 import { DOWNLOAD_PATH } from "@/lib/download-path";
+import { buildDownloadHref, detectDesktopOS, type DesktopOS, type DownloadPlatform } from "@/lib/download-routing";
 import { desktopReleaseQuery, publicSiteQuery } from "@/lib/queries";
 import type { PublicDesktopRelease } from "@/lib/public.functions";
 import { formatBytes, formatDate } from "@/lib/format";
 import "./download-page.css";
 
-const downloadSearchSchema = z.object({ platform: z.enum(["mobile", "desktop"]).catch("mobile") });
-type DownloadPlatform = "mobile" | "desktop";
-type DesktopOS = "windows" | "macos" | "linux";
+const downloadSearchSchema = z.object({
+  platform: z.enum(["mobile", "desktop"]).catch("mobile"),
+  os: z.enum(["windows", "macos", "linux"]).optional(),
+});
 
 export const Route = createFileRoute("/download")({
   validateSearch: downloadSearchSchema,
@@ -72,7 +74,7 @@ function DownloadPage() {
   const { t, p } = useI18n();
   const { data } = useSuspenseQuery(publicSiteQuery);
   const router = useRouter();
-  const { platform } = Route.useSearch();
+  const { platform, os } = Route.useSearch();
   const { data: desktopReleaseData } = useQuery({
     ...desktopReleaseQuery,
     enabled: platform === "desktop",
@@ -85,7 +87,8 @@ function DownloadPage() {
     releaseUrl: "https://github.com/obamamunyehirwe/beboss1/releases",
     assets: { windows: null, macos: null, linux: null },
   };
-  const [desktopOs, setDesktopOs] = useState<DesktopOS>("windows");
+  const [detectedOs, setDetectedOs] = useState<DesktopOS>("windows");
+  const desktopOs: DesktopOS = os ?? detectedOs;
   const release = data.current;
   const [origin, setOrigin] = useState("");
   const [copiedHash, setCopiedHash] = useState(false);
@@ -99,17 +102,25 @@ function DownloadPage() {
   );
   const downloadUrl = `${DOWNLOAD_PATH}?ch=web`;
   const changePlatform = (next: DownloadPlatform) => {
-    router.history.push(next === "mobile" ? "/download" : "/download?platform=desktop");
+    if (next === "mobile") {
+      router.history.push(buildDownloadHref("mobile"));
+      return;
+    }
+    router.history.push(buildDownloadHref("desktop", desktopOs));
+  };
+  const changeDesktopOs = (next: DesktopOS) => {
+    // Keep the selected installer in the address bar. Browser back/forward now
+    // restores both the application family and the chosen operating system.
+    router.history.push(buildDownloadHref("desktop", next));
   };
   const qrUrl = origin && release ? `${origin}${DOWNLOAD_PATH}?ch=qr` : "";
 
   useEffect(() => {
     setOrigin(window.location.origin);
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    if (userAgent.includes("mac")) setDesktopOs("macos");
-    else if (userAgent.includes("linux")) setDesktopOs("linux");
-    else setDesktopOs("windows");
-  }, []);
+    // Respect an explicit URL selection; otherwise suggest the visitor's OS.
+    if (os) return;
+    setDetectedOs(detectDesktopOS(window.navigator.userAgent));
+  }, [os]);
 
   const copyHash = async () => {
     if (!release) return;
@@ -417,7 +428,7 @@ function DownloadPage() {
         <DesktopDownloads
           release={desktopRelease}
           selectedOs={desktopOs}
-          onSelectOs={setDesktopOs}
+          onSelectOs={changeDesktopOs}
         />
       )}
     </SiteLayout>
@@ -441,6 +452,35 @@ function DesktopDownloads({
     linux: "Linux",
   };
   const version = release.tagName?.replace(/^desktop-/, "") ?? "Latest";
+  const expectedChecksum = asset?.sha256?.toLowerCase() ?? "";
+  const [checksumInput, setChecksumInput] = useState("");
+  const [checksumCopied, setChecksumCopied] = useState(false);
+  const normalizedChecksumInput = checksumInput.trim().toLowerCase();
+  const checksumMatches = Boolean(
+    expectedChecksum && /^[a-f0-9]{64}$/.test(normalizedChecksumInput) &&
+      normalizedChecksumInput === expectedChecksum,
+  );
+  const checksumMismatch = Boolean(
+    expectedChecksum && /^[a-f0-9]{64}$/.test(normalizedChecksumInput) &&
+      normalizedChecksumInput !== expectedChecksum,
+  );
+
+  useEffect(() => {
+    setChecksumInput("");
+    setChecksumCopied(false);
+  }, [selectedOs, expectedChecksum]);
+
+  const copyChecksum = async () => {
+    if (!expectedChecksum) return;
+    try {
+      await navigator.clipboard.writeText(expectedChecksum);
+      setChecksumCopied(true);
+      toast.success("Desktop installer SHA-256 copied");
+    } catch {
+      toast.error("Clipboard access was blocked. Select the checksum and copy it manually.");
+    }
+  };
+
   const options: { os: DesktopOS; title: string; subtitle: string }[] = [
     { os: "windows", title: "Windows", subtitle: "64-bit · .exe installer" },
     { os: "macos", title: "macOS", subtitle: "Disk image · .dmg" },
@@ -529,11 +569,64 @@ function DesktopDownloads({
           </div>
 
           {asset ? (
-            <dl className="mt-6 grid gap-3 sm:grid-cols-3">
-              <Meta label="Desktop version" value={version} />
-              <Meta label="Package size" value={asset.sizeBytes > 0 ? formatBytes(asset.sizeBytes) : "Provided by release"} />
-              <Meta label="Downloads" value={asset.downloadCount.toLocaleString()} />
-            </dl>
+            <>
+              <dl className="mt-6 grid gap-3 sm:grid-cols-3">
+                <Meta label="Desktop version" value={version} />
+                <Meta label="Package size" value={asset.sizeBytes > 0 ? formatBytes(asset.sizeBytes) : "Provided by release"} />
+                <Meta label="Downloads" value={asset.downloadCount.toLocaleString()} />
+              </dl>
+
+              <section className="mt-6 rounded-2xl border border-border bg-background/70 p-4 sm:p-5" aria-labelledby="desktop-checksum-title">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p id="desktop-checksum-title" className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                    <ShieldCheck className="size-4 text-success" />
+                    Installer SHA-256 integrity
+                  </p>
+                  {expectedChecksum ? (
+                    <Button size="sm" variant="ghost" onClick={copyChecksum}>
+                      {checksumCopied ? <Check className="text-success" /> : <Copy />}
+                      {checksumCopied ? "Copied" : "Copy checksum"}
+                    </Button>
+                  ) : null}
+                </div>
+                {expectedChecksum ? (
+                  <>
+                    <p className="mt-3 break-all rounded-xl bg-surface px-3 py-3 font-mono text-xs leading-6 text-foreground">
+                      {expectedChecksum}
+                    </p>
+                    <div className="mt-4 border-t border-border pt-4">
+                      <label htmlFor="desktop-checksum-input" className="mb-2 block text-xs font-semibold text-foreground">
+                        Verify the installer you downloaded
+                      </label>
+                      <input
+                        id="desktop-checksum-input"
+                        value={checksumInput}
+                        onChange={(event) => setChecksumInput(event.target.value)}
+                        placeholder="Paste the calculated 64-character SHA-256 hash"
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="h-11 w-full rounded-xl border border-border bg-surface px-3 font-mono text-xs text-foreground placeholder:text-muted-foreground/70 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                      {normalizedChecksumInput.length > 0 ? (
+                        <p className="mt-2 flex items-center gap-2 text-xs font-medium" role="status">
+                          {checksumMatches ? (
+                            <><CheckCircle2 className="size-4 text-success" /> The downloaded installer matches the official release checksum.</>
+                          ) : checksumMismatch ? (
+                            <><ShieldCheck className="size-4 text-destructive" /> Hash mismatch. Do not install this file until its origin is confirmed.</>
+                          ) : (
+                            <><FileCheck2 className="size-4 text-muted-foreground" /> Enter all 64 hexadecimal characters to complete the comparison.</>
+                          )}
+                        </p>
+                      ) : null}
+                    </div>
+                  </>
+                ) : (
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                    The selected release does not contain a valid checksum entry in its SHA256SUMS.txt manifest. Download only from the official BeBoss release page.
+                  </p>
+                )}
+              </section>
+            </>
           ) : (
             <div className="mt-6 rounded-2xl border border-warning/30 bg-warning/5 p-4 text-sm leading-6 text-muted-foreground" role="status">
               {release.unavailable
