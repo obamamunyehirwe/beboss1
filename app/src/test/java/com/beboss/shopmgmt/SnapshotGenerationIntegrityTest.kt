@@ -3,6 +3,7 @@ package com.beboss.shopmgmt
 import com.beboss.shopmgmt.util.SupabaseAdminClient
 import com.beboss.shopmgmt.util.SupabaseBranchSnapshotDto
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -86,4 +87,40 @@ class SnapshotGenerationIntegrityTest {
         assertFalse(SupabaseAdminClient.hasIncompleteLatestSnapshotGeneration(rows, complete))
         assertTrue(complete.all { it.syncGeneration == "generation-2" })
     }
+    @Test
+    fun `different snapshot generations never overwrite the same cloud row IDs`() {
+        val previous = SupabaseAdminClient.snapshotGenerationRowId(
+            shopSyncKey = "shop_test",
+            deviceId = "ANDROID-1",
+            syncGeneration = "generation-1",
+            chunkIndex = 0
+        )
+        val current = SupabaseAdminClient.snapshotGenerationRowId(
+            shopSyncKey = "shop_test",
+            deviceId = "ANDROID-1",
+            syncGeneration = "generation-2",
+            chunkIndex = 0
+        )
+
+        assertNotEquals(previous, current)
+    }
+
+    @Test
+    fun `each chunk within a generation has its own immutable cloud row ID`() {
+        val first = SupabaseAdminClient.snapshotGenerationRowId(
+            shopSyncKey = "shop_test",
+            deviceId = "ANDROID-1",
+            syncGeneration = "generation-3",
+            chunkIndex = 0
+        )
+        val second = SupabaseAdminClient.snapshotGenerationRowId(
+            shopSyncKey = "shop_test",
+            deviceId = "ANDROID-1#c1",
+            syncGeneration = "generation-3",
+            chunkIndex = 1
+        )
+
+        assertNotEquals(first, second)
+    }
+
 }
