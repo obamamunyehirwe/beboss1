@@ -313,7 +313,7 @@ dependencies {
   implementation(libs.retrofit)
   implementation(libs.androidx.work.runtime.ktx)
   // Production crash and ANR reporting; DSN is a public project identifier, never a server secret.
-  implementation("io.sentry:sentry-android:8.62.0")
+  implementation("io.sentry:sentry-android:8.64.0")
   implementation(libs.zxing.core)
   implementation(libs.mlkit.barcode.scanning)
   testImplementation(libs.androidx.compose.ui.test.junit4)
