@@ -364,14 +364,39 @@ jobs:
       - name: Inspect generated Android BuildConfig before compilation
         run: |
           gradle :app:generateSecureDebugBuildConfig :app:generateTransitionDebugBuildConfig --stacktrace
-          echo "----- Generated secure BuildConfig.java -----"
-          sed -n '1,45p' app/build/generated/source/buildConfig/secureDebug/com/beboss/shopmgmt/BuildConfig.java
+          echo "----- Locating flavor-specific generated BuildConfig.java files -----"
+          mapfile -t configs < <(find app/build/generated -type f -name BuildConfig.java)
+          printf '%s\n' "${configs[@]}"
+          if [ "${#configs[@]}" -ne 2 ]; then
+            echo "Expected exactly two generated BuildConfig.java files (secure and transition), found ${#configs[@]}."
+            exit 1
+          fi
+          secure_config=""
+          transition_config=""
+          for config_file in "${configs[@]}"; do
+            if grep -Fq 'BEBOSS_SECURITY_PEPPER' "$config_file"; then
+              transition_config="$config_file"
+            else
+              secure_config="$config_file"
+            fi
+          done
+          if [ -z "$secure_config" ] || [ -z "$transition_config" ]; then
+            echo "Could not identify both secure and transition Android BuildConfig files."
+            exit 1
+          fi
+          echo "Secure variant: $secure_config"
+          echo "Transition variant: $transition_config"
+          sed -n '1,45p' "$secure_config"
 
       - name: Verify server-only credentials are not embedded in Android
         shell: bash
         run: |
-          config="app/build/generated/source/buildConfig/secureDebug/com/beboss/shopmgmt/BuildConfig.java"
-          transition="app/build/generated/source/buildConfig/transitionDebug/com/beboss/shopmgmt/BuildConfig.java"
+          config="$(find app/build/generated -type f -name BuildConfig.java | while read -r file; do if ! grep -Fq 'BEBOSS_SECURITY_PEPPER' "$file"; then printf '%s\\n' "$file"; fi; done | head -n 1)"
+          transition="$(find app/build/generated -type f -name BuildConfig.java | while read -r file; do if grep -Fq 'BEBOSS_SECURITY_PEPPER' "$file"; then printf '%s\\n' "$file"; fi; done | head -n 1)"
+          if [ -z "$config" ] || [ -z "$transition" ]; then
+            echo "Both secret-free secure and migration-only transition BuildConfig files are required."
+            exit 1
+          fi
           if grep -Eq 'AFRICASTALKING_|AIRTEL_MONEY_|MTN_MOMO_|SEND_SMS_HOOK_SECRET|FLW_SECRET_KEY|STRIPE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY|BEBOSS_DATASHARE_HMAC_SECRET|BEBOSS_SECURITY_PEPPER' "$config"; then
             echo "The final secure Android variant embedded a server credential or migration-only compatibility secret."
             exit 1
