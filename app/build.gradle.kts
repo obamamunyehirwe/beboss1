@@ -1,4 +1,6 @@
 import java.util.Properties
+import java.security.KeyStore
+import java.security.MessageDigest
 
 plugins {
   alias(libs.plugins.android.application)
@@ -103,13 +105,13 @@ fun actualReleaseCertificateSha256(): String? {
   return runCatching {
     val store = sequenceOf("PKCS12", "JKS").mapNotNull { type ->
       runCatching {
-        java.security.KeyStore.getInstance(type).apply {
+        KeyStore.getInstance(type).apply {
           file.inputStream().use { load(it, password.toCharArray()) }
         }
       }.getOrNull()
     }.firstOrNull() ?: return null
     val certificate = store.getCertificate(alias) ?: return null
-    java.security.MessageDigest.getInstance("SHA-256")
+    MessageDigest.getInstance("SHA-256")
       .digest(certificate.encoded)
       .joinToString("") { "%02X".format(it) }
   }.getOrNull()
