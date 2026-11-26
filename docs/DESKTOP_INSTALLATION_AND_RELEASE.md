@@ -78,7 +78,7 @@ For macOS, run the DMG build on macOS; complete signing and notarization with yo
 5. Choose whether the build should immediately become the current public installer. Publishing a new current version archives the previous release for that platform only; switching platforms never changes another platform's current installer.
 6. Verify the resulting public download page, release notes and checksum. The Mobile and Desktop release histories are separate; a desktop upload never changes the Android APK or its update configuration.
 
-The bucket is private. Public downloads are issued from a server-controlled, short-lived signed URL only after the server confirms that the platform release remains current and public. The browser never receives a storage service key, a permanent public object URL or the underlying private object path. Download counts are incremented by the server-side release-download function.
+The bucket is private. Public downloads are issued from a server-controlled, short-lived signed URL only after the server confirms that the selected platform release is marked public. This includes the current installer and any archived version the administrator has explicitly made public. The browser never receives a storage service key, a permanent public object URL or the underlying private object path. Download counts are incremented by the server-side release-download function.
 
 A failed or interrupted upload is not made public. The Admin page attempts to remove incomplete uploads; check the release archive before retrying in case the network connection was interrupted after a successful publication.
 
