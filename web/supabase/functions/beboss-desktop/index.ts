@@ -686,14 +686,19 @@ async function loadManagementRecordsV2(admin: SupabaseClient, shopId: string, ow
     staff: staff.data ?? [], announcements: announcements.data ?? [], payments: payments.data ?? [], codes: codes.data ?? [], serverTime: Date.now() };
 }
 
-async function ownerManagementActorV2(admin: SupabaseClient, shopId: string, actorDeviceId: string, ownerUserId: string) {
+async function ownerManagementActorV2(admin: SupabaseClient, shopId: string, actorDeviceId: string, ownerUsername: string) {
   const normalizedActorDeviceId = text(actorDeviceId).trim();
-  if (!/^DESKTOP:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedActorDeviceId) || !ownerUserId) {
-    throw new Error("This desktop installation does not have a valid registered device identity.");
+  const normalizedOwnerUsername = text(ownerUsername).trim().toLowerCase();
+  if (!/^DESKTOP:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedActorDeviceId) ||
+      !/^[a-z0-9._-]{2,80}$/.test(normalizedOwnerUsername)) {
+    throw new Error("This desktop installation or registered owner identity is invalid.");
   }
+  // Supabase Auth IDs and the Android Room shop_users.user_id are intentionally
+  // separate identity domains. Resolve the Room owner using the username already
+  // bound to the verified Auth membership and tenant, never by passing auth.uid().
   const [ownerUser, actorDevice, mainBranch] = await Promise.all([
     admin.from("shop_users").select("user_id,username,full_name,role,is_active")
-      .eq("shop_sync_key", shopId).eq("user_id", ownerUserId).eq("role", "OWNER").eq("is_active", true).maybeSingle(),
+      .eq("shop_sync_key", shopId).eq("username", normalizedOwnerUsername).eq("role", "OWNER").eq("is_active", true).maybeSingle(),
     admin.from("shop_devices").select("id,device_id,assigned_user_id,is_active")
       .eq("shop_sync_key", shopId).eq("device_id", normalizedActorDeviceId)
       .eq("is_active", true).maybeSingle(),
@@ -1291,7 +1296,7 @@ Deno.serve(async (req: Request) => {
     if (action === "save_snapshot") {
       const installationId = text(body.deviceId).trim();
       if (!isUuid(installationId)) throw new Error("The desktop installation identifier is invalid.");
-      const actor = await ownerManagementActorV2(admin, owner.shopId, "DESKTOP:" + installationId, text(owner.user.id));
+      const actor = await ownerManagementActorV2(admin, owner.shopId, "DESKTOP:" + installationId, owner.username);
       const snapshot = sanitizeSnapshot(body.snapshot, { username: owner.username, shop: owner.shop });
       nowSnapshot(snapshot, owner.username);
       const shopShareSecret = await getShopDataShareSecret(admin, owner.shopId);
@@ -1663,7 +1668,7 @@ if (action === "submit_payment_proof") {
     }
 
     if (action === "branch_upsert") {
-      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const row = branchPayload((body.branch ?? {}) as Row, owner.shopId);
       if (row.manager_user_id) {
         const manager = await admin.from("shop_users").select("user_id,full_name,role,is_active")
@@ -1689,7 +1694,7 @@ if (action === "submit_payment_proof") {
     }
 
     if (action === "branch_delete") {
-      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const branchId = text(body.id);
       if (!branchId) throw new Error("A branch ID is required.");
       const { data: branch, error: readError } = await admin.from("shop_branches")
@@ -1715,7 +1720,7 @@ if (action === "submit_payment_proof") {
     }
 
     if (action === "staff_update") {
-      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const userId = text(body.userId);
       const role = text(body.role).toUpperCase();
       const isActive = body.isActive === true;
@@ -1818,7 +1823,7 @@ if (action === "submit_payment_proof") {
       const { data: shop, error: shopError } = await admin.from("shop_accounts")
         .select("shop_name,remote_kill_switch").eq("id", owner.shopId).maybeSingle();
       if (shopError || !shop || shop.remote_kill_switch) throw new Error("This shop is not available for new device registration.");
-      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const [staffRes, branchRes] = await Promise.all([
         admin.from("shop_users").select("user_id,username,full_name,role,assigned_branch_id,is_active")
           .eq("shop_sync_key", owner.shopId).eq("user_id", assignedUserId).eq("is_active", true).maybeSingle(),
@@ -1861,7 +1866,7 @@ if (action === "submit_payment_proof") {
       if (!deviceRecordId || deviceName.length < 2 || deviceName.length > 120 || !nextBranchId) {
         throw new Error("Enter a valid device name and select a branch.");
       }
-      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const { data: current, error: currentError } = await admin.from("shop_devices")
         .select("id,device_id,assigned_user_id,role,branch_id,is_owner_primary,is_active")
         .eq("id", deviceRecordId).eq("shop_sync_key", owner.shopId).maybeSingle();
@@ -1909,7 +1914,7 @@ if (action === "submit_payment_proof") {
       const deviceRecordId = text(body.id).trim();
       const isActive = body.isActive === true;
       if (!deviceRecordId) throw new Error("A device record ID is required.");
-      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const tenantAdmin = createClient(config.url, config.serviceKey, {
         auth: { persistSession: false, autoRefreshToken: false },
         global: { headers: { "X-Shop-Sync-Key": owner.shopId } }
@@ -1937,7 +1942,7 @@ if (action === "submit_payment_proof") {
     if (action === "device_remove") {
       const deviceRecordId = text(body.id).trim();
       if (!deviceRecordId) throw new Error("A device record ID is required.");
-      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const { data: device, error: readError } = await admin.from("shop_devices")
         .select("id,device_id,is_owner_primary").eq("id", deviceRecordId).eq("shop_sync_key", owner.shopId).maybeSingle();
       if (readError || !device || device.is_owner_primary) throw new Error("The primary owner terminal cannot be removed.");
@@ -1961,7 +1966,7 @@ if (action === "submit_payment_proof") {
     if (action === "device_reinvite") {
       const deviceRecordId = text(body.id).trim();
       if (!deviceRecordId) throw new Error("A device record ID is required.");
-      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), text(owner.user.id));
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const { data: device, error: readError } = await admin.from("shop_devices")
         .select("id,device_id,is_owner_primary,is_active,assigned_user_id,branch_id").eq("id", deviceRecordId).eq("shop_sync_key", owner.shopId).maybeSingle();
       if (readError || !device || !device.is_active || device.is_owner_primary || text(device.device_id) !== "") {
