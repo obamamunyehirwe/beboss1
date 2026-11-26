@@ -340,8 +340,22 @@ jobs:
             exit 1
           fi
 
-      - name: Run Android unit tests
-        run: gradle :app:testDebugUnitTest --stacktrace
+      - name: Run Android unit tests (retry transient Maven Central rate limits)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            echo "Android unit-test attempt ${attempt}/3"
+            if gradle :app:testDebugUnitTest --stacktrace; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((attempt * 20))
+              echo "Gradle failed; retrying after ${delay}s (this also covers transient Maven Central HTTP 429 responses)."
+              sleep "$delay"
+            fi
+          done
+          echo "Android unit tests failed after three attempts."
+          exit 1
 
       - name: Run Android instrumentation smoke tests on an emulator
         uses: reactivecircus/android-emulator-runner@v2
