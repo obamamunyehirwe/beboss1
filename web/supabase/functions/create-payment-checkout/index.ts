@@ -89,7 +89,9 @@ async function checkMtnPaymentStatus(request: Request, input: Record<string, unk
   });
   const payments = await restRows<{
     id: string; owner_username: string; owner_phone: string; status: string;
-    amount_rwf: number; payer_phone: string;
+    amount_rwf: number; payer_phone: string; gateway_reference: string;
+    gateway_transaction_id: string; gateway_amount_rwf: number;
+    gateway_currency: string; gateway_verified_at: number;
   }>(`payment_requests?${filters.toString()}`);
   const payment = payments[0];
   if (!payment || normalizePhone(payment.owner_phone) !== normalizePhone(ownerPhone)) {
@@ -131,6 +133,9 @@ async function checkMtnPaymentStatus(request: Request, input: Record<string, unk
   }
   if (row.status === "FAILED") {
     return jsonResponse(200, { ok: true, pending: false, verified: false, status: "FAILED", message: "MTN MoMo marked this payment as failed. Start a new payment request." });
+  }
+  if (row.status === "REVIEW_REQUIRED") {
+    return jsonResponse(409, { ok: true, pending: true, verified: false, status: "REVIEW_REQUIRED", message: "This provider response is reserved for manual reconciliation. BeBoss will not retry or activate the payment automatically." });
   }
 
   const config = readMtnMomoConfiguration();
