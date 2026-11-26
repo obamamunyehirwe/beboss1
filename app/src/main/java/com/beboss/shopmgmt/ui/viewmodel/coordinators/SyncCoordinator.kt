@@ -568,6 +568,74 @@ class SyncCoordinator(
         }
     }
 
+    /**
+     * Requests a one-time owner SMS code for old globally signed DataShare exports.
+     * The signing secret never leaves Supabase; only the registered owner can unlock
+     * the server-side compatibility verifier.
+     */
+    fun requestLegacyBranchShareOtp(onDone: (Boolean, String) -> Unit = { _, _ -> }) {
+        scope.launch {
+            try {
+                val owner = allUsers.value.firstOrNull {
+                    it.role == com.beboss.shopmgmt.data.model.UserRole.OWNER && it.isActive
+                } ?: throw SecurityException("The registered shop owner profile is missing on this terminal.")
+                val phone = shopProfile.value.phone.ifBlank { owner.phone }
+                SupabaseAdminClient.requestOwnerDeviceCredentialOtp(owner.username, phone).getOrThrow()
+                val message = "A verification code was sent to the registered shop-owner phone. Enter it here to verify the legacy token online."
+                emitSnackbar(message)
+                onDone(true, message)
+            } catch (error: Exception) {
+                val message = "Could not request owner verification: ${error.safeMessage()}"
+                emitSnackbar(message)
+                onDone(false, message)
+            }
+        }
+    }
+
+    /**
+     * Server-verifies a legacy token using owner SMS OTP, then imports the sanitized
+     * snapshot through the existing repository merge path. No shared legacy key is
+     * included in the Android request or stored on this device.
+     */
+    fun importLegacyBranchShareToken(
+        token: String,
+        otp: String,
+        onDone: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        scope.launch {
+            try {
+                val owner = allUsers.value.firstOrNull {
+                    it.role == com.beboss.shopmgmt.data.model.UserRole.OWNER && it.isActive
+                } ?: throw SecurityException("The registered shop owner profile is missing on this terminal.")
+                val phone = shopProfile.value.phone.ifBlank { owner.phone }
+                val summary = SupabaseAdminClient.verifyLegacyBranchShareToken(
+                    token = token,
+                    ownerUsername = owner.username,
+                    ownerPhone = phone,
+                    otp = otp
+                ).getOrThrow()
+                val result = repository.importShopDataPackage(summary, currentUser.value)
+                val message = "Legacy branch package verified online and merged: ${summary.branches.size} branches, ${result.mergedProducts} products and ${result.mergedSales} sales."
+                repository.logSyncEvent("LEGACY_DATASHARE_MIGRATION", "SUCCESS", message)
+                repository.recordLocalAudit(
+                    actorName = currentUser.value?.name ?: owner.name,
+                    actorRole = currentUser.value?.role?.name ?: "OWNER",
+                    action = "LEGACY_DATASHARE_IMPORT",
+                    targetId = summary.branchScopeName.orEmpty(),
+                    details = message
+                )
+                emitSnackbar(message)
+                onDone(true, message)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val message = "Legacy DataShare verification failed: ${error.safeMessage()}"
+                emitSnackbar(message)
+                onDone(false, message)
+            }
+        }
+    }
+
     fun importShopPackage(summary: ShopImportSummary) {
         scope.launch {
             try {
