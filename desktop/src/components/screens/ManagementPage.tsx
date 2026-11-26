@@ -15,6 +15,7 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnounc
   const activeDevices = rows(cloud.devices).filter((item) => item.is_active === true);
   const openTransfers = rows(cloud.transfers).filter((item) => ["REQUESTED", "IN_TRANSIT", "RECEIPT_REQUESTED"].includes(s(item.status).toUpperCase()));
   const receivables = customers.reduce((sum, item) => sum + n(item.debtBalance), 0);
+  const creditWatch = customers.filter((item) => n(item.debtBalance) > 0).sort((a, b) => n(b.debtBalance) - n(a.debtBalance)).slice(0, 6);
   const modules: { title: string; description: string; view: NavKey; icon: typeof Package; value: string }[] = [
     { title: "Inventory control", description: "Catalogue, pricing, quantities, adjustments and reorder levels.", view: "products", icon: Package, value: products.length + " active items" },
     { title: "Sales operations", description: "Checkout, ledger, receipt reprints and payment reconciliation.", view: "sales", icon: ShoppingBag, value: sales.length + " recorded sales" },
@@ -27,7 +28,11 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnounc
     { title: "Finance & reports", description: "Revenue, gross profit, margins and operating performance.", view: "reports", icon: BarChart3, value: "Snapshot-derived reports" },
     { title: "Billing & subscription", description: "Plan status, hosted checkout and payment claim history.", view: "billing", icon: CreditCard, value: s(cloud.shop.subscription_status) || "Status unavailable" },
     { title: "Sync & connectivity", description: "Cloud snapshot, pending outbox and synchronization health.", view: "sync", icon: RefreshCw, value: offline ? "Offline queue active" : cloud.verifiedChunks + " verified chunks" },
-    { title: "Backup & recovery", description: "Encrypted local backups and signed branch exchange.", view: "backup", icon: Database, value: "Encrypted local storage" }
+    { title: "Backup & recovery", description: "Encrypted local backups and signed branch exchange.", view: "backup", icon: Database, value: "Encrypted local storage" },
+    { title: "System health & diagnostics", description: "Review native runtime, SQLCipher integrity, network and printer diagnostics.", view: "diagnostics", icon: RefreshCw, value: offline ? "Offline diagnostics available" : "Cloud diagnostics available" },
+    { title: "Owner security & access", description: "Verify owner identity and run protected account-management operations.", view: "admin", icon: ShieldCheck, value: "Owner verification protected" },
+    { title: "Platform administration", description: "Open restricted platform-wide administration and governance tools.", view: "masterAdmin", icon: ShieldCheck, value: "Role-protected console" },
+    { title: "Workspace preferences", description: "Configure appearance, language, density, startup view and sync behavior.", view: "settings", icon: Settings, value: "Desktop and shop preferences" }
   ];
   return <div className="page-stack">
     <PageHeading eyebrow="OPERATIONS CONTROL CENTER" title="Management center" description="A live operating view across inventory, financial activity, organization, devices and platform services." action={<button className="btn-outline" onClick={() => onNavigate("settings")}><Settings size={16} /> Workspace settings</button>} />
@@ -50,6 +55,9 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnounc
           {rows(cloud.branches).slice(0, 4).map((item) => <div className="management-watch-row" key={"branch-" + s(item.id)}><span><strong>{s(item.name) || s(item.branch_name) || "Branch " + s(item.id).slice(0, 8)}</strong><small>Branch</small></span><StatusPill value={item.is_active ? "ACTIVE" : "INACTIVE"} /></div>)}
           {rows(cloud.devices).slice(0, 4).map((item) => <div className="management-watch-row" key={"device-" + s(item.id)}><span><strong>{s(item.device_name) || s(item.name) || "POS terminal"}</strong><small>{s(item.platform) || "Registered device"}</small></span><StatusPill value={item.is_active ? "ACTIVE" : "INACTIVE"} /></div>)}
         </div> : <Empty title="No registered locations or terminals" description="Authorized branch and device records appear here after registration." icon={Building2} />}
+      </section>
+      <section className="panel"><div className="panel-heading"><div><span className="eyebrow muted">CUSTOMER CREDIT CONTROL</span><h3>Largest outstanding balances</h3></div><button className="text-action" onClick={() => onNavigate("customers")}>Open accounts <ArrowRight size={14} /></button></div>
+        {creditWatch.length ? <div className="management-watch-list">{creditWatch.map((item) => <div className="management-watch-row" key={"credit-" + s(item.id)}><span><strong>{s(item.name) || s(item.fullName) || "Customer account"}</strong><small>{s(item.phone) || s(item.customerCode) || "Customer credit account"}</small></span><b>{money(n(item.debtBalance))}</b></div>)}</div> : <Empty title="No outstanding customer balances" description="Customer accounts with a positive balance will appear here for quick follow-up." icon={Wallet} />}
       </section>
     </div>
   </div>;
