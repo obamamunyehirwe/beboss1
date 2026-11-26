@@ -1,0 +1,10 @@
+# Local-only Worker secrets. Copy this file to .dev.vars and add real values.
+# Never commit .dev.vars or share its contents.
+SUPABASE_SECRET_KEY=replace-with-your-supabase-secret-api-key
+# Optional: required only when enabling the BeBoss AI copilot.
+LOVABLE_API_KEY=
+# Optional server-side integration secrets, only when the feature is enabled.
+LOVABLE_CRON_SECRET=
+LOVABLE_CRON_SECRET_PREVIOUS=
+BEBOSS_DATASHARE_HMAC_SECRET=
+BEBOSS_SECURITY_PEPPER=

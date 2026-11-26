@@ -8,7 +8,7 @@ import {
   restRows,
   restRequest,
 } from "../_shared/payment-gateway.ts";
-import { getMtnMomoAccessToken, getMtnMomoPaymentStatus, matchesMtnMomoSettlement, MtnMomoRequestRejectedError, readMtnMomoConfiguration, requestMtnMomoPayment } from "../_shared/mtn-momo.ts";
+import { getMtnMomoAccessToken, getMtnMomoPaymentStatus, matchesMtnMomoSettlement, MtnMomoRequestRejectedError, readMtnMomoConfiguration, requestMtnMomoPayment, type MtnMomoStatus } from "../_shared/mtn-momo.ts";
 
 type ShopRow = {
   id: string;
@@ -89,7 +89,9 @@ async function checkMtnPaymentStatus(request: Request, input: Record<string, unk
   });
   const payments = await restRows<{
     id: string; owner_username: string; owner_phone: string; status: string;
-    amount_rwf: number; payer_phone: string;
+    amount_rwf: number; payer_phone: string; gateway_reference: string;
+    gateway_transaction_id: string; gateway_amount_rwf: number;
+    gateway_currency: string; gateway_verified_at: number;
   }>(`payment_requests?${filters.toString()}`);
   const payment = payments[0];
   if (!payment || normalizePhone(payment.owner_phone) !== normalizePhone(ownerPhone)) {
@@ -133,8 +135,21 @@ async function checkMtnPaymentStatus(request: Request, input: Record<string, unk
     return jsonResponse(200, { ok: true, pending: false, verified: false, status: "FAILED", message: "MTN MoMo marked this payment as failed. Start a new payment request." });
   }
 
+
   const config = readMtnMomoConfiguration();
-  const status = await getMtnMomoPaymentStatus(config, row.provider_checkout_id);
+  let status: MtnMomoStatus;
+  try {
+    status = await getMtnMomoPaymentStatus(config, row.provider_checkout_id);
+  } catch (error) {
+    console.warn("[create-payment-checkout] MTN status is not yet reconcilable", error instanceof Error ? error.message : "unknown error");
+    return jsonResponse(202, {
+      ok: true,
+      pending: true,
+      verified: false,
+      status: row.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "PENDING",
+      message: "MTN MoMo has not returned a reconcilable final status yet. Keep this request for reconciliation and do not submit a duplicate payment.",
+    });
+  }
   if (status.status === "PENDING") {
     return jsonResponse(200, { ok: true, pending: true, verified: false, status: "PENDING", message: "Payment request is still pending. Approve the prompt on the MTN MoMo wallet and check again." });
   }
@@ -149,7 +164,11 @@ async function checkMtnPaymentStatus(request: Request, input: Record<string, unk
       `payment_gateway_transactions?${new URLSearchParams({ payment_request_id: `eq.${requestId}`, provider_reference: `eq.${row.provider_reference}` }).toString()}`,
       { status: "REVIEW_REQUIRED", failure_reason: "MTN MoMo status did not match the registered payer, reference, amount or RWF currency.", updated_at: Date.now() },
     );
-    return jsonResponse(409, { ok: true, pending: true, verified: false, status: "REVIEW_REQUIRED", message: "The provider response needs manual reconciliation. No subscription has been activated." });
+    await restPatch(`payment_requests?${new URLSearchParams({ id: `eq.${requestId}` }).toString()}`, {
+      admin_verification_note: "MTN MoMo returned a successful status but the payer, reference, amount or currency did not match this payment claim. Do not issue a code until the merchant transaction is independently reconciled.",
+      updated_at: Date.now(),
+    });
+    return jsonResponse(409, { ok: true, pending: true, verified: false, status: "REVIEW_REQUIRED", message: "The provider response does not match the submitted payment and needs manual reconciliation. No subscription has been activated." });
   }
 
   if (status.status === "FAILED") {
@@ -195,10 +214,11 @@ Deno.serve(async (request: Request) => {
   let txRef = "";
   let providerRequestStarted = false;
   let providerRejected = false;
+  let gateway = "";
   try {
     const input = await request.json();
     if (String(input?.action ?? "") === "status") return await checkMtnPaymentStatus(request, input);
-    const gateway = String(input?.gateway ?? "").toLowerCase();
+    gateway = String(input?.gateway ?? "").toLowerCase();
     if (gateway !== "flutterwave" && gateway !== "stripe" && gateway !== "mtn_momo") {
       return jsonResponse(400, { message: "Select Flutterwave, Stripe or direct MTN MoMo checkout." });
     }
@@ -221,11 +241,15 @@ Deno.serve(async (request: Request) => {
       throw new Error("The selected subscription plan is invalid.");
     }
 
-    // The production Vercel alias is a safe public fallback; deployments using a
-    // custom domain can override it server-side without making checkout depend on
-    // an otherwise optional secret.
+    // The return origin must be configured for the active Cloudflare deployment.
+    // Never send a payment return to a retired Vercel URL.
     const configuredPublicUrl = String(Deno.env.get("BEBOSS_PUBLIC_URL") ?? "").trim();
-    const publicUrl = (configuredPublicUrl || "https://beboss1.vercel.app").replace(/\/+$/, "");
+    if (!configuredPublicUrl) {
+      return jsonResponse(503, {
+        message: "The BeBoss public web URL is not configured. Set the Supabase Edge Function secret BEBOSS_PUBLIC_URL to the active Cloudflare Workers URL.",
+      });
+    }
+    const publicUrl = configuredPublicUrl.replace(/\/+$/, "");
     let publicOrigin: URL;
     try {
       publicOrigin = new URL(publicUrl);
@@ -512,11 +536,22 @@ Deno.serve(async (request: Request) => {
       }
     }
     if (uncertainProviderOutcome) {
+      if (gateway === "mtn_momo") {
+        try {
+          await restPatch(`payment_requests?${new URLSearchParams({ id: `eq.${paymentRequestId}` }).toString()}`, {
+            admin_verification_note: "MTN MoMo wallet request response was uncertain. Reconcile the provider transaction status before approving or rejecting this payment.",
+            updated_at: Date.now(),
+          });
+        } catch (noteError) {
+          console.error("[create-payment-checkout] could not write MTN reconciliation note", noteError);
+        }
+      }
       return jsonResponse(202, {
         ok: true,
         pending: true,
         paymentRequestId,
         reference: txRef,
+        status: "REVIEW_REQUIRED",
         message: "The provider response or local save is uncertain. This payment is held for reconciliation; do not create another checkout until its status has been reviewed.",
       });
     }

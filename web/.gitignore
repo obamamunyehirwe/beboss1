@@ -18,7 +18,8 @@ dist-ssr
 
 # Wrangler / Cloudflare
 .wrangler/
-.dev.vars
+.cloudflare/
+.dev.vars*
 
 # Environment files - never commit secrets
 .env

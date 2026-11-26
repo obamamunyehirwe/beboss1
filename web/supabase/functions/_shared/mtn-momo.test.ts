@@ -1,4 +1,5 @@
 import {
+  getMtnMomoAccessToken,
   getMtnMomoPaymentStatus,
   matchesMtnMomoSettlement,
   readMtnMomoConfiguration,
@@ -13,41 +14,73 @@ const config: MtnMomoConfiguration = {
   collectionsSubscriptionKey: "test-subscription-key",
   apiUser: "test-api-user",
   apiKey: "test-api-key",
+  credentialKind: "sandbox_api_user_key",
 };
 
-Deno.test("MTN configuration requires official HTTPS API host and matching environment", () => {
-  const old = {
-    env: Deno.env.get("MTN_MOMO_ENV"),
-    url: Deno.env.get("MTN_MOMO_BASE_URL"),
-    target: Deno.env.get("MTN_MOMO_TARGET_ENVIRONMENT"),
-    subscription: Deno.env.get("MTN_MOMO_COLLECTIONS_SUBSCRIPTION_KEY"),
-    user: Deno.env.get("MTN_MOMO_API_USER"),
-    key: Deno.env.get("MTN_MOMO_API_KEY"),
-  };
+Deno.test("MTN sandbox and production use their matching hosts, targets and credential schemes", () => {
+  const names = [
+    "MTN_MOMO_ENV", "MTN_MOMO_BASE_URL", "MTN_MOMO_TARGET_ENVIRONMENT",
+    "MTN_MOMO_COLLECTIONS_SUBSCRIPTION_KEY", "MTN_MOMO_API_USER", "MTN_MOMO_API_KEY",
+    "MTN_MOMO_USER_ID", "MTN_MOMO_CREDENTIAL_TOKEN",
+  ];
+  const old = Object.fromEntries(names.map((name) => [name, Deno.env.get(name)]));
   try {
     Deno.env.set("MTN_MOMO_ENV", "sandbox");
     Deno.env.set("MTN_MOMO_BASE_URL", "https://sandbox.momodeveloper.mtn.com");
     Deno.env.set("MTN_MOMO_TARGET_ENVIRONMENT", "sandbox");
-    Deno.env.set("MTN_MOMO_COLLECTIONS_SUBSCRIPTION_KEY", "test");
-    Deno.env.set("MTN_MOMO_API_USER", "user");
-    Deno.env.set("MTN_MOMO_API_KEY", "key");
-    if (readMtnMomoConfiguration().targetEnvironment !== "sandbox") throw new Error("Sandbox config rejected.");
+    Deno.env.set("MTN_MOMO_COLLECTIONS_SUBSCRIPTION_KEY", "sandbox-subscription");
+    Deno.env.set("MTN_MOMO_API_USER", "sandbox-user");
+    Deno.env.set("MTN_MOMO_API_KEY", "sandbox-key");
+    const sandbox = readMtnMomoConfiguration();
+    if (sandbox.targetEnvironment !== "sandbox" || sandbox.credentialKind !== "sandbox_api_user_key") throw new Error("Sandbox credential mode rejected.");
+    if (sandbox.baseUrl !== "https://sandbox.momodeveloper.mtn.com") throw new Error("Unexpected sandbox host.");
+
+    Deno.env.set("MTN_MOMO_ENV", "production");
+    Deno.env.set("MTN_MOMO_BASE_URL", "https://momoapi.momo.africa");
+    Deno.env.set("MTN_MOMO_TARGET_ENVIRONMENT", "mtnrwanda");
+    Deno.env.set("MTN_MOMO_USER_ID", "production-user-id");
+    Deno.env.set("MTN_MOMO_CREDENTIAL_TOKEN", "production-credential-token");
+    const production = readMtnMomoConfiguration();
+    if (production.targetEnvironment !== "mtnrwanda" || production.credentialKind !== "production_user_id_token") throw new Error("Rwanda production credential mode rejected.");
+    if (production.apiUser !== "production-user-id" || production.apiKey !== "production-credential-token") throw new Error("Production credential pair mismatch.");
+    if (production.baseUrl !== "https://momoapi.momo.africa") throw new Error("Unexpected production host.");
+
     Deno.env.set("MTN_MOMO_BASE_URL", "https://attacker.invalid");
-    let rejected = false;
-    try { readMtnMomoConfiguration(); } catch { rejected = true; }
-    if (!rejected) throw new Error("An arbitrary provider base URL was accepted.");
+    let rejectedHost = false;
+    try { readMtnMomoConfiguration(); } catch { rejectedHost = true; }
+    if (!rejectedHost) throw new Error("An arbitrary provider base URL was accepted.");
+    Deno.env.set("MTN_MOMO_BASE_URL", "https://momoapi.momo.africa");
+    Deno.env.set("MTN_MOMO_TARGET_ENVIRONMENT", "production");
+    let rejectedTarget = false;
+    try { readMtnMomoConfiguration(); } catch { rejectedTarget = true; }
+    if (!rejectedTarget) throw new Error("A generic production target was accepted for Rwanda.");
   } finally {
-    for (const [name, value] of Object.entries({
-      MTN_MOMO_ENV: old.env,
-      MTN_MOMO_BASE_URL: old.url,
-      MTN_MOMO_TARGET_ENVIRONMENT: old.target,
-      MTN_MOMO_COLLECTIONS_SUBSCRIPTION_KEY: old.subscription,
-      MTN_MOMO_API_USER: old.user,
-      MTN_MOMO_API_KEY: old.key,
-    })) {
+    for (const [name, value] of Object.entries(old)) {
       if (value === undefined) Deno.env.delete(name); else Deno.env.set(name, value);
     }
   }
+});
+
+Deno.test("Rwanda production token exchange uses User ID, Credential Token and mtnrwanda", async () => {
+  const production: MtnMomoConfiguration = {
+    environment: "production",
+    baseUrl: "https://momoapi.momo.africa",
+    targetEnvironment: "mtnrwanda",
+    collectionsSubscriptionKey: "production-subscription",
+    apiUser: "production-user-id",
+    apiKey: "production-credential-token",
+    credentialKind: "production_user_id_token",
+  };
+  let tokenRequest: Request | undefined;
+  const fetcher: typeof fetch = async (input, init) => {
+    tokenRequest = new Request(input, init);
+    return Response.json({ access_token: "production-access-token" }, { status: 200 });
+  };
+  const token = await getMtnMomoAccessToken(production, fetcher);
+  if (token !== "production-access-token") throw new Error("Production access token was not returned.");
+  if (!tokenRequest?.url.startsWith("https://momoapi.momo.africa/collection/token/")) throw new Error("Production token host mismatch.");
+  if (tokenRequest.headers.get("Authorization") !== "Basic " + btoa("production-user-id:production-credential-token")) throw new Error("The migrated production credential pair was not used.");
+  if (tokenRequest.headers.get("X-Target-Environment") !== "mtnrwanda") throw new Error("The Rwanda target environment header is missing.");
 });
 
 Deno.test("Request-to-Pay uses server credentials, RWF and the owner-approved MSISDN", async () => {
@@ -76,10 +109,10 @@ Deno.test("Request-to-Pay uses server credentials, RWF and the owner-approved MS
 });
 
 Deno.test("A 202 Request-to-Pay is accepted but never treated as a paid settlement", async () => {
-  const accepted: typeof fetch = async (_input, init) => {
-    const request = new Request("https://example.invalid", init);
-    return request.method === "POST"
-      ? new Response(JSON.stringify({ access_token: "token" }), { status: 200 })
+  const accepted: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    return request.url.endsWith("/collection/token/")
+      ? Response.json({ access_token: "token" }, { status: 200 })
       : new Response(null, { status: 202 });
   };
   const result = await requestMtnMomoPayment(config, {
