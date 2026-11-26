@@ -34,7 +34,7 @@ window.beBossDesktop = Object.freeze({
   }),
   getDeviceId: () => nativeInvoke<string>("get_device_id"),
   recoverLocalDatabase: () => nativeInvoke<{ backupPath: string; archivedFiles: string[]; recoveryKeyReference: string | null }>("recover_local_database"),
-  setupPreflight: () => nativeInvoke<import("./env").SetupPreflight>("setup_preflight"),
+  setupPreflight: () => nativeInvoke<import("../env").SetupPreflight>("setup_preflight"),
   testCredentialVault: () => nativeInvoke<void>("test_credential_vault"),
   local: Object.freeze({
     load: (shopSyncKey: string) => nativeInvoke<Record<string, unknown> | null>("local_load", { shopSyncKey }),
