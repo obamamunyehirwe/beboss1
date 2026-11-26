@@ -30,7 +30,8 @@
     "lucide-react": "^0.575.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "@sentry/react": "11.18.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
