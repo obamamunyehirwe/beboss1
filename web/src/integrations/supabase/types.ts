@@ -220,6 +220,7 @@ export type Database = {
           file_url: string
           id: string
           is_current: boolean
+          is_public: boolean
           min_android: string
           published_at: string
           release_notes: string
@@ -236,6 +237,7 @@ export type Database = {
           file_url?: string
           id?: string
           is_current?: boolean
+          is_public?: boolean
           min_android?: string
           published_at?: string
           release_notes?: string
