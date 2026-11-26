@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mergeSnapshots } from "./snapshot-merge.ts";
+import type { Snapshot, Row } from "./types.ts";
 
-function emptySnapshot() {
+function emptySnapshot(): Snapshot {
   return {
     metadata: { schemaVersion: 3, timestamp: 0 },
     shopProfile: {},
-    products: [], customers: [], sales: [], saleItems: [], customerPayments: [],
-    purchases: [], stockTransfers: [], branches: [], users: [], tombstones: []
+    products: [] as Row[], customers: [] as Row[], sales: [] as Row[], saleItems: [] as Row[], customerPayments: [] as Row[],
+    purchases: [] as Row[], stockTransfers: [] as Row[], branches: [] as Row[], users: [] as Row[], tombstones: [] as Row[]
   };
 }
 
-function phoneSnapshot() {
+function phoneSnapshot(): Snapshot {
   return {
     metadata: { schemaVersion: 3, timestamp: 2_000 },
     shopProfile: { shopName: "Phone Shop", updatedAt: 2_000, hlcTimestamp: 2_000 },
