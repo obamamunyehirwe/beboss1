@@ -18,7 +18,8 @@ const failures = [];
 if (!/ownerManagementActorV2\([^)]*ownerUsername:\s*string\)/.test(helper)) {
   failures.push("The helper must accept the verified shop-owner username, not the Supabase Auth UUID.");
 }
-if (!/\.eq\("username",\s*normalizedOwnerUsername\)/.test(helper) ||
+if (!/\.eq\("shop_sync_key",\s*shopId\)/.test(helper) ||
+    !/\.eq\("username",\s*normalizedOwnerUsername\)/.test(helper) ||
     !/\.eq\("role",\s*"OWNER"\)/.test(helper) ||
     !/\.eq\("is_active",\s*true\)/.test(helper)) {
   failures.push("The shop owner lookup must be tenant-scoped, username-bound, active and OWNER-only.");
