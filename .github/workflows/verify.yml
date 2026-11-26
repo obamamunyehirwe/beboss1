@@ -163,8 +163,8 @@ jobs:
     env:
       VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
-      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-      VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      SENTRY_DSN: ${{ secrets.DESKTOP_SENTRY_DSN || secrets.SENTRY_DSN }}
+      VITE_SENTRY_DSN: ${{ secrets.DESKTOP_SENTRY_DSN || secrets.SENTRY_DSN }}
     defaults:
       run:
         working-directory: desktop
@@ -325,7 +325,7 @@ jobs:
     name: Android tests and debug-only build validation
     runs-on: ubuntu-24.04
     env:
-      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      SENTRY_DSN: ${{ secrets.ANDROID_SENTRY_DSN || secrets.SENTRY_DSN }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
