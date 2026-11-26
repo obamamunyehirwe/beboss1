@@ -10,8 +10,11 @@ if (!bundleDirectory) {
 
 const absoluteDirectory = path.resolve(process.cwd(), bundleDirectory);
 const entries = await readdir(absoluteDirectory, { withFileTypes: true });
+// Tauri's macOS DMG bundler leaves bundle_dmg.sh in the output directory.
+ // It is a build helper, not an installer. Only include files users can install.
+const PACKAGE_EXTENSION = /\\.(?:dmg|exe|msi|appimage|deb|rpm)$/i;
 const artifacts = entries
-  .filter((entry) => entry.isFile() && entry.name !== "SHA256SUMS.txt")
+  .filter((entry) => entry.isFile() && PACKAGE_EXTENSION.test(entry.name))
   .map((entry) => entry.name)
   .sort();
 

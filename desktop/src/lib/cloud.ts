@@ -74,6 +74,7 @@ function isOwnerAuthorizationMessage(value: unknown) {
 export type DesktopAction =
   | "bootstrap"
   | "restore_preview"
+  | "redeem_unlock_code"
   | "save_snapshot"
   | "branch_upsert"
   | "branch_delete"
