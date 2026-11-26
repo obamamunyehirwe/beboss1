@@ -1,6 +1,7 @@
 import { Activity, ArrowRight, ArrowUpRight, BarChart3, Building2, CreditCard, Megaphone, Package, RefreshCw, ShieldCheck, ShoppingCart, Smartphone, Truck, Users, Wallet, Zap } from "lucide-react";
 import { money, n, rows, s } from "../../lib/format";
-import type { CloudState, DesktopLanguage, NavKey, Row, Snapshot } from "../../lib/types";
+import type { CloudState, NavKey, Row, Snapshot } from "../../lib/types";
+import type { DesktopLanguage } from "../../lib/i18n";
 import { PageHeading, SalesTable, StatCard, StatusPill } from "../ui";
 
 type WelcomeCopy = {
