@@ -340,7 +340,7 @@ function mergeParts(parts: Row[]): Snapshot {
     }
 
     for (const key of DATA_KEYS) {
-      const rows = arrayRows(part[alias[key] ?? key]);
+      const rows = arrayRows(part[key]);
       for (const row of rows) {
         const id = text(row.id);
         if (!id) continue;

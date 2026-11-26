@@ -63,6 +63,12 @@ function decodePem(pem: string): Uint8Array {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
+function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const output = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(output).set(bytes);
+  return output;
+}
+
 async function verifyBb3PrivateKey(pem: string): Promise<void> {
   if (!pem.startsWith("-----BEGIN PRIVATE KEY-----") || !pem.includes("-----END PRIVATE KEY-----")) {
     throw new Error("Paste a complete PKCS#8 ECDSA P-256 private key PEM.");
@@ -71,7 +77,7 @@ async function verifyBb3PrivateKey(pem: string): Promise<void> {
   try {
     privateKey = await crypto.subtle.importKey(
       "pkcs8",
-      decodePem(pem),
+      asArrayBuffer(decodePem(pem)),
       { name: "ECDSA", namedCurve: "P-256" },
       true,
       ["sign"],
@@ -82,7 +88,7 @@ async function verifyBb3PrivateKey(pem: string): Promise<void> {
   const privateJwk = await crypto.subtle.exportKey("jwk", privateKey);
   const expectedKey = await crypto.subtle.importKey(
     "spki",
-    decodePem(BB3_ANDROID_PUBLIC_KEY_PEM),
+    asArrayBuffer(decodePem(BB3_ANDROID_PUBLIC_KEY_PEM)),
     { name: "ECDSA", namedCurve: "P-256" },
     true,
     ["verify"],
