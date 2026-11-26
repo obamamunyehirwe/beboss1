@@ -91,7 +91,8 @@ export type DesktopAction =
   | "create_checkout"
   | "submit_payment_proof"
   | "create_branch_share"
-  | "verify_branch_share";
+  | "verify_branch_share"
+  | "lan_pairing_credentials";
 
 export async function requestOwnerOtp(credentials: OwnerCredentials) {
   const response = await fetch(url + "/functions/v1/request-desktop-owner-otp", {

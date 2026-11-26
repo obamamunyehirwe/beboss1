@@ -1,15 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, CloudDownload, CloudUpload, Database, HardDriveDownload, LoaderCircle, RefreshCw, ShieldCheck, Wifi, WifiOff } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CloudDownload, CloudUpload, Database, HardDriveDownload, Laptop, LoaderCircle, RefreshCw, Search, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { dateTime, n, s } from "../../lib/format";
-import type { CloudState } from "../../lib/types";
+import type { CloudState, Snapshot } from "../../lib/types";
 import { PageHeading, StatCard } from "../ui";
 
 type Pending = { id: string; payload: any; hlc: number; expectedUpdatedAt: number; queued?: boolean };
 
-export function SyncHubPage({ cloud, deviceId, offline, onRefresh }: {
-  cloud: CloudState; deviceId: string; offline: boolean; onRefresh: () => Promise<void> | void;
+export function SyncHubPage({ cloud, deviceId, offline, snapshot, shopSyncKey, onRefresh, onPrepareLanPairing, onMergeLanSnapshot }: {
+  cloud: CloudState; deviceId: string; offline: boolean; snapshot: Snapshot | null; shopSyncKey: string;
+  onRefresh: () => Promise<void> | void;
+  onPrepareLanPairing: () => Promise<string>;
+  onMergeLanSnapshot: (snapshot: Snapshot) => Promise<void>;
 }) {
   const [pending, setPending] = useState<Pending[]>([]);
+  const [hubs, setHubs] = useState<Array<{ id: string; shopName: string; branchName: string; ipAddress: string; port: number; productsCount: number; salesCount: number; branchesCount: number; lastSeenAt: number }>>([]);
+  const [discovering, setDiscovering] = useState(false);
+  const [lanSyncing, setLanSyncing] = useState(false);
+  const [manualIp, setManualIp] = useState("");
+  const [lanNotice, setLanNotice] = useState("");
   const [outbox, setOutbox] = useState(0);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -41,6 +49,34 @@ export function SyncHubPage({ cloud, deviceId, offline, onRefresh }: {
     } finally { setSyncing(false); }
   }
 
+  async function discoverLanPeers() {
+    setDiscovering(true); setError(""); setLanNotice("");
+    try {
+      const pairedShopKey = await onPrepareLanPairing();
+      const peers = await window.beBossDesktop.lan.discoverHubs(pairedShopKey, 8_000);
+      setHubs(peers);
+      setLanNotice(peers.length
+        ? `Found ${peers.length} authenticated BeBoss phone/terminal hub(s) on this network.`
+        : "No authenticated hub beacon was found. Check that both devices are on the same Wi-Fi/hotspot, that the phone LAN Hub is running, or enter its local IP below.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "LAN discovery failed. Your encrypted cloud snapshot remains unchanged.");
+    } finally { setDiscovering(false); }
+  }
+
+  async function syncWithLanPeer(ipAddress: string, port = 8989) {
+    setLanSyncing(true); setError(""); setLanNotice("");
+    try {
+      if (!snapshot) throw new Error("Retrieve the shop snapshot from BeBoss Cloud before starting LAN sync.");
+      const pairedShopKey = await onPrepareLanPairing();
+      const result = await window.beBossDesktop.lan.syncWithHub(pairedShopKey, ipAddress, port, snapshot as unknown as Record<string, unknown>);
+      await onMergeLanSnapshot(result.pulledSnapshot as Snapshot);
+      setLanNotice(result.message + " The merged records were saved to the encrypted desktop outbox/cloud sync path.");
+      await loadStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "LAN synchronization failed. Existing local and phone data have not been deleted.");
+    } finally { setLanSyncing(false); }
+  }
+
   const lastSync = cloud.snapshotUpdatedAt ? dateTime(cloud.snapshotUpdatedAt) : "Not synced yet";
   const opLabel = (op: string) => {
     const clean = s(op).toUpperCase();
@@ -65,6 +101,28 @@ export function SyncHubPage({ cloud, deviceId, offline, onRefresh }: {
     </div>
 
     {error && <div className="global-alert error"><AlertTriangle size={16} /><span>{error}</span><button onClick={() => void loadStatus()}>Retry</button></div>}
+
+    <section className="panel span-2 lan-mesh-panel">
+      <div className="panel-heading">
+        <div><span className="eyebrow muted">LOCAL NETWORK · WI-FI · HOTSPOT</span><h3>Android phone and desktop LAN sync</h3></div>
+        <div className="row-actions">
+          <button className="btn-outline small" disabled={discovering || lanSyncing || !shopSyncKey} onClick={() => void discoverLanPeers()}>
+            {discovering ? <LoaderCircle className="spin" size={14} /> : <Search size={14} />}
+            {discovering ? "Discovering…" : "Discover phones"}
+          </button>
+        </div>
+      </div>
+      <p className="backup-desc">Desktop pairs with the shop's server-issued 256-bit LAN credential, discovers Android hubs using signed UDP beacons, then exchanges encrypted snapshots over the local network. Internet access is not required after the key has been provisioned once.</p>
+      {(lanNotice || error) && <div className={"global-alert " + (error ? "error" : "success")}><span>{error || lanNotice}</span></div>}
+      {hubs.length > 0 && <div className="table-wrap"><table><thead><tr><th>Phone / hub</th><th>Local IP</th><th>Products</th><th>Sales</th><th>Branches</th><th className="right">Action</th></tr></thead><tbody>
+        {hubs.map((hub) => <tr key={hub.ipAddress}><td><span className="strong">{hub.shopName}</span><br/><small>{hub.branchName}</small></td><td className="mono">{hub.ipAddress}:{hub.port}</td><td>{hub.productsCount}</td><td>{hub.salesCount}</td><td>{hub.branchesCount}</td><td className="right"><button className="btn-primary small" disabled={lanSyncing} onClick={() => void syncWithLanPeer(hub.ipAddress, hub.port)}><Laptop size={13}/>Sync phone</button></td></tr>)}
+      </tbody></table></div>}
+      <div className="row-actions lan-manual-row">
+        <label className="lan-ip-field"><span>Enter phone local IP when discovery is blocked</span><input value={manualIp} onChange={(event) => setManualIp(event.target.value)} placeholder="192.168.43.1" inputMode="decimal" /></label>
+        <button className="btn-outline small" disabled={lanSyncing || !manualIp.trim()} onClick={() => void syncWithLanPeer(manualIp.trim())}>{lanSyncing ? <LoaderCircle className="spin" size={14}/> : <Wifi size={14}/>}Connect by IP</button>
+      </div>
+      <div className="health-foot"><span>Security</span><strong>HMAC-authenticated · AES-256-GCM encrypted · replay protected · private IP only</strong></div>
+    </section>
 
     <section className="panel span-2">
       <div className="panel-heading"><div><span className="eyebrow muted">OFFLINE QUEUE</span><h3>Pending transactions</h3></div><button className="btn-outline small" disabled={loading} onClick={() => void loadStatus()}><RefreshCw size={14} className={loading ? "spin" : ""} />Refresh status</button></div>

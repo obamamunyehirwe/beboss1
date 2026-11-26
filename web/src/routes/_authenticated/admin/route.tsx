@@ -27,6 +27,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 });
 
 function AdminRouteError({ error, reset }: { error: Error; reset: () => void }) {
+  const staleDownloadBundle = /DOWNLOAD_PATH is not defined/.test(error.message || "");
   return (
     <div role="alert" className="grid min-h-[70vh] place-items-center bg-background px-4 py-10">
       <div className="w-full max-w-xl rounded-3xl border border-warning/40 bg-card p-8 shadow-xl">
@@ -35,13 +36,20 @@ function AdminRouteError({ error, reset }: { error: Error; reset: () => void }) 
           <h1 className="text-xl font-bold">Admin page could not load</h1>
         </div>
         <p className="mt-3 text-sm text-muted-foreground">
-          The admin page encountered an error. Your Supabase records and shop data have not been reset.
+          {staleDownloadBundle
+            ? "This browser appears to have an older admin JavaScript bundle. Reload the latest app code; your Supabase records and shop data have not been reset."
+            : "The admin page encountered an error. Your Supabase records and shop data have not been reset."}
         </p>
         <pre className="mt-4 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
           {error.message || "Unexpected admin page error"}
         </pre>
         <div className="mt-5 flex flex-wrap gap-2">
           <Button onClick={reset}><RefreshCw /> Retry page</Button>
+          {staleDownloadBundle && (
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              <RefreshCw /> Reload latest app
+            </Button>
+          )}
           <Button variant="outline" asChild><Link to="/admin">Admin overview</Link></Button>
         </div>
       </div>

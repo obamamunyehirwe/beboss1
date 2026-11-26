@@ -5,7 +5,6 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.util.Log
-import com.beboss.shopmgmt.BuildConfig
 import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.data.model.User
@@ -87,7 +86,7 @@ data class LocalSyncClientResult(
  * Authenticated & AES-256-GCM encrypted LAN P2P Branch Hub Server + Client.
  *
  * Security invariants:
- * - Per-shop 256-bit pairing keys are provisioned from Supabase and wrapped by Android Keystore; optional legacy build key is a fallback.
+ * - Per-shop 256-bit pairing keys are provisioned from Supabase and wrapped by Android Keystore; no global build-time key is accepted.
  * - UDP discovery beacons are HMAC-signed and timestamped (<=30s clock window) + validated against peer IP.
  * - All /api/sync/push & /api/sync/pull bodies are AES-256-GCM encrypted and authenticated with
  *   mandatory X-BeBoss-Signature, X-BeBoss-Timestamp (<=5 min), and X-BeBoss-Nonce anti-replay protection.
@@ -170,16 +169,10 @@ class LocalNetworkSyncServer(
 
     private fun getMasterLanSecretBytes(): ByteArray {
         activeShopLanSecretBytes?.let { return it.copyOf() }
-        // Backwards compatibility for deployments that intentionally provision a shared
-        // LAN secret at build time. A device-unique SQLCipher key is never a valid peer key.
-        val legacySharedSecret = try {
-            BuildConfig.BEBOSS_LAN_SYNC_SECRET.trim()
-        } catch (_: Throwable) {
-            ""
-        }
-        if (legacySharedSecret.isNotEmpty() && legacySharedSecret != "DEFAULT_LAN_SECRET_PLACEHOLDER") {
-            return legacySharedSecret.toByteArray(StandardCharsets.UTF_8)
-        }
+        // LAN authentication uses only the shop-scoped key issued by Supabase and
+        // wrapped by this installation's Android Keystore. Never fall back to a shared
+        // APK/build-time key: every copy of an APK would otherwise share one extractable
+        // credential across unrelated shops.
         throw SecurityException("This shop's encrypted LAN pairing key is not synced yet. Connect to cloud once while signed in as the shop owner.")
     }
 

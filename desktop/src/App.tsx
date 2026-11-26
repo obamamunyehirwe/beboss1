@@ -9,7 +9,7 @@ import { callDesktopApi, currentSession, signOut, OwnerAuthorizationError, Devic
 import { BrowserRuntimeNotice } from "./components/BrowserRuntimeNotice";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
-import type { CloudState, DesktopPreferences, NavKey, ReceiptPayload, RestorePreview, Row, Snapshot } from "./lib/types";
+import type { CloudState, DesktopPreferences, LanSyncResult, NavKey, ReceiptPayload, RestorePreview, Row, Snapshot } from "./lib/types";
 import { AuthScreen } from "./components/AuthScreen";
 import { DeviceRestorePrompt } from "./components/DeviceRestorePrompt";
 import { ReceiptPreview } from "./components/ReceiptPreview";
@@ -545,6 +545,30 @@ function NativeDesktopApp() {
     } finally { setBusy(false); }
   }
 
+  async function prepareDesktopLanPairing(): Promise<string> {
+    if (!owner || !cloud) throw new Error("Sign in to the registered shop owner before pairing the desktop LAN.");
+    const shopSyncKey = s(cloud.shop?.id);
+    if (!shopSyncKey) throw new Error("The current shop identity is unavailable.");
+    // Offline mode can use a previously provisioned OS-vault key. New key provisioning
+    // is performed only while the authenticated owner session is online.
+    if (!offline) {
+      const credentials = await callDesktopApi<{ ok: true; shopSyncKey: string; secret: string }>(
+        "lan_pairing_credentials", owner, { deviceId }
+      );
+      if (credentials.shopSyncKey !== shopSyncKey || !/^[a-f0-9]{64}$/i.test(credentials.secret)) {
+        throw new Error("The server returned a LAN credential for a different shop or an invalid key.");
+      }
+      await window.beBossDesktop.lan.storeShopSecret(shopSyncKey, credentials.secret);
+    }
+    return shopSyncKey;
+  }
+
+  async function mergeLanSnapshot(remoteSnapshot: Snapshot) {
+    if (!cloud?.snapshot) throw new Error("The desktop has no local business snapshot to merge.");
+    const merged = mergeSnapshots(cloud.snapshot, remoteSnapshot).snapshot as Snapshot;
+    await commitSnapshot((next) => { Object.assign(next, merged); }, "LAN_SYNC");
+  }
+
   async function refreshManagement() {
     if (!owner || offline) throw new Error("Reconnect the owner account before refreshing cloud management records.");
     const management = await callDesktopApi<{
@@ -873,7 +897,16 @@ function NativeDesktopApp() {
           return result as Row;
         }} />}
         {view === "diagnostics" && <DiagnosticsPage cloud={cloud} snapshot={snapshot} onRefresh={refresh} />}
-        {view === "sync" && <SyncHubPage cloud={cloud} deviceId={deviceId} offline={offline} onRefresh={refresh} />}
+        {view === "sync" && <SyncHubPage
+          cloud={cloud}
+          deviceId={deviceId}
+          offline={offline}
+          snapshot={snapshot}
+          shopSyncKey={s(cloud.shop?.id)}
+          onRefresh={refresh}
+          onPrepareLanPairing={prepareDesktopLanPairing}
+          onMergeLanSnapshot={mergeLanSnapshot}
+        />}
         {view === "admin" && <OwnerAccessPage cloud={cloud} />}
         {view === "masterAdmin" && <AdminConsolePage />}
         {view === "backup" && <BackupPage snapshot={snapshot} cloud={cloud} onCommit={commitSnapshot}

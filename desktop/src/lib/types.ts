@@ -92,3 +92,26 @@ export type DesktopPreferences = {
   refreshMinutes: 0 | 1 | 5 | 15;
   reducedMotion: boolean;
 };
+
+export type LanHub = {
+  id: string;
+  shopName: string;
+  branchName: string;
+  ipAddress: string;
+  port: number;
+  productsCount: number;
+  salesCount: number;
+  branchesCount: number;
+  lastSeenAt: number;
+};
+
+export type LanSyncResult = {
+  success: boolean;
+  peerIp: string;
+  pushedRecords: number;
+  pulledRecords: number;
+  conflictsAvailableForMerge: boolean;
+  pulledSnapshot: Snapshot;
+  latencyMs: number;
+  message: string;
+};
