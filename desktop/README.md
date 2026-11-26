@@ -80,8 +80,8 @@ From the `desktop` directory:
 npm run check:versions
 npm run check:types
 npm run build
-cargo test --manifest-path src-tauri/Cargo.toml --locked
-npm run dist:win
+cargo test --locked --manifest-path src-tauri/Cargo.toml
+npm run release:win:local
 ```
 
 GitHub Actions runs source checks and may produce CI inspection artifacts for testing. Those files are not official customer releases. Build the production installer locally and use the platform's signing/verification process before uploading it through the Admin page.
