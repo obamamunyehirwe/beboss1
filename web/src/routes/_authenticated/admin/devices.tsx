@@ -189,10 +189,15 @@ function DevicesPage() {
                 <tr key={d.id} className="hover:bg-accent/40">
                   <td className="px-4 py-3">
                     <p className="font-medium">{d.device_name || "Unnamed device"}</p>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      {d.device_id}
-                      {d.is_owner_primary ? " • owner" : ` • +${d.monthly_fee_addon_rwf.toLocaleString()} FRw`}
-                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <span className="inline-flex rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                        {String(d.device_id || "").startsWith("DESKTOP:") ? a("Desktop app") : a("Android terminal")}
+                      </span>
+                      <span className="font-mono text-[10px] text-muted-foreground">{d.device_id || "Awaiting pairing"}</span>
+                      {d.is_owner_primary ? <span className="text-[10px] text-muted-foreground">• owner</span> : Number(d.monthly_fee_addon_rwf) > 0 ? (
+                        <span className="text-[10px] text-muted-foreground">+{d.monthly_fee_addon_rwf.toLocaleString()} FRw / {a("per month")}</span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <Link to="/admin/shops/$shopId" params={{ shopId: d.shop_sync_key }} className="hover:text-primary">

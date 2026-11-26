@@ -30,8 +30,12 @@ export function DevicesPage({ cloud, onAction, onRefresh, offline, currentDevice
   const staff = activeStaff(cloud).filter((user) => s(user.role).toUpperCase() !== "OWNER");
   const branches = rows(cloud.branches).filter((branch) => branch.is_active !== false);
   const activeDevices = devices.filter((device) => device.is_active === true);
-  const additionalActive = activeDevices.filter((device) => device.is_owner_primary !== true).length;
-  const monthlyAddon = additionalActive * 2000;
+  const additionalDevices = activeDevices.filter((device) => device.is_owner_primary !== true);
+  const additionalActive = additionalDevices.length;
+  const monthlyAddon = additionalDevices.reduce(
+    (total, device) => total + Math.max(0, n(device.monthly_fee_addon_rwf)),
+    0
+  );
   const pendingCount = activeDevices.filter((device) => !s(device.device_id)).length;
   const pairedCount = activeDevices.length - pendingCount;
 
@@ -124,12 +128,12 @@ export function DevicesPage({ cloud, onAction, onRefresh, offline, currentDevice
       <StatCard label="Registered terminals" value={devices.length.toLocaleString()} sub="All device records in this shop" icon={Laptop} />
       <StatCard label="Paired active devices" value={pairedCount.toLocaleString()} sub="Approved terminal identities" icon={Monitor} tone="green" />
       <StatCard label="Awaiting pairing" value={pendingCount.toLocaleString()} sub="Active one-time invitations" icon={Clock3} tone="orange" />
-      <StatCard label="Monthly device add-on" value={money(monthlyAddon)} sub={additionalActive + " additional active devices × FRw 2,000"} icon={CreditCard} tone="purple" />
+      <StatCard label="Monthly device add-on" value={money(monthlyAddon)} sub={additionalActive + " additional active devices · server-rated monthly total"} icon={CreditCard} tone="purple" />
     </div>
 
     <section className="enterprise-device-policy">
       <span className="enterprise-device-policy-icon"><ShieldCheck size={19} /></span>
-      <div><strong>One owner terminal included · FRw 2,000 per additional active device / month</strong><p>Each added terminal is linked to one active shop operator and branch. The server recalculates licensed usage and the subscription amount; pausing a terminal removes it from active device usage after the cloud confirms the change.</p></div>
+      <div><strong>One owner terminal included · additional active devices are billed from the shop device registry</strong><p>Each added terminal is linked to one active shop operator and branch. The displayed add-on amounts come from the server-owned device records; the cloud recalculates the licensed usage and subscription total. Pausing a terminal changes active device usage only after the cloud confirms it.</p></div>
       <div className="enterprise-device-policy-total"><span>Shop licensed device count</span><strong>{n(cloud.shop.device_count || activeDevices.length)} active</strong><small>Current monthly shop plan: {money(cloud.shop.monthly_fee_rwf)}</small></div>
     </section>
 
@@ -167,7 +171,7 @@ export function DevicesPage({ cloud, onAction, onRefresh, offline, currentDevice
           </div>
           <p className="enterprise-device-state">{state.detail}</p>
           <div className="enterprise-device-id"><span>Terminal identity</span><code>{s(device.device_id) || "Not paired — invitation slot"}</code></div>
-          <div className="enterprise-device-card-foot"><span>{device.is_owner_primary ? "Included owner terminal" : "FRw 2,000 / month while active"}</span><span>{unpaired ? "Pairing required" : isDesktop ? "Desktop installation" : "Android installation"}</span></div>
+          <div className="enterprise-device-card-foot"><span>{device.is_owner_primary ? "Included owner terminal" : money(Math.max(0, n(device.monthly_fee_addon_rwf))) + " / month while active"}</span><span>{unpaired ? "Pairing required" : isDesktop ? "Desktop installation" : "Android installation"}</span></div>
           {!device.is_owner_primary && <div className="enterprise-device-actions">
             <button className="btn-outline small" disabled={offline || !device.is_active} onClick={() => openEdit(device)}><Edit3 size={14} /> Edit</button>
             <button className="btn-outline small" disabled={offline || self} onClick={() => void runAction("device_set_active", { id: s(device.id), isActive: !device.is_active })}>
