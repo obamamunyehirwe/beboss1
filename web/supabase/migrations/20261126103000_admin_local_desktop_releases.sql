@@ -140,7 +140,6 @@ begin
   update public.desktop_app_releases
   set download_count = download_count + 1
   where id = p_release_id
-    and is_current = true
     and is_public = true;
 
   if not found then

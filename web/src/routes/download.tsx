@@ -86,6 +86,7 @@ function DownloadPage() {
     publishedAt: null,
     releaseUrl: "/download?platform=desktop",
     assets: { windows: null, macos: null, linux: null },
+    history: [],
   };
   const [detectedOs, setDetectedOs] = useState<DesktopOS>("windows");
   const desktopOs: DesktopOS = os ?? detectedOs;
@@ -446,6 +447,7 @@ function DesktopDownloads({
   onSelectOs: (os: DesktopOS) => void;
 }) {
   const asset = release.assets[selectedOs];
+  const previousReleases = release.history.filter((item) => item.platform === selectedOs);
   const labels: Record<DesktopOS, string> = {
     windows: "Windows",
     macos: "macOS",
@@ -456,6 +458,7 @@ function DesktopDownloads({
   const [checksumInput, setChecksumInput] = useState("");
   const [checksumCopied, setChecksumCopied] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [archiveDownloadId, setArchiveDownloadId] = useState<string | null>(null);
   const normalizedChecksumInput = checksumInput.trim().toLowerCase();
   const checksumMatches = Boolean(
     expectedChecksum && /^[a-f0-9]{64}$/.test(normalizedChecksumInput) &&
@@ -482,6 +485,20 @@ function DesktopDownloads({
       toast.error(error instanceof Error ? error.message : "Could not prepare the desktop installer download.");
     } finally {
       setIsDownloading(false);
+    }
+  };
+
+  const downloadArchivedInstaller = async (item: PublicDesktopRelease["history"][number]) => {
+    if (archiveDownloadId) return;
+    setArchiveDownloadId(item.id);
+    try {
+      const result = await createPublicDesktopDownload({ data: { id: item.id } });
+      window.location.assign(result.url);
+      toast.success(`${labels[selectedOs]} v${item.versionName} download is ready.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not prepare the archived installer download.");
+    } finally {
+      setArchiveDownloadId(null);
     }
   };
 
@@ -655,15 +672,49 @@ function DesktopDownloads({
               {release.publishedAt ? `Published ${formatDate(release.publishedAt)}` : "Official BeBoss desktop distribution"}
             </p>
             <a
-              href={release.releaseUrl}
-              target="_blank"
-              rel="noreferrer"
+              href="#desktop-release-history"
               className="inline-flex items-center gap-2 text-sm font-semibold text-primary underline-offset-4 hover:underline"
             >
-              View all desktop releases <ExternalLink className="size-4" />
+              Previous versions <ArrowRight className="size-4" />
             </a>
           </div>
         </div>
+      </section>
+
+      <section id="desktop-release-history" className="mt-7 rounded-3xl border border-border bg-card p-5 sm:p-7" aria-labelledby="desktop-history-heading">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[.16em] text-primary">Release archive</p>
+            <h3 id="desktop-history-heading" className="mt-1 text-xl font-bold">Previous {labels[selectedOs]} versions</h3>
+            <p className="mt-1 text-sm text-muted-foreground">Older builds are available only when the release administrator has enabled public visibility.</p>
+          </div>
+          <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-muted-foreground">{previousReleases.length} public version(s)</span>
+        </div>
+        {previousReleases.length ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {previousReleases.map((item) => (
+              <article key={item.id} className="min-w-0 rounded-2xl border border-border bg-background/70 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong className="text-sm">BeBoss Desktop v{item.versionName}</strong>
+                  <span className="text-xs text-muted-foreground">{formatDate(item.publishedAt)}</span>
+                </div>
+                <p className="mt-2 break-all text-xs text-muted-foreground">{item.name} · {formatBytes(item.sizeBytes)} · {item.downloadCount.toLocaleString()} downloads</p>
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs font-semibold text-primary">Show checksum and release notes</summary>
+                  <p className="mt-2 break-all rounded-lg bg-muted/50 p-2 font-mono text-[10px] leading-5">SHA-256 {item.sha256}</p>
+                  {item.releaseNotes ? <p className="mt-2 whitespace-pre-line text-xs leading-5 text-muted-foreground">{item.releaseNotes}</p> : null}
+                </details>
+                <Button type="button" size="sm" variant="outline" className="mt-3 w-full" disabled={archiveDownloadId === item.id || archiveDownloadId !== null}
+                  onClick={() => void downloadArchivedInstaller(item)}>
+                  {archiveDownloadId === item.id ? <FileDown className="animate-pulse" /> : <Download />}
+                  {archiveDownloadId === item.id ? "Preparing secure download…" : "Download this version"}
+                </Button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 rounded-xl bg-muted/30 p-4 text-sm leading-6 text-muted-foreground">There are no previous public {labels[selectedOs]} versions. Older releases hidden by the administrator remain in the private archive.</p>
+        )}
       </section>
 
       <section className="mt-7 grid gap-4 md:grid-cols-3">
