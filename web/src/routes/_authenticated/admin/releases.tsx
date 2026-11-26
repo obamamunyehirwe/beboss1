@@ -85,7 +85,7 @@ function ReleasesPage() {
       return;
     }
     if (desktopVersion.trim() !== sourceVersion) {
-      toast.error(\`Desktop release version must match the source version \${sourceVersion}. Update the desktop package versions first.\`);
+      toast.error("Desktop release version must match the source version " + sourceVersion + ". Update the desktop package versions first.");
       return;
     }
     if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(desktopVersion.trim())) {
