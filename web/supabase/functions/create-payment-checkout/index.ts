@@ -241,11 +241,15 @@ Deno.serve(async (request: Request) => {
       throw new Error("The selected subscription plan is invalid.");
     }
 
-    // The production Vercel alias is a safe public fallback; deployments using a
-    // custom domain can override it server-side without making checkout depend on
-    // an otherwise optional secret.
+    // The return origin must be configured for the active Cloudflare deployment.
+    // Never send a payment return to a retired Vercel URL.
     const configuredPublicUrl = String(Deno.env.get("BEBOSS_PUBLIC_URL") ?? "").trim();
-    const publicUrl = (configuredPublicUrl || "https://beboss1.vercel.app").replace(/\/+$/, "");
+    if (!configuredPublicUrl) {
+      return jsonResponse(503, {
+        message: "The BeBoss public web URL is not configured. Set the Supabase Edge Function secret BEBOSS_PUBLIC_URL to the active Cloudflare Workers URL.",
+      });
+    }
+    const publicUrl = configuredPublicUrl.replace(/\/+$/, "");
     let publicOrigin: URL;
     try {
       publicOrigin = new URL(publicUrl);

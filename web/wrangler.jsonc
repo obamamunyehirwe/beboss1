@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "beboss-web",
+  "main": "@tanstack/react-start/server-entry",
+  "compatibility_date": "2026-11-26",
+  "workers_dev": true,
+  "preview_urls": true,
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "SUPABASE_URL": "https://ahlpvlhmpfiyeoercxol.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_SFUKqYETliLdgqluQBQ2xg_XJNudcvM",
+    "VITE_SUPABASE_URL": "https://ahlpvlhmpfiyeoercxol.supabase.co",
+    "VITE_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_SFUKqYETliLdgqluQBQ2xg_XJNudcvM"
+  }
+}

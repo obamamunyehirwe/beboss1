@@ -39,8 +39,11 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      - name: Synchronize the npm lockfile for Cloudflare Worker dependencies
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       - name: Set up Deno for Supabase Edge Function validation
         uses: denoland/setup-deno@v2
@@ -115,16 +118,11 @@ jobs:
       - name: Run unit tests
         run: npm run test
 
-      - name: Build production web app for Vercel
+      - name: Build production web app for Cloudflare Workers
         run: npm run build
-        env:
-          VERCEL: "1"
 
-      - name: Verify Vercel server-function output
-        run: |
-          test -s .vercel/output/config.json
-          test -d .vercel/output/functions
-          test -d .vercel/output/static
+      - name: Validate the Cloudflare Worker deployment bundle
+        run: npx wrangler deploy --dry-run --outdir .cloudflare/dry-run
 
   tenant-security-database:
     name: Supabase tenant-isolation database tests

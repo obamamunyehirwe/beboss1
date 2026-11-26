@@ -45,7 +45,7 @@ function isH3SwallowedErrorBody(body: string): boolean {
 
 // TanStack Start's server-entry API passes a request-options object as its
 // second fetch argument. createServerEntry supplies the correct runtime
-// adapter contract for Vite/Nitro/Cloudflare. Do not call handler.fetch with
+// adapter contract for the Cloudflare Workers runtime. Do not call handler.fetch with
 // the raw (request, env, ctx) platform signature: that drops Start's request
 // context and can make normal routes and server functions fail with HTTP 500.
 export default createServerEntry({
