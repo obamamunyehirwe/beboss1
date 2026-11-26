@@ -532,22 +532,34 @@ object ShopDataTransferManager {
         for (idx in 0 until maxChunks) {
             val salesForChunk = saleChunks.getOrElse(idx) { emptyList() }
             val saleIds = salesForChunk.map { it.id }.toSet()
-            val json = createExportJson(
-                profile = profile,
-                users = userChunks.getOrElse(idx) { emptyList() },
-                products = productChunks.getOrElse(idx) { emptyList() },
-                customers = customerChunks.getOrElse(idx) { emptyList() },
-                sales = salesForChunk,
-                saleItems = saleItems.filter { it.saleId in saleIds },
-                payments = paymentChunks.getOrElse(idx) { emptyList() },
-                exportedByUser = exportedByUser,
-                branches = branchChunks.getOrElse(idx) { emptyList() },
-                stockTransfers = transferChunks.getOrElse(idx) { emptyList() },
-                purchases = purchaseChunks.getOrElse(idx) { emptyList() },
-                sinceUpdatedAt = sinceUpdatedAt,
-                tombstones = tombstoneChunks.getOrElse(idx) { emptyList() }
-            )
-            tokens.add(createShopScopedShareToken(json, shopSecret))
+            // A single high-volume sale can contain hundreds or thousands of sale
+            // lines. Keep each sale's parent row in the first packet, then split its
+            // related saleItems into bounded follow-up packets. This preserves the
+            // parent-before-child order while preventing an oversized first chunk.
+            val saleItemPackets = saleItems
+                .filter { it.saleId in saleIds }
+                .chunked(maxRecordsPerChunk)
+                .ifEmpty { listOf(emptyList()) }
+
+            saleItemPackets.forEachIndexed { itemPacketIndex, itemPacket ->
+                val isPrimaryPacket = itemPacketIndex == 0
+                val json = createExportJson(
+                    profile = profile,
+                    users = if (isPrimaryPacket) userChunks.getOrElse(idx) { emptyList() } else emptyList(),
+                    products = if (isPrimaryPacket) productChunks.getOrElse(idx) { emptyList() } else emptyList(),
+                    customers = if (isPrimaryPacket) customerChunks.getOrElse(idx) { emptyList() } else emptyList(),
+                    sales = if (isPrimaryPacket) salesForChunk else emptyList(),
+                    saleItems = itemPacket,
+                    payments = if (isPrimaryPacket) paymentChunks.getOrElse(idx) { emptyList() } else emptyList(),
+                    exportedByUser = exportedByUser,
+                    branches = if (isPrimaryPacket) branchChunks.getOrElse(idx) { emptyList() } else emptyList(),
+                    stockTransfers = if (isPrimaryPacket) transferChunks.getOrElse(idx) { emptyList() } else emptyList(),
+                    purchases = if (isPrimaryPacket) purchaseChunks.getOrElse(idx) { emptyList() } else emptyList(),
+                    sinceUpdatedAt = sinceUpdatedAt,
+                    tombstones = if (isPrimaryPacket) tombstoneChunks.getOrElse(idx) { emptyList() } else emptyList()
+                )
+                tokens.add(createShopScopedShareToken(json, shopSecret))
+            }
         }
         return tokens
     }
