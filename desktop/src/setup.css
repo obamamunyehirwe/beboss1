@@ -5,7 +5,7 @@
 .setup-rail::after { position: absolute; right: -140px; bottom: -120px; width: 320px; height: 320px; border: 1px solid rgba(146,174,217,.08); border-radius: 50%; content: ""; }
 .setup-brand { position: relative; z-index: 2; display: flex; align-items: center; gap: 11px; }
 .setup-brand img { width: 42px; height: 42px; border-radius: 12px; object-fit: cover; box-shadow: 0 7px 18px rgba(255,104,42,.22); }
-.setup-brand strong { display: block; font-family: Manrope,sans-serif; font-size: 18px; font-weight: 800; letter-spacing: -.4px; }
+.setup-brand strong { display: block; font-family: "Bricolage Grotesque", Figtree, sans-serif; font-size: 18px; font-weight: 800; letter-spacing: -.4px; }
 .setup-brand small { display: block; margin-top: 2px; color: #7d90ad; font-size: 8px; letter-spacing: 1.3px; font-weight: 700; }
 .setup-progress { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 6px; }
 .setup-step { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border: 1px solid transparent; border-radius: 11px; opacity: .6; transition: .18s ease; }
@@ -24,7 +24,7 @@
 .setup-close:hover { color: #fff; border-color: rgba(255,142,85,.3); }
 .setup-content { width: min(100%,560px); }
 .setup-icon { display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: 20px; border: 1px solid rgba(255,142,85,.24); border-radius: 16px; color: #ffab7a; background: linear-gradient(145deg, rgba(255,138,69,.18), rgba(255,122,50,.06)); }
-.setup-content h1 { margin: 10px 0 8px; color: #f3f7fd; font-family: Manrope,sans-serif; font-size: 30px; font-weight: 800; letter-spacing: -1px; }
+.setup-content h1 { margin: 10px 0 8px; color: #f3f7fd; font-family: "Bricolage Grotesque", Figtree, sans-serif; font-size: 30px; font-weight: 800; letter-spacing: -1px; }
 .setup-content > p { max-width: 500px; margin: 0 0 24px; color: #8b9cb6; font-size: 12px; line-height: 1.7; }
 .setup-feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-bottom: 24px; }
 .setup-feature-grid article { display: flex; gap: 11px; align-items: flex-start; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: #111d30; color: #ffab7a; }
