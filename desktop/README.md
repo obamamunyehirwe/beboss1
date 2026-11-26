@@ -42,3 +42,10 @@ npm run release:win:local
 ```
 
 GitHub Actions may run source validation and native tests as CI checks, but it is not the desktop release publisher. Customer installers are built on the target computer and uploaded manually through the Admin release workspace. For Windows distribution, use the local `release:win:local` script with a valid, trusted Authenticode certificate; macOS signing/notarization and Linux runtime validation must be completed on their corresponding platforms.
+
+
+## Windows NSIS upgrades and encrypted shop data
+
+The Windows setup package performs an in-place application upgrade: it replaces the installed BeBoss program files, refreshes its shortcuts and handles the WebView2 bootstrapper. It does **not** replace or delete the user's SQLCipher database, operating-system credentials, DPAPI-protected key backup, pending sync queue or recovery archives. The native app validates an available key and performs database recovery after launch. When the original key cannot be recovered, the existing encrypted files are retained for manual recovery; an installer cannot decrypt a database after its only key has been permanently lost.
+
+The Windows release command runs version-coherence, installer-policy, TypeScript, regression and Rust tests before building the NSIS package. The Windows CI smoke test installs, upgrades, launches and uninstalls the package while verifying that recovery data survives both upgrade and uninstall.
