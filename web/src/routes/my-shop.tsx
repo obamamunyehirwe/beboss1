@@ -1332,6 +1332,24 @@ function ProofPanel({ initial }: { initial: z.infer<typeof searchSchema> }) {
             Flutterwave supports RWF card and Rwanda Mobile Money, subject to merchant payment-method activation. Stripe requires an active merchant account in a supported country.
           </p>
         </div>
+        {pendingPaymentId ? (
+          <div className="rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm">
+            <p className="font-semibold">MTN MoMo request {pendingPaymentId}</p>
+            <p className="mt-1 text-muted-foreground">{pendingPaymentMessage || "Approve the wallet prompt on the payer phone. Subscription access will not change until MTN confirms SUCCESSFUL settlement."}</p>
+            <Button type="button" variant="outline" size="sm" className="mt-3" disabled={paymentStatusBusy} onClick={async () => {
+              setPaymentStatusBusy(true);
+              try {
+                const status = await checkPaymentStatus({ data: { username: f.username, phone: f.phone, paymentRequestId: pendingPaymentId } });
+                setPendingPaymentMessage(status.message);
+                if (status.verified) { setPendingPaymentId(""); toast.success("Payment verified by MTN MoMo. It is now in the BeBoss review queue."); }
+                else if (status.status === "FAILED") { setPendingPaymentId(""); toast.error("MTN MoMo reported a failed payment. Submit a new request when ready."); }
+              } catch (error) { toast.error(error instanceof Error ? error.message : "Could not refresh payment status."); }
+              finally { setPaymentStatusBusy(false); }
+            }}>
+              {paymentStatusBusy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Refresh MTN MoMo status
+            </Button>
+          </div>
+        ) : null}
         <Button type="submit" variant="hero" size="lg" className="mt-auto" disabled={sending || Boolean(pendingPaymentId)}>
           {sending ? <Loader2 className="animate-spin" /> : <Send />}
           {ownerVerified ? "Continue to secure payment" : otpSent ? "Verify owner & continue" : "Verify owner and pay"}
