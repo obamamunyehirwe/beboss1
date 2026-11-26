@@ -812,6 +812,21 @@ Deno.serve(async (req: Request) => {
     if (action === "restore_preview") {
       const installationId = text(body.deviceId).trim();
       if (!isUuid(installationId)) return json(403, { ok: false, message: "This desktop installation has no valid persistent device identity. Reopen BeBoss and try again." });
+      const desktopDeviceId = "DESKTOP:" + installationId;
+      const { data: enrolledDevice, error: enrollmentError } = await admin
+        .from("shop_devices")
+        .select("device_id,assigned_user_id,assigned_username,role,is_active,is_owner_primary")
+        .eq("shop_sync_key", owner.shopId)
+        .eq("device_id", desktopDeviceId)
+        .maybeSingle();
+      if (enrollmentError || !enrolledDevice || enrolledDevice.is_active !== true ||
+          enrolledDevice.is_owner_primary === true || enrolledDevice.role !== "OWNER" ||
+          text(enrolledDevice.assigned_username).trim().toLowerCase() !== owner.username) {
+        return json(403, {
+          ok: false,
+          message: "Register this desktop and confirm its recurring monthly device add-on before previewing or retrieving shop data."
+        });
+      }
       const [snapshotResult, devicesResult] = await Promise.all([
         latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret),
         admin.from("shop_devices")
