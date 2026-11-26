@@ -813,15 +813,25 @@ Deno.serve(async (req: Request) => {
       const installationId = text(body.deviceId).trim();
       if (!isUuid(installationId)) return json(403, { ok: false, message: "This desktop installation has no valid persistent device identity. Reopen BeBoss and try again." });
       const desktopDeviceId = "DESKTOP:" + installationId;
+      const { data: ownerUser, error: ownerUserError } = await admin
+        .from("shop_users")
+        .select("user_id,username,role,is_active")
+        .eq("shop_sync_key", owner.shopId)
+        .eq("username", owner.username)
+        .eq("role", "OWNER")
+        .eq("is_active", true)
+        .maybeSingle();
       const { data: enrolledDevice, error: enrollmentError } = await admin
         .from("shop_devices")
         .select("device_id,assigned_user_id,assigned_username,role,is_active,is_owner_primary")
         .eq("shop_sync_key", owner.shopId)
         .eq("device_id", desktopDeviceId)
         .maybeSingle();
-      if (enrollmentError || !enrolledDevice || enrolledDevice.is_active !== true ||
-          enrolledDevice.is_owner_primary === true || enrolledDevice.role !== "OWNER" ||
-          text(enrolledDevice.assigned_username).trim().toLowerCase() !== owner.username) {
+      if (ownerUserError || !ownerUser || enrollmentError || !enrolledDevice ||
+          enrolledDevice.is_active !== true || enrolledDevice.is_owner_primary === true ||
+          enrolledDevice.role !== "OWNER" ||
+          text(enrolledDevice.assigned_user_id) !== text(ownerUser.user_id) ||
+          text(enrolledDevice.assigned_username).trim().toLowerCase() !== text(ownerUser.username).trim().toLowerCase()) {
         return json(403, {
           ok: false,
           message: "Register this desktop and confirm its recurring monthly device add-on before previewing or retrieving shop data."
