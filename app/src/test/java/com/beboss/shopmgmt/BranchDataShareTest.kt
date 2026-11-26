@@ -1,5 +1,7 @@
 package com.beboss.shopmgmt
 
+private const val TEST_SHOP_SHARE_SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -110,10 +112,10 @@ class BranchDataShareTest {
             branchIdFilter = "br_kimironko"
         )
 
-        val token = ShopDataTransferManager.createCompressedSyncToken(json)
-        assertTrue(token.startsWith("BBSHARE1:"))
+        val token = ShopDataTransferManager.createShopScopedShareToken(json, TEST_SHOP_SHARE_SECRET)
+        assertTrue(token.startsWith("BBSHARE2:"))
 
-        val parsed = ShopDataTransferManager.parseShopPackageString(token)
+        val parsed = ShopDataTransferManager.parseShopPackageString(token, shopSecret = TEST_SHOP_SHARE_SECRET)
         assertEquals("Kimironko", parsed.branchScopeName)
         assertEquals(1, parsed.branches.size)
         assertEquals("br_kimironko", parsed.branches.first().id)
@@ -191,8 +193,8 @@ class BranchDataShareTest {
             stockTransfers = transfers,
             purchases = emptyList()
         )
-        val token = ShopDataTransferManager.createCompressedSyncToken(json)
-        val parsed = ShopDataTransferManager.parseShopPackageString(token)
+        val token = ShopDataTransferManager.createShopScopedShareToken(json, TEST_SHOP_SHARE_SECRET)
+        val parsed = ShopDataTransferManager.parseShopPackageString(token, shopSecret = TEST_SHOP_SHARE_SECRET)
 
         val b = parsed.branches.first()
         assertEquals("HQ", b.name)
@@ -375,14 +377,14 @@ class BranchDataShareTest {
             fail("Expected tampered BBSHARE2 token to be rejected")
         } catch (expected: IllegalArgumentException) {
             assertTrue(
-                expected.message?.contains("integrity", ignoreCase = true) == true ||
-                    expected.message?.contains("Base64", ignoreCase = true) == true
+                expected.message?.contains("BBSHARE2", ignoreCase = true) == true ||
+                    expected.message?.contains("signature", ignoreCase = true) == true
             )
         }
     }
 
     @Test
-    fun `tampered BBSHARE1 token is rejected by HMAC integrity check`() {
+    fun `tampered BBSHARE2 token is rejected without the matching shop signature`() {
         val profile = ShopProfile(id = 1, name = "Owner", shopName = "BeBoss Kigali", phone = "+250788111222")
         val json = ShopDataTransferManager.createExportJson(
             profile = profile,
@@ -394,9 +396,9 @@ class BranchDataShareTest {
             payments = emptyList(),
             exportedByUser = null
         )
-        val token = ShopDataTransferManager.createCompressedSyncToken(json)
+        val token = ShopDataTransferManager.createShopScopedShareToken(json, TEST_SHOP_SHARE_SECRET)
         val parts = token.split(":", limit = 3)
-        val tampered = "BBSHARE1:00000000:${parts[2]}"
+        val tampered = "BBSHARE2:00000000:${parts[2]}"
 
         try {
             ShopDataTransferManager.parseShopPackageString(tampered)
