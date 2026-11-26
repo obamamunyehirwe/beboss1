@@ -6,8 +6,9 @@ import { PageHeading, StatCard, StatusPill } from "../ui";
 
 type Diagnostics = {
   osPlatform: string; osArch: string; appVersion: string; dbPath: string;
-  dbSizeBytes: number; pendingOutboxCount: number; uptimeSeconds: number; hostname: string;
-  databaseEncrypted: boolean; databaseCipherVersion: string;
+  dbSizeBytes: number; pendingOutboxCount: number; oldestPendingAt: number | null;
+  uptimeSeconds: number; hostname: string;
+  databaseEncrypted: boolean; databaseCipherVersion: string; databaseIntegrity: string; journalMode: string;
 };
 
 type PingState = { host: string; latencyMs: number; reachable: boolean; details: string } | null;
@@ -80,6 +81,9 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
         <div className="diag-row"><span>Database path</span><strong className="mono diag-path">{diag ? diag.dbPath : "—"}</strong></div>
         <div className="diag-row"><span>Database size</span><strong>{diag ? formatBytes(diag.dbSizeBytes) : "—"}</strong></div>
         <div className="diag-row"><span>Encryption</span><strong>{diag ? diag.databaseEncrypted ? "SQLCipher " + diag.databaseCipherVersion : "Not verified" : "Checking…"}</strong></div>
+        <div className="diag-row"><span>Integrity quick-check</span><strong>{diag ? diag.databaseIntegrity === "ok" ? "Passed" : "Attention required" : "Checking…"}</strong></div>
+        <div className="diag-row"><span>Journal mode</span><strong>{diag ? diag.journalMode.toUpperCase() : "Checking…"}</strong></div>
+        <div className="diag-row"><span>Oldest pending change</span><strong>{diag?.oldestPendingAt ? dateTime(diag.oldestPendingAt) : "None"}</strong></div>
         <div className="diag-row"><span>Key protection</span><strong>OS keyring</strong></div>
       </section>
 
