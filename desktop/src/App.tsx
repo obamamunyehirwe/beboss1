@@ -170,9 +170,9 @@ function NativeDesktopApp() {
       const message = errorText(e);
       if (e instanceof DeviceFeeConfirmationRequired) {
         const accepted = window.confirm(
-          "New BeBoss desktop detected.\\n\\nRegistering this installation adds FRw " +
+          "New BeBoss desktop detected.\n\nRegistering this installation adds FRw " +
           e.monthlyAddonRwf.toLocaleString("en-US") +
-          " per month to your shop subscription. This is a recurring monthly device fee, not a one-time purchase. No payment is taken in this confirmation step.\\n\\nContinue and register this desktop?"
+          " per month to your shop subscription. This is a recurring monthly device fee, not a one-time purchase. No payment is taken in this confirmation step.\n\nContinue and register this desktop?"
         );
         if (accepted) return await bootstrap(credentials, showBusy, true);
         setError("Desktop registration was cancelled. This installation has not been added to your device fleet and no device add-on was applied.");
