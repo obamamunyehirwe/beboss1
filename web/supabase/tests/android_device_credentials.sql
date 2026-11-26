@@ -255,13 +255,36 @@ $function$;
 
 set local role anon;
 
--- After the owner cutover, the old deterministic header is no longer accepted.
+-- After the owner cutover, public/anonymous requests cannot use the deterministic header.
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
 select set_config(
   'request.headers',
   '{"x-shop-sync-key":"__beboss_device_test_shop_a__"}',
   true
 );
 select public._assert_android_device_tenant_test('', '__beboss_device_test_shop_b__', '', '');
+
+-- Trusted server-only owner-portal RPCs can still resolve the shop context after
+-- cutover. This does not grant the legacy header to anon/authenticated clients.
+reset role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select set_config(
+  'request.headers',
+  '{"x-shop-sync-key":"__beboss_device_test_shop_a__"}',
+  true
+);
+set local role service_role;
+do $function$
+begin
+  if public.current_shop_sync_key() <> '__beboss_device_test_shop_a__' then
+    raise exception 'The trusted server-side owner-portal tenant context did not resolve after legacy cutover.';
+  end if;
+end
+$function$;
+
+reset role;
+select set_config('request.jwt.claims', '{"role":"anon"}', true);
+set local role anon;
 
 -- The device bearer remains valid after the legacy header is retired.
 select set_config(

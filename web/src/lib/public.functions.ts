@@ -60,7 +60,7 @@ async function requireOwnerTenantAdmin(context: OwnerAuthContext, username: stri
   const supabase = createShopAdminClient(key);
   const { data: shop, error } = await supabase
     .from("shop_accounts")
-    .select("id,owner_username,owner_phone")
+    .select("id,owner_username,owner_phone,owner_name")
     .eq("id", key)
     .maybeSingle();
   if (error || !shop ||
@@ -68,7 +68,7 @@ async function requireOwnerTenantAdmin(context: OwnerAuthContext, username: stri
       normalizePhoneLast9(String(shop.owner_phone ?? "")) !== normalizePhoneLast9(phone)) {
     throw new Error("The verified owner account does not match this registered shop.");
   }
-  return { key, supabase };
+  return { key, supabase, ownerName: String(shop.owner_name ?? "").trim() || "Shop Owner" };
 }
 
 const ownerEnrollmentSchema = z.object({
@@ -643,8 +643,19 @@ export const upsertMyShopStockTransfer = createServerFn({ method: "POST" })
   .validator((d: z.infer<typeof transferSchema>) => transferSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
-    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
+    const { key, supabase: sb, ownerName } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     if (data.fromBranchId === data.toBranchId) throw new Error("Source and destination branches must differ.");
+    const { data: activeBranches, error: branchError } = await sb.from("shop_branches")
+      .select("id,name")
+      .eq("shop_sync_key", key).eq("is_active", true)
+      .in("id", [data.fromBranchId, data.toBranchId]);
+    if (branchError || (activeBranches?.length ?? 0) !== 2) {
+      throw new Error("Both transfer branches must be active branches in this shop.");
+    }
+    const sourceBranch = activeBranches.find((branch) => branch.id === data.fromBranchId);
+    const targetBranch = activeBranches.find((branch) => branch.id === data.toBranchId);
+    if (!sourceBranch || !targetBranch) throw new Error("The transfer branches could not be verified.");
+
     const { data: existing, error: readError } = await sb
       .from("shop_stock_transfers")
       .select("id,status")
@@ -662,16 +673,16 @@ export const upsertMyShopStockTransfer = createServerFn({ method: "POST" })
       product_id: data.productId,
       product_name: data.productName,
       from_branch_id: data.fromBranchId,
-      from_branch_name: data.fromBranchName,
+      from_branch_name: sourceBranch.name,
       to_branch_id: data.toBranchId,
-      to_branch_name: data.toBranchName,
+      to_branch_name: targetBranch.name,
       quantity: data.quantity,
       unit: data.unit,
       cost_value_rwf: data.costValueRwf,
       transfer_date: now,
       status: "REQUESTED",
       notes: data.notes,
-      transferred_by: data.transferredBy,
+      transferred_by: ownerName,
       received_by: "",
       received_at: 0,
       synced: false,
@@ -706,13 +717,13 @@ export const confirmMyShopStockTransfer = createServerFn({ method: "POST" })
   .validator((d: z.infer<typeof confirmTransferSchema>) => confirmTransferSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
-    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
+    const { key, supabase: sb, ownerName } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const now = Date.now();
     const { data: updated, error } = await sb
       .from("shop_stock_transfers")
       .update({
         status: "RECEIPT_REQUESTED",
-        received_by: data.receivedBy,
+        received_by: ownerName,
         received_at: 0,
         updated_at: now,
         hlc_timestamp: now,
@@ -752,13 +763,13 @@ export const requestMyShopStockTransferCancellation = createServerFn({ method: "
   .validator((d: z.infer<typeof cancelTransferSchema>) => cancelTransferSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
-    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
+    const { key, supabase: sb, ownerName } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const now = Date.now();
     const { data: updated, error } = await sb
       .from("shop_stock_transfers")
       .update({
         status: "CANCEL_REQUESTED",
-        received_by: data.actorName,
+        received_by: ownerName,
         received_at: 0,
         notes: data.reason,
         updated_at: now,
