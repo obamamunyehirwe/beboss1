@@ -1428,8 +1428,6 @@ const desktopReleaseUploadSchema = z.object({
   make_current: z.boolean().default(true),
 });
 
-const DESKTOP_SOURCE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-
 // Desktop versions are verified against the package.json selected from the
 // administrator's local working copy. Publishing never fetches source files
 // or installer binaries from GitHub.
