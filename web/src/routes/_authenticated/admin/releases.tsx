@@ -74,7 +74,7 @@ function ReleasesPage() {
   const startDesktopRelease = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canManageReleases || desktopDispatching) return;
-    if (!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(desktopVersion.trim())) {
+    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(desktopVersion.trim())) {
       toast.error("Enter a valid desktop version, for example 1.3.1.");
       return;
     }
@@ -259,7 +259,7 @@ function ReleasesPage() {
                       value={desktopVersion}
                       onChange={(event) => setDesktopVersion(event.target.value)}
                       placeholder="1.3.1"
-                      pattern="^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+                      pattern="^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$"
                       maxLength={40}
                       required
                     />
