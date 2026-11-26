@@ -1415,7 +1415,7 @@ export const managePaymentGatewayRefund = createServerFn({ method: "POST" })
 
 // ---------------- Native desktop releases ----------------
 const desktopReleaseDispatchSchema = z.object({
-  version: z.string().trim().regex(/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/, "Use a semantic version such as 1.3.1."),
+  version: z.string().trim().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "Use a semantic version such as 1.3.1."),
   release_notes: z.string().trim().max(4000).default(""),
 });
 
