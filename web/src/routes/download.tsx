@@ -775,8 +775,6 @@ function DesktopDownloads({
                     </div>
                   </div>
                 </section>
-                  </div>
-                ) : null}
         </>
       ) : null}
     </section>
