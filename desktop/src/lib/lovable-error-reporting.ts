@@ -1,3 +1,5 @@
+import { captureDesktopException, scrubDesktopDiagnostic } from "./telemetry";
+
 type LovableErrorOptions = {
   mechanism?: "manual" | "onerror" | "unhandledrejection" | "react_error_boundary";
   handled?: boolean;
@@ -26,13 +28,18 @@ declare global {
 
 export function reportLovableError(error: unknown, context: Record<string, unknown> = {}) {
   if (typeof window === "undefined") return;
+  const safeContext = {
+    source: "react_error_boundary",
+    route: window.location.pathname,
+    ...context,
+  };
+  captureDesktopException(error, {
+    source: "react_error_boundary",
+    route: window.location.pathname,
+  });
   window.__lovableEvents?.captureException?.(
     error,
-    {
-      source: "react_error_boundary",
-      route: window.location.pathname,
-      ...context,
-    },
+    safeContext,
     {
       mechanism: "react_error_boundary",
       handled: false,
@@ -44,7 +51,7 @@ export function reportLovableError(error: unknown, context: Record<string, unkno
   // which is present only inside the editor preview.
   const stack = error instanceof Error ? error.stack : undefined;
   window.__lovableReportRuntimeError?.({
-    message: describeThrown(error),
+    message: scrubDesktopDiagnostic(describeThrown(error)),
     ...(stack !== undefined && { stack }),
     filename: window.location.pathname,
   });
