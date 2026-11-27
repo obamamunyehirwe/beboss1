@@ -153,3 +153,42 @@ export function isSubscriptionActive(profile: { subscriptionStatus: string; subs
   if (profile.subscriptionStatus === 'SUSPENDED' || profile.subscriptionStatus === 'EXPIRED') return false;
   return trustedNow < profile.subscriptionExpiresAt;
 }
+
+
+export type SubscriptionQuote = {
+  branchCount: number;
+  branchBasePrice: number;
+  workerCount: number;
+  workerFee: number;
+  deviceCount: number;
+  deviceFee: number;
+  monthlySubtotal: number;
+  durationMonths: number;
+  discountPercent: number;
+  discountAmount: number;
+  totalPayable: number;
+};
+
+export function calculateSubscriptionQuote(
+  branchCountInput: number,
+  workerCountInput: number,
+  durationMonths: number,
+  deviceCountInput = 1
+): SubscriptionQuote {
+  if (![1, 3, 6, 12].includes(durationMonths)) throw new Error('Choose a 1, 3, 6 or 12 month subscription term.');
+  const branchCount = Math.max(1, Math.floor(branchCountInput));
+  const workerCount = Math.max(1, Math.floor(workerCountInput));
+  const deviceCount = Math.max(1, Math.floor(deviceCountInput));
+  const branchBasePrice = branchCount === 1 ? 5000 : branchCount === 2 ? 10000 : 20000;
+  const workerFee = workerCount <= 1 ? 0 : workerCount <= 3 ? 2000 : workerCount <= 5 ? 4000 : 4000 + (workerCount - 5) * 1000;
+  const deviceFee = (deviceCount - 1) * 2000;
+  const monthlySubtotal = branchBasePrice + workerFee + deviceFee;
+  const rawTotal = monthlySubtotal * durationMonths;
+  const discountPercent = durationMonths === 3 ? 10 : durationMonths === 12 ? 20 : 0;
+  const discountAmount = Math.floor((rawTotal * discountPercent) / 100);
+  return {
+    branchCount, branchBasePrice, workerCount, workerFee, deviceCount, deviceFee,
+    monthlySubtotal, durationMonths, discountPercent, discountAmount,
+    totalPayable: rawTotal - discountAmount
+  };
+}

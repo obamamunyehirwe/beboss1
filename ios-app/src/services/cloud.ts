@@ -415,3 +415,105 @@ export function getCloudRestConfiguration(): { url: string; publishableKey: stri
   if (!cloudConfigured) throw new Error('Secure cloud configuration is missing.');
   return { url, publishableKey: publicKey };
 }
+
+
+export type SubscriptionCheckoutInput = {
+  username: string;
+  ownerPhone: string;
+  payerPhone: string;
+  payerName: string;
+  payerEmail: string;
+  shopName: string;
+  months: 1 | 3 | 6 | 12;
+  branches: number;
+  workers: number;
+  devices: number;
+  gateway: 'mtn_momo' | 'flutterwave' | 'stripe';
+};
+
+export type SubscriptionCheckoutResult = {
+  ok: true;
+  pending?: boolean;
+  paymentRequestId: string;
+  provider?: string;
+  reference?: string;
+  amountRwf: number;
+  currency: string;
+  status?: string;
+  message?: string;
+  checkoutUrl?: string;
+};
+
+export async function createSubscriptionCheckout(
+  input: SubscriptionCheckoutInput
+): Promise<SubscriptionCheckoutResult> {
+  if (!supabase) throw new Error('BeBoss Cloud is not configured on this iPhone.');
+  const session = await supabase.auth.getSession();
+  if (session.error || !session.data.session || !session.data.session.user.phone_confirmed_at) {
+    throw new Error('Verify the registered shop-owner phone by SMS before creating a subscription payment.');
+  }
+  if (session.data.session.user.phone?.replace(/\D/g, '').slice(-9) !== input.ownerPhone.replace(/\D/g, '').slice(-9)) {
+    throw new Error('The verified SMS session does not match this shop owner phone.');
+  }
+  const result = await supabase.functions.invoke('create-payment-checkout', {
+    body: {
+      gateway: input.gateway,
+      username: input.username.trim().toLowerCase(),
+      phone: input.ownerPhone.trim(),
+      payerPhone: input.payerPhone.trim(),
+      payerName: input.payerName.trim(),
+      payerEmail: input.payerEmail.trim().toLowerCase(),
+      shopName: input.shopName.trim(),
+      months: input.months,
+      branches: input.branches,
+      workers: input.workers,
+      devices: input.devices
+    }
+  });
+  if (result.error) {
+    const context = (result.error as any).context;
+    const detail = context?.json || context?.body;
+    throw new Error(detail?.message || result.error.message || 'The subscription checkout could not be created.');
+  }
+  const data = result.data as SubscriptionCheckoutResult;
+  if (!data?.ok || !data.paymentRequestId || !Number.isFinite(Number(data.amountRwf))) {
+    throw new Error('BeBoss payment service returned an incomplete checkout response.');
+  }
+  return data;
+}
+
+export type SubscriptionPaymentStatus = {
+  ok: true;
+  pending: boolean;
+  verified: boolean;
+  status: 'PENDING' | 'SUCCESSFUL' | 'FAILED' | 'REVIEW_REQUIRED' | string;
+  message: string;
+};
+
+export async function checkSubscriptionPaymentStatus(
+  paymentRequestId: string,
+  username: string,
+  ownerPhone: string
+): Promise<SubscriptionPaymentStatus> {
+  if (!supabase) throw new Error('BeBoss Cloud is not configured.');
+  const session = await supabase.auth.getSession();
+  if (session.error || !session.data.session || !session.data.session.user.phone_confirmed_at) {
+    throw new Error('A verified owner phone session is required to check payment status.');
+  }
+  const result = await supabase.functions.invoke('create-payment-checkout', {
+    body: {
+      action: 'status',
+      paymentRequestId: paymentRequestId.trim(),
+      username: username.trim().toLowerCase(),
+      phone: ownerPhone.trim()
+    }
+  });
+  if (result.error) {
+    const context = (result.error as any).context;
+    const detail = context?.json || context?.body;
+    throw new Error(detail?.message || result.error.message || 'The provider payment status could not be checked.');
+  }
+  const data = result.data as SubscriptionPaymentStatus;
+  if (!data?.ok) throw new Error(data?.message || 'The provider returned no payment status.');
+  return data;
+}

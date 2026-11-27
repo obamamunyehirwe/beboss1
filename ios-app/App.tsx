@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, Platform, Pressable,
   ScrollView, StatusBar, StyleSheet, Text, TextInput, View
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -22,11 +22,11 @@ import { BarcodeScannerModal, useBluetoothPrinters } from './src/services/hardwa
 import { decryptBackupFile, exportEncryptedBackup } from './src/services/backup';
 import { enableBiometricUnlock, requireBiometricUnlock, biometricAvailable } from './src/services/biometrics';
 import {
-  cloudConfigured, cloudSessionState, downloadIosCloudSnapshots, enrollIosDevice,
+  checkSubscriptionPaymentStatus, cloudConfigured, cloudSessionState, createSubscriptionCheckout, downloadIosCloudSnapshots, enrollIosDevice,
   getIosCloudSyncStatus, getIosDeviceCredential, requestOwnerPhoneVerification,
   requestSecureIosSyncReadiness, signOutCloud, uploadIosCloudSnapshot, verifyOwnerPhoneCode
 } from './src/services/cloud';
-import { isSubscriptionActive, roundMoney } from './src/core/domain';
+import { calculateSubscriptionQuote, isSubscriptionActive, roundMoney } from './src/core/domain';
 import { buildReorderSuggestions } from './src/core/forecast';
 import { exportInventoryCsv, exportSalesCsv } from './src/services/reports';
 
@@ -93,6 +93,14 @@ function AppRoot(): React.JSX.Element {
   const [latestCloudUpdatedAt, setLatestCloudUpdatedAt] = useState(0);
   const [enrolledDeviceSummary, setEnrolledDeviceSummary] = useState('');
   const [otpRequested, setOtpRequested] = useState(false);
+  const [subscriptionMonths, setSubscriptionMonths] = useState<'1' | '3' | '6' | '12'>('1');
+  const [subscriptionGateway, setSubscriptionGateway] = useState<'mtn_momo' | 'flutterwave' | 'stripe'>('mtn_momo');
+  const [payerName, setPayerName] = useState('');
+  const [payerEmail, setPayerEmail] = useState('');
+  const [payerPhone, setPayerPhone] = useState('');
+  const [paymentRequestId, setPaymentRequestId] = useState('');
+  const [paymentRequestMessage, setPaymentRequestMessage] = useState('');
+  const [paymentRequestStatus, setPaymentRequestStatus] = useState('');
   const [backupPassword, setBackupPassword] = useState('');
   const [backupMode, setBackupMode] = useState<'EXPORT' | 'RESTORE'>('EXPORT');
   const [showScanner, setShowScanner] = useState(false);
@@ -1371,18 +1379,104 @@ function AppRoot(): React.JSX.Element {
 
   const renderSubscription = () => {
     const active = profile ? isSubscriptionActive(profile) : false;
-    const remaining = Math.max(0, profile!.subscriptionExpiresAt - Date.now());
+    const remaining = Math.max(0, (profile?.subscriptionExpiresAt || 0) - Date.now());
     const days = Math.ceil(remaining / 86400000);
+    const activeBranches = Math.max(1, (snapshot?.branches || []).filter(branch => branch.isActive && branch.operationalStatus === 'OPEN').length);
+    const activeStaff = Math.max(1, (snapshot?.staff || []).filter(user => user.isActive).length);
+    const devices = Math.max(1, profile?.deviceCountLimit || 1);
+    const quote = calculateSubscriptionQuote(activeBranches, activeStaff, Number(subscriptionMonths), devices);
+    const startCheckout = async () => {
+      if (!profile) return;
+      if (actor.role !== 'OWNER') { setError('Only the registered shop owner can create subscription payments.'); return; }
+      if (!cloudAuthenticated) { setError('Verify the registered owner phone in Sync settings before starting payment.'); return; }
+      if (!payerName.trim() || !payerEmail.trim() || !payerPhone.trim()) {
+        setError('Enter the payer name, email and Rwanda mobile number.');
+        return;
+      }
+      setBusy(true); setError(''); setPaymentRequestMessage('');
+      try {
+        const result = await createSubscriptionCheckout({
+          username: profile.username,
+          ownerPhone: profile.phone,
+          payerPhone,
+          payerName,
+          payerEmail,
+          shopName: profile.shopName,
+          months: Number(subscriptionMonths) as 1 | 3 | 6 | 12,
+          branches: activeBranches,
+          workers: activeStaff,
+          devices,
+          gateway: subscriptionGateway
+        });
+        setPaymentRequestId(result.paymentRequestId);
+        setPaymentRequestStatus(result.status || (result.pending ? 'PENDING' : 'CHECKOUT_CREATED'));
+        setPaymentRequestMessage(result.message || 'Payment request created. Payment is not yet verified.');
+        if (result.checkoutUrl) {
+          await Linking.openURL(result.checkoutUrl);
+        }
+      } catch (caught: any) {
+        setError(caught?.message || 'Subscription payment could not be started.');
+      } finally { setBusy(false); }
+    };
+    const refreshPaymentStatus = async () => {
+      if (!paymentRequestId || !profile) return;
+      setBusy(true); setError('');
+      try {
+        const status = await checkSubscriptionPaymentStatus(paymentRequestId, profile.username, profile.phone);
+        setPaymentRequestStatus(status.status);
+        setPaymentRequestMessage(status.message);
+        if (status.verified) {
+          setNotice('Provider reports successful payment. It remains pending BeBoss administrator review and BB3 authorization; this iPhone has not self-activated the subscription.');
+        }
+      } catch (caught: any) { setError(caught?.message || 'Payment status could not be checked.'); }
+      finally { setBusy(false); }
+    };
+
     return (
       <View>
-        <PageHeading title="Subscription" subtitle="Entitlement state comes from verified BeBoss licensing." />
+        <PageHeading title="Subscription & billing" subtitle="Server-priced plans and provider-verified payments. This iPhone cannot self-activate an entitlement." />
         <View style={styles.noticeCard}>
-          <Text style={styles.noticeHeading}>{profile?.subscriptionStatus || 'UNKNOWN'} {active ? '· Active' : '· Expired or locked'}</Text>
-          <Text style={styles.rowSub}>{profile?.subscriptionStatus === 'TRIAL' ? 'Trial time remaining: ' + days + ' day(s).' : 'Expires: ' + new Date(profile!.subscriptionExpiresAt).toLocaleString()}</Text>
-          <Text style={styles.rowSub}>Device allowance: {profile?.deviceCountLimit || 1}</Text>
+          <Text style={styles.noticeHeading}>{profile?.subscriptionStatus || 'UNKNOWN'} {active ? '· Active on local profile' : '· Expired or locked'}</Text>
+          <Text style={styles.rowSub}>{profile?.subscriptionStatus === 'TRIAL' ? 'Local trial estimate: ' + days + ' day(s) remaining. Final entitlement is server-controlled.' : 'Local expiry estimate: ' + new Date(profile!.subscriptionExpiresAt).toLocaleString()}</Text>
+          <Text style={styles.rowSub}>Registered device allowance: {profile?.deviceCountLimit || 1}</Text>
         </View>
-        <Text style={styles.muted}>Payments and subscription extension must be confirmed by BeBoss Cloud. This iPhone does not locally unlock a plan or accept an unverified payment reference.</Text>
-        <ButtonSecondary title="Open secure owner verification" onPress={() => setScreen('sync')} />
+        <Text style={styles.muted}>Plan pricing follows the Android price rules. The checkout service recalculates the final amount from the registered shop's server-side branch, staff and device usage before it accepts the payment.</Text>
+        <SectionHeader title="Registered shop plan" />
+        <Metric label="Active retail branches" value={String(activeBranches)} />
+        <Metric label="Active staff accounts" value={String(activeStaff)} />
+        <Metric label="Billable devices requested" value={String(devices)} />
+        <SelectChips label="Subscription duration" values={[
+          { label: '1 month', value: '1' },
+          { label: '3 months · 10% off', value: '3' },
+          { label: '6 months', value: '6' },
+          { label: '12 months · 20% off', value: '12' }
+        ]} value={subscriptionMonths} onChange={value => setSubscriptionMonths(value as typeof subscriptionMonths)} />
+        <View style={styles.card}>
+          <Text style={styles.rowTitle}>Server pricing estimate</Text>
+          <Text style={styles.rowSub}>Branch base {money(quote.branchBasePrice, currency)} · Staff add-on {money(quote.workerFee, currency)} · Extra devices {money(quote.deviceFee, currency)}</Text>
+          <Text style={styles.rowSub}>{quote.discountPercent}% duration discount · {money(quote.discountAmount, currency)} saved</Text>
+          <Text style={[styles.price, { fontSize: 20, marginTop: 6 }]}>{money(quote.totalPayable, currency)}</Text>
+          <Text style={styles.muted}>The server is authoritative. If the plan is below the live shop usage or the server price differs, the checkout will be rejected safely.</Text>
+        </View>
+        <SectionHeader title="Provider-verified payment" />
+        <Field label="Payer full name" value={payerName || profile?.ownerName || ''} onChangeText={setPayerName} />
+        <Field label="Payer email" value={payerEmail || profile?.email || ''} onChangeText={setPayerEmail} keyboardType="email-address" autoCapitalize="none" />
+        <Field label="Payer Rwanda mobile number" value={payerPhone || profile?.phone || ''} onChangeText={setPayerPhone} keyboardType="phone-pad" />
+        <SelectChips label="Payment gateway" values={[
+          { label: 'MTN MoMo', value: 'mtn_momo' },
+          { label: 'Flutterwave', value: 'flutterwave' },
+          { label: 'Stripe', value: 'stripe' }
+        ]} value={subscriptionGateway} onChange={value => setSubscriptionGateway(value as typeof subscriptionGateway)} />
+        <ButtonPrimary title="Create secure subscription payment" onPress={startCheckout} loading={busy} disabled={actor.role !== 'OWNER' || !cloudAuthenticated || !cloudConfigured} />
+        {paymentRequestId ? <View style={styles.card}>
+          <Text style={styles.rowTitle}>Payment request · {paymentRequestStatus}</Text>
+          <Text style={styles.rowSub}>Reference: {paymentRequestId}</Text>
+          <Text style={styles.rowSub}>{paymentRequestMessage}</Text>
+          {subscriptionGateway === 'mtn_momo' ? <ButtonSecondary title="Check MTN MoMo status" onPress={refreshPaymentStatus} disabled={busy} /> : null}
+          <Text style={styles.muted}>A provider success response is only payment verification. The request remains in the BeBoss admin review queue until an authorized administrator issues a matching BB3 unlock. This app will not unlock itself using an SMS or payer-entered reference.</Text>
+        </View> : null}
+        <Text style={styles.muted}>Owner phone verification is required. Card checkout opens the provider-hosted payment page; MTN prompts the payer's wallet and must be checked again for final settlement. If the provider reports a pending or uncertain result, keep the same request and do not pay twice.</Text>
+        <ButtonSecondary title="Open owner verification and sync" onPress={() => setScreen('sync')} />
       </View>
     );
   };
