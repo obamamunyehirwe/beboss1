@@ -74,6 +74,9 @@ $apk = Get-Item -LiteralPath $ArtifactPath
 if ($apk.Length -lt 1MB) {
     throw "The generated APK is unexpectedly small ($($apk.Length) bytes); it will not be published."
 }
+if ($apk.Length -gt 100MB) {
+    throw "The generated APK exceeds the Admin release upload limit of 100 MB ($($apk.Length) bytes). Reduce the package before publishing."
+}
 
 $sdk = $env:ANDROID_SDK_ROOT
 if ([string]::IsNullOrWhiteSpace($sdk)) { $sdk = $env:ANDROID_HOME }
@@ -87,6 +90,12 @@ $buildTools = Get-ChildItem -LiteralPath $buildToolsRoot -Directory -ErrorAction
 if (-not $buildTools) { throw "Android SDK build-tools were not found." }
 $aapt = Join-Path $buildTools.FullName "aapt.exe"
 if (-not (Test-Path -LiteralPath $aapt -PathType Leaf)) { throw "aapt.exe is missing from $($buildTools.FullName)." }
+$zipalign = Join-Path $buildTools.FullName "zipalign.exe"
+if (-not (Test-Path -LiteralPath $zipalign -PathType Leaf)) { throw "zipalign.exe is missing from $($buildTools.FullName)." }
+$alignment = & $zipalign -c -v 4 $apk.FullName 2>&1
+if ($LASTEXITCODE -ne 0) {
+    throw "APK zip alignment verification failed: $($alignment -join [Environment]::NewLine)"
+}
 
 $badging = & $aapt dump badging $apk.FullName 2>&1
 if ($LASTEXITCODE -ne 0) { throw "aapt could not inspect the generated APK: $($badging -join [Environment]::NewLine)" }

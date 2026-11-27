@@ -40,6 +40,18 @@ $gradleConfig = Get-Content -Raw -LiteralPath (Join-Path $root "app/build.gradle
 if ($gradleConfig -notmatch '"ANDROID_RELEASE_CERT_SHA256"\s*->\s*signingSecret\(key\)\s*\?:\s*signingSecret\("ANDROID_UPLOAD_CERT_SHA256"\)') {
     throw "Android BuildConfig must embed the same legacy-compatible signing certificate fingerprint accepted by release validation."
 }
+$productionBuild = Get-Content -Raw -LiteralPath (Join-Path $root "scripts/build-first-production-apk.ps1")
+foreach ($pattern in @(
+    "app-secure-release.apk",
+    "100 MB",
+    "zipalign",
+    "aapt dump badging",
+    "verify-android-release-signing.ps1"
+)) {
+    if ($productionBuild -notmatch [regex]::Escape($pattern)) {
+        throw "The production APK build helper is missing its required output/package safety check: $pattern"
+    }
+}
 $verify = Get-Content -Raw -LiteralPath (Join-Path $root "scripts/verify-android-release-signing.ps1")
 if (-not $verify.Contains('Signer #\d+')) {
     throw "Android release verifier does not inspect every signing certificate."

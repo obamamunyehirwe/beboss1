@@ -197,7 +197,7 @@ The build now blocks:
 The remaining external actions depend on release history: for a first production launch, configure the locally held signing keystore and fingerprint, set ANDROID_FIRST_PRODUCTION_RELEASE=true only after confirming there are no customer production installs or legacy credential backups to import, configure a real SENTRY_DSN, build and verify the APK, publish it through BeBoss Admin, and test update delivery on physical devices. For an existing install base, complete the transition migration and signing-compatibility path instead. Play Console is not required for direct APK distribution.
 
 
-## 5. Repeatable signed production APK build from GitHub Actions
+## 6. Repeatable signed production APK build from GitHub Actions
 
 The repository includes a manual workflow: **Actions → Build signed BeBoss Android production APK → Run workflow**. It builds only the Secure Release APK, derives the TLS pin from the configured live Supabase HTTPS endpoint, runs the release gates and secure unit tests, inspects the APK package/version, verifies the configured signer certificate and uploads the APK plus SHA-256 checksum as a 30-day workflow artifact. It does not publish the artifact automatically; download the artifact and publish the exact APK through Admin → App Releases → Mobile releases after reviewing the version, release notes and signing identity.
 
