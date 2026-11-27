@@ -38,6 +38,17 @@ Deno.test("branch main-branch reassignment is audited and unchanged syncs are id
   assertEquals(classifyShopAuditTransition("BRANCH", next, { ...next, updatedAt: 300, hlcTimestamp: 300 }), null);
 });
 
+Deno.test("branch notes are included in profile audit transitions", () => {
+  const before = buildShopAuditSnapshot("BRANCH", {
+    id: "branch-notes", name: "Warehouse", code: "WH-01", is_active: true,
+    operational_status: "OPEN", notes: "Weekday hours", created_at: 100, updated_at: 100
+  });
+  const after = { ...before, notes: "Open every day", updatedAt: 200, hlcTimestamp: 200 };
+  const change = classifyShopAuditTransition("BRANCH", before, after);
+  assertEquals(change?.action, "PROFILE_UPDATED");
+  assert(change?.detail.includes("branch profile updated"));
+});
+
 Deno.test("transfer state and receipt changes are tracked without changing the persisted row", () => {
   const before = buildShopAuditSnapshot("STOCK_TRANSFER", {
     id: "transfer-1", transfer_number: "TRF-1", status: "IN_TRANSIT",
