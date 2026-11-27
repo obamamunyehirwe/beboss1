@@ -1015,6 +1015,7 @@ Deno.serve(async (req: Request) => {
 
       const rowsToSave: Row[] = [];
       const newApprovalAudit: Row[] = [];
+      const verifiedPriorApprovalIds = new Set<string>();
       for (const transfer of requested) {
         const transferId = text(transfer.id).trim();
         const productId = text(transfer.product_id).trim();
@@ -1041,17 +1042,33 @@ Deno.serve(async (req: Request) => {
           return json(409, { ok: false, message: "The transfer cost does not match the latest verified product cost. Refresh inventory and retry." });
         }
 
-        const previouslyApproved = await admin.from("cloud_sync_events").select("id")
+        const previouslyApproved = await admin.from("cloud_sync_events").select("detail")
           .eq("shop_sync_key", text(shop.id)).eq("entity", "STOCK_TRANSFER")
           .eq("action", "ANDROID_OWNER_APPROVED")
           .like("detail", '%"recordId":"' + transferId + '"%')
-          .limit(1).maybeSingle();
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
         if (previouslyApproved.error) throw new Error("Could not verify prior transfer approval evidence.");
+        let priorApprovalValid = false;
+        if (previouslyApproved.data?.detail) {
+          try {
+            const previousProof = JSON.parse(text(previouslyApproved.data.detail)) as Row;
+            priorApprovalValid = text(previousProof.recordId) === transferId &&
+              number(previousProof.policyVersion) === policy.version &&
+              number(previousProof.transferCostRwf) === cost &&
+              text(previousProof.productId) === productId &&
+              text(previousProof.fromBranchId) === fromBranchId &&
+              text(previousProof.toBranchId) === toBranchId &&
+              normalizeTransferQuantity(previousProof.quantity) === normalizeTransferQuantity(transfer.quantity);
+          } catch { priorApprovalValid = false; }
+        }
         const approvalRequired = policy.transferApprovalThresholdRwf > 0 &&
           cost >= policy.transferApprovalThresholdRwf;
         const proof = transfer.approval_proof && typeof transfer.approval_proof === "object"
           ? transfer.approval_proof as Row : {};
-        if (approvalRequired && !previouslyApproved.data) {
+        if (approvalRequired && priorApprovalValid) {
+          verifiedPriorApprovalIds.add(transferId);
+        }
+        if (approvalRequired && !priorApprovalValid) {
           const reason = text(proof.reason).trim();
           const actorUserId = text(proof.actor_user_id).trim();
           const approvalDeviceId = text(proof.device_id).trim();
@@ -1209,7 +1226,7 @@ Deno.serve(async (req: Request) => {
           updatedAt,
           syncedAt: Date.now(),
           approvalRequired,
-          approvalVerified: approvalAuditIds.has(recordId) || approvalRequired
+          approvalVerified: approvalAuditIds.has(recordId) || verifiedPriorApprovalIds.has(recordId)
         });
         const saved = await recordShopAuditEvent(
           admin, text(shop.id), text(shop.shop_name),
