@@ -7,7 +7,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import { pick, keepLocalCopy, types as documentTypes, isErrorWithCode, errorCodes } from '@react-native-documents/picker';
 import {
-  Branch, CartLine, CheckoutInput, Customer, Product, Role, Sale, ShopProfile, Staff,
+  Branch, CartLine, CheckoutInput, Customer, HeldCart, Product, Role, Sale, ShopProfile, Staff,
   StoreSnapshot
 } from './src/core/types';
 import {
@@ -332,6 +332,55 @@ function AppRoot(): React.JSX.Element {
     setSelectedProductId(product.id);
     setForm({ quantity: '', reason: 'Stock received' });
     setModal('adjust');
+  };
+
+  const holdCurrentCart = () => {
+    if (!actor || !cart.length) return;
+    Alert.prompt(
+      'Hold this sale',
+      'Add a label so this basket can be found and resumed later.',
+      label => {
+        run(async () => {
+          await saveHeldCart({
+            label: label || '',
+            items: cart,
+            customerId: customerChoice,
+            discountAmount: Number(discount || 0),
+            paymentMethod,
+            amountPaid: Number(paid || 0),
+            splitCashAmount: Number(splitCash || 0),
+            splitMomoAmount: Number(splitMomo || 0),
+            notes: '',
+            branchId: actor.branchId || snapshot?.branches.find(branch => branch.isMainBranch)?.id || 'main_branch'
+          }, actor);
+          setCart([]);
+          setCustomerChoice('');
+          setDiscount('0');
+          setPaid('');
+          setSplitCash('');
+          setSplitMomo('');
+          setPaymentMethod('CASH');
+        }, 'Sale held securely on this iPhone.');
+      },
+      'plain-text'
+    );
+  };
+
+  const resumeHeldCart = async (held: HeldCart) => {
+    if (cart.length) {
+      setError('Hold or clear the current basket before resuming another held sale.');
+      return;
+    }
+    const ok = await run(async () => { await deleteHeldCart(held.id, actor!); }, 'Held sale resumed.');
+    if (!ok) return;
+    setCart(held.items);
+    setCustomerChoice(held.customerId);
+    setDiscount(String(held.discountAmount));
+    setPaymentMethod(held.paymentMethod);
+    setPaid(String(held.amountPaid));
+    setSplitCash(String(held.splitCashAmount));
+    setSplitMomo(String(held.splitMomoAmount));
+    setScreen('pos');
   };
 
   const saveStockAdjustment = async () => {
@@ -854,11 +903,33 @@ function AppRoot(): React.JSX.Element {
         ))}
         <View style={styles.inlineActions}>
           <ButtonSecondary title="Clear" onPress={() => setCart([])} disabled={!cart.length} />
+          <ButtonSecondary title="Hold" onPress={holdCurrentCart} disabled={!cart.length} />
           <ButtonPrimary title="Checkout" onPress={() => {
             if (!cart.length) return;
             setDiscount('0'); setPaid(String(cartSubtotal)); setCustomerChoice(''); setModal('checkout');
           }} disabled={!cart.length} />
         </View>
+        {(snapshot?.heldCarts.length || 0) > 0 ? <>
+          <Text style={styles.fieldLabel}>Held sales · {snapshot?.heldCarts.length}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+            {snapshot?.heldCarts.map(held => (
+              <View key={held.id} style={styles.heldCartChip}>
+                <Pressable onPress={() => resumeHeldCart(held)}>
+                  <Text style={styles.chipTextSelected}>{held.label}</Text>
+                  <Text style={styles.heldCartMeta}>{held.items.length} lines · {money(held.items.reduce((sum, line) => {
+                    const product = snapshot.products.find(item => item.id === line.productId);
+                    return sum + (product?.sellingPrice || line.customPrice || 0) * line.quantity;
+                  }, 0), currency)}</Text>
+                  <Text style={styles.heldCartAction}>Resume sale</Text>
+                </Pressable>
+                <Pressable onPress={() => Alert.alert('Delete held sale?', held.label, [
+                  { text: 'Keep', style: 'cancel' },
+                  { text: 'Delete', style: 'destructive', onPress: () => run(async () => { await deleteHeldCart(held.id, actor!); }, 'Held sale deleted.') }
+                ])}><Text style={styles.heldCartDelete}>Remove</Text></Pressable>
+              </View>
+            ))}
+          </ScrollView>
+        </> : null}
       </View>
     </View>
   );
@@ -1716,6 +1787,10 @@ const styles = StyleSheet.create({
   inventoryCard: { flexDirection: 'row', backgroundColor: COLORS.paper, borderWidth: 1, borderColor: COLORS.border, padding: 13, borderRadius: 15, marginBottom: 8 },
   customerCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.paper, padding: 13, borderRadius: 15, borderWidth: 1, borderColor: COLORS.border, marginBottom: 8 },
   card: { backgroundColor: COLORS.paper, borderWidth: 1, borderColor: COLORS.border, padding: 13, borderRadius: 15, marginBottom: 9 },
+  heldCartChip: { backgroundColor: COLORS.navy, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 8, minWidth: 140, maxWidth: 220 },
+  heldCartMeta: { color: '#D4DCE8', fontSize: 9, marginTop: 3 },
+  heldCartAction: { color: '#F6A276', fontSize: 10, fontWeight: '900', marginTop: 5 },
+  heldCartDelete: { color: '#FFC7C7', fontSize: 9, fontWeight: '800', marginTop: 5 },
   cartDock: { backgroundColor: COLORS.paper, borderTopWidth: 1, borderColor: COLORS.border, paddingHorizontal: 15, paddingTop: 10, paddingBottom: 12 },
   cartHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cartTitle: { fontWeight: '900', color: COLORS.ink, fontSize: 13 },

@@ -109,6 +109,36 @@ async function currentStaff(userId: string): Promise<Staff | null> {
   return row ? staffFromRow(row) : null;
 }
 
+export async function saveHeldCart(
+  input: Omit<HeldCart, 'id' | 'createdAt'>,
+  actor: Staff
+): Promise<HeldCart> {
+  requirePermission(actor, 'canSellPOS', 'hold POS carts');
+  if (!input.items.length) throw new Error('A cart must contain at least one item before it can be held.');
+  if (input.items.length > 500) throw new Error('This cart contains too many line items to save.');
+  const now = Date.now();
+  const held: HeldCart = {
+    ...input,
+    id: makeId(),
+    label: input.label.trim().slice(0, 80) || 'Held sale ' + new Date(now).toLocaleString(),
+    items: input.items.map(line => ({ ...line })),
+    createdAt: now
+  };
+  await execute('INSERT INTO held_carts(id,label,data,created_at) VALUES(?,?,?,?)',
+    [held.id, held.label, toJson(held), now]);
+  await audit(actor, 'POS_CART_HELD', held.id, held.label + ' • ' + held.items.length + ' lines');
+  return held;
+}
+
+export async function deleteHeldCart(heldCartId: string, actor: Staff): Promise<void> {
+  requirePermission(actor, 'canSellPOS', 'manage held POS carts');
+  const row = await first<Row>('SELECT data FROM held_carts WHERE id=?', [heldCartId]);
+  if (!row) return;
+  const held = fromJson<HeldCart>(row.data);
+  await execute('DELETE FROM held_carts WHERE id=?', [heldCartId]);
+  await audit(actor, 'POS_HELD_CART_DELETED', heldCartId, held.label);
+}
+
 export async function initializeStore(): Promise<void> {
   await getDatabase();
 }
@@ -124,6 +154,7 @@ export async function loadSnapshot(userId: string | null): Promise<StoreSnapshot
   const paymentRows = await query<Row>('SELECT data FROM customer_payments ORDER BY created_at DESC LIMIT 500');
   const purchaseRows = await query<Row>('SELECT data FROM purchases ORDER BY created_at DESC LIMIT 500');
   const transferRows = await query<Row>('SELECT data FROM stock_transfers ORDER BY created_at DESC LIMIT 500');
+  const heldCartRows = await query<Row>('SELECT data FROM held_carts ORDER BY created_at DESC');
   const outboxRows = await query<Row>('SELECT * FROM sync_outbox WHERE status != "SYNCED" ORDER BY created_at');
   const products = productRows.map(row => productFromRow(row));
   const customers = customerRows.map(row => customerFromRow(row));
@@ -141,6 +172,7 @@ export async function loadSnapshot(userId: string | null): Promise<StoreSnapshot
     payments: paymentRows.map(row => fromJson<CustomerPayment>(row.data)),
     purchases,
     transfers,
+    heldCarts: heldCartRows.map(row => fromJson<HeldCart>(row.data)),
     outbox: outboxRows.map(row => outboxFromRow(row)),
     totalSales: sales.reduce((total, sale) => total + sale.totalAmount, 0),
     totalProfit: sales.reduce((total, sale) => total + sale.totalProfit, 0),

@@ -108,6 +108,21 @@ export type Branch = {
 
 export type CartLine = { productId: string; quantity: number; customPrice?: number | null };
 
+export type HeldCart = {
+  id: string;
+  label: string;
+  items: CartLine[];
+  customerId: string;
+  discountAmount: number;
+  paymentMethod: string;
+  amountPaid: number;
+  splitCashAmount: number;
+  splitMomoAmount: number;
+  notes: string;
+  branchId: string;
+  createdAt: number;
+};
+
 export type SaleLine = {
   id: string;
   saleId: string;
@@ -223,6 +238,7 @@ export type StoreSnapshot = {
   payments: CustomerPayment[];
   purchases: Purchase[];
   transfers: StockTransfer[];
+  heldCarts: HeldCart[];
   outbox: SyncOutboxItem[];
   totalSales: number;
   totalProfit: number;

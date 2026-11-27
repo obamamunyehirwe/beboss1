@@ -24,6 +24,7 @@ const schema = [
   'CREATE TABLE IF NOT EXISTS customer_payments (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, amount_cents INTEGER NOT NULL, created_at INTEGER NOT NULL, data TEXT NOT NULL, FOREIGN KEY(customer_id) REFERENCES customers(id))',
   'CREATE TABLE IF NOT EXISTS purchases (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, branch_id TEXT NOT NULL, total_cents INTEGER NOT NULL, created_at INTEGER NOT NULL, data TEXT NOT NULL)',
   'CREATE TABLE IF NOT EXISTS stock_transfers (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, from_branch_id TEXT NOT NULL, to_branch_id TEXT NOT NULL, quantity REAL NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, data TEXT NOT NULL)',
+  'CREATE TABLE IF NOT EXISTS held_carts (id TEXT PRIMARY KEY, label TEXT NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL)',
   'CREATE TABLE IF NOT EXISTS sync_outbox (id TEXT PRIMARY KEY, table_name TEXT NOT NULL, record_id TEXT NOT NULL, operation TEXT NOT NULL, payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT "PENDING", retry_count INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT "", created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
   'CREATE INDEX IF NOT EXISTS idx_outbox_status ON sync_outbox(status, created_at)',
   'CREATE TABLE IF NOT EXISTS sync_tombstones (id TEXT PRIMARY KEY, table_name TEXT NOT NULL, record_id TEXT NOT NULL, deleted_at INTEGER NOT NULL, hlc TEXT NOT NULL)',
