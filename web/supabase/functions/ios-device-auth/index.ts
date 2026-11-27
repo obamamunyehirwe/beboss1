@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { shopShareSignature, verifyAndDecodeToken } from "../../../src/lib/snapshot-analytics.ts";
+import { shopShareSignature, verifyAndDecodeToken } from "../_shared/snapshot-integrity.ts";
 import { isCompleteSnapshotGeneration, snapshotDeviceBaseId } from "../_shared/snapshot-generations.ts";
 import {
   createDeviceToken,
