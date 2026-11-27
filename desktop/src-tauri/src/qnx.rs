@@ -228,8 +228,7 @@ fn verify_qcc_variants(
         }
         let output = probe_directory.join(format!("qnx-toolchain-probe-{variant}"));
         let args = vec![
-            "-V".into(),
-            variant.into(),
+            format!("-V{variant}"),
             "-Wall".into(),
             "-Wextra".into(),
             source.display().to_string(),
@@ -445,7 +444,7 @@ pub fn qnx_build_agent(
     fs::write(&source, EDGE_AGENT_SOURCE).map_err(|error| error.to_string())?;
 
     let args = vec![
-        "-V".into(), variant.into(),
+        format!("-V{variant}"),
         "-Wall".into(), "-Wextra".into(), "-O2".into(),
         source.display().to_string(),
         "-o".into(), output.display().to_string(),
@@ -460,7 +459,7 @@ pub fn qnx_build_agent(
     Ok(QnxOperationResult {
         success: true,
         message: format!("Compiled the BeBoss Neutrino edge agent for {target_arch}."),
-        command: format!("qcc -V {variant} -Wall -Wextra -O2 <source> -o <binary>"),
+        command: format!("qcc -V{variant} -Wall -Wextra -O2 <source> -o <binary>"),
         output_path: Some(output.display().to_string()),
         sha256: Some(sha256),
         process_id: None,
@@ -515,7 +514,7 @@ pub fn qnx_build_ipc_client(
     Ok(QnxOperationResult {
         success: true,
         message: format!("Compiled the BeBoss Neutrino IPC smoke-test client for {target_arch}."),
-        command: format!("qcc -V {variant} -Wall -Wextra -O2 <client-source> -o <client-binary>"),
+        command: format!("qcc -V{variant} -Wall -Wextra -O2 <client-source> -o <client-binary>"),
         output_path: Some(output.display().to_string()),
         sha256: Some(sha256),
         process_id: None,
