@@ -134,7 +134,7 @@ android {
     applicationId = "com.beboss.shopmgmt"
     minSdk = 24
     targetSdk = 36
-    // Migration build 18 must be installed before secure build 19 on every device.
+    // First direct-production secure build; no legacy migration install base is assumed.
     versionCode = 20
     versionName = "2.6.0"
 
@@ -222,6 +222,7 @@ android {
       buildConfigField("String", "BEBOSS_ADMIN_URL", envConfigString("BEBOSS_ADMIN_URL"))
       buildConfigField("String", "BEBOSS_ADMIN_WHATSAPP", envConfigString("BEBOSS_ADMIN_WHATSAPP"))
       buildConfigField("String", "SENTRY_DSN", envConfigString("SENTRY_DSN"))
+      buildConfigField("String", "ANDROID_RELEASE_CERT_SHA256", envConfigString("ANDROID_RELEASE_CERT_SHA256"))
       buildConfigField("String", "SUPABASE_ANON_KEY", envConfigString("SUPABASE_ANON_KEY"))
       buildConfigField("String", "SUPABASE_CERT_PINS", envConfigString("SUPABASE_CERT_PINS"))
       buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", envConfigString("SUPABASE_PUBLISHABLE_KEY"))
@@ -232,6 +233,7 @@ android {
       buildConfigField("String", "BEBOSS_ADMIN_URL", envConfigString("BEBOSS_ADMIN_URL"))
       buildConfigField("String", "BEBOSS_ADMIN_WHATSAPP", envConfigString("BEBOSS_ADMIN_WHATSAPP"))
       buildConfigField("String", "SENTRY_DSN", envConfigString("SENTRY_DSN"))
+      buildConfigField("String", "ANDROID_RELEASE_CERT_SHA256", envConfigString("ANDROID_RELEASE_CERT_SHA256"))
       buildConfigField("String", "SUPABASE_ANON_KEY", envConfigString("SUPABASE_ANON_KEY"))
       buildConfigField("String", "SUPABASE_CERT_PINS", envConfigString("SUPABASE_CERT_PINS"))
       buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", envConfigString("SUPABASE_PUBLISHABLE_KEY"))
