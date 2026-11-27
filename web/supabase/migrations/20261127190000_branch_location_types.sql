@@ -16,7 +16,8 @@ BEGIN
   ) THEN
     ALTER TABLE public.shop_branches
       ADD CONSTRAINT shop_branches_location_type_check
-      CHECK (location_type IN ('STORE', 'WAREHOUSE'));
+      CHECK (location_type IN ('STORE', 'WAREHOUSE')
+        AND (location_type <> 'WAREHOUSE' OR is_main_branch = false));
   END IF;
 END $$;
 
