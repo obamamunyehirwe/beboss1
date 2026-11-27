@@ -123,6 +123,7 @@ import com.beboss.shopmgmt.util.MessageDispatchRecord
 import com.beboss.shopmgmt.util.OfflineSubscriptionManager
 import com.beboss.shopmgmt.util.PdfReportGenerator
 import com.beboss.shopmgmt.util.SubscriptionSecurityManager
+import com.beboss.shopmgmt.ui.screens.admin.AdminCloudActivityTab
 import com.beboss.shopmgmt.ui.screens.admin.AdminCloudHealthTab
 import com.beboss.shopmgmt.ui.screens.admin.AdminFleetTelemetryTab
 import com.beboss.shopmgmt.util.CloudHealthDiagnosticsDto
@@ -130,6 +131,7 @@ import com.beboss.shopmgmt.util.SupabaseAdminClient
 import com.beboss.shopmgmt.util.SupabaseAdminSession
 import com.beboss.shopmgmt.util.SupabaseAuditLogDto
 import com.beboss.shopmgmt.util.SupabaseBranchSnapshotDto
+import com.beboss.shopmgmt.util.SupabaseCloudSyncEventDto
 import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
 import com.beboss.shopmgmt.util.SupabasePaymentRequestDto
 import com.beboss.shopmgmt.util.SupabaseShopAccountDto
@@ -179,6 +181,8 @@ fun AdminVerificationConsoleDialog(
     onDeleteBranchSnapshot: (SupabaseBranchSnapshotDto) -> Unit = {},
     onShareWebPortal: () -> Unit,
     deviceTelemetry: List<SupabaseDeviceTelemetryDto> = emptyList(),
+    cloudActivity: List<SupabaseCloudSyncEventDto> = emptyList(),
+    onLoadMoreCloudActivity: () -> Unit = {},
     cloudHealth: CloudHealthDiagnosticsDto? = null,
     onRunCloudDiagnostics: () -> Unit = {},
     onLoadMoreShops: () -> Unit = {},
@@ -684,6 +688,12 @@ fun AdminVerificationConsoleDialog(
                             onClick = { selectedTab = 10 },
                             modifier = Modifier.testTag("admin_tab_cloud_health"),
                             text = { Text("Cloud & Exports", fontSize = 11.5.sp, fontWeight = FontWeight.Bold) }
+                        )
+                        Tab(
+                            selected = selectedTab == 11,
+                            onClick = { selectedTab = 11 },
+                            modifier = Modifier.testTag("admin_tab_activity"),
+                            text = { Text("Activity (${cloudActivity.size})", fontSize = 11.5.sp, fontWeight = FontWeight.Bold) }
                         )
                     }
 
@@ -2333,7 +2343,7 @@ fun AdminVerificationConsoleDialog(
                             )
                         }
 
-                        else -> {
+                        10 -> {
                             AdminCloudHealthTab(
                                 cloudHealth = cloudHealth,
                                 shopCount = shopAccounts.size,
@@ -2343,6 +2353,15 @@ fun AdminVerificationConsoleDialog(
                                 onRunDiagnostics = onRunCloudDiagnostics,
                                 onExportAdminCsv = onExportAdminCsv,
                                 onExportExecutivePdf = onExportExecutivePdf
+                            )
+                        }
+
+                        11 -> {
+                            AdminCloudActivityTab(
+                                events = cloudActivity,
+                                isLoading = isLoading,
+                                onRefresh = onRefresh,
+                                onLoadMore = onLoadMoreCloudActivity
                             )
                         }
                     }
