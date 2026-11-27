@@ -1594,8 +1594,6 @@ object SupabaseAdminClient {
                 throw IOException("This update requires Android API $archiveMinSdk or later.")
             }
 
-            }
-
             if (destination.exists() && !destination.delete()) {
                 throw IOException("BeBoss could not replace an older cached update file.")
             }
