@@ -1,7 +1,7 @@
 import type React from "react";
 import { useMemo, useState } from "react";
 import { Check, Search, ShieldCheck, Users, UserCheck, UserX, SlidersHorizontal, RefreshCw, LockKeyhole, Info } from "lucide-react";
-import { errorText, rows, s } from "../../lib/format";
+import { downloadCsv, errorText, rows, s } from "../../lib/format";
 import type { CloudState, Row, Snapshot } from "../../lib/types";
 import { Empty, Modal, PageHeading, StatCard, StatusPill } from "../ui";
 
@@ -64,6 +64,13 @@ export function StaffPage({ cloud, snapshot, onSaveStaff, offline }: {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [permissionSearch, setPermissionSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkRole, setBulkRole] = useState<"KEEP" | "MANAGER" | "CASHIER">("KEEP");
+  const [bulkBranch, setBulkBranch] = useState("__KEEP__");
+  const [bulkState, setBulkState] = useState<"KEEP" | "ACTIVE" | "INACTIVE">("KEEP");
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState("");
+  const [bulkError, setBulkError] = useState("");
 
   const staff = rows(cloud.staff);
   const branches = rows(cloud.branches).filter((b) => b.is_active);
@@ -76,6 +83,78 @@ export function StaffPage({ cloud, snapshot, onSaveStaff, offline }: {
       (stateFilter === "ALL" || (stateFilter === "ACTIVE" ? u.is_active !== false : u.is_active === false)) &&
       (roleFilter === "ALL" || s(u.role).toUpperCase() === roleFilter);
   }), [staff, search, stateFilter, roleFilter]);
+
+  const selectableFiltered = filtered.filter((user) => s(user.role).toUpperCase() !== "OWNER");
+  const selectedStaff = staff.filter((user) => selectedIds.includes(s(user.user_id)) && s(user.role).toUpperCase() !== "OWNER");
+
+  function toggleStaffSelection(userId: string, checked: boolean) {
+    setSelectedIds((current) => checked
+      ? Array.from(new Set([...current, userId]))
+      : current.filter((id) => id !== userId));
+  }
+
+  function toggleFilteredSelection(checked: boolean) {
+    const ids = selectableFiltered.map((user) => s(user.user_id));
+    setSelectedIds((current) => checked
+      ? Array.from(new Set([...current, ...ids]))
+      : current.filter((id) => !ids.includes(id)));
+  }
+
+  function exportStaffDirectory() {
+    const report = staff.map((user) => {
+      const profile = rows(snapshot?.users).find((item) =>
+        s(item.id) === s(user.user_id) || (s(user.username) && s(item.username).toLowerCase() === s(user.username).toLowerCase())
+      );
+      return {
+        full_name: s(user.full_name), username: s(user.username), phone: s(user.phone),
+        role: s(user.role), branch: s(user.assigned_branch_name) || "All branches",
+        status: user.is_active === false ? "INACTIVE" : "ACTIVE",
+        permissions_enabled: profile ? PERMISSIONS.filter((item) => profile[item.key] === true).length : "Not synchronized",
+        last_updated: user.updated_at ? new Date(s(user.updated_at)).toLocaleString() : ""
+      };
+    });
+    downloadCsv("BeBoss-Staff-Directory-" + new Date().toISOString().slice(0, 10) + ".csv",
+      ["full_name", "username", "phone", "role", "branch", "status", "permissions_enabled", "last_updated"], report);
+  }
+
+  async function applyBulkAccess() {
+    if (!selectedStaff.length) return;
+    if (bulkRole === "KEEP" && bulkBranch === "__KEEP__" && bulkState === "KEEP") {
+      setBulkError("Choose at least one bulk change before applying.");
+      return;
+    }
+    const changes: string[] = [];
+    if (bulkRole !== "KEEP") changes.push("role to " + bulkRole);
+    if (bulkBranch !== "__KEEP__") changes.push("branch assignment");
+    if (bulkState !== "KEEP") changes.push("account state to " + bulkState);
+    const inactiveCount = bulkState === "INACTIVE" ? selectedStaff.filter((user) => user.is_active !== false).length : 0;
+    const confirmation = "Apply " + changes.join(", ") + " to " + selectedStaff.length + " selected staff accounts?" +
+      (inactiveCount ? "\\n\\n" + inactiveCount + " active accounts will be disabled. Existing sales history will remain unchanged." : "");
+    if (!window.confirm(confirmation)) return;
+    setBulkSaving(true);
+    setBulkError("");
+    setBulkProgress("Preparing " + selectedStaff.length + " staff updates…");
+    const completed: string[] = [];
+    try {
+      for (let index = 0; index < selectedStaff.length; index++) {
+        const user = selectedStaff[index];
+        const nextRole = bulkRole === "KEEP" ? (s(user.role).toUpperCase() === "MANAGER" ? "MANAGER" : "CASHIER") : bulkRole;
+        const nextBranch = bulkBranch === "__KEEP__" ? s(user.assigned_branch_id) : bulkBranch;
+        const nextActive = bulkState === "KEEP" ? user.is_active !== false : bulkState === "ACTIVE";
+        setBulkProgress("Updating " + (index + 1) + " of " + selectedStaff.length + " · " + (s(user.full_name) || s(user.username)));
+        await onSaveStaff({ userId: s(user.user_id), role: nextRole, branchId: nextBranch, isActive: nextActive });
+        completed.push(s(user.user_id));
+      }
+      setSelectedIds((current) => current.filter((id) => !completed.includes(id)));
+      setBulkProgress("Successfully updated " + completed.length + " staff accounts in BeBoss Cloud.");
+      setBulkRole("KEEP"); setBulkBranch("__KEEP__"); setBulkState("KEEP");
+    } catch (error) {
+      setSelectedIds((current) => current.filter((id) => completed.includes(id) ? false : true));
+      setBulkError((error instanceof Error ? error.message : "A staff update failed.") +
+        (completed.length ? " " + completed.length + " earlier updates were saved; the remaining selections are still selected for review." : ""));
+      setBulkProgress("Stopped after " + completed.length + " successful update(s).");
+    } finally { setBulkSaving(false); }
+  }
 
   const editingProfile = editing ? rows(snapshot?.users).find((item) =>
     s(item.id) === s(editing.user_id) ||
@@ -141,6 +220,7 @@ export function StaffPage({ cloud, snapshot, onSaveStaff, offline }: {
       <div className="staff-directory-toolbar">
         <div><span className="eyebrow muted">STAFF DIRECTORY</span><h3>Enrolled shop users</h3><p>Access changes are saved to the cloud staff registry and signed shared snapshot.</p></div>
         <div className="staff-directory-tools">
+          <button className="btn-outline small" type="button" onClick={exportStaffDirectory}><Users size={13} /> Export CSV</button>
           <label className="staff-search"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, username or branch" /></label>
           <select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as typeof stateFilter)} aria-label="Filter staff by state">
             <option value="ALL">All states</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option>
@@ -150,7 +230,18 @@ export function StaffPage({ cloud, snapshot, onSaveStaff, offline }: {
           </select>
         </div>
       </div>
-      <div className="staff-table-wrap"><table className="staff-table"><thead><tr><th>Staff member</th><th>Role</th><th>Branch</th><th>Permissions</th><th>Operating state</th><th></th></tr></thead><tbody>
+      {selectedIds.length > 0 && <section className="staff-bulk-panel">
+        <div className="staff-bulk-heading"><div><strong>{selectedStaff.length} selected staff accounts</strong><small>Bulk changes are submitted through the same owner-authorized cloud operation as individual edits.</small></div><button type="button" className="text-action" disabled={bulkSaving} onClick={() => setSelectedIds([])}>Clear selection</button></div>
+        <div className="staff-bulk-controls">
+          <label>Role<select value={bulkRole} disabled={bulkSaving} onChange={(event) => setBulkRole(event.target.value as typeof bulkRole)}><option value="KEEP">Keep current role</option><option value="MANAGER">Set Manager</option><option value="CASHIER">Set Cashier</option></select></label>
+          <label>Branch<select value={bulkBranch} disabled={bulkSaving} onChange={(event) => setBulkBranch(event.target.value)}><option value="__KEEP__">Keep current branch</option><option value="">All branches</option>{branches.map((branch) => <option key={s(branch.id)} value={s(branch.id)}>{s(branch.name)}</option>)}</select></label>
+          <label>Account state<select value={bulkState} disabled={bulkSaving} onChange={(event) => setBulkState(event.target.value as typeof bulkState)}><option value="KEEP">Keep current state</option><option value="ACTIVE">Activate</option><option value="INACTIVE">Deactivate</option></select></label>
+          <button type="button" className="btn-primary" disabled={offline || bulkSaving || !selectedStaff.length} onClick={() => void applyBulkAccess()}>{bulkSaving ? "Applying…" : "Apply to selected"}</button>
+        </div>
+        {bulkProgress && <p className="staff-bulk-progress">{bulkProgress}</p>}
+        {bulkError && <div className="inline-alert error">{bulkError}</div>}
+      </section>}
+      <div className="staff-table-wrap"><table className="staff-table"><thead><tr><th><input type="checkbox" aria-label="Select all visible staff" checked={selectableFiltered.length > 0 && selectableFiltered.every((user) => selectedIds.includes(s(user.user_id)))} disabled={!selectableFiltered.length || offline || bulkSaving} onChange={(event) => toggleFilteredSelection(event.target.checked)} /></th><th>Staff member</th><th>Role</th><th>Branch</th><th>Permissions</th><th>Operating state</th><th></th></tr></thead><tbody>
         {filtered.map((user) => {
           const profile = rows(snapshot?.users).find((item) =>
             s(item.id) === s(user.user_id) ||
@@ -158,6 +249,7 @@ export function StaffPage({ cloud, snapshot, onSaveStaff, offline }: {
           );
           const permissionCount = profile ? PERMISSIONS.filter((item) => profile[item.key] === true).length : null;
           return <tr key={s(user.user_id)}>
+            <td><input type="checkbox" aria-label={"Select " + (s(user.full_name) || s(user.username))} checked={selectedIds.includes(s(user.user_id))} disabled={offline || bulkSaving || s(user.role).toUpperCase() === "OWNER"} onChange={(event) => toggleStaffSelection(s(user.user_id), event.target.checked)} /></td>
             <td><div className="staff-person"><span>{s(user.full_name).slice(0,1).toUpperCase() || "•"}</span><strong>{s(user.full_name) || s(user.username)}</strong></div><small className="staff-username">@{s(user.username)}</small></td>
             <td><StatusPill value={s(user.role)} /></td>
             <td>{s(user.assigned_branch_name) || "All branches"}</td>
