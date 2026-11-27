@@ -1,4 +1,5 @@
 import type React from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useMemo, useState } from "react";
 import { Activity, Building2, Check, MapPin, Pencil, Plus, Search, Store, Trash2, Users, Warehouse } from "lucide-react";
 import { downloadCsv, errorText, id, money, n, rows, s } from "../../lib/format";
@@ -222,10 +223,20 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
     let threshold = 0;
     try { threshold = Math.max(0, n(JSON.parse(s(approvalEvent?.detail)).reconciliationVarianceThresholdRwf)); }
     catch { /* No saved policy means approval threshold is disabled. */ }
-    const variance = Math.round(counted - estimate.expected);
+    const localCalculation = await invoke<{
+      expectedCashRwf: number;
+      varianceRwf: number;
+      approvalRequired: boolean;
+    }>("calculate_branch_cash_reconciliation", {
+      openingFloatRwf: Math.round(estimate.openingFloat),
+      cashSalesRwf: Math.round(estimate.cashSales),
+      customerCashPaymentsRwf: Math.round(estimate.cashCollections),
+      cashCountedRwf: Math.round(counted),
+      varianceThresholdRwf: Math.round(threshold)
+    });
     let approvalConfirmed = false;
     let approvalReason = "";
-    if (threshold > 0 && Math.abs(variance) >= threshold) {
+    if (localCalculation.approvalRequired) {
       approvalConfirmed = window.confirm("The cash variance is " + money(Math.abs(variance)) +
         ", meeting the shop's owner-review threshold of " + money(threshold) +
         ". Confirm that the owner has reviewed this variance?");
