@@ -69,8 +69,19 @@ export function QnxDevelopmentPage() {
   }, [installRoot]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let active = true;
+    invoke<QnxStatus>("qnx_probe", { installRoot: null })
+      .then((next) => {
+        if (active) {
+          setStatus(next);
+          setLastChecked(Date.now());
+        }
+      })
+      .catch((cause) => {
+        if (active) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => { active = false; };
+  }, []);
 
   async function runOperation(name: string, operation: () => Promise<QnxResult>) {
     setBusy(name);
