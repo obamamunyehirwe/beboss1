@@ -84,7 +84,7 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnounc
         targetProgress: target > 0 ? Math.min(100, metric.total / target * 100) : 0
       };
     }).sort((a, b) => b.monthlySales - a.monthlySales);
-  }, [cloud.branches, snapshot?.sales]);
+  }, [cloud.branches, cloud.staff, snapshot?.sales]);
 
   const alerts: ManagementAlert[] = [
     ...(lowStock.length ? [{
