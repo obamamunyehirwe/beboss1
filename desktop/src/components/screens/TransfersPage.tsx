@@ -138,6 +138,7 @@ export function TransfersPage({ cloud, snapshot, onAction, onRefresh, offline }:
         <button className="btn-outline" onClick={exportTransfers}><Download size={15} /> Export view</button>
         <button className="btn-primary" disabled={offline || !products.length || branches.length < 2} onClick={() => setOpen(true)}><Plus size={17} /> New transfer</button>
       </div>} />
+    {policyNotice && <div className="inline-alert success">{policyNotice}</div>}
     <div className="info-note"><Activity size={17} /> Desktop submits a signed cloud command. Source and destination terminals validate physical stock movement; this screen cannot mark inventory as transferred or received without terminal confirmation.</div>
     <div className="stat-grid four">
       <StatCard label="All transfer records" value={transfers.length.toLocaleString()} sub="Cloud transfer registry" icon={Truck} />
