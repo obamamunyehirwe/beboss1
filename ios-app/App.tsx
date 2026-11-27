@@ -24,6 +24,8 @@ import {
 } from './src/services/cloud';
 import { isSubscriptionActive, roundMoney } from './src/core/domain';
 import { CLOUD_SYNC_NOTICE } from './src/services/cloud-status';
+import { buildReorderSuggestions } from './src/core/forecast';
+import { exportInventoryCsv, exportSalesCsv } from './src/services/reports';
 
 type Screen = 'dashboard' | 'pos' | 'inventory' | 'customers' | 'sales' | 'reports' | 'purchases' | 'branches' | 'staff' | 'sync' | 'subscription' | 'settings';
 type ModalName = 'product' | 'adjust' | 'customer' | 'payment' | 'checkout' | 'purchase' | 'branch' | 'transfer' | 'staff' | 'settings' | 'scanner' | 'backup' | null;
@@ -59,6 +61,8 @@ function AppRoot(): React.JSX.Element {
   const [splitMomo, setSplitMomo] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [receiptNumber, setReceiptNumber] = useState('');
+  const [analyticsPeriod, setAnalyticsPeriod] = useState('THIS_MONTH');
+  const [reportBranch, setReportBranch] = useState('ALL');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
@@ -724,22 +728,174 @@ function AppRoot(): React.JSX.Element {
 
   const renderReports = () => {
     if (!actor.canViewAnalytics) return <EmptyState title="Reports restricted" subtitle="Your staff role does not have permission to view business analytics." />;
-    const products = snapshot?.products || [];
-    const sortedProducts = [...products].sort((a, b) => b.quantityInStock * b.sellingPrice - a.quantityInStock * a.sellingPrice).slice(0, 5);
-    const totalUnits = products.reduce((sum, product) => sum + product.quantityInStock, 0);
-    const averageSale = snapshot?.sales.length ? (snapshot.totalSales / snapshot.sales.length) : 0;
-    const margin = snapshot?.totalSales ? (snapshot.totalProfit / snapshot.totalSales) * 100 : 0;
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const weekStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const daysSinceMonday = (weekStartDate.getDay() + 6) % 7;
+    weekStartDate.setDate(weekStartDate.getDate() - daysSinceMonday);
+    const startTime = analyticsPeriod === 'TODAY' ? startOfToday
+      : analyticsPeriod === 'THIS_WEEK' ? weekStartDate.getTime()
+      : analyticsPeriod === 'THIS_MONTH' ? new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+      : 0;
+    const effectiveBranch = actor.branchId || reportBranch;
+    const filteredSales = (snapshot?.sales || []).filter(sale =>
+      sale.saleDate >= startTime &&
+      sale.saleDate <= now.getTime() &&
+      (effectiveBranch === 'ALL' || sale.branchId === effectiveBranch)
+    );
+    const filteredProducts = (snapshot?.products || []).filter(product =>
+      effectiveBranch === 'ALL' || product.branchId === effectiveBranch
+    );
+    const totalSales = filteredSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+    const totalProfit = filteredSales.reduce((sum, sale) => sum + sale.totalProfit, 0);
+    const totalCost = filteredSales.reduce((sum, sale) => sum + sale.totalCost, 0);
+    const averageSale = filteredSales.length ? totalSales / filteredSales.length : 0;
+    const margin = totalSales > 0 ? totalProfit / totalSales * 100 : 0;
+
+    const productTotals = new Map<string, { name: string; quantity: number; revenue: number; profit: number }>();
+    for (const sale of filteredSales) {
+      for (const line of sale.items || []) {
+        const current = productTotals.get(line.productId) || { name: line.productName, quantity: 0, revenue: 0, profit: 0 };
+        current.quantity += line.quantitySold;
+        current.revenue += line.subtotal;
+        current.profit += line.profit;
+        productTotals.set(line.productId, current);
+      }
+    }
+    const topProducts = Array.from(productTotals.entries()).sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 6);
+    const branchTotals = new Map<string, { name: string; revenue: number; profit: number; sales: number }>();
+    for (const sale of filteredSales) {
+      const current = branchTotals.get(sale.branchId) || {
+        name: sale.branchName || sale.branchId, revenue: 0, profit: 0, sales: 0
+      };
+      current.revenue += sale.totalAmount;
+      current.profit += sale.totalProfit;
+      current.sales += 1;
+      branchTotals.set(sale.branchId, current);
+    }
+    const reorderSuggestions = buildReorderSuggestions(filteredProducts, snapshot?.sales || [], {
+      branchId: effectiveBranch,
+      leadTimeDays: 7,
+      reviewPeriodDays: 7,
+      nowMs: now.getTime()
+    }).slice(0, 12);
+    const lastSevenDays = Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - index));
+      const dayStart = day.getTime();
+      const dayEnd = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime();
+      const daySales = filteredSales.filter(sale => sale.saleDate >= dayStart && sale.saleDate < dayEnd);
+      return {
+        label: day.toLocaleDateString(undefined, { weekday: 'short' }),
+        revenue: daySales.reduce((sum, sale) => sum + sale.totalAmount, 0),
+        count: daySales.length
+      };
+    });
+    const maxDayRevenue = Math.max(1, ...lastSevenDays.map(day => day.revenue));
+    const paymentTotals = new Map<string, number>();
+    filteredSales.forEach(sale => {
+      if (sale.paymentBreakdown?.length) {
+        sale.paymentBreakdown.forEach(part => paymentTotals.set(part.method, (paymentTotals.get(part.method) || 0) + part.amount));
+      } else {
+        paymentTotals.set(sale.paymentMethod, (paymentTotals.get(sale.paymentMethod) || 0) + sale.amountPaid);
+      }
+    });
+    const exportCurrentSales = async () => {
+      try {
+        requireRoleFeature('canExportReports', 'export sales reports');
+        const path = await exportSalesCsv(filteredSales, profile!);
+        setNotice('Sales report exported: ' + path.split('/').pop());
+      } catch (caught: any) { setError(caught?.message || 'Sales report export failed.'); }
+    };
+    const exportCurrentInventory = async () => {
+      try {
+        requireRoleFeature('canExportReports', 'export inventory reports');
+        const path = await exportInventoryCsv(filteredProducts, snapshot?.branches || [], profile!);
+        setNotice('Inventory report exported: ' + path.split('/').pop());
+      } catch (caught: any) { setError(caught?.message || 'Inventory report export failed.'); }
+    };
+
     return (
       <View>
-        <PageHeading title="Business reports" subtitle="Current local records. Cloud-consolidated figures require secure iOS device enrollment." />
-        <Metric label="Recorded revenue" value={money(snapshot?.totalSales || 0, currency)} tone="orange" />
-        <Metric label="Gross profit" value={money(snapshot?.totalProfit || 0, currency)} tone="green" />
-        <Metric label="Gross margin" value={margin.toFixed(1) + '%'} tone="green" />
-        <Metric label="Average sale" value={money(averageSale, currency)} />
-        <Metric label="Stock units" value={totalUnits.toLocaleString()} />
-        <Metric label="Inventory cost value" value={money(snapshot?.inventoryCost || 0, currency)} />
-        <SectionHeader title="Top stock value" />
-        {sortedProducts.map(product => <ProductRow key={product.id} product={product} currency={currency} />)}
+        <PageHeading title="Business intelligence" subtitle="Sales, gross profit, payment mix, branch performance and inventory demand." />
+        <SelectChips label="Reporting period" values={[
+          { label: 'Today', value: 'TODAY' },
+          { label: 'This week', value: 'THIS_WEEK' },
+          { label: 'This month', value: 'THIS_MONTH' },
+          { label: 'All time', value: 'ALL_TIME' }
+        ]} value={analyticsPeriod} onChange={setAnalyticsPeriod} />
+        {!actor.branchId ? <SelectChips label="Branch scope" values={[
+          { label: 'All branches', value: 'ALL' },
+          ...(snapshot?.branches.filter(branch => branch.isActive).map(branch => ({ label: branch.name, value: branch.id })) || [])
+        ]} value={reportBranch} onChange={setReportBranch} /> : null}
+        <View style={styles.metricGrid}>
+          <Metric label="Recorded revenue" value={money(totalSales, currency)} tone="orange" />
+          <Metric label="Gross profit" value={money(totalProfit, currency)} tone="green" />
+          <Metric label="Gross margin" value={margin.toFixed(1) + '%'} tone="green" />
+          <Metric label="Average sale" value={money(averageSale, currency)} />
+        </View>
+        <Text style={styles.muted}>{filteredSales.length} sales · Revenue net of discounts · Cost of goods {money(totalCost, currency)}</Text>
+        <SectionHeader title="Sales trend · last seven days" />
+        <View style={styles.card}>
+          {lastSevenDays.map(day => (
+            <View key={day.label} style={styles.trendRow}>
+              <Text style={styles.trendLabel}>{day.label}</Text>
+              <View style={styles.trendTrack}>
+                <View style={[styles.trendBar, { width: Math.max(day.revenue > 0 ? 2 : 0, (day.revenue / maxDayRevenue) * 100) + '%' }]} />
+              </View>
+              <Text style={styles.trendValue}>{money(day.revenue, currency)}</Text>
+            </View>
+          ))}
+        </View>
+        <SectionHeader title="Top performing products" action="Export inventory" onAction={exportCurrentInventory} />
+        {topProducts.map(([id, item]) => (
+          <View key={id} style={styles.compactRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{item.name}</Text>
+              <Text style={styles.rowSub}>{item.quantity} units sold · Gross profit {money(item.profit, currency)}</Text>
+            </View>
+            <Text style={styles.price}>{money(item.revenue, currency)}</Text>
+          </View>
+        ))}
+        {!topProducts.length ? <EmptyState title="No sales in this period" subtitle="Sales must be recorded before product performance can be calculated." /> : null}
+        {branchTotals.size > 1 ? <>
+          <SectionHeader title="Branch performance" />
+          {Array.from(branchTotals.entries()).sort((a, b) => b[1].revenue - a[1].revenue).map(([id, item]) => (
+            <View key={id} style={styles.compactRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowTitle}>{item.name}</Text>
+                <Text style={styles.rowSub}>{item.sales} transactions · Profit {money(item.profit, currency)}</Text>
+              </View>
+              <Text style={styles.price}>{money(item.revenue, currency)}</Text>
+            </View>
+          ))}
+        </> : null}
+        <SectionHeader title="Payment method mix" />
+        {Array.from(paymentTotals.entries()).map(([method, amount]) => (
+          <View key={method} style={styles.compactRow}>
+            <Text style={[styles.rowTitle, { flex: 1 }]}>{method.replace('_', ' ')}</Text>
+            <Text style={styles.price}>{money(amount, currency)}</Text>
+          </View>
+        ))}
+        <SectionHeader title="Demand-based reorder suggestions" />
+        <Text style={styles.muted}>Forecast from 56 local sales days, recent trend, weekday seasonality and a 7-day replenishment lead time. Suggestions are limited to the selected branch scope.</Text>
+        {reorderSuggestions.map(({ product, forecast }) => (
+          <View key={product.id} style={styles.inventoryCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{product.name}</Text>
+              <Text style={styles.rowSub}>Stock {product.quantityInStock} · Reorder point {Math.ceil(forecast.reorderPoint)} · {forecast.confidence} confidence</Text>
+              <Text style={styles.rowSub}>Daily demand {forecast.forecastDailyDemand.toFixed(2)} · Safety stock {forecast.safetyStock.toFixed(1)}</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={styles.warningText}>Order {forecast.suggestedOrderQuantity}</Text>
+              <ActionLink label="Receive stock" onPress={() => openPurchase(product)} />
+            </View>
+          </View>
+        ))}
+        {!reorderSuggestions.length ? <EmptyState title="No current reorder alerts" subtitle="No products are below their calculated demand-based replenishment point." /> : null}
+        <View style={styles.inlineActions}>
+          <ButtonSecondary title="Export sales CSV" onPress={exportCurrentSales} disabled={!actor.canExportReports} />
+          <ButtonSecondary title="Export inventory CSV" onPress={exportCurrentInventory} disabled={!actor.canExportReports} />
+        </View>
       </View>
     );
   };
