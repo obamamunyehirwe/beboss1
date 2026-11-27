@@ -357,7 +357,26 @@ export async function checkout(input: CheckoutInput, actor: Staff): Promise<Sale
   requirePermission(actor, 'canSellPOS', 'complete sales');
   if (!input.items.length) throw new Error('Add at least one item before checkout.');
   const discountCents = toCents(assertAmount(input.discountAmount, 'Discount'));
-  const paidCentsInput = toCents(assertAmount(input.amountPaid, 'Amount paid'));
+  const paymentBreakdown = input.paymentMethod === 'SPLIT' ? (input.paymentBreakdown || []) : [];
+  let paidCentsInput = toCents(assertAmount(input.amountPaid, 'Amount paid'));
+  if (input.paymentMethod === 'SPLIT') {
+    if (paymentBreakdown.length < 2) throw new Error('Split tender requires at least two payment methods.');
+    const allowedMethods = new Set(['CASH', 'MOMO', 'AIRTEL', 'CARD', 'BANK']);
+    const seenMethods = new Set<string>();
+    let splitCents = 0;
+    for (const part of paymentBreakdown) {
+      if (!allowedMethods.has(part.method)) throw new Error('A split payment method is not supported.');
+      if (seenMethods.has(part.method)) throw new Error('Use each split payment method once and combine its amount.');
+      seenMethods.add(part.method);
+      splitCents += toCents(assertAmount(part.amount, part.method + ' payment', false));
+    }
+    if (splitCents !== toCents(assertAmount(input.amountPaid, 'Split amount paid'))) {
+      throw new Error('The split payment amounts do not equal the amount paid.');
+    }
+    paidCentsInput = splitCents;
+  } else if (paymentBreakdown.length) {
+    throw new Error('Payment allocations are only accepted for split-tender transactions.');
+  }
   if (discountCents > 0) requirePermission(actor, 'canApplyDiscounts', 'apply discounts');
   return transaction(async tx => {
     const branchId = input.branchId || actor.branchId || 'main_branch';
@@ -420,7 +439,11 @@ export async function checkout(input: CheckoutInput, actor: Staff): Promise<Sale
       totalProfit: centsToMoney(totalCents - totalCostCents), discountAmount: centsToMoney(discountCents),
       paymentMethod: input.paymentMethod || 'CASH',
       paymentStatus: paidCents >= totalCents ? 'PAID' : paidCents > 0 ? 'PARTIAL' : 'UNPAID',
-      amountPaid: centsToMoney(paidCents), notes: input.notes.trim(), branchId, branchName: branch.name,
+      amountPaid: centsToMoney(paidCents),
+      paymentBreakdown: input.paymentMethod === 'SPLIT'
+        ? paymentBreakdown.map(part => ({ ...part, amount: centsToMoney(toCents(part.amount)) }))
+        : undefined,
+      notes: input.notes.trim(), branchId, branchName: branch.name,
       cashierId: actor.id, cashierName: actor.name, items: lineItems
     };
     await execute('INSERT INTO sales(id,receipt_number,customer_id,branch_id,total_cents,paid_cents,profit_cents,created_at,data) VALUES(?,?,?,?,?,?,?,?,?)',
