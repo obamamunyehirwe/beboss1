@@ -485,6 +485,21 @@ object DatabaseMigrations {
         }
     }
 
+    /**
+     * Adds an explicit location type without changing existing branch identity or stock.
+     * Historical records become STORE; owners can reclassify selected locations as WAREHOUSE.
+     */
+    val MIGRATION_17_18 = object : Migration(17, 18) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            if (!tableExists(db, "branches")) return
+            val columns = getExistingColumns(db, "branches")
+            if (!columns.contains("locationType")) {
+                db.execSQL("ALTER TABLE branches ADD COLUMN locationType TEXT NOT NULL DEFAULT 'STORE'")
+            }
+            db.execSQL("UPDATE branches SET locationType = 'STORE' WHERE locationType IS NULL OR trim(locationType) = ''")
+        }
+    }
+
     val ALL_MIGRATIONS = arrayOf(
         MIGRATION_1_2,
         MIGRATION_2_3,
@@ -501,6 +516,7 @@ object DatabaseMigrations {
         MIGRATION_13_14,
         MIGRATION_14_15,
         MIGRATION_15_16,
-        MIGRATION_16_17
+        MIGRATION_16_17,
+        MIGRATION_17_18
     )
 }
