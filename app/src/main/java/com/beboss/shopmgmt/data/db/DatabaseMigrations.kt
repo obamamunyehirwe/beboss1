@@ -531,6 +531,32 @@ object DatabaseMigrations {
         }
     }
 
+    /** Adds owner-approval evidence columns without dropping offline transfer history. */
+    val MIGRATION_19_20 = object : Migration(19, 20) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            if (!tableExists(db, "stock_transfers")) return
+            val columns = getExistingColumns(db, "stock_transfers")
+            if (!columns.contains("approvalReason")) {
+                db.execSQL("ALTER TABLE stock_transfers ADD COLUMN approvalReason TEXT NOT NULL DEFAULT ''")
+            }
+            if (!columns.contains("approvalActorUserId")) {
+                db.execSQL("ALTER TABLE stock_transfers ADD COLUMN approvalActorUserId TEXT NOT NULL DEFAULT ''")
+            }
+            if (!columns.contains("approvalSignedAt")) {
+                db.execSQL("ALTER TABLE stock_transfers ADD COLUMN approvalSignedAt INTEGER NOT NULL DEFAULT 0")
+            }
+            if (!columns.contains("approvalPolicyVersion")) {
+                db.execSQL("ALTER TABLE stock_transfers ADD COLUMN approvalPolicyVersion INTEGER NOT NULL DEFAULT 0")
+            }
+            if (!columns.contains("approvalDeviceId")) {
+                db.execSQL("ALTER TABLE stock_transfers ADD COLUMN approvalDeviceId TEXT NOT NULL DEFAULT ''")
+            }
+            if (!columns.contains("approvalSignature")) {
+                db.execSQL("ALTER TABLE stock_transfers ADD COLUMN approvalSignature TEXT NOT NULL DEFAULT ''")
+            }
+        }
+    }
+
     val ALL_MIGRATIONS = arrayOf(
         MIGRATION_1_2,
         MIGRATION_2_3,
@@ -549,6 +575,7 @@ object DatabaseMigrations {
         MIGRATION_15_16,
         MIGRATION_16_17,
         MIGRATION_17_18,
-        MIGRATION_18_19
+        MIGRATION_18_19,
+        MIGRATION_19_20
     )
 }
