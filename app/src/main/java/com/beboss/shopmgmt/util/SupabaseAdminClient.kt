@@ -1,6 +1,7 @@
 package com.beboss.shopmgmt.util
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Base64
 import android.util.Log
@@ -1588,13 +1589,31 @@ object SupabaseAdminClient {
                 }
             }
 
-            // Verify the actual archive agrees with the release record before exposing it
-            // to Android's installer. The OS remains responsible for certificate/lineage checks.
+            // Verify archive identity, version, SDK compatibility and the pinned BeBoss
+            // production signer before exposing it to Android's package installer.
+            val archiveFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                @Suppress("DEPRECATION")
+                PackageManager.GET_SIGNATURES
+            }
             @Suppress("DEPRECATION")
-            val archiveInfo = context.packageManager.getPackageArchiveInfo(partial.absolutePath, 0)
+            val archiveInfo = context.packageManager.getPackageArchiveInfo(partial.absolutePath, archiveFlags)
                 ?: throw IOException("The downloaded file is not a valid Android APK.")
             if (archiveInfo.packageName != context.packageName) {
                 throw IOException("The published APK belongs to a different Android application.")
+            }
+            val signerCertificates = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                archiveInfo.signingInfo?.apkContentsSigners?.toList().orEmpty()
+            } else {
+                archiveInfo.signatures?.toList().orEmpty()
+            }
+            if (signerCertificates.size != 1 ||
+                !release.hasExpectedSigningCertificate(
+                    signerCertificates.singleOrNull()?.toByteArray() ?: ByteArray(0),
+                    BuildConfig.ANDROID_RELEASE_CERT_SHA256
+                )) {
+                throw IOException("The APK signing certificate does not match the official BeBoss production key. The update was blocked.")
             }
             val archiveVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 archiveInfo.longVersionCode
