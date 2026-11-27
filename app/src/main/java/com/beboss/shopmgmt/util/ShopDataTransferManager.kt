@@ -187,6 +187,7 @@ object ShopDataTransferManager {
                 put("id", b.id)
                 put("name", b.name)
                 put("code", b.code)
+                put("locationType", b.locationType)
                 put("address", b.address)
                 put("phone", b.phone)
                 put("managerUserId", b.managerUserId)
