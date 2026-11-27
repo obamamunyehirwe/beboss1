@@ -1,77 +1,38 @@
 package com.beboss.shopmgmt.util
 
+import com.beboss.shared.HlcMath
 import java.util.concurrent.atomic.AtomicLong
-import kotlin.math.max
 
 /**
- * Thread-safe 64-bit Hybrid Logical Clock (HLC) for causal multi-branch synchronization.
- * Upper 48 bits encode physical epoch millis; lower 16 bits encode logical sequence counter.
+ * Thread-safe Android HLC adapter.
+ *
+ * The causal ordering rules live in shared Kotlin code so Android and iOS
+ * resolve concurrent/offline record versions with the same deterministic rules.
  */
 object HlcClock {
+    private val lastHlc = AtomicLong(HlcMath.pack(ClockGuard.effectiveNowMs(), 0))
 
-    private val lastHlc = AtomicLong(pack(ClockGuard.effectiveNowMs(), 0))
+    fun pack(physicalMs: Long, logical: Int): Long = HlcMath.pack(physicalMs, logical)
 
-    fun pack(physicalMs: Long, logical: Int): Long {
-        val maskedLogical = (logical and 0xFFFF).toLong()
-        return (physicalMs shl 16) or maskedLogical
-    }
+    fun physicalOf(hlc: Long): Long = HlcMath.physicalOf(hlc)
 
-    fun physicalOf(hlc: Long): Long = hlc ushr 16
-
-    fun logicalOf(hlc: Long): Int = (hlc and 0xFFFFL).toInt()
+    fun logicalOf(hlc: Long): Int = HlcMath.logicalOf(hlc)
 
     fun current(): Long = lastHlc.get()
 
-    /** Isolates tests from the real wall-clock timestamp used when this singleton initializes. */
+    /** Isolates tests from the wall-clock timestamp used when this singleton initializes. */
     internal fun resetForTests(initialHlc: Long = 0L) {
         lastHlc.set(initialHlc)
     }
 
-    /**
-     * Advances HLC for a local mutation event.
-     */
-    fun tick(nowMs: Long = ClockGuard.effectiveNowMs()): Long {
-        while (true) {
-            val prev = lastHlc.get()
-            val prevPhys = physicalOf(prev)
-            val prevLogic = logicalOf(prev)
-            val next = if (nowMs > prevPhys) {
-                pack(nowMs, 0)
-            } else {
-                pack(prevPhys, (prevLogic + 1).coerceAtMost(0xFFFF))
-            }
-            if (lastHlc.compareAndSet(prev, next)) return next
-        }
-    }
+    fun tick(nowMs: Long = ClockGuard.effectiveNowMs()): Long =
+        advance { previous -> HlcMath.tick(previous, nowMs) }
 
-    /**
-     * Merges a remote HLC timestamp on receipt so future local events stay causally ordered after it.
-     */
     fun observe(remoteHlc: Long, nowMs: Long = ClockGuard.effectiveNowMs()): Long {
         if (remoteHlc <= 0L) return tick(nowMs)
-        while (true) {
-            val prev = lastHlc.get()
-            val prevPhys = physicalOf(prev)
-            val remotePhys = physicalOf(remoteHlc)
-            val maxPhys = max(nowMs, max(prevPhys, remotePhys))
-            val nextLogic = when {
-                maxPhys == prevPhys && maxPhys == remotePhys ->
-                    (max(logicalOf(prev), logicalOf(remoteHlc)) + 1).coerceAtMost(0xFFFF)
-                maxPhys == prevPhys ->
-                    (logicalOf(prev) + 1).coerceAtMost(0xFFFF)
-                maxPhys == remotePhys ->
-                    (logicalOf(remoteHlc) + 1).coerceAtMost(0xFFFF)
-                else -> 0
-            }
-            val next = pack(maxPhys, nextLogic)
-            if (lastHlc.compareAndSet(prev, next)) return next
-        }
+        return advance { previous -> HlcMath.observe(previous, remoteHlc, nowMs) }
     }
 
-    /**
-     * Deterministic total-order comparator between a local and incoming entity version.
-     * Returns > 0 if incoming wins over local, < 0 if local wins, 0 if identical.
-     */
     fun compareVersions(
         localHlc: Long,
         localVersion: Long,
@@ -81,27 +42,22 @@ object HlcClock {
         remoteVersion: Long,
         remoteUpdatedAt: Long,
         remoteDeviceId: String
-    ): Int {
-        // Total order (antisymmetric + transitive) so every device converges to
-        // the same winner regardless of merge order. When both records carry a
-        // real HLC, the higher HLC wins causally. Otherwise (legacy HLC=0
-        // records, or an HLC tie) fall back to wall-clock updatedAt, then
-        // per-record version, then a deterministic device-id tie-break. A
-        // previous version-based special case for HLC=0 records was asymmetric
-        // and could pick a different winner depending on which side was
-        // "local", diverging peers; it is intentionally removed.
-        if (localHlc > 0L && remoteHlc > 0L && localHlc != remoteHlc) {
-            return remoteHlc.compareTo(localHlc)
+    ): Int = HlcMath.compareVersions(
+        localHlc = localHlc,
+        localVersion = localVersion,
+        localUpdatedAt = localUpdatedAt,
+        localDeviceId = localDeviceId,
+        remoteHlc = remoteHlc,
+        remoteVersion = remoteVersion,
+        remoteUpdatedAt = remoteUpdatedAt,
+        remoteDeviceId = remoteDeviceId
+    )
+
+    private inline fun advance(crossinline calculate: (Long) -> Long): Long {
+        while (true) {
+            val previous = lastHlc.get()
+            val next = calculate(previous)
+            if (lastHlc.compareAndSet(previous, next)) return next
         }
-        // Wall-clock timestamp comparison
-        if (remoteUpdatedAt != localUpdatedAt) {
-            return remoteUpdatedAt.compareTo(localUpdatedAt)
-        }
-        // Fallback version comparison
-        if (remoteVersion != localVersion) {
-            return remoteVersion.compareTo(localVersion)
-        }
-        // Deterministic node-ID tie breaker so all branches converge identically
-        return remoteDeviceId.compareTo(localDeviceId)
     }
 }
