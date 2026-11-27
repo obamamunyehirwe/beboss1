@@ -2,6 +2,7 @@
 
 use aes_gcm::{aead::{Aead, KeyInit, Payload}, Aes256Gcm, Nonce};
 use base64::prelude::*;
+use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use keyring::Entry;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,7 @@ const KEYRING_DATABASE_KEY: &str = "database-encryption-key";
 const KEYRING_DEVICE_ID_KEY: &str = "installation-device-id";
 const DATABASE_KEY_BACKUP_FILE: &str = "beboss-local.sqlite.dpapi-key";
 const DATABASE_KEY_DPAPI_ENTROPY: &[u8] = b"BeBoss Desktop SQLCipher master key v1";
+const LAN_MAX_UNCOMPRESSED_BYTES: usize = 5 * 1024 * 1024;
 #[cfg(target_os = "windows")]
 #[repr(C)]
 struct DataBlob { cb_data: u32, pb_data: *mut u8 }
@@ -1394,16 +1396,43 @@ fn lan_aes_key(shop_secret: &str) -> [u8; 32] {
     lan_derive_subkey(shop_secret, "BeBoss_LAN_AES256GCM_v2")
 }
 
+fn gzip_lan_payload(plain: &[u8]) -> Result<Vec<u8>, String> {
+    if plain.len() > LAN_MAX_UNCOMPRESSED_BYTES {
+        return Err("The shop snapshot exceeds the 5 MB uncompressed LAN transfer limit.".into());
+    }
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(plain).map_err(|error| format!("Could not compress the desktop LAN snapshot: {error}"))?;
+    encoder.finish().map_err(|error| format!("Could not finish compressing the desktop LAN snapshot: {error}"))
+}
+
+fn gunzip_lan_payload(compressed: &[u8]) -> Result<Vec<u8>, String> {
+    if compressed.is_empty() || compressed.len() > 70_000_000 {
+        return Err("The compressed BeBoss LAN snapshot is empty or oversized.".into());
+    }
+    let decoder = GzDecoder::new(compressed);
+    let mut bounded = decoder.take((LAN_MAX_UNCOMPRESSED_BYTES + 1) as u64);
+    let mut plain = Vec::with_capacity(compressed.len().saturating_mul(2).min(LAN_MAX_UNCOMPRESSED_BYTES));
+    bounded.read_to_end(&mut plain).map_err(|error| format!("The compressed BeBoss LAN snapshot is invalid: {error}"))?;
+    if plain.len() > LAN_MAX_UNCOMPRESSED_BYTES {
+        return Err("The decompressed BeBoss LAN snapshot exceeds the 5 MB safety limit.".into());
+    }
+    Ok(plain)
+}
+
 fn encrypt_lan_body(plain: &str, shop_secret: &str, timestamp: &str, nonce_text: &str) -> Result<String, String> {
+    if plain.len() > LAN_MAX_UNCOMPRESSED_BYTES {
+        return Err("The shop snapshot exceeds the 5 MB uncompressed LAN transfer limit.".into());
+    }
+    let compressed = gzip_lan_payload(plain.as_bytes())?;
     let key = lan_aes_key(shop_secret);
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|error| error.to_string())?;
     let random = Uuid::new_v4();
     let iv = &random.as_bytes()[..12];
     let nonce = Nonce::from_slice(iv);
     let aad = format!("{timestamp}|{nonce_text}");
-    let encrypted = cipher.encrypt(nonce, Payload { msg: plain.as_bytes(), aad: aad.as_bytes() })
+    let encrypted = cipher.encrypt(nonce, Payload { msg: &compressed, aad: aad.as_bytes() })
         .map_err(|error| format!("Could not encrypt the desktop LAN payload: {error}"))?;
-    Ok(format!("GCM1:{}:{}", BASE64_STANDARD.encode(iv), BASE64_STANDARD.encode(encrypted)))
+    Ok(format!("GCM2Z:{}:{}", BASE64_STANDARD.encode(iv), BASE64_STANDARD.encode(encrypted)))
 }
 
 fn decrypt_lan_body(envelope: &str, shop_secret: &str, timestamp: &str, nonce_text: &str) -> Result<String, String> {
@@ -1411,7 +1440,7 @@ fn decrypt_lan_body(envelope: &str, shop_secret: &str, timestamp: &str, nonce_te
     let version = parts.next().unwrap_or_default();
     let iv_text = parts.next().unwrap_or_default();
     let cipher_text = parts.next().unwrap_or_default();
-    if version != "GCM1" || iv_text.is_empty() || cipher_text.is_empty() {
+    if !matches!(version, "GCM1" | "GCM2Z") || iv_text.is_empty() || cipher_text.is_empty() {
         return Err("The Android hub returned an unsupported encrypted payload.".into());
     }
     let iv = BASE64_STANDARD.decode(iv_text).map_err(|_| "The Android hub returned an invalid encryption nonce.")?;
@@ -1423,8 +1452,16 @@ fn decrypt_lan_body(envelope: &str, shop_secret: &str, timestamp: &str, nonce_te
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|error| error.to_string())?;
     let nonce = Nonce::from_slice(&iv);
     let aad = format!("{timestamp}|{nonce_text}");
-    let plain = cipher.decrypt(nonce, Payload { msg: &ciphertext, aad: aad.as_bytes() })
+    let decrypted = cipher.decrypt(nonce, Payload { msg: &ciphertext, aad: aad.as_bytes() })
         .map_err(|_| "The Android hub payload failed AES-GCM authentication.")?;
+    let plain = if version == "GCM2Z" {
+        gunzip_lan_payload(&decrypted)?
+    } else {
+        if decrypted.len() > LAN_MAX_UNCOMPRESSED_BYTES {
+            return Err("The Android hub snapshot exceeds the 5 MB safety limit.".into());
+        }
+        decrypted
+    };
     String::from_utf8(plain).map_err(|_| "The Android hub payload is not valid UTF-8.".to_string())
 }
 
@@ -1963,6 +2000,42 @@ mod database_encryption_tests {
         let _ = fs::remove_dir_all(directory);
     }
 
+
+    #[test]
+    fn lan_gzip_envelope_round_trips_and_legacy_gcm1_remains_readable() {
+        let secret = "ab".repeat(32);
+        let timestamp = "1790000000000";
+        let nonce_text = "gzip-lan-test-nonce";
+        let snapshot = serde_json::json!({
+            "metadata": { "schemaVersion": 3, "timestamp": 1790000000000i64 },
+            "shopProfile": { "shopName": "BeBoss Test Shop" },
+            "products": (0..500).map(|index| serde_json::json!({
+                "id": format!("product-{index}"),
+                "name": "Repeated inventory item",
+                "description": "Repeated data compresses well over a local hotspot"
+            })).collect::<Vec<_>>(),
+            "customers": [], "sales": [], "saleItems": [], "customerPayments": [],
+            "purchases": [], "stockTransfers": [], "branches": [], "users": [], "tombstones": []
+        });
+        let plain = snapshot.to_string();
+        let compressed = gzip_lan_payload(plain.as_bytes()).expect("gzip should succeed");
+        assert!(compressed.len() < plain.len());
+        let encrypted = encrypt_lan_body(&plain, &secret, timestamp, nonce_text).expect("new encryption should succeed");
+        assert!(encrypted.starts_with("GCM2Z:"));
+        assert_eq!(decrypt_lan_body(&encrypted, &secret, timestamp, nonce_text).expect("new envelope should decode"), plain);
+
+        let key = lan_aes_key(&secret);
+        let cipher = Aes256Gcm::new_from_slice(&key).expect("AES-GCM key should be valid");
+        let random = Uuid::new_v4();
+        let iv = &random.as_bytes()[..12];
+        let aad = format!("{timestamp}|{nonce_text}");
+        let ciphertext = cipher.encrypt(
+            Nonce::from_slice(iv),
+            Payload { msg: plain.as_bytes(), aad: aad.as_bytes() }
+        ).expect("legacy payload should encrypt");
+        let legacy = format!("GCM1:{}:{}", BASE64_STANDARD.encode(iv), BASE64_STANDARD.encode(ciphertext));
+        assert_eq!(decrypt_lan_body(&legacy, &secret, timestamp, nonce_text).expect("legacy GCM1 should remain readable"), plain);
+    }
 
     #[test]
     fn read_only_phone_recovery_accepts_a_valid_hmac_and_aes_gcm_snapshot() {

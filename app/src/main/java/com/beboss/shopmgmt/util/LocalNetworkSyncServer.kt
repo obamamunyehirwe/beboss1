@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.BufferedInputStream
+import java.io.ByteArrayInputStream
 import java.io.EOFException
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
@@ -44,9 +45,41 @@ import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.abs
+
+internal fun gzipLanPayload(plain: ByteArray): ByteArray {
+    require(plain.size <= SyncPayloadValidator.MAX_RAW_PAYLOAD_BYTES) {
+        "The shop snapshot exceeds the 5 MB uncompressed LAN transfer limit."
+    }
+    val output = ByteArrayOutputStream()
+    GZIPOutputStream(output).use { gzip -> gzip.write(plain) }
+    return output.toByteArray()
+}
+
+internal fun gunzipLanPayload(compressed: ByteArray): ByteArray {
+    require(compressed.isNotEmpty() && compressed.size <= 70 * 1024 * 1024) {
+        "The compressed BeBoss LAN snapshot is empty or oversized."
+    }
+    val output = ByteArrayOutputStream(minOf(compressed.size * 2, SyncPayloadValidator.MAX_RAW_PAYLOAD_BYTES))
+    GZIPInputStream(ByteArrayInputStream(compressed)).use { gzip ->
+        val buffer = ByteArray(8192)
+        var total = 0
+        while (true) {
+            val count = gzip.read(buffer)
+            if (count < 0) break
+            total += count
+            require(total <= SyncPayloadValidator.MAX_RAW_PAYLOAD_BYTES) {
+                "The decompressed BeBoss LAN snapshot exceeds the 5 MB safety limit."
+            }
+            output.write(buffer, 0, count)
+        }
+    }
+    return output.toByteArray()
+}
 
 internal data class LanHttpRequestHead(
     val method: String,
@@ -797,8 +830,14 @@ class LocalNetworkSyncServer(
     }
 
     private fun encryptLanBody(plain: String, ts: String, nonce: String): String {
+        val raw = plain.toByteArray(StandardCharsets.UTF_8)
+        require(raw.size <= SyncPayloadValidator.MAX_RAW_PAYLOAD_BYTES) {
+            "The shop snapshot exceeds the 5 MB uncompressed LAN transfer limit."
+        }
+        val compressed = gzipLanPayload(raw)
         val aad = "$ts|$nonce".toByteArray(StandardCharsets.UTF_8)
-        val encrypted = CryptoKeyManager.encryptAesGcm(getLanAesKey(), plain.toByteArray(StandardCharsets.UTF_8), aad)
+        val encrypted = CryptoKeyManager.encryptAesGcm(getLanAesKey(), compressed, aad)
+            .replaceFirst("GCM1:", "GCM2Z:")
         return JSONObject().apply {
             put("enc", encrypted)
             put("ts", ts)
@@ -810,8 +849,14 @@ class LocalNetworkSyncServer(
         val obj = JSONObject(body)
         val enc = obj.optCleanString("enc")
         require(enc.isNotBlank()) { "LAN sync requires encrypted AES-GCM envelope." }
+        val gzipEnvelope = enc.startsWith("GCM2Z:")
+        val compatibleEnvelope = if (gzipEnvelope) "GCM1:" + enc.removePrefix("GCM2Z:") else enc
         val aad = "$expectedTs|$expectedNonce".toByteArray(StandardCharsets.UTF_8)
-        val plainBytes = CryptoKeyManager.decryptAesGcm(getLanAesKey(), enc, aad)
+        val decrypted = CryptoKeyManager.decryptAesGcm(getLanAesKey(), compatibleEnvelope, aad)
+        val plainBytes = if (gzipEnvelope) gunzipLanPayload(decrypted) else decrypted
+        require(plainBytes.size <= SyncPayloadValidator.MAX_RAW_PAYLOAD_BYTES) {
+            "The BeBoss LAN snapshot exceeds the 5 MB safety limit."
+        }
         return String(plainBytes, StandardCharsets.UTF_8)
     }
 

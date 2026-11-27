@@ -3,12 +3,41 @@ package com.beboss.shopmgmt.util
 import java.io.ByteArrayInputStream
 import java.io.EOFException
 import java.nio.charset.StandardCharsets
+import java.io.ByteArrayOutputStream
+import java.util.zip.GZIPOutputStream
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalNetworkHttpProtocolTest {
+
+    @Test
+    fun gzipLanPayloadRoundTripsAndShrinksLargeShopJson() {
+        val json = ("""{"shopName":"BeBoss Kigali","description":"Inventory and sales sync over Wi-Fi"}""").repeat(800)
+            .toByteArray(StandardCharsets.UTF_8)
+        val compressed = gzipLanPayload(json)
+
+        assertTrue("repeated JSON should compress substantially", compressed.size < json.size)
+        assertArrayEquals(json, gunzipLanPayload(compressed))
+    }
+
+    @Test
+    fun gunzipRejectsPayloadsThatExpandPastTheSafeSnapshotLimit() {
+        val oversized = ByteArray(SyncPayloadValidator.MAX_RAW_PAYLOAD_BYTES + 1) { 'x'.code.toByte() }
+        val zipped = ByteArrayOutputStream().apply {
+            GZIPOutputStream(this).use { gzip -> gzip.write(oversized) }
+        }.toByteArray()
+
+        var rejected = false
+        try {
+            gunzipLanPayload(zipped)
+        } catch (_: IllegalArgumentException) {
+            rejected = true
+        }
+        assertTrue("LAN decompression must enforce the maximum uncompressed snapshot size", rejected)
+    }
 
     @Test
     fun `reads UTF-8 bodies by declared byte length without truncating multibyte text`() {

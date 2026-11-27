@@ -472,6 +472,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "uuid",
+ "flate2",
 ]
 
 [[package]]
