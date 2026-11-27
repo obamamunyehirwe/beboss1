@@ -28,6 +28,7 @@ export type CloudState = {
   transfers: Row[];
   staff: Row[];
   announcements: Row[];
+  activity?: Row[];
   serverTime: number;
 };
 
