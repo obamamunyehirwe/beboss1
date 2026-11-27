@@ -16,7 +16,7 @@ import {
   markIosOutboxFailed, markIosOutboxSynced,
   mergeIosCloudSnapshots, recordCustomerPayment, recordPurchase, recordStockTransfer, registerOwner,
   restoreEncryptedBackupData, reverseSale, saveBranch, saveCustomer, saveProduct, saveShopSettings,
-  saveStaff, setBranchOperationalStatus, storeDiagnostics, prepareEnrolledDeviceStaff
+  saveStaff, setBranchOperationalStatus, storeDiagnostics, prepareEnrolledDeviceStaff, quickCustomSale
 } from './src/storage/repository';
 import { BarcodeScannerModal, useBluetoothPrinters } from './src/services/hardware';
 import { decryptBackupFile, exportEncryptedBackup } from './src/services/backup';
@@ -31,7 +31,7 @@ import { buildReorderSuggestions } from './src/core/forecast';
 import { exportInventoryCsv, exportSalesCsv } from './src/services/reports';
 
 type Screen = 'dashboard' | 'pos' | 'inventory' | 'customers' | 'sales' | 'reports' | 'purchases' | 'branches' | 'staff' | 'sync' | 'subscription' | 'settings';
-type ModalName = 'product' | 'adjust' | 'customer' | 'payment' | 'checkout' | 'purchase' | 'branch' | 'transfer' | 'staff' | 'settings' | 'scanner' | 'backup' | null;
+type ModalName = 'product' | 'adjust' | 'customer' | 'payment' | 'checkout' | 'quickSale' | 'purchase' | 'branch' | 'transfer' | 'staff' | 'settings' | 'scanner' | 'backup' | null;
 
 const money = (value: number, symbol = 'RWF') =>
   symbol + ' ' + roundMoney(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -326,6 +326,26 @@ function AppRoot(): React.JSX.Element {
       Alert.alert('Sale completed', sale.receiptNumber + '\nTotal: ' + money(sale.totalAmount, currency) + '\nPaid: ' + money(sale.amountPaid, currency) + '\nBalance: ' + money(sale.totalAmount - sale.amountPaid, currency));
     }, 'Sale committed locally and added to the secure sync outbox.');
     if (!ok) return;
+  };
+
+  const openQuickSale = () => {
+    setForm({ description: '', amount: '', paymentMethod: 'CASH' });
+    setModal('quickSale');
+  };
+
+  const saveQuickSale = async () => {
+    const amount = Number(form.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError('Enter a quick-sale amount greater than zero.');
+      return;
+    }
+    const ok = await run(async () => {
+      const sale = await quickCustomSale(form.description || 'Custom Quick Item', amount, form.paymentMethod || 'CASH', actor!);
+      setReceiptNumber(sale.receiptNumber);
+      setModal(null);
+      Alert.alert('Quick sale completed', sale.receiptNumber + '\nTotal: ' + money(sale.totalAmount, currency) + '\nProfit: ' + money(sale.totalProfit, currency));
+    }, 'Quick custom sale recorded.');
+    if (ok) setForm({});
   };
 
   const openStockAdjustment = (product: Product) => {
@@ -862,7 +882,7 @@ function AppRoot(): React.JSX.Element {
 
   const renderPos = () => (
     <View style={{ flex: 1 }}>
-      <PageHeading title="Point of sale" subtitle="Select catalogue products and build a checkout basket." />
+      <PageHeading title="Point of sale" subtitle="Select catalogue products and build a checkout basket." action="Quick custom sale" onAction={openQuickSale} />
       <View style={styles.searchRow}>
         <TextInput style={[styles.input, { flex: 1 }]} value={search} onChangeText={setSearch} placeholder="Search product, barcode or category" placeholderTextColor={COLORS.muted} />
         <Pressable style={styles.scanButton} onPress={() => setShowScanner(true)}><Text style={styles.scanGlyph}>⌗</Text></Pressable>
@@ -1497,6 +1517,13 @@ function AppRoot(): React.JSX.Element {
                 <Field label="Reference / note" value={form.note || ''} onChangeText={value => setForm({ ...form, note: value })} />
                 <ButtonPrimary title="Record customer payment" onPress={saveCustomerPayment} loading={busy} />
               </> : null}
+              {modal === 'quickSale' ? <>
+                <Text style={styles.muted}>Record a one-off service or custom item without creating a stock product. The sale, receipt, cost estimate and audit entry are committed atomically.</Text>
+                <Field label="Description" value={form.description || ''} onChangeText={value => setForm({ ...form, description: value })} />
+                <Field label="Amount" value={form.amount || ''} onChangeText={value => setForm({ ...form, amount: value })} keyboardType="decimal-pad" />
+                <SelectChips label="Payment method" values={['CASH', 'MOMO', 'AIRTEL', 'CARD', 'BANK'].map(value => ({ label: value, value }))} value={form.paymentMethod || 'CASH'} onChange={value => setForm({ ...form, paymentMethod: value })} />
+                <ButtonPrimary title="Complete quick sale" onPress={saveQuickSale} loading={busy} />
+              </> : null}
               {modal === 'checkout' ? <>
                 <Metric label="Subtotal" value={money(cartSubtotal, currency)} />
                 <Field label="Discount" value={discount} onChangeText={setDiscount} keyboardType="decimal-pad" />
@@ -1603,6 +1630,7 @@ function modalTitle(modal: ModalName): string {
     case 'customer': return 'Customer details';
     case 'payment': return 'Receive customer payment';
     case 'checkout': return 'Complete checkout';
+    case 'quickSale': return 'Quick custom sale';
     case 'purchase': return 'Record purchase';
     case 'branch': return 'Branch details';
     case 'transfer': return 'New stock transfer';
