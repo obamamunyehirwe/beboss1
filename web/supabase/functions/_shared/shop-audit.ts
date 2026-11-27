@@ -15,6 +15,7 @@ export function buildShopAuditSnapshot(entity: ShopAuditEntity, row: Record<stri
       recordId: stringValue(row.id, 80),
       name: stringValue(row.name, 72),
       code: stringValue(row.code, 24),
+      locationType: stringValue(row.location_type, 12).toUpperCase() === "WAREHOUSE" ? "WAREHOUSE" : "STORE",
       address: stringValue(row.address, 72),
       phone: stringValue(row.phone, 24),
       email: stringValue(row.email, 64),
@@ -95,7 +96,7 @@ export function classifyShopAuditTransition(
     if (!same(previous.operationalStatus, current.operationalStatus)) changes.push("operating status changed");
     if (!same(previous.managerUserId, current.managerUserId) || !same(previous.managerName, current.managerName)) changes.push("branch manager changed");
     if (!same(previous.isMainBranch, current.isMainBranch)) changes.push(boolValue(current.isMainBranch) ? "main branch designation set" : "main branch designation removed");
-    const profileKeys = ["name","code","address","phone","email","notes","dailyTargetRwf","monthlyTargetRwf","openingCashFloatRwf"];
+    const profileKeys = ["name","code","locationType","address","phone","email","notes","dailyTargetRwf","monthlyTargetRwf","openingCashFloatRwf"];
     if (profileKeys.some((key) => !same(previous[key], current[key]))) changes.push("branch profile updated");
     if (!changes.length) return null;
     const action = !same(previous.isActive, current.isActive)
