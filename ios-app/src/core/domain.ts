@@ -1,3 +1,4 @@
+import { Buffer } from 'buffer';
 import QuickCrypto from 'react-native-quick-crypto';
 
 const PBKDF2_ITERATIONS = 210000;
@@ -225,7 +226,7 @@ export function computeBB3AccountBindingHash(username: string, phone: string): s
 export function computeVoucherFingerprint(code: string): string {
   const raw = code.trim();
   const canonical = raw.split('-')[0]?.toUpperCase() === 'BB3' ? raw : raw.toUpperCase();
-  return sha256Hex(canonical);
+  return sha256Hex(canonical).toLowerCase();
 }
 
 export function verifyBB3Voucher(

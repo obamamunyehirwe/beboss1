@@ -1,6 +1,6 @@
 import { execute, first, getDatabase, query, transaction } from './database';
 import {
-  centsToMoney, compareHlcVersions, computeVoucherFingerprint, hashCredential, isSubscriptionActive, makeId, multiplyPriceQuantityCents,
+  calculateSubscriptionQuote, centsToMoney, compareHlcVersions, computeVoucherFingerprint, hashCredential, isSubscriptionActive, makeId, multiplyPriceQuantityCents,
   nowHlc, roundMoney, tickHlc, toCents, validatePassword, validatePin, verifyBB3Voucher, verifyCredential
 } from '../core/domain';
 import {
@@ -2579,7 +2579,10 @@ export async function redeemBB3Voucher(
   const newExpiry = activeExpiry + validation.days * DAY_MS;
   const activeBranches = Math.max(1, (await query<Row>('SELECT data FROM branches WHERE active=1', [])).map(row => branchFromRow(row))
     .filter(branch => branch.operationalStatus === 'OPEN' && branch.locationType !== 'WAREHOUSE').length);
-  const monthly = activeBranches === 1 ? 5000 : activeBranches === 2 ? 10000 : 20000;
+  const activeWorkers = Math.max(1, (await query<Row>('SELECT data FROM users WHERE active=1', [])).length);
+  // Android maps BB3's tier to the same one-month branch + staff pricing helper.
+  // It intentionally does not add the extra-device fee to the voucher amount display.
+  const monthly = calculateSubscriptionQuote(activeBranches, activeWorkers, 1, 1).totalPayable;
   const verifiedAmount = validation.tier === 'ANNUAL' ? monthly * 10 :
     validation.tier === 'MULTI' ? 20000 :
     validation.tier === 'DUAL' ? 10000 : 5000;

@@ -1,7 +1,7 @@
 import {
   centsToMoney, compareHlcVersions, hashCredential, isSubscriptionActive,
   multiplyPriceQuantityCents, tickHlc, toCents, validatePassword, validatePin,
-  verifyCredential
+  verifyCredential, computeBB3AccountBindingHash, verifyBB3Voucher
 } from '../src/core/domain';
 
 describe('BeBoss portable money rules', () => {
@@ -64,5 +64,19 @@ describe('Android subscription pricing parity', () => {
     expect(calculateSubscriptionQuote(1, 1, 3, 1).totalPayable).toBe(13500);
     expect(calculateSubscriptionQuote(1, 1, 12, 1).totalPayable).toBe(48000);
     expect(calculateSubscriptionQuote(1, 1, 6, 1).totalPayable).toBe(30000);
+  });
+});
+
+
+describe('Android BB3 signed subscription voucher parity', () => {
+  it('uses the Android username and last-nine-digit phone binding', () => {
+    expect(computeBB3AccountBindingHash('Shop.Owner', '+250 788 123 456'))
+      .toBe(computeBB3AccountBindingHash('shop.owner', '0788123456'));
+    expect(computeBB3AccountBindingHash('shop.owner', '0788123456')).toHaveLength(6);
+  });
+  it('rejects legacy BB/BB2 codes and malformed account-bound BB3 values', () => {
+    expect(verifyBB3Voucher('BB2-LEGACY', 'owner', '0788123456').valid).toBe(false);
+    expect(verifyBB3Voucher('BB-SINGLE-30-ABC-12345-ABCD1234', 'owner', '0788123456').valid).toBe(false);
+    expect(verifyBB3Voucher('BB3-SINGLE-30-ABC-000000-000000000000000000000000-AA==', 'owner', '0788123456').valid).toBe(false);
   });
 });
