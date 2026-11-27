@@ -688,6 +688,32 @@ async function loadManagementRecordsV2(admin: SupabaseClient, shopId: string, ow
     activity: activity.data ?? [], serverTime: Date.now() };
 }
 
+async function recordShopAuditEvent(
+  admin: SupabaseClient,
+  shopId: string,
+  shopName: string,
+  actor: string,
+  deviceId: string,
+  entity: string,
+  action: string,
+  detail: string
+) {
+  const { error } = await admin.from("cloud_sync_events").insert({
+    shop_sync_key: shopId,
+    shop_name: shopName,
+    entity,
+    action,
+    actor,
+    device_id: deviceId,
+    detail: detail.slice(0, 1000)
+  });
+  if (error) {
+    console.error("[BeBoss shop activity audit]", entity, action, error.message);
+    return false;
+  }
+  return true;
+}
+
 async function ownerManagementActorV2(admin: SupabaseClient, shopId: string, actorDeviceId: string, ownerUsername: string) {
   const normalizedActorDeviceId = text(actorDeviceId).trim();
   const normalizedOwnerUsername = text(ownerUsername).trim().toLowerCase();
@@ -1757,8 +1783,9 @@ if (action === "submit_payment_proof") {
     }
 
     if (action === "branch_upsert") {
-      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const row = branchPayload((body.branch ?? {}) as Row, owner.shopId);
+      row.last_modified_device_id = actor.actorDeviceId;
       if (row.manager_user_id) {
         const manager = await admin.from("shop_users").select("user_id,full_name,role,is_active")
           .eq("shop_sync_key", owner.shopId).eq("user_id", row.manager_user_id).eq("is_active", true).maybeSingle();
@@ -1772,18 +1799,29 @@ if (action === "submit_payment_proof") {
           is_main_branch: false, updated_at: Date.now(), hlc_timestamp: Date.now(), last_modified_device_id: "DESKTOP"
         }).eq("shop_sync_key", owner.shopId).eq("is_main_branch", true).neq("id", row.id);
       }
-      const { data: old, error: readError } = await admin.from("shop_branches").select("id,shop_sync_key,created_at").eq("id", row.id).maybeSingle();
+      const { data: old, error: readError } = await admin.from("shop_branches").select("id,shop_sync_key,created_at,name,code,manager_user_id,operational_status,is_active,is_main_branch").eq("id", row.id).maybeSingle();
       if (readError) throw new Error("Could not validate the branch record.");
       if (old && old.shop_sync_key !== owner.shopId) throw new Error("The branch belongs to another shop.");
       row.created_at = number(old?.created_at) || row.created_at;
       const { error } = await admin.from("shop_branches").upsert(row, { onConflict: "id" });
       if (error) throw new Error("Could not save the branch: " + error.message);
       const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
-      return json(200, { ok: true, id: row.id, shopUsage });
+      const auditAction = !old ? "CREATED"
+        : old.is_active === false && row.is_active ? "REACTIVATED"
+        : old.operational_status !== row.operational_status ? "OPERATING_STATUS_CHANGED"
+        : old.manager_user_id !== row.manager_user_id ? "MANAGER_CHANGED"
+        : old.is_main_branch !== row.is_main_branch ? "MAIN_BRANCH_CHANGED"
+        : "PROFILE_UPDATED";
+      const auditLogged = await recordShopAuditEvent(
+        admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
+        actor.actorDeviceId, "BRANCH", auditAction,
+        row.name + " · " + row.code + " · " + row.operational_status + " · Manager: " + (row.manager_name || "unassigned")
+      );
+      return json(200, { ok: true, id: row.id, shopUsage, auditLogged });
     }
 
     if (action === "branch_delete") {
-      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const branchId = text(body.id);
       if (!branchId) throw new Error("A branch ID is required.");
       const { data: branch, error: readError } = await admin.from("shop_branches")
@@ -1801,11 +1839,15 @@ if (action === "submit_payment_proof") {
         throw new Error("Reassign active devices and staff before deactivating this branch. Existing sales and stock history will be retained.");
       }
       const { error } = await admin.from("shop_branches").update({
-        is_active: false, operational_status: "CLOSED", updated_at: Date.now(), hlc_timestamp: Date.now(), last_modified_device_id: "DESKTOP"
+        is_active: false, operational_status: "CLOSED", updated_at: Date.now(), hlc_timestamp: Date.now(), last_modified_device_id: actor.actorDeviceId
       }).eq("id", branchId).eq("shop_sync_key", owner.shopId);
       if (error) throw new Error("Could not deactivate the branch: " + error.message);
       const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
-      return json(200, { ok: true, shopUsage });
+      const auditLogged = await recordShopAuditEvent(
+        admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
+        actor.actorDeviceId, "BRANCH", "DEACTIVATED", "Branch " + branchId + " was deactivated after assignment checks passed."
+      );
+      return json(200, { ok: true, shopUsage, auditLogged });
     }
 
     if (action === "staff_update") {
@@ -1839,6 +1881,7 @@ if (action === "submit_payment_proof") {
     }
 
     if (action === "transfer_create") {
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const id = text(body.id) || crypto.randomUUID();
       const productId = text(body.productId);
       const fromId = text(body.fromBranchId);
@@ -1879,13 +1922,20 @@ if (action === "submit_payment_proof") {
         transfer_date: now, status: "REQUESTED",
         notes: text(body.notes).slice(0, 1000), transferred_by: owner.username,
         received_by: "", received_at: 0, synced: false,
-        created_at: now, updated_at: now, hlc_timestamp: now, last_modified_device_id: "WEB"
+        created_at: now, updated_at: now, hlc_timestamp: now, last_modified_device_id: actor.actorDeviceId
       });
       if (error) throw new Error("Could not create the stock-transfer command: " + error.message);
-      return json(200, { ok: true, id, transferNumber, status: "REQUESTED" });
+      const auditLogged = await recordShopAuditEvent(
+        admin, owner.shopId, owner.shop.shop_name, "OWNER:" + owner.username,
+        actor.actorDeviceId, "STOCK_TRANSFER", "REQUESTED",
+        transferNumber + " · " + text(product.name) + " · " + quantity + " " + (text(product.unit) || "pcs") +
+          " · " + from.name + " → " + to.name
+      );
+      return json(200, { ok: true, id, transferNumber, status: "REQUESTED", auditLogged });
     }
 
     if (action === "transfer_command") {
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const id = text(body.id);
       const command = text(body.command).toUpperCase();
       if (!id || !["RECEIPT","CANCEL"].includes(command)) throw new Error("A valid stock-transfer command is required.");
@@ -1896,10 +1946,15 @@ if (action === "submit_payment_proof") {
       const now = Date.now();
       const next = command === "RECEIPT" ? "RECEIPT_REQUESTED" : "CANCEL_REQUESTED";
       const { error } = await admin.from("shop_stock_transfers").update({
-        status: next, updated_at: now, hlc_timestamp: now, last_modified_device_id: "WEB"
+        status: next, updated_at: now, hlc_timestamp: now, last_modified_device_id: actor.actorDeviceId
       }).eq("id", id).eq("shop_sync_key", owner.shopId).eq("status", "IN_TRANSIT");
       if (error) throw new Error("Could not submit the transfer command: " + error.message);
-      return json(200, { ok: true, status: next });
+      const auditLogged = await recordShopAuditEvent(
+        admin, owner.shopId, owner.shop.shop_name, "OWNER:" + owner.username,
+        actor.actorDeviceId, "STOCK_TRANSFER", next,
+        "Transfer " + id + " · " + current.status + " → " + next
+      );
+      return json(200, { ok: true, status: next, auditLogged });
     }
 
     if (action === "device_create") {
