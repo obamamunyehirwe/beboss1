@@ -868,13 +868,13 @@ Deno.serve(async (req: Request) => {
       let currentRows: Row[] = [];
       if (entity === "BRANCH") {
         const result = await admin.from("shop_branches")
-          .select("id,shop_sync_key,name,code,address,phone,email,manager_user_id,manager_name,is_active,is_main_branch,operational_status,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,created_at,updated_at,hlc_timestamp,last_modified_device_id")
+          .select("id,shop_sync_key,name,code,address,phone,email,notes,manager_user_id,manager_name,is_active,is_main_branch,operational_status,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,created_at,updated_at,hlc_timestamp,last_modified_device_id")
           .eq("shop_sync_key", text(shop.id)).in("id", ids).limit(250);
         if (result.error) throw new Error("Could not verify uploaded branch records before journaling: " + result.error.message);
         currentRows = (result.data ?? []) as unknown as Row[];
       } else {
         const result = await admin.from("shop_stock_transfers")
-          .select("id,shop_sync_key,transfer_number,product_id,product_name,from_branch_id,from_branch_name,to_branch_id,to_branch_name,quantity,unit,cost_value_rwf,status,transferred_by,received_by,received_at,created_at,updated_at,hlc_timestamp,last_modified_device_id")
+          .select("id,shop_sync_key,transfer_number,product_id,product_name,from_branch_id,from_branch_name,to_branch_name,quantity,unit,cost_value_rwf,status,transferred_by,received_by,received_at,notes,created_at,updated_at,hlc_timestamp,last_modified_device_id")
           .eq("shop_sync_key", text(shop.id)).in("id", ids).limit(250);
         if (result.error) throw new Error("Could not verify uploaded stock-transfer records before journaling: " + result.error.message);
         currentRows = (result.data ?? []) as unknown as Row[];
