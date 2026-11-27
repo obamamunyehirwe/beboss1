@@ -12,19 +12,20 @@ import {
 } from './src/core/types';
 import {
   adjustStock, archiveBranch, authenticate, cancelStockTransfer, checkout, confirmStockTransfer, deleteProduct,
-  initializeStore, loadSnapshot, recordCustomerPayment, recordPurchase,
-  recordStockTransfer, registerOwner, restoreEncryptedBackupData, reverseSale, saveBranch, saveCustomer,
-  saveProduct, saveShopSettings, saveStaff, setBranchOperationalStatus, storeDiagnostics
+  buildIosCloudSnapshot, initializeStore, loadSnapshot, markIosOutboxFailed, markIosOutboxSynced,
+  mergeIosCloudSnapshots, recordCustomerPayment, recordPurchase, recordStockTransfer, registerOwner,
+  restoreEncryptedBackupData, reverseSale, saveBranch, saveCustomer, saveProduct, saveShopSettings,
+  saveStaff, setBranchOperationalStatus, storeDiagnostics
 } from './src/storage/repository';
 import { BarcodeScannerModal, useBluetoothPrinters } from './src/services/hardware';
 import { decryptBackupFile, exportEncryptedBackup } from './src/services/backup';
 import { enableBiometricUnlock, requireBiometricUnlock, biometricAvailable } from './src/services/biometrics';
 import {
-  cloudConfigured, cloudSessionState, enrollIosDevice, getIosDeviceCredential,
-  requestOwnerPhoneVerification, requestSecureIosSyncReadiness, signOutCloud, verifyOwnerPhoneCode
+  cloudConfigured, cloudSessionState, downloadIosCloudSnapshots, enrollIosDevice,
+  getIosCloudSyncStatus, getIosDeviceCredential, requestOwnerPhoneVerification,
+  requestSecureIosSyncReadiness, signOutCloud, uploadIosCloudSnapshot, verifyOwnerPhoneCode
 } from './src/services/cloud';
 import { isSubscriptionActive, roundMoney } from './src/core/domain';
-import { CLOUD_SYNC_NOTICE } from './src/services/cloud-status';
 import { buildReorderSuggestions } from './src/core/forecast';
 import { exportInventoryCsv, exportSalesCsv } from './src/services/reports';
 
@@ -80,6 +81,9 @@ function AppRoot(): React.JSX.Element {
   const [ownerOtp, setOwnerOtp] = useState('');
   const [ownerJoinCode, setOwnerJoinCode] = useState('');
   const [iosDeviceEnrolled, setIosDeviceEnrolled] = useState(false);
+  const [iosSyncReady, setIosSyncReady] = useState(false);
+  const [iosSyncRole, setIosSyncRole] = useState('');
+  const [latestCloudUpdatedAt, setLatestCloudUpdatedAt] = useState(0);
   const [enrolledDeviceSummary, setEnrolledDeviceSummary] = useState('');
   const [otpRequested, setOtpRequested] = useState(false);
   const [backupPassword, setBackupPassword] = useState('');
@@ -456,16 +460,89 @@ function AppRoot(): React.JSX.Element {
     }, 'Shop settings saved.');
   };
 
+  const refreshIosSyncStatus = async () => {
+    const [stats, cloud] = await Promise.all([storeDiagnostics(), cloudSessionState()]);
+    setDiagnostics(stats);
+    setCloudAuthenticated(cloud.authenticated);
+    setIosDeviceEnrolled(cloud.enrolledDevice);
+    if (!cloud.enrolledDevice) {
+      setIosSyncReady(false);
+      setIosSyncRole('');
+      setLatestCloudUpdatedAt(0);
+      return;
+    }
+    const [enrolled, status] = await Promise.all([getIosDeviceCredential(), getIosCloudSyncStatus()]);
+    setIosSyncReady(status.ready);
+    setIosSyncRole(status.role);
+    setLatestCloudUpdatedAt(status.latestUpdatedAt);
+    if (enrolled) setEnrolledDeviceSummary(enrolled.shopName + ' · ' + enrolled.role + ' · ' + (enrolled.branchName || 'Assigned branch'));
+  };
+
   const openSyncScreen = async () => {
-    try {
-      const [stats, cloud] = await Promise.all([storeDiagnostics(), cloudSessionState()]);
-      setDiagnostics(stats);
-      setCloudAuthenticated(cloud.authenticated);
-      setIosDeviceEnrolled(cloud.enrolledDevice);
-      const enrolled = await getIosDeviceCredential();
-      if (enrolled) setEnrolledDeviceSummary(enrolled.shopName + ' · ' + enrolled.role + ' · ' + (enrolled.branchName || 'Assigned branch'));
-    } catch (caught: any) { setError(caught?.message || 'Unable to load sync status.'); }
+    try { await refreshIosSyncStatus(); }
+    catch (caught: any) { setError(caught?.message || 'Unable to load sync status.'); }
     setScreen('sync');
+  };
+
+  const synchronizeIosNow = async () => {
+    if (!actor) { setError('Unlock this iPhone with an active local staff account before synchronizing.'); return; }
+    if (!online) { setError('This iPhone is offline. Your business changes remain saved locally; reconnect and retry cloud sync.'); return; }
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    let inFlightOutboxIds: string[] = [];
+    try {
+      const status = await getIosCloudSyncStatus();
+      if (!status.ready) throw new Error(status.reason);
+      if (!status.canUpload) throw new Error('This iPhone is not authorised to upload shop changes.');
+      let completed = false;
+      for (let attempt = 0; attempt < 3 && !completed; attempt += 1) {
+        const local = await buildIosCloudSnapshot(actor);
+        inFlightOutboxIds = local.outboxIds;
+        const uploaded = await uploadIosCloudSnapshot(local.snapshot, local.expectedUpdatedAt);
+        if (!uploaded.accepted) {
+          if (!uploaded.conflict) throw new Error(uploaded.message || 'The cloud did not accept the iPhone snapshot.');
+          const latest = await downloadIosCloudSnapshots();
+          if (latest.snapshots.length) {
+            await mergeIosCloudSnapshots(latest.snapshots, actor);
+            await reload(actor.id);
+          }
+          await markIosOutboxSynced([], Date.now(), latest.latestUpdatedAt);
+          setLatestCloudUpdatedAt(latest.latestUpdatedAt);
+          if (attempt === 2) {
+            throw new Error('Another device kept changing the shop during synchronization. Local changes are preserved; retry once the other device finishes.');
+          }
+          continue;
+        }
+
+        // Confirm the upload by reading back a complete, HMAC-verified generation.
+        const confirmed = await downloadIosCloudSnapshots();
+        if (confirmed.snapshots.length) {
+          await mergeIosCloudSnapshots(confirmed.snapshots, actor);
+        }
+        await markIosOutboxSynced(local.outboxIds, Date.now(), confirmed.latestUpdatedAt || uploaded.latestUpdatedAt);
+        await reload(actor.id);
+        const diagnosticsNow = await storeDiagnostics();
+        setDiagnostics(diagnosticsNow);
+        setLatestCloudUpdatedAt(confirmed.latestUpdatedAt || uploaded.latestUpdatedAt);
+        setNotice(
+          'Cloud synchronization completed. ' + uploaded.chunkCount + ' signed chunks were accepted; ' +
+          diagnosticsNow.pending + ' local changes remain queued.'
+        );
+        completed = true;
+      }
+      await refreshIosSyncStatus();
+    } catch (caught: any) {
+      if (inFlightOutboxIds.length) {
+        try { await markIosOutboxFailed(inFlightOutboxIds, caught?.message || 'Cloud synchronization failed.'); }
+        catch { /* Keep the original network/authorization error visible. */ }
+      }
+      try { setDiagnostics(await storeDiagnostics()); } catch { /* Keep the primary error visible. */ }
+      setError(caught?.message || 'The iPhone could not complete cloud synchronization. Local business records have been retained.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const requestOtp = async () => {
@@ -488,6 +565,11 @@ function AppRoot(): React.JSX.Element {
       setCloudAuthenticated(true);
       setOtpRequested(false);
       const readiness = await requestSecureIosSyncReadiness();
+      setIosSyncReady(readiness.ready);
+      if (readiness.status) {
+        setIosSyncRole(readiness.status.role);
+        setLatestCloudUpdatedAt(readiness.status.latestUpdatedAt);
+      }
       setNotice('Owner phone verified. ' + readiness.reason);
     } catch (caught: any) { setError(caught?.message || 'Phone verification failed.'); }
     finally { setBusy(false); }
@@ -512,6 +594,11 @@ function AppRoot(): React.JSX.Element {
       setEnrolledDeviceSummary(enrolled.shopName + ' · ' + enrolled.role + ' · ' + (enrolled.branchName || 'Assigned branch'));
       setOwnerJoinCode('');
       const readiness = await requestSecureIosSyncReadiness();
+      setIosSyncReady(readiness.ready);
+      if (readiness.status) {
+        setIosSyncRole(readiness.status.role);
+        setLatestCloudUpdatedAt(readiness.status.latestUpdatedAt);
+      }
       setNotice('iPhone device credential issued and stored in Apple Keychain. ' + readiness.reason);
     } catch (caught: any) { setError(caught?.message || 'iPhone device enrollment failed.'); }
     finally { setBusy(false); }
@@ -1042,16 +1129,21 @@ function AppRoot(): React.JSX.Element {
 
   const renderSync = () => (
     <View>
-      <PageHeading title="Synchronization & device health" subtitle="Durable local outbox and cloud enrollment status." />
+      <PageHeading title="Synchronization & device health" subtitle="Offline-first business records with verified, multi-device cloud exchange." />
       <Metric label="Pending changes" value={String(diagnostics.pending)} tone="amber" />
-      <Metric label="Failed changes" value={String(diagnostics.failed)} tone={diagnostics.failed ? 'red' : 'green'} />
+      <Metric label="Failed / retryable changes" value={String(diagnostics.failed)} tone={diagnostics.failed ? 'red' : 'green'} />
       <Metric label="Local business records" value={String(diagnostics.localRows)} />
       <Metric label="Internet connection" value={online ? 'Connected' : 'Offline'} tone={online ? 'green' : 'amber'} />
-      <Metric label="Supabase sign-in" value={cloudAuthenticated ? 'Owner verified' : 'Not verified'} tone={cloudAuthenticated ? 'green' : 'amber'} />
-      <View style={styles.noticeCard}>
-        <Text style={styles.noticeHeading}>Cloud data protection</Text>
-        <Text style={styles.rowSub}>{CLOUD_SYNC_NOTICE}</Text>
-      </View>
+      <Metric label="Owner phone session" value={cloudAuthenticated ? 'Verified' : 'Not signed in'} tone={cloudAuthenticated ? 'green' : 'amber'} />
+      <Metric label="iPhone device credential" value={iosDeviceEnrolled ? 'Enrolled' : 'Not enrolled'} tone={iosDeviceEnrolled ? 'green' : 'amber'} />
+      <Metric label="Cloud device role" value={iosSyncRole || 'Not available'} />
+      <Metric label="Latest verified cloud generation" value={latestCloudUpdatedAt ? new Date(latestCloudUpdatedAt).toLocaleString() : 'No cloud snapshot yet'} />
+      {iosDeviceEnrolled ? <View style={styles.noticeCard}>
+        <Text style={styles.noticeHeading}>Enrolled iPhone</Text>
+        <Text style={styles.rowSub}>{enrolledDeviceSummary}</Text>
+        <Text style={styles.rowSub}>The server revalidates the iPhone ID, revocable device token, active staff assignment and role before each synchronization.</Text>
+        <ButtonPrimary title="Synchronize this iPhone now" onPress={synchronizeIosNow} loading={busy} disabled={!online || !iosSyncReady} />
+      </View> : null}
       <SectionHeader title="Owner-verified iPhone enrollment" />
       <Field label="Registered shop-owner username" value={ownerOtpUsername} autoCapitalize="none" onChangeText={setOwnerOtpUsername} />
       <Field label="Registered owner phone" value={ownerOtpPhone} onChangeText={setOwnerOtpPhone} keyboardType="phone-pad" />
@@ -1063,17 +1155,13 @@ function AppRoot(): React.JSX.Element {
       )}
       <Field label="Owner-issued device invitation code" value={ownerJoinCode} onChangeText={setOwnerJoinCode} autoCapitalize="characters" />
       <ButtonPrimary title="Enroll this iPhone securely" onPress={enrollThisIphone} loading={busy} disabled={!cloudConfigured || !cloudAuthenticated} />
-      {iosDeviceEnrolled ? <View style={styles.noticeCard}>
-        <Text style={styles.noticeHeading}>iPhone device enrolled</Text>
-        <Text style={styles.rowSub}>{enrolledDeviceSummary}</Text>
-        <Text style={styles.rowSub}>Device credentials are stored in Apple Keychain. Snapshot synchronization is still disabled until the iOS data-transfer protocol is completed.</Text>
-      </View> : null}
-      <ButtonSecondary title="Recheck sync readiness" onPress={async () => {
-        const readiness = await requestSecureIosSyncReadiness();
-        setIosDeviceEnrolled(readiness.enrolledDevice);
-        setNotice(readiness.reason);
-      }} />
-      <Text style={styles.muted}>Cloud sync is never reported as successful until the backend issues an iPhone-bound tenant credential and the complete snapshot generation is accepted.</Text>
+      <ButtonSecondary title="Refresh device and cloud status" onPress={async () => {
+        try {
+          await refreshIosSyncStatus();
+          setNotice('Latest iPhone device authorization and cloud snapshot status loaded.');
+        } catch (caught: any) { setError(caught?.message || 'Could not refresh iPhone sync status.'); }
+      }} disabled={busy} />
+      <Text style={styles.muted}>Cloud uploads are signed with the shop-scoped DataShare key on the server. The key and plaintext device tokens are never included in exported shop records.</Text>
       <Text style={styles.muted}>Last successful cloud sync: {diagnostics.lastSyncAt ? new Date(diagnostics.lastSyncAt).toLocaleString() : 'Never'}</Text>
     </View>
   );
