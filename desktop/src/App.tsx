@@ -899,8 +899,12 @@ function NativeDesktopApp() {
         currentDeviceId: currentActorDeviceId
       });
       await refreshManagement();
-      setNotice("Shop management changes are saved to BeBoss Cloud.");
-      window.setTimeout(() => setNotice(""), 4500);
+      if (result.auditLogged === false) {
+        setError("The management change was applied, but its audit event could not be saved. Do not repeat the operation. Refresh the activity log and contact the owner before making further changes.");
+      } else {
+        setNotice("Shop management changes and audit records are saved to BeBoss Cloud.");
+        window.setTimeout(() => setNotice(""), 4500);
+      }
       return result as Record<string, any>;
     } catch (e) {
       if (e instanceof OwnerAuthorizationError) await invalidateOwnerAuthorization();
@@ -948,7 +952,7 @@ function NativeDesktopApp() {
         throw new Error("This staff member's permission profile is not in the latest signed mobile snapshot. Synchronize the Android owner terminal before editing granular permissions.");
       }
 
-      await callDesktopApi("staff_update", owner, {
+      const staffUpdateResult = await callDesktopApi<{ ok: true; auditLogged?: boolean }>("staff_update", owner, {
         userId: input.userId, role: input.role, branchId: input.branchId, isActive: input.isActive
       });
 
@@ -993,7 +997,9 @@ function NativeDesktopApp() {
           if (/newer shop data|snapshot/i.test(message)) {
             const recovered = await bootstrap(owner, false);
             if (recovered) {
-              setNotice("Staff access was saved. BeBoss refreshed and merged it with the latest mobile and desktop snapshot.");
+              setNotice(staffUpdateResult.auditLogged === false
+                ? "Staff access was saved and merged, but its audit event could not be written. Do not repeat the change; review cloud activity before proceeding."
+                : "Staff access was saved. BeBoss refreshed and merged it with the latest mobile and desktop snapshot.");
               return;
             }
           }
@@ -1008,7 +1014,9 @@ function NativeDesktopApp() {
                 : staff)
             };
             setCloud(updated); setOffline(true);
-            setNotice("Staff access is saved to the encrypted local outbox and will synchronize when the connection returns.");
+            setNotice(staffUpdateResult.auditLogged === false
+              ? "Staff access is queued locally, but its cloud audit event could not be written. Do not repeat the change; resolve the audit warning when online."
+              : "Staff access is saved to the encrypted local outbox and will synchronize when the connection returns.");
             return;
           }
           throw saveError;
@@ -1028,7 +1036,9 @@ function NativeDesktopApp() {
         await saveCache(owner, updated);
       }
       await bootstrap(owner, false);
-      setNotice("Staff role, branch, operating state and available mobile permissions were synchronized.");
+      setNotice(staffUpdateResult.auditLogged === false
+        ? "Staff role and permissions were synchronized, but the cloud audit event could not be written. Do not repeat the change; review the audit journal before proceeding."
+        : "Staff role, branch, operating state and available mobile permissions were synchronized.");
     } catch (e) {
       if (e instanceof OwnerAuthorizationError) await invalidateOwnerAuthorization();
       else setError(errorText(e));
