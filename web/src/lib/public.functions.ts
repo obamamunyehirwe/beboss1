@@ -275,7 +275,7 @@ export const lookupMyShop = createServerFn({ method: "POST" })
     const nowIso = new Date().toISOString();
     const [
       pays, codes, devices, globalNews, shopNews, snaps,
-      branchRows, transferRows, staffRows
+      branchRows, transferRows, staffRows, auditRows
     ] = await Promise.all([
       sb.from("payment_requests")
         .select("id,provider,amount_rwf,duration_months,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,rejection_reason,created_at,updated_at,gateway_provider,gateway_reference,gateway_transaction_id,gateway_amount_rwf,gateway_currency,gateway_verified_at")
@@ -314,9 +314,14 @@ export const lookupMyShop = createServerFn({ method: "POST" })
         .select("user_id,full_name,username,role,assigned_branch_id,assigned_branch_name,is_active")
         .eq("shop_sync_key", key).eq("is_active", true)
         .order("full_name", { ascending: true }).limit(500),
+      sb.from("cloud_sync_events")
+        .select("id,entity,action,actor,device_id,detail,created_at")
+        .eq("shop_sync_key", key)
+        .in("entity", ["FINANCE_LEDGER", "BRANCH", "STOCK_TRANSFER", "BRANCH_RECONCILIATION", "STAFF", "APPROVAL_POLICY"])
+        .order("created_at", { ascending: false }).limit(1000),
     ]);
 
-    for (const result of [pays, codes, devices, globalNews, shopNews, snaps, branchRows, transferRows, staffRows]) {
+    for (const result of [pays, codes, devices, globalNews, shopNews, snaps, branchRows, transferRows, staffRows, auditRows]) {
       if (result.error) throw new Error("Could not load the verified shop workspace. Please retry.");
     }
 
@@ -367,6 +372,7 @@ export const lookupMyShop = createServerFn({ method: "POST" })
       snapshotUploadedAt,
       branches: branchRows.data ?? [],
       stockTransfers: transferRows.data ?? [],
+      activity: auditRows.data ?? [],
       staff: Array.from(
         new Map(
           (staffRows.data ?? []).map((staff) => [
