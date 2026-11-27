@@ -91,29 +91,28 @@ fn resolve_qnx_root(selected: Option<String>) -> Result<Option<PathBuf>, String>
 }
 
 fn host_directory(root: Option<&Path>) -> Option<PathBuf> {
-    if let Some(value) = env::var_os("QNX_HOST") {
-        if let Some(path) = canonical_dir(PathBuf::from(value)) {
+    if let Some(root) = root {
+        let candidates = [
+            root.join("host/win64/x86_64"),
+            root.join("host/linux/x86_64"),
+            root.join("host/win64"),
+            root.join("host/linux"),
+        ];
+        if let Some(path) = candidates.into_iter().find_map(canonical_dir) {
             return Some(path);
         }
     }
 
-    let root = root?;
-    let candidates = [
-        root.join("host/win64/x86_64"),
-        root.join("host/linux/x86_64"),
-        root.join("host/win64"),
-        root.join("host/linux"),
-    ];
-    candidates.into_iter().find_map(canonical_dir)
+    env::var_os("QNX_HOST").and_then(|value| canonical_dir(PathBuf::from(value)))
 }
 
 fn target_directory(root: Option<&Path>) -> Option<PathBuf> {
-    if let Some(value) = env::var_os("QNX_TARGET") {
-        if let Some(path) = canonical_dir(PathBuf::from(value)) {
+    if let Some(root) = root {
+        if let Some(path) = canonical_dir(root.join("target/qnx8")) {
             return Some(path);
         }
     }
-    root.and_then(|base| canonical_dir(base.join("target/qnx8")))
+    env::var_os("QNX_TARGET").and_then(|value| canonical_dir(PathBuf::from(value)))
 }
 
 fn executable_names(name: &str) -> Vec<String> {
@@ -134,6 +133,7 @@ fn find_tool(name: &str, host: Option<&Path>) -> Option<PathBuf> {
                 }
             }
         }
+        return None;
     }
 
     let path_value = env::var_os("PATH")?;
