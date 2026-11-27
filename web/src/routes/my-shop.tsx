@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@/lib/use-server-fn";
-import { Check, Copy, KeyRound, Loader2, Plus, RefreshCw, Search, Send, Smartphone, Trash2 } from "lucide-react";
+import { Banknote, Check, Copy, KeyRound, Loader2, Plus, RefreshCw, RotateCcw, Search, Send, Smartphone, Trash2, Wallet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -14,7 +14,7 @@ import { liveConfigured } from '@/lib/live-config';
 import { ServiceUnavailable } from '@/components/site/ServiceUnavailable';
 import { PageHero, SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/lib/i18n";
-import { addMyShopDevice, claimMyShopOwner, checkGatewayPaymentStatus, confirmMyShopStockTransfer, createGatewayCheckout, deleteMyShopBranch, lookupMyShop, requestMyShopOwnerOtp, requestMyShopStockTransferCancellation, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
+import { addMyShopDevice, claimMyShopOwner, checkGatewayPaymentStatus, confirmMyShopStockTransfer, createGatewayCheckout, deleteMyShopBranch, lookupMyShop, postMyShopFinanceEntry, requestMyShopOwnerOtp, requestMyShopStockTransferCancellation, reverseMyShopFinanceEntry, upsertMyShopBranch, upsertMyShopStockTransfer } from "@/lib/public.functions";
 import { AnnouncementCard } from "@/components/site/AnnouncementBanner";
 import { calculateSubscriptionFee, effectiveShopStatus } from "@/lib/pricing";
 import { daysLeft, formatDateTime, formatRwf, relativeTime } from "@/lib/format";
@@ -295,6 +295,12 @@ function LookupPanel() {
               <TabsTrigger value="branches">
                 <Plus className="size-4" /> Branches & Transfers
               </TabsTrigger>
+              <TabsTrigger value="finance">
+                <Banknote className="size-4" /> Financial Journal
+              </TabsTrigger>
+              <TabsTrigger value="finance">
+                <Banknote className="size-4" /> Financial Journal
+              </TabsTrigger>
             </TabsList>
 
             {/* Products Tab */}
@@ -445,6 +451,33 @@ function LookupPanel() {
                   </tbody>
                 </table>
               </div>
+            </TabsContent>
+
+            {/* Owner financial journal uses the same shop-scoped append-only cloud events as BeBoss Desktop. */}
+            <TabsContent value="finance" className="pt-3">
+              <MyShopFinance
+                username={username}
+                phone={phone}
+                activity={result.activity ?? []}
+                branches={result.branches ?? []}
+                onRefresh={async () => {
+                  try { await refreshLatest(false); }
+                  catch { /* quiet; the server action has already reported the primary write outcome */ }
+                }}
+              />
+            </TabsContent>
+
+            <TabsContent value="finance" className="pt-3">
+              <MyShopFinance
+                username={username}
+                phone={phone}
+                activity={result.activity ?? []}
+                branches={result.branches ?? []}
+                onRefresh={async () => {
+                  try { await refreshLatest(false); }
+                  catch { /* the financial server action reports write status */ }
+                }}
+              />
             </TabsContent>
 
             {/* Branches & Transfers Tab */}
@@ -1386,3 +1419,251 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
     </div>
   );
 }
+
+type MyShopFinanceEvent = NonNullable<Lookup["activity"]>[number];
+type MyShopFinanceEntry = {
+  version: 1;
+  entryId: string;
+  type: string;
+  flow: "OUTFLOW" | "INFLOW" | "TRANSFER";
+  amountRwf: number;
+  account?: string;
+  sourceAccount?: string;
+  destinationAccount?: string;
+  branchId?: string;
+  branchName?: string;
+  effectiveAt: number;
+  counterparty?: string;
+  reference?: string;
+  note?: string;
+  postedAt?: number;
+  actorUsername?: string;
+  reversalOf?: string;
+  originalType?: string;
+};
+
+function parseMyShopFinanceEvent(event: MyShopFinanceEvent): MyShopFinanceEntry | null {
+  if (event.entity !== "FINANCE_LEDGER" || !["POSTED", "REVERSED"].includes(event.action)) return null;
+  try {
+    const value = JSON.parse(event.detail) as MyShopFinanceEntry;
+    return value?.version === 1 && typeof value.entryId === "string" &&
+      Number.isSafeInteger(value.amountRwf) && value.amountRwf > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function MyShopFinance({ username, phone, activity, branches, onRefresh }: {
+  username: string;
+  phone: string;
+  activity: MyShopFinanceEvent[];
+  branches: Lookup["branches"];
+  onRefresh: () => void;
+}) {
+  const postEntry = useServerFn(postMyShopFinanceEntry);
+  const reverseEntry = useServerFn(reverseMyShopFinanceEntry);
+  const [entryType, setEntryType] = useState("OPERATING_EXPENSE");
+  const [amount, setAmount] = useState("");
+  const [account, setAccount] = useState("CASH");
+  const [sourceAccount, setSourceAccount] = useState("CASH");
+  const [branchId, setBranchId] = useState("ALL");
+  const [effectiveDate, setEffectiveDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [counterparty, setCounterparty] = useState("");
+  const [reference, setReference] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  const entries = activity.map((event) => ({ event, entry: parseMyShopFinanceEvent(event) }))
+    .filter((item): item is { event: MyShopFinanceEvent; entry: MyShopFinanceEntry } => Boolean(item.entry))
+    .sort((a, b) => new Date(String(b.event.created_at)).getTime() - new Date(String(a.event.created_at)).getTime());
+  const reversedIds = new Set(entries.filter((item) => item.event.action === "REVERSED")
+    .map((item) => item.entry.reversalOf).filter((id): id is string => Boolean(id)));
+  const outflows = entries.reduce((sum, item) => sum + (item.entry.flow === "OUTFLOW" ? item.entry.amountRwf : 0), 0);
+  const inflows = entries.reduce((sum, item) => sum + (item.entry.flow === "INFLOW" ? item.entry.amountRwf : 0), 0);
+  const transferTotal = entries.reduce((sum, item) => sum + (item.entry.flow === "TRANSFER" ? item.entry.amountRwf : 0), 0);
+
+  async function post(event: React.FormEvent) {
+    event.preventDefault();
+    const amountRwf = Number(amount);
+    if (!Number.isSafeInteger(amountRwf) || amountRwf <= 0 || amountRwf > 10000000000) {
+      setError("Enter a positive whole-RWF amount up to FRw 10,000,000,000.");
+      return;
+    }
+    const date = new Date(effectiveDate + "T12:00:00").getTime();
+    if (!Number.isFinite(date) || date <= 0 || date > Date.now() + 5 * 60 * 1000) {
+      setError("Choose a valid transaction date.");
+      return;
+    }
+    setBusy("post");
+    setError("");
+    try {
+      await postEntry({ data: {
+        username, phone, entryId: crypto.randomUUID(), type: entryType as
+          "OPERATING_EXPENSE" | "PAYROLL_PAYMENT" | "SUPPLIER_SETTLEMENT" | "TAX_PAYMENT" |
+          "OWNER_DRAW" | "CASH_WITHDRAWAL" | "CAPITAL_CONTRIBUTION" | "BANK_DEPOSIT",
+        amountRwf, account: account as "CASH" | "BANK" | "MOBILE_MONEY" | "OTHER",
+        sourceAccount: entryType === "BANK_DEPOSIT" ? sourceAccount as "CASH" | "MOBILE_MONEY" | "OTHER" : undefined,
+        destinationAccount: entryType === "BANK_DEPOSIT" ? "BANK" : undefined,
+        branchId: branchId === "ALL" ? "" : branchId,
+        effectiveAt: date, counterparty, reference, note
+      } });
+      setAmount(""); setCounterparty(""); setReference(""); setNote("");
+      toast.success("Financial entry posted to the shop's cloud journal.");
+      onRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The financial entry could not be posted.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function reverse(entry: MyShopFinanceEntry) {
+    const reason = window.prompt("Explain why this posted entry must be reversed (minimum 8 characters):", "")?.trim() ?? "";
+    if (reason.length < 8) {
+      if (reason.length) toast.error("Enter at least 8 characters for the reversal explanation.");
+      return;
+    }
+    setBusy(entry.entryId);
+    setError("");
+    try {
+      await reverseEntry({ data: { username, phone, reversalEntryId: crypto.randomUUID(), originalEntryId: entry.entryId, reason } });
+      toast.success("A compensating reversal was appended. The original entry was preserved.");
+      onRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The financial reversal could not be posted.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return <div className="space-y-5">
+    <div className="grid gap-3 sm:grid-cols-3">
+      <div className="rounded-2xl border border-border bg-background/50 p-4">
+        <p className="text-xs text-muted-foreground">Posted outflows</p>
+        <p className="mt-1 text-xl font-semibold tabular-nums">{formatRwf(outflows)}</p>
+      </div>
+      <div className="rounded-2xl border border-border bg-background/50 p-4">
+        <p className="text-xs text-muted-foreground">Posted inflows</p>
+        <p className="mt-1 text-xl font-semibold tabular-nums">{formatRwf(inflows)}</p>
+      </div>
+      <div className="rounded-2xl border border-border bg-background/50 p-4">
+        <p className="text-xs text-muted-foreground">Cash-to-bank transfers</p>
+        <p className="mt-1 text-xl font-semibold tabular-nums">{formatRwf(transferTotal)}</p>
+      </div>
+    </div>
+
+    <form onSubmit={(event) => void post(event)} className="grid gap-4 rounded-2xl border border-border bg-background/40 p-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="space-y-2">
+        <Label>Entry category</Label>
+        <Select value={entryType} onValueChange={setEntryType}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="OPERATING_EXPENSE">Operating expense</SelectItem>
+            <SelectItem value="PAYROLL_PAYMENT">Payroll payment</SelectItem>
+            <SelectItem value="SUPPLIER_SETTLEMENT">Supplier settlement</SelectItem>
+            <SelectItem value="TAX_PAYMENT">Tax payment</SelectItem>
+            <SelectItem value="OWNER_DRAW">Owner draw</SelectItem>
+            <SelectItem value="CASH_WITHDRAWAL">Cash withdrawal</SelectItem>
+            <SelectItem value="CAPITAL_CONTRIBUTION">Capital contribution</SelectItem>
+            <SelectItem value="BANK_DEPOSIT">Deposit to bank</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Amount (FRw)</Label>
+        <Input type="number" min="1" max="10000000000" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} required placeholder="Enter amount" />
+      </div>
+      {entryType === "BANK_DEPOSIT" ? <div className="space-y-2">
+        <Label>Deposit source</Label>
+        <Select value={sourceAccount} onValueChange={setSourceAccount}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="CASH">Cash</SelectItem>
+            <SelectItem value="MOBILE_MONEY">Mobile Money</SelectItem>
+            <SelectItem value="OTHER">Other</SelectItem>
+          </SelectContent>
+        </Select>
+      </div> : <div className="space-y-2">
+        <Label>Payment account</Label>
+        <Select value={account} onValueChange={setAccount}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="CASH">Cash</SelectItem>
+            <SelectItem value="BANK">Bank</SelectItem>
+            <SelectItem value="MOBILE_MONEY">Mobile Money</SelectItem>
+            <SelectItem value="OTHER">Other</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>}
+      <div className="space-y-2">
+        <Label>Business date</Label>
+        <Input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} required />
+      </div>
+      <div className="space-y-2">
+        <Label>Branch</Label>
+        <Select value={branchId} onValueChange={setBranchId}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All branches</SelectItem>
+            {branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Supplier / employee / counterparty</Label>
+        <Input value={counterparty} onChange={(e) => setCounterparty(e.target.value)} maxLength={100} />
+      </div>
+      <div className="space-y-2">
+        <Label>Reference / receipt</Label>
+        <Input value={reference} onChange={(e) => setReference(e.target.value)} maxLength={48} />
+      </div>
+      <div className="space-y-2 sm:col-span-2 xl:col-span-3">
+        <Label>Description / explanation</Label>
+        <Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={240} placeholder="Describe this financial movement" />
+      </div>
+      {error ? <p className="text-sm text-destructive sm:col-span-2 xl:col-span-3">{error}</p> : null}
+      <div className="sm:col-span-2 xl:col-span-3">
+        <Button type="submit" variant="hero" disabled={busy === "post" || !amount.trim()}>
+          {busy === "post" ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+          Post append-only journal entry
+        </Button>
+        <p className="mt-2 text-xs text-muted-foreground">Posted entries are never edited or deleted. Correct a mistake with a compensating reversal so the audit trail remains intact.</p>
+      </div>
+    </form>
+
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="font-semibold">Financial journal history ({entries.length})</h4>
+        <Badge variant="outline">Shop scoped · append only</Badge>
+      </div>
+      {entries.length ? <div className="max-h-[520px] overflow-auto rounded-2xl border border-border">
+        <table className="w-full min-w-[900px] text-left text-xs">
+          <thead className="sticky top-0 bg-surface text-muted-foreground"><tr>
+            <th className="p-3">Recorded</th><th className="p-3">Type</th><th className="p-3">Date</th><th className="p-3">Account</th><th className="p-3">Branch</th><th className="p-3">Amount</th><th className="p-3">Counterparty / reference</th><th className="p-3">Action</th>
+          </tr></thead>
+          <tbody className="divide-y divide-border">
+            {entries.map(({ event, entry }) => {
+              const original = event.action === "POSTED";
+              const isReversed = original && reversedIds.has(entry.entryId);
+              const accountLabel = entry.flow === "TRANSFER"
+                ? `${entry.sourceAccount || "—"} → ${entry.destinationAccount || "—"}`
+                : (entry.account || "—");
+              return <tr key={event.id} className="hover:bg-surface/40">
+                <td className="p-3 whitespace-nowrap">{formatDateTime(new Date(String(event.created_at)).getTime())}</td>
+                <td className="p-3"><Badge variant={event.action === "REVERSED" ? "warning" : "outline"}>{event.action === "REVERSED" ? "Reversal" : entry.type.replaceAll("_", " ")}</Badge></td>
+                <td className="p-3 whitespace-nowrap">{formatDateTime(entry.effectiveAt)}</td>
+                <td className="p-3">{accountLabel}</td>
+                <td className="p-3">{entry.branchName || "All branches"}</td>
+                <td className="p-3 font-semibold tabular-nums">{formatRwf(entry.amountRwf)}</td>
+                <td className="p-3"><div>{entry.counterparty || "—"}</div><div className="text-muted-foreground">{entry.reference || entry.note || "—"}</div></td>
+                <td className="p-3">{original && !isReversed ? <Button size="sm" variant="outline" disabled={busy === entry.entryId} onClick={() => void reverse(entry)}><RotateCcw className="size-3" /> Reverse</Button> : isReversed ? <Badge variant="warning">Reversed</Badge> : <span className="text-muted-foreground">—</span>}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div> : <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No financial journal entries have been posted yet.</div>}
+    </div>
+  </div>;
+}
+
