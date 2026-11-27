@@ -308,6 +308,7 @@ function ReleasesPage() {
       toast.error(a("This file does not have a valid APK/ZIP package signature."));
       return;
     }
+    let uploadedPath: string | null = null;
     try {
       setStage("hashing");
       const sha = await sha256Hex(file);
@@ -316,6 +317,7 @@ function ReleasesPage() {
       const path = `v${form.version_name.replace(/[^0-9a-zA-Z.-]/g, "")}/${Date.now()}-${safeName}`;
       const { error } = await supabase.storage.from("releases").upload(path, file, { contentType: "application/vnd.android.package-archive", upsert: false });
       if (error) throw new Error(error.message);
+      uploadedPath = path;
       setStage("publishing");
       await publish({ data: { ...form, file_path: path, file_name: safeName, size_bytes: file.size, sha256: sha, public_download_url: downloadUrl } });
       toast.success(`v${form.version_name} published${form.make_current ? " — the website and app now offer it" : ""}`);
@@ -324,6 +326,16 @@ function ReleasesPage() {
       qc.invalidateQueries({ queryKey: ["admin", "releases"] });
       qc.invalidateQueries({ queryKey: ["public-site"] });
     } catch (err) {
+      if (uploadedPath) {
+        try {
+          const { error: cleanupError } = await supabase.storage.from("releases").remove([uploadedPath]);
+          if (cleanupError) {
+            console.error("[BeBoss release upload] Could not clean the unpublished APK upload.", cleanupError);
+          }
+        } catch (cleanupError) {
+          console.error("[BeBoss release upload] Could not clean the unpublished APK upload.", cleanupError);
+        }
+      }
       toast.error(err instanceof Error ? err.message : a("Upload failed"));
     } finally {
       setStage("");
