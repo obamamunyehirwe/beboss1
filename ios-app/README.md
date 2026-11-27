@@ -43,15 +43,15 @@ The CI workflow builds for the physical-device `iphoneos` SDK. An unsigned `BeBo
 - First-run shop workspace and owner setup, local staff sign-in and login throttling
 - Role-enforced owner, manager and cashier access, checked in repository mutations
 - Dashboard, sales overview and low-stock monitoring
-- POS with catalogue search, barcode scanner, cart, discounts, customer selection, split/partial payments, credit validation, atomic checkout, receipt history and controlled sale reversal
+- POS with catalogue search, barcode scanner, held carts, discounts, customer selection, split/partial payments, credit validation, quick custom sale, atomic checkout, receipt history and controlled sale reversal
 - Product inventory, archive, stock adjustments and reorder levels
 - Customer records and debt collection/payment ledger
-- Supplier purchases and stock inflow
+- Supplier purchases, purchase records and controlled purchase deletion
 - Branch and warehouse records, operating states and controlled stock transfers with receive/cancel actions
-- Staff records and role permission presets
-- Sales and inventory CSV exports
-- Password-encrypted backup export and same-shop restore
-- Face ID / Touch ID and BLE receipt printing
+- Staff records, owner/manager/cashier permission presets and one-account-per-enrolled-iPhone access
+- Sales and inventory CSV exports, local operational diagnostics and audit-event writing
+- Password-encrypted backup export and same-shop restore, plus authenticated Android DataShare package import and record merging
+- Face ID / Touch ID, BLE receipt printing, subscription price estimates, hosted provider checkout/status checks and account-bound BB3 voucher redemption with replay protection
 
 ## Secure iPhone cloud synchronization
 
@@ -77,8 +77,8 @@ The Edge Function requires the existing Supabase URL, service-role secret and pu
 The iPhone app is a substantial offline-first client, but it is not yet a verified 100% feature-identical replacement for Android. In particular, the following Android capabilities still require dedicated iOS modules and parity tests:
 
 - Full admin/support verification console and privileged licensing workflows
-- Payment-provider orchestration and verified subscription/BB3 entitlement activation
-- Complete branch DataShare file import/export and approval workflow
+- Full payment-provider reconciliation, admin-side subscription review and server-issued entitlement activation (the iPhone can request checkout and check provider status but cannot self-activate a plan)
+- Complete branch DataShare file export, signed approval workflow and all Android DataShare transport modes (the current iOS client can import/merge verified Android packages)
 - Background/periodic cloud sync scheduling and recovery across iOS suspension/relaunch
 - Full device-fleet telemetry, device posture reporting and remote maintenance controls
 - Advanced diagnostics, repair tooling and Android-specific hardware integrations
