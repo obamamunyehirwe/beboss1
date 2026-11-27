@@ -1,8 +1,8 @@
-import { Activity, ArrowDownRight, ArrowUpRight, Banknote, Download, Filter, ShieldCheck, Store, Truck, Wallet } from "lucide-react";
+import { Activity, ArrowDownRight, ArrowUpRight, Banknote, Download, Filter, Plus, RotateCcw, ShieldCheck, Store, Truck, Wallet } from "lucide-react";
 import { useMemo, useState } from "react";
-import { downloadCsv, money, n, rows, s } from "../../lib/format";
-import type { CloudState, Row, Snapshot } from "../../lib/types";
-import { Empty, PageHeading, StatCard, StatusPill } from "../ui";
+import { downloadCsv, errorText, id, money, n, rows, s } from "../../lib/format";
+import type { CloudAction, CloudState, Row, Snapshot } from "../../lib/types";
+import { Empty, Modal, PageHeading, StatCard, StatusPill } from "../ui";
 
 const DAY = 86400000;
 type FinancePeriod = "TODAY" | "7D" | "30D" | "90D" | "ALL";
@@ -39,9 +39,62 @@ function parseReconciliation(event: Row): Row | null {
   }
 }
 
-export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; snapshot: Snapshot | null }) {
+type FinanceJournalEntry = {
+  version: 1;
+  entryId: string;
+  type: string;
+  flow: "OUTFLOW" | "INFLOW" | "TRANSFER";
+  amountRwf: number;
+  account?: string;
+  sourceAccount?: string;
+  destinationAccount?: string;
+  branchId?: string;
+  branchName?: string;
+  effectiveAt: number;
+  counterparty?: string;
+  reference?: string;
+  note?: string;
+  postedAt?: number;
+  actorUsername?: string;
+  reversalOf?: string;
+  originalType?: string;
+};
+
+function parseFinanceJournalEvent(event: Row): FinanceJournalEntry | null {
+  if (String(event.entity).toUpperCase() !== "FINANCE_LEDGER" ||
+      !["POSTED", "REVERSED"].includes(String(event.action).toUpperCase())) return null;
+  try {
+    const value = JSON.parse(s(event.detail)) as FinanceJournalEntry;
+    if (value?.version !== 1 || !value.entryId ||
+        !Number.isSafeInteger(value.amountRwf) || value.amountRwf <= 0 ||
+        !["OUTFLOW", "INFLOW", "TRANSFER"].includes(value.flow)) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+export function FinanceControlPage({ cloud, snapshot, onAction, offline }: {
+  cloud: CloudState; snapshot: Snapshot | null; onAction: CloudAction; offline: boolean;
+}) {
   const [period, setPeriod] = useState<FinancePeriod>("30D");
   const [branchFilter, setBranchFilter] = useState("ALL");
+  const [entryOpen, setEntryOpen] = useState(false);
+  const [entryBusy, setEntryBusy] = useState(false);
+  const [entryError, setEntryError] = useState("");
+  const [entryType, setEntryType] = useState("OPERATING_EXPENSE");
+  const [entryAmount, setEntryAmount] = useState("");
+  const [entryAccount, setEntryAccount] = useState("CASH");
+  const [entrySourceAccount, setEntrySourceAccount] = useState("CASH");
+  const [entryBranchId, setEntryBranchId] = useState("ALL");
+  const [entryDate, setEntryDate] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  });
+  const [entryCounterparty, setEntryCounterparty] = useState("");
+  const [entryReference, setEntryReference] = useState("");
+  const [entryNote, setEntryNote] = useState("");
+  const [reversingId, setReversingId] = useState("");
   
 
   const branches = rows(cloud.branches).filter((branch) => branch.is_active !== false);
@@ -81,6 +134,99 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
       ? sum + Math.max(0, n(purchase.totalPurchaseCost ?? purchase.total_purchase_cost)) : sum, 0);
   const supplierCreditValue = supplierCreditPurchases.reduce((sum, purchase) =>
     sum + Math.max(0, n(purchase.totalPurchaseCost ?? purchase.total_purchase_cost)), 0);
+  const journalAll = rows(cloud.activity).map((event) => ({
+    event, entry: parseFinanceJournalEvent(event)
+  })).filter((item): item is { event: Row; entry: FinanceJournalEntry } => Boolean(item.entry));
+  const reversedEntryIds = new Set(journalAll
+    .filter((item) => String(item.event.action).toUpperCase() === "REVERSED")
+    .map((item) => item.entry.reversalOf).filter((value): value is string => Boolean(value)));
+  const journalEntries = journalAll.filter(({ event, entry }) => {
+    const branchId = s(entry.branchId);
+    return (!startAt || entry.effectiveAt >= startAt) &&
+      (branchFilter === "ALL" || branchId === branchFilter);
+  }).sort((a, b) => timestampOf(b.event, "created_at") - timestampOf(a.event, "created_at"));
+  const postedOutflowsRwf = journalEntries.reduce((sum, item) =>
+    sum + (item.entry.flow === "OUTFLOW" ? item.entry.amountRwf : 0), 0);
+  const postedInflowsRwf = journalEntries.reduce((sum, item) =>
+    sum + (item.entry.flow === "INFLOW" ? item.entry.amountRwf : 0), 0);
+  const postedTransfersRwf = journalEntries.reduce((sum, item) =>
+    sum + (item.entry.flow === "TRANSFER" ? item.entry.amountRwf : 0), 0);
+  const netPostedMovementRwf = postedInflowsRwf - postedOutflowsRwf;
+
+  function exportJournal() {
+    downloadCsv("BeBoss-Financial-Journal-" + new Date().toISOString().slice(0, 10) + ".csv",
+      ["event_id","event_action","entry_id","entry_type","flow","amount_rwf","business_date","account","source_account","destination_account","branch","counterparty","reference","note","reversal_of","actor","device_id","recorded_at"],
+      journalEntries.map(({ event, entry }) => ({
+        event_id: s(event.id), event_action: s(event.action), entry_id: entry.entryId,
+        entry_type: entry.type === "REVERSAL" ? entry.originalType : entry.type,
+        flow: entry.flow, amount_rwf: entry.amountRwf,
+        business_date: new Date(entry.effectiveAt).toISOString(),
+        account: entry.account ?? "", source_account: entry.sourceAccount ?? "",
+        destination_account: entry.destinationAccount ?? "", branch: entry.branchName ?? "",
+        counterparty: entry.counterparty ?? "", reference: entry.reference ?? "",
+        note: entry.note ?? "", reversal_of: entry.reversalOf ?? "",
+        actor: s(event.actor), device_id: s(event.device_id), recorded_at: s(event.created_at)
+      })));
+  }
+
+  async function postJournalEntry(event: React.FormEvent) {
+    event.preventDefault();
+    const amountRwf = Number(entryAmount);
+    if (!Number.isSafeInteger(amountRwf) || amountRwf <= 0 || amountRwf > 10000000000) {
+      setEntryError("Enter a positive whole-RWF amount up to FRw 10,000,000,000.");
+      return;
+    }
+    const effectiveAt = new Date(entryDate + "T12:00:00").getTime();
+    if (!Number.isFinite(effectiveAt) || effectiveAt < Date.UTC(2000, 0, 1) ||
+        effectiveAt > Date.now() + 5 * 60 * 1000) {
+      setEntryError("Choose a valid business date no later than today.");
+      return;
+    }
+    if (entryType === "BANK_DEPOSIT" && entrySourceAccount === "BANK") {
+      setEntryError("A bank deposit must come from Cash, Mobile Money or Other.");
+      return;
+    }
+    setEntryBusy(true);
+    setEntryError("");
+    try {
+      await onAction("finance_ledger_post", {
+        entryId: id(), type: entryType, amountRwf, account: entryAccount,
+        sourceAccount: entryType === "BANK_DEPOSIT" ? entrySourceAccount : "",
+        destinationAccount: entryType === "BANK_DEPOSIT" ? "BANK" : "",
+        branchId: entryBranchId === "ALL" ? "" : entryBranchId,
+        effectiveAt, counterparty: entryCounterparty, reference: entryReference, note: entryNote
+      });
+      setEntryAmount(""); setEntryCounterparty(""); setEntryReference(""); setEntryNote("");
+      setEntryOpen(false);
+    } catch (error) {
+      setEntryError(errorText(error));
+    } finally {
+      setEntryBusy(false);
+    }
+  }
+
+  async function reverseJournalEntry(entry: FinanceJournalEntry) {
+    if (reversedEntryIds.has(entry.entryId)) return;
+    const accepted = window.confirm("Reverse this posted entry by adding an opposite financial event? The original history will remain visible.");
+    if (!accepted) return;
+    const reason = window.prompt("Enter the reversal explanation (at least 8 characters):", "")?.trim() ?? "";
+    if (reason.length < 8) {
+      if (reason.length) setEntryError("A reversal explanation of at least 8 characters is required.");
+      return;
+    }
+    setReversingId(entry.entryId);
+    setEntryError("");
+    try {
+      await onAction("finance_ledger_reverse", {
+        reversalEntryId: id(), originalEntryId: entry.entryId, reason
+      });
+    } catch (error) {
+      setEntryError(errorText(error));
+    } finally {
+      setReversingId("");
+    }
+  }
+
   const customers = rows(snapshot?.customers).filter((customer) => customer.isDeleted !== true);
   const receivables = customers.reduce((sum, customer) => sum + Math.max(0, n(customer.debtBalance)), 0);
   const revenue = sales.reduce((sum, sale) => sum + Math.max(0, n(sale.totalAmount ?? sale.total_amount)), 0);
@@ -177,7 +323,9 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
       description="Consolidated sales, collections, cost of goods, branch comparisons and recorded cash close-outs from the latest signed shop snapshot."
       action={<div className="enterprise-page-actions">
         <button className="btn-outline" onClick={exportBranches}><Download size={15} /> Export branch totals</button>
-        <button className="btn-primary" onClick={exportFinance}><Download size={15} /> Export finance ledger</button>
+        <button className="btn-outline" onClick={exportJournal}><Download size={15} /> Export posted journal</button>
+        <button className="btn-outline" onClick={() => { setEntryError(""); setEntryOpen(true); }} disabled={offline}><Plus size={15} /> New financial entry</button>
+        <button className="btn-primary" onClick={exportFinance}><Download size={15} /> Export sales & purchases</button>
       </div>} />
     <section className="panel enterprise-transfer-toolbar">
       <div className="enterprise-toolbar-controls">
@@ -209,6 +357,12 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
       <StatCard label="Mobile-money purchases" value={money(momoPurchaseSpend)} sub="Purchases marked paid by MoMo" icon={Activity} tone="blue" />
       <StatCard label="Bank-paid purchases" value={money(bankPurchaseSpend)} sub="Purchases marked paid by bank" icon={ShieldCheck} tone="green" />
       <StatCard label="Supplier-credit purchases" value={money(supplierCreditValue)} sub={supplierCreditPurchases.length.toLocaleString() + " purchases marked supplier credit"} icon={Wallet} tone="orange" />
+    </div>
+    <div className="stat-grid four">
+      <StatCard label="Posted cash outflows" value={money(postedOutflowsRwf)} sub="Expenses, payroll, supplier settlements, taxes and draws (net of reversals)" icon={ArrowDownRight} tone="orange" />
+      <StatCard label="Posted cash inflows" value={money(postedInflowsRwf)} sub="Capital contributions and approved reversals" icon={ArrowUpRight} tone="green" />
+      <StatCard label="Bank deposits" value={money(postedTransfersRwf)} sub="Cash / mobile money moved to bank" icon={Banknote} tone="blue" />
+      <StatCard label="Net posted movement" value={money(netPostedMovementRwf)} sub="Recorded inflows less outflows; not net profit" icon={Wallet} />
     </div>
     <div className="dashboard-grid">
       <section className="panel span-2">
@@ -244,6 +398,34 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
       </tbody></table></div> : <Empty title="No saved cash close-outs yet" description="Complete a branch cash close-out from Branch management. Saved results are retained in the shop-scoped cloud activity journal." />}
     </section>
     <section className="panel">
+      <div className="panel-heading"><div><span className="eyebrow muted">APPEND-ONLY FINANCIAL JOURNAL · CLOUD</span><h3>Posted financial entries ({journalEntries.length})</h3></div><ShieldCheck size={18} className="muted-icon" /></div>
+      {entryError && <div className="inline-alert error">{entryError}</div>}
+      {journalEntries.length ? <div className="table-wrap"><table><thead><tr>
+        <th>Recorded</th><th>Entry</th><th>Flow</th><th>Account</th><th>Branch</th><th>Amount</th><th>Counterparty / note</th><th>Actor</th><th>Correction</th>
+      </tr></thead><tbody>
+        {journalEntries.map(({ event, entry }) => {
+          const action = s(event.action).toUpperCase();
+          const title = entry.type === "REVERSAL" ? "REVERSAL · " + s(entry.originalType).replaceAll("_", " ") : entry.type.replaceAll("_", " ");
+          const account = entry.flow === "TRANSFER"
+            ? (s(entry.sourceAccount) + " → " + s(entry.destinationAccount))
+            : s(entry.account);
+          const canReverse = action === "POSTED" && entry.type !== "REVERSAL" && !reversedEntryIds.has(entry.entryId);
+          return <tr key={s(event.id)}>
+            <td>{new Date(timestampOf(event, "created_at")).toLocaleString()}</td>
+            <td><strong>{title}</strong><small className="cell-sub mono">{entry.entryId}</small></td>
+            <td><StatusPill value={entry.flow} /></td>
+            <td>{account || "—"}</td><td>{s(entry.branchName) || "All branches"}</td>
+            <td className="strong">{money(entry.amountRwf)}</td>
+            <td><strong>{s(entry.counterparty) || "—"}</strong><small className="cell-sub">{s(entry.reference) || s(entry.note) || "—"}</small></td>
+            <td>{s(event.actor) || s(entry.actorUsername) || "Owner"}</td>
+            <td>{canReverse ? <button type="button" className="btn-outline small" disabled={offline || reversingId === entry.entryId} onClick={() => void reverseJournalEntry(entry)}><RotateCcw size={13} /> Reverse</button>
+              : action === "REVERSED" ? <StatusPill value="REVERSED" /> : reversedEntryIds.has(entry.entryId) ? <StatusPill value="HAS REVERSAL" /> : "—"}</td>
+          </tr>;
+        })}
+      </tbody></table></div> : <Empty title="No posted financial entries yet" description="Post an operating expense, payroll, supplier settlement, tax payment, owner draw, cash withdrawal, capital contribution or bank deposit to begin the cloud journal." />}
+      <p className="panel-hint">Entries are append-only. Corrections create opposite, separately audited events; original records are never edited or deleted. Net posted movement is not net profit or a double-entry statutory balance sheet.</p>
+    </section>
+    <section className="panel">
       <div className="panel-heading"><div><span className="eyebrow muted">SUPPLIER EXPOSURE · PURCHASE REGISTER</span><h3>Supplier purchases and credit exposure</h3></div><Truck size={18} className="muted-icon" /></div>
       {purchases.length ? <div className="table-wrap"><table><thead><tr><th>Supplier</th><th>Purchases</th><th>Total acquired</th><th>Marked paid</th><th>Supplier credit</th></tr></thead><tbody>
         {Object.entries(purchases.reduce<Record<string, { count: number; total: number; paid: number; credit: number }>>((acc, purchase) => {
@@ -277,6 +459,48 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
           })}
         </tbody></table></div> : <Empty title="No outstanding customer balances" description="Customer credit balances are synchronized from the shop snapshot." />}
     </section>
-    <div className="info-note"><ShieldCheck size={16} /> Sales, repayments and purchase records are consolidated from the signed shop snapshot. Purchase payment status is the supplier settlement evidence currently synchronized. Operating expenses, payroll, tax, cash withdrawals, bank deposits and partial supplier settlements are not yet separately ledgered here, so these figures are not net profit or statutory cash-flow accounts.</div>
+    <div className="info-note"><ShieldCheck size={16} /> Sales, repayments and purchases are consolidated from the signed shop snapshot. Additional operating expenses, payroll, supplier settlements, tax, owner draws, withdrawals, capital contributions and bank deposits are now captured in the append-only cloud journal. This is a controlled cash-movement register, not a double-entry general ledger, bank reconciliation, payroll processor, tax filing or statutory net-profit statement.</div>
+    {entryOpen && <Modal title="Post financial journal entry" onClose={() => !entryBusy && setEntryOpen(false)}>
+      <form className="form-grid" onSubmit={(event) => void postJournalEntry(event)}>
+        <label>Entry category
+          <select value={entryType} onChange={(event) => setEntryType(event.target.value)} disabled={entryBusy}>
+            <option value="OPERATING_EXPENSE">Operating expense</option>
+            <option value="PAYROLL_PAYMENT">Payroll payment</option>
+            <option value="SUPPLIER_SETTLEMENT">Supplier settlement</option>
+            <option value="TAX_PAYMENT">Tax payment</option>
+            <option value="OWNER_DRAW">Owner draw</option>
+            <option value="CASH_WITHDRAWAL">Cash withdrawal</option>
+            <option value="CAPITAL_CONTRIBUTION">Capital contribution</option>
+            <option value="BANK_DEPOSIT">Deposit to bank</option>
+          </select>
+        </label>
+        <label>Amount (FRw)<input type="number" min="1" max="10000000000" step="1" required value={entryAmount} onChange={(event) => setEntryAmount(event.target.value)} disabled={entryBusy} /></label>
+        {entryType === "BANK_DEPOSIT" ? <label>Deposit source account
+          <select value={entrySourceAccount} onChange={(event) => setEntrySourceAccount(event.target.value)} disabled={entryBusy}>
+            <option value="CASH">Cash</option><option value="MOBILE_MONEY">Mobile Money</option><option value="OTHER">Other</option>
+          </select>
+        </label> : <label>Payment account
+          <select value={entryAccount} onChange={(event) => setEntryAccount(event.target.value)} disabled={entryBusy}>
+            <option value="CASH">Cash</option><option value="BANK">Bank</option><option value="MOBILE_MONEY">Mobile Money</option><option value="OTHER">Other</option>
+          </select>
+        </label>}
+        <label>Business date<input type="date" required value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={entryBusy} /></label>
+        <label>Branch
+          <select value={entryBranchId} onChange={(event) => setEntryBranchId(event.target.value)} disabled={entryBusy}>
+            <option value="ALL">All branches</option>
+            {branches.map((branch) => <option key={s(branch.id)} value={s(branch.id)}>{s(branch.name)}</option>)}
+          </select>
+        </label>
+        <label>Supplier / employee / counterparty<input maxLength={100} value={entryCounterparty} onChange={(event) => setEntryCounterparty(event.target.value)} disabled={entryBusy} /></label>
+        <label>Reference / receipt<input maxLength={48} value={entryReference} onChange={(event) => setEntryReference(event.target.value)} disabled={entryBusy} /></label>
+        <label className="field-wide">Description / explanation<textarea rows={3} maxLength={240} value={entryNote} onChange={(event) => setEntryNote(event.target.value)} disabled={entryBusy} /></label>
+        {entryError && <div className="inline-alert error field-wide">{entryError}</div>}
+        <div className="field-wide info-note"><ShieldCheck size={15} /> The cloud verifies the owner identity and registered desktop device, enforces tenant scope, and stores this entry as an append-only audit record. Errors keep the form open and never show a false success.</div>
+        <div className="modal-actions field-wide">
+          <button type="button" className="btn-outline" disabled={entryBusy} onClick={() => setEntryOpen(false)}>Cancel</button>
+          <button type="submit" className="btn-primary" disabled={entryBusy || offline || !entryAmount.trim()}>{entryBusy ? "Posting..." : <><Plus size={14} /> Post journal entry</>}</button>
+        </div>
+      </form>
+    </Modal>}
   </div>;
 }
