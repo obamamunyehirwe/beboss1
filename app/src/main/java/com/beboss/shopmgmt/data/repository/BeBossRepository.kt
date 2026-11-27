@@ -1806,15 +1806,18 @@ class BeBossRepository(private val database: AppDatabase) {
         }
     }
 
-    suspend fun clearTransactionalDataOnly() = withContext(Dispatchers.IO) {
-        clearAllSalesData()
+    suspend fun clearTransactionalDataOnly(actor: User? = null) = withContext(Dispatchers.IO) {
+        requirePermission(actor, "CLEAR_TRANSACTION_HISTORY") { it.role == UserRole.OWNER }
+        clearAllSalesData(actor)
     }
 
-    suspend fun clearAllProducts() = withContext(Dispatchers.IO) {
+    suspend fun clearAllProducts(actor: User? = null) = withContext(Dispatchers.IO) {
+        requirePermission(actor, "CLEAR_PRODUCT_CATALOG") { it.role == UserRole.OWNER }
         inventoryManager.clearAllProducts()
     }
 
-    suspend fun clearAllCustomers() = withContext(Dispatchers.IO) {
+    suspend fun clearAllCustomers(actor: User? = null) = withContext(Dispatchers.IO) {
+        requirePermission(actor, "CLEAR_CUSTOMER_LEDGER") { it.role == UserRole.OWNER }
         customerDebtManager.clearAllCustomers()
     }
 
@@ -1825,7 +1828,8 @@ class BeBossRepository(private val database: AppDatabase) {
         salesManager.deleteSale(saleId)
     }
 
-    suspend fun clearAllSalesData() = withContext(Dispatchers.IO) {
+    suspend fun clearAllSalesData(actor: User? = null) = withContext(Dispatchers.IO) {
+        requirePermission(actor, "CLEAR_ALL_SALES_DATA") { it.role == UserRole.OWNER }
         salesManager.clearAllSales()
         customerPaymentDao.clearAllPayments()
         purchaseDao.clearAllPurchases()
@@ -1833,7 +1837,8 @@ class BeBossRepository(private val database: AppDatabase) {
         syncQueueDao.clearQueue()
     }
 
-    suspend fun resetWholeApp(context: Context) = withContext(Dispatchers.IO) {
+    suspend fun resetWholeApp(context: Context, actor: User? = null) = withContext(Dispatchers.IO) {
+        requirePermission(actor, "FACTORY_RESET") { it.role == UserRole.OWNER }
         // 1. Wipe all transactional records
         salesManager.clearAllSales()
         customerPaymentDao.clearAllPayments()
