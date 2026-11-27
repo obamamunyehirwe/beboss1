@@ -2,6 +2,7 @@ package com.beboss.shopmgmt.util
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -10,6 +11,11 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class HlcClockTest {
+    @Before
+    fun resetClockForDeterministicTimeTests() {
+        HlcClock.resetForTests()
+    }
+
     private data class VersionCase(
         val localHlc: Long,
         val localVersion: Long,
