@@ -42,6 +42,17 @@ export function BarcodeScannerModal({ visible, onClose, onDetected }: ScanProps)
   );
 }
 
+const styles = StyleSheet.create({
+  scanRoot: { flex: 1, backgroundColor: '#090C11' },
+  scanHeader: { flexDirection: 'row', justifyContent: 'space-between', padding: 18, paddingTop: 60, zIndex: 2 },
+  scanTitle: { color: '#FFFFFF', fontSize: 17, fontWeight: '900' },
+  close: { color: '#F36B2B', fontSize: 13, fontWeight: '800' },
+  scanMessage: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 26 },
+  scanText: { color: '#FFFFFF', textAlign: 'center', fontSize: 13 },
+  action: { backgroundColor: '#F36B2B', padding: 12, borderRadius: 10, marginTop: 12 },
+  actionText: { color: '#FFFFFF', fontWeight: '800' }
+});
+
 const bleManager = new BleManager();
 const SERIAL_SERVICE_IDS = ['0000ffe0', '000018f0', '6e400001'];
 
