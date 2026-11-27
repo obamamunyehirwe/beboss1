@@ -70,7 +70,7 @@ abstract class ValidateAndroidCloudConfigurationTask : org.gradle.api.DefaultTas
     }
     if (!hasValidCertificatePin.get()) {
       throw org.gradle.api.GradleException(
-        "Android release TLS pinning is mandatory. Set SUPABASE_CERT_PINS to one or more valid sha256/<base64 SHA-256 certificate pins for the Supabase HTTPS host, separated by commas."
+        "Android release TLS pinning is mandatory. Set SUPABASE_CERT_PINS to the real sha256/<base64 SHA-256 SubjectPublicKeyInfo> pins generated from the verified Supabase TLS certificate chain."
       )
     }
   }
@@ -327,10 +327,12 @@ val hasPublicSupabaseApiKey =
       }
     }.getOrDefault(false)
 
-val hasValidSupabaseCertificatePin = configuredSupabasePins
-  .split(",")
-  .map { it.trim() }
-  .any { Regex("sha256/[A-Za-z0-9+/]{43}=").matches(it) }
+val configuredSupabasePinEntries = configuredSupabasePins.split(",").map { it.trim() }
+val supabasePinPattern = Regex("sha256/[A-Za-z0-9+/]{43}=")
+val hasValidSupabaseCertificatePin =
+  configuredSupabasePinEntries.isNotEmpty() &&
+    configuredSupabasePinEntries.all { it.isNotBlank() && supabasePinPattern.matches(it) } &&
+    configuredSupabasePinEntries.distinct().size == configuredSupabasePinEntries.size
 
 val validateAndroidCloudConfiguration = tasks.register<ValidateAndroidCloudConfigurationTask>("validateAndroidCloudConfiguration") {
   hasValidHttpsUrl.set(hasValidSupabaseHttpsUrl)

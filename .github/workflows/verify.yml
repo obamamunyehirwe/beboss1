@@ -340,6 +340,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Compile Supabase TLS pin discovery utility
+        run: |
+          mkdir -p "$RUNNER_TEMP/supabase-tls-pin-tool"
+          javac -Xlint:all -d "$RUNNER_TEMP/supabase-tls-pin-tool" scripts/PrintSupabaseTlsPins.java
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
