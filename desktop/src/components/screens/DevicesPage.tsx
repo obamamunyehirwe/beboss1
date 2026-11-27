@@ -1,7 +1,7 @@
 import type React from "react";
 import { useMemo, useState } from "react";
 import { Activity, Clock3, Copy, CreditCard, Edit3, Laptop, LoaderCircle, Monitor, Pause, Play, Plus, RefreshCw, Search, ShieldCheck, Smartphone, Store, Trash2, UserRound, Wifi, WifiOff } from "lucide-react";
-import { activeStaff, dateTime, errorText, money, n, rows, s } from "../../lib/format";
+import { activeStaff, dateTime, downloadCsv, errorText, money, n, rows, s } from "../../lib/format";
 import type { CloudAction, CloudState, Row } from "../../lib/types";
 import { Empty, Modal, PageHeading, StatCard, StatusPill } from "../ui";
 
@@ -25,6 +25,9 @@ export function DevicesPage({ cloud, onAction, onRefresh, offline, currentDevice
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [pageError, setPageError] = useState("");
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState("");
 
   const devices = rows(cloud.devices);
   const staff = activeStaff(cloud).filter((user) => s(user.role).toUpperCase() !== "OWNER");
@@ -51,6 +54,60 @@ export function DevicesPage({ cloud, onAction, onRefresh, offline, currentDevice
       .map((value) => s(value).toLowerCase()).join(" ");
     return stateMatch && (!query.trim() || haystack.includes(query.trim().toLowerCase()));
   }), [devices, filter, query]);
+
+  const eligibleDevices = devices.filter((device) => !device.is_owner_primary && (!currentDeviceId || s(device.device_id) !== currentDeviceId));
+  const selectedDevices = eligibleDevices.filter((device) => selectedDeviceIds.includes(s(device.id)));
+
+  function toggleDeviceSelection(deviceId: string, checked: boolean) {
+    setSelectedDeviceIds((current) => checked
+      ? Array.from(new Set([...current, deviceId]))
+      : current.filter((id) => id !== deviceId));
+  }
+
+  function exportDeviceFleet() {
+    downloadCsv("BeBoss-Device-Fleet-" + new Date().toISOString().slice(0, 10) + ".csv",
+      ["device_name", "platform", "terminal_id", "assigned_operator", "username", "role", "branch", "state", "last_sync", "monthly_addon_rwf"],
+      devices.map((device) => ({
+        device_name: s(device.device_name) || "POS terminal",
+        platform: s(device.device_id).startsWith("DESKTOP:") ? "DESKTOP" : s(device.device_id) ? "ANDROID" : "PENDING",
+        terminal_id: s(device.device_id),
+        assigned_operator: s(device.assigned_user_name),
+        username: s(device.assigned_username),
+        role: s(device.role),
+        branch: s(device.branch_name),
+        state: device.is_active ? (s(device.device_id) ? "ACTIVE / PAIRED" : "ACTIVE / PENDING") : "PAUSED",
+        last_sync: device.last_synced_at ? dateTime(device.last_synced_at) : "Never",
+        monthly_addon_rwf: Math.max(0, n(device.monthly_fee_addon_rwf))
+      })));
+  }
+
+  async function applyBulkDeviceState(isActive: boolean) {
+    const targets = selectedDevices.filter((device) => Boolean(device.is_active) !== isActive);
+    if (!targets.length) {
+      setPageError("The selected devices are already in the requested state.");
+      return;
+    }
+    if (!isActive && !window.confirm("Pause " + targets.length + " selected terminal(s)? They will lose access on their next server validation. Existing business history remains intact.")) return;
+    setBulkBusy(true);
+    setPageError("");
+    setBulkProgress("Updating " + targets.length + " device records…");
+    const completed: string[] = [];
+    try {
+      for (let index = 0; index < targets.length; index++) {
+        const device = targets[index];
+        setBulkProgress((isActive ? "Resuming " : "Pausing ") + (index + 1) + " of " + targets.length + " · " + (s(device.device_name) || s(device.device_id)));
+        const result = await runAction("device_set_active", { id: s(device.id), isActive });
+        if (!result) throw new Error("The server rejected an update for " + (s(device.device_name) || s(device.id)) + ". Review the message above; earlier changes remain applied.");
+        completed.push(s(device.id));
+      }
+      setSelectedDeviceIds((current) => current.filter((id) => !completed.includes(id)));
+      setBulkProgress("Successfully " + (isActive ? "resumed " : "paused ") + completed.length + " terminal(s).");
+    } catch (error) {
+      setSelectedDeviceIds((current) => current.filter((id) => !completed.includes(id)));
+      setPageError(error instanceof Error ? error.message : "A device operation failed. Earlier successful changes remain applied.");
+      setBulkProgress("Stopped after " + completed.length + " successful operation(s).");
+    } finally { setBulkBusy(false); }
+  }
 
   function openEdit(device: Row) {
     setPageError("");
@@ -145,7 +202,17 @@ export function DevicesPage({ cloud, onAction, onRefresh, offline, currentDevice
           <option value="ALL">All devices</option><option value="ACTIVE">Paired / active</option>
           <option value="PENDING">Awaiting pairing</option><option value="PAUSED">Paused</option>
         </select>
+        <button className="btn-outline small" type="button" onClick={exportDeviceFleet}><Activity size={13} /> Export fleet</button>
       </div>
+      {selectedDeviceIds.length > 0 && <div className="device-bulk-panel">
+        <div><strong>{selectedDevices.length} selected terminals</strong><small>Owner-primary and this active desktop are protected and cannot be changed here.</small></div>
+        <div className="device-bulk-actions">
+          <button className="btn-outline small danger" type="button" disabled={offline || bulkBusy || !selectedDevices.some((device) => device.is_active)} onClick={() => void applyBulkDeviceState(false)}><Pause size={13} /> Pause selected</button>
+          <button className="btn-outline small" type="button" disabled={offline || bulkBusy || !selectedDevices.some((device) => !device.is_active)} onClick={() => void applyBulkDeviceState(true)}><Play size={13} /> Resume selected</button>
+          <button className="text-action" type="button" disabled={bulkBusy} onClick={() => setSelectedDeviceIds([])}>Clear</button>
+        </div>
+        {bulkProgress && <small className="device-bulk-progress">{bulkProgress}</small>}
+      </div>}
       <div className="enterprise-toolbar-foot"><span>Showing {filtered.length} of {devices.length} device records</span><span>Management actions require an online, verified owner device</span></div>
     </section>
 
@@ -157,8 +224,13 @@ export function DevicesPage({ cloud, onAction, onRefresh, offline, currentDevice
         const self = !!currentDeviceId && s(device.device_id) === currentDeviceId;
         const unpaired = !s(device.device_id);
         const isDesktop = s(device.device_id).startsWith("DESKTOP:");
-        return <article className="enterprise-device-card" key={s(device.id)}>
+        const selectable = !device.is_owner_primary && !self;
+        return <article className={"enterprise-device-card " + (selectedDeviceIds.includes(s(device.id)) ? "is-selected" : "")} key={s(device.id)}>
           <div className="enterprise-device-card-top">
+            <label className="device-select-control" aria-label={"Select " + (s(device.device_name) || "POS terminal")}>
+              <input type="checkbox" checked={selectedDeviceIds.includes(s(device.id))} disabled={!selectable || offline || bulkBusy} onChange={(event) => toggleDeviceSelection(s(device.id), event.target.checked)} />
+              <span>{selectable ? "Select" : self ? "Current desktop" : "Owner device"}</span>
+            </label>
             <span className="enterprise-device-icon">{isDesktop ? <Laptop size={20} /> : <Smartphone size={20} />}</span>
             <div className="enterprise-device-top-status"><StatusPill value={device.is_active ? "ACTIVE" : "PAUSED"} /><span className={"enterprise-connection " + (state.online ? "online" : "")}><i />{state.label}</span></div>
           </div>
