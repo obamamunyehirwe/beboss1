@@ -804,6 +804,7 @@ object ShopDataTransferManager {
                         id = b.optCleanString("id"),
                         name = b.optCleanString("name", "Branch"),
                         code = b.optCleanString("code", "BR-01"),
+                        locationType = b.optCleanString("locationType", "STORE").uppercase().takeIf { it == "WAREHOUSE" } ?: "STORE",
                         address = b.optCleanString("address", "Kigali, Rwanda"),
                         phone = b.optCleanString("phone", ""),
                         managerUserId = b.optCleanString("managerUserId", ""),
