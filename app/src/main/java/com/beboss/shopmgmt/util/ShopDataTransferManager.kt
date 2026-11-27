@@ -518,6 +518,21 @@ object ShopDataTransferManager {
             tombstoneChunks.size
         )
 
+        // Index each sale's destination chunk once, then walk the sale-line table
+        // once. The previous implementation scanned every sale line for every
+        // sales chunk (O(salesChunks * saleItems)), which became extremely costly
+        // for long-running shops with large histories. This keeps the source order
+        // of sale lines while reducing the grouping work to O(sales + saleItems).
+        val saleChunkIndexById = HashMap<String, Int>(sales.size)
+        saleChunks.forEachIndexed { chunkIndex, chunk ->
+            chunk.forEach { sale -> saleChunkIndexById[sale.id] = chunkIndex }
+        }
+        val saleItemsByChunk = MutableList(maxChunks) { mutableListOf<SaleItem>() }
+        saleItems.forEach { item ->
+            val chunkIndex = saleChunkIndexById[item.saleId]
+            if (chunkIndex != null) saleItemsByChunk[chunkIndex].add(item)
+        }
+
         for (idx in 0 until maxChunks) {
             val salesForChunk = saleChunks.getOrElse(idx) { emptyList() }
             val saleIds = salesForChunk.map { it.id }.toSet()
@@ -525,8 +540,7 @@ object ShopDataTransferManager {
             // lines. Keep each sale's parent row in the first packet, then split its
             // related saleItems into bounded follow-up packets. This preserves the
             // parent-before-child order while preventing an oversized first chunk.
-            val saleItemPackets = saleItems
-                .filter { it.saleId in saleIds }
+            val saleItemPackets = saleItemsByChunk[idx]
                 .chunked(maxRecordsPerChunk)
                 .ifEmpty { listOf(emptyList()) }
 
