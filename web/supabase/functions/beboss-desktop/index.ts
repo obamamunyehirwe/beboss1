@@ -945,6 +945,122 @@ Deno.serve(async (req: Request) => {
       return json(200, { ok: true, entity, auditedCount, unchangedCount });
     }
 
+    if (action === "record_device_branch_tombstones") {
+      const deviceId = text(req.headers.get("X-BeBoss-Device-ID")).trim();
+      const deviceToken = text(req.headers.get("X-BeBoss-Device-Token")).trim();
+      if (deviceId.length < 4 || deviceId.length > 120 || !/^[a-f0-9]{64}$/i.test(deviceToken)) {
+        return json(401, { ok: false, message: "An enrolled Android device credential is required to submit branch deletion events." });
+      }
+      const deviceClient = createClient(config.url, config.publishableKey, {
+        global: { headers: {
+          "X-BeBoss-Device-ID": deviceId,
+          "X-BeBoss-Device-Token": deviceToken
+        } },
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+      const { data: shop, error: shopError } = await deviceClient.from("shop_accounts")
+        .select("id,shop_name,remote_kill_switch").maybeSingle();
+      if (shopError || !shop || shop.remote_kill_switch === true) {
+        return json(401, { ok: false, message: "This device is not authenticated for an active BeBoss shop." });
+      }
+      const requested = Array.isArray(body.tombstones) ? body.tombstones as Row[] : [];
+      if (requested.length < 1 || requested.length > 250) {
+        return json(400, { ok: false, message: "Branch deletion batches must contain between 1 and 250 signed tombstones." });
+      }
+      const seen = new Set<string>();
+      for (const item of requested) {
+        const id = text(item.recordId).trim();
+        if (text(item.tableName) !== "branches" || !id || id.length > 120 ||
+            !Number.isFinite(number(item.deletedAt)) || number(item.deletedAt) <= 0 ||
+            !Number.isFinite(number(item.hlcTimestamp)) || number(item.hlcTimestamp) <= 0 ||
+            seen.has(id)) {
+          return json(400, { ok: false, message: "The branch deletion tombstone is malformed or duplicated." });
+        }
+        seen.add(id);
+      }
+
+      // Deletion is accepted only when the same tombstone is present in a complete,
+      // HMAC-verified snapshot from this enrolled device. A client cannot fabricate
+      // a standalone deletion request and remove another shop's branch.
+      const verified = await latestVerifiedSnapshot(admin, text(shop.id), config.hmacSecret);
+      if (!verified.snapshot || !verified.sourceDevices.some((source) => source.deviceId === deviceId)) {
+        return json(409, { ok: false, message: "Upload a complete signed device snapshot before submitting branch deletion audit records." });
+      }
+      const signedTombstones = verified.snapshot.tombstones;
+      let auditedCount = 0;
+      let unchangedCount = 0;
+      for (const tombstone of requested) {
+        const recordId = text(tombstone.recordId);
+        const signed = signedTombstones.find((candidate) =>
+          text(candidate.tableName) === "branches" &&
+          text(candidate.recordId) === recordId &&
+          number(candidate.deletedAt) === number(tombstone.deletedAt) &&
+          number(candidate.hlcTimestamp) === number(tombstone.hlcTimestamp)
+        );
+        if (!signed) {
+          return json(409, { ok: false, message: "The branch deletion was not found in this device's signed cloud snapshot. Retry synchronization before journaling it." });
+        }
+
+        const { data: branch, error: branchError } = await admin.from("shop_branches")
+          .select("id,shop_sync_key,name,code,address,phone,email,manager_user_id,manager_name,is_active,is_main_branch,operational_status,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,created_at,updated_at,hlc_timestamp,last_modified_device_id")
+          .eq("shop_sync_key", text(shop.id)).eq("id", recordId).maybeSingle();
+        if (branchError) throw new Error("Could not validate deleted branch " + recordId + ": " + branchError.message);
+        if (branch?.is_main_branch === true || recordId === "main_branch") {
+          return json(409, { ok: false, message: "The main shop branch cannot be deleted. Restore it and deactivate a secondary branch instead." });
+        }
+        if (branch?.is_active === true) {
+          const [devices, staff] = await Promise.all([
+            admin.from("shop_devices").select("id", { count: "exact", head: true })
+              .eq("shop_sync_key", text(shop.id)).eq("branch_id", recordId).eq("is_active", true),
+            admin.from("shop_users").select("user_id", { count: "exact", head: true })
+              .eq("shop_sync_key", text(shop.id)).eq("assigned_branch_id", recordId).eq("is_active", true)
+          ]);
+          if (devices.error || staff.error) throw new Error("Could not check assignments before applying the branch deletion.");
+          if ((devices.count ?? 0) > 0 || (staff.count ?? 0) > 0) {
+            return json(409, { ok: false, message: "Reassign active staff and devices before deleting this branch. The deletion remains queued for retry." });
+          }
+          const { error: updateError } = await admin.from("shop_branches").update({
+            is_active: false,
+            operational_status: "CLOSED",
+            updated_at: number(tombstone.deletedAt),
+            hlc_timestamp: number(tombstone.hlcTimestamp),
+            last_modified_device_id: deviceId
+          }).eq("shop_sync_key", text(shop.id)).eq("id", recordId);
+          if (updateError) throw new Error("Could not apply the signed branch deletion: " + updateError.message);
+        }
+
+        const state = buildShopAuditSnapshot("BRANCH", {
+          ...(branch ?? { id: recordId, name: "Deleted branch", code: "" }),
+          is_active: false,
+          operational_status: "CLOSED",
+          updated_at: number(tombstone.deletedAt),
+          hlc_timestamp: number(tombstone.hlcTimestamp),
+          last_modified_device_id: deviceId
+        });
+        const detail = JSON.stringify({
+          version: 1,
+          recordId,
+          state,
+          changes: ["branch deletion tombstone verified from a signed shop snapshot", "historical branch record retained as inactive"]
+        });
+        const duplicate = await admin.from("cloud_sync_events").select("id")
+          .eq("shop_sync_key", text(shop.id)).eq("entity", "BRANCH")
+          .eq("action", "DELETED").eq("device_id", deviceId).eq("detail", detail).limit(1).maybeSingle();
+        if (duplicate.error) throw new Error("Could not check branch deletion audit idempotency: " + duplicate.error.message);
+        if (duplicate.data) {
+          unchangedCount += 1;
+          continue;
+        }
+        const saved = await recordShopAuditEvent(
+          admin, text(shop.id), text(shop.shop_name), "ANDROID_DEVICE:" + deviceId,
+          deviceId, "BRANCH", "DELETED", detail
+        );
+        if (!saved) return json(503, { ok: false, message: "The signed branch deletion was applied, but its audit record could not be saved. Keep synchronization pending and retry." });
+        auditedCount += 1;
+      }
+      return json(200, { ok: true, auditedCount, unchangedCount });
+    }
+
     if (action === "verify_device_branch_share") {
       const deviceId = text(req.headers.get("X-BeBoss-Device-ID")).trim();
       const deviceToken = text(req.headers.get("X-BeBoss-Device-Token")).trim();
