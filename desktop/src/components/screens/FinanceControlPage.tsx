@@ -96,10 +96,6 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
     sum + Math.max(0, n(sale.totalAmount ?? sale.total_amount) - amountCollected(sale)), 0);
   const averageOrder = sales.length ? revenue / sales.length : 0;
   const margin = revenue > 0 ? grossProfit / revenue * 100 : 0;
-  const transferExposure = rows(cloud.transfers).filter((transfer) =>
-    ["REQUESTED", "IN_TRANSIT", "RECEIPT_REQUESTED", "CANCEL_REQUESTED"].includes(s(transfer.status).toUpperCase()) &&
-    (branchFilter === "ALL" || s(transfer.from_branch_id) === branchFilter || s(transfer.to_branch_id) === branchFilter)
-  ).reduce((sum, transfer) => sum + Math.max(0, n(transfer.cost_value_rwf)), 0);
 
   const branchSummary = useMemo(() => branches.map((branch) => {
     const id = s(branch.id);
