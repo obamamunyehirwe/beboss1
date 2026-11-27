@@ -1,5 +1,7 @@
 -- Give enrolled iPhones the same immutable, signed snapshot-generation exchange
 -- used by Android and desktop. Only the trusted iOS Edge Function can commit.
+begin;
+
 create or replace function public.commit_ios_snapshot_generation(
   p_shop_sync_key text,
   p_device_id text,
@@ -54,7 +56,8 @@ begin
     and d.device_id = p_device_id
   for update;
 
-  if not found or not v_device.is_active
+  if not found
+     or v_device.is_active is distinct from true
      or v_device.assigned_user_id <> p_assigned_user_id
      or v_device.role <> p_role then
     raise exception using errcode = '42501', message = 'The iPhone is no longer assigned to an active shop device.';
@@ -66,13 +69,17 @@ begin
     and u.user_id = p_assigned_user_id
   for share;
 
-  if not found or not v_staff.is_active or v_staff.role <> p_role then
+  if not found
+     or v_staff.is_active is distinct from true
+     or v_staff.role <> p_role then
     raise exception using errcode = '42501', message = 'The iPhone user is inactive or its role no longer matches.';
   end if;
 
   if not exists (
-    select 1 from public.shop_accounts s
-    where s.id = p_shop_sync_key and s.remote_kill_switch = false
+    select 1
+    from public.shop_accounts s
+    where s.id = p_shop_sync_key
+      and s.remote_kill_switch = false
   ) then
     raise exception using errcode = '42501', message = 'This shop is disabled or unavailable.';
   end if;
@@ -102,7 +109,7 @@ begin
      or v_distinct_counts <> 1
      or v_min_index <> 0
      or v_max_index <> p_expected_chunk_count - 1 then
-    -- Keep the previous complete generation; incomplete new rows are never committed.
+    -- An incomplete upload cannot replace the last complete generation.
     delete from public.branch_sync_snapshots
     where shop_sync_key = p_shop_sync_key
       and pg_catalog.regexp_replace(device_id, '#c[0-9]+$', '') = p_device_id
@@ -110,7 +117,8 @@ begin
     return jsonb_build_object('accepted', false, 'conflict', false, 'reason', 'incomplete_generation');
   end if;
 
-  -- Only complete generations count toward the optimistic-concurrency version.
+  -- Compare against all other complete device generations, excluding this
+  -- in-flight generation so it cannot satisfy its own optimistic concurrency check.
   select coalesce(max(generation_updated_at), 0)
     into v_latest
   from (
@@ -123,10 +131,10 @@ begin
     group by
       pg_catalog.regexp_replace(device_id, '#c[0-9]+$', ''),
       coalesce(nullif(sync_generation, ''), 'legacy')
-    having count(*) = max(coalesce(nullif(chunk_count, 0), 1))
-       and count(distinct chunk_index) = max(coalesce(nullif(chunk_count, 0), 1))
+    having count(*) = max(greatest(1, coalesce(chunk_count, 1)))
+       and count(distinct chunk_index) = max(greatest(1, coalesce(chunk_count, 1)))
        and min(chunk_index) = 0
-       and max(chunk_index) = max(coalesce(nullif(chunk_count, 0), 1)) - 1
+       and max(chunk_index) = max(greatest(1, coalesce(chunk_count, 1))) - 1
   ) complete_generations
   where not (
     complete_generations.base_device_id = p_device_id
@@ -147,43 +155,18 @@ begin
     and pg_catalog.regexp_replace(device_id, '#c[0-9]+$', '') = p_device_id
     and sync_generation = p_sync_generation;
 
-  -- Keep five complete/most recent generations for this iPhone installation.
+  -- Retain five complete generations. Failed/incomplete uploads never displace
+  -- a known-good rollback point.
   with keep_generations as (
     select sync_generation
     from public.branch_sync_snapshots
     where shop_sync_key = p_shop_sync_key
-      and pg_catalog.regexp_replace(device_id, '#c[0-9]+
-  delete from public.branch_sync_snapshots older
-  where older.shop_sync_key = p_shop_sync_key
-    and pg_catalog.regexp_replace(older.device_id, '#c[0-9]+$', '') = p_device_id
-    and not exists (
-      select 1 from keep_generations keep
-      where keep.sync_generation = older.sync_generation
-    );
-
-  return jsonb_build_object(
-    'accepted', true,
-    'conflict', false,
-    'uploadedAt', v_now,
-    'latestUpdatedAt', v_now,
-    'chunkCount', p_expected_chunk_count
-  );
-end;
-$function$;
-
-revoke all on function public.commit_ios_snapshot_generation(text,text,text,text,text,text,integer,bigint)
-  from public, anon, authenticated;
-grant execute on function public.commit_ios_snapshot_generation(text,text,text,text,text,text,integer,bigint)
-  to service_role;
-
-comment on function public.commit_ios_snapshot_generation(text,text,text,text,text,text,integer,bigint)
-  is 'Atomically validates and commits a complete iOS signed snapshot generation with device assignment and cross-device optimistic concurrency checks.';
-, '') = p_device_id
+      and pg_catalog.regexp_replace(device_id, '#c[0-9]+$', '') = p_device_id
     group by sync_generation
-    having count(*) = max(greatest(1, nullif(chunk_count, 0)))
-       and count(distinct chunk_index) = max(greatest(1, nullif(chunk_count, 0)))
+    having count(*) = max(greatest(1, coalesce(chunk_count, 1)))
+       and count(distinct chunk_index) = max(greatest(1, coalesce(chunk_count, 1)))
        and min(chunk_index) = 0
-       and max(chunk_index) = max(greatest(1, nullif(chunk_count, 0))) - 1
+       and max(chunk_index) = max(greatest(1, coalesce(chunk_count, 1))) - 1
     order by max(updated_at) desc, sync_generation desc
     limit 5
   )
@@ -191,7 +174,8 @@ comment on function public.commit_ios_snapshot_generation(text,text,text,text,te
   where older.shop_sync_key = p_shop_sync_key
     and pg_catalog.regexp_replace(older.device_id, '#c[0-9]+$', '') = p_device_id
     and not exists (
-      select 1 from keep_generations keep
+      select 1
+      from keep_generations keep
       where keep.sync_generation = older.sync_generation
     );
 
@@ -212,3 +196,5 @@ grant execute on function public.commit_ios_snapshot_generation(text,text,text,t
 
 comment on function public.commit_ios_snapshot_generation(text,text,text,text,text,text,integer,bigint)
   is 'Atomically validates and commits a complete iOS signed snapshot generation with device assignment and cross-device optimistic concurrency checks.';
+
+commit;
