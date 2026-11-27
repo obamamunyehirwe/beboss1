@@ -524,6 +524,71 @@ struct FileExportResult {
 
 // ────────────────────── TAURI COMMANDS ──────────────────────
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BranchCashReconciliationCalculation {
+    opening_float_rwf: i64,
+    cash_sales_rwf: i64,
+    customer_cash_payments_rwf: i64,
+    expected_cash_rwf: i64,
+    cash_counted_rwf: i64,
+    variance_rwf: i64,
+    approval_required: bool,
+}
+
+fn branch_cash_reconciliation_calculation(
+    opening_float_rwf: i64,
+    cash_sales_rwf: i64,
+    customer_cash_payments_rwf: i64,
+    cash_counted_rwf: i64,
+    variance_threshold_rwf: i64,
+) -> Result<BranchCashReconciliationCalculation, String> {
+    const MAX_RWF: i64 = 10_000_000_000;
+    let values = [
+        opening_float_rwf,
+        cash_sales_rwf,
+        customer_cash_payments_rwf,
+        cash_counted_rwf,
+        variance_threshold_rwf,
+    ];
+    if values.iter().any(|value| *value < 0 || *value > MAX_RWF) {
+        return Err("Reconciliation amounts must be non-negative and no greater than FRw 10,000,000,000.".into());
+    }
+    let expected_cash_rwf = opening_float_rwf
+        .checked_add(cash_sales_rwf)
+        .and_then(|value| value.checked_add(customer_cash_payments_rwf))
+        .ok_or_else(|| "The expected cash total is outside the supported range.".to_string())?;
+    let variance_rwf = cash_counted_rwf
+        .checked_sub(expected_cash_rwf)
+        .ok_or_else(|| "The cash variance is outside the supported range.".to_string())?;
+    Ok(BranchCashReconciliationCalculation {
+        opening_float_rwf,
+        cash_sales_rwf,
+        customer_cash_payments_rwf,
+        expected_cash_rwf,
+        cash_counted_rwf,
+        variance_rwf,
+        approval_required: variance_threshold_rwf > 0 && variance_rwf.abs() >= variance_threshold_rwf,
+    })
+}
+
+#[tauri::command]
+fn calculate_branch_cash_reconciliation(
+    opening_float_rwf: i64,
+    cash_sales_rwf: i64,
+    customer_cash_payments_rwf: i64,
+    cash_counted_rwf: i64,
+    variance_threshold_rwf: i64,
+) -> Result<BranchCashReconciliationCalculation, String> {
+    branch_cash_reconciliation_calculation(
+        opening_float_rwf,
+        cash_sales_rwf,
+        customer_cash_payments_rwf,
+        cash_counted_rwf,
+        variance_threshold_rwf,
+    )
+}
+
 #[tauri::command]
 fn secure_get(app: tauri::AppHandle, key: String) -> Result<Option<String>, String> {
     if !is_valid_secure_key(&key) { return Err("Invalid secure-storage key.".into()); }
@@ -1802,7 +1867,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            secure_get, secure_set, secure_remove, get_device_id, recover_local_database,
+            calculate_branch_cash_reconciliation, secure_get, secure_set, secure_remove, get_device_id, recover_local_database,
             setup_preflight, test_credential_vault,
             local_load, local_save_baseline, local_queue, local_pending, local_outbox_count, local_unassigned_outbox_count, local_ack,
             system_diagnostics, network_ping, print_escpos_thermal,
@@ -1825,6 +1890,29 @@ mod database_encryption_tests {
         ));
         fs::create_dir_all(&directory).expect("test directory should be created");
         directory.join("beboss-local.sqlite")
+    }
+
+    #[test]
+    fn branch_cash_reconciliation_uses_integer_rwf_and_owner_variance_threshold() {
+        let result = branch_cash_reconciliation_calculation(100_000, 250_000, 50_000, 390_000, 10_000)
+            .expect("valid business-day reconciliation should calculate");
+        assert_eq!(result.expected_cash_rwf, 400_000);
+        assert_eq!(result.variance_rwf, -10_000);
+        assert!(result.approval_required);
+    }
+
+    #[test]
+    fn branch_cash_reconciliation_rejects_negative_and_oversized_values() {
+        assert!(branch_cash_reconciliation_calculation(-1, 0, 0, 0, 0).is_err());
+        assert!(branch_cash_reconciliation_calculation(0, 0, 0, 0, 10_000_000_001).is_err());
+    }
+
+    #[test]
+    fn branch_cash_reconciliation_disables_review_when_threshold_is_zero() {
+        let result = branch_cash_reconciliation_calculation(10_000, 0, 0, 9_000, 0)
+            .expect("valid close-out should calculate");
+        assert_eq!(result.variance_rwf, -1_000);
+        assert!(!result.approval_required);
     }
 
     #[test]
