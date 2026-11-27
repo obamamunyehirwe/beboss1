@@ -15,6 +15,7 @@ import com.beboss.shopmgmt.data.model.Branch
 import com.beboss.shopmgmt.data.model.LocalAuditLog
 import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.data.model.UserRole
+import com.beboss.shopmgmt.util.CachedTransferApprovalPolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
