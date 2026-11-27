@@ -1173,9 +1173,14 @@ Deno.serve(async (req: Request) => {
         // A record already in the cloud was originally committed under the authority
         // of its creating workflow. Existing lifecycle updates do not need new approval.
         // A new offline record above today's threshold must have a fresh signed proof.
-        if (!existing && approvalRequired) {
-          const proof = transfer.approval_proof && typeof transfer.approval_proof === "object"
-            ? transfer.approval_proof as Row : {};
+        const approvalProof = transfer.approval_proof && typeof transfer.approval_proof === "object"
+          ? transfer.approval_proof as Row : {};
+        const hasApprovalSignature = Boolean(text(approvalProof.signature).trim());
+        const needsNewApprovalProof = (!existing && approvalRequired) ||
+          (Boolean(existing) && !priorApprovalValid && policy.transferApprovalThresholdRwf > 0 &&
+            cost >= policy.transferApprovalThresholdRwf && hasApprovalSignature);
+        if (needsNewApprovalProof) {
+          const proof = approvalProof;
           const reason = text(proof.reason).trim();
           const actorUserId = text(proof.actor_user_id).trim();
           const approvalDeviceId = text(proof.device_id).trim();
@@ -1288,8 +1293,6 @@ Deno.serve(async (req: Request) => {
         const upload = await admin.from("shop_stock_transfers").upsert(rowsToSave, { onConflict: "id" });
         if (upload.error) throw new Error("The verified Android transfers could not be committed: " + upload.error.message);
       }
-      if (upload.error) throw new Error("The verified Android transfers could not be committed: " + upload.error.message);
-
       const existingSyncEvents = await admin.from("cloud_sync_events").select("detail")
         .eq("shop_sync_key", text(shop.id)).eq("entity", "STOCK_TRANSFER")
         .eq("action", "ANDROID_TRANSFER_SYNCED").order("created_at", { ascending: false }).limit(1000);
@@ -1319,6 +1322,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const approvalAuditIds = new Set(newApprovalAudit.map((item) => text(item.recordId)));
+      const statusChangeById = new Map(statusChanges.map((change) => [change.id, change]));
       for (const transfer of requested) {
         const recordId = text(transfer.id);
         const savedTransfer = rowsToSave.find((row) => text(row.id) === recordId);
@@ -1336,11 +1340,13 @@ Deno.serve(async (req: Request) => {
           quantity: number(transfer.quantity),
           costValueRwf: number(savedTransfer?.cost_value_rwf),
           status: text(transfer.status).toUpperCase(),
+          previousStatus: statusChangeById.get(recordId)?.from ?? "",
+          statusChanged: statusChangeById.has(recordId),
           sourceDeviceId: text(transfer.last_modified_device_id) || deviceId,
           updatedAt,
           syncedAt: Date.now(),
           approvalRequired,
-          approvalVerified: approvalAuditIds.has(recordId) || verifiedPriorApprovalIds.has(recordId)
+          approvalVerified: approvalAuditIds.has(recordId) || verifiedPriorApprovalIds.has(recordId) || verifiedPortalApprovalIds.has(recordId)
         });
         const saved = await recordShopAuditEvent(
           admin, text(shop.id), text(shop.shop_name),
@@ -1349,6 +1355,25 @@ Deno.serve(async (req: Request) => {
         );
         if (!saved) {
           return json(503, { ok: false, message: "Transfers were saved, but the synchronization audit could not be recorded. Retry synchronization." });
+        }
+        const statusChange = statusChangeById.get(recordId);
+        if (statusChange) {
+          const statusAuditSaved = await recordShopAuditEvent(
+            admin, text(shop.id), text(shop.shop_name),
+            "ANDROID_DEVICE:" + text(currentDevice.assigned_user_id),
+            deviceId, "STOCK_TRANSFER", "ANDROID_TRANSFER_STATUS_CHANGED",
+            JSON.stringify({
+              version: 1, recordId,
+              previousStatus: statusChange.from,
+              status: statusChange.to,
+              updatedAt,
+              actorUserId: text(currentDevice.assigned_user_id),
+              deviceId
+            })
+          );
+          if (!statusAuditSaved) {
+            return json(503, { ok: false, message: "The transfer status changed, but its lifecycle audit could not be recorded. Refresh before retrying." });
+          }
         }
       }
       return json(200, {
