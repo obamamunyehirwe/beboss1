@@ -2,12 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@/lib/use-server-fn";
 import { Download, Pause, Play, RefreshCw, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmAction, EmptyState, FilterChips, LoadingBlock, PageHeader, SearchInput, StatusBadge, TableShell, downloadCsv, matches, useAdminAction } from "@/components/admin/ui";
 import { useAdminCtx } from "@/hooks/use-admin-ctx";
 import { deleteDevice, setDeviceActive } from "@/lib/admin.functions";
-import { deviceCredentialRolloutQuery, devicesQuery } from "@/lib/admin-queries";
+import { deviceCredentialRolloutQuery, devicesQuery, deviceSecurityTelemetryQuery } from "@/lib/admin-queries";
 import { formatRwf, relativeTime } from "@/lib/format";
 import { useAdminText } from "@/lib/admin-copy";
 
@@ -20,6 +20,7 @@ type F = "ALL" | "ACTIVE" | "PAUSED" | "STALE";
 function DevicesPage() {
   const a = useAdminText();
   const { data, isLoading, isError, error, refetch } = useQuery(devicesQuery);
+  const telemetry = useQuery(deviceSecurityTelemetryQuery);
   const isAdmin = !!useAdminCtx().data?.isAdmin;
   const rollout = useQuery({ ...deviceCredentialRolloutQuery, enabled: isAdmin });
   const [q, setQ] = useState("");
@@ -32,6 +33,10 @@ function DevicesPage() {
   const rows = all
     .filter((d) => (f === "ALL" ? true : f === "ACTIVE" ? d.is_active : f === "PAUSED" ? !d.is_active : stale(d.last_synced_at)))
     .filter((d) => matches(q, d.device_name, d.device_id, d.shop_name, d.join_code, d.assigned_username, d.assigned_user_name, d.branch_name));
+  const telemetryByDevice = useMemo(
+    () => new Map((telemetry.data ?? []).map((item) => [`${item.shop_sync_key}::${item.device_id}`, item] as const)),
+    [telemetry.data],
+  );
   const addonMrr = all.filter((d) => d.is_active && !d.is_owner_primary).reduce((a, d) => a + d.monthly_fee_addon_rwf, 0);
   const rolloutRows = rollout.data ?? [];
   const rolloutTotals = rolloutRows.reduce((total, shop) => ({
@@ -148,6 +153,12 @@ function DevicesPage() {
           )}
         </section>
       ) : null}
+      {telemetry.isError ? (
+        <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between" role="alert">
+          <span>Device security and location reports could not be loaded. Device pairing data is still available.</span>
+          <Button size="sm" variant="outline" onClick={() => telemetry.refetch()}>Retry reports</Button>
+        </div>
+      ) : null}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <SearchInput value={q} onChange={setQ} placeholder="Search device, shop, join code, user, branch…" />
         <FilterChips<F>
@@ -172,73 +183,87 @@ function DevicesPage() {
         <EmptyState title="No devices" sub="Devices register when a shop owner pairs a new phone with a join code." />
       ) : (
         <TableShell>
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[1180px] text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Device</th>
+                <th className="px-4 py-3">Platform & software</th>
                 <th className="px-4 py-3">Shop</th>
                 <th className="px-4 py-3">User & branch</th>
                 <th className="px-4 py-3">Join code</th>
                 <th className="px-4 py-3">Last sync</th>
+                <th className="px-4 py-3">Security</th>
+                <th className="px-4 py-3">Last shared location</th>
                 <th className="px-4 py-3">Status</th>
                 {isAdmin ? <th className="px-4 py-3" /> : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {rows.map((d) => (
-                <tr key={d.id} className="hover:bg-accent/40">
-                  <td className="px-4 py-3">
-                    <p className="font-medium">{d.device_name || "Unnamed device"}</p>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      <span className="inline-flex rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-                        {String(d.device_id || "").startsWith("DESKTOP:") ? a("Desktop app") : a("Android terminal")}
-                      </span>
-                      <span className="font-mono text-[10px] text-muted-foreground">{d.device_id || "Awaiting pairing"}</span>
-                      {d.is_owner_primary ? <span className="text-[10px] text-muted-foreground">• owner</span> : Number(d.monthly_fee_addon_rwf) > 0 ? (
-                        <span className="text-[10px] text-muted-foreground">+{d.monthly_fee_addon_rwf.toLocaleString()} FRw / {a("per month")}</span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link to="/admin/shops/$shopId" params={{ shopId: d.shop_sync_key }} className="hover:text-primary">
-                      {d.shop_name || d.shop_sync_key}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-xs">
-                    <p>{d.assigned_user_name || d.assigned_username || "—"}</p>
-                    <p className="text-muted-foreground">
-                      {d.role} • {d.branch_name}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">{d.join_code || "—"}</td>
-                  <td className={`px-4 py-3 text-xs ${stale(d.last_synced_at) ? "text-warning" : "text-muted-foreground"}`}>{relativeTime(d.last_synced_at)}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={d.is_active ? "ACTIVE" : "SUSPENDED"} />
-                  </td>
-                  {isAdmin ? (
+              {rows.map((d) => {
+                const report = telemetryByDevice.get(`${d.shop_sync_key}::${d.device_id}`);
+                const platform = report?.device_platform || (String(d.device_id || "").startsWith("DESKTOP:") ? "DESKTOP" : "ANDROID");
+                const optedIn = !!report && /(?:^|;)location_sharing=enabled(?:;|$)/i.test(report.permissions_summary || "");
+                const latitude = Number(report?.latitude ?? 0);
+                const longitude = Number(report?.longitude ?? 0);
+                const capturedAt = Number(report?.location_captured_at ?? 0);
+                const hasLocation = optedIn && capturedAt > 0 && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180 && (latitude !== 0 || longitude !== 0);
+                return (
+                  <tr key={d.id} className="hover:bg-accent/40">
                     <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => toggle.mutate({ id: d.id, active: !d.is_active })}>
-                          {d.is_active ? <Pause /> : <Play />}
-                          {a(d.is_active ? "Pause" : "Resume")}
-                        </Button>
-                        <ConfirmAction
-                          trigger={
-                            <Button size="icon" variant="ghost" aria-label={a("Remove device")}>
-                              <Trash2 />
-                            </Button>
-                          }
-                          title={a(`Remove ${d.device_name || "this device"}?`)}
-                          description={a("The device is unpaired from the shop. It will need a new join code to sync again.")}
-                          destructive
-                          confirmLabel="Remove"
-                          onConfirm={() => del.mutate({ id: d.id })}
-                        />
+                      <p className="font-medium">{d.device_name || "Unnamed device"}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-[10px] text-muted-foreground">{d.device_id || "Awaiting pairing"}</span>
+                        {d.is_owner_primary ? <span className="text-[10px] text-muted-foreground">• owner</span> : Number(d.monthly_fee_addon_rwf) > 0 ? (
+                          <span className="text-[10px] text-muted-foreground">+{d.monthly_fee_addon_rwf.toLocaleString()} FRw / {a("per month")}</span>
+                        ) : null}
                       </div>
                     </td>
-                  ) : null}
-                </tr>
-              ))}
+                    <td className="px-4 py-3 text-xs">
+                      <p className="font-medium">{platform}</p>
+                      <p>{[report?.manufacturer, report?.model].filter(Boolean).join(" ") || "Hardware not reported"}</p>
+                      <p className="text-muted-foreground">{report?.os_release ? `OS ${report.os_release} · API ${report.sdk_int}` : "OS version unavailable"}</p>
+                      <p className="text-muted-foreground">{report?.app_version ? `BeBoss ${report.app_version} (${report.app_build})` : telemetry.isLoading ? "Loading device report…" : "App version unavailable"}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link to="/admin/shops/$shopId" params={{ shopId: d.shop_sync_key }} className="hover:text-primary">
+                        {d.shop_name || d.shop_sync_key}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      <p>{d.assigned_user_name || d.assigned_username || "—"}</p>
+                      <p className="text-muted-foreground">{d.role} • {d.branch_name}</p>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs">{d.join_code || "—"}</td>
+                    <td className={`px-4 py-3 text-xs ${stale(d.last_synced_at) ? "text-warning" : "text-muted-foreground"}`}>{relativeTime(d.last_synced_at)}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {report ? <><StatusBadge status={report.risk_score >= 50 ? "HIGH RISK" : report.posture_label || "REPORTED"} /><p className="mt-1 text-muted-foreground">{Number(report.risk_score)}/100 · {relativeTime(report.updated_at)}</p></> : <span className="text-muted-foreground">{telemetry.isLoading ? "Loading…" : "Awaiting report"}</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {hasLocation ? (
+                        <><a className="font-medium text-primary underline underline-offset-2" href={`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`} target="_blank" rel="noreferrer">{report?.location_label || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`}</a><p className="mt-1 text-muted-foreground">Captured {new Date(capturedAt).toLocaleString()} · ±{Math.round(Number(report?.accuracy_meters ?? 0))}m</p></>
+                      ) : <span className="text-muted-foreground">{optedIn ? "Opted in · No recent foreground fix" : report ? "Not shared by device" : telemetry.isLoading ? "Loading report…" : "No report"}</span>}
+                    </td>
+                    <td className="px-4 py-3"><StatusBadge status={d.is_active ? "ACTIVE" : "SUSPENDED"} /></td>
+                    {isAdmin ? (
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => toggle.mutate({ id: d.id, active: !d.is_active })}>
+                            {d.is_active ? <Pause /> : <Play />}
+                            {a(d.is_active ? "Pause" : "Resume")}
+                          </Button>
+                          <ConfirmAction
+                            trigger={<Button size="icon" variant="ghost" aria-label={a("Remove device")}><Trash2 /></Button>}
+                            title={a(`Remove ${d.device_name || "this device"}?`)}
+                            description={a("The device is unpaired from the shop. It will need a new join code to sync again.")}
+                            destructive confirmLabel="Remove"
+                            onConfirm={() => del.mutate({ id: d.id })}
+                          />
+                        </div>
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </TableShell>
