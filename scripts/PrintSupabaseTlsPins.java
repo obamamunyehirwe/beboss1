@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
  * deliberately fails closed on untrusted, expired, or hostname-mismatched TLS.
  *
  * Run from the repository root with Java 11+:
- *   java .\\scripts\\PrintSupabaseTlsPins.java --update-env
+ *   java ./scripts/PrintSupabaseTlsPins.java --update-env
  */
 public final class PrintSupabaseTlsPins {
     private static final Path ENV_FILE = Paths.get(".env");

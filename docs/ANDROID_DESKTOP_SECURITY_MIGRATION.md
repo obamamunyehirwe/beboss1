@@ -50,7 +50,7 @@ The first secure direct-distribution release uses versionCode 20 / versionName 2
 6. Before building, generate the TLS pins from the exact Supabase project configured in the ignored root `.env` file:
 
 ~~~powershell
-java .\\scripts\\PrintSupabaseTlsPins.java --update-env
+java ./scripts/PrintSupabaseTlsPins.java --update-env
 ~~~
 
 This performs a real TLS handshake to the configured `SUPABASE_URL` using the Java runtime's normal trusted CA store and HTTPS hostname verification. It derives OkHttp `sha256/` pins from the live peer certificate chain's SubjectPublicKeyInfo keys, excludes a self-signed root, and writes only `SUPABASE_CERT_PINS` in the ignored `.env`. It does not disable certificate validation, use a placeholder, or read any Supabase API secret. Run it again when the endpoint's certificate chain changes.
