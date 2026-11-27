@@ -1734,7 +1734,7 @@ function MyShopAuditTrail({ activity }: { activity: Lookup["activity"] }) {
           <SelectTrigger className="w-full sm:w-52"><SelectValue placeholder="All event types" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All event types</SelectItem>
-            {["BRANCH", "STOCK_TRANSFER", "BRANCH_RECONCILIATION", "FINANCE_LEDGER", "STAFF", "APPROVAL_POLICY"].map((value) =>
+            {["BRANCH", "STOCK_TRANSFER", "BRANCH_RECONCILIATION", "FINANCE_LEDGER", "STAFF", "DEVICE", "APPROVAL_POLICY"].map((value) =>
               <SelectItem key={value} value={value}>{value.replaceAll("_", " ")}</SelectItem>
             )}
           </SelectContent>
