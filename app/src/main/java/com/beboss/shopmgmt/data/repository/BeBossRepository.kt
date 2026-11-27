@@ -516,7 +516,7 @@ class BeBossRepository(private val database: AppDatabase) {
         actor: User? = null
     ): Sale {
         requirePermission(actor, "PROCESS_SALE", branchId) {
-            it.canMakeSales || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+            it.canSellPOS || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
         }
         return salesManager.processSale(
             items = items,
