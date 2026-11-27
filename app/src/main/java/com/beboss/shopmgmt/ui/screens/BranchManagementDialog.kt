@@ -1334,7 +1334,7 @@ fun BranchFormDialog(
                         Text(if (language == AppLanguage.KINYARWANDA) "Iduka" else "Retail store", fontSize = 11.sp)
                     }
                     OutlinedButton(
-                        onClick = { locationType = "WAREHOUSE"; isMain = false },
+                        onClick = { locationType = "WAREHOUSE" },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(
                             containerColor = if (locationType == "WAREHOUSE") OrangePrimary.copy(alpha = 0.14f) else Color.Transparent
@@ -1540,6 +1540,7 @@ fun BranchFormDialog(
                         Switch(
                             checked = isMain,
                             onCheckedChange = { isMain = it },
+                            enabled = locationType == "STORE",
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
                                 checkedTrackColor = OrangePrimary
@@ -1574,7 +1575,7 @@ fun BranchFormDialog(
                                     phone = phone.trim(),
                                     managerUserId = managerUserId,
                                     managerName = managerName.trim(),
-                                    isMainBranch = isMain,
+                                    isMainBranch = isMain && locationType == "STORE",
                                     isActive = isActive,
                                     dailySalesTargetRwf = dailyTargetInput.toLongOrNull() ?: 0L,
                                     monthlyTargetRwf = monthlyTargetInput.toLongOrNull() ?: 0L,
