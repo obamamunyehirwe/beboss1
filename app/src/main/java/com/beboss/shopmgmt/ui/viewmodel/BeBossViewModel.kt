@@ -67,6 +67,10 @@ import com.beboss.shopmgmt.util.PaymentProcessingResult
 import com.beboss.shopmgmt.util.ShopImportSummary
 import com.beboss.shopmgmt.util.SubscriptionPriceBreakdown
 import com.beboss.shopmgmt.util.SupabaseAdminClient
+import com.beboss.shopmgmt.util.AndroidDeviceCredentialStore
+import com.beboss.shopmgmt.util.AndroidTransferApprovalSigner
+import com.beboss.shopmgmt.util.CachedTransferApprovalPolicy
+import com.beboss.shopmgmt.util.TransferApprovalPolicyCache
 import com.beboss.shopmgmt.util.SupabaseAdminSession
 import com.beboss.shopmgmt.util.SupabaseAuditLogDto
 import com.beboss.shopmgmt.util.SupabaseBranchSnapshotDto
@@ -195,6 +199,11 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     val repository = BeBossRepository(db)
     private val connectivityObserver = NetworkConnectivityObserver(application)
     private val deviceId: String = SupabaseAdminClient.getOrCreateDeviceId(application)
+
+    private val _transferApprovalPolicy = MutableStateFlow(
+        TransferApprovalPolicyCache.load(application, AndroidDeviceCredentialStore.currentShopId())
+    )
+    val transferApprovalPolicy: StateFlow<CachedTransferApprovalPolicy?> = _transferApprovalPolicy.asStateFlow()
 
     private val _deviceIntegrityStatus = MutableStateFlow(DeviceIntegrityStatus(isCompromisedRisk = false))
     val deviceIntegrityStatus: StateFlow<DeviceIntegrityStatus> = _deviceIntegrityStatus.asStateFlow()
@@ -491,6 +500,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         ClockGuard.init(application)
         LocationHelper.loadCachedLocation(application)
         MessageAuditManager.load(application)
+
+        viewModelScope.launch { refreshTransferApprovalPolicyNow() }
 
         syncCoordinator = SyncCoordinator(
             application = application,
@@ -1123,6 +1134,38 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun refreshTransferApprovalPolicy() {
+        viewModelScope.launch { refreshTransferApprovalPolicyNow() }
+    }
+
+    private suspend fun refreshTransferApprovalPolicyNow() {
+        val shopId = AndroidDeviceCredentialStore.currentShopId()
+        if (shopId.isBlank()) return
+        val cached = TransferApprovalPolicyCache.load(getApplication(), shopId)
+        if (cached != null) _transferApprovalPolicy.value = cached
+        val fetched = SupabaseAdminClient.fetchAndroidTransferApprovalPolicy(shopId) ?: return
+        val actor = currentUser.value
+        val terminal = repository.getAllShopDevicesList().firstOrNull { it.deviceId == deviceId }
+        var registered = cached?.takeIf { it.version == fetched.version }?.signingKeyRegistered == true
+        if (terminal?.isActive == true && terminal.isOwnerPrimary &&
+            terminal.assignedUserId == actor?.id && actor.role == UserRole.OWNER) {
+            registered = runCatching {
+                val publicKey = AndroidTransferApprovalSigner.publicKeyBase64(shopId, deviceId)
+                SupabaseAdminClient.registerAndroidTransferApprovalKey(shopId, publicKey)
+            }.getOrDefault(false) || registered
+        }
+        val ready = fetched.copy(signingKeyRegistered = registered)
+        TransferApprovalPolicyCache.save(
+            getApplication(),
+            shopId,
+            ready.version,
+            ready.thresholdRwf,
+            ready.fetchedAt,
+            ready.signingKeyRegistered
+        )
+        _transferApprovalPolicy.value = ready
+    }
+
     fun createStockTransfer(
         productId: String,
         fromBranchId: String,
@@ -1130,11 +1173,54 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         toBranchId: String,
         toBranchName: String,
         quantity: Double,
-        notes: String = ""
+        notes: String = "",
+        ownerApprovalPin: String = "",
+        approvalReason: String = ""
     ) {
         runWithBlurLoading("Transferring Stock...", "Moving inventory to $toBranchName") {
             try {
+                refreshTransferApprovalPolicyNow()
                 val user = currentUser.value
+                if (user == null || !user.isActive) throw SecurityException("Sign in with an active staff account before transferring stock.")
+                val shopId = AndroidDeviceCredentialStore.currentShopId()
+                val policy = _transferApprovalPolicy.value
+                    ?: throw IllegalStateException("The shop's approval policy is not cached. Connect this terminal and refresh policy before transferring stock.")
+                val product = repository.getProductById(productId)
+                    ?: throw IllegalStateException("The selected product no longer exists.")
+                val costValueRwf = (product.costPrice * quantity).roundToLong().coerceAtLeast(0L)
+                val approvalRequired = policy.thresholdRwf > 0L && costValueRwf >= policy.thresholdRwf
+                val transferId = UUID.randomUUID().toString()
+                val proof = if (approvalRequired) {
+                    if (shopId.isBlank()) throw SecurityException("This device is not paired to a registered shop.")
+                    val reason = approvalReason.trim()
+                    if (reason.length < 8) throw IllegalArgumentException("An owner approval explanation of at least 8 characters is required.")
+                    val owner = repository.getUserByPin(ownerApprovalPin)
+                        ?: throw SecurityException("The owner PIN was not accepted. The high-value transfer was not created.")
+                    if (!owner.isActive || owner.role != UserRole.OWNER) {
+                        throw SecurityException("Only an active shop owner can approve a high-value stock transfer.")
+                    }
+                    val terminal = repository.getAllShopDevicesList().firstOrNull { it.deviceId == deviceId }
+                    if (terminal == null || !terminal.isActive || !terminal.isOwnerPrimary ||
+                        terminal.assignedUserId != owner.id) {
+                        throw SecurityException("High-value offline transfers require the active primary owner terminal and its owner account.")
+                    }
+                    if (!policy.signingKeyRegistered) {
+                        throw SecurityException("This terminal has no cloud-registered owner approval key. Connect the primary owner terminal before taking it offline.")
+                    }
+                    AndroidTransferApprovalSigner.sign(
+                        shopId = shopId,
+                        deviceId = deviceId,
+                        transferId = transferId,
+                        productId = productId,
+                        fromBranchId = fromBranchId,
+                        toBranchId = toBranchId,
+                        quantity = quantity,
+                        costValueRwf = costValueRwf,
+                        policyVersion = policy.version,
+                        actorUserId = owner.id,
+                        reason = reason
+                    )
+                } else null
                 val transfer = repository.createStockTransfer(
                     productId = productId,
                     fromBranchId = fromBranchId,
@@ -1143,9 +1229,11 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     toBranchName = toBranchName,
                     quantity = quantity,
                     notes = notes,
-                    transferredBy = user?.name ?: "Store Manager",
-                    transferredByRole = user?.role?.name ?: "STAFF",
-                    actor = user
+                    transferredBy = user.name,
+                    transferredByRole = user.role.name,
+                    actor = user,
+                    approvalProof = proof,
+                    transferId = transferId
                 )
                 BeBossNotificationManager.sendStockTransferNotification(getApplication(), transfer)
                 scheduleAutoBranchSync()
