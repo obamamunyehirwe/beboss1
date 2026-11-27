@@ -2635,7 +2635,7 @@ object SupabaseAdminClient {
                 val records = JSONArray()
                 batch.forEach { event ->
                     val safeDetails = Regex(
-                        """(?i)\\b(password|pin|token|secret|otp|authorization)\\b\\s*[:=]\\s*([^\\s,;]+)"""
+                        """(?i)\b(password|pin|token|secret|otp|authorization)\b\s*[:=]\s*([^\s,;]+)"""
                     ).replace(event.details.take(600)) { match ->
                         "${match.groupValues[1]}=[REDACTED]"
                     }
@@ -2643,7 +2643,7 @@ object SupabaseAdminClient {
                         put("eventId", event.id)
                         put("actorName", event.actorName.trim().take(80))
                         put("actorRole", event.actorRole.trim().uppercase(Locale.ROOT).take(40))
-                        put("action", event.action.trim().uppercase(Locale.ROOT).take(80))
+                        put("action", event.action.trim().uppercase(Locale.ROOT).replace(Regex("[^A-Z0-9_:-]"), "_").take(80).ifBlank { "UNKNOWN_EVENT" })
                         put("targetId", event.targetId.trim().take(120))
                         put("details", safeDetails)
                         put("occurredAt", event.createdAt)

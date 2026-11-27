@@ -890,7 +890,7 @@ Deno.serve(async (req: Request) => {
         const actionName = text(event.action).trim().toUpperCase();
         const targetId = text(event.targetId).trim().slice(0, 120);
         // Never copy likely credential material to the tenant's long-lived journal.
-        const details = text(event.details).slice(0, 600).replace(
+        const details = text(event.details).slice(0, 250).replace(
           /\b(password|pin|token|secret|otp|authorization)\b\s*[:=]\s*[^\s,;]+/gi,
           "$1=[REDACTED]"
         );
@@ -932,9 +932,8 @@ Deno.serve(async (req: Request) => {
           .select("id")
           .eq("shop_sync_key", text(shop.id))
           .eq("entity", "USER_DEVICE_AUDIT")
-          .eq("action", actionName)
           .eq("device_id", deviceId)
-          .eq("detail", detail)
+          .like("detail", `%"eventId":"${eventId}"%`)
           .limit(1)
           .maybeSingle();
         if (duplicateError) throw new Error("Could not check local audit idempotency: " + duplicateError.message);
@@ -952,7 +951,7 @@ Deno.serve(async (req: Request) => {
         }
         acknowledgedCount += 1;
       }
-      return json(200, { ok: true, acknowledgedCount, duplicateCount });
+      return json(200, { ok: true, acknowledgedCount: acknowledgedCount + duplicateCount, insertedCount: acknowledgedCount, duplicateCount });
     }
 
     if (action === "record_device_sync_audit") {
