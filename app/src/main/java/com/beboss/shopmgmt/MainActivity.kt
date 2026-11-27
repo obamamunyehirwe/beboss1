@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import com.beboss.shopmgmt.util.AndroidAppRelease
 import com.beboss.shopmgmt.util.SupabaseAdminClient
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import android.os.Build
@@ -338,6 +339,10 @@ private fun BeBossMainContent(
 
     LaunchedEffect(context.packageName) {
         checkForAndroidUpdate()
+        while (true) {
+            delay(ANDROID_UPDATE_RECHECK_INTERVAL_MS)
+            checkForAndroidUpdate()
+        }
     }
 
     // Recheck official releases when the shop returns to the foreground. A
