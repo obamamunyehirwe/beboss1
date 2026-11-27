@@ -1976,7 +1976,7 @@ export async function mergeIosCloudSnapshots(parts: unknown[], actor: Staff): Pr
       const saleDate = cloudNumber(raw, 'saleDate', 'sale_date', Date.now());
       if (!id || !receipt || isDeleted(['sales'], id, saleDate)) continue;
       if (await first<Row>('SELECT id FROM sales WHERE id=? OR receipt_number=? LIMIT 1', [id, receipt], tx)) continue;
-      const lineRows = saleItems.get(id) || arrayRows(raw.items);
+      const lineRows: Row[] = saleItems.get(id) || (Array.isArray(raw.items) ? raw.items as Row[] : []);
       const items: SaleLine[] = lineRows.map(line => ({
         id: cloudString(line, 'id', 'id', makeId()),
         saleId: id,
