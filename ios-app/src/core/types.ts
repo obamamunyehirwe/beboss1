@@ -20,6 +20,7 @@ export type ShopProfile = {
   shopName: string;
   ownerName: string;
   username: string;
+  email?: string;
   phone: string;
   address: string;
   businessType: string;
