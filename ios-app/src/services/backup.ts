@@ -58,7 +58,7 @@ export async function decryptBackupFile(path: string, passphrase: string): Promi
   if (envelope.format !== 'BEBOSS_ENCRYPTED_BACKUP_V1') throw new Error('Unsupported BeBoss backup format.');
   const key = QuickCrypto.pbkdf2Sync(passphrase.trim(), fromHex(envelope.salt), 210000, 32, 'sha256');
   const decipher = QuickCrypto.createDecipheriv('aes-256-gcm', key, fromHex(envelope.iv));
-  decipher.setAuthTag(Buffer.from(fromHex(envelope.tag)));
+  decipher.setAuthTag(Buffer.from(fromHex(envelope.tag)) as any);
   const plaintext = Buffer.concat([decipher.update(Buffer.from(unbase64(envelope.payload))), decipher.final()]).toString('utf8');
   const data = JSON.parse(plaintext);
   if (data.format !== 'beboss_iphone_backup_v1') throw new Error('The backup contents are not valid.');
