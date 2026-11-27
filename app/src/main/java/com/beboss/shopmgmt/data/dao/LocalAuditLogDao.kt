@@ -15,6 +15,17 @@ interface LocalAuditLogDao {
     @Query("SELECT * FROM local_audit_logs ORDER BY createdAt DESC LIMIT :limit")
     suspend fun getRecentLogsDirect(limit: Int = 60): List<LocalAuditLog>
 
+    @Query("""
+        SELECT * FROM local_audit_logs
+        WHERE syncedToCloud = 0 AND actorRole != 'MASTER_ADMIN'
+        ORDER BY createdAt ASC
+        LIMIT :limit
+    """)
+    suspend fun getPendingCloudSyncLogs(limit: Int = 250): List<LocalAuditLog>
+
+    @Query("UPDATE local_audit_logs SET syncedToCloud = 1 WHERE id IN (:ids)")
+    suspend fun markCloudSynced(ids: List<String>)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLog(log: LocalAuditLog)
 

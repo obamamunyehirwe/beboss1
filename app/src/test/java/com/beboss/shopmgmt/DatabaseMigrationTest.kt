@@ -478,6 +478,7 @@ class DatabaseMigrationTest {
                 "index_sync_queue_status_nextAttemptAt",
                 "index_local_audit_logs_createdAt",
                 "index_local_audit_logs_action",
+                "index_local_audit_logs_syncedToCloud_createdAt",
                 "index_sync_tombstones_tableName_deletedAt",
                 "index_shop_devices_deviceId",
                 "index_shop_devices_joinCode"
@@ -536,6 +537,9 @@ class DatabaseMigrationTest {
             val logs = roomDb.localAuditLogDao().getRecentLogsDirect(10)
             assertEquals(1, logs.size)
             assertEquals("MIGRATION_VERIFIED", logs.first().action)
+            assertEquals(1, roomDb.localAuditLogDao().getPendingCloudSyncLogs(10).size)
+            roomDb.localAuditLogDao().markCloudSynced(listOf("log_v10_1"))
+            assertTrue(roomDb.localAuditLogDao().getPendingCloudSyncLogs(10).isEmpty())
 
             // Verify new v11 sync_tombstones table is operational
             roomDb.syncTombstoneDao().insertTombstone(

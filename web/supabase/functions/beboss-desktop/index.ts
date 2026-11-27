@@ -839,6 +839,122 @@ Deno.serve(async (req: Request) => {
       }
       config.hmacSecret = storedSecret;
     }
+
+    if (action === "record_device_local_audit") {
+      const deviceId = text(req.headers.get("X-BeBoss-Device-ID")).trim();
+      const deviceToken = text(req.headers.get("X-BeBoss-Device-Token")).trim();
+      if (deviceId.length < 4 || deviceId.length > 120 || !/^[a-f0-9]{64}$/i.test(deviceToken)) {
+        return json(401, { ok: false, message: "A valid enrolled device credential is required to write employee audit events." });
+      }
+      const deviceClient = createClient(config.url, config.publishableKey, {
+        global: { headers: {
+          "X-BeBoss-Device-ID": deviceId,
+          "X-BeBoss-Device-Token": deviceToken
+        } },
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+      const { data: shop, error: shopError } = await deviceClient.from("shop_accounts")
+        .select("id,shop_name,remote_kill_switch").maybeSingle();
+      if (shopError || !shop || shop.remote_kill_switch === true) {
+        return json(401, { ok: false, message: "The device is not authenticated for an active BeBoss shop." });
+      }
+
+      const requested = Array.isArray(body.records) ? body.records as Row[] : [];
+      if (requested.length < 1 || requested.length > 250) {
+        return json(400, { ok: false, message: "Local audit batches must contain between 1 and 250 events." });
+      }
+      const seen = new Set<string>();
+      for (const event of requested) {
+        const eventId = text(event.eventId).trim();
+        const actionName = text(event.action).trim().toUpperCase();
+        const occurredAt = number(event.occurredAt);
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventId) ||
+            !/^[A-Z0-9_:-]{2,80}$/.test(actionName) ||
+            !text(event.actorName).trim() || text(event.actorName).length > 80 ||
+            !text(event.actorRole).trim() || text(event.actorRole).length > 40 ||
+            text(event.targetId).length > 120 || text(event.details).length > 600 ||
+            !Number.isFinite(occurredAt) || occurredAt <= 0 ||
+            seen.has(eventId)) {
+          return json(400, { ok: false, message: "A local audit event is malformed or duplicated." });
+        }
+        seen.add(eventId);
+      }
+
+      let acknowledgedCount = 0;
+      let duplicateCount = 0;
+      const systemRoles = new Set(["SYSTEM", "SECURITY", "DATABASE", "MAINTENANCE", "SYNC_ENGINE"]);
+      for (const event of requested) {
+        const eventId = text(event.eventId).trim();
+        const actorName = text(event.actorName).trim().slice(0, 80);
+        const actorRole = text(event.actorRole).trim().toUpperCase().slice(0, 40);
+        const actionName = text(event.action).trim().toUpperCase();
+        const targetId = text(event.targetId).trim().slice(0, 120);
+        // Never copy likely credential material to the tenant's long-lived journal.
+        const details = text(event.details).slice(0, 600).replace(
+          /\b(password|pin|token|secret|otp|authorization)\b\s*[:=]\s*[^\s,;]+/gi,
+          "$1=[REDACTED]"
+        );
+        const occurredAt = number(event.occurredAt);
+
+        let actorUserId = "";
+        let actorIdentityVerified = false;
+        if (actorName && !systemRoles.has(actorRole)) {
+          const { data: matches, error: actorError } = await admin.from("shop_users")
+            .select("user_id,full_name,role,is_active")
+            .eq("shop_sync_key", text(shop.id))
+            .eq("full_name", actorName)
+            .eq("role", actorRole)
+            .eq("is_active", true)
+            .limit(2);
+          if (actorError) throw new Error("Could not verify a local audit actor against the active shop roster: " + actorError.message);
+          if ((matches ?? []).length === 1) {
+            actorUserId = text(matches?.[0]?.user_id);
+            actorIdentityVerified = actorUserId.length > 0;
+          }
+        }
+
+        const detail = JSON.stringify({
+          version: 1,
+          eventId,
+          actorName,
+          actorRole,
+          actorIdentityVerified,
+          actorUserId,
+          targetId,
+          details,
+          occurredAt,
+          source: "ANDROID_LOCAL_AUDIT"
+        });
+        if (detail.length > 1000) {
+          return json(400, { ok: false, message: "A local audit event exceeds the cloud journal detail limit after normalization." });
+        }
+        const { data: duplicate, error: duplicateError } = await admin.from("cloud_sync_events")
+          .select("id")
+          .eq("shop_sync_key", text(shop.id))
+          .eq("entity", "USER_DEVICE_AUDIT")
+          .eq("action", actionName)
+          .eq("device_id", deviceId)
+          .eq("detail", detail)
+          .limit(1)
+          .maybeSingle();
+        if (duplicateError) throw new Error("Could not check local audit idempotency: " + duplicateError.message);
+        if (duplicate) {
+          duplicateCount += 1;
+          continue;
+        }
+        const actor = actorIdentityVerified ? "ANDROID_USER:" + actorUserId : "ANDROID_DEVICE:" + deviceId;
+        const saved = await recordShopAuditEvent(
+          admin, text(shop.id), text(shop.shop_name), actor,
+          deviceId, "USER_DEVICE_AUDIT", actionName, detail
+        );
+        if (!saved) {
+          return json(503, { ok: false, message: "The local audit event could not be committed. Keep it pending and retry synchronization." });
+        }
+        acknowledgedCount += 1;
+      }
+      return json(200, { ok: true, acknowledgedCount, duplicateCount });
+    }
+
     if (action === "record_device_sync_audit") {
       const deviceId = text(req.headers.get("X-BeBoss-Device-ID")).trim();
       const deviceToken = text(req.headers.get("X-BeBoss-Device-Token")).trim();

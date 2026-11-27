@@ -761,6 +761,22 @@ class CloudSyncManager(private val database: AppDatabase) {
                     )
                 }
                 if (!branchDeletionAuditUploaded) allChunksUploaded = false
+
+                // Employee/security audit events have their own durable outbox. Do not
+                // acknowledge a local event until the enrolled device API confirms that
+                // exact event ID has been written to the tenant's cloud audit journal.
+                val pendingAuditEvents = database.localAuditLogDao().getPendingCloudSyncLogs(250)
+                if (pendingAuditEvents.isNotEmpty()) {
+                    val auditEventsUploaded = retryWithBackoff(maxAttempts = 3) {
+                        SupabaseAdminClient.uploadLocalAuditEvents(shopSyncKey, pendingAuditEvents)
+                    }
+                    if (auditEventsUploaded) {
+                        database.localAuditLogDao().markCloudSynced(pendingAuditEvents.map { it.id })
+                    } else {
+                        allChunksUploaded = false
+                        Log.w(TAG, "Local employee/security audit events remain queued; cloud synchronization is not acknowledged.")
+                    }
+                }
                 supabaseSyncOk = allChunksUploaded && accountUploaded && usersUploaded && allDevicesUploaded && peerSnapshotExchangeSucceeded
 
                 // Message dispatches are acknowledged only after the telemetry upsert succeeds.

@@ -12,6 +12,7 @@ import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.data.model.StockTransfer
 import com.beboss.shopmgmt.data.model.SyncTombstone
 import com.beboss.shopmgmt.data.model.Branch
+import com.beboss.shopmgmt.data.model.LocalAuditLog
 import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.data.model.UserRole
 import kotlinx.coroutines.CancellationException
@@ -2608,6 +2609,74 @@ object SupabaseAdminClient {
             throw error
         } catch (error: Exception) {
             Log.w(TAG, "Device audit journal will retry with the next cloud sync: ${error.message}")
+            false
+        }
+    }
+
+
+    /**
+     * Uploads the durable local user/security audit outbox using an enrolled device
+     * credential. Rows are acknowledged one-for-one only after the server confirms
+     * the idempotent cloud journal write; offline or unpaired devices retain every row.
+     */
+    suspend fun uploadLocalAuditEvents(
+        shopSyncKey: String,
+        events: List<LocalAuditLog>
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (events.isEmpty()) return@withContext true
+        if (!isConfigured() || shopSyncKey.isBlank()) return@withContext false
+        val saved = AndroidDeviceCredentialStore.readForShop(shopSyncKey) ?: run {
+            Log.w(TAG, "Local audit journal remains pending until this device completes secure enrollment.")
+            return@withContext false
+        }
+        try {
+            val active = refreshAndroidDeviceCredential(saved)
+            for (batch in events.chunked(100)) {
+                val records = JSONArray()
+                batch.forEach { event ->
+                    val safeDetails = Regex(
+                        """(?i)\\b(password|pin|token|secret|otp|authorization)\\b\\s*[:=]\\s*([^\\s,;]+)"""
+                    ).replace(event.details.take(600)) { match ->
+                        "${match.groupValues[1]}=[REDACTED]"
+                    }
+                    records.put(JSONObject().apply {
+                        put("eventId", event.id)
+                        put("actorName", event.actorName.trim().take(80))
+                        put("actorRole", event.actorRole.trim().uppercase(Locale.ROOT).take(40))
+                        put("action", event.action.trim().uppercase(Locale.ROOT).take(80))
+                        put("targetId", event.targetId.trim().take(120))
+                        put("details", safeDetails)
+                        put("occurredAt", event.createdAt)
+                    })
+                }
+                val payload = JSONObject()
+                    .put("action", "record_device_local_audit")
+                    .put("records", records)
+                val request = Request.Builder()
+                    .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
+                    .addHeader("apikey", getSupabaseApiKey())
+                    .addHeader("X-BeBoss-Device-ID", active.deviceId)
+                    .addHeader("X-BeBoss-Device-Token", active.accessToken)
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody(jsonMediaType))
+                    .build()
+                val acknowledged = client.newCall(request).execute().use { response ->
+                    val raw = response.body?.string().orEmpty()
+                    val result = runCatching { JSONObject(raw) }.getOrNull()
+                    if (!response.isSuccessful || result?.optBoolean("ok") != true) {
+                        Log.w(TAG, "Local audit batch remains pending (HTTP ${response.code}): ${result?.optString("message").orEmpty()}")
+                        false
+                    } else {
+                        result.optInt("acknowledgedCount", -1) == batch.size
+                    }
+                }
+                if (!acknowledged) return@withContext false
+            }
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.w(TAG, "Local audit journal upload will retry with the next cloud sync: ${error.message}")
             false
         }
     }

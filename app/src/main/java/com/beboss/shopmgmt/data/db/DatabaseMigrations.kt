@@ -500,6 +500,37 @@ object DatabaseMigrations {
         }
     }
 
+    /**
+     * Adds an acknowledgement flag to the immutable local audit journal. Existing
+     * events remain pending so upgrades can backfill the cloud audit history safely.
+     */
+    val MIGRATION_18_19 = object : Migration(18, 19) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            if (!tableExists(db, "local_audit_logs")) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS local_audit_logs (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        actorName TEXT NOT NULL,
+                        actorRole TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        targetId TEXT NOT NULL,
+                        details TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        syncedToCloud INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_audit_logs_createdAt ON local_audit_logs(createdAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_local_audit_logs_action ON local_audit_logs(action)")
+            } else {
+                val columns = getExistingColumns(db, "local_audit_logs")
+                if (!columns.contains("syncedToCloud")) {
+                    db.execSQL("ALTER TABLE local_audit_logs ADD COLUMN syncedToCloud INTEGER NOT NULL DEFAULT 0")
+                }
+            }
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_local_audit_logs_syncedToCloud_createdAt ON local_audit_logs(syncedToCloud, createdAt)")
+        }
+    }
+
     val ALL_MIGRATIONS = arrayOf(
         MIGRATION_1_2,
         MIGRATION_2_3,
@@ -517,6 +548,7 @@ object DatabaseMigrations {
         MIGRATION_14_15,
         MIGRATION_15_16,
         MIGRATION_16_17,
-        MIGRATION_17_18
+        MIGRATION_17_18,
+        MIGRATION_18_19
     )
 }
