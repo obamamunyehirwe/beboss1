@@ -18,6 +18,7 @@ export function buildShopAuditSnapshot(entity: ShopAuditEntity, row: Record<stri
       address: stringValue(row.address, 72),
       phone: stringValue(row.phone, 24),
       email: stringValue(row.email, 64),
+      notes: stringValue(row.notes, 160),
       managerUserId: stringValue(row.manager_user_id, 64),
       managerName: stringValue(row.manager_name, 48),
       isActive: boolValue(row.is_active),
@@ -48,6 +49,7 @@ export function buildShopAuditSnapshot(entity: ShopAuditEntity, row: Record<stri
     transferredBy: stringValue(row.transferred_by, 48),
     receivedBy: stringValue(row.received_by, 48),
     receivedAt: numberValue(row.received_at),
+    notes: stringValue(row.notes, 160),
     createdAt: numberValue(row.created_at),
     updatedAt: numberValue(row.updated_at),
     hlcTimestamp: numberValue(row.hlc_timestamp),
@@ -93,7 +95,7 @@ export function classifyShopAuditTransition(
     if (!same(previous.operationalStatus, current.operationalStatus)) changes.push("operating status changed");
     if (!same(previous.managerUserId, current.managerUserId) || !same(previous.managerName, current.managerName)) changes.push("branch manager changed");
     if (!same(previous.isMainBranch, current.isMainBranch)) changes.push(boolValue(current.isMainBranch) ? "main branch designation set" : "main branch designation removed");
-    const profileKeys = ["name","code","address","phone","email","dailyTargetRwf","monthlyTargetRwf","openingCashFloatRwf"];
+    const profileKeys = ["name","code","address","phone","email","notes","dailyTargetRwf","monthlyTargetRwf","openingCashFloatRwf"];
     if (profileKeys.some((key) => !same(previous[key], current[key]))) changes.push("branch profile updated");
     if (!changes.length) return null;
     const action = !same(previous.isActive, current.isActive)
