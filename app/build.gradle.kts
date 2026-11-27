@@ -167,7 +167,7 @@ val configuredReleaseCertificateMatches =
 
 android {
   // Compile the exact same commonMain Kotlin source files into the Android app.
-  sourceSets.getByName("main").java.srcDir(rootProject.file("../shared/src/commonMain/kotlin"))
+  sourceSets.getByName("main").java.srcDir(rootProject.file("shared/src/commonMain/kotlin"))
   namespace = "com.beboss.shopmgmt"
   compileSdk = 36
   flavorDimensions += "credentialCompatibility"
