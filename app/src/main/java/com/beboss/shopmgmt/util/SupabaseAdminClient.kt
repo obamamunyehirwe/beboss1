@@ -229,7 +229,8 @@ data class SupabaseBranchDto(
     val updatedAt: Long,
     val syncVersion: Long,
     val hlcTimestamp: Long,
-    val lastModifiedDeviceId: String
+    val lastModifiedDeviceId: String,
+    val locationType: String = "STORE"
 )
 
 data class SupabaseStockTransferDto(
@@ -2691,6 +2692,7 @@ object SupabaseAdminClient {
                         put("shop_name", shopName)
                         put("name", b.name)
                         put("code", b.code)
+                        put("location_type", b.locationType.uppercase().takeIf { it == "WAREHOUSE" } ?: "STORE")
                         put("address", b.address)
                         put("phone", b.phone)
                         put("manager_user_id", b.managerUserId)
@@ -3969,6 +3971,7 @@ object SupabaseAdminClient {
             shopName = o.optCleanString("shop_name"),
             name = o.optCleanString("name", "Branch"),
             code = o.optCleanString("code", "BR-01"),
+            locationType = o.optCleanString("location_type", "STORE").uppercase().takeIf { it == "WAREHOUSE" } ?: "STORE",
             address = o.optCleanString("address", ""),
             phone = o.optCleanString("phone", ""),
             managerUserId = o.optCleanString("manager_user_id", ""),
