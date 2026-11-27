@@ -2,7 +2,7 @@
 
 **Target:** Android 2.5.0 secure release; Desktop 1.4.2 production telemetry  
 **Repository:** obamamunyehirwe/beboss1  
-**Safety rule:** do not publish the final secure Android build until every active terminal has completed the transition release and the replacement upload certificate has been accepted.
+**Safety rule:** do not publish the final secure Android build until every active terminal has completed the transition release and the owner-controlled signing identity has passed the appropriate direct-APK lineage or store-distribution upgrade checks.
 
 ## 1. APK secrets and DataShare architecture
 
@@ -87,7 +87,7 @@ Android release packaging fails closed without a valid SENTRY_DSN. Desktop npm r
 
 After setting DSNs, send a test event from Android and Desktop, then verify each event appears in the correct Sentry project with the expected release/platform tags. Code integration alone does not establish that event delivery works.
 
-## 4. Rotate Android upload signing key without breaking customer upgrades
+## 4. Rotate Android signing identity without breaking customer upgrades
 
 A signing key previously committed to public Git history must be treated as exposed. Removing a file from the current branch does not rotate the key. The repository cannot reset the Play Console upload certificate without the app owner's authorized Google Play account.
 

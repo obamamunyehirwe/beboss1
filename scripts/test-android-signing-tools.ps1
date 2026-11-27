@@ -36,7 +36,7 @@ foreach ($pattern in @(
     }
 }
 $verify = Get-Content -Raw -LiteralPath (Join-Path $root "scripts/verify-android-release-signing.ps1")
-if ($verify -notmatch "Signer #\d+") {
+if (-not $verify.Contains('Signer #\d+')) {
     throw "Android release verifier does not inspect every signing certificate."
 }
 Write-Host "Android standalone signing helper PowerShell syntax and structure checks passed."
