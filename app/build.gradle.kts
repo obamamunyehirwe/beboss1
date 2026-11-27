@@ -418,6 +418,8 @@ tasks.configureEach {
 }
 
 dependencies {
+  // Shared Kotlin business logic also compiles to a native iOS framework.
+  implementation("com.beboss:shared:1.0.0")
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
