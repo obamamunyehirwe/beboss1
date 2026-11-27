@@ -362,6 +362,20 @@ fun BranchManagementDialog(
                                                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                                         )
                                                     }
+                                                    Spacer(modifier = Modifier.width(5.dp))
+                                                    val isWarehouse = branch.locationType.uppercase() == "WAREHOUSE"
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = if (isWarehouse) Color(0xFFE8F1FF) else Color(0xFFE6F6EE)
+                                                    ) {
+                                                        Text(
+                                                            text = if (isWarehouse) "WAREHOUSE" else "STORE",
+                                                            fontSize = 8.sp,
+                                                            fontWeight = FontWeight.ExtraBold,
+                                                            color = if (isWarehouse) Color(0xFF245E9B) else Color(0xFF24734E),
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp)
+                                                        )
+                                                    }
                                                 }
 
                                                 if (branch.isMainBranch) {
