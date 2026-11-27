@@ -70,6 +70,7 @@ import com.beboss.shopmgmt.util.SupabaseAdminClient
 import com.beboss.shopmgmt.util.SupabaseAdminSession
 import com.beboss.shopmgmt.util.SupabaseAuditLogDto
 import com.beboss.shopmgmt.util.SupabaseBranchSnapshotDto
+import com.beboss.shopmgmt.util.SupabaseCloudSyncEventDto
 import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
 import com.beboss.shopmgmt.util.SupabasePaymentRequestDto
 import com.beboss.shopmgmt.util.SupabaseShopAccountDto
@@ -732,6 +733,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     val adminUnlockCodes: StateFlow<List<SupabaseUnlockCodeDto>> get() = adminCoordinator.adminUnlockCodes
     val adminAuditLogs: StateFlow<List<SupabaseAuditLogDto>> get() = adminCoordinator.adminAuditLogs
     val adminDeviceTelemetry: StateFlow<List<SupabaseDeviceTelemetryDto>> get() = adminCoordinator.adminDeviceTelemetry
+    val adminCloudActivity: StateFlow<List<SupabaseCloudSyncEventDto>> get() = adminCoordinator.adminCloudActivity
     val adminCloudHealth: StateFlow<CloudHealthDiagnosticsDto?> get() = adminCoordinator.adminCloudHealth
     val adminPaymentConfig: StateFlow<AdminPaymentConfig> get() = adminCoordinator.adminPaymentConfig
     val isAdminLoading: StateFlow<Boolean> get() = adminCoordinator.isAdminLoading
@@ -1041,6 +1043,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun loadMoreAdminShops() = adminCoordinator.loadMoreAdminShops()
     fun loadMoreAdminPaymentRequests() = adminCoordinator.loadMoreAdminPaymentRequests()
     fun loadMoreAdminTelemetry() = adminCoordinator.loadMoreAdminTelemetry()
+    fun loadMoreAdminCloudActivity() = adminCoordinator.loadMoreAdminCloudActivity()
     fun exportAdminLedgerCsv(context: Context) = adminCoordinator.exportAdminLedgerCsv(context)
     fun exportAdminExecutivePdf(context: Context) = adminCoordinator.exportAdminExecutivePdf(context)
     fun processDirectSubscriptionPayment(
