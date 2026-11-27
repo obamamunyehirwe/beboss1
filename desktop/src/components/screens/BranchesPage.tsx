@@ -358,7 +358,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
           </div>
           {s(branch.notes) && <p className="enterprise-branch-notes">{s(branch.notes)}</p>}
           <div className="enterprise-branch-actions">
-            <button className="btn-outline small" type="button" disabled={offline || branch.is_active === false} onClick={() => openReconciliation(branch)}><Activity size={14} /> Cash close-out</button>
+            {locationType === "STORE" ? <button className="btn-outline small" type="button" disabled={offline || branch.is_active === false || status !== "OPEN"} onClick={() => openReconciliation(branch)}><Activity size={14} /> Cash close-out</button> : <span className="enterprise-location-note">Warehouse stock is reconciled through inventory counts</span>}
             <button className="btn-outline small" disabled={offline} onClick={() => start(branch)}><Pencil size={14} /> Edit branch</button>
             {!branch.is_main_branch && <button className="btn-outline small danger" disabled={offline || branch.is_active === false} onClick={() => void deactivate(branch)}><Trash2 size={14} /> Deactivate</button>}
           </div>
