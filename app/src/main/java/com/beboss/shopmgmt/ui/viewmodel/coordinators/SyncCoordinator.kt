@@ -130,7 +130,7 @@ class SyncCoordinator(
     fun requeueDeadLetter(id: String) {
         scope.launch {
             try {
-                repository.requeueSyncItem(id)
+                repository.requeueSyncItem(id, currentUser.value)
                 emitSnackbar("Sync record queued for immediate retry.")
                 if (connectivityStatus.value == ConnectivityStatus.AVAILABLE) {
                     runAutomaticCloudSync(showResult = false, retryDeadLetters = false)
@@ -146,7 +146,7 @@ class SyncCoordinator(
     fun requeueAllDeadLetters() {
         scope.launch {
             try {
-                val count = repository.requeueAllDeadLetters()
+                val count = repository.requeueAllDeadLetters(currentUser.value)
                 emitSnackbar(
                     if (count > 0) "Re-queued $count failed sync record(s)." else "No failed sync records to retry."
                 )
@@ -164,7 +164,7 @@ class SyncCoordinator(
     fun discardDeadLetter(id: String) {
         scope.launch {
             try {
-                repository.discardDeadLetterItem(id)
+                repository.discardDeadLetterItem(id, currentUser.value)
                 emitSnackbar("Discarded failed sync record.")
             } catch (e: CancellationException) {
                 throw e
