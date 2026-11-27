@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
+import DocumentPicker from 'react-native-document-picker';
 import {
   Branch, CartLine, CheckoutInput, Customer, Product, Role, ShopProfile, Staff,
   StoreSnapshot
@@ -12,11 +13,11 @@ import {
 import {
   adjustStock, archiveBranch, authenticate, cancelStockTransfer, checkout, confirmStockTransfer, deleteProduct,
   initializeStore, loadSnapshot, recordCustomerPayment, recordPurchase,
-  recordStockTransfer, registerOwner, reverseSale, saveBranch, saveCustomer,
+  recordStockTransfer, registerOwner, restoreEncryptedBackupData, reverseSale, saveBranch, saveCustomer,
   saveProduct, saveShopSettings, saveStaff, setBranchOperationalStatus, storeDiagnostics
 } from './src/storage/repository';
 import { BarcodeScannerModal, useBluetoothPrinters } from './src/services/hardware';
-import { exportEncryptedBackup } from './src/services/backup';
+import { decryptBackupFile, exportEncryptedBackup } from './src/services/backup';
 import { enableBiometricUnlock, requireBiometricUnlock, biometricAvailable } from './src/services/biometrics';
 import {
   cloudConfigured, cloudSessionState, requestOwnerPhoneVerification,
@@ -78,6 +79,7 @@ function AppRoot(): React.JSX.Element {
   const [ownerOtp, setOwnerOtp] = useState('');
   const [otpRequested, setOtpRequested] = useState(false);
   const [backupPassword, setBackupPassword] = useState('');
+  const [backupMode, setBackupMode] = useState<'EXPORT' | 'RESTORE'>('EXPORT');
   const [showScanner, setShowScanner] = useState(false);
   const printer = useBluetoothPrinters();
 
@@ -482,15 +484,41 @@ function AppRoot(): React.JSX.Element {
 
   const saveBackup = async () => {
     if (!snapshot || !backupPassword.trim()) { setError('Set a backup password first.'); return; }
-    requireRoleFeature('canExportImportData', 'export backups');
     setBusy(true); setError('');
     try {
+      requireRoleFeature('canExportImportData', 'export backups');
       const path = await exportEncryptedBackup(snapshot, backupPassword);
       setModal(null);
       setBackupPassword('');
       setNotice('Encrypted backup exported and shared: ' + path.split('/').pop());
     } catch (caught: any) { setError(caught?.message || 'Backup export failed.'); }
     finally { setBusy(false); }
+  };
+
+  const restoreBackup = async () => {
+    if (!backupPassword.trim()) { setError('Enter the password used to encrypt this backup.'); return; }
+    setBusy(true); setError('');
+    try {
+      requireRoleFeature('canExportImportData', 'restore backups');
+      const picked = await DocumentPicker.pickSingle({
+        type: [DocumentPicker.types.allFiles],
+        copyTo: 'cachesDirectory',
+        presentationStyle: 'pageSheet'
+      });
+      const fileUri = picked.fileCopyUri || picked.uri;
+      if (!fileUri) throw new Error('The selected backup file could not be opened.');
+      const filePath = fileUri.startsWith('file://') ? decodeURIComponent(fileUri.slice(7)) : fileUri;
+      const backup = await decryptBackupFile(filePath, backupPassword);
+      const summary = await restoreEncryptedBackupData(backup, actor!);
+      await reload(actor!.id);
+      setModal(null);
+      setBackupPassword('');
+      setNotice('Backup merged successfully. Restored: ' +
+        summary.products + ' products, ' + summary.customers + ' customers, ' +
+        summary.sales + ' sales and ' + summary.payments + ' payments. Staff credentials, subscriptions and cloud device keys were preserved.');
+    } catch (caught: any) {
+      if (!DocumentPicker.isCancel(caught)) setError(caught?.message || 'Backup restore failed.');
+    } finally { setBusy(false); }
   };
 
   const requireRoleFeature = (permission: 'canExportImportData' | 'canExportReports' | 'canViewAnalytics', label: string) => {
@@ -1028,7 +1056,8 @@ function AppRoot(): React.JSX.Element {
         const ok = await requireBiometricUnlock();
         setNotice(ok ? 'Biometric verification succeeded.' : 'Biometric verification was not completed or no biometric key is configured.');
       }} />
-      <ButtonSecondary title="Export encrypted backup" onPress={() => { setBackupPassword(''); setModal('backup'); }} disabled={!actor.canExportImportData} />
+      <ButtonSecondary title="Export encrypted backup" onPress={() => { setBackupMode('EXPORT'); setBackupPassword(''); setModal('backup'); }} disabled={!actor.canExportImportData} />
+      <ButtonSecondary title="Import encrypted backup" onPress={() => { setBackupMode('RESTORE'); setBackupPassword(''); setModal('backup'); }} disabled={!actor.canExportImportData} />
       <SectionHeader title="Receipt printer (Bluetooth LE)" />
       <PrinterControls printer={printer} />
       <SectionHeader title="Terminal" />
@@ -1223,9 +1252,11 @@ function AppRoot(): React.JSX.Element {
                 <ButtonPrimary title="Save business settings" onPress={saveSettingsForm} loading={busy} />
               </> : null}
               {modal === 'backup' ? <>
-                <Text style={styles.muted}>Your backup contains shop records and sales, but never staff PIN/password hashes or cloud credentials. AES-256-GCM encrypts the file with a key derived from your backup password.</Text>
-                <Field label="Backup password (minimum 12 characters)" value={backupPassword} onChangeText={setBackupPassword} secureTextEntry />
-                <ButtonPrimary title="Encrypt and share backup" onPress={saveBackup} loading={busy} />
+                <Text style={styles.muted}>{backupMode === 'EXPORT'
+                  ? 'Your backup contains shop records and sales, but never staff PIN/password hashes, subscription entitlements or cloud device credentials. AES-256-GCM encrypts the file with a key derived from your password.'
+                  : 'Choose a BeBoss encrypted backup file and enter its password. The restore merges valid records into this shop; it does not erase existing records or replace staff credentials, subscription entitlements or device secrets.'}</Text>
+                <Field label={backupMode === 'EXPORT' ? 'Backup password (minimum 12 characters)' : 'Backup password'} value={backupPassword} onChangeText={setBackupPassword} secureTextEntry />
+                <ButtonPrimary title={backupMode === 'EXPORT' ? 'Encrypt and share backup' : 'Select and restore backup'} onPress={backupMode === 'EXPORT' ? saveBackup : restoreBackup} loading={busy} />
               </> : null}
             </ScrollView>
           </View>
