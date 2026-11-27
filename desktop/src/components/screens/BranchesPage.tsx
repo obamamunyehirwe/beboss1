@@ -29,7 +29,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<BranchFilter>("ALL");
   const [locationFilter, setLocationFilter] = useState<"ALL" | "STORE" | "WAREHOUSE">("ALL");
-  const [saving, setSaving = useState(false);
+  const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [formError, setFormError] = useState("");
   const [actionError, setActionError] = useState("");
