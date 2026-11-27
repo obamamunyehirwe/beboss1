@@ -15,7 +15,7 @@ export type DesktopUpdateOffer = {
 type ParsedVersion = { numbers: [number, number, number]; prerelease: string[] | null };
 
 function parseVersion(value: string): ParsedVersion | null {
-  const match = /^(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(value.trim());
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(value.trim());
   if (!match) return null;
   const numbers = match.slice(1, 4).map(Number);
   if (numbers.some((number) => !Number.isSafeInteger(number) || number < 0)) return null;
@@ -25,11 +25,11 @@ function parseVersion(value: string): ParsedVersion | null {
 }
 
 function compareIdentifiers(left: string, right: string): number {
-  const leftNumeric = /^\\d+$/.test(left);
-  const rightNumeric = /^\\d+$/.test(right);
+  const leftNumeric = /^\d+$/.test(left);
+  const rightNumeric = /^\d+$/.test(right);
   if (leftNumeric && rightNumeric) {
-    const a = left.replace(/^0+(?=\\d)/, "");
-    const b = right.replace(/^0+(?=\\d)/, "");
+    const a = left.replace(/^0+(?=\d)/, "");
+    const b = right.replace(/^0+(?=\d)/, "");
     return a.length !== b.length ? a.length < b.length ? -1 : 1 : a < b ? -1 : a > b ? 1 : 0;
   }
   if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
