@@ -44,7 +44,7 @@ data class StockTransfer(
     /** Packed HLC: epoch milliseconds in upper bits and a logical counter in the lower 16 bits. */
     @ColumnInfo(defaultValue = "0") val hlcTimestamp: Long = 0L,
     /** Stable writer identity used for deterministic conflict resolution. */
-    @ColumnInfo(defaultValue = "''") val lastModifiedDeviceId: String = ""
+    @ColumnInfo(defaultValue = "''") val lastModifiedDeviceId: String = "",
     /** Owner approval proof stays in the encrypted local database until cloud verification. */
     @ColumnInfo(defaultValue = "''") val approvalReason: String = "",
     @ColumnInfo(defaultValue = "''") val approvalActorUserId: String = "",
