@@ -1,7 +1,7 @@
 name: Build signed BeBoss Android production APK
 
-on:
-  workflow_dispatch:
+"on":
+  workflow_dispatch: {}
 
 permissions:
   contents: read
