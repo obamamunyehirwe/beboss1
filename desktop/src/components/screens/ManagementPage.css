@@ -90,3 +90,16 @@
   .management-module,.management-progress-track>span { transition: none; }
   .management-module:hover { transform: none; }
 }
+
+.management-audit-panel { min-width: 0; }
+.management-audit-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
+.management-audit-search { display: flex; align-items: center; gap: 8px; min-height: 38px; margin: 12px 0; padding: 0 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-bg); color: var(--muted); }
+.management-audit-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 11px; }
+.management-audit-table { max-height: 440px; overflow: auto; }
+.management-audit-table table { min-width: 820px; }
+.management-audit-table td { vertical-align: top; font-size: 10px; }
+.management-audit-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border); color: var(--muted); font-size: 9px; }
+@media (max-width: 600px) {
+  .management-audit-actions { justify-content: flex-start; }
+  .management-audit-foot { flex-direction: column; }
+}
