@@ -80,6 +80,32 @@ function base64ToBytes(value: string) {
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
   return out;
 }
+function canonicalTransferApproval(fields: string[]): string {
+  return fields.map((field) => {
+    const bytes = new TextEncoder().encode(field);
+    return String(bytes.length) + ":" + bytesToBase64(bytes);
+  }).join("|");
+}
+function normalizeTransferQuantity(value: unknown): string {
+  const n = number(value);
+  if (!Number.isFinite(n) || n <= 0) throw new Error("The stock transfer quantity is invalid.");
+  const raw = String(n);
+  if (!/[eE]/.test(raw)) return raw;
+  const parts = raw.toLowerCase().split("e");
+  const exponent = Number(parts[1]);
+  const negative = parts[0].startsWith("-");
+  const unsigned = negative ? parts[0].slice(1) : parts[0];
+  const decimal = unsigned.split(".");
+  const whole = decimal[0];
+  const digits = whole + (decimal[1] ?? "");
+  const point = whole.length + exponent;
+  const expanded = point <= 0 ? "0." + "0".repeat(-point) + digits :
+    point >= digits.length ? digits + "0".repeat(point - digits.length) :
+    digits.slice(0, point) + "." + digits.slice(point);
+  const cleaned = expanded.includes(".") ? expanded.replace(/0+$/, "").replace(/\\.$/, "") : expanded;
+  return (negative ? "-" : "") + cleaned;
+}
+
 function bytesToHex(bytes: Uint8Array) {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -838,6 +864,290 @@ Deno.serve(async (req: Request) => {
         throw new Error("The existing Android snapshot HMAC key is not configured in the protected server secret store.");
       }
       config.hmacSecret = storedSecret;
+    }
+
+    if (action === "android_transfer_policy" ||
+        action === "android_transfer_register_approval_key" ||
+        action === "android_transfer_sync") {
+      const deviceId = text(req.headers.get("X-BeBoss-Device-ID")).trim();
+      const deviceToken = text(req.headers.get("X-BeBoss-Device-Token")).trim();
+      if (deviceId.length < 4 || deviceId.length > 120 || !/^[a-f0-9]{64}$/i.test(deviceToken)) {
+        return json(401, { ok: false, message: "A valid enrolled device credential is required for Android transfer operations." });
+      }
+      const deviceClient = createClient(config.url, config.publishableKey, {
+        global: { headers: {
+          "X-BeBoss-Device-ID": deviceId,
+          "X-BeBoss-Device-Token": deviceToken
+        } },
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+      const shopResult = await deviceClient.from("shop_accounts")
+        .select("id,shop_name,remote_kill_switch").maybeSingle();
+      const shop = shopResult.data;
+      if (shopResult.error || !shop || shop.remote_kill_switch === true) {
+        return json(401, { ok: false, message: "The Android device is not authenticated for an active shop." });
+      }
+
+      const deviceResult = await admin.from("shop_devices")
+        .select("id,device_id,is_active,is_owner_primary,assigned_user_id,role")
+        .eq("shop_sync_key", text(shop.id)).eq("device_id", deviceId)
+        .eq("is_active", true).maybeSingle();
+      const currentDevice = deviceResult.data;
+      if (deviceResult.error || !currentDevice) {
+        return json(403, { ok: false, message: "This Android terminal is not present in the active shop device registry." });
+      }
+
+      if (action === "android_transfer_policy") {
+        const policy = await loadShopApprovalPolicy(admin, text(shop.id));
+        return json(200, {
+          ok: true,
+          version: policy.version,
+          transferApprovalThresholdRwf: policy.transferApprovalThresholdRwf,
+          serverTime: Date.now()
+        });
+      }
+
+      if (action === "android_transfer_register_approval_key") {
+        if (currentDevice.is_owner_primary !== true || text(currentDevice.role).toUpperCase() !== "OWNER") {
+          return json(403, { ok: false, message: "Only the active primary-owner Android terminal may register an approval key." });
+        }
+        const ownerUserId = text(currentDevice.assigned_user_id);
+        const ownerResult = await admin.from("shop_users")
+          .select("user_id,role,is_active").eq("shop_sync_key", text(shop.id))
+          .eq("user_id", ownerUserId).eq("role", "OWNER").eq("is_active", true).maybeSingle();
+        if (ownerResult.error || !ownerResult.data) {
+          return json(403, { ok: false, message: "The primary terminal is not assigned to an active owner account." });
+        }
+        const publicKey = text(body.publicKey).trim();
+        if (publicKey.length < 80 || publicKey.length > 1200 || !/^[A-Za-z0-9+/]+={0,2}$/.test(publicKey)) {
+          return json(400, { ok: false, message: "The Android owner public key is malformed." });
+        }
+        try {
+          await crypto.subtle.importKey(
+            "spki", base64ToBytes(publicKey), { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]
+          );
+        } catch {
+          return json(400, { ok: false, message: "The Android owner public key is not a valid P-256 signing key." });
+        }
+        const previous = await admin.from("cloud_sync_events").select("detail")
+          .eq("shop_sync_key", text(shop.id)).eq("entity", "TRANSFER_APPROVAL_KEY")
+          .eq("action", "REGISTERED").eq("device_id", deviceId)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (previous.error) throw new Error("Could not read the enrolled owner signing key: " + previous.error.message);
+        if (previous.data?.detail) {
+          let existing: Row = {};
+          try { existing = JSON.parse(text(previous.data.detail)) as Row; } catch { /* fail closed below */ }
+          if (text(existing.publicKey) !== publicKey || text(existing.ownerUserId) !== ownerUserId) {
+            return json(409, { ok: false, message: "This owner terminal already has a different registered signing key. Use the reviewed recovery process before rotating it." });
+          }
+          return json(200, { ok: true, alreadyRegistered: true });
+        }
+        const detail = JSON.stringify({
+          version: 1,
+          algorithm: "ECDSA_P256_SHA256",
+          publicKey,
+          ownerUserId,
+          registeredAt: Date.now()
+        });
+        const saved = await recordShopAuditEvent(
+          admin, text(shop.id), text(shop.shop_name), "ANDROID_OWNER:" + ownerUserId,
+          deviceId, "TRANSFER_APPROVAL_KEY", "REGISTERED", detail
+        );
+        if (!saved) return json(503, { ok: false, message: "The signing key could not be recorded in the cloud audit journal. Retry before using offline approvals." });
+        return json(200, { ok: true, registered: true });
+      }
+
+      const requested = Array.isArray(body.transfers) ? body.transfers as Row[] : [];
+      if (requested.length < 1 || requested.length > 250) {
+        return json(400, { ok: false, message: "Android transfer batches must contain between 1 and 250 records." });
+      }
+      const ids = requested.map((row) => text(row.id).trim());
+      if (ids.some((id) => !id || id.length > 120) || new Set(ids).size !== ids.length) {
+        return json(400, { ok: false, message: "Transfer records must contain unique valid identifiers." });
+      }
+
+      const policy = await loadShopApprovalPolicy(admin, text(shop.id));
+      const snapshotResult = await latestVerifiedSnapshot(admin, text(shop.id), config.hmacSecret);
+      if (!snapshotResult.snapshot) {
+        return json(409, { ok: false, message: "A verified shop inventory snapshot is required before Android stock transfers can be accepted. Sync the primary terminal and retry." });
+      }
+      const productById = new Map<string, Row>(
+        (snapshotResult.snapshot.products ?? []).map((row) => [text(row.id), row])
+      );
+      const branchIds = [...new Set(requested.flatMap((row) => [
+        text(row.from_branch_id).trim(), text(row.to_branch_id).trim()
+      ]).filter(Boolean))];
+      const branchResult = branchIds.length
+        ? await admin.from("shop_branches").select("id,is_active,operational_status")
+            .eq("shop_sync_key", text(shop.id)).in("id", branchIds).limit(100)
+        : { data: [], error: null };
+      if (branchResult.error) throw new Error("Could not validate source and destination branches: " + branchResult.error.message);
+      const branchById = new Map<string, Row>((branchResult.data ?? []).map((row) => [text(row.id), row]));
+
+      const rowsToSave: Row[] = [];
+      const newApprovalAudit: Row[] = [];
+      for (const transfer of requested) {
+        const transferId = text(transfer.id).trim();
+        const productId = text(transfer.product_id).trim();
+        const fromBranchId = text(transfer.from_branch_id).trim();
+        const toBranchId = text(transfer.to_branch_id).trim();
+        const quantity = number(transfer.quantity);
+        if (!transferId || !productId || !fromBranchId || !toBranchId ||
+            fromBranchId === toBranchId || !Number.isFinite(quantity) || quantity <= 0 || quantity > 1000000000) {
+          return json(400, { ok: false, message: "A transfer contains invalid product, branch or quantity data." });
+        }
+        const product = productById.get(productId);
+        const fromBranch = branchById.get(fromBranchId);
+        const toBranch = branchById.get(toBranchId);
+        if (!product || product.isDeleted === true || !fromBranch?.is_active || !toBranch?.is_active ||
+            text(fromBranch.operational_status).toUpperCase() !== "OPEN" ||
+            text(toBranch.operational_status).toUpperCase() !== "OPEN") {
+          return json(409, { ok: false, message: "A transfer references a deleted product or inactive/closed branch." });
+        }
+        if (text(product.branchId) && text(product.branchId) !== fromBranchId) {
+          return json(409, { ok: false, message: "The selected product is not assigned to the source branch in the latest verified inventory snapshot." });
+        }
+        const cost = Math.max(0, Math.round(quantity * number(product.costPrice)));
+        if (number(transfer.cost_value_rwf) !== cost) {
+          return json(409, { ok: false, message: "The transfer cost does not match the latest verified product cost. Refresh inventory and retry." });
+        }
+
+        const previouslyApproved = await admin.from("cloud_sync_events").select("id")
+          .eq("shop_sync_key", text(shop.id)).eq("entity", "STOCK_TRANSFER")
+          .eq("action", "ANDROID_OWNER_APPROVED")
+          .like("detail", '%"recordId":"' + transferId + '"%')
+          .limit(1).maybeSingle();
+        if (previouslyApproved.error) throw new Error("Could not verify prior transfer approval evidence.");
+        const approvalRequired = policy.transferApprovalThresholdRwf > 0 &&
+          cost >= policy.transferApprovalThresholdRwf;
+        const proof = transfer.approval_proof && typeof transfer.approval_proof === "object"
+          ? transfer.approval_proof as Row : {};
+        if (approvalRequired && !previouslyApproved.data) {
+          const reason = text(proof.reason).trim();
+          const actorUserId = text(proof.actor_user_id).trim();
+          const approvalDeviceId = text(proof.device_id).trim();
+          const signedAt = number(proof.signed_at);
+          const proofPolicyVersion = number(proof.policy_version);
+          const signatureText = text(proof.signature).trim();
+          if (reason.length < 8 || reason.length > 600 || !actorUserId ||
+              !approvalDeviceId || !/^[A-Za-z0-9+/]+={0,2}$/.test(signatureText) ||
+              signatureText.length < 80 || proofPolicyVersion !== policy.version ||
+              signedAt <= 0 || signedAt > Date.now() + 5 * 60 * 1000 ||
+              Date.now() - signedAt > 90 * 24 * 60 * 60 * 1000) {
+            return json(403, { ok: false, message: "This transfer meets the current owner-approval threshold but has no valid, recent owner approval evidence. Keep it pending and request owner approval." });
+          }
+          const approvalDeviceResult = await admin.from("shop_devices")
+            .select("id,device_id,is_active,is_owner_primary,assigned_user_id,role")
+            .eq("shop_sync_key", text(shop.id)).eq("device_id", approvalDeviceId)
+            .eq("is_active", true).maybeSingle();
+          const approvalDevice = approvalDeviceResult.data;
+          if (approvalDeviceResult.error || !approvalDevice || approvalDevice.is_owner_primary !== true ||
+              text(approvalDevice.role).toUpperCase() !== "OWNER" ||
+              text(approvalDevice.assigned_user_id) !== actorUserId) {
+            return json(403, { ok: false, message: "The approval signature was not issued by the active primary owner terminal." });
+          }
+          const ownerUser = await admin.from("shop_users").select("user_id")
+            .eq("shop_sync_key", text(shop.id)).eq("user_id", actorUserId)
+            .eq("role", "OWNER").eq("is_active", true).maybeSingle();
+          if (ownerUser.error || !ownerUser.data) {
+            return json(403, { ok: false, message: "The approving owner account is inactive or no longer authorized." });
+          }
+          const keyEvent = await admin.from("cloud_sync_events").select("detail")
+            .eq("shop_sync_key", text(shop.id)).eq("entity", "TRANSFER_APPROVAL_KEY")
+            .eq("action", "REGISTERED").eq("device_id", approvalDeviceId)
+            .order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (keyEvent.error || !keyEvent.data?.detail) {
+            return json(403, { ok: false, message: "The approving terminal has no server-registered owner signing key." });
+          }
+          let keyRecord: Row;
+          try { keyRecord = JSON.parse(text(keyEvent.data.detail)) as Row; }
+          catch { return json(403, { ok: false, message: "The registered owner signing key record is invalid." }); }
+          if (text(keyRecord.ownerUserId) !== actorUserId || text(keyRecord.algorithm) !== "ECDSA_P256_SHA256") {
+            return json(403, { ok: false, message: "The registered signing key is not bound to this active owner." });
+          }
+          const canonical = canonicalTransferApproval([
+            "BEBOSS_TRANSFER_APPROVAL_V1", text(shop.id), transferId, productId,
+            fromBranchId, toBranchId, normalizeTransferQuantity(transfer.quantity),
+            String(cost), String(policy.version), actorUserId, approvalDeviceId,
+            String(signedAt), reason
+          ]);
+          try {
+            const publicKey = await crypto.subtle.importKey(
+              "spki", base64ToBytes(text(keyRecord.publicKey)),
+              { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]
+            );
+            const signature = derEcdsaToRawSignature(base64ToBytes(signatureText));
+            const valid = await crypto.subtle.verify(
+              { name: "ECDSA", hash: "SHA-256" }, publicKey,
+              asArrayBuffer(signature),
+              asArrayBuffer(new TextEncoder().encode(canonical))
+            );
+            if (!valid) return json(403, { ok: false, message: "The transfer owner-approval signature is invalid." });
+          } catch {
+            return json(403, { ok: false, message: "The transfer owner-approval signature could not be verified." });
+          }
+          newApprovalAudit.push({
+            recordId: transferId,
+            approverUserId: actorUserId,
+            approvalDeviceId,
+            signedAt,
+            policyVersion: proofPolicyVersion,
+            transferCostRwf: cost,
+            reason,
+            signature: signatureText
+          });
+        }
+
+        const writerDeviceId = text(transfer.last_modified_device_id).trim() || deviceId;
+        rowsToSave.push({
+          id: transferId,
+          shop_sync_key: text(shop.id),
+          shop_name: text(shop.shop_name),
+          transfer_number: text(transfer.transfer_number),
+          product_id: productId,
+          product_name: text(transfer.product_name),
+          from_branch_id: fromBranchId,
+          from_branch_name: text(transfer.from_branch_name),
+          to_branch_id: toBranchId,
+          to_branch_name: text(transfer.to_branch_name),
+          quantity,
+          unit: text(transfer.unit) || "pcs",
+          cost_value_rwf: cost,
+          transfer_date: number(transfer.transfer_date) || Date.now(),
+          status: text(transfer.status).toUpperCase() || "IN_TRANSIT",
+          notes: text(transfer.notes).slice(0, 1000),
+          transferred_by: text(transfer.transferred_by).slice(0, 120),
+          received_by: text(transfer.received_by).slice(0, 120),
+          received_at: number(transfer.received_at),
+          synced: true,
+          created_at: number(transfer.created_at) || Date.now(),
+          updated_at: Math.max(number(transfer.updated_at), number(transfer.created_at), Date.now()),
+          hlc_timestamp: number(transfer.hlc_timestamp),
+          last_modified_device_id: writerDeviceId
+        });
+      }
+
+      const upload = await admin.from("shop_stock_transfers").upsert(rowsToSave, { onConflict: "id" });
+      if (upload.error) throw new Error("The verified Android transfers could not be committed: " + upload.error.message);
+
+      for (const evidence of newApprovalAudit) {
+        const detail = JSON.stringify({ version: 1, ...evidence });
+        const saved = await recordShopAuditEvent(
+          admin, text(shop.id), text(shop.shop_name),
+          "ANDROID_OWNER:" + text(evidence.approverUserId),
+          text(evidence.approvalDeviceId), "STOCK_TRANSFER", "ANDROID_OWNER_APPROVED", detail
+        );
+        if (!saved) {
+          return json(503, { ok: false, message: "Transfers were committed, but owner approval evidence could not be journaled. Keep synchronization pending and retry." });
+        }
+      }
+      return json(200, {
+        ok: true,
+        acceptedCount: rowsToSave.length,
+        ownerApprovedCount: newApprovalAudit.length,
+        policyVersion: policy.version,
+        serverTime: Date.now()
+      });
     }
 
     if (action === "record_device_local_audit") {
