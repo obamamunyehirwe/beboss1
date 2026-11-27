@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, ArrowRight, BarChart3, Building2, CheckCircle2,
   Clock3, CreditCard, Database, Download, Filter, Package, RefreshCw,
   Search, Settings, ShieldCheck, ShoppingBag, Smartphone, Truck, Users,
-  Wallet, WifiOff
+  Wallet, WifiOff, FileClock
 } from "lucide-react";
 import { downloadCsv, money, n, rows, s } from "../../lib/format";
 import type { CloudState, NavKey, Row, Snapshot } from "../../lib/types";
@@ -23,12 +23,15 @@ type ManagementAlert = {
   icon: typeof AlertTriangle;
 };
 
-export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnouncementAction, language }: {
-  cloud: CloudState; snapshot: Snapshot | null; offline: boolean; onNavigate: (view: NavKey) => void; onAnnouncementAction?: (urlValue: string) => Promise<void>; language: string
+export function ManagementPage({ cloud, snapshot, offline, onNavigate, onRefresh, onAnnouncementAction, language }: {
+  cloud: CloudState; snapshot: Snapshot | null; offline: boolean; onNavigate: (view: NavKey) => void; onRefresh: () => Promise<void>; onAnnouncementAction?: (urlValue: string) => Promise<void>; language: string
 }) {
   const [moduleQuery, setModuleQuery] = useState("");
   const [moduleCategory, setModuleCategory] = useState<ModuleCategory>("ALL");
   const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const [activityQuery, setActivityQuery] = useState("");
+  const [activityRefreshing, setActivityRefreshing] = useState(false);
+  const [activityError, setActivityError] = useState("");
 
   const products = rows(snapshot?.products).filter((item) => item.isDeleted !== true);
   const lowStock = products.filter((item) => n(item.quantityInStock) <= n(item.lowStockThreshold));
@@ -161,6 +164,21 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnounc
     return matchesCategory && matchesTerm;
   }), [modules, moduleCategory, moduleQuery]);
 
+  const activity = rows(cloud.activity);
+  const visibleActivity = activity.filter((event) => {
+    const term = activityQuery.trim().toLowerCase();
+    return !term || [event.entity, event.action, event.actor, event.device_id, event.detail]
+      .some((value) => s(value).toLowerCase().includes(term));
+  });
+
+  async function refreshAuditFeed() {
+    setActivityRefreshing(true);
+    setActivityError("");
+    try { await onRefresh(); }
+    catch (error) { setActivityError(error instanceof Error ? error.message : "Could not refresh the shop activity feed."); }
+    finally { setActivityRefreshing(false); }
+  }
+
   function exportManagementReport() {
     const reportRows: Row[] = [
       { Section: "WORKSPACE", Item: "Shop", Status: "CURRENT", Value: s(cloud.shop.shop_name) || "BeBoss shop", Details: "Management report" },
@@ -192,6 +210,10 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnounc
         Section: "DEVICE", Item: s(item.device_name) || s(item.name) || "POS terminal",
         Status: item.is_active ? (s(item.device_id) ? "ACTIVE · PAIRED" : "ACTIVE · PENDING") : "INACTIVE",
         Value: s(item.platform), Details: s(item.branch_name) + " · " + (s(item.assigned_user_name) || "unassigned")
+      })),
+      ...activity.map((event) => ({
+        Section: "ACTIVITY", Item: s(event.entity) + " · " + s(event.action), Status: s(event.actor),
+        Value: new Date(s(event.created_at)).toLocaleString(), Details: s(event.detail) + " · " + s(event.device_id)
       }))
     ];
     const dateStamp = new Date().toISOString().slice(0, 10);
@@ -264,6 +286,31 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnounc
         <div className="management-branch-footer"><span>{branchPerformance.length} registered locations</span><span>{branchPerformance.filter((branch) => branch.target > 0 && branch.targetProgress >= 100).length} at or above monthly target</span></div>
       </section>
     </div>
+
+    <section className="panel management-audit-panel">
+      <div className="panel-heading">
+        <div><span className="eyebrow muted">SHOP-SCOPED AUDIT TRAIL</span><h3>Business & device activity</h3><p>Events are read from the shop's server-side cloud activity log, not generated locally by this screen.</p></div>
+        <div className="management-audit-actions">
+          <span className="management-module-count">{activity.length.toLocaleString()} recent events</span>
+          <button className="btn-outline small" disabled={offline || activityRefreshing} onClick={() => void refreshAuditFeed()}><RefreshCw size={13} className={activityRefreshing ? "spin" : ""} /> Refresh audit</button>
+        </div>
+      </div>
+      <label className="management-audit-search"><Search size={15} /><input value={activityQuery} onChange={(event) => setActivityQuery(event.target.value)} placeholder="Filter by event, action, actor, device or detail…" /></label>
+      {activityError && <div className="inline-alert error">{activityError}</div>}
+      {visibleActivity.length ? <div className="management-audit-table table-wrap">
+        <table><thead><tr><th>Time</th><th>Area</th><th>Action</th><th>Actor</th><th>Device</th><th>Details</th></tr></thead><tbody>
+          {visibleActivity.slice(0, 40).map((event) => <tr key={s(event.id)}>
+            <td>{event.created_at ? new Date(s(event.created_at)).toLocaleString() : "—"}</td>
+            <td><StatusPill value={s(event.entity) || "EVENT"} /></td>
+            <td><strong>{s(event.action) || "RECORDED"}</strong></td>
+            <td>{s(event.actor) || "SYSTEM"}</td>
+            <td className="mono">{s(event.device_id) || "Cloud / system"}</td>
+            <td>{s(event.detail) || "—"}</td>
+          </tr>)}
+        </tbody></table>
+      </div> : <Empty title={activity.length ? "No matching activity" : "No shop activity returned"} description={activity.length ? "Adjust the activity filter to see more events." : "Refresh the audit feed after business activity has synchronized. The feed is limited to events belonging to this shop."} icon={FileClock} />}
+      <div className="management-audit-foot"><span>Showing {Math.min(visibleActivity.length, 40)} of {visibleActivity.length} matching events</span><span>Up to 300 latest server-recorded events are retained in this view</span></div>
+    </section>
 
     <section className="management-modules">
       <div className="section-title-row"><div><span className="eyebrow muted">MANAGEMENT WORKSPACES</span><h3>Operational modules</h3><p>Search or filter the management tools. Opening a module takes you to its working workflow.</p></div><span className="management-module-count">{filteredModules.length} of {modules.length} workspaces</span></div>
