@@ -652,6 +652,7 @@ class CloudSyncManager(private val database: AppDatabase) {
                                 id = dto.id,
                                 name = dto.name,
                                 code = dto.code,
+                                locationType = dto.locationType,
                                 address = dto.address,
                                 phone = dto.phone,
                                 managerUserId = dto.managerUserId,
