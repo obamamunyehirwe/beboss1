@@ -32,7 +32,8 @@ jobs:
         run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 
       - name: Lint every workflow and context expression
-        run: "$(go env GOPATH)/bin/actionlint" -color
+        run: |
+          "$(go env GOPATH)/bin/actionlint" -color
 
   web:
     name: Web lint, tests and production build
