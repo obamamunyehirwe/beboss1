@@ -64,13 +64,19 @@ class BranchTransferManager(
         val now = ClockGuard.effectiveNowMs()
         val toSave = branch.copy(
             updatedAt = now,
-            hlcTimestamp = HlcClock.tick(now)
+            hlcTimestamp = HlcClock.tick(now),
+            lastModifiedDeviceId = nodeId
         )
         if (toSave.isMainBranch) {
             branchDao.getAllActiveBranchesList()
                 .filter { it.id != toSave.id && it.isMainBranch }
                 .forEach { b ->
-                    branchDao.insertBranch(b.copy(isMainBranch = false, updatedAt = now, hlcTimestamp = HlcClock.tick(now)))
+                    branchDao.insertBranch(b.copy(
+                        isMainBranch = false,
+                        updatedAt = now,
+                        hlcTimestamp = HlcClock.tick(now),
+                        lastModifiedDeviceId = nodeId
+                    ))
                 }
         }
         branchDao.insertBranch(toSave)
@@ -82,7 +88,13 @@ class BranchTransferManager(
         val now = ClockGuard.effectiveNowMs()
         branchDao.updateOperationalStatus(branchId, status, now)
         val branch = branchDao.getBranchById(branchId) ?: return@withContext
-        enqueueBranchSync(branch, "UPDATE")
+        val versioned = branch.copy(
+            updatedAt = now,
+            hlcTimestamp = HlcClock.tick(now),
+            lastModifiedDeviceId = nodeId
+        )
+        branchDao.insertBranch(versioned)
+        enqueueBranchSync(versioned, "UPDATE")
     }
 
     suspend fun deleteBranch(branchId: String) = withContext(Dispatchers.IO) {
