@@ -85,17 +85,13 @@ KEY_PASSWORD=<your-private-key-password>
 
 SUPABASE_CERT_PINS must contain one or more real SHA-256 pins for the HTTPS Supabase host in OkHttp sha256/base64 format. The build rejects placeholder URL/key/pin values and rejects a service-role key. The public certificate fingerprint can be present in .env.example; the private .p12 and passwords must remain outside Git.
 
-Build and verify the actual standalone production APK:
+Build and verify the signed production APK with the release orchestrator:
 
 ~~~powershell
-.\gradlew.bat :app:validateReleaseSigningConfiguration
-.\gradlew.bat :app:validateSecureMigrationApproval
-.\gradlew.bat :app:validateSentryDsnConfiguration
-.\gradlew.bat :app:validateAndroidCloudConfiguration
-.\gradlew.bat :app:assembleSecureRelease
-
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-android-release-signing.ps1 -ArtifactPath .\app\build\outputs\apk\secure\release\app-secure-release.apk
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-first-production-apk.ps1
 ~~~
+
+The script runs the release configuration gates, secure unit tests and Secure Release assembly. It then checks the generated APK's application ID and version against the secure Gradle flavor, verifies the owner-controlled signing certificate, and writes a SHA-256 checksum next to the APK. It does not print or modify the ignored .env or the private keystore.
 
 Expected output: app\build\outputs\apk\secure\release\app-secure-release.apk. Upload that exact APK in BeBoss Admin → App Releases → Mobile. Do not upload a debug APK, the transition flavor, or an AAB to the direct APK channel.
 
