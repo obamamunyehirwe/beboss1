@@ -33,7 +33,8 @@
     "react-native-vision-camera": "5.2.5",
     "react-native-vision-camera-barcode-scanner": "5.2.5",
     "@react-native-documents/picker": "12.1.0",
-    "react-native-nitro-image": "0.15.2"
+    "react-native-nitro-image": "0.15.2",
+    "fflate": "0.8.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
