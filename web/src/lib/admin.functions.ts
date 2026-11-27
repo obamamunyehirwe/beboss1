@@ -1146,6 +1146,19 @@ export const publishRelease = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     const admin = await requirePermission(ctx, "releases.manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: latestRelease, error: latestReleaseError } = await supabaseAdmin
+      .from("app_releases")
+      .select("version_code")
+      .order("version_code", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestReleaseError) {
+      throw new Error("Could not verify the existing Android release sequence: " + latestReleaseError.message);
+    }
+    const highestVersionCode = Number(latestRelease?.version_code ?? 0);
+    if (data.version_code <= highestVersionCode) {
+      throw new Error("Android versionCode " + data.version_code + " must be greater than the highest registered release code " + highestVersionCode + ".");
+    }
     const { data: row, error } = await supabaseAdmin
       .from("app_releases")
       .insert({
