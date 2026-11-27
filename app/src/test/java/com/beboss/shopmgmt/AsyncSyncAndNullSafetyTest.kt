@@ -145,7 +145,8 @@ class AsyncSyncAndNullSafetyTest {
                 branchId = mainBranch.id,
                 branchName = mainBranch.name,
                 cashierId = owner.id,
-                cashierName = owner.name
+                cashierName = owner.name,
+                actor = owner
             )
 
             repo.recordCustomerPayment(
@@ -158,7 +159,8 @@ class AsyncSyncAndNullSafetyTest {
                     recordedBy = owner.name,
                     branchId = mainBranch.id,
                     branchName = mainBranch.name
-                )
+                ),
+                actor = owner
             )
 
             repo.createStockTransfer(
@@ -169,7 +171,8 @@ class AsyncSyncAndNullSafetyTest {
                 toBranchName = secondBranch.name,
                 quantity = 3.0,
                 notes = "Transfer \"urgent\"\nvan",
-                transferredBy = owner.name
+                transferredBy = owner.name,
+                actor = owner
             )
 
             repo.updateShopProfile(
@@ -180,7 +183,8 @@ class AsyncSyncAndNullSafetyTest {
                     email = "owner_hq@beboss.rw",
                     shopName = "Shop \"Empire\"\nRW",
                     businessType = "Retail"
-                )
+                ),
+                actor = owner
             )
 
             val outboxItems = db.syncQueueDao().getDueQueueItems(Long.MAX_VALUE, 100)
