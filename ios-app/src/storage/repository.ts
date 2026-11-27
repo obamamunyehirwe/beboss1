@@ -892,6 +892,197 @@ export async function saveShopSettings(input: Partial<ShopProfile>, actor: Staff
   return profile;
 }
 
+export type BackupRestoreSummary = {
+  branches: number;
+  products: number;
+  customers: number;
+  sales: number;
+  payments: number;
+  purchases: number;
+  transfers: number;
+};
+
+export async function restoreEncryptedBackupData(backup: any, actor: Staff): Promise<BackupRestoreSummary> {
+  requirePermission(actor, 'canExportImportData', 'restore business backups');
+  if (!backup || backup.format !== 'beboss_iphone_backup_v1' || !backup.profile) {
+    throw new Error('This is not a supported BeBoss iPhone backup.');
+  }
+  const current = await currentProfile();
+  if (!current) throw new Error('Register or pair this iPhone with a shop before restoring a backup.');
+  const restoredProfile = backup.profile as ShopProfile;
+  const sameOwner = restoredProfile.username?.trim().toLowerCase() === current.username.trim().toLowerCase();
+  const samePhone = restoredProfile.phone.replace(/\D/g, '').slice(-9) === current.phone.replace(/\D/g, '').slice(-9);
+  if (!sameOwner || !samePhone) {
+    throw new Error('This backup belongs to a different shop owner. Restore it only on an iPhone already paired to that same shop.');
+  }
+  const branches = Array.isArray(backup.branches) ? backup.branches as Branch[] : [];
+  const products = Array.isArray(backup.products) ? backup.products as Product[] : [];
+  const customers = Array.isArray(backup.customers) ? backup.customers as Customer[] : [];
+  const sales = Array.isArray(backup.sales) ? backup.sales as Sale[] : [];
+  const payments = Array.isArray(backup.payments) ? backup.payments as CustomerPayment[] : [];
+  const purchases = Array.isArray(backup.purchases) ? backup.purchases as Purchase[] : [];
+  const transfers = Array.isArray(backup.transfers) ? backup.transfers as StockTransfer[] : [];
+  if (branches.length > 500 || products.length > 100000 || customers.length > 100000 ||
+      sales.length > 250000 || payments.length > 250000 || purchases.length > 100000 || transfers.length > 100000) {
+    throw new Error('Backup exceeds supported record limits.');
+  }
+  const now = Date.now();
+  const summary: BackupRestoreSummary = {
+    branches: 0, products: 0, customers: 0, sales: 0, payments: 0, purchases: 0, transfers: 0
+  };
+
+  await transaction(async tx => {
+    const currentProducts = new Set((await query<Row>('SELECT id FROM products', [], tx)).map(row => String(row.id)));
+    const currentCustomers = new Set((await query<Row>('SELECT id FROM customers', [], tx)).map(row => String(row.id)));
+    const currentBranches = new Set((await query<Row>('SELECT id FROM branches', [], tx)).map(row => String(row.id)));
+    const currentSales = new Set((await query<Row>('SELECT id,receipt_number FROM sales', [], tx)).flatMap(row => [String(row.id), String(row.receipt_number)]));
+
+    for (const branch of branches) {
+      if (!branch?.id || !branch.name?.trim()) throw new Error('Backup contains an invalid branch record.');
+      const old = await first<Row>('SELECT data FROM branches WHERE id=?', [branch.id], tx);
+      const merged = {
+        ...branch,
+        createdAt: old ? branchFromRow(old).createdAt : branch.createdAt || now,
+        updatedAt: now
+      };
+      await saveBranchRow(merged, tx);
+      await enqueue('branches', merged.id, old ? 'UPDATE' : 'CREATE', merged, tx);
+      currentBranches.add(merged.id);
+      summary.branches += 1;
+    }
+
+    for (const product of products) {
+      if (!product?.id || !product.name?.trim() || !Number.isFinite(product.quantityInStock) || product.quantityInStock < 0) {
+        throw new Error('Backup contains an invalid product record.');
+      }
+      const old = await first<Row>('SELECT data FROM products WHERE id=?', [product.id], tx);
+      const merged: Product = {
+        ...product,
+        branchId: product.branchId || 'main_branch',
+        updatedAt: now,
+        syncVersion: (old ? productFromRow(old).syncVersion : product.syncVersion || 0) + 1,
+        hlcTimestamp: tickHlc(old ? productFromRow(old).hlcTimestamp : product.hlcTimestamp || '0', now)
+      };
+      await saveProductRow(merged, tx);
+      await execute('DELETE FROM sync_tombstones WHERE id=?', ['products:' + merged.id], tx);
+      await enqueue('products', merged.id, old ? 'UPDATE' : 'CREATE', merged, tx);
+      currentProducts.add(merged.id);
+      summary.products += 1;
+    }
+
+    for (const customer of customers) {
+      if (!customer?.id || !customer.name?.trim() || !Number.isFinite(customer.debtBalance) || customer.debtBalance < 0) {
+        throw new Error('Backup contains an invalid customer record.');
+      }
+      const old = await first<Row>('SELECT data FROM customers WHERE id=?', [customer.id], tx);
+      const merged: Customer = { ...customer, updatedAt: now };
+      await saveCustomerRow(merged, tx);
+      await enqueue('customers', merged.id, old ? 'UPDATE' : 'CREATE', merged, tx);
+      currentCustomers.add(merged.id);
+      summary.customers += 1;
+    }
+
+    for (const sale of sales) {
+      if (!sale?.id || !sale.receiptNumber || !Array.isArray(sale.items) || !Number.isFinite(sale.totalAmount)) {
+        throw new Error('Backup contains an invalid sales record.');
+      }
+      if (currentSales.has(sale.id) || currentSales.has(sale.receiptNumber)) continue;
+      if (sale.customerId && !currentCustomers.has(sale.customerId)) {
+        throw new Error('Backup sales reference a customer that is not available in the restored records.');
+      }
+      const safeSale: Sale = { ...sale, saleDate: Number(sale.saleDate) || now };
+      await execute(
+        'INSERT INTO sales(id,receipt_number,customer_id,branch_id,total_cents,paid_cents,profit_cents,created_at,data) VALUES(?,?,?,?,?,?,?,?,?)',
+        [safeSale.id, safeSale.receiptNumber, safeSale.customerId, safeSale.branchId, toCents(safeSale.totalAmount),
+          toCents(safeSale.amountPaid), toCents(safeSale.totalProfit), safeSale.saleDate, toJson(safeSale)],
+        tx
+      );
+      for (const line of safeSale.items) {
+        if (!line?.id || !line.productId || !Number.isFinite(line.quantitySold) || line.quantitySold <= 0) {
+          throw new Error('Backup contains an invalid sales line.');
+        }
+        await execute(
+          'INSERT OR IGNORE INTO sale_items(id,sale_id,product_id,quantity,data) VALUES(?,?,?,?,?)',
+          [line.id, safeSale.id, line.productId, line.quantitySold, toJson(line)],
+          tx
+        );
+      }
+      await enqueue('sales', safeSale.id, 'CREATE', safeSale, tx);
+      currentSales.add(safeSale.id);
+      currentSales.add(safeSale.receiptNumber);
+      summary.sales += 1;
+    }
+
+    for (const payment of payments) {
+      if (!payment?.id || !payment.customerId || !Number.isFinite(payment.amount) || payment.amount <= 0) {
+        throw new Error('Backup contains an invalid customer payment.');
+      }
+      if (!currentCustomers.has(payment.customerId)) throw new Error('Backup payment references a missing customer.');
+      const alreadyExists = await first<Row>('SELECT id FROM customer_payments WHERE id=?', [payment.id], tx);
+      if (alreadyExists) continue;
+      await execute(
+        'INSERT INTO customer_payments(id,customer_id,amount_cents,created_at,data) VALUES(?,?,?,?,?)',
+        [payment.id, payment.customerId, toCents(payment.amount), payment.paymentDate || now, toJson(payment)],
+        tx
+      );
+      await enqueue('customer_payments', payment.id, 'CREATE', payment, tx);
+      summary.payments += 1;
+    }
+
+    for (const purchase of purchases) {
+      if (!purchase?.id || !purchase.productId || !Number.isFinite(purchase.quantityPurchased)) {
+        throw new Error('Backup contains an invalid purchase record.');
+      }
+      const exists = await first<Row>('SELECT id FROM purchases WHERE id=?', [purchase.id], tx);
+      if (exists) continue;
+      await execute(
+        'INSERT INTO purchases(id,product_id,branch_id,total_cents,created_at,data) VALUES(?,?,?,?,?,?)',
+        [purchase.id, purchase.productId, purchase.branchId, toCents(purchase.totalPurchaseCost), purchase.purchaseDate || now, toJson(purchase)],
+        tx
+      );
+      await enqueue('purchases', purchase.id, 'CREATE', purchase, tx);
+      summary.purchases += 1;
+    }
+
+    for (const transfer of transfers) {
+      if (!transfer?.id || !transfer.productId || !Number.isFinite(transfer.quantity) || transfer.quantity <= 0) {
+        throw new Error('Backup contains an invalid stock transfer.');
+      }
+      const exists = await first<Row>('SELECT id FROM stock_transfers WHERE id=?', [transfer.id], tx);
+      if (exists) continue;
+      await execute(
+        'INSERT INTO stock_transfers(id,product_id,from_branch_id,to_branch_id,quantity,status,created_at,data) VALUES(?,?,?,?,?,?,?,?)',
+        [transfer.id, transfer.productId, transfer.fromBranchId, transfer.toBranchId, transfer.quantity,
+          transfer.status, transfer.transferDate || now, toJson(transfer)],
+        tx
+      );
+      await enqueue('stock_transfers', transfer.id, 'CREATE', transfer, tx);
+      summary.transfers += 1;
+    }
+
+    // Staff credentials, subscription claims and cloud device secrets are never restored from a portable backup.
+    const safeProfile: ShopProfile = {
+      ...current,
+      shopName: restoredProfile.shopName,
+      ownerName: restoredProfile.ownerName,
+      phone: restoredProfile.phone,
+      address: restoredProfile.address,
+      businessType: restoredProfile.businessType,
+      currencyCode: restoredProfile.currencyCode,
+      currencySymbol: restoredProfile.currencySymbol,
+      taxRate: restoredProfile.taxRate,
+      receiptHeader: restoredProfile.receiptHeader,
+      receiptFooter: restoredProfile.receiptFooter,
+      lowStockThresholdDefault: restoredProfile.lowStockThresholdDefault,
+      updatedAt: now
+    };
+    await execute('UPDATE shop_profile SET data=?,updated_at=? WHERE id=1', [toJson(safeProfile), now], tx);
+    await enqueue('shop_profile', '1', 'UPDATE', safeProfile, tx);
+    await audit(actor, 'BACKUP_RESTORED', safeProfile.username, JSON.stringify(summary), tx);
+  });
+  return summary;
+}
+
 export async function getOutbox(): Promise<SyncOutboxItem[]> {
   const rows = await query<Row>('SELECT * FROM sync_outbox WHERE status != "SYNCED" ORDER BY created_at');
   return rows.map(outboxFromRow);
