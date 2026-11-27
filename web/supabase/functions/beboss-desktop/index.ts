@@ -6,10 +6,16 @@ import {
   DEVICE_REFRESH_TTL_MS,
 } from "../_shared/device-credentials.ts";
 import { EXTRA_DEVICE_MONTHLY_FEE_RWF, monthlyShopFeeRwf } from "../_shared/shop-management.ts";
+import {
+  buildShopAuditSnapshot,
+  classifyShopAuditTransition,
+  parseShopAuditSnapshot,
+  type ShopAuditEntity,
+} from "../_shared/shop-audit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info, x-beboss-device-id, x-beboss-device-token",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json"
 };
@@ -827,6 +833,111 @@ Deno.serve(async (req: Request) => {
       }
       config.hmacSecret = storedSecret;
     }
+    if (action === "record_device_sync_audit") {
+      const deviceId = text(req.headers.get("X-BeBoss-Device-ID")).trim();
+      const deviceToken = text(req.headers.get("X-BeBoss-Device-Token")).trim();
+      if (deviceId.length < 4 || deviceId.length > 120 || !/^[a-f0-9]{64}$/i.test(deviceToken)) {
+        return json(401, { ok: false, message: "A valid enrolled device credential is required to write shop audit events." });
+      }
+      const deviceClient = createClient(config.url, config.publishableKey, {
+        global: { headers: {
+          "X-BeBoss-Device-ID": deviceId,
+          "X-BeBoss-Device-Token": deviceToken
+        } },
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+      const { data: shop, error: shopError } = await deviceClient.from("shop_accounts")
+        .select("id,shop_name,owner_username,remote_kill_switch").maybeSingle();
+      if (shopError || !shop || shop.remote_kill_switch === true) {
+        return json(401, { ok: false, message: "The device is not authenticated for an active BeBoss shop." });
+      }
+
+      const entity = text(body.entity).toUpperCase() as ShopAuditEntity;
+      if (entity !== "BRANCH" && entity !== "STOCK_TRANSFER") {
+        return json(400, { ok: false, message: "Unsupported device audit entity." });
+      }
+      const requestedRecords = Array.isArray(body.records) ? body.records as Row[] : [];
+      if (requestedRecords.length < 1 || requestedRecords.length > 250) {
+        return json(400, { ok: false, message: "Device audit batches must contain between 1 and 250 records." });
+      }
+      const ids = requestedRecords.map((record) => text(record.id).trim());
+      if (ids.some((id) => !id || id.length > 120) || new Set(ids).size !== ids.length) {
+        return json(400, { ok: false, message: "Device audit records must have unique valid record identifiers." });
+      }
+
+      const table = entity === "BRANCH" ? "shop_branches" : "shop_stock_transfers";
+      const columns = entity === "BRANCH"
+        ? "id,shop_sync_key,name,code,address,phone,email,manager_user_id,manager_name,is_active,is_main_branch,operational_status,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,created_at,updated_at,hlc_timestamp,last_modified_device_id"
+        : "id,shop_sync_key,transfer_number,product_id,product_name,from_branch_id,from_branch_name,to_branch_id,to_branch_name,quantity,unit,cost_value_rwf,status,transferred_by,received_by,received_at,created_at,updated_at,hlc_timestamp,last_modified_device_id";
+      const { data: currentRows, error: rowError } = await admin.from(table).select(columns)
+        .eq("shop_sync_key", text(shop.id)).in("id", ids).limit(250);
+      if (rowError) throw new Error("Could not verify the uploaded " + entity.toLowerCase() + " records before journaling: " + rowError.message);
+      const currentById = new Map((currentRows ?? []).map((row) => [text(row.id), row as Row]));
+      if (currentById.size !== ids.length) {
+        return json(409, { ok: false, message: "Some records are not yet visible in the cloud. The device must retry the audit after the record upload completes." });
+      }
+
+      const verifiedRows: Row[] = [];
+      for (const requested of requestedRecords) {
+        const current = currentById.get(text(requested.id))!;
+        if (number(current.updated_at) !== number(requested.updatedAt) ||
+            number(current.hlc_timestamp) !== number(requested.hlcTimestamp) ||
+            text(current.last_modified_device_id) !== text(requested.lastModifiedDeviceId)) {
+          return json(409, { ok: false, message: "A record changed while its audit was being submitted. Synchronize the newest version and retry." });
+        }
+        verifiedRows.push(current);
+      }
+
+      const { data: previousEvents, error: previousError } = await admin.from("cloud_sync_events")
+        .select("detail,created_at").eq("shop_sync_key", text(shop.id)).eq("entity", entity)
+        .order("created_at", { ascending: false }).limit(1000);
+      if (previousError) throw new Error("Could not read the previous shop audit journal: " + previousError.message);
+      const previousStates = new Map<string, Record<string, unknown>>();
+      for (const event of previousEvents ?? []) {
+        try {
+          const parsed = JSON.parse(text(event.detail));
+          const recordId = text(parsed?.recordId);
+          if (parsed?.version === 1 && recordId && !previousStates.has(recordId)) {
+            const state = parseShopAuditSnapshot(text(event.detail), recordId);
+            if (state) previousStates.set(recordId, state);
+          }
+        } catch { /* Older plain-text audit entries are retained but are not state baselines. */ }
+      }
+
+      let auditedCount = 0;
+      let unchangedCount = 0;
+      for (const current of verifiedRows) {
+        const state = buildShopAuditSnapshot(entity, current);
+        const previous = previousStates.get(text(current.id)) ?? null;
+        const transition = classifyShopAuditTransition(entity, previous, state);
+        if (!transition) {
+          unchangedCount += 1;
+          continue;
+        }
+        if (transition.detail.length > 1000) {
+          throw new Error("The normalized audit record exceeded the cloud journal detail limit.");
+        }
+        const duplicate = await admin.from("cloud_sync_events").select("id")
+          .eq("shop_sync_key", text(shop.id)).eq("entity", entity)
+          .eq("action", transition.action).eq("device_id", deviceId)
+          .eq("detail", transition.detail).limit(1).maybeSingle();
+        if (duplicate.error) throw new Error("Could not check audit idempotency: " + duplicate.error.message);
+        if (duplicate.data) {
+          unchangedCount += 1;
+          continue;
+        }
+        const saved = await recordShopAuditEvent(
+          admin, text(shop.id), text(shop.shop_name), "ANDROID_DEVICE:" + deviceId,
+          deviceId, entity, transition.action, transition.detail
+        );
+        if (!saved) {
+          return json(503, { ok: false, message: "The record upload succeeded, but the shop audit journal is unavailable. Keep the sync pending and retry." });
+        }
+        auditedCount += 1;
+      }
+      return json(200, { ok: true, entity, auditedCount, unchangedCount });
+    }
+
     if (action === "verify_device_branch_share") {
       const deviceId = text(req.headers.get("X-BeBoss-Device-ID")).trim();
       const deviceToken = text(req.headers.get("X-BeBoss-Device-Token")).trim();
