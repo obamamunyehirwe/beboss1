@@ -403,6 +403,8 @@ private fun BeBossMainContent(
     val adminBranchSnapshots by viewModel.adminBranchSnapshots.collectAsState()
     val adminUnlockCodes by viewModel.adminUnlockCodes.collectAsState()
     val adminAuditLogs by viewModel.adminAuditLogs.collectAsState()
+    val adminDeviceTelemetry by viewModel.adminDeviceTelemetry.collectAsState()
+    val adminCloudActivity by viewModel.adminCloudActivity.collectAsState()
     val localAuditLogs by viewModel.localAuditLogs.collectAsState()
     val adminPaymentConfig by viewModel.adminPaymentConfig.collectAsState()
     val isAdminLoading by viewModel.isAdminLoading.collectAsState()
@@ -870,6 +872,9 @@ private fun BeBossMainContent(
                                 adminBranchSnapshots = adminBranchSnapshots,
                                 adminUnlockCodes = adminUnlockCodes,
                                 adminAuditLogs = adminAuditLogs,
+                                adminDeviceTelemetry = adminDeviceTelemetry,
+                                adminCloudActivity = adminCloudActivity,
+                                onLoadMoreAdminCloudActivity = { viewModel.loadMoreAdminCloudActivity() },
                                 localAuditLogs = localAuditLogs,
                                 isAdminLoading = isAdminLoading,
                                 onAdminSignIn = { email, password -> viewModel.signInSupabaseAdmin(email, password) },
@@ -1087,6 +1092,9 @@ private fun BeBossMainContent(
             onDeleteShopUser = { user -> viewModel.adminDeleteShopUser(user) },
             onDeleteBranchSnapshot = { snap -> viewModel.adminDeleteBranchSnapshot(snap) },
             onShareWebPortal = { viewModel.shareAdminWebPortal(context) },
+            deviceTelemetry = adminDeviceTelemetry,
+            cloudActivity = adminCloudActivity,
+            onLoadMoreCloudActivity = { viewModel.loadMoreAdminCloudActivity() },
             clockTamperStatus = clockTamperStatus,
             capturedLocation = lastCapturedLocation,
             messageRecords = messageDispatchRecords,
