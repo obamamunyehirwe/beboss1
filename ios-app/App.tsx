@@ -1352,7 +1352,7 @@ function ErrorStartupView({ message, onRetry }: { message: string; onRetry: () =
 }
 function AuthShell({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }): React.JSX.Element {
   return <SafeAreaView style={styles.authRoot}>
-    <StatusBar barStyle="dark-content" backgroundColor={COLORS.canvas} />
+    <StatusBar barStyle="dark-content" />
     <ScrollView contentContainerStyle={styles.authContent} keyboardShouldPersistTaps="handled">
       <View style={styles.brandHero}><View style={styles.brandMarkLarge}><Text style={styles.brandGlyphLarge}>B</Text></View><Text style={styles.brandNameLarge}>BeBoss</Text><Text style={styles.brandTag}>THE RETAIL OPERATING SYSTEM</Text></View>
       <View style={styles.authCard}><Text style={styles.pageTitle}>{title}</Text><Text style={styles.subTitle}>{subtitle}</Text>{children}</View>
