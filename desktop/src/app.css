@@ -1992,3 +1992,7 @@ select option { background: var(--panel-bg); color: var(--text); }
 .enterprise-location-type-badge.warehouse{border-color:color-mix(in srgb,#5594d8 44%,var(--border));background:color-mix(in srgb,#5594d8 10%,var(--panel-bg));color:color-mix(in srgb,#4d8ac9 80%,var(--text))}
 .enterprise-toolbar-controls select{min-width:132px;max-width:100%}
 @media(max-width:620px){.enterprise-toolbar-controls select{flex:1 1 140px}}
+
+
+.enterprise-location-note{display:inline-flex;align-items:center;max-width:230px;padding:7px 9px;border:1px solid var(--border);border-radius:9px;color:var(--muted);font-size:10px;line-height:1.35}
+@media(max-width:620px){.enterprise-location-note{max-width:100%;flex:1 1 100%}}
