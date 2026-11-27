@@ -683,7 +683,7 @@ async function loadManagementRecordsV2(admin: SupabaseClient, shopId: string, ow
     admin.from("announcements").select("id,title,body,severity,audience,target_shop_key,cta_label,cta_url,starts_at,ends_at,is_active,translations").in("audience", ["ALL","APP"]).eq("is_active", true).or(`target_shop_key.eq.${shopId},target_shop_key.eq.`).order("starts_at", { ascending: false }).limit(50),
     admin.from("payment_requests").select("id,provider,amount_rwf,duration_months,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,rejection_reason,created_at,updated_at,gateway_provider,gateway_reference,gateway_verified_at").eq("owner_username", ownerUsername).order("created_at", { ascending: false }).limit(100),
     admin.from("unlock_codes").select("unlock_code,tier_code,plan_days,status,issued_at,redeemed_at").eq("shop_username", ownerUsername).order("issued_at", { ascending: false }).limit(100),
-    admin.from("cloud_sync_events").select("id,entity,action,actor,device_id,detail,created_at").eq("shop_sync_key", shopId).order("created_at", { ascending: false }).limit(300)
+    admin.from("cloud_sync_events").select("id,entity,action,actor,device_id,detail,created_at").eq("shop_sync_key", shopId).order("created_at", { ascending: false }).limit(1000)
   ]);
   for (const result of [shop, devices, branches, transfers, staff, announcements, payments, codes, activity]) {
     if (result.error) throw new Error("Could not refresh shop management records: " + result.error.message);
