@@ -3,8 +3,6 @@ module.exports = {
   testPathIgnorePatterns: ['/node_modules/', '/ios/'],
   clearMocks: true,
   moduleNameMapper: {
-    '^react-native-quick-crypto
-};
-: '<rootDir>/__mocks__/quick-crypto.js'
-  },
+    '^react-native-quick-crypto$': '<rootDir>/__mocks__/quick-crypto.js'
+  }
 };
