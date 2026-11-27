@@ -168,7 +168,7 @@ val configuredReleaseCertificateMatches =
 android {
   // AGP 9 built-in Kotlin requires added Kotlin sources on AndroidSourceSet.kotlin.
   sourceSets.named("main") {
-    kotlin.directories += rootProject.file("shared/src/commonMain/kotlin")
+    kotlin.directories.add(rootProject.file("shared/src/commonMain/kotlin").absolutePath)
   }
   namespace = "com.beboss.shopmgmt"
   compileSdk = 36
