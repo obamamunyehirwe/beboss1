@@ -48,6 +48,7 @@ import com.beboss.shopmgmt.util.SecurityUtils
 import com.beboss.shopmgmt.util.ShopDataTransferManager
 import com.beboss.shopmgmt.util.ShopImportSummary
 import com.beboss.shopmgmt.util.SupabaseAdminClient
+import com.beboss.shopmgmt.util.TransferApprovalProof
 import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
 import com.beboss.shopmgmt.util.SupabaseSyncResult
 import com.beboss.shopmgmt.util.SyncAuditLog
@@ -176,21 +177,11 @@ class BeBossRepository(private val database: AppDatabase) {
         targetId: String = "",
         allowed: (User) -> Boolean
     ) {
-        val principal = actor ?: run {
-            val allUsers = try { userDao.getAllUsersDirect() } catch (_: Throwable) { emptyList() }
-            allUsers.firstOrNull { it.role == UserRole.OWNER && it.isActive }
-                ?: allUsers.firstOrNull { it.isActive }
-                ?: allUsers.firstOrNull()
-        }
-
-        // Setup flows with no explicit actor may proceed before the first owner is
-        // persisted. An explicitly supplied actor is always checked, even when Room
-        // currently contains no user rows (for example, during an isolated operation
-        // or test); an empty users table must never bypass a supplied cashier's RBAC.
-        if (principal == null) {
-            return
-        }
-
+        val supplied = actor ?: throw SecurityException(
+            "An explicitly signed-in active user is required for $action."
+        )
+        val principal = userDao.getUserById(supplied.id)
+            ?: throw SecurityException("The signed-in account is no longer registered. Sign in again.")
         if (!principal.isActive || !allowed(principal)) {
             recordLocalAudit(
                 actorName = principal.name,
@@ -381,7 +372,7 @@ class BeBossRepository(private val database: AppDatabase) {
     }
 
     suspend fun updateShopProfile(profile: ShopProfile, actor: User? = null) = withContext(Dispatchers.IO) {
-        if (actor != null) {
+        if (userDao.getUserCount() > 0) {
             requirePermission(actor, "UPDATE_SHOP_SETTINGS", profile.id.toString()) {
                 it.canManageShopSettings || it.role == UserRole.OWNER
             }
@@ -551,7 +542,8 @@ class BeBossRepository(private val database: AppDatabase) {
         notes: String,
         transferredBy: String = "Store Manager",
         transferredByRole: String = "STAFF",
-        actor: User? = null
+        actor: User? = null,
+        approvalProof: TransferApprovalProof? = null
     ): StockTransfer {
         requirePermission(actor, "CREATE_STOCK_TRANSFER") {
             it.canManageInventory || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
@@ -565,7 +557,8 @@ class BeBossRepository(private val database: AppDatabase) {
             quantity = quantity,
             notes = notes,
             transferredBy = transferredBy,
-            transferredByRole = transferredByRole
+            transferredByRole = transferredByRole,
+            approvalProof = approvalProof
         )
     }
 
@@ -579,10 +572,11 @@ class BeBossRepository(private val database: AppDatabase) {
         notes: String,
         transferredBy: String = "Store Manager",
         transferredByRole: String = "STAFF",
-        actor: User? = null
+        actor: User? = null,
+        approvalProof: TransferApprovalProof? = null
     ): StockTransfer = recordStockTransfer(
         productId, fromBranchId, fromBranchName, toBranchId, toBranchName, quantity, notes,
-        transferredBy, transferredByRole, actor
+        transferredBy, transferredByRole, actor, approvalProof
     )
 
     suspend fun deleteStockTransfer(transferId: String) = branchTransferManager.deleteStockTransfer(transferId)
