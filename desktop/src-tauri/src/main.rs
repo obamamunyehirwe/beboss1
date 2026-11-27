@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod qnx;
+
 use aes_gcm::{aead::{Aead, KeyInit, Payload}, Aes256Gcm, Nonce};
 use base64::prelude::*;
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
@@ -1999,7 +2001,9 @@ fn main() {
             setup_preflight, test_credential_vault,
             local_load, local_save_baseline, local_queue, local_pending, local_outbox_count, local_unassigned_outbox_count, local_ack,
             system_diagnostics, network_ping, print_escpos_thermal,
-            export_backup_file, export_support_bundle, lan_store_shop_secret, lan_discover_hubs, lan_pull_from_hub, lan_sync_with_hub
+            export_backup_file, export_support_bundle, lan_store_shop_secret, lan_discover_hubs, lan_pull_from_hub, lan_sync_with_hub,
+            qnx::qnx_probe, qnx::qnx_build_agent, qnx::qnx_build_ifs,
+            qnx::qnx_build_qemu_image, qnx::qnx_run_qemu, qnx::qnx_stop_qemu
         ])
         .run(tauri::generate_context!())
         .expect("error while running BeBoss Desktop");
