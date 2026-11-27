@@ -10,7 +10,7 @@ type FinancePeriod = "TODAY" | "7D" | "30D" | "90D" | "ALL";
 function timestampOf(row: Row, ...keys: string[]) {
   for (const key of keys) {
     const raw = row[key];
-    const parsed = typeof raw === "string" && !/^\\d+(?:\\.\\d+)?$/.test(raw) ? Date.parse(raw) : n(raw);
+    const parsed = typeof raw === "string" && !/^\d+(?:\.\d+)?$/.test(raw) ? Date.parse(raw) : n(raw);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
   return 0;
