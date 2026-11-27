@@ -1854,7 +1854,22 @@ if (action === "submit_payment_proof") {
         }
       }
       const { error } = await admin.from("shop_branches").upsert(row, { onConflict: "id" });
-      if (error) throw new Error("Could not save the branch: " + error.message);
+      if (error) {
+        // Restore the former main designation if the replacement branch write fails.
+        // This compensation keeps the shop navigable even without a schema transaction.
+        if (previousMainBranches.length) {
+          const restored = await admin.from("shop_branches").update({
+            is_main_branch: true, updated_at: Date.now(), hlc_timestamp: Date.now() + 1,
+            last_modified_device_id: actor.actorDeviceId
+          }).eq("shop_sync_key", owner.shopId)
+            .in("id", previousMainBranches.map((branch) => text(branch.id)));
+          if (restored.error) {
+            console.error("[branch main designation compensation failed]", restored.error);
+            throw new Error("Branch save failed and the previous main designation could not be restored. Stop branch edits and contact support.");
+          }
+        }
+        throw new Error("Could not save the branch: " + error.message);
+      }
       const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
       const auditEvents: Array<{ action: string; detail: string }> = [];
       if (!old) {
@@ -1933,9 +1948,9 @@ if (action === "submit_payment_proof") {
       const cashCountedRwf = Number(body.cashCountedRwf);
       const reconciliationId = text(body.reconciliationId).trim() || crypto.randomUUID();
       if (!branchId || !Number.isFinite(startAt) || !Number.isFinite(endAt) || startAt <= 0 ||
-          endAt < startAt || endAt - startAt > 31 * 24 * 60 * 60 * 1000 ||
+          endAt < startAt || endAt - startAt >= 24 * 60 * 60 * 1000 ||
           !Number.isFinite(cashCountedRwf) || cashCountedRwf < 0 || cashCountedRwf > 10000000000) {
-        throw new Error("Choose a valid branch, period of up to 31 days and non-negative counted cash amount.");
+        throw new Error("Choose a valid active branch, one business day and a non-negative counted cash amount.");
       }
       const { data: branch, error: branchError } = await admin.from("shop_branches")
         .select("id,name,opening_cash_float,is_active,is_main_branch").eq("shop_sync_key", owner.shopId)
