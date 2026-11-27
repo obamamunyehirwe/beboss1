@@ -1,6 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 import { open } from '@op-engineering/op-sqlite';
-import { randomBytes } from 'react-native-quick-crypto';
+import QuickCrypto from 'react-native-quick-crypto';
 
 const DATABASE_NAME = 'beboss_iphone.db';
 const KEY_SERVICE = 'rw.beboss.ios.database-key';
@@ -54,7 +54,7 @@ export async function getDatabase(): Promise<any> {
     if (saved && saved.password) {
       encryptionKey = saved.password;
     } else {
-      encryptionKey = Array.from(randomBytes(32)).map(value => value.toString(16).padStart(2, '0')).join('');
+      encryptionKey = Array.from(QuickCrypto.randomBytes(32)).map(value => value.toString(16).padStart(2, '0')).join('');
       await Keychain.setGenericPassword('BeBoss encrypted database', encryptionKey, {
         service: KEY_SERVICE,
         accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY
