@@ -1938,3 +1938,50 @@ select option { background: var(--panel-bg); color: var(--text); }
 @media(prefers-reduced-motion:reduce){
   .master-admin-auth *,.master-admin-auth *::before,.master-admin-auth *::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+
+/* Executive branch/network intelligence on the desktop overview. */
+.executive-network-panel{min-width:0}
+.executive-network-panel .panel-heading{align-items:flex-start}
+.executive-network-panel .panel-heading p{margin:5px 0 0;color:var(--muted);font-size:9px;line-height:1.6}
+.executive-network-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:13px 0 16px}
+.executive-network-kpis article{display:grid;gap:5px;min-width:0;padding:12px;border:1px solid var(--border);border-radius:11px;background:var(--panel-soft)}
+.executive-network-kpis article>span{color:var(--muted);font-size:8px;font-weight:850;letter-spacing:.35px;text-transform:uppercase}
+.executive-network-kpis article>strong{overflow:hidden;color:var(--text);font-size:clamp(14px,1.6vw,20px);font-weight:950;letter-spacing:-.5px;text-overflow:ellipsis;white-space:nowrap}
+.executive-network-kpis article>small{color:var(--muted);font-size:8px;line-height:1.5}
+.executive-network-kpis article.attention{border-color:color-mix(in srgb,#f0a340 42%,var(--border));background:color-mix(in srgb,#f0a340 7%,var(--panel-soft))}
+.executive-branch-list{display:grid;gap:0}
+.executive-branch-row{display:grid;grid-template-columns:27px minmax(130px,1fr) minmax(150px,.9fr) 72px;align-items:center;gap:11px;min-width:0;padding:11px 2px;border-bottom:1px solid var(--border)}
+.executive-branch-row:last-child{border-bottom:0}
+.executive-branch-rank{display:grid;place-items:center;width:24px;height:24px;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--muted);font-size:9px;font-weight:900}
+.executive-branch-identity{display:grid;gap:4px;min-width:0}
+.executive-branch-identity strong{overflow:hidden;color:var(--text);font-size:10px;font-weight:850;text-overflow:ellipsis;white-space:nowrap}
+.executive-branch-identity small{overflow:hidden;color:var(--muted);font-size:8px;text-overflow:ellipsis;white-space:nowrap}
+.executive-branch-progress{display:grid;gap:6px;min-width:0}
+.executive-branch-progress>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.executive-branch-progress>div:first-child span{color:var(--muted);font-size:8px}
+.executive-branch-progress>div:first-child strong{color:var(--text);font-size:9px;font-weight:900}
+.executive-branch-track{height:6px;overflow:hidden;border-radius:99px;background:var(--panel-soft)}
+.executive-branch-track i{display:block;height:100%;min-width:0;border-radius:99px;background:linear-gradient(90deg,#e96c24,#ffac57);transition:width .25s ease}
+.executive-branch-transactions{color:var(--muted);font-size:8px;font-weight:800;text-align:right;white-space:nowrap}
+.executive-network-foot{display:flex;align-items:center;gap:9px;margin-top:12px;padding:10px 12px;border:1px solid color-mix(in srgb,#e9a23e 35%,var(--border));border-radius:10px;background:color-mix(in srgb,#e9a23e 6%,var(--panel-bg));color:var(--text);font-size:9px}
+.executive-network-foot>svg{flex:none;color:#dc9434}
+.executive-network-foot span{flex:1;min-width:0}
+.executive-network-foot .text-btn{flex:none;color:var(--primary);white-space:nowrap}
+.executive-network-meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);color:var(--muted);font-size:8px}
+.executive-network-meta span{display:inline-flex;align-items:center;gap:6px}
+.executive-network-meta svg{color:#3eab83}
+@media(max-width:900px){
+  .executive-network-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .executive-branch-row{grid-template-columns:27px minmax(100px,1fr) minmax(130px,.9fr) 64px;gap:8px}
+}
+@media(max-width:620px){
+  .executive-network-panel .panel-heading{align-items:flex-start}
+  .executive-branch-row{grid-template-columns:25px minmax(0,1fr) 84px;gap:8px}
+  .executive-branch-progress{grid-column:2/4;grid-row:2}
+  .executive-branch-transactions{grid-column:3;grid-row:1}
+  .executive-network-foot{align-items:flex-start;flex-wrap:wrap}
+  .executive-network-foot span{flex:1 1 75%}
+  .executive-network-meta{flex-direction:column}
+}
+@media(prefers-reduced-motion:reduce){.executive-branch-track i{transition:none}}
