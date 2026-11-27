@@ -181,7 +181,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
     const branchId = s(branch.id);
     const matchesBranch = (value: unknown) => {
       const valueId = s(value);
-      return valueId === branchId || (!valueId && branchId === "main_branch");
+      return valueId === branchId || (!valueId && (branch.is_main_branch === true || branchId === "main_branch"));
     };
     const sales = rows(snapshot?.sales).filter((sale) => {
       const timestamp = n(sale.saleDate ?? sale.sale_date);
