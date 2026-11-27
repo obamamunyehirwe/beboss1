@@ -87,9 +87,6 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
     s(branch.locationType ?? branch.location_type).toUpperCase() !== "WAREHOUSE" &&
     s(branch.operationalStatus ?? branch.operational_status ?? "OPEN").toUpperCase() === "OPEN";
   const retailBranches = branchRows.filter(isRetailBranch);
-  const mainRetailBranch = retailBranches.find((branch) =>
-    branch.isMainBranch === true || branch.is_main_branch === true
-  );
   const isRetailSaleProduct = (product: Row) => {
     const branchId = s(product.branchId ?? product.branch_id);
     const branch = branchRows.find((item) => s(item.id) === branchId);
