@@ -72,6 +72,9 @@ jobs:
       - name: Test Android device credential primitives
         run: deno test --no-lock supabase/functions/_shared/device-credentials.test.ts
 
+      - name: Test branch and stock-transfer audit transitions
+        run: deno test --no-lock supabase/functions/_shared/shop-audit.test.ts
+
       - name: Test device billing and Africa's Talking SMS primitives
         run: |
           deno test --no-lock supabase/functions/_shared/shop-management.test.ts
