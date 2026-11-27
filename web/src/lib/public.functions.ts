@@ -317,7 +317,7 @@ export const lookupMyShop = createServerFn({ method: "POST" })
       sb.from("cloud_sync_events")
         .select("id,entity,action,actor,device_id,detail,created_at")
         .eq("shop_sync_key", key)
-        .in("entity", ["FINANCE_LEDGER", "BRANCH", "STOCK_TRANSFER", "BRANCH_RECONCILIATION", "STAFF", "DEVICE", "APPROVAL_POLICY"])
+        .in("entity", ["FINANCE_LEDGER", "BRANCH", "STOCK_TRANSFER", "BRANCH_RECONCILIATION", "STAFF", "DEVICE", "USER_DEVICE_AUDIT", "APPROVAL_POLICY"])
         .order("created_at", { ascending: false }).limit(1000),
     ]);
 

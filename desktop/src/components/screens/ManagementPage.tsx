@@ -307,6 +307,7 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onRefresh
           <option value="BRANCH_RECONCILIATION">Cash reconciliation</option>
           <option value="STAFF">Staff & user access</option>
           <option value="DEVICE">Devices & terminals</option>
+          <option value="USER_DEVICE_AUDIT">Employee & device security audit</option>
           <option value="FINANCE_LEDGER">Finance journal</option>
           <option value="APPROVAL_POLICY">Approval policy</option>
         </select>
