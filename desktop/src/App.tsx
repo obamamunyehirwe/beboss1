@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Activity, AlertTriangle, BarChart3, Bell, Building2, Briefcase, Check, ChevronDown,
-  ClipboardList, CreditCard, Database, Home, LayoutDashboard, LoaderCircle, LogOut, Menu,
+  ClipboardList, CreditCard, Database, Download, Home, LayoutDashboard, LoaderCircle, LogOut, Menu,
   Package, RefreshCw, Search, Settings, ShieldCheck, ShoppingCart, Smartphone, Truck, UserRound,
   Users, Warehouse, Wallet, X, Zap, Languages, ShieldAlert
 } from "lucide-react";
@@ -11,6 +11,7 @@ import { callDesktopApi, currentSession, signOut, subscribeToShopChanges, OwnerA
 import { BrowserRuntimeNotice } from "./components/BrowserRuntimeNotice";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
+import { parseDesktopUpdateOffer, type DesktopUpdateOffer } from "./lib/desktop-update";
 import type { CloudState, DesktopPreferences, LanSyncResult, NavKey, ReceiptPayload, RestorePreview, Row, Snapshot } from "./lib/types";
 import { AuthScreen } from "./components/AuthScreen";
 import { DeviceRestorePrompt } from "./components/DeviceRestorePrompt";
@@ -136,6 +137,9 @@ function NativeDesktopApp() {
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [desktopUpdateOffer, setDesktopUpdateOffer] = useState<DesktopUpdateOffer | null>(null);
+  const [desktopUpdateError, setDesktopUpdateError] = useState("");
+  const [checkingDesktopUpdate, setCheckingDesktopUpdate] = useState(false);
   const [deviceId, setDeviceId] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -147,6 +151,50 @@ function NativeDesktopApp() {
   const [deviceFeeBusy, setDeviceFeeBusy] = useState(false);
   const [deviceFeeError, setDeviceFeeError] = useState("");
   const syncProbeRef = useRef({ ownerKey: "", managementVersion: "", snapshotUpdatedAt: 0, inFlight: false });
+
+  const desktopUpdateCheckInFlight = useRef(false);
+  const checkForDesktopUpdate = useCallback(async (showResult = false) => {
+    if (!isTauri() || desktopUpdateCheckInFlight.current) return;
+    desktopUpdateCheckInFlight.current = true;
+    setCheckingDesktopUpdate(true);
+    setDesktopUpdateError("");
+    try {
+      const userAgent = navigator.userAgent;
+      const platform = /Windows/i.test(userAgent) ? "windows"
+        : /Mac OS X|Macintosh/i.test(userAgent) ? "macos"
+        : /Linux/i.test(userAgent) ? "linux" : null;
+      if (!platform) throw new Error("This desktop platform is not supported by the update service.");
+
+      const endpoint = new URL("https://beboss.rw/api/public/desktop-release/latest");
+      endpoint.searchParams.set("platform", platform);
+      endpoint.searchParams.set("current", window.beBossDesktop.version);
+      const response = await fetch(endpoint, {
+        method: "GET",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      if (response.status === 204) {
+        setDesktopUpdateOffer(null);
+        if (showResult) setNotice("BeBoss Desktop is up to date.");
+        return;
+      }
+      if (!response.ok) throw new Error("The desktop release service returned HTTP " + response.status + ".");
+      const offer = parseDesktopUpdateOffer(await response.json(), window.beBossDesktop.version, platform);
+      setDesktopUpdateOffer(offer);
+      if (showResult) {
+        setNotice(offer
+          ? "BeBoss Desktop " + offer.version + " is available. Download the signed installer to update."
+          : "BeBoss Desktop is up to date.");
+      }
+    } catch (error) {
+      const message = errorText(error);
+      if (showResult) setDesktopUpdateError(message);
+      else console.warn("[BeBoss desktop updater] Automatic update check could not complete.", message);
+    } finally {
+      desktopUpdateCheckInFlight.current = false;
+      setCheckingDesktopUpdate(false);
+    }
+  }, []);
 
   async function saveCache(credentials: OwnerCredentials, data: CloudState) {
     try {
@@ -289,6 +337,11 @@ function NativeDesktopApp() {
     })();
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    if (!startupReady || setupRequired || !isTauri()) return;
+    void checkForDesktopUpdate(false);
+  }, [startupReady, setupRequired, checkForDesktopUpdate]);
 
   useEffect(() => {
     const root = document.getElementById("root");
@@ -1191,6 +1244,7 @@ function NativeDesktopApp() {
           <button type="button" className="topbar-quick-action" onClick={() => { setView("checkout"); setMenuOpen(false); }} title="Open point of sale checkout"><ShoppingCart size={17} /><span>New sale</span></button>
           <button type="button" className={"connection-chip " + (offline ? "offline" : "online")} onClick={refresh} title="Refresh verified cloud data"><span className="connection-dot" /><span>{offline ? "Offline cache" : "Cloud connected"}</span></button>
           <button className="icon-btn topbar-refresh" onClick={refresh} title="Refresh workspace data" aria-label="Refresh workspace data"><RefreshCw size={17} className={busy ? "spin" : ""} /></button>
+          <button className="icon-btn" onClick={() => void checkForDesktopUpdate(true)} disabled={checkingDesktopUpdate} title="Check for desktop updates" aria-label="Check for desktop updates"><Download size={17} className={checkingDesktopUpdate ? "spin" : ""} /></button>
           <NotificationBell />
           <button className="icon-btn" onClick={() => setView("billing")} title="Announcements and billing" aria-label="Open announcements and billing"><Bell size={17} /></button>
         </div>
@@ -1199,6 +1253,13 @@ function NativeDesktopApp() {
       <div className="page-content">
         {error && <div className="global-alert error"><AlertTriangle size={16} /><span>{error}</span><button onClick={() => setError("")}><X size={15} /></button></div>}
         {notice && <div className="global-alert success"><Check size={16} /><span>{notice}</span><button onClick={() => setNotice("")}><X size={15} /></button></div>}
+        {desktopUpdateError && <div className="global-alert error"><AlertTriangle size={16} /><span>{desktopUpdateError}</span><button onClick={() => setDesktopUpdateError("")}><X size={15} /></button></div>}
+        {desktopUpdateOffer && <div className="global-alert success">
+          <Download size={17} />
+          <span><strong>BeBoss Desktop {desktopUpdateOffer.version} is available.</strong> {desktopUpdateOffer.releaseNotes || "A newer signed desktop installer is ready."} Download and run the installer over this installation; your encrypted shop database, protected credentials and pending sync queue are preserved.</span>
+          <button type="button" onClick={() => void window.beBossDesktop.openExternal(desktopUpdateOffer.downloadUrl).catch((error) => setDesktopUpdateError(errorText(error)))}>Download update</button>
+          <button type="button" aria-label="Dismiss desktop update" onClick={() => setDesktopUpdateOffer(null)}><X size={15} /></button>
+        </div>}
         {offline && <div className="offline-banner"><AlertTriangle size={17} /><span>Offline-first mode. Sales and stock changes are saved in an encrypted SQLite transaction queue and will sync when the connection returns.</span></div>}
         {!snapshot && <LoginHint />}
         {view === "welcome" && <WelcomePage cloud={cloud} snapshot={snapshot} offline={offline} revenueToday={revenueToday} profitToday={profitToday} lowStock={lowStock} onNavigate={setView} onReceipt={openReceipt} onAnnouncementAction={openAnnouncementAction} language={preferences.language} />}
