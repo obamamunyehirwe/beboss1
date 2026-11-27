@@ -309,6 +309,57 @@ class BranchDataShareTest {
     }
 
     @Test
+    fun largeMultiSaleExportsRetainEverySaleLineInItsParentSalesChunk() {
+        val profile = ShopProfile(id = 1, name = "Owner", shopName = "BeBoss Kigali", phone = "+250788111222")
+        val sales = (1..205).map { index ->
+            Sale(
+                id = "sale_" + index,
+                receiptNumber = "RC-" + index,
+                totalAmount = 30.0
+            )
+        }
+        val saleItems = sales.flatMapIndexed { index, sale ->
+            (1..3).map { line ->
+                SaleItem(
+                    id = "line_" + index + "_" + line,
+                    saleId = sale.id,
+                    productId = "product_" + line,
+                    productName = "Product " + line,
+                    quantitySold = 1.0,
+                    unitPriceAtSale = 10.0,
+                    costPriceAtSale = 5.0,
+                    subtotal = 10.0,
+                    profit = 5.0
+                )
+            }
+        }
+
+        val shopSecret = "e".repeat(64)
+        val tokens = ShopDataTransferManager.exportChunkedTokens(
+            profile = profile,
+            users = emptyList(),
+            products = emptyList(),
+            customers = emptyList(),
+            sales = sales,
+            saleItems = saleItems,
+            payments = emptyList(),
+            exportedByUser = null,
+            maxRecordsPerChunk = 100,
+            shopSecret = shopSecret
+        )
+        val packets = tokens.map { token ->
+            ShopDataTransferManager.parseShopPackageString(token, shopSecret = shopSecret)
+        }
+        val exportedItems = packets.flatMap { it.saleItems }
+
+        assertTrue("A large multi-sale snapshot must use multiple signed packets.", tokens.size > 3)
+        assertEquals(sales.size, packets.sumOf { it.saleCount })
+        assertEquals(saleItems.size, exportedItems.size)
+        assertEquals(saleItems.map { it.id }.toSet(), exportedItems.map { it.id }.toSet())
+        assertTrue(exportedItems.all { item -> sales.any { sale -> sale.id == item.saleId } })
+    }
+
+    @Test
     fun `BBSHARE2 is shop scoped and rejects a wrong shop key`() {
         val profile = ShopProfile(id = 1, name = "Owner", shopName = "BeBoss Kigali", phone = "+250788111222")
         val json = ShopDataTransferManager.createExportJson(
