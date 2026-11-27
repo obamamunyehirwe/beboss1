@@ -424,6 +424,12 @@ object ShopDataTransferManager {
                 put("updatedAt", tr.updatedAt)
                 put("hlcTimestamp", tr.hlcTimestamp)
                 put("lastModifiedDeviceId", tr.lastModifiedDeviceId)
+                put("approvalReason", tr.approvalReason)
+                put("approvalActorUserId", tr.approvalActorUserId)
+                put("approvalSignedAt", tr.approvalSignedAt)
+                put("approvalPolicyVersion", tr.approvalPolicyVersion)
+                put("approvalDeviceId", tr.approvalDeviceId)
+                put("approvalSignature", tr.approvalSignature)
             })
         }
         root.put("stockTransfers", transfersArr)
@@ -1083,7 +1089,13 @@ object ShopDataTransferManager {
                         createdAt = tr.optLong("createdAt", System.currentTimeMillis()),
                         updatedAt = tr.optLong("updatedAt", tr.optLong("createdAt", System.currentTimeMillis())),
                         hlcTimestamp = tr.optLong("hlcTimestamp", 0L),
-                        lastModifiedDeviceId = tr.optCleanString("lastModifiedDeviceId", "")
+                        lastModifiedDeviceId = tr.optCleanString("lastModifiedDeviceId", ""),
+                        approvalReason = tr.optCleanString("approvalReason", ""),
+                        approvalActorUserId = tr.optCleanString("approvalActorUserId", ""),
+                        approvalSignedAt = tr.optLong("approvalSignedAt", 0L),
+                        approvalPolicyVersion = tr.optLong("approvalPolicyVersion", 0L),
+                        approvalDeviceId = tr.optCleanString("approvalDeviceId", ""),
+                        approvalSignature = tr.optCleanString("approvalSignature", "")
                     )
                 )
             }
