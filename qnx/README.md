@@ -43,6 +43,16 @@ The expected QNX 8 target tree is:
 
 The workbench saves the sample C source and built binary in the per-user BeBoss application-data directory under qnx-workbench/edge-agent.
 
+## Run the IPC smoke test on the QNX target
+
+After copying both built binaries to the same running QNX 8.0 target (QEMU or supported hardware), start the service first and then execute the client:
+
+    ./beboss-qnx-edge-agent-x86_64 &
+    ./beboss-qnx-ipc-client-x86_64
+
+Use the matching aarch64le binary names for an AArch64 target. A successful client run prints PASS for both the health response and the echo response, followed by a final message confirming the BeBoss QNX message-passing smoke test. The server handles QNX connection messages and disconnect pulses; the application message type is kept outside the reserved QNX I/O message range.
+
+
 ## Command-line equivalents
 
 After sourcing the SDP environment, cross-compile for QNX x86-64:
