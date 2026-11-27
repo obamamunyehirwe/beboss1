@@ -1,6 +1,6 @@
 import {
-  ArrowDownRight, ArrowRight, BarChart3, Boxes, Building2,
-  Cloud, Languages, LockKeyhole, Moon, ShieldCheck, Smartphone, Sun, Zap
+  ArrowDownRight, ArrowRight, BarChart3, Boxes, Building2, ClipboardCheck,
+  Cloud, Languages, LockKeyhole, Moon, ShieldCheck, Smartphone, Sun, Warehouse, Zap
 } from "lucide-react";
 import type { DesktopLanguage } from "../lib/i18n";
 import type { DesktopPreferences } from "../lib/types";
@@ -17,7 +17,7 @@ const COPY: Record<DesktopLanguage, Copy> = {
     eyebrow: "THE BUSINESS, IN ONE PLACE",
     headline: "Bring every part of your business",
     accent: "into clear view.",
-    subtitle: "A capable desktop workspace for sales, stock, customers, teams and branches — connected to your BeBoss shop and built to keep working when the internet does not.",
+    subtitle: "A connected operations workspace for sales, inventory, customers, teams, branches and stock movement — with live cloud sync, executive visibility and protected offline work.",
     signIn: "Sign in to your shop", explore: "Explore the workspace",
     trust: "Owner access protected by registered-phone verification",
     platform: "BE BOSS · RETAIL OPERATIONS",
@@ -30,7 +30,9 @@ const COPY: Record<DesktopLanguage, Copy> = {
       { title: "People and locations", body: "Manage branches, enrolled POS devices, staff roles and available permissions." },
       { title: "Business intelligence", body: "Review sales, gross profit, receivables and shop performance from synchronized records." },
       { title: "Encrypted offline work", body: "Keep supported changes in the encrypted local database and durable sync outbox." },
-      { title: "Sync and recovery", body: "Inspect synchronization, verify snapshots and use encrypted backup and restore workflows." }
+      { title: "Sync and recovery", body: "Inspect synchronization, verify snapshots and use encrypted backup and restore workflows." },
+      { title: "Branch and warehouse network", body: "Coordinate locations, branch leadership, stock positions, cash close-outs and inter-location movement." },
+      { title: "Audit-ready governance", body: "Trace approvals, administrator actions, device activity and operational changes in the cloud journal." }
     ],
     footer: "Your shop data stays behind owner authentication.",
     ownerAccess: "Secure owner access", theme: "Appearance"
@@ -39,7 +41,7 @@ const COPY: Record<DesktopLanguage, Copy> = {
     eyebrow: "UBUCURUZI BWAWE AHANTU HAMWE",
     headline: "Reba ibikorwa byose by'ubucuruzi",
     accent: "mu buryo busobanutse.",
-    subtitle: "Ahantu ho gukorera kuri mudasobwa hacunga ibicuruzwa, ububiko, abakiriya, abakozi n'amashami — hahujwe na BeBoss kandi hakomeza gukora n'igihe internet itariho.",
+    subtitle: "Ahantu hamwe ho gucungira kugurisha, ububiko, abakiriya, abakozi, amashami no kwimura ibicuruzwa — hahujwe na internet kandi hakomeza gukora mu buryo burinzwe igihe internet yabuze.",
     signIn: "Injira mu iduka ryawe", explore: "Reba ibikoresho bihari",
     trust: "Kwinjira k'umuyobozi birindwa no kugenzura telefone yanditse",
     platform: "BE BOSS · IMICUNGIRE Y'UBUCURUZI",
@@ -52,7 +54,9 @@ const COPY: Record<DesktopLanguage, Copy> = {
       { title: "Abakozi n'amashami", body: "Cunga amashami, ibikoresho bya POS byemewe, inshingano z'abakozi n'uburenganzira." },
       { title: "Isesengura ry'ubucuruzi", body: "Reba ibicuruzwa byagurishijwe, inyungu, imyenda n'imikorere ukoresheje amakuru yahujwe." },
       { title: "Gukora offline birinzwe", body: "Impinduka zemewe zibikwa muri database irinzwe n'umurongo utegereje guhuza." },
-      { title: "Guhuza no kugarura amakuru", body: "Genza ihuzwa, wemeze snapshots kandi ukoreshe uburyo bwo kubika no kugarura amakuru." }
+      { title: "Guhuza no kugarura amakuru", body: "Genza ihuzwa, wemeze snapshots kandi ukoreshe uburyo bwo kubika no kugarura amakuru." },
+      { title: "Amashami n'ububiko", body: "Cunga amashami, abayobozi, ibicuruzwa biri muri buri hantu, ibarura ry'amafaranga no kwimura ibicuruzwa." },
+      { title: "Igenzura n'umutekano", body: "Kurikirana ibyemezo, ibikorwa by'abayobozi, ibikoresho byemewe n'impinduka zakozwe." }
     ],
     footer: "Amakuru y'iduka arindwa no kwemeza umuyobozi.",
     ownerAccess: "Kwinjira k'umuyobozi kurinzwe", theme: "Imigaragarire"
@@ -61,7 +65,7 @@ const COPY: Record<DesktopLanguage, Copy> = {
     eyebrow: "TOUTE L'ACTIVITÉ, AU MÊME ENDROIT",
     headline: "Gardez toute votre activité",
     accent: "clairement en vue.",
-    subtitle: "Un espace de travail sur ordinateur pour les ventes, les stocks, les clients, les équipes et les succursales — connecté à votre boutique BeBoss et conçu pour continuer à fonctionner hors ligne.",
+    subtitle: "Un espace de gestion connecté pour les ventes, les stocks, les clients, les équipes, les succursales et les transferts — avec synchronisation cloud, visibilité de direction et travail hors ligne protégé.",
     signIn: "Se connecter à votre boutique", explore: "Découvrir l'espace de travail",
     trust: "Accès propriétaire protégé par vérification du téléphone enregistré",
     platform: "BE BOSS · GESTION COMMERCIALE",
@@ -74,7 +78,9 @@ const COPY: Record<DesktopLanguage, Copy> = {
       { title: "Équipes et succursales", body: "Gérez les succursales, les terminaux POS inscrits, les rôles et les autorisations." },
       { title: "Analyse commerciale", body: "Consultez les ventes, la marge brute, les créances et les performances à partir des données synchronisées." },
       { title: "Travail hors ligne chiffré", body: "Conservez les modifications prises en charge dans la base locale chiffrée et la file de synchronisation." },
-      { title: "Synchronisation et récupération", body: "Inspectez la synchronisation, vérifiez les instantanés et utilisez les sauvegardes chiffrées." }
+      { title: "Synchronisation et récupération", body: "Inspectez la synchronisation, vérifiez les instantanés et utilisez les sauvegardes chiffrées." },
+      { title: "Réseau de succursales et dépôts", body: "Coordonnez les sites, les responsables, les stocks, les clôtures de caisse et les transferts." },
+      { title: "Gouvernance traçable", body: "Suivez les validations, les actions administratives et l'activité des appareils dans le journal cloud." }
     ],
     footer: "Les données de votre boutique restent protégées par l'authentification du propriétaire.",
     ownerAccess: "Accès propriétaire sécurisé", theme: "Apparence"
@@ -83,7 +89,7 @@ const COPY: Record<DesktopLanguage, Copy> = {
     eyebrow: "BIASHARA YAKO, MAHALI PAMOJA",
     headline: "Ona kila sehemu ya biashara",
     accent: "kwa uwazi zaidi.",
-    subtitle: "Sehemu ya kazi ya kompyuta ya mauzo, bidhaa, wateja, timu na matawi — imeunganishwa na duka lako la BeBoss na inaweza kuendelea kufanya kazi bila intaneti.",
+    subtitle: "Sehemu iliyounganishwa ya mauzo, bidhaa, wateja, timu, matawi na uhamishaji wa bidhaa — yenye usawazishaji wa wingu, ripoti za uongozi na kazi salama bila intaneti.",
     signIn: "Ingia kwenye duka lako", explore: "Chunguza sehemu ya kazi",
     trust: "Ufikiaji wa mmiliki unalindwa kwa uthibitisho wa simu iliyosajiliwa",
     platform: "BE BOSS · UENDESHAJI WA BIASHARA",
@@ -96,14 +102,16 @@ const COPY: Record<DesktopLanguage, Copy> = {
       { title: "Wafanyakazi na matawi", body: "Simamia matawi, vifaa vya POS vilivyosajiliwa, majukumu na ruhusa." },
       { title: "Uchambuzi wa biashara", body: "Chunguza mauzo, faida ghafi, madeni na utendaji kwa rekodi zilizosawazishwa." },
       { title: "Kazi fiche bila intaneti", body: "Hifadhi mabadiliko yanayotumika katika hifadhidata fiche na foleni ya kusawazisha." },
-      { title: "Usawazishaji na urejeshaji", body: "Kagua usawazishaji, thibitisha snapshots na tumia nakala fiche za kurejesha." }
+      { title: "Usawazishaji na urejeshaji", body: "Kagua usawazishaji, thibitisha snapshots na tumia nakala fiche za kurejesha." },
+      { title: "Matawi na maghala", body: "Simamia maeneo, wasimamizi, akiba za bidhaa, hesabu za fedha na uhamishaji wa bidhaa." },
+      { title: "Udhibiti unaofuatilika", body: "Fuatilia idhini, vitendo vya wasimamizi, vifaa na mabadiliko katika kumbukumbu ya wingu." }
     ],
     footer: "Data ya duka lako inalindwa nyuma ya uthibitishaji wa mmiliki.",
     ownerAccess: "Ufikiaji salama wa mmiliki", theme: "Mwonekano"
   }
 };
 
-const FEATURE_ICONS = [BarChart3, Boxes, Building2, Zap, LockKeyhole, Cloud];
+const FEATURE_ICONS = [BarChart3, Boxes, Building2, Zap, LockKeyhole, Cloud, Warehouse, ClipboardCheck];
 
 export function LandingPage({
   language, theme, onLanguageChange, onThemeChange, onSignIn, onOpenAdmin
