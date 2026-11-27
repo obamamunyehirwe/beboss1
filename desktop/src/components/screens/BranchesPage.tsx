@@ -237,7 +237,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
     let approvalConfirmed = false;
     let approvalReason = "";
     if (localCalculation.approvalRequired) {
-      approvalConfirmed = window.confirm("The cash variance is " + money(Math.abs(variance)) +
+      approvalConfirmed = window.confirm("The cash variance is " + money(Math.abs(localCalculation.varianceRwf)) +
         ", meeting the shop's owner-review threshold of " + money(threshold) +
         ". Confirm that the owner has reviewed this variance?");
       if (!approvalConfirmed) return;
