@@ -4,7 +4,7 @@ import {
   nowHlc, roundMoney, tickHlc, toCents, validatePassword, validatePin, verifyCredential
 } from '../core/domain';
 import {
-  Branch, CartLine, CheckoutInput, Customer, CustomerPayment, Permissions, Product, Purchase,
+  Branch, CartLine, CheckoutInput, Customer, CustomerPayment, HeldCart, Permissions, Product, Purchase,
   Role, Sale, SaleLine, ShopProfile, Staff, StockTransfer, StoreSnapshot, SyncOutboxItem,
   ROLE_PERMISSIONS
 } from '../core/types';
