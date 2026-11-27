@@ -2559,38 +2559,43 @@ object SupabaseAdminClient {
         }
         return try {
             val active = refreshAndroidDeviceCredential(saved)
-            val records = JSONArray()
-            for (index in 0 until uploadedRows.length()) {
-                val row = uploadedRows.getJSONObject(index)
-                records.put(JSONObject().apply {
-                    put("id", row.optString("id"))
-                    put("updatedAt", row.optLong("updated_at"))
-                    put("hlcTimestamp", row.optLong("hlc_timestamp"))
-                    put("lastModifiedDeviceId", row.optString("last_modified_device_id"))
-                })
-            }
-            val payload = JSONObject()
-                .put("action", "record_device_sync_audit")
-                .put("entity", entity)
-                .put("records", records)
-            val request = Request.Builder()
-                .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
-                .addHeader("apikey", getSupabaseApiKey())
-                .addHeader("X-BeBoss-Device-ID", active.deviceId)
-                .addHeader("X-BeBoss-Device-Token", active.accessToken)
-                .addHeader("Content-Type", "application/json")
-                .post(payload.toString().toRequestBody(jsonMediaType))
-                .build()
-            client.newCall(request).execute().use { response ->
-                val raw = response.body?.string().orEmpty()
-                val result = runCatching { JSONObject(raw) }.getOrNull()
-                if (!response.isSuccessful || result?.optBoolean("ok") != true) {
-                    Log.w(TAG, "Device audit journal was not acknowledged (HTTP ${response.code}): ${result?.optString("message").orEmpty()}")
-                    false
-                } else {
-                    true
+            for (start in 0 until uploadedRows.length() step 250) {
+                val records = JSONArray()
+                val end = minOf(start + 250, uploadedRows.length())
+                for (index in start until end) {
+                    val row = uploadedRows.getJSONObject(index)
+                    records.put(JSONObject().apply {
+                        put("id", row.optString("id"))
+                        put("updatedAt", row.optLong("updated_at"))
+                        put("hlcTimestamp", row.optLong("hlc_timestamp"))
+                        put("lastModifiedDeviceId", row.optString("last_modified_device_id"))
+                    })
                 }
+                val payload = JSONObject()
+                    .put("action", "record_device_sync_audit")
+                    .put("entity", entity)
+                    .put("records", records)
+                val request = Request.Builder()
+                    .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
+                    .addHeader("apikey", getSupabaseApiKey())
+                    .addHeader("X-BeBoss-Device-ID", active.deviceId)
+                    .addHeader("X-BeBoss-Device-Token", active.accessToken)
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody(jsonMediaType))
+                    .build()
+                val acknowledged = client.newCall(request).execute().use { response ->
+                    val raw = response.body?.string().orEmpty()
+                    val result = runCatching { JSONObject(raw) }.getOrNull()
+                    if (!response.isSuccessful || result?.optBoolean("ok") != true) {
+                        Log.w(TAG, "Device audit batch was not acknowledged (HTTP ${response.code}): ${result?.optString("message").orEmpty()}")
+                        false
+                    } else {
+                        true
+                    }
+                }
+                if (!acknowledged) return false
             }
+            true
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
