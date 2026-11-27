@@ -2381,9 +2381,12 @@ if (action === "submit_payment_proof") {
         throw new Error("Choose a valid active branch, one business day and a non-negative counted cash amount.");
       }
       const { data: branch, error: branchError } = await admin.from("shop_branches")
-        .select("id,name,opening_cash_float,is_active,is_main_branch").eq("shop_sync_key", owner.shopId)
+        .select("id,name,location_type,opening_cash_float,is_active,is_main_branch").eq("shop_sync_key", owner.shopId)
         .eq("id", branchId).maybeSingle();
       if (branchError || !branch || !branch.is_active) throw new Error("Choose an active branch belonging to this shop.");
+      if (text(branch.location_type).toUpperCase() === "WAREHOUSE") {
+        throw new Error("Cash close-out is only available for retail stores. Reconcile warehouse stock through inventory counts and stock-transfer verification.");
+      }
       const verified = await latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret);
       const snapshot = verified.snapshot;
       if (!snapshot) throw new Error("No verified shop snapshot is available. Synchronize the owner terminal before reconciling cash.");
