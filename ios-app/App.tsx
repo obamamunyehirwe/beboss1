@@ -11,8 +11,9 @@ import {
   StoreSnapshot
 } from './src/core/types';
 import {
-  adjustStock, archiveBranch, authenticate, cancelStockTransfer, checkout, confirmStockTransfer, deleteProduct,
-  buildIosCloudSnapshot, initializeStore, loadSnapshot, markIosOutboxFailed, markIosOutboxSynced,
+  adjustStock, archiveBranch, authenticate, bindIosDeviceStaff, cancelStockTransfer, checkout,
+  confirmStockTransfer, deleteProduct, buildIosCloudSnapshot, initializeStore, loadSnapshot,
+  markIosOutboxFailed, markIosOutboxSynced,
   mergeIosCloudSnapshots, recordCustomerPayment, recordPurchase, recordStockTransfer, registerOwner,
   restoreEncryptedBackupData, reverseSale, saveBranch, saveCustomer, saveProduct, saveShopSettings,
   saveStaff, setBranchOperationalStatus, storeDiagnostics
@@ -31,6 +32,15 @@ import { exportInventoryCsv, exportSalesCsv } from './src/services/reports';
 
 type Screen = 'dashboard' | 'pos' | 'inventory' | 'customers' | 'sales' | 'reports' | 'purchases' | 'branches' | 'staff' | 'sync' | 'subscription' | 'settings';
 type ModalName = 'product' | 'adjust' | 'customer' | 'payment' | 'checkout' | 'purchase' | 'branch' | 'transfer' | 'staff' | 'settings' | 'scanner' | 'backup' | null;
+type IosAssignedStaff = {
+  assignedUserId: string;
+  username: string;
+  name: string;
+  phone: string;
+  role: Role;
+  branchId: string;
+  branchName: string;
+};
 
 const money = (value: number, symbol = 'RWF') =>
   symbol + ' ' + roundMoney(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -85,6 +95,9 @@ function AppRoot(): React.JSX.Element {
   const [iosSyncRole, setIosSyncRole] = useState('');
   const [latestCloudUpdatedAt, setLatestCloudUpdatedAt] = useState(0);
   const [enrolledDeviceSummary, setEnrolledDeviceSummary] = useState('');
+  const [iosPendingStaff, setIosPendingStaff] = useState<IosAssignedStaff | null>(null);
+  const [iosLocalPin, setIosLocalPin] = useState('');
+  const [iosLocalPassword, setIosLocalPassword] = useState('');
   const [otpRequested, setOtpRequested] = useState(false);
   const [backupPassword, setBackupPassword] = useState('');
   const [backupMode, setBackupMode] = useState<'EXPORT' | 'RESTORE'>('EXPORT');
@@ -110,6 +123,12 @@ function AppRoot(): React.JSX.Element {
         setSnapshot(initial);
         setRegistered(!!initial.profile);
         if (initial.profile) setLoginName(initial.profile.username);
+        const enrolled = await getIosDeviceCredential();
+        if (mounted && enrolled) {
+          setIosDeviceEnrolled(true);
+          setLoginName(enrolled.assignedUsername);
+          setEnrolledDeviceSummary(enrolled.shopName + ' · ' + enrolled.role + ' · ' + (enrolled.branchName || 'Assigned branch'));
+        }
       } catch (caught: any) {
         if (mounted) setError(caught?.message || 'The encrypted BeBoss database could not be opened.');
       } finally {
@@ -162,7 +181,16 @@ function AppRoot(): React.JSX.Element {
     setBusy(true);
     setError('');
     try {
+      const enrolled = await getIosDeviceCredential();
+      if (enrolled && loginName.trim().toLowerCase() !== enrolled.assignedUsername) {
+        throw new Error('This iPhone is assigned to @' + enrolled.assignedUsername + ' (' + enrolled.role + '). Other local staff accounts cannot sign in on this device.');
+      }
       const user = await authenticate(loginName, loginSecret);
+      if (enrolled && (user.id !== enrolled.assignedUserId || user.role !== enrolled.role ||
+          user.branchId !== enrolled.branchId)) {
+        setActor(null);
+        throw new Error('The local account does not match this iPhone\'s server-assigned user, role and branch. Rebind the assigned staff account before signing in.');
+      }
       setActor(user);
       setLoginSecret('');
       await reload(user.id);
@@ -583,25 +611,78 @@ function AppRoot(): React.JSX.Element {
     setBusy(true); setError('');
     try {
       const enrolled = await enrollIosDevice(ownerOtpUsername, ownerOtpPhone, ownerJoinCode, 'BeBoss iPhone');
-      const localAssignedUser = snapshot?.staff.find(user => user.id === enrolled.assignedUserId);
-      if (!localAssignedUser) {
-        setError('The iPhone was securely enrolled as ' + enrolled.role + ', but its assigned staff profile is not available locally yet. Download/restore the shop roster before signing into this assigned terminal.');
-      } else {
-        setActor(localAssignedUser);
-        await reload(localAssignedUser.id);
-      }
+      const pending: IosAssignedStaff = {
+        assignedUserId: enrolled.assignedUserId,
+        username: enrolled.assignedUsername,
+        name: enrolled.assignedUserName,
+        phone: enrolled.assignedPhone,
+        role: enrolled.role,
+        branchId: enrolled.branchId,
+        branchName: enrolled.branchName
+      };
+      const localAssignedUser = snapshot?.staff.find(user =>
+        user.id === enrolled.assignedUserId ||
+        user.username.trim().toLowerCase() === enrolled.assignedUsername
+      );
       setIosDeviceEnrolled(true);
-      setEnrolledDeviceSummary(enrolled.shopName + ' · ' + enrolled.role + ' · ' + (enrolled.branchName || 'Assigned branch'));
+      setEnrolledDeviceSummary(enrolled.shopName + ' · @' + enrolled.assignedUsername + ' · ' +
+        enrolled.role + ' · ' + (enrolled.branchName || 'Assigned branch'));
       setOwnerJoinCode('');
+      setIosPendingStaff(null);
+      setActor(null);
+      setSnapshot(previous => previous ? { ...previous, currentUser: null } : previous);
+      if (localAssignedUser?.pinHash && localAssignedUser?.passwordHash) {
+        const bound = await bindIosDeviceStaff({
+          ...pending,
+          pin: '',
+          password: ''
+        });
+        setActor(bound);
+        setLoginName(bound.username);
+        await reload(bound.id);
+        setNotice('This iPhone is now restricted to the server-assigned ' + bound.role + ' account. ' +
+          'Other local staff accounts have been locked on this device.');
+      } else {
+        setIosPendingStaff(pending);
+        setLoginName(pending.username);
+        setIosLocalPin('');
+        setIosLocalPassword('');
+        setNotice('The owner invitation was accepted. Create local sign-in credentials for the assigned ' +
+          pending.role + ' account to finish pairing this iPhone.');
+      }
       const readiness = await requestSecureIosSyncReadiness();
       setIosSyncReady(readiness.ready);
       if (readiness.status) {
         setIosSyncRole(readiness.status.role);
         setLatestCloudUpdatedAt(readiness.status.latestUpdatedAt);
       }
-      setNotice('iPhone device credential issued and stored in Apple Keychain. ' + readiness.reason);
     } catch (caught: any) { setError(caught?.message || 'iPhone device enrollment failed.'); }
     finally { setBusy(false); }
+  };
+
+  const provisionIosAssignedStaff = async () => {
+    if (!iosPendingStaff) return;
+    setBusy(true); setError('');
+    try {
+      const user = await bindIosDeviceStaff({
+        ...iosPendingStaff,
+        pin: iosLocalPin,
+        password: iosLocalPassword
+      });
+      setActor(user);
+      setLoginName(user.username);
+      setIosLocalPin('');
+      setIosLocalPassword('');
+      setIosPendingStaff(null);
+      await reload(user.id);
+      await refreshIosSyncStatus();
+      setNotice('iPhone pairing completed. This terminal can now sign in only as @' + user.username +
+        ' (' + user.role + ') for ' + (user.branchName || user.branchId || 'the assigned shop') + '.');
+    } catch (caught: any) {
+      setError(caught?.message || 'The assigned iPhone staff account could not be provisioned.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const saveBackup = async () => {
@@ -713,13 +794,35 @@ function AppRoot(): React.JSX.Element {
     );
   }
 
+  if (iosPendingStaff) {
+    return (
+      <AuthShell
+        title="Finish iPhone pairing"
+        subtitle={profile.shopName + ' · Assigned terminal identity'}
+      >
+        <View style={styles.noticeCard}>
+          <Text style={styles.noticeHeading}>{iosPendingStaff.name || iosPendingStaff.username}</Text>
+          <Text style={styles.rowSub}>@{iosPendingStaff.username} · {iosPendingStaff.role}</Text>
+          <Text style={styles.rowSub}>{iosPendingStaff.branchName || iosPendingStaff.branchId || 'Assigned branch'}</Text>
+          <Text style={styles.rowSub}>This iPhone will be restricted to this cloud-assigned staff identity. Existing credentials are never downloaded from another device.</Text>
+        </View>
+        <Field label="Create local PIN (4–6 digits)" value={iosLocalPin} onChangeText={setIosLocalPin} secureTextEntry keyboardType="number-pad" />
+        <Field label="Create local password" value={iosLocalPassword} onChangeText={setIosLocalPassword} secureTextEntry />
+        <ButtonPrimary title="Activate assigned iPhone account" onPress={provisionIosAssignedStaff} loading={busy} />
+        <Message error={error} notice={notice} />
+      </AuthShell>
+    );
+  }
+
   if (!actor) {
     return (
       <AuthShell title="Welcome back" subtitle={profile.shopName + ' • Secure terminal sign-in'}>
-        <Field label="Staff username" value={loginName} autoCapitalize="none" onChangeText={setLoginName} />
+        <Field label="Staff username" value={loginName} autoCapitalize="none" onChangeText={setLoginName} editable={!iosDeviceEnrolled} />
         <Field label="PIN or password" value={loginSecret} secureTextEntry onChangeText={setLoginSecret} />
         <ButtonPrimary title="Unlock BeBoss" onPress={doLogin} loading={busy} />
-        <Text style={styles.muted}>Staff credentials are verified locally using PBKDF2-HMAC-SHA256. Android legacy pepper hashes are not copied to iPhone.</Text>
+        <Text style={styles.muted}>{iosDeviceEnrolled
+          ? 'This iPhone is assigned to one cloud-registered staff account. Only that username, role and branch can unlock this device.'
+          : 'Staff credentials are verified locally using PBKDF2-HMAC-SHA256. Android legacy pepper hashes are not copied to iPhone.'}</Text>
         <Message error={error} notice={notice} />
       </AuthShell>
     );
