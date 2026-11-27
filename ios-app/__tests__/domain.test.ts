@@ -1,7 +1,7 @@
 import {
   centsToMoney, compareHlcVersions, hashCredential, isSubscriptionActive,
   multiplyPriceQuantityCents, tickHlc, toCents, validatePassword, validatePin,
-  verifyCredential, computeBB3AccountBindingHash, verifyBB3Voucher
+  verifyCredential, computeBB3AccountBindingHash, verifyBB3Voucher, calculateSubscriptionQuote
 } from '../src/core/domain';
 
 describe('BeBoss portable money rules', () => {

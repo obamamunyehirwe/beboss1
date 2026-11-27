@@ -11,7 +11,7 @@ import {
   StoreSnapshot
 } from './src/core/types';
 import {
-  adjustStock, archiveBranch, authenticate, cancelStockTransfer, checkout, deleteCustomer,
+  adjustStock, archiveBranch, authenticate, cancelStockTransfer, checkout, confirmStockTransfer, deleteCustomer,
   deleteHeldCart, deleteProduct, deletePurchaseRecord, buildIosCloudSnapshot, initializeStore,
   listArchivedCustomers, listArchivedProducts, loadSnapshot, markIosOutboxFailed, markIosOutboxSynced,
   mergeIosCloudSnapshots, recordCustomerPayment, recordPurchase, recordStockTransfer, registerOwner,
