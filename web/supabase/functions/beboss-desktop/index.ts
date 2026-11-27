@@ -1835,8 +1835,9 @@ if (action === "submit_payment_proof") {
       } else row.manager_name = "";
       const { data: old, error: readError } = await admin.from("shop_branches")
         .select("id,shop_sync_key,created_at,name,code,manager_user_id,operational_status,is_active,is_main_branch")
-        .eq("shop_sync_key", owner.shopId).eq("id", row.id).maybeSingle();
+        .eq("id", row.id).maybeSingle();
       if (readError) throw new Error("Could not validate the branch record.");
+      if (old && old.shop_sync_key !== owner.shopId) throw new Error("The branch belongs to another shop.");
       row.created_at = number(old?.created_at) || row.created_at;
       let previousMainBranches: Row[] = [];
       if (row.is_main_branch) {
@@ -2092,7 +2093,7 @@ if (action === "submit_payment_proof") {
         .select("id,status").maybeSingle();
       if (error || !updated) throw new Error("The transfer changed on another terminal. Refresh the transfer queue before trying again.");
       const auditLogged = await recordShopAuditEvent(
-        admin, owner.shopId, owner.shop_name, "OWNER:" + owner.username,
+        admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
         actor.actorDeviceId, "STOCK_TRANSFER", next,
         "Transfer " + id + " · " + current.status + " → " + next
       );
