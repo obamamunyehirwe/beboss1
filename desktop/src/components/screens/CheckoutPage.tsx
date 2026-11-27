@@ -86,14 +86,15 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
     branch.isActive !== false && branch.is_active !== false &&
     s(branch.locationType ?? branch.location_type).toUpperCase() !== "WAREHOUSE" &&
     s(branch.operationalStatus ?? branch.operational_status ?? "OPEN").toUpperCase() === "OPEN";
-  const mainRetailBranch = branchRows.find((branch) =>
-    (branch.isMainBranch === true || branch.is_main_branch === true) && isRetailBranch(branch)
+  const retailBranches = branchRows.filter(isRetailBranch);
+  const mainRetailBranch = retailBranches.find((branch) =>
+    branch.isMainBranch === true || branch.is_main_branch === true
   );
   const isRetailSaleProduct = (product: Row) => {
     const branchId = s(product.branchId ?? product.branch_id);
     const branch = branchRows.find((item) => s(item.id) === branchId);
     if (branch) return isRetailBranch(branch);
-    if (!branchId || branchId === "main_branch") return !mainRetailBranch || isRetailBranch(mainRetailBranch);
+    if (!branchId || branchId === "main_branch") return branchRows.length === 0 || retailBranches.length > 0;
     return true;
   };
   const products = activeProducts(snapshot).filter(isRetailSaleProduct);
@@ -372,9 +373,12 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
     if (!Number.isFinite(amount) || amount <= 0) { setQuickSaleError("Sale amount must be greater than zero."); return; }
     if (!Number.isFinite(cost) || cost < 0) { setQuickSaleError("Cost estimate must be zero or greater."); return; }
 
-    const availableBranches = branchRows.filter(isRetailBranch);
+    const availableBranches = retailBranches;
+    if (branchRows.length > 0 && availableBranches.length === 0) {
+      throw new Error("Quick sales require at least one active, OPEN retail store. Warehouse-only locations cannot accept POS sales.");
+    }
     const chosenBranch = availableBranches.find((branch) => s(branch.id) === quickSaleBranchId)
-      ?? availableBranches.find((branch) => branch.isMainBranch === true)
+      ?? availableBranches.find((branch) => branch.isMainBranch === true || branch.is_main_branch === true)
       ?? availableBranches[0];
     const branchId = s(chosenBranch?.id) || "main_branch";
     const branchName = s(chosenBranch?.name) || "Main Branch";
