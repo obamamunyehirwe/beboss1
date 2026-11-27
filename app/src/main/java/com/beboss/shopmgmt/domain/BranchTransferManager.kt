@@ -14,6 +14,7 @@ import com.beboss.shopmgmt.data.model.StockTransfer
 import com.beboss.shopmgmt.data.model.SyncQueueItem
 import com.beboss.shopmgmt.data.model.SyncTombstone
 import com.beboss.shopmgmt.util.BeBossLogger
+import com.beboss.shopmgmt.util.TransferApprovalProof
 import com.beboss.shopmgmt.util.ClockGuard
 import com.beboss.shopmgmt.util.DbWriteMutex
 import com.beboss.shopmgmt.util.HlcClock
@@ -163,7 +164,13 @@ class BranchTransferManager(
                 operationalStatus = normalizedStatus,
                 updatedAt = now,
                 hlcTimestamp = HlcClock.tick(now),
-                lastModifiedDeviceId = nodeId
+                lastModifiedDeviceId = nodeId,
+                approvalReason = approvalProof?.reason.orEmpty(),
+                approvalActorUserId = approvalProof?.actorUserId.orEmpty(),
+                approvalSignedAt = approvalProof?.signedAt ?: 0L,
+                approvalPolicyVersion = approvalProof?.policyVersion ?: 0L,
+                approvalDeviceId = approvalProof?.deviceId.orEmpty(),
+                approvalSignature = approvalProof?.signature.orEmpty()
             )
             branchDao.insertBranch(versioned)
             enqueueBranchSync(versioned, "UPDATE")
@@ -310,7 +317,8 @@ class BranchTransferManager(
         transferredBy: String = "Store Manager",
         transferId: String? = null,
         transferNumberOverride: String? = null,
-        transferredByRole: String = "STAFF"
+        transferredByRole: String = "STAFF",
+        approvalProof: TransferApprovalProof? = null
     ): StockTransfer = withContext(Dispatchers.IO) {
         val now = ClockGuard.effectiveNowMs()
         if (fromBranchId == toBranchId) {
