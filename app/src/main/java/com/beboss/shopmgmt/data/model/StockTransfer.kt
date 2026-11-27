@@ -45,4 +45,11 @@ data class StockTransfer(
     @ColumnInfo(defaultValue = "0") val hlcTimestamp: Long = 0L,
     /** Stable writer identity used for deterministic conflict resolution. */
     @ColumnInfo(defaultValue = "''") val lastModifiedDeviceId: String = ""
+    /** Owner approval proof stays in the encrypted local database until cloud verification. */
+    @ColumnInfo(defaultValue = "''") val approvalReason: String = "",
+    @ColumnInfo(defaultValue = "''") val approvalActorUserId: String = "",
+    @ColumnInfo(defaultValue = "0") val approvalSignedAt: Long = 0L,
+    @ColumnInfo(defaultValue = "0") val approvalPolicyVersion: Long = 0L,
+    @ColumnInfo(defaultValue = "''") val approvalDeviceId: String = "",
+    @ColumnInfo(defaultValue = "''") val approvalSignature: String = ""
 )
