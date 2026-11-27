@@ -1176,7 +1176,18 @@ export async function saveStaff(input: {
     passwordHash: input.password.trim() ? hashCredential(input.password) : existing?.passwordHash || '',
     createdAt: existing?.createdAt || now, updatedAt: now, lastLoginAt: existing?.lastLoginAt || 0,
     ...ROLE_PERMISSIONS[input.role],
-    ...(input.permissions || existing || {})
+    canSellPOS: input.permissions?.canSellPOS ?? existing?.canSellPOS ?? ROLE_PERMISSIONS[input.role].canSellPOS,
+    canApplyDiscounts: input.permissions?.canApplyDiscounts ?? existing?.canApplyDiscounts ?? ROLE_PERMISSIONS[input.role].canApplyDiscounts,
+    canManageInventory: input.permissions?.canManageInventory ?? existing?.canManageInventory ?? ROLE_PERMISSIONS[input.role].canManageInventory,
+    canViewCostAndProfit: input.permissions?.canViewCostAndProfit ?? existing?.canViewCostAndProfit ?? ROLE_PERMISSIONS[input.role].canViewCostAndProfit,
+    canViewAnalytics: input.permissions?.canViewAnalytics ?? existing?.canViewAnalytics ?? ROLE_PERMISSIONS[input.role].canViewAnalytics,
+    canManageCustomers: input.permissions?.canManageCustomers ?? existing?.canManageCustomers ?? ROLE_PERMISSIONS[input.role].canManageCustomers,
+    canCollectDebt: input.permissions?.canCollectDebt ?? existing?.canCollectDebt ?? ROLE_PERMISSIONS[input.role].canCollectDebt,
+    canDeleteRecords: input.permissions?.canDeleteRecords ?? existing?.canDeleteRecords ?? ROLE_PERMISSIONS[input.role].canDeleteRecords,
+    canExportReports: input.permissions?.canExportReports ?? existing?.canExportReports ?? ROLE_PERMISSIONS[input.role].canExportReports,
+    canManageCollaborators: input.permissions?.canManageCollaborators ?? existing?.canManageCollaborators ?? ROLE_PERMISSIONS[input.role].canManageCollaborators,
+    canManageShopSettings: input.permissions?.canManageShopSettings ?? existing?.canManageShopSettings ?? ROLE_PERMISSIONS[input.role].canManageShopSettings,
+    canExportImportData: input.permissions?.canExportImportData ?? existing?.canExportImportData ?? ROLE_PERMISSIONS[input.role].canExportImportData
   };
   await transaction(async tx => {
     await execute('INSERT INTO users(id,username,role,branch_id,active,data,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username,role=excluded.role,branch_id=excluded.branch_id,active=excluded.active,data=excluded.data,updated_at=excluded.updated_at',
