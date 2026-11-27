@@ -313,7 +313,7 @@ class BranchTransferConcurrencyTest {
             val productResult = runCatching { repository.branchTransferManager.deleteBranch("branch") }
             assertTrue("Active inventory must be moved or archived first", productResult.isFailure)
 
-            db.productDao().deleteProduct("branch-stock")
+            db.productDao().deleteProductPermanently("branch-stock")
             db.stockTransferDao().insertTransfer(
                 StockTransfer(
                     id = "branch-open-transfer",
