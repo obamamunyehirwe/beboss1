@@ -215,7 +215,9 @@ const BEBOSS_BB3_PUBLIC_KEY = [
 ].join('\n');
 
 function sha256Hex(value: string): string {
-  return QuickCrypto.createHash('sha256').update(value, 'utf8').digest('hex').toUpperCase();
+  const hash = QuickCrypto.createHash('sha256');
+  hash.update(value, 'utf8');
+  return hash.digest('hex').toUpperCase();
 }
 
 export function computeBB3AccountBindingHash(username: string, phone: string): string {

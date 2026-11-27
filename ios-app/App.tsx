@@ -29,7 +29,7 @@ import {
 } from './src/services/cloud';
 import { calculateSubscriptionQuote, isSubscriptionActive, roundMoney } from './src/core/domain';
 import { buildReorderSuggestions } from './src/core/forecast';
-import { computeBranchPerformance, computeCategorySalesBreakdown, computeCustomerAging, computeStaffPerformance } from './src/core/analytics';
+import { AnalyticsPeriod, computeBranchPerformance, computeCategorySalesBreakdown, computeCustomerAging, computeStaffPerformance } from './src/core/analytics';
 import { exportInventoryCsv, exportSalesCsv } from './src/services/reports';
 
 type Screen = 'dashboard' | 'pos' | 'inventory' | 'customers' | 'sales' | 'reports' | 'purchases' | 'branches' | 'staff' | 'sync' | 'subscription' | 'settings';
@@ -66,7 +66,7 @@ function AppRoot(): React.JSX.Element {
   const [splitMomo, setSplitMomo] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [receiptNumber, setReceiptNumber] = useState('');
-  const [analyticsPeriod, setAnalyticsPeriod] = useState('THIS_MONTH');
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>('THIS_MONTH');
   const [reportBranch, setReportBranch] = useState('ALL');
   const [archivedProducts, setArchivedProducts] = useState<Product[]>([]);
   const [archivedCustomers, setArchivedCustomers] = useState<Customer[]>([]);
@@ -1241,7 +1241,7 @@ function AppRoot(): React.JSX.Element {
           { label: 'This week', value: 'THIS_WEEK' },
           { label: 'This month', value: 'THIS_MONTH' },
           { label: 'All time', value: 'ALL_TIME' }
-        ]} value={analyticsPeriod} onChange={setAnalyticsPeriod} />
+        ]} value={analyticsPeriod} onChange={value => setAnalyticsPeriod(value as AnalyticsPeriod)} />
         {!actor.branchId ? <SelectChips label="Branch scope" values={[
           { label: 'All branches', value: 'ALL' },
           ...(snapshot?.branches.filter(branch => branch.isActive).map(branch => ({ label: branch.name, value: branch.id })) || [])
