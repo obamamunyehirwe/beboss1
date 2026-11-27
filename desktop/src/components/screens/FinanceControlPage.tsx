@@ -62,6 +62,25 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
     const time = timestampOf(payment, "paymentDate", "payment_date");
     return (!startAt || time >= startAt) && branchMatches(payment);
   });
+  const purchases = rows(snapshot?.purchases).filter((purchase) => {
+    const time = timestampOf(purchase, "purchaseDate", "purchase_date");
+    return (!startAt || time >= startAt) && branchMatches(purchase);
+  }).sort((a, b) => timestampOf(b, "purchaseDate", "purchase_date") - timestampOf(a, "purchaseDate", "purchase_date"));
+  const supplierCreditPurchases = purchases.filter((purchase) =>
+    s(purchase.paymentStatus ?? purchase.payment_status).toUpperCase() === "SUPPLIER_CREDIT"
+  );
+  const purchaseSpend = purchases.reduce((sum, purchase) => sum + Math.max(0, n(purchase.totalPurchaseCost ?? purchase.total_purchase_cost)), 0);
+  const cashPurchaseSpend = purchases.reduce((sum, purchase) =>
+    ["PAID_CASH", "CASH"].includes(s(purchase.paymentStatus ?? purchase.payment_status).toUpperCase())
+      ? sum + Math.max(0, n(purchase.totalPurchaseCost ?? purchase.total_purchase_cost)) : sum, 0);
+  const momoPurchaseSpend = purchases.reduce((sum, purchase) =>
+    ["PAID_MOMO", "MOMO", "PAID_MOBILE_MONEY"].includes(s(purchase.paymentStatus ?? purchase.payment_status).toUpperCase())
+      ? sum + Math.max(0, n(purchase.totalPurchaseCost ?? purchase.total_purchase_cost)) : sum, 0);
+  const bankPurchaseSpend = purchases.reduce((sum, purchase) =>
+    ["PAID_BANK", "BANK", "PAID_TRANSFER"].includes(s(purchase.paymentStatus ?? purchase.payment_status).toUpperCase())
+      ? sum + Math.max(0, n(purchase.totalPurchaseCost ?? purchase.total_purchase_cost)) : sum, 0);
+  const supplierCreditValue = supplierCreditPurchases.reduce((sum, purchase) =>
+    sum + Math.max(0, n(purchase.totalPurchaseCost ?? purchase.total_purchase_cost)), 0);
   const customers = rows(snapshot?.customers).filter((customer) => customer.isDeleted !== true);
   const receivables = customers.reduce((sum, customer) => sum + Math.max(0, n(customer.debtBalance)), 0);
   const revenue = sales.reduce((sum, sale) => sum + Math.max(0, n(sale.totalAmount ?? sale.total_amount)), 0);
@@ -89,15 +108,17 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
     const salesTotal = localSales.reduce((sum, sale) => sum + Math.max(0, n(sale.totalAmount ?? sale.total_amount)), 0);
     const collectedTotal = localSales.reduce((sum, sale) => sum + amountCollected(sale), 0) +
       localPayments.reduce((sum, payment) => sum + Math.max(0, n(payment.amount)), 0);
+    const localPurchases = purchases.filter((purchase) => branchOf(purchase, mainBranchId) === (id || mainBranchId));
     return {
       id, name: s(branch.name), sales: salesTotal,
       cost: localSales.reduce((sum, sale) => sum + Math.max(0, n(sale.totalCost ?? sale.total_cost)), 0),
       profit: localSales.reduce((sum, sale) => sum + n(sale.totalProfit ?? sale.total_profit), 0),
+      purchases: localPurchases.reduce((sum, purchase) => sum + Math.max(0, n(purchase.totalPurchaseCost ?? purchase.total_purchase_cost)), 0),
       collected: collectedTotal, count: localSales.length,
       target: n(branch.monthly_target_rwf), status: s(branch.operational_status) || "OPEN"
     };
   }).filter((branch) => branchFilter === "ALL" || branch.id === branchFilter)
-    .sort((a, b) => b.sales - a.sales), [branches, sales, payments, branchFilter]);
+    .sort((a, b) => b.sales - a.sales), [branches, sales, payments, purchases, branchFilter, mainBranchId]);
 
   const reconciliations = useMemo(() => rows(cloud.activity)
     .filter((event) => s(event.entity).toUpperCase() === "BRANCH_RECONCILIATION")
@@ -125,7 +146,20 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
         counterparty: s(payment.customerName ?? payment.customer_name),
         method: tenderOf(payment), gross_amount_rwf: n(payment.amount), collected_amount_rwf: n(payment.amount),
         cost_rwf: 0, gross_profit_rwf: 0, status: "COLLECTED"
-      }))
+      })),
+      ...purchases.map((purchase) => {
+        const paymentStatus = s(purchase.paymentStatus ?? purchase.payment_status).toUpperCase();
+        const amount = Math.max(0, n(purchase.totalPurchaseCost ?? purchase.total_purchase_cost));
+        const paid = ["PAID_CASH","PAID_MOMO","PAID_BANK","CASH","MOMO","BANK","PAID_TRANSFER","PAID_MOBILE_MONEY"].includes(paymentStatus) ? amount : 0;
+        return {
+          record_type: "INVENTORY_PURCHASE", timestamp: new Date(timestampOf(purchase, "purchaseDate", "purchase_date")).toISOString(),
+          branch: branchNames.get(branchOf(purchase, mainBranchId)) || branchOf(purchase, mainBranchId),
+          reference: s(purchase.invoiceNumber ?? purchase.invoice_number ?? purchase.id),
+          counterparty: s(purchase.supplierName ?? purchase.supplier_name) || "Supplier",
+          method: paymentStatus, gross_amount_rwf: amount, collected_amount_rwf: paid,
+          cost_rwf: amount, gross_profit_rwf: 0, status: paymentStatus
+        };
+      })
     ];
     downloadCsv("BeBoss-Consolidated-Finance-" + new Date().toISOString().slice(0, 10) + ".csv",
       ["record_type","timestamp","branch","reference","counterparty","method","gross_amount_rwf","collected_amount_rwf","cost_rwf","gross_profit_rwf","status"],
@@ -133,12 +167,12 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
   }
   function exportBranches() {
     downloadCsv("BeBoss-Branch-Finance-" + new Date().toISOString().slice(0, 10) + ".csv",
-      ["branch_id","branch_name","transactions","revenue_rwf","cost_of_goods_rwf","gross_profit_rwf","collections_rwf","monthly_target_rwf"],
+      ["branch_id","branch_name","transactions","revenue_rwf","cost_of_goods_rwf","gross_profit_rwf","collections_rwf","monthly_target_rwf","purchase_spend_rwf"],
       branchSummary.map((branch) => ({
         branch_id: branch.id, branch_name: branch.name, transactions: branch.count,
         revenue_rwf: Math.round(branch.sales), cost_of_goods_rwf: Math.round(branch.cost),
         gross_profit_rwf: Math.round(branch.profit), collections_rwf: Math.round(branch.collected),
-        monthly_target_rwf: branch.target
+        monthly_target_rwf: branch.target, purchase_spend_rwf: Math.round(branch.purchases)
       })));
   }
 
@@ -160,7 +194,7 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
           {branches.map((branch) => <option key={s(branch.id)} value={s(branch.id)}>{s(branch.name)}</option>)}
         </select>
       </div>
-      <div className="enterprise-toolbar-foot"><span>{sales.length.toLocaleString()} sales · {payments.length.toLocaleString()} customer repayments</span><span>Totals exclude operating expenses, supplier payables and bank deposits not present in this data model</span></div>
+      <div className="enterprise-toolbar-foot"><span>{sales.length.toLocaleString()} sales · {payments.length.toLocaleString()} customer repayments · {purchases.length.toLocaleString()} purchases</span><span>Purchase outflows are shown separately from cost of goods sold</span></div>
     </section>
     <div className="stat-grid four">
       <StatCard label="Gross sales" value={money(revenue)} sub={sales.length.toLocaleString() + " transactions · average " + money(averageOrder)} icon={Store} />
@@ -172,16 +206,22 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
       <StatCard label="Cash collections" value={money(cashSales + cashRepayments)} sub={money(cashSales) + " sales · " + money(cashRepayments) + " repayments"} icon={Banknote} />
       <StatCard label="Non-cash collections" value={money(nonCashSales + nonCashRepayments)} sub={money(nonCashSales) + " sales · " + money(nonCashRepayments) + " repayments"} icon={Activity} tone="blue" />
       <StatCard label="Total recorded collections" value={money(collected)} sub="Sales paid amounts plus customer repayments" icon={ShieldCheck} tone="green" />
-      <StatCard label="Open transfer value" value={money(transferExposure)} sub="Requested and unresolved stock movements" icon={Store} tone="purple" />
+      <StatCard label="Purchase spend" value={money(purchaseSpend)} sub={purchases.length.toLocaleString() + " inventory purchase records"} icon={Store} tone="purple" />
+    </div>
+    <div className="stat-grid four">
+      <StatCard label="Cash purchase spend" value={money(cashPurchaseSpend)} sub="Purchases marked paid in cash" icon={Banknote} />
+      <StatCard label="Mobile-money purchases" value={money(momoPurchaseSpend)} sub="Purchases marked paid by MoMo" icon={Activity} tone="blue" />
+      <StatCard label="Bank-paid purchases" value={money(bankPurchaseSpend)} sub="Purchases marked paid by bank" icon={ShieldCheck} tone="green" />
+      <StatCard label="Supplier-credit purchases" value={money(supplierCreditValue)} sub={supplierCreditPurchases.length.toLocaleString() + " purchases marked supplier credit"} icon={Wallet} tone="orange" />
     </div>
     <div className="dashboard-grid">
       <section className="panel span-2">
         <div className="panel-heading"><div><span className="eyebrow muted">CONSOLIDATED BRANCH PERFORMANCE</span><h3>Branch finance comparison</h3></div><Store size={18} className="muted-icon" /></div>
-        {branchSummary.length ? <div className="table-wrap"><table><thead><tr><th>Branch</th><th>State</th><th>Transactions</th><th>Gross sales</th><th>Cost of goods</th><th>Gross profit</th><th>Collections</th><th>Target</th></tr></thead>
+        {branchSummary.length ? <div className="table-wrap"><table><thead><tr><th>Branch</th><th>State</th><th>Transactions</th><th>Gross sales</th><th>Cost of goods</th><th>Gross profit</th><th>Collections</th><th>Purchases</th><th>Target</th></tr></thead>
           <tbody>{branchSummary.map((branch) => <tr key={branch.id}>
             <td><strong>{branch.name}</strong><small className="cell-sub mono">{branch.id}</small></td><td><StatusPill value={branch.status} /></td>
             <td>{branch.count}</td><td>{money(branch.sales)}</td><td>{money(branch.cost)}</td>
-            <td className="strong">{money(branch.profit)}</td><td>{money(branch.collected)}</td>
+            <td className="strong">{money(branch.profit)}</td><td>{money(branch.collected)}</td><td>{money(branch.purchases)}</td>
             <td>{branch.target > 0 ? (branch.sales / branch.target * 100).toFixed(1) + "%" : "Not set"}</td>
           </tr>)}</tbody></table></div> : <Empty title="No branch records" description="Branch comparison appears after the first branch is synchronized." />}
       </section>
@@ -208,6 +248,26 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
       </tbody></table></div> : <Empty title="No saved cash close-outs yet" description="Complete a branch cash close-out from Branch management. Saved results are retained in the shop-scoped cloud activity journal." />}
     </section>
     <section className="panel">
+      <div className="panel-heading"><div><span className="eyebrow muted">SUPPLIER EXPOSURE · PURCHASE REGISTER</span><h3>Supplier purchases and credit exposure</h3></div><Truck size={18} className="muted-icon" /></div>
+      {purchases.length ? <div className="table-wrap"><table><thead><tr><th>Supplier</th><th>Purchases</th><th>Total acquired</th><th>Marked paid</th><th>Supplier credit</th></tr></thead><tbody>
+        {Object.entries(purchases.reduce<Record<string, { count: number; total: number; paid: number; credit: number }>>((acc, purchase) => {
+          const name = s(purchase.supplierName ?? purchase.supplier_name) || "Supplier not specified";
+          const key = name.toLowerCase();
+          const amount = Math.max(0, n(purchase.totalPurchaseCost ?? purchase.total_purchase_cost));
+          const status = s(purchase.paymentStatus ?? purchase.payment_status).toUpperCase();
+          const paid = ["PAID_CASH","PAID_MOMO","PAID_BANK","CASH","MOMO","BANK","PAID_TRANSFER","PAID_MOBILE_MONEY"].includes(status);
+          const item = acc[key] ?? { count: 0, total: 0, paid: 0, credit: 0 };
+          item.count += 1; item.total += amount;
+          if (paid) item.paid += amount;
+          if (status === "SUPPLIER_CREDIT") item.credit += amount;
+          acc[key] = item;
+          return acc;
+        }, {})).sort((a, b) => b[1].credit - a[1].credit || b[1].total - a[1].total).slice(0, 20).map(([supplier, value]) =>
+          <tr key={supplier}><td><strong>{supplier}</strong></td><td>{value.count}</td><td>{money(value.total)}</td><td>{money(value.paid)}</td><td className="strong">{money(value.credit)}</td></tr>
+        )}
+      </tbody></table></div> : <Empty title="No purchases recorded in this period" description="Purchases from the Android and desktop purchase registers appear here after synchronization." />}
+    </section>
+    <section className="panel">
       <div className="panel-heading"><div><span className="eyebrow muted">RECEIVABLES · FINANCIAL EXPOSURE</span><h3>Top customer balances · shop-wide</h3></div><Wallet size={18} className="muted-icon" /></div>
       {customers.filter((customer) => n(customer.debtBalance) > 0).sort((a, b) => n(b.debtBalance) - n(a.debtBalance)).slice(0, 15).length
         ? <div className="table-wrap"><table><thead><tr><th>Customer</th><th>Phone</th><th>Balance</th><th>Credit limit</th><th>Exposure</th></tr></thead><tbody>
@@ -221,6 +281,6 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
           })}
         </tbody></table></div> : <Empty title="No outstanding customer balances" description="Customer credit balances are synchronized from the shop snapshot." />}
     </section>
-    <div className="info-note"><ShieldCheck size={16} /> Financial view based on signed sales and customer-payment records. "Gross profit" is not net profit: salaries, rent, tax, operating expenses, supplier payments, cash withdrawals and bank deposits require separate verified ledger records before they can be reported as cash-flow or statutory accounts.</div>
+    <div className="info-note"><ShieldCheck size={16} /> Sales, repayments and purchase records are consolidated from the signed shop snapshot. Purchase payment status is the supplier settlement evidence currently synchronized. Operating expenses, payroll, tax, cash withdrawals, bank deposits and partial supplier settlements are not yet separately ledgered here, so these figures are not net profit or statutory cash-flow accounts.</div>
   </div>;
 }
