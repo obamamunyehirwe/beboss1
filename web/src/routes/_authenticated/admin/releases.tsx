@@ -82,7 +82,7 @@ function ReleasesPage() {
 
   const [activeTab, setActiveTab] = useState<ReleaseTab>("mobile");
   const [file, setFile] = useState<File | null>(null);
-  const [form, setForm] = useState({ version_name: "", version_code: 1, min_android: "Android 7.0+", release_notes: "", make_current: true });
+  const [form, setForm] = useState({ version_name: "", version_code: 20, min_android: "Android 7.0+", release_notes: "", make_current: true });
   const [stage, setStage] = useState<"" | "hashing" | "uploading" | "publishing">("");
   const [desktopPlatform, setDesktopPlatform] = useState<DesktopPlatform>("windows");
   const [desktopFile, setDesktopFile] = useState<File | null>(null);
@@ -99,17 +99,21 @@ function ReleasesPage() {
   const editReleaseAction = useAdminAction(useServerFn(updateRelease), { success: "Release updated", invalidate: [["admin", "releases"], ["public-site"]] });
 
   const downloadUrl = `https://beboss.rw${DOWNLOAD_PATH}`;
-  // Start new releases above the highest version code already published.
+  // The first secure production APK is 2.6.0 / code 20. Keep later uploads
+  // above every release already registered so Android will always see updates.
   useEffect(() => {
+    if (!releases.isSuccess) return;
     const highestVersionCode = (releases.data ?? []).reduce(
       (highest, release) => Math.max(highest, Number(release.version_code) || 0),
       0,
     );
-    const nextVersionCode = highestVersionCode + 1;
-    setForm((current) => current.version_code < nextVersionCode
-      ? { ...current, version_code: nextVersionCode }
-      : current);
-  }, [releases.data]);
+    const nextVersionCode = Math.max(20, highestVersionCode + 1);
+    setForm((current) => ({
+      ...current,
+      version_code: Math.max(current.version_code, nextVersionCode),
+      version_name: highestVersionCode < 20 && !current.version_name ? "2.6.0" : current.version_name,
+    }));
+  }, [releases.data, releases.isSuccess]);
 
   const daily = useMemo(() => {
     const out: { day: string; n: number }[] = [];
@@ -284,6 +288,19 @@ function ReleasesPage() {
     }
     if (file.size > MAX_APK_BYTES) {
       toast.error(a("The APK must be 100 MB or smaller."));
+      return;
+    }
+    const highestPublishedVersionCode = rows.reduce(
+      (highest, release) => Math.max(highest, Number(release.version_code) || 0),
+      0,
+    );
+    if (!Number.isInteger(form.version_code) || form.version_code < 20 ||
+        form.version_code > 1_000_000 || form.version_code <= highestPublishedVersionCode) {
+      toast.error("Android version code must be between 20 and 1,000,000 and greater than the highest published code (" + highestPublishedVersionCode + ").");
+      return;
+    }
+    if (!/^[0-9]+(\.[0-9]+){0,3}$/.test(form.version_name.trim()) || form.version_name.trim().length > 20) {
+      toast.error("Enter a valid Android version name, such as 2.6.0.");
       return;
     }
     const signature = new Uint8Array(await file.slice(0, 4).arrayBuffer());
@@ -471,9 +488,9 @@ function ReleasesPage() {
             <HardDrive className="mt-0.5 size-5 shrink-0 text-primary" />
             <div className="min-w-0">
               <h3 className="font-semibold">Build the Android release locally</h3>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">From the repository root, build the production-signed APK on your own computer, then select that output below. Do not upload a debug APK.</p>
-              <code className="mt-3 block overflow-x-auto rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs">.\\gradlew.bat :app:assembleRelease</code>
-              <p className="mt-2 text-xs text-muted-foreground">Expected output: <code>app\\build\\outputs\\apk\\release\\app-release.apk</code>. The release keystore and passwords must already be configured locally and kept outside source control.</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Build the secure production variant locally using the BeBoss signing key. Do not upload a debug APK or the migration-only transition variant.</p>
+              <code className="mt-3 block overflow-x-auto rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs">.\\gradlew.bat :app:assembleSecureRelease</code>
+              <p className="mt-2 text-xs text-muted-foreground">First production build: <strong>2.6.0 / versionCode 20</strong>. Expected output: <code>app\\build\\outputs\\apk\\secure\\release\\app-secure-release.apk</code>. For every later release, increase the secure flavor version name/code, rebuild, and enter the exact same values below. Keep the .p12 keystore and passwords outside source control.</p>
             </div>
           </div>
         </div>
@@ -494,7 +511,7 @@ function ReleasesPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>{a("Version code")}</Label>
-                <Input type="number" min={1} value={form.version_code} onChange={(e) => setForm({ ...form, version_code: Math.max(1, Number(e.target.value) || 1) })} />
+                <Input type="number" min={20} max={1000000} value={form.version_code} onChange={(e) => setForm({ ...form, version_code: Math.max(20, Math.min(1000000, Number(e.target.value) || 20)) })} />
               </div>
               <div className="space-y-1.5">
                 <Label>{a("Minimum")}</Label>
