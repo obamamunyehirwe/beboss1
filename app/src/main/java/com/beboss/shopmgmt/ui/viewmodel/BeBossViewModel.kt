@@ -1149,11 +1149,11 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         val terminal = repository.getAllShopDevicesList().firstOrNull { it.deviceId == deviceId }
         var registered = cached?.takeIf { it.version == fetched.version }?.signingKeyRegistered == true
         if (terminal?.isActive == true && terminal.isOwnerPrimary &&
-            terminal.assignedUserId == actor?.id && actor.role == UserRole.OWNER) {
+            terminal.assignedUserId == actor?.id && actor?.role == UserRole.OWNER) {
             registered = runCatching {
                 val publicKey = AndroidTransferApprovalSigner.publicKeyBase64(shopId, deviceId)
                 SupabaseAdminClient.registerAndroidTransferApprovalKey(shopId, publicKey)
-            }.getOrDefault(false) || registered
+            }.getOrDefault(false)
         }
         val ready = fetched.copy(signingKeyRegistered = registered)
         TransferApprovalPolicyCache.save(
