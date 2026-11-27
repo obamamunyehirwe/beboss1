@@ -1050,3 +1050,167 @@ export const createPublicDesktopDownload = createServerFn({ method: "POST" })
     }
     return { url: signed.signedUrl, expiresInSeconds: 600, fileName: release.file_name };
   });
+
+
+const myShopFinancePostSchema = z.object({
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+  entryId: z.string().uuid(),
+  type: z.enum([
+    "OPERATING_EXPENSE", "PAYROLL_PAYMENT", "SUPPLIER_SETTLEMENT",
+    "TAX_PAYMENT", "OWNER_DRAW", "CASH_WITHDRAWAL",
+    "CAPITAL_CONTRIBUTION", "BANK_DEPOSIT"
+  ]),
+  amountRwf: z.number().int().positive().max(10_000_000_000),
+  account: z.enum(["CASH", "BANK", "MOBILE_MONEY", "OTHER"]).optional().default("CASH"),
+  sourceAccount: z.enum(["CASH", "MOBILE_MONEY", "OTHER"]).optional(),
+  destinationAccount: z.literal("BANK").optional(),
+  branchId: z.string().trim().max(120).default(""),
+  effectiveAt: z.number().int().min(Date.UTC(2000, 0, 1)),
+  counterparty: z.string().trim().max(100).default(""),
+  reference: z.string().trim().max(48).default(""),
+  note: z.string().trim().max(240).default(""),
+});
+
+export const postMyShopFinanceEntry = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: z.infer<typeof myShopFinancePostSchema>) => myShopFinancePostSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const ownerContext = context as unknown as OwnerAuthContext;
+    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
+    const ownerUsername = data.username.trim().toLowerCase();
+    if (data.effectiveAt > Date.now() + 5 * 60 * 1000) {
+      throw new Error("Choose a transaction date no later than the current date.");
+    }
+    let branchName = "All branches";
+    if (data.branchId) {
+      const { data: branch, error } = await sb.from("shop_branches")
+        .select("id,name,is_active").eq("shop_sync_key", key).eq("id", data.branchId).maybeSingle();
+      if (error || !branch || branch.is_active !== true) {
+        throw new Error("Choose an active branch belonging to this shop, or select All branches.");
+      }
+      branchName = String(branch.name ?? "");
+    }
+    const flow = data.type === "CAPITAL_CONTRIBUTION" ? "INFLOW"
+      : data.type === "BANK_DEPOSIT" ? "TRANSFER" : "OUTFLOW";
+    if (flow === "TRANSFER" && (!data.sourceAccount || data.destinationAccount !== "BANK")) {
+      throw new Error("A bank deposit must move funds from Cash, Mobile Money or Other into the Bank account.");
+    }
+    const entry = {
+      version: 1,
+      entryId: data.entryId,
+      type: data.type,
+      flow,
+      amountRwf: data.amountRwf,
+      account: flow === "TRANSFER" ? "" : data.account,
+      sourceAccount: flow === "TRANSFER" ? data.sourceAccount : "",
+      destinationAccount: flow === "TRANSFER" ? "BANK" : "",
+      branchId: data.branchId,
+      branchName,
+      effectiveAt: data.effectiveAt,
+      counterparty: data.counterparty,
+      reference: data.reference,
+      note: data.note,
+      postedAt: Date.now(),
+      actorUsername: ownerUsername,
+      actorDeviceId: "WEB:OWNER_PORTAL"
+    };
+    const duplicate = await sb.from("cloud_sync_events").select("detail")
+      .eq("shop_sync_key", key).eq("entity", "FINANCE_LEDGER").eq("action", "POSTED")
+      .like("detail", '%"entryId":"' + data.entryId + '"%').limit(1).maybeSingle();
+    if (duplicate.error) throw new Error("Could not check the financial journal before posting.");
+    if (duplicate.data?.detail) {
+      try {
+        const prior = JSON.parse(String(duplicate.data.detail));
+        if (prior?.version === 1 && prior.entryId === data.entryId) return { ok: true, entry: prior, reused: true };
+      } catch { /* Invalid legacy details cannot satisfy the versioned idempotency check. */ }
+    }
+    const detail = JSON.stringify(entry);
+    const { data: inserted, error } = await sb.from("cloud_sync_events").insert({
+      shop_sync_key: key,
+      shop_name: (await sb.from("shop_accounts").select("shop_name").eq("id", key).maybeSingle()).data?.shop_name ?? "",
+      entity: "FINANCE_LEDGER",
+      action: "POSTED",
+      actor: "OWNER:" + ownerUsername,
+      device_id: "WEB:OWNER_PORTAL",
+      detail
+    }).select("id,created_at").single();
+    if (error || !inserted) {
+      console.error("[My Shop finance] Financial entry could not be posted", error);
+      throw new Error("The financial entry could not be saved to the shop cloud journal. Nothing was reported as posted; retry after refreshing.");
+    }
+    return { ok: true, entry, eventId: inserted.id, createdAt: inserted.created_at };
+  });
+
+const myShopFinanceReverseSchema = z.object({
+  username: z.string().trim().min(2).max(80),
+  phone: z.string().trim().min(9).max(30),
+  reversalEntryId: z.string().uuid(),
+  originalEntryId: z.string().uuid(),
+  reason: z.string().trim().min(8).max(300),
+});
+
+export const reverseMyShopFinanceEntry = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: z.infer<typeof myShopFinanceReverseSchema>) => myShopFinanceReverseSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const ownerContext = context as unknown as OwnerAuthContext;
+    const { key } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
+    const ownerUsername = data.username.trim().toLowerCase();
+    const originalResult = await ownerContext.supabase.from("cloud_sync_events").select("detail")
+      .eq("shop_sync_key", key).eq("entity", "FINANCE_LEDGER").eq("action", "POSTED")
+      .like("detail", '%"entryId":"' + data.originalEntryId + '"%').limit(1).maybeSingle();
+    if (originalResult.error || !originalResult.data?.detail) {
+      throw new Error("The original posted financial entry could not be found.");
+    }
+    let original: Record<string, unknown>;
+    try { original = JSON.parse(String(originalResult.data.detail)); }
+    catch { throw new Error("The original financial entry cannot be verified."); }
+    if (original.version !== 1 || original.entryId !== data.originalEntryId || original.type === "REVERSAL") {
+      throw new Error("Only a valid original posted financial entry can be reversed.");
+    }
+    const previous = await ownerContext.supabase.from("cloud_sync_events").select("detail")
+      .eq("shop_sync_key", key).eq("entity", "FINANCE_LEDGER").eq("action", "REVERSED")
+      .like("detail", '%"reversalOf":"' + data.originalEntryId + '"%').limit(1).maybeSingle();
+    if (previous.error) throw new Error("Could not verify earlier reversals.");
+    if (previous.data?.detail) {
+      try {
+        const prior = JSON.parse(String(previous.data.detail));
+        if (prior?.version === 1 && prior.reversalOf === data.originalEntryId) {
+          return { ok: true, entry: prior, reused: true };
+        }
+      } catch { /* Invalid legacy details cannot confirm a reversal. */ }
+    }
+    const oldFlow = String(original.flow ?? "").toUpperCase();
+    const reversal = {
+      version: 1,
+      entryId: data.reversalEntryId,
+      type: "REVERSAL",
+      originalType: String(original.type ?? ""),
+      reversalOf: data.originalEntryId,
+      flow: oldFlow === "OUTFLOW" ? "INFLOW" : oldFlow === "INFLOW" ? "OUTFLOW" : "TRANSFER",
+      amountRwf: Number(original.amountRwf) || 0,
+      account: String(original.account ?? ""),
+      sourceAccount: String(original.destinationAccount ?? ""),
+      destinationAccount: String(original.sourceAccount ?? ""),
+      branchId: String(original.branchId ?? ""),
+      branchName: String(original.branchName ?? ""),
+      effectiveAt: Date.now(),
+      counterparty: String(original.counterparty ?? ""),
+      reference: String(original.reference ?? ""),
+      note: data.reason,
+      postedAt: Date.now(),
+      actorUsername: ownerUsername,
+      actorDeviceId: "WEB:OWNER_PORTAL"
+    };
+    const { data: inserted, error } = await ownerContext.supabase.from("cloud_sync_events").insert({
+      shop_sync_key: key,
+      entity: "FINANCE_LEDGER",
+      action: "REVERSED",
+      actor: "OWNER:" + ownerUsername,
+      device_id: "WEB:OWNER_PORTAL",
+      detail: JSON.stringify(reversal)
+    }).select("id,created_at").single();
+    if (error || !inserted) throw new Error("The financial reversal could not be saved. The original entry remains unchanged.");
+    return { ok: true, entry: reversal, eventId: inserted.id, createdAt: inserted.created_at };
+  });
