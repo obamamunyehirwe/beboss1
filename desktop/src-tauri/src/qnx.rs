@@ -10,6 +10,8 @@ use uuid::Uuid;
 
 const EDGE_AGENT_SOURCE: &str = include_str!("../../../qnx/edge-agent/main.c");
 const EDGE_CLIENT_SOURCE: &str = include_str!("../../../qnx/edge-agent/client.c");
+const QNX_COMPILER_PROBE_SOURCE: &str =
+    "#include <sys/neutrino.h>\nint main(void) { return 0; }\n";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -213,8 +215,7 @@ fn verify_qcc_variants(
     }
 
     let source = probe_directory.join("qnx-toolchain-probe.c");
-    let source_text = "#include <sys/neutrino.h>\nint main(void) { return 0; }\n";
-    if let Err(error) = fs::write(&source, source_text) {
+    if let Err(error) = fs::write(&source, QNX_COMPILER_PROBE_SOURCE) {
         let _ = fs::remove_dir_all(&probe_directory);
         return (Vec::new(), vec![format!("Could not write the temporary compiler-test source: {error}")]);
     }
@@ -685,9 +686,8 @@ mod tests {
 
     #[test]
     fn compiler_probe_source_includes_the_qnx_neutrino_target_header() {
-        let source_text = "#include <sys/neutrino.h>\\nint main(void) { return 0; }\\n";
-        assert!(source_text.contains("#include <sys/neutrino.h>"));
-        assert!(source_text.contains("int main(void)"));
+        assert!(QNX_COMPILER_PROBE_SOURCE.contains("#include <sys/neutrino.h>"));
+        assert!(QNX_COMPILER_PROBE_SOURCE.contains("\\nint main(void)"));
     }
 
     #[test]
