@@ -38,6 +38,17 @@ Deno.test("branch main-branch reassignment is audited and unchanged syncs are id
   assertEquals(classifyShopAuditTransition("BRANCH", next, { ...next, updatedAt: 300, hlcTimestamp: 300 }), null);
 });
 
+Deno.test("changing a location from store to warehouse is a branch profile audit event", () => {
+  const before = buildShopAuditSnapshot("BRANCH", {
+    id: "location-type-1", name: "Central Depot", code: "DEP-01", location_type: "STORE",
+    is_active: true, operational_status: "OPEN", created_at: 100, updated_at: 100
+  });
+  const after = { ...before, locationType: "WAREHOUSE", updatedAt: 200, hlcTimestamp: 200 };
+  const change = classifyShopAuditTransition("BRANCH", before, after);
+  assertEquals(change?.action, "PROFILE_UPDATED");
+  assert(change?.detail.includes("branch profile updated"));
+});
+
 Deno.test("branch notes are included in profile audit transitions", () => {
   const before = buildShopAuditSnapshot("BRANCH", {
     id: "branch-notes", name: "Warehouse", code: "WH-01", is_active: true,
