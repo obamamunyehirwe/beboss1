@@ -36,6 +36,10 @@ foreach ($pattern in @(
         throw "Android signing helper is missing its rotation/compatibility check: $pattern"
     }
 }
+$gradleConfig = Get-Content -Raw -LiteralPath (Join-Path $root "app/build.gradle.kts")
+if ($gradleConfig -notmatch '"ANDROID_RELEASE_CERT_SHA256"\s*->\s*signingSecret\(key\)\s*\?:\s*signingSecret\("ANDROID_UPLOAD_CERT_SHA256"\)') {
+    throw "Android BuildConfig must embed the same legacy-compatible signing certificate fingerprint accepted by release validation."
+}
 $verify = Get-Content -Raw -LiteralPath (Join-Path $root "scripts/verify-android-release-signing.ps1")
 if (-not $verify.Contains('Signer #\d+')) {
     throw "Android release verifier does not inspect every signing certificate."

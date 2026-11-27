@@ -207,12 +207,18 @@ android {
     }
   }
   fun envConfigString(key: String): String {
-    // Use the exact same resolver as release validation: environment/Gradle
-    // overrides first, ignored root .env second, and .env.example last.
-    // This prevents a stale invalid .env pin from being embedded after a
-    // valid CI/local override has already passed the release gate.
+    // Resolve certificate fingerprints with the same compatibility alias as
+    // the release-signing gate. Otherwise the build could validate the legacy
+    // upload fingerprint but embed the example fingerprint into the APK.
+    val configuredSecret = when (key) {
+      "ANDROID_RELEASE_CERT_SHA256" ->
+        signingSecret(key) ?: signingSecret("ANDROID_UPLOAD_CERT_SHA256")
+      else -> signingSecret(key)
+    }
+    // Explicit environment/Gradle overrides win, then ignored root .env,
+    // and .env.example is only a final fallback.
     val raw = (
-      signingSecret(key)
+      configuredSecret
         ?: defaultEnvProps.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: ""
       ).trim()
