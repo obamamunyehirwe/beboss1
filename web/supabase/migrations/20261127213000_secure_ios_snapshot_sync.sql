@@ -35,8 +35,9 @@ begin
      or p_device_id !~ '^IOS:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
      or coalesce(p_device_record_id, '') = ''
      or coalesce(p_assigned_user_id, '') = ''
-     or p_role not in ('OWNER','MANAGER','CASHIER')
+     or coalesce(p_role, '') not in ('OWNER','MANAGER','CASHIER')
      or coalesce(p_sync_generation, '') = ''
+     or p_expected_chunk_count is null
      or p_expected_chunk_count < 1
      or p_expected_chunk_count > 100000 then
     raise exception using errcode = '22023', message = 'Invalid iPhone snapshot-generation parameters.';
@@ -151,8 +152,38 @@ begin
     select sync_generation
     from public.branch_sync_snapshots
     where shop_sync_key = p_shop_sync_key
-      and pg_catalog.regexp_replace(device_id, '#c[0-9]+$', '') = p_device_id
+      and pg_catalog.regexp_replace(device_id, '#c[0-9]+
+  delete from public.branch_sync_snapshots older
+  where older.shop_sync_key = p_shop_sync_key
+    and pg_catalog.regexp_replace(older.device_id, '#c[0-9]+$', '') = p_device_id
+    and not exists (
+      select 1 from keep_generations keep
+      where keep.sync_generation = older.sync_generation
+    );
+
+  return jsonb_build_object(
+    'accepted', true,
+    'conflict', false,
+    'uploadedAt', v_now,
+    'latestUpdatedAt', v_now,
+    'chunkCount', p_expected_chunk_count
+  );
+end;
+$function$;
+
+revoke all on function public.commit_ios_snapshot_generation(text,text,text,text,text,text,integer,bigint)
+  from public, anon, authenticated;
+grant execute on function public.commit_ios_snapshot_generation(text,text,text,text,text,text,integer,bigint)
+  to service_role;
+
+comment on function public.commit_ios_snapshot_generation(text,text,text,text,text,text,integer,bigint)
+  is 'Atomically validates and commits a complete iOS signed snapshot generation with device assignment and cross-device optimistic concurrency checks.';
+, '') = p_device_id
     group by sync_generation
+    having count(*) = max(greatest(1, nullif(chunk_count, 0)))
+       and count(distinct chunk_index) = max(greatest(1, nullif(chunk_count, 0)))
+       and min(chunk_index) = 0
+       and max(chunk_index) = max(greatest(1, nullif(chunk_count, 0))) - 1
     order by max(updated_at) desc, sync_generation desc
     limit 5
   )
