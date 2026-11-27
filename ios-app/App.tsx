@@ -1565,7 +1565,7 @@ function AuthShell({ title, subtitle, children }: { title: string; subtitle: str
 }
 function Field(props: {
   label: string; value: string; onChangeText: (value: string) => void; secureTextEntry?: boolean;
-  keyboardType?: any; autoCapitalize?: any; multiline?: boolean;
+  keyboardType?: any; autoCapitalize?: any; multiline?: boolean; editable?: boolean;
 }): React.JSX.Element {
   return <View style={styles.field}>
     <Text style={styles.fieldLabel}>{props.label}</Text>
@@ -1577,6 +1577,7 @@ function Field(props: {
       keyboardType={props.keyboardType || 'default'}
       autoCapitalize={props.autoCapitalize || 'sentences'}
       multiline={props.multiline}
+      editable={props.editable !== false}
       placeholderTextColor={COLORS.muted}
     />
   </View>;
