@@ -1254,7 +1254,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun deleteStockTransfer(id: String) {
         viewModelScope.launch {
             try {
-                repository.deleteStockTransfer(id)
+                repository.deleteStockTransfer(id, actor = currentUser.value)
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit("Stock transfer log removed.")
             } catch (e: CancellationException) {
@@ -1512,7 +1512,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     branchName = branch.name,
                     buyerId = user?.id ?: "",
                     buyerName = user?.name ?: "Shop Manager",
-                    notes = notes
+                    notes = notes,
+                    actor = user
                 )
                 scheduleAutoBranchSync()
 
@@ -1551,7 +1552,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     branchName = branch.name,
                     buyerId = user?.id ?: "",
                     buyerName = user?.name ?: "Shop Manager",
-                    notes = "Quick POS 1-Tap Restock"
+                    notes = "Quick POS 1-Tap Restock",
+                    actor = user
                 )
 
                 val updatedProd = repository.getProductById(product.id) ?: product.copy(quantityInStock = product.quantityInStock + quantityToAdd)
@@ -1573,7 +1575,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun deletePurchaseRecord(purchaseId: String) {
         viewModelScope.launch {
             try {
-                repository.deletePurchaseRecord(purchaseId)
+                repository.deletePurchaseRecord(purchaseId, actor = currentUser.value)
                 scheduleAutoBranchSync()
                 val msg = if (_currentLanguage.value == AppLanguage.KINYARWANDA)
                     "Inyandiko yo kugura yasibwe."
@@ -1634,7 +1636,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     branchName = branch.name
                 )
 
-                val updatedPayment = repository.recordCustomerPayment(payment)
+                val updatedPayment = repository.recordCustomerPayment(payment, actor = user)
                 val symbol = shopProfile.value.currencySymbol
 
                 BeBossNotificationManager.sendDebtPaymentNotification(
@@ -1894,17 +1896,17 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun refreshDatabaseStats(context: Context? = null) = dbCoordinator.refreshDatabaseStats(context)
     fun optimizeDatabase(context: Context? = null) = dbCoordinator.optimizeDatabase(context)
     fun verifyDatabaseIntegrity() = dbCoordinator.verifyDatabaseIntegrity()
-    fun clearTransactionalDataOnly(context: Context? = null) = dbCoordinator.clearTransactionalDataOnly(context)
-    fun clearAllProducts(context: Context? = null) = dbCoordinator.clearAllProducts(context) {
+    fun clearTransactionalDataOnly(context: Context? = null) = dbCoordinator.clearTransactionalDataOnly(context, currentUser.value)
+    fun clearAllProducts(context: Context? = null) = dbCoordinator.clearAllProducts(context, currentUser.value) {
         posCoordinator.clearCart()
         _productSearchQuery.value = ""
     }
 
-    fun clearAllCustomers(context: Context? = null) = dbCoordinator.clearAllCustomers(context) {
+    fun clearAllCustomers(context: Context? = null) = dbCoordinator.clearAllCustomers(context, currentUser.value) {
         _customerSearchQuery.value = ""
     }
 
-    fun resetWholeApp(context: Context? = null) = dbCoordinator.resetWholeApp(context) {
+    fun resetWholeApp(context: Context? = null) = dbCoordinator.resetWholeApp(context, currentUser.value) {
         _productSearchQuery.value = ""
         _customerSearchQuery.value = ""
     }
