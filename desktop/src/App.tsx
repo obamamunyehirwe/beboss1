@@ -5,7 +5,7 @@ import {
   Activity, AlertTriangle, BarChart3, Bell, Building2, Briefcase, Check, ChevronDown,
   ClipboardList, CreditCard, Database, Home, LayoutDashboard, LoaderCircle, LogOut, Menu,
   Package, RefreshCw, Search, Settings, ShieldCheck, ShoppingCart, Smartphone, Truck, UserRound,
-  Users, Warehouse, X, Zap, Languages, ShieldAlert
+  Users, Warehouse, Wallet, X, Zap, Languages, ShieldAlert
 } from "lucide-react";
 import { callDesktopApi, currentSession, signOut, subscribeToShopChanges, OwnerAuthorizationError, DeviceFeeConfirmationRequired, type OwnerCredentials } from "./lib/cloud";
 import { BrowserRuntimeNotice } from "./components/BrowserRuntimeNotice";
@@ -24,6 +24,7 @@ import { SalesPage } from "./components/screens/SalesPage";
 import { CustomersPage } from "./components/screens/CustomersPage";
 import { PurchasesPage } from "./components/screens/PurchasesPage";
 import { ReportsPage } from "./components/screens/ReportsPage";
+import { FinanceControlPage } from "./components/screens/FinanceControlPage";
 import { BranchesPage } from "./components/screens/BranchesPage";
 import { StaffPage } from "./components/screens/StaffPage";
 import { DevicesPage } from "./components/screens/DevicesPage";
@@ -100,6 +101,7 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
   { id: "customers", label: "Customers & credit", icon: Users, group: "Operations" },
   { id: "purchases", label: "Purchasing", icon: Truck, group: "Operations" },
   { id: "reports", label: "Reports & insights", icon: BarChart3, group: "Intelligence" },
+  { id: "finance", label: "Financial control", icon: Wallet, group: "Intelligence" },
   { id: "branches", label: "Branches", icon: Building2, group: "Organization" },
   { id: "staff", label: "Staff access", icon: UserRound, group: "Organization" },
   { id: "devices", label: "POS terminals", icon: Smartphone, group: "Organization" },
@@ -1208,6 +1210,7 @@ function NativeDesktopApp() {
         {view === "customers" && <CustomersPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} query={search} onReceipt={openReceipt} />}
         {view === "purchases" && <PurchasesPage snapshot={snapshot} onCommit={commitSnapshot} offline={offline} />}
         {view === "reports" && <ReportsPage snapshot={snapshot} />}
+        {view === "finance" && <FinanceControlPage cloud={cloud} snapshot={snapshot} />}
         {view === "branches" && <BranchesPage cloud={cloud} snapshot={snapshot} onAction={callAction} onRefresh={refreshManagement} offline={offline} />}
         {view === "staff" && <StaffPage cloud={cloud} snapshot={snapshot} onSaveStaff={saveStaffAccess} offline={offline} />}
         {view === "devices" && <DevicesPage cloud={cloud} onAction={callAction} onRefresh={refreshManagement} offline={offline} currentDeviceId={"DESKTOP:" + deviceId} />}
