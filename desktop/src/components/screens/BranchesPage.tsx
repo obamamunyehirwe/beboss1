@@ -263,7 +263,8 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
   return <div className="page-stack enterprise-branch-page">
     <PageHeading eyebrow="ORGANIZATION · MULTI-LOCATION CONTROL" title="Branch management"
       description="Operate every store location from one owner workspace. Manage branch leaders, targets, operating states and cloud-shared performance."
-      action={<div className="enterprise-page-actions">\n        <button className="btn-outline" type="button" onClick={exportBranchNetwork}><Activity size={15} /> Export network</button>
+      action={<div className="enterprise-page-actions">
+        <button className="btn-outline" type="button" onClick={exportBranchNetwork}><Activity size={15} /> Export network</button>
         <button className="btn-outline" disabled={offline || refreshing} onClick={() => void refresh()}><Activity size={15} className={refreshing ? "spin" : ""} /> Refresh cloud</button>
         <button className="btn-primary" disabled={offline} onClick={() => start()}><Plus size={17} /> Add branch</button>
       </div>} />
