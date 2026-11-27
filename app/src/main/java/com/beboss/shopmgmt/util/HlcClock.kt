@@ -22,6 +22,11 @@ object HlcClock {
 
     fun current(): Long = lastHlc.get()
 
+    /** Isolates tests from the real wall-clock timestamp used when this singleton initializes. */
+    internal fun resetForTests(initialHlc: Long = 0L) {
+        lastHlc.set(initialHlc)
+    }
+
     /**
      * Advances HLC for a local mutation event.
      */
