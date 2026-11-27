@@ -195,3 +195,20 @@ The build now blocks:
 - Desktop installer creation without both renderer and native crash telemetry configured.
 
 The remaining external actions depend on release history: for a first production launch, configure the locally held signing keystore and fingerprint, set ANDROID_FIRST_PRODUCTION_RELEASE=true only after confirming there are no customer production installs or legacy credential backups to import, configure a real SENTRY_DSN, build and verify the APK, publish it through BeBoss Admin, and test update delivery on physical devices. For an existing install base, complete the transition migration and signing-compatibility path instead. Play Console is not required for direct APK distribution.
+
+
+## 5. Repeatable signed production APK build from GitHub Actions
+
+The repository includes a manual workflow: **Actions → Build signed BeBoss Android production APK → Run workflow**. It builds only the Secure Release APK, derives the TLS pin from the configured live Supabase HTTPS endpoint, runs the release gates and secure unit tests, inspects the APK package/version, verifies the configured signer certificate and uploads the APK plus SHA-256 checksum as a 30-day workflow artifact. It does not publish the artifact automatically; download the artifact and publish the exact APK through Admin → App Releases → Mobile releases after reviewing the version, release notes and signing identity.
+
+Configure these GitHub Actions repository secrets before running it:
+
+- `ANDROID_RELEASE_KEYSTORE_BASE64`: base64 of the exact owner-held PKCS#12/JKS signing keystore used for this direct APK channel.
+- `ANDROID_RELEASE_STORE_PASSWORD`, `ANDROID_RELEASE_KEY_PASSWORD`, `ANDROID_RELEASE_KEY_ALIAS`: keystore credentials and alias.
+- `ANDROID_RELEASE_CERT_SHA256`: SHA-256 fingerprint of that APK signing certificate. The legacy `ANDROID_UPLOAD_CERT_SHA256` name is also accepted.
+- `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `ANDROID_SENTRY_DSN` (or the shared `SENTRY_DSN`).
+- Exactly one approval secret: `ANDROID_FIRST_PRODUCTION_RELEASE=true` only when no production APK has ever been installed by a customer and no legacy credential backup will be imported; otherwise `SECURE_CREDENTIAL_MIGRATION_APPROVED=true` only after all active devices have completed the transition migration.
+- Optional `BEBOSS_ADMIN_URL` and `BEBOSS_ADMIN_WHATSAPP`.
+
+The workflow writes the base64-decoded keystore only to the ephemeral Windows runner, validates it against the declared certificate fingerprint, and deletes it after the build. Never add the raw keystore or passwords to Git. Do not create a new signing key for later updates.
+

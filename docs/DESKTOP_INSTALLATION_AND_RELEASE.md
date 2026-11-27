@@ -113,3 +113,16 @@ The native desktop app checks the public release service when startup setup comp
 When a newer version is available, BeBoss opens the signed, short-lived installer download in the system browser. The user runs the downloaded platform installer and confirms the upgrade. The Windows NSIS installer replaces application binaries and shortcuts while preserving the encrypted SQLCipher database, OS credential-vault entry, DPAPI key backup, pending sync outbox and recovery archives.
 
 This is a release check plus a user-approved installer update, not a silent background install. A fully automatic Tauri updater is intentionally not enabled yet: it requires a separate updater signing keypair and signed update packages. The private updater key must be generated and held by the release owner outside Git; Windows Authenticode signing and Tauri updater signatures are separate trust systems. Do not enable an unsigned updater payload or store updater private keys in the repository.
+
+
+## Repeatable signed Windows installer build from GitHub Actions
+
+The repository includes **Actions → Build signed BeBoss Windows desktop installer → Run workflow**. This Windows-only workflow runs the same version, installer-policy, TypeScript, regression, Rust and production-build checks as the local release script, signs the NSIS setup executable with Authenticode and a trusted RFC 3161 timestamp, verifies the resulting signature, writes SHA-256 checksums and uploads a 30-day artifact. It does not publish automatically; download the signed artifact and upload the exact `.exe` through Admin → App Releases → Desktop releases.
+
+Configure these GitHub Actions repository secrets:
+
+- `WINDOWS_CODESIGN_PFX_BASE64`: base64 of a new CA-issued code-signing PFX containing its private key and Code Signing EKU.
+- `WINDOWS_CODESIGN_PFX_PASSWORD`: password for that PFX.
+
+The workflow rejects the previously exposed PFX by its known file hash. Never upload the private PFX to Git or include it in build artifacts. The current desktop auto-update experience discovers a newer public installer and opens its trusted download; the user then runs the signed installer to perform the data-preserving in-place upgrade. It is not a silent Tauri updater.
+

@@ -1,0 +1,118 @@
+name: Build signed BeBoss Android production APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beboss-android-production-release
+  cancel-in-progress: false
+
+jobs:
+  secure-release:
+    name: Build and verify signed secure APK
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+      KEYSTORE_PATH: ${{ runner.temp }}\beboss-android-release.keystore
+      STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD || secrets.STORE_PASSWORD }}
+      KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS || secrets.KEY_ALIAS }}
+      ANDROID_RELEASE_CERT_SHA256: ${{ secrets.ANDROID_RELEASE_CERT_SHA256 || secrets.ANDROID_UPLOAD_CERT_SHA256 }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SENTRY_DSN: ${{ secrets.ANDROID_SENTRY_DSN || secrets.SENTRY_DSN }}
+      ANDROID_FIRST_PRODUCTION_RELEASE: ${{ secrets.ANDROID_FIRST_PRODUCTION_RELEASE }}
+      SECURE_CREDENTIAL_MIGRATION_APPROVED: ${{ secrets.SECURE_CREDENTIAL_MIGRATION_APPROVED }}
+      BEBOSS_ADMIN_URL: ${{ secrets.BEBOSS_ADMIN_URL }}
+      BEBOSS_ADMIN_WHATSAPP: ${{ secrets.BEBOSS_ADMIN_WHATSAPP }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Set up Gradle wrapper caching
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Validate protected release configuration and materialize keystore
+        shell: pwsh
+        run: |
+          $required = @(
+            "ANDROID_RELEASE_KEYSTORE_BASE64",
+            "STORE_PASSWORD",
+            "KEY_PASSWORD",
+            "KEY_ALIAS",
+            "ANDROID_RELEASE_CERT_SHA256",
+            "SUPABASE_URL",
+            "SUPABASE_PUBLISHABLE_KEY",
+            "SENTRY_DSN"
+          )
+          foreach ($name in $required) {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ([string]::IsNullOrWhiteSpace($value)) {
+              throw "Required GitHub Actions secret is missing: $name"
+            }
+          }
+          $first = $env:ANDROID_FIRST_PRODUCTION_RELEASE -eq "true"
+          $migrated = $env:SECURE_CREDENTIAL_MIGRATION_APPROVED -eq "true"
+          if (-not $first -and -not $migrated) {
+            throw "Set ANDROID_FIRST_PRODUCTION_RELEASE=true only for a genuinely first customer release, or SECURE_CREDENTIAL_MIGRATION_APPROVED=true after every existing active terminal has completed its credential migration."
+          }
+          if ($first -and $migrated) {
+            throw "Choose exactly one Android secure-release approval path; do not set both approval secrets to true."
+          }
+          $encoded = $env:ANDROID_RELEASE_KEYSTORE_BASE64 -replace '\s', ''
+          try { $bytes = [Convert]::FromBase64String($encoded) }
+          catch { throw "ANDROID_RELEASE_KEYSTORE_BASE64 is not valid base64." }
+          if ($bytes.Length -lt 1024) { throw "The decoded Android signing keystore is unexpectedly small." }
+          [IO.File]::WriteAllBytes($env:KEYSTORE_PATH, $bytes)
+          [Array]::Clear($bytes, 0, $bytes.Length)
+          if (-not (Test-Path -LiteralPath ".env")) {
+            New-Item -ItemType File -Path ".env" | Out-Null
+          }
+          Write-Host "Protected Android release inputs are present. Keystore bytes were written only to the ephemeral runner."
+      
+      - name: Derive real Supabase TLS public-key pins
+        shell: pwsh
+        run: java .\scripts\PrintSupabaseTlsPins.java --update-env
+
+      - name: Build secure production APK and verify package plus signing identity
+        shell: pwsh
+        run: .\scripts\build-first-production-apk.ps1
+
+      - name: Upload signed production APK and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeBoss-Android-Secure-2.6.0-${{ github.run_number }}
+          path: |
+            app/build/outputs/apk/secure/release/app-secure-release.apk
+            app/build/outputs/apk/secure/release/app-secure-release.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Remove ephemeral signing material and generated environment
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath $env:KEYSTORE_PATH) {
+            Remove-Item -LiteralPath $env:KEYSTORE_PATH -Force
+          }
+          if (Test-Path -LiteralPath ".env") {
+            Remove-Item -LiteralPath ".env" -Force
+          }

@@ -1,0 +1,85 @@
+name: Build signed BeBoss Windows desktop installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beboss-windows-production-release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Build, Authenticode-sign and verify NSIS installer
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+      WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
+      WINDOWS_CODESIGN_PFX_PATH: ${{ runner.temp }}\beboss-windows-codesign.pfx
+      VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_SFUKqYETliLdgqluQBQ2xg_XJNudcvM
+      VITE_SENTRY_DSN: https://bfef12cf8aa3fe3be99557e2371ecfc7@o4512498787287040.ingest.us.sentry.io/4512498794954752
+      SENTRY_DSN: https://bfef12cf8aa3fe3be99557e2371ecfc7@o4512498787287040.ingest.us.sentry.io/4512498794954752
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate new Windows code-signing certificate and materialize PFX
+        shell: pwsh
+        run: |
+          foreach ($name in @("WINDOWS_CODESIGN_PFX_BASE64", "WINDOWS_CODESIGN_PFX_PASSWORD")) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Required GitHub Actions secret is missing: $name"
+            }
+          }
+          $encoded = $env:WINDOWS_CODESIGN_PFX_BASE64 -replace '\s', ''
+          try { $bytes = [Convert]::FromBase64String($encoded) }
+          catch { throw "WINDOWS_CODESIGN_PFX_BASE64 is not valid base64." }
+          if ($bytes.Length -lt 1024) { throw "The decoded Windows signing PFX is unexpectedly small." }
+          [IO.File]::WriteAllBytes($env:WINDOWS_CODESIGN_PFX_PATH, $bytes)
+          [Array]::Clear($bytes, 0, $bytes.Length)
+          Write-Host "Windows signing certificate has been materialized in the ephemeral runner."
+
+      - name: Install desktop dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build and sign the Windows production installer
+        run: npm run release:win:local
+
+      - name: Upload signed Windows installer and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeBoss-Windows-Signed-${{ github.run_number }}
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/release/bundle/nsis/*.sha256
+            desktop/src-tauri/target/release/bundle/nsis/signature-status.txt
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Remove ephemeral code-signing material
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath $env:WINDOWS_CODESIGN_PFX_PATH) {
+            Remove-Item -LiteralPath $env:WINDOWS_CODESIGN_PFX_PATH -Force
+          }

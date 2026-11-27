@@ -331,6 +331,7 @@ jobs:
   android:
     name: Android tests and debug-only build validation
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     env:
       SENTRY_DSN: ${{ secrets.ANDROID_SENTRY_DSN || secrets.SENTRY_DSN }}
     steps:
@@ -453,10 +454,16 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_2
+          force-avd-creation: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -noaudio
           disable-animations: true
           script: gradle :app:connectedSecureDebugAndroidTest --stacktrace
 
+      # Always run the remaining independent release-safety and compile checks
+      # even when a hosted Android emulator fails to start.
       - name: Verify Android release signing fails closed without production credentials
+        if: ${{ always() && !cancelled() }}
         shell: bash
         env:
           KEYSTORE_PATH: ""
@@ -479,4 +486,5 @@ jobs:
           fi
 
       - name: Compile Android debug variant for CI validation only
+        if: ${{ always() && !cancelled() }}
         run: gradle :app:assembleSecureDebug :app:assembleTransitionDebug --stacktrace
