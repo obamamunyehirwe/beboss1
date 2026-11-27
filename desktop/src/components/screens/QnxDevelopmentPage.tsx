@@ -201,7 +201,7 @@ export function QnxDevelopmentPage() {
       <ul className="qnx-notes">{status.notes.map((note) => <li key={note}>{note}</li>)}</ul>
     </section> : null}
 
-    {result && <section className="panel settings-form">
+    {result ? <section className="panel settings-form">
       <div className="panel-heading"><div><span className="eyebrow muted">BUILD EVIDENCE</span><h3>Latest operation output</h3></div><Terminal size={18} className="muted-icon" /></div>
       <DetailRow label="Command" value={result.command} />
       {result.outputPath && <DetailRow label="Output" value={result.outputPath} />}
