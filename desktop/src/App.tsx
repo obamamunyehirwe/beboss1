@@ -1174,7 +1174,7 @@ function NativeDesktopApp() {
   }
 
   if ((!owner || !cloud) && view === "masterAdmin") {
-    return <AdminConsolePage onExit={() => setView("welcome")} />;
+    return <AdminConsolePage theme={preferences.theme} onExit={() => setView("welcome")} />;
   }
 
   if (!owner || !cloud) {
