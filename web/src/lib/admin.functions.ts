@@ -1509,6 +1509,29 @@ export const publishDesktopRelease = createServerFn({ method: "POST" })
     }
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    if (data.make_current) {
+      const { compareReleaseVersions } = await import("@/lib/desktop-release-version");
+      const { data: previousVersions, error: previousVersionError } = await supabaseAdmin
+        .from("desktop_app_releases")
+        .select("version_name")
+        .eq("platform", data.platform)
+        .limit(500);
+      if (previousVersionError) throw new Error("Could not verify the previous desktop release version.");
+      const highestVersion = (previousVersions ?? []).reduce(
+        (highest, row) => {
+          if (!highest) return row.version_name;
+          const comparison = compareReleaseVersions(row.version_name, highest);
+          return comparison !== null && comparison > 0 ? row.version_name : highest;
+        },
+        "" as string,
+      );
+      if (highestVersion) {
+        const comparison = compareReleaseVersions(data.version_name, highestVersion);
+        if (comparison === null || comparison <= 0) {
+          throw new Error(`A current ${data.platform} release must be newer than the highest published version (${highestVersion}). Use a higher semantic version.`);
+        }
+      }
+    }
     const folder = pathParts.slice(0, 3).join("/");
     const { data: storedFiles, error: storageError } = await supabaseAdmin.storage
       .from("releases")
