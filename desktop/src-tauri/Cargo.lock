@@ -462,6 +462,7 @@ version = "1.4.2"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
+ "flate2",
  "keyring",
  "rusqlite",
  "sentry",
@@ -472,7 +473,6 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "uuid",
- "flate2",
 ]
 
 [[package]]
