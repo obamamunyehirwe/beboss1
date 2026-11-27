@@ -50,25 +50,32 @@ if ($extension -eq ".apk") {
         }
     }
     if (-not $apksigner) { throw "apksigner was not found. Install Android SDK build-tools and add apksigner to PATH." }
-    $details = & $apksigner verify --print-certs $ArtifactPath 2>&1
+    $details = & $apksigner verify --verbose --print-certs $ArtifactPath 2>&1
     if ($LASTEXITCODE -ne 0) { throw "APK signature verification failed: $($details -join [Environment]::NewLine)" }
-    $line = $details | Where-Object { $_ -match "Signer #1 certificate SHA-256 digest:\s*([A-Fa-f0-9]+)" } | Select-Object -First 1
-    if (-not $line -or $line -notmatch "Signer #1 certificate SHA-256 digest:\s*([A-Fa-f0-9]+)") {
-        throw "Could not read the APK signer SHA-256 digest."
+    # Rotation-capable APKs can report more than one signer certificate.
+    # Require the owner-configured replacement certificate to appear in the
+    # verified signer set; do not assume it is always printed as signer #1.
+    $actual = @()
+    foreach ($line in $details) {
+        if ($line -match "Signer #\d+ certificate SHA-256 digest:\s*([A-Fa-f0-9]+)") {
+            $actual += $Matches[1].ToUpperInvariant()
+        }
     }
-    $actual = $Matches[1].ToUpperInvariant()
+    if ($actual.Count -eq 0) {
+        throw "Could not read any APK signer SHA-256 digest."
+    }
 } elseif ($extension -eq ".aab") {
     if (-not (Get-Command keytool -ErrorAction SilentlyContinue)) { throw "keytool is required to inspect an Android App Bundle." }
     $details = & keytool -printcert -jarfile $ArtifactPath 2>&1
     if ($LASTEXITCODE -ne 0) { throw "AAB signing certificate inspection failed: $($details -join [Environment]::NewLine)" }
     $line = $details | Where-Object { $_ -match "SHA256:\s*([A-Fa-f0-9:]+)" } | Select-Object -First 1
     if (-not $line -or $line -notmatch "SHA256:\s*([A-Fa-f0-9:]+)") { throw "Could not read the AAB signer SHA-256 fingerprint." }
-    $actual = ($Matches[1] -replace ":", "").ToUpperInvariant()
+    $actual = @(($Matches[1] -replace ":", "").ToUpperInvariant())
 } else {
     throw "Supported artifacts are .apk and .aab."
 }
 
-if ($actual -ne $expected) {
-    throw "Signing certificate mismatch. Expected $expected but artifact was signed with $actual. Do not publish this artifact."
+if ($actual -notcontains $expected) {
+    throw "Signing certificate mismatch. Expected $expected but verified artifact signer(s) were $($actual -join ', '). Do not publish this artifact."
 }
-Write-Host "Signature verified. Artifact matches the configured Android release certificate ($actual). No Google Play service is used by this check."
+Write-Host "Signature verified. The configured Android release certificate ($expected) is present in the artifact's verified signer set."

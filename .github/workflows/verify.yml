@@ -414,6 +414,10 @@ jobs:
             exit 1
           fi
 
+      - name: Validate standalone Android signing helper scripts
+        shell: pwsh
+        run: ./scripts/test-android-signing-tools.ps1
+
       - name: Run Android unit tests (retry transient Maven Central rate limits)
         shell: bash
         run: |
