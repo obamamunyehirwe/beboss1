@@ -5,6 +5,7 @@ BeBoss Desktop includes a host-side workbench for QNX SDP 8.0 development. It do
 ## Capabilities
 
 - Detects QNX_BASE, QNX_HOST, QNX_TARGET, QNX SDP target headers, compiler variants, qcc, q++, mkifs and mkqnximage.
+- Runs a compile-and-link smoke test with each reported qcc target variant, including the QNX target headers, before marking that architecture as available.
 - Cross-compiles a native Neutrino edge agent for x86-64 or AArch64 with qcc.
 - Calculates SHA-256 for the generated target executable and IFS output.
 - Builds a user-supplied QNX IFS buildfile with mkifs without overwriting existing output.
@@ -15,6 +16,8 @@ The edge agent registers the beboss-edge-gateway service and processes health/ec
 ## Host requirements
 
 Use a supported 64-bit x86 Windows or Linux development host with QNX SDP 8.0 installed and licensed. QNX SDP 8.0 is not supported as a macOS or ARM-host development environment. Check the release notes for the precise maintenance-release host operating-system support.
+
+The workbench only treats a non-empty `images/qemu` directory as a preliminary package-presence check; it does not claim this directory contains a bootable image. The actual `mkqnximage --build` command must complete successfully, and a QEMU boot must be confirmed in the guest window or serial console.
 
 The QEMU workflow also needs the QNX SDP 8.0 QEMU quick-start/reference-image package unpacked under:
 
@@ -36,7 +39,7 @@ The expected QNX 8 target tree is:
 
 1. Open Administration, then QNX Development Center.
 2. Enter the QNX SDP installation directory, or set QNX_BASE before starting BeBoss Desktop.
-3. Select Refresh status. The workbench probes qcc, q++, mkifs, mkqnximage, target headers and compiler variants.
+3. Select Refresh status. The workbench probes qcc, q++, mkifs, mkqnximage and target headers, then compiles and links a minimal QNX test program for each reported architecture. Only variants that pass this check are shown as verified and enabled for building.
 4. Select x86_64 or aarch64le, then choose Build edge agent and Build IPC client. The generated target binaries and SHA-256 digests appear in the evidence panel.
 5. To create a custom image, enter a valid QNX board-specific .build file and a new output path, then choose Build IFS.
 6. Install and unpack the QNX QEMU quick-start image package. Choose Prepare image, then Launch QEMU. Choose Stop QEMU to request shutdown.
@@ -84,4 +87,4 @@ Prepare, launch and stop the QNX QEMU reference target from its image directory:
 - desktop/src-tauri/src/qnx.rs — real SDK detection, qcc compilation, mkifs image build and QEMU lifecycle commands.
 - desktop/src/components/screens/QnxDevelopmentPage.tsx — interactive desktop workbench.
 
-The actual qcc build, IFS generation and QEMU boot require QNX SDP 8.0, a valid license, matching target packages and a supported development host. The repository alone cannot establish that the SDK or reference image is installed on a user's computer. BeBoss retail desktop itself remains a Windows/macOS/Linux Tauri product; this integration provides host-based QNX 8.0 development support.
+The qcc status probe validates each listed compiler variant by compiling and linking a temporary test program. The actual BeBoss edge-agent/client builds and IFS generation still require a licensed QNX SDP 8.0 installation, matching target packages and a supported development host. Starting `mkqnximage --run` only confirms that the launch command was handed off; confirm the guest boot independently in the QEMU window or serial console. The repository alone cannot establish that the SDK, license or reference image is installed on a user's computer. BeBoss retail desktop itself remains a Windows/macOS/Linux Tauri product; this integration provides host-based QNX 8.0 development support.
