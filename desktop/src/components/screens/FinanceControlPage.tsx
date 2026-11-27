@@ -1,4 +1,4 @@
-import { Activity, ArrowDownRight, ArrowUpRight, Banknote, Download, Filter, ShieldCheck, Store, Wallet } from "lucide-react";
+import { Activity, ArrowDownRight, ArrowUpRight, Banknote, Download, Filter, ShieldCheck, Store, Truck, Wallet } from "lucide-react";
 import { useMemo, useState } from "react";
 import { downloadCsv, money, n, rows, s } from "../../lib/format";
 import type { CloudState, Row, Snapshot } from "../../lib/types";
