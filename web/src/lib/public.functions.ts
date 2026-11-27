@@ -1126,9 +1126,12 @@ export const postMyShopFinanceEntry = createServerFn({ method: "POST" })
       } catch { /* Invalid legacy details cannot satisfy the versioned idempotency check. */ }
     }
     const detail = JSON.stringify(entry);
+    const { data: shop, error: shopError } = await sb.from("shop_accounts")
+      .select("shop_name").eq("id", key).maybeSingle();
+    if (shopError || !shop) throw new Error("Could not verify the shop before posting this financial entry.");
     const { data: inserted, error } = await sb.from("cloud_sync_events").insert({
       shop_sync_key: key,
-      shop_name: (await sb.from("shop_accounts").select("shop_name").eq("id", key).maybeSingle()).data?.shop_name ?? "",
+      shop_name: String(shop.shop_name ?? ""),
       entity: "FINANCE_LEDGER",
       action: "POSTED",
       actor: "OWNER:" + ownerUsername,
@@ -1155,9 +1158,9 @@ export const reverseMyShopFinanceEntry = createServerFn({ method: "POST" })
   .validator((d: z.infer<typeof myShopFinanceReverseSchema>) => myShopFinanceReverseSchema.parse(d))
   .handler(async ({ data, context }) => {
     const ownerContext = context as unknown as OwnerAuthContext;
-    const { key } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
+    const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const ownerUsername = data.username.trim().toLowerCase();
-    const originalResult = await ownerContext.supabase.from("cloud_sync_events").select("detail")
+    const originalResult = await sb.from("cloud_sync_events").select("detail")
       .eq("shop_sync_key", key).eq("entity", "FINANCE_LEDGER").eq("action", "POSTED")
       .like("detail", '%"entryId":"' + data.originalEntryId + '"%').limit(1).maybeSingle();
     if (originalResult.error || !originalResult.data?.detail) {
@@ -1169,7 +1172,7 @@ export const reverseMyShopFinanceEntry = createServerFn({ method: "POST" })
     if (original.version !== 1 || original.entryId !== data.originalEntryId || original.type === "REVERSAL") {
       throw new Error("Only a valid original posted financial entry can be reversed.");
     }
-    const previous = await ownerContext.supabase.from("cloud_sync_events").select("detail")
+    const previous = await sb.from("cloud_sync_events").select("detail")
       .eq("shop_sync_key", key).eq("entity", "FINANCE_LEDGER").eq("action", "REVERSED")
       .like("detail", '%"reversalOf":"' + data.originalEntryId + '"%').limit(1).maybeSingle();
     if (previous.error) throw new Error("Could not verify earlier reversals.");
@@ -1203,7 +1206,7 @@ export const reverseMyShopFinanceEntry = createServerFn({ method: "POST" })
       actorUsername: ownerUsername,
       actorDeviceId: "WEB:OWNER_PORTAL"
     };
-    const { data: inserted, error } = await ownerContext.supabase.from("cloud_sync_events").insert({
+    const { data: inserted, error } = await sb.from("cloud_sync_events").insert({
       shop_sync_key: key,
       entity: "FINANCE_LEDGER",
       action: "REVERSED",
