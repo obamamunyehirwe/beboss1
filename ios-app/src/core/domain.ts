@@ -299,3 +299,4 @@ export function verifyBB3Voucher(
     fingerprint: computeVoucherFingerprint(code),
     message: 'BB3 signature and shop-owner account binding verified.'
   };
+}
