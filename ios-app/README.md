@@ -1,28 +1,34 @@
 # BeBoss iPhone application
 
-This is a separate React Native application for iPhone. It does not replace, rewrite, or build the Android app. Its native iOS host and product code live here; the original Android app remains under the root app/ directory.
+This is the native iPhone client for BeBoss. It shares the BeBoss business model and cloud snapshot protocol with Android and desktop, while keeping its own iOS-native database, credentials and device identity. The Android app remains under `app/`; this project does not copy Android private storage or Android Keystore secrets to iOS.
 
 ## Technology
 
-- React Native 0.88.1, React 19.3, New Architecture enabled
-- TypeScript business services and React Native user interface
-- SQLCipher-backed local SQLite through OP-SQLite
-- Apple Keychain storage for the database encryption key and Supabase session
-- PBKDF2-HMAC-SHA256 credentials compatible with the Android pbkdf2v2 record format
-- AES-256-GCM encrypted portable backup files
-- Face ID / Touch ID via Keychain access control
-- VisionCamera 5 barcode scanning
-- Bluetooth Low Energy ESC/POS printer transport
-- Supabase JS client using only the public publishable API key
+- React Native 0.88.1, React 19.3 and TypeScript
+- SQLCipher-backed SQLite through OP-SQLite
+- Apple Keychain for the database key, Supabase session and revocable iPhone device credentials
+- PBKDF2-HMAC-SHA256 local PIN/password hashes using the Android-compatible `pbkdf2v2` wire format
+- AES-256-GCM password-encrypted portable backups
+- Face ID / Touch ID through Keychain access control
+- VisionCamera barcode scanning
+- Bluetooth Low Energy ESC/POS receipt printing
+- Supabase Edge Functions for owner verification, device enrollment and signed snapshot synchronization
 
-## Build an unsigned iPhone-device app
+## Configure the cloud client
 
-Requires macOS, Xcode 26.4 with the iOS device SDK, Node.js 22.13 or later, Ruby and CocoaPods.
+Copy `.env.example` to `.env` and set only the BeBoss public Supabase project URL and publishable key:
+
+    SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+    SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+
+Do not put a service-role key, the shop DataShare signing key, an Android Keystore secret or a device token in `.env`, source control, reports or backup exports. The iPhone's opaque device credentials are held in Apple Keychain.
+
+## Build an unsigned iPhone device app
+
+The device build requires macOS, Xcode with an iOS device SDK, Node.js 22.13 or later, Ruby and CocoaPods.
 
 From this directory:
 
-    cp .env.example .env
-    # Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY to the BeBoss public project values.
     npm install
     npm run typecheck
     npm test -- --runInBand
@@ -30,28 +36,52 @@ From this directory:
     bundle exec pod install --project-directory=ios
     xcodebuild -project ios/BeBoss.xcodeproj -scheme BeBoss -sdk iphoneos -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/ios-device CODE_SIGNING_ALLOWED=NO build
 
-The CI workflow uses the physical-device iphoneos SDK only. It does not build or run an iOS simulator. The unsigned app output is under build/ios-device/Build/Products/Release-iphoneos/BeBoss.app.
+The CI workflow builds for the physical-device `iphoneos` SDK. An unsigned `BeBoss.app` is not installable on an ordinary iPhone until it is signed. Device installation and TestFlight/App Store distribution require an Apple Developer Team, valid signing certificates and provisioning profiles; those credentials must not be committed to the repository.
 
-To install on a real iPhone, configure your Apple Developer Team and signing capabilities in Xcode. App Store/TestFlight distribution additionally needs the account's distribution certificate, provisioning profile, App Store Connect record and Apple's signing process. Those credentials must not be committed to this repository.
+## Local business workflows
 
-## Implemented iPhone workflows
+- First-run shop workspace and owner setup, local staff sign-in and login throttling
+- Role-enforced owner, manager and cashier access, checked in repository mutations
+- Dashboard, sales overview and low-stock monitoring
+- POS with catalogue search, barcode scanner, cart, discounts, customer selection, split/partial payments, credit validation, atomic checkout, receipt history and controlled sale reversal
+- Product inventory, archive, stock adjustments and reorder levels
+- Customer records and debt collection/payment ledger
+- Supplier purchases and stock inflow
+- Branch and warehouse records, operating states and controlled stock transfers with receive/cancel actions
+- Staff records and role permission presets
+- Sales and inventory CSV exports
+- Password-encrypted backup export and same-shop restore
+- Face ID / Touch ID and BLE receipt printing
 
-- First-run shop/owner registration with the four-day trial fields, local staff sign-in, PBKDF2v2 PIN/password hashes and lockout tracking
-- Role permissions for owner, manager and cashier, checked again in repository mutations
-- Dashboard and low-stock view
-- Point of sale: catalogue search, barcode capture, cart quantity controls, customer selection, discounts, partial payments, credit validation, atomic checkout, receipt history and sale reversal
-- Inventory: product CRUD, archive, stock adjustments and reorder threshold
-- Customers: profile CRUD and outstanding debt collection/payment ledger
-- Purchases: supplier invoice records, stock inflow and cost/selling price update
-- Branch records and controlled in-transit stock transfers with receiving confirmation
-- Staff records and Android-compatible role permission presets
-- Local reports and basic operational diagnostics
-- Encrypted AES-256-GCM backup export, Face ID/Touch ID Keychain gate and BLE printer test/receipt output
+## Secure iPhone cloud synchronization
 
-## Cross-platform and security notes
+An iPhone must be paired with an active device slot using the owner-issued invitation. The enrollment endpoint verifies the fresh SMS-confirmed shop-owner session, redeems the invitation, confirms the assigned active staff account and role, and obtains a revocable device credential. The credential is stored in Keychain and is refreshed through the device-auth Edge Function.
 
-The iOS app writes to its own encrypted iPhone database. It does not read Android private app storage, Room files, SQLCipher files or Android Keystore material. It does not embed the old Android credential pepper. Existing Android pbkdf2 legacy hashes are rejected on iPhone until the enrolled Android device has upgraded those records or the owner completes a backend-supported migration. New pbkdf2v2 hashes use the same algorithm, iteration count, salt length, output length and wire format.
+The sync endpoint authenticates the iPhone using its device ID and opaque access token. It checks the server-side device registry, assigned user, role and active branch before handling data. Business snapshots are signed on the server using the shop-scoped DataShare signing key; that key is never returned to the app. Each generation is written in immutable BBSHARE2 chunks and only becomes current after the server verifies the complete chunk set and checks the expected cloud generation version. Interrupted or conflicting generations do not replace the last accepted generation.
 
-Every local mutation adds a durable sync-outbox item. The iOS build does not claim that these rows have synchronized. The current BeBoss cloud sync protocol requires a server-issued, platform-bound device credential in X-BeBoss-Device-ID and X-BeBoss-Device-Token, plus the per-shop snapshot signing secret and generation-complete chunk protocol. Android's Keystore credential cannot be copied to iOS; a dedicated iOS enrollment/credential issuance path is needed on the Supabase backend before snapshot sync can safely be enabled. Owner SMS verification alone is not shop-device authorization.
+The iPhone downloads and HMAC-verifies the latest complete snapshot set, merges records using update/HLC versions and tombstones, and preserves locally stored PIN/password hashes. Downloaded staff records without local credentials remain locked until an authorised device pairing provisions them. Upload acknowledgement is tied to the exact local outbox rows included in the successful upload; network failures and version conflicts leave changes queued for retry. Local POS and inventory continue to work offline.
 
-This initial iOS migration does not yet provide the Android's full admin verification console, complete branch DataShare import/export protocol, multi-device cloud snapshot merge and conflict reconciliation, payment-provider orchestration, full subscription BB3 unlock verification, background cloud scheduler, complete device-fleet telemetry, or all diagnostic/maintenance tools. The current local workflow is useful for offline shop operations but is not feature-identical to the Android release. Do not deploy it as an Android-parity replacement until the remaining backend and platform-specific functions have been migrated and tested.
+## Backend deployment requirements
+
+The iOS source depends on the new SQL migration and Edge Function in this repository:
+
+- Apply `web/supabase/migrations/20261127213000_secure_ios_snapshot_sync.sql`
+- Deploy `web/supabase/functions/ios-device-auth`
+- Deploy the updated `web/supabase/config.toml` function configuration
+- Confirm the existing iOS invitation migration `20261127200000_secure_ios_device_enrollment.sql` and authenticated device-credential migration `20261124210000_authenticated_android_device_credentials.sql` are applied
+
+The Edge Function requires the existing Supabase URL, service-role secret and publishable key in its server environment, plus the shop-scoped DataShare key provisioned by the primary owner terminal. Keep all server secrets in Supabase Edge Function secrets, never in the React Native bundle. Test enrollment, upload, download, revocation, branch assignment and concurrent-device conflicts against a non-production shop before rollout.
+
+## Platform differences still requiring migration or validation
+
+The iPhone app is a substantial offline-first client, but it is not yet a verified 100% feature-identical replacement for Android. In particular, the following Android capabilities still require dedicated iOS modules and parity tests:
+
+- Full admin/support verification console and privileged licensing workflows
+- Payment-provider orchestration and verified subscription/BB3 entitlement activation
+- Complete branch DataShare file import/export and approval workflow
+- Background/periodic cloud sync scheduling and recovery across iOS suspension/relaunch
+- Full device-fleet telemetry, device posture reporting and remote maintenance controls
+- Advanced diagnostics, repair tooling and Android-specific hardware integrations
+- Full regression coverage with real iPhones, Bluetooth printer models and production cloud accounts
+
+These gaps must be completed and validated before describing the iPhone app as 100% Android-parity or using it as the only production client.
