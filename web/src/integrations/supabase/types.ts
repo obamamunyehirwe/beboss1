@@ -424,6 +424,15 @@ export type Database = {
       device_security_telemetry: {
         Row: {
           accuracy_meters: number
+          app_build: number
+          app_version: string
+          device_platform: string
+          locale_tag: string
+          manufacturer: string
+          model: string
+          os_release: string
+          sdk_int: number
+          timezone_id: string
           clock_rollback_detected: boolean
           clock_skew_ms: number
           device_id: string
@@ -452,6 +461,15 @@ export type Database = {
         }
         Insert: {
           accuracy_meters?: number
+          app_build?: number
+          app_version?: string
+          device_platform?: string
+          locale_tag?: string
+          manufacturer?: string
+          model?: string
+          os_release?: string
+          sdk_int?: number
+          timezone_id?: string
           clock_rollback_detected?: boolean
           clock_skew_ms?: number
           device_id: string
@@ -480,6 +498,15 @@ export type Database = {
         }
         Update: {
           accuracy_meters?: number
+          app_build?: number
+          app_version?: string
+          device_platform?: string
+          locale_tag?: string
+          manufacturer?: string
+          model?: string
+          os_release?: string
+          sdk_int?: number
+          timezone_id?: string
           clock_rollback_detected?: boolean
           clock_skew_ms?: number
           device_id?: string
