@@ -167,6 +167,113 @@ for (let index = 0; index < ownerDeclarations.length; index += 1) {
   }
 }
 
+// The desktop/mobile Edge Function is the trusted boundary for remote management.
+// Every non-device action must first pass requireOwner (confirmed owner phone + active
+// shop-owner membership). Sensitive management mutations must then verify the
+// enrolled desktop device against the exact active Room owner.
+const edgeFile = "supabase/functions/beboss-desktop/index.ts";
+const edgeSource = readFileSync(edgeFile, "utf8");
+const ownerGuardIndex = edgeSource.indexOf("const owner = await requireOwner(");
+const ownerGuardFunction = edgeSource.slice(
+  edgeSource.indexOf("async function requireOwner("),
+  edgeSource.indexOf("async function getShopDataShareSecret(")
+);
+if (ownerGuardIndex < 0 ||
+    !/auth\\.getUser/.test(ownerGuardFunction) ||
+    !/phone_confirmed_at/.test(ownerGuardFunction) ||
+    !/normalizePhone\\(text\\(user\\.phone\\)\\)/.test(ownerGuardFunction) ||
+    !/shop_owner_memberships/.test(ownerGuardFunction) ||
+    !/status !== "ACTIVE"/.test(ownerGuardFunction) ||
+    !/revoked_at/.test(ownerGuardFunction)) {
+  fail(edgeFile + " :: shared owner boundary must validate the confirmed owner phone and active, non-revoked tenant membership");
+}
+
+const edgeDeviceActions = [
+  "android_transfer_policy",
+  "android_transfer_register_approval_key",
+  "android_transfer_sync",
+  "record_device_local_audit",
+  "record_device_sync_audit",
+  "record_device_branch_tombstones",
+  "verify_device_branch_share",
+];
+const combinedAndroidStart = edgeSource.indexOf('if (action === "android_transfer_policy" ||');
+const combinedAndroidEnd = edgeSource.indexOf('if (action === "record_device_local_audit")', combinedAndroidStart);
+const combinedAndroidBlock = combinedAndroidStart >= 0 && combinedAndroidEnd > combinedAndroidStart
+  ? edgeSource.slice(combinedAndroidStart, combinedAndroidEnd)
+  : "";
+if (!/X-BeBoss-Device-ID/.test(combinedAndroidBlock) ||
+    !/X-BeBoss-Device-Token/.test(combinedAndroidBlock) ||
+    !/deviceClient/.test(combinedAndroidBlock) ||
+    !/remote_kill_switch/.test(combinedAndroidBlock) ||
+    !/is_active/.test(combinedAndroidBlock)) {
+  fail(edgeFile + " :: Android transfer policy, key registration and sync must validate an active device credential and shop");
+}
+for (const action of edgeDeviceActions.slice(3)) {
+  const start = edgeSource.indexOf('if (action === "' + action + '")');
+  const next = edgeSource.indexOf('if (action === "', start + 1);
+  const block = start >= 0 ? edgeSource.slice(start, next > start ? next : edgeSource.length) : "";
+  if (!/X-BeBoss-Device-ID/.test(block) ||
+      !/X-BeBoss-Device-Token/.test(block) ||
+      !/deviceClient/.test(block) ||
+      !/remote_kill_switch/.test(block)) {
+    fail(edgeFile + " :: " + action + " must validate an active enrolled-device credential and shop");
+  }
+}
+
+const ownerEdgeActions = [
+  "lan_pairing_credentials",
+  "restore_preview",
+  "redeem_unlock_code",
+  "device_enroll",
+  "device_retire_legacy",
+  "bootstrap",
+  "register_desktop",
+  "management_refresh",
+  "management_probe",
+  "create_branch_share",
+  "verify_branch_share",
+  "create_checkout",
+  "submit_payment_proof",
+];
+for (const action of ownerEdgeActions) {
+  const start = edgeSource.indexOf('if (action === "' + action + '"');
+  if (start < 0) {
+    // bootstrap is grouped with register_desktop in one action branch.
+    if (action === "bootstrap" && edgeSource.includes('action === "bootstrap" || action === "register_desktop"')) continue;
+    fail(edgeFile + " :: expected owner-protected action " + action + " is missing");
+  } else if (start < ownerGuardIndex) {
+    fail(edgeFile + " :: " + action + " is handled before the shared confirmed-owner membership gate");
+  }
+}
+
+const sensitiveEdgeMutations = [
+  "save_snapshot",
+  "approval_policy_save",
+  "finance_ledger_post",
+  "finance_ledger_reverse",
+  "branch_upsert",
+  "branch_delete",
+  "branch_reconcile",
+  "staff_update",
+  "transfer_create",
+  "transfer_command",
+  "device_create",
+  "device_update",
+  "device_set_active",
+  "device_remove",
+  "device_reinvite",
+];
+for (const action of sensitiveEdgeMutations) {
+  const start = edgeSource.indexOf('if (action === "' + action + '")');
+  const next = edgeSource.indexOf('if (action === "', start + 1);
+  const block = start >= 0 ? edgeSource.slice(start, next > start ? next : edgeSource.length) : "";
+  if (start < 0 || !/ownerManagementActorV2\\s*\\(/.test(block)) {
+    fail(edgeFile + " :: sensitive management mutation " + action + " must verify an active owner-assigned device");
+  }
+}
+checked += edgeDeviceActions.length + ownerEdgeActions.length + sensitiveEdgeMutations.length + 1;
+
 // The platform stats endpoint is intentionally public and read-only.
 const platformFile = "src/lib/platform.functions.ts";
 const platformSource = readFileSync(platformFile, "utf8");
