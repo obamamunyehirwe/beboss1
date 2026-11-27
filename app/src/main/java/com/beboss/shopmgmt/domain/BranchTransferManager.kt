@@ -94,7 +94,8 @@ class BranchTransferManager(
                 tableName = "branches",
                 recordId = branchId,
                 deletedAt = now,
-                hlcTimestamp = HlcClock.tick(now)
+                hlcTimestamp = HlcClock.tick(now),
+                deletedByDeviceId = nodeId
             )
         )
         syncQueueDao.enqueue(
