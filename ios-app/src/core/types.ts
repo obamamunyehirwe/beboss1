@@ -35,6 +35,9 @@ export type ShopProfile = {
   trialStartedAt: number;
   deviceCountLimit: number;
   lastSyncedAt: number;
+  lastPaymentRef?: string;
+  lastPaymentAmount?: number;
+  lastPaymentDate?: number;
   createdAt: number;
   updatedAt: number;
 };

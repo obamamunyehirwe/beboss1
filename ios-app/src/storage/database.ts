@@ -31,6 +31,7 @@ const schema = [
   'CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL, action TEXT NOT NULL, target_id TEXT NOT NULL, details TEXT NOT NULL, created_at INTEGER NOT NULL)',
   'CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC)',
   'CREATE TABLE IF NOT EXISTS auth_attempts (bucket TEXT PRIMARY KEY, failures INTEGER NOT NULL, blocked_until INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
+  'CREATE TABLE IF NOT EXISTS redeemed_vouchers (fingerprint TEXT PRIMARY KEY, voucher_code TEXT NOT NULL, plan_name TEXT NOT NULL, days_added INTEGER NOT NULL, verified_amount_rwf INTEGER NOT NULL, redeemed_at INTEGER NOT NULL)',
   'CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)'
 ];
 

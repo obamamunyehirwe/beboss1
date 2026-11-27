@@ -192,3 +192,110 @@ export function calculateSubscriptionQuote(
     totalPayable: rawTotal - discountAmount
   };
 }
+
+
+export type BB3VoucherValidation = {
+  valid: boolean;
+  code: string;
+  tier: string;
+  days: number;
+  expiryEpochDay: number;
+  accountHash: string;
+  fingerprint: string;
+  message: string;
+};
+
+/** Public key pinned in the Android SubscriptionSecurityManager. The private key is server-only. */
+const BEBOSS_BB3_PUBLIC_KEY = \`-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEnH8Qg10M7lur8WocoKgklEJ98F6
+UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
+-----END PUBLIC KEY-----\`;
+
+function sha256Hex(value: string): string {
+  return QuickCrypto.createHash('sha256').update(value, 'utf8').digest('hex').toUpperCase();
+}
+
+export function computeBB3AccountBindingHash(username: string, phone: string): string {
+  const normalizedUser = username.trim().toLowerCase();
+  const normalizedPhone = phone.replace(/\D/g, '').slice(-9);
+  if (!normalizedUser || normalizedPhone.length !== 9) return '';
+  return sha256Hex(normalizedUser + ':' + normalizedPhone).slice(0, 6);
+}
+
+export function computeVoucherFingerprint(code: string): string {
+  const raw = code.trim();
+  const canonical = raw.split('-')[0]?.toUpperCase() === 'BB3' ? raw : raw.toUpperCase();
+  return sha256Hex(canonical);
+}
+
+export function verifyBB3Voucher(
+  input: string,
+  username: string,
+  phone: string,
+  nowMs = Date.now()
+): BB3VoucherValidation {
+  const code = input.trim();
+  const parts = code.split('-');
+  const invalid = (message: string): BB3VoucherValidation => ({
+    valid: false, code, tier: '', days: 0, expiryEpochDay: 0,
+    accountHash: '', fingerprint: computeVoucherFingerprint(code), message
+  });
+  if (parts.length !== 7 || parts[0].toUpperCase() !== 'BB3') {
+    return invalid('Only server-signed BB3 vouchers can be redeemed on iPhone. Legacy BB and BB2 vouchers need their supported migration path.');
+  }
+  const tier = parts[1].toUpperCase();
+  const days = Number(parts[2]);
+  const expiryHex = parts[3].toUpperCase();
+  const accountHash = parts[4].toUpperCase();
+  const nonce = parts[5].toUpperCase();
+  const signatureText = parts[6];
+
+  if (!/^[A-Z]{2,12}$/.test(tier) || !Number.isInteger(days) || days < 1 || days > 800) {
+    return invalid('The BB3 plan tier or validity period is invalid.');
+  }
+  if (!/^[0-9A-F]{3,8}$/.test(expiryHex) ||
+      !/^[0-9A-F]{6}$/.test(accountHash) ||
+      !/^[0-9A-F]{24}$/.test(nonce) ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(signatureText)) {
+    return invalid('The BB3 voucher fields are malformed.');
+  }
+  const expiryEpochDay = Number.parseInt(expiryHex, 16);
+  const todayEpochDay = Math.floor(nowMs / 86400000);
+  if (!Number.isSafeInteger(expiryEpochDay) || todayEpochDay > expiryEpochDay) {
+    return invalid('This BB3 voucher has expired.');
+  }
+  const expectedAccountHash = computeBB3AccountBindingHash(username, phone);
+  if (!expectedAccountHash || accountHash !== expectedAccountHash) {
+    return invalid('This BB3 voucher belongs to a different shop owner account.');
+  }
+
+  const payload = 'BB3:' + tier + ':' + days + ':' + expiryHex + ':' + accountHash + ':' + nonce;
+  let signatureValid = false;
+  try {
+    const signature = Buffer.from(signatureText, 'base64');
+    if (signature.length < 68 || signature.length > 72 ||
+        signature.toString('base64') !== signatureText) {
+      return invalid('The BB3 signature is malformed.');
+    }
+    signatureValid = (QuickCrypto as any).verify(
+      'sha256',
+      Buffer.from(payload, 'utf8'),
+      BEBOSS_BB3_PUBLIC_KEY,
+      signature
+    ) === true;
+  } catch {
+    signatureValid = false;
+  }
+  if (!signatureValid) return invalid('BB3 public-key signature verification failed. The code may be invalid or modified.');
+
+  return {
+    valid: true,
+    code,
+    tier,
+    days,
+    expiryEpochDay,
+    accountHash,
+    fingerprint: computeVoucherFingerprint(code),
+    message: 'BB3 signature and shop-owner account binding verified.'
+  };
+}

@@ -17,7 +17,7 @@ import {
   mergeIosCloudSnapshots, recordCustomerPayment, recordPurchase, recordStockTransfer, registerOwner,
   restoreCustomer, restoreEncryptedBackupData, restoreProduct, reverseSale, saveBranch, saveCustomer,
   saveHeldCart, saveProduct, saveShopSettings, saveStaff, setBranchOperationalStatus,
-  storeDiagnostics, prepareEnrolledDeviceStaff, quickCustomSale
+  storeDiagnostics, prepareEnrolledDeviceStaff, quickCustomSale, redeemBB3Voucher, listRedeemedVouchers
 } from './src/storage/repository';
 import { BarcodeScannerModal, useBluetoothPrinters } from './src/services/hardware';
 import { decryptBackupFile, exportEncryptedBackup } from './src/services/backup';
@@ -100,6 +100,8 @@ function AppRoot(): React.JSX.Element {
   const [payerEmail, setPayerEmail] = useState('');
   const [payerPhone, setPayerPhone] = useState('');
   const [paymentRequestId, setPaymentRequestId] = useState('');
+  const [voucherCode, setVoucherCode] = useState('');
+  const [redeemedVouchers, setRedeemedVouchers] = useState<Array<{fingerprint:string;voucherCode:string;planName:string;daysAdded:number;verifiedAmountRwf:number;redeemedAt:number}>>([]);
   const [paymentRequestMessage, setPaymentRequestMessage] = useState('');
   const [paymentRequestStatus, setPaymentRequestStatus] = useState('');
   const [backupPassword, setBackupPassword] = useState('');
@@ -1378,6 +1380,20 @@ function AppRoot(): React.JSX.Element {
     </View>
   );
 
+  const redeemLocalBB3Voucher = async () => {
+    if (!voucherCode.trim()) { setError('Enter the signed BB3 voucher supplied by BeBoss.'); return; }
+    setBusy(true); setError('');
+    try {
+      const result = await redeemBB3Voucher(voucherCode, actor!);
+      setVoucherCode('');
+      await reload(actor!.id);
+      setRedeemedVouchers(await listRedeemedVouchers());
+      setNotice('BB3 signature verified. ' + result.planName + ' extended by ' + result.daysAdded + ' days, until ' + new Date(result.newExpiry).toLocaleDateString() + '.');
+    } catch (caught: any) {
+      setError(caught?.message || 'BB3 voucher redemption failed.');
+    } finally { setBusy(false); }
+  };
+
   const renderSubscription = () => {
     const active = profile ? isSubscriptionActive(profile) : false;
     const remaining = Math.max(0, (profile?.subscriptionExpiresAt || 0) - Date.now());
@@ -1459,6 +1475,18 @@ function AppRoot(): React.JSX.Element {
           <Text style={[styles.price, { fontSize: 20, marginTop: 6 }]}>{money(quote.totalPayable, currency)}</Text>
           <Text style={styles.muted}>The server is authoritative. If the plan is below the live shop usage or the server price differs, the checkout will be rejected safely.</Text>
         </View>
+        <SectionHeader title="Redeem administrator-issued BB3 voucher" />
+        <Text style={styles.muted}>iPhone verifies the same pinned ECDSA-P256 public key as Android. The private signing key never enters the app. This iPhone rejects legacy BB and BB2 codes; they require their legacy migration or server verification path.</Text>
+        <Field label="Signed BB3 unlock code" value={voucherCode} onChangeText={setVoucherCode} autoCapitalize="none" />
+        <ButtonPrimary title="Verify and redeem BB3 voucher" onPress={redeemLocalBB3Voucher} loading={busy} disabled={actor.role !== 'OWNER'} />
+        <ButtonSecondary title="View redeemed voucher history" onPress={async () => {
+          try { setRedeemedVouchers(await listRedeemedVouchers()); }
+          catch (caught: any) { setError(caught?.message || 'Could not load voucher history.'); }
+        }} />
+        {redeemedVouchers.length ? <View style={styles.card}>
+          <Text style={styles.rowTitle}>Redeemed on this iPhone</Text>
+          {redeemedVouchers.map(item => <Text key={item.fingerprint} style={styles.rowSub}>{item.planName} · +{item.daysAdded} days · {new Date(item.redeemedAt).toLocaleDateString()}</Text>)}
+        </View> : null}
         <SectionHeader title="Provider-verified payment" />
         <Field label="Payer full name" value={payerName || profile?.ownerName || ''} onChangeText={setPayerName} />
         <Field label="Payer email" value={payerEmail || profile?.email || ''} onChangeText={setPayerEmail} keyboardType="email-address" autoCapitalize="none" />

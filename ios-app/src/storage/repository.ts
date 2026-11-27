@@ -1,7 +1,7 @@
 import { execute, first, getDatabase, query, transaction } from './database';
 import {
-  centsToMoney, compareHlcVersions, hashCredential, isSubscriptionActive, makeId, multiplyPriceQuantityCents,
-  nowHlc, roundMoney, tickHlc, toCents, validatePassword, validatePin, verifyCredential
+  centsToMoney, compareHlcVersions, computeVoucherFingerprint, hashCredential, isSubscriptionActive, makeId, multiplyPriceQuantityCents,
+  nowHlc, roundMoney, tickHlc, toCents, validatePassword, validatePin, verifyBB3Voucher, verifyCredential
 } from '../core/domain';
 import {
   Branch, CartLine, CheckoutInput, Customer, CustomerPayment, HeldCart, Permissions, Product, Purchase,
@@ -2534,6 +2534,109 @@ export async function mergeIosCloudSnapshots(parts: unknown[], actor: Staff): Pr
     await audit(actor, 'IOS_CLOUD_SNAPSHOT_MERGED', actor.id, JSON.stringify(summary), tx);
   });
   return summary;
+}
+
+export type VoucherRedemptionResult = {
+  planName: string;
+  daysAdded: number;
+  verifiedAmount: number;
+  newExpiry: number;
+  fingerprint: string;
+};
+
+export async function redeemBB3Voucher(
+  voucherInput: string,
+  actor: Staff
+): Promise<VoucherRedemptionResult> {
+  if (!actor.isActive || actor.role !== 'OWNER') {
+    throw new Error('Only the registered shop owner can redeem a BB3 subscription voucher.');
+  }
+  const profile = await currentProfile();
+  if (!profile) throw new Error('The registered BeBoss shop profile is missing.');
+  const username = profile.username.trim().toLowerCase();
+  const phone = profile.phone;
+  const now = Date.now();
+  const previousClock = await first<Row>('SELECT value FROM app_meta WHERE key=?', ['voucher_clock_highwater_ms']);
+  const lastTrustedNow = Number(previousClock?.value || 0);
+  if (lastTrustedNow > 0 && now + 5 * 60 * 1000 < lastTrustedNow) {
+    throw new Error('The iPhone clock appears to have moved backwards. Connect to BeBoss Cloud and correct the device time before voucher redemption.');
+  }
+  const trustedNow = Math.max(now, lastTrustedNow);
+  const validation = verifyBB3Voucher(voucherInput, username, phone, trustedNow);
+  if (!validation.valid) throw new Error(validation.message);
+
+  const existing = await first<Row>('SELECT fingerprint FROM redeemed_vouchers WHERE fingerprint=?', [validation.fingerprint]);
+  if (existing) throw new Error('This BB3 voucher has already been redeemed on this iPhone.');
+  const tierNames: Record<string, string> = {
+    SINGLE: 'Single Store Standard Plan',
+    DUAL: 'Dual Branch Plan',
+    MULTI: 'Enterprise Multi-Branch Plan',
+    ANNUAL: 'Annual VIP Merchant Plan'
+  };
+  const planName = tierNames[validation.tier] || 'BeBoss ' + validation.tier + ' Plan';
+  const activeExpiry = profile.subscriptionExpiresAt > trustedNow && profile.subscriptionStatus !== 'SUSPENDED'
+    ? profile.subscriptionExpiresAt : trustedNow;
+  const newExpiry = activeExpiry + validation.days * DAY_MS;
+  const activeBranches = Math.max(1, (await query<Row>('SELECT data FROM branches WHERE active=1', [])).map(row => branchFromRow(row))
+    .filter(branch => branch.operationalStatus === 'OPEN' && branch.locationType !== 'WAREHOUSE').length);
+  const monthly = activeBranches === 1 ? 5000 : activeBranches === 2 ? 10000 : 20000;
+  const verifiedAmount = validation.tier === 'ANNUAL' ? monthly * 10 :
+    validation.tier === 'MULTI' ? 20000 :
+    validation.tier === 'DUAL' ? 10000 : 5000;
+
+  await transaction(async tx => {
+    const replay = await first<Row>('SELECT fingerprint FROM redeemed_vouchers WHERE fingerprint=?', [validation.fingerprint], tx);
+    if (replay) throw new Error('This BB3 voucher has already been redeemed on this iPhone.');
+    const currentRow = await first<Row>('SELECT data FROM shop_profile WHERE id=1', [], tx);
+    if (!currentRow) throw new Error('Shop profile is missing.');
+    const current = profileFromRow(currentRow);
+    const currentExpiry = current.subscriptionExpiresAt > trustedNow && current.subscriptionStatus !== 'SUSPENDED'
+      ? current.subscriptionExpiresAt : trustedNow;
+    const expiry = currentExpiry + validation.days * DAY_MS;
+    const updated: ShopProfile = {
+      ...current,
+      subscriptionStatus: 'ACTIVE',
+      subscriptionExpiresAt: expiry,
+      lastPaymentRef: validation.code,
+      lastPaymentAmount: verifiedAmount,
+      lastPaymentDate: trustedNow,
+      updatedAt: trustedNow
+    };
+    await execute('UPDATE shop_profile SET data=?,updated_at=? WHERE id=1', [toJson(updated), trustedNow], tx);
+    await execute(
+      'INSERT INTO redeemed_vouchers(fingerprint,voucher_code,plan_name,days_added,verified_amount_rwf,redeemed_at) VALUES(?,?,?,?,?,?)',
+      [validation.fingerprint, validation.code, planName, validation.days, verifiedAmount, trustedNow],
+      tx
+    );
+    await execute('INSERT INTO app_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      ['voucher_clock_highwater_ms', String(trustedNow)], tx);
+    await audit(actor, 'BB3_VOUCHER_REDEEMED', validation.fingerprint,
+      planName + ' • ' + validation.days + ' days • expiry ' + new Date(expiry).toISOString(), tx);
+  });
+
+  const finalProfile = await currentProfile();
+  return {
+    planName,
+    daysAdded: validation.days,
+    verifiedAmount,
+    newExpiry: finalProfile?.subscriptionExpiresAt || newExpiry,
+    fingerprint: validation.fingerprint
+  };
+}
+
+export async function listRedeemedVouchers(): Promise<Array<{
+  fingerprint: string; voucherCode: string; planName: string; daysAdded: number;
+  verifiedAmountRwf: number; redeemedAt: number;
+}>> {
+  const rows = await query<Row>('SELECT * FROM redeemed_vouchers ORDER BY redeemed_at DESC');
+  return rows.map(row => ({
+    fingerprint: String(row.fingerprint),
+    voucherCode: String(row.voucher_code),
+    planName: String(row.plan_name),
+    daysAdded: Number(row.days_added) || 0,
+    verifiedAmountRwf: Number(row.verified_amount_rwf) || 0,
+    redeemedAt: Number(row.redeemed_at) || 0
+  }));
 }
 
 export async function getOutbox(): Promise<SyncOutboxItem[]> {
