@@ -46,6 +46,9 @@ jobs:
       - name: Set up Gradle caching
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Compile shared tests for the iPhone device target (compile only; no simulator)
+        run: ./gradlew -p shared :compileTestKotlinIosArm64
+
       - name: Compile Kotlin framework for the real iPhone device target
         run: ./gradlew -p shared :linkReleaseFrameworkIosArm64
 
