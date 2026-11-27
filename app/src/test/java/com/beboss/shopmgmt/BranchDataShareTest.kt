@@ -157,6 +157,14 @@ class BranchDataShareTest {
                 syncVersion = 7L,
                 hlcTimestamp = 111L,
                 lastModifiedDeviceId = "DEV-1"
+            ),
+            Branch(
+                id = "central_warehouse",
+                name = "Central Warehouse",
+                code = "WH-01",
+                locationType = "WAREHOUSE",
+                operationalStatus = "OPEN",
+                isMainBranch = false
             )
         )
         val users = listOf(
@@ -216,6 +224,9 @@ class BranchDataShareTest {
         assertEquals(7L, b.syncVersion)
         assertEquals(111L, b.hlcTimestamp)
         assertEquals("DEV-1", b.lastModifiedDeviceId)
+        val warehouse = parsed.branches.first { it.id == "central_warehouse" }
+        assertEquals("WAREHOUSE", warehouse.locationType)
+        assertEquals(false, warehouse.isMainBranch)
 
         val t = parsed.stockTransfers.first()
         assertEquals(5_000L, t.costValueRwf)
