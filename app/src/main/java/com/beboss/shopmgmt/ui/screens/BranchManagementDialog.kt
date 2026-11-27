@@ -108,6 +108,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.roundToLong
 
 /**
  * Enterprise Multi-Branch Management & Logistics Hub
@@ -130,7 +131,8 @@ fun BranchManagementDialog(
     onSelectActiveBranch: (String) -> Unit = {},
     onSaveBranch: (Branch) -> Unit,
     onDeleteBranch: (String) -> Unit,
-    onCreateStockTransfer: (productId: String, fromBranchId: String, fromBranchName: String, toBranchId: String, toBranchName: String, quantity: Double, notes: String) -> Unit = { _, _, _, _, _, _, _ -> },
+    transferApprovalThresholdRwf: Long? = null,
+    onCreateStockTransfer: (productId: String, fromBranchId: String, fromBranchName: String, toBranchId: String, toBranchName: String, quantity: Double, notes: String, ownerApprovalPin: String, approvalReason: String) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
     onConfirmTransferReceived: (String) -> Unit = {},
     onRejectStockTransfer: (String, String) -> Unit = { _, _ -> },
     onUpdateBranchStatus: (String, String) -> Unit = { _, _ -> },
@@ -909,8 +911,9 @@ fun BranchManagementDialog(
             branches = branches,
             products = products,
             language = language,
-            onTransfer = { prodId, fromId, fromName, toId, toName, qty, notes ->
-                onCreateStockTransfer(prodId, fromId, fromName, toId, toName, qty, notes)
+            transferApprovalThresholdRwf = transferApprovalThresholdRwf,
+            onTransfer = { prodId, fromId, fromName, toId, toName, qty, notes, ownerPin, approvalReason ->
+                onCreateStockTransfer(prodId, fromId, fromName, toId, toName, qty, notes, ownerPin, approvalReason)
                 isCreatingTransfer = false
             },
             onDismiss = { isCreatingTransfer = false }
@@ -987,7 +990,8 @@ fun CreateStockTransferDialog(
     branches: List<Branch>,
     products: List<Product>,
     language: AppLanguage,
-    onTransfer: (productId: String, fromBranchId: String, fromBranchName: String, toBranchId: String, toBranchName: String, quantity: Double, notes: String) -> Unit,
+    transferApprovalThresholdRwf: Long? = null,
+    onTransfer: (productId: String, fromBranchId: String, fromBranchName: String, toBranchId: String, toBranchName: String, quantity: Double, notes: String, ownerApprovalPin: String, approvalReason: String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var selectedProduct by remember { mutableStateOf<Product?>(products.firstOrNull()) }
@@ -1001,6 +1005,8 @@ fun CreateStockTransferDialog(
 
     var quantityInput by remember { mutableStateOf("1") }
     var notes by remember { mutableStateOf("") }
+    var ownerApprovalPin by remember { mutableStateOf("") }
+    var approvalReason by remember { mutableStateOf("") }
 
     val currentStock = selectedProduct?.quantityInStock ?: 0.0
 
@@ -1183,14 +1189,65 @@ fun CreateStockTransferDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 val parsedQty = quantityInput.toDoubleOrNull() ?: 0.0
-                val isValid = selectedProduct != null && fromBranch != null && toBranch != null && fromBranch != toBranch && parsedQty > 0
+                val isValid = selectedProduct != null && fromBranch != null && toBranch != null &&
+                    fromBranch != toBranch && parsedQty > 0 && parsedQty.isFinite()
+                val estimatedCostRwf = ((selectedProduct?.costPrice ?: 0.0) * parsedQty).roundToLong().coerceAtLeast(0L)
+                val approvalPolicyReady = transferApprovalThresholdRwf != null
+                val ownerApprovalRequired = transferApprovalThresholdRwf?.let { it > 0L && estimatedCostRwf >= it } == true
+                val approvalFieldsValid = !ownerApprovalRequired ||
+                    (ownerApprovalPin.isNotBlank() && approvalReason.trim().length >= 8)
+                if (!approvalPolicyReady) {
+                    Text(
+                        "Transfer approval policy has not been synchronized to this device. Connect to BeBoss Cloud and refresh before creating a transfer.",
+                        color = WarningAmber,
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                if (ownerApprovalRequired) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = WarningAmber.copy(alpha = 0.10f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, WarningAmber.copy(alpha = 0.35f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("Owner approval required", fontWeight = FontWeight.Bold, color = WarningAmber)
+                            Text(
+                                "Estimated transfer cost: FRw ${String.format(Locale.US, "%,d", estimatedCostRwf)}. Enter the owner PIN and explain why this transfer is required. Approval is signed on this primary owner device.",
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = ownerApprovalPin,
+                                onValueChange = { ownerApprovalPin = it.filter(Char::isDigit).take(12) },
+                                label = { Text("Owner PIN") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = approvalReason,
+                                onValueChange = { approvalReason = it.take(600) },
+                                label = { Text("Approval explanation (required)") },
+                                placeholder = { Text("Explain the business reason for this transfer") },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 2,
+                                maxLines = 4
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
                 Button(
                     onClick = {
                         val prod = selectedProduct
                         val src = fromBranch
                         val dst = toBranch
-                        if (prod != null && src != null && dst != null && src != dst && parsedQty > 0) {
+                        if (prod != null && src != null && dst != null && src != dst && isValid && approvalPolicyReady && approvalFieldsValid) {
                             onTransfer(
                                 prod.id,
                                 src.id,
@@ -1198,14 +1255,16 @@ fun CreateStockTransferDialog(
                                 dst.id,
                                 dst.name,
                                 parsedQty,
-                                notes
+                                notes,
+                                ownerApprovalPin,
+                                approvalReason.trim()
                             )
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
                     shape = RoundedCornerShape(10.dp),
-                    enabled = isValid
+                    enabled = isValid && approvalPolicyReady && approvalFieldsValid
                 ) {
                     Icon(Icons.Default.LocalShipping, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
