@@ -98,16 +98,16 @@ export function QnxDevelopmentPage() {
     }
   }
 
-  useEffect(() => {
-    if (!status?.qccVariants.length) return;
-    const selected = targetArch === "x86_64" ? "gcc_ntox86_64" : "gcc_ntoaarch64le";
-    if (!status.qccVariants.includes(selected)) {
-      setTargetArch(status.qccVariants.includes("gcc_ntox86_64") ? "x86_64" : "aarch64le");
-    }
-  }, [status, targetArch]);
-
   const sdkReady = Boolean(status?.sdp8Ready);
-  const selectedVariant = targetArch === "x86_64" ? "gcc_ntox86_64" : "gcc_ntoaarch64le";
+  const targetVariant = targetArch === "x86_64" ? "gcc_ntox86_64" : "gcc_ntoaarch64le";
+  const effectiveTargetArch = status?.qccVariants.includes(targetVariant)
+    ? targetArch
+    : status?.qccVariants.includes("gcc_ntox86_64")
+      ? "x86_64"
+      : status?.qccVariants.includes("gcc_ntoaarch64le")
+        ? "aarch64le"
+        : targetArch;
+  const selectedVariant = effectiveTargetArch === "x86_64" ? "gcc_ntox86_64" : "gcc_ntoaarch64le";
   const selectedTargetVerified = Boolean(status?.qccVariants.includes(selectedVariant));
   const canBuildImage = sdkReady && selectedTargetVerified
     && Boolean(status?.mkqnximagePath) && Boolean(status?.qemuPackageDirectoryPresent);
@@ -159,14 +159,14 @@ export function QnxDevelopmentPage() {
         <div className="panel-heading"><div><span className="eyebrow muted">NEUTRINO SAMPLE</span><h3>Build BeBoss edge agent</h3></div><Terminal size={18} className="muted-icon" /></div>
         <p className="settings-section-description">Compile a native QNX service that registers beboss-edge-gateway and processes health/echo messages with name_attach, MsgReceive and MsgReply.</p>
         <label className="field-wide">Target architecture
-          <select value={targetArch} onChange={(event) => setTargetArch(event.target.value)}>
+          <select value={effectiveTargetArch} onChange={(event) => setTargetArch(event.target.value)}>
             <option value="x86_64" disabled={!status?.qccVariants.includes("gcc_ntox86_64")}>QNX x86-64{status?.qccVariants.includes("gcc_ntox86_64") ? "" : " · compiler not verified"}</option>
             <option value="aarch64le" disabled={!status?.qccVariants.includes("gcc_ntoaarch64le")}>QNX AArch64 little-endian{status?.qccVariants.includes("gcc_ntoaarch64le") ? "" : " · compiler not verified"}</option>
           </select>
         </label>
         <div className="form-footer">
           <span className="muted small-text">qcc · compiler output · SHA-256</span>
-          <button className="btn-primary" disabled={!sdkReady || !selectedTargetVerified || Boolean(busy)} onClick={() => void runOperation("agent", () => invoke<QnxResult>("qnx_build_agent", { installRoot: installRoot.trim() || null, targetArch }))}>
+          <button className="btn-primary" disabled={!sdkReady || !selectedTargetVerified || Boolean(busy)} onClick={() => void runOperation("agent", () => invoke<QnxResult>("qnx_build_agent", { installRoot: installRoot.trim() || null, targetArch: effectiveTargetArch }))}>
             {busy === "agent" ? <LoaderCircle size={15} className="spin" /> : <Wrench size={15} />} Build edge agent
           </button>
           <button className="btn-outline" disabled={!sdkReady || !selectedTargetVerified || Boolean(busy)} onClick={() => void runOperation("client", () => invoke<QnxResult>("qnx_build_ipc_client", { installRoot: installRoot.trim() || null, targetArch }))}>
@@ -193,7 +193,7 @@ export function QnxDevelopmentPage() {
         <p className="settings-section-description">mkqnximage prepares and launches the QNX QEMU reference target. A non-empty package directory is only a preliminary check; the build command must still validate its contents, and the guest boot must be confirmed in QEMU or its serial console.</p>
         <div className="form-footer">
           <span className="muted small-text">{status?.qemuPackageDirectoryPresent ? "Files found in QEMU package directory" : "QEMU reference package missing or directory empty"}</span>
-          <button className="btn-outline" disabled={!canBuildImage || Boolean(busy)} onClick={() => void runOperation("qemu-build", () => invoke<QnxResult>("qnx_build_qemu_image", { installRoot: installRoot.trim() || null, architecture: targetArch }))}>
+          <button className="btn-outline" disabled={!canBuildImage || Boolean(busy)} onClick={() => void runOperation("qemu-build", () => invoke<QnxResult>("qnx_build_qemu_image", { installRoot: installRoot.trim() || null, architecture: effectiveTargetArch }))}>
             {busy === "qemu-build" ? <LoaderCircle size={15} className="spin" /> : <Wrench size={15} />} Prepare image
           </button>
         </div>
