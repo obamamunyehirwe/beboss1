@@ -16,7 +16,7 @@ import {
   markIosOutboxFailed, markIosOutboxSynced,
   mergeIosCloudSnapshots, recordCustomerPayment, recordPurchase, recordStockTransfer, registerOwner,
   restoreEncryptedBackupData, reverseSale, saveBranch, saveCustomer, saveProduct, saveShopSettings,
-  saveStaff, setBranchOperationalStatus, storeDiagnostics
+  saveStaff, setBranchOperationalStatus, storeDiagnostics, prepareEnrolledDeviceStaff
 } from './src/storage/repository';
 import { BarcodeScannerModal, useBluetoothPrinters } from './src/services/hardware';
 import { decryptBackupFile, exportEncryptedBackup } from './src/services/backup';
@@ -90,6 +90,8 @@ function AppRoot(): React.JSX.Element {
   const [ownerOtpPhone, setOwnerOtpPhone] = useState('');
   const [ownerOtp, setOwnerOtp] = useState('');
   const [ownerJoinCode, setOwnerJoinCode] = useState('');
+  const [deviceLocalPin, setDeviceLocalPin] = useState('');
+  const [deviceLocalPassword, setDeviceLocalPassword] = useState('');
   const [iosDeviceEnrolled, setIosDeviceEnrolled] = useState(false);
   const [iosSyncReady, setIosSyncReady] = useState(false);
   const [iosSyncRole, setIosSyncRole] = useState('');
@@ -123,6 +125,13 @@ function AppRoot(): React.JSX.Element {
         setSnapshot(initial);
         setRegistered(!!initial.profile);
         if (initial.profile) setLoginName(initial.profile.username);
+        const enrolled = await getIosDeviceCredential();
+        if (enrolled) {
+          if (!mounted) return;
+          setIosDeviceEnrolled(true);
+          setLoginName(enrolled.assignedUsername);
+          setEnrolledDeviceSummary(enrolled.shopName + ' · ' + enrolled.role + ' · ' + (enrolled.branchName || 'Assigned branch'));
+        }
         const enrolled = await getIosDeviceCredential();
         if (mounted && enrolled) {
           setIosDeviceEnrolled(true);
@@ -1257,7 +1266,10 @@ function AppRoot(): React.JSX.Element {
         </>
       )}
       <Field label="Owner-issued device invitation code" value={ownerJoinCode} onChangeText={setOwnerJoinCode} autoCapitalize="characters" />
-      <ButtonPrimary title="Enroll this iPhone securely" onPress={enrollThisIphone} loading={busy} disabled={!cloudConfigured || !cloudAuthenticated} />
+      <Field label="Local PIN for this iPhone (4–6 digits)" value={deviceLocalPin} onChangeText={setDeviceLocalPin} secureTextEntry keyboardType="number-pad" />
+      <Field label="Local password for this iPhone (8+ characters)" value={deviceLocalPassword} onChangeText={setDeviceLocalPassword} secureTextEntry />
+      <Text style={styles.muted}>These credentials unlock this iPhone only. They do not replace, reveal or overwrite the Android staff credential stored on the shop's existing terminals.</Text>
+      <ButtonPrimary title="Enroll and provision this iPhone" onPress={enrollThisIphone} loading={busy} disabled={!cloudConfigured || !cloudAuthenticated} />
       <ButtonSecondary title="Refresh device and cloud status" onPress={async () => {
         try {
           await refreshIosSyncStatus();
