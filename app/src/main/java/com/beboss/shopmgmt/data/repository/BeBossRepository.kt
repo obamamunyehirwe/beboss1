@@ -282,14 +282,14 @@ class BeBossRepository(private val database: AppDatabase) {
         requirePermission(actor, "MANAGE_BRANCHES", branch.id) {
             it.role == UserRole.OWNER || it.role == UserRole.MANAGER || it.canManageShopSettings
         }
-        branchTransferManager.saveBranch(branch)
+        branchTransferManager.saveBranch(branch, actor?.name ?: "System", actor?.role?.name ?: "SYSTEM")
     }
 
     suspend fun deleteBranch(branchId: String, actor: User? = null) {
         requirePermission(actor, "DELETE_BRANCH", branchId) {
             it.role == UserRole.OWNER || it.canManageShopSettings || it.canDeleteRecords
         }
-        branchTransferManager.deleteBranch(branchId)
+        branchTransferManager.deleteBranch(branchId, actor?.name ?: "System", actor?.role?.name ?: "SYSTEM")
     }
 
     suspend fun ensureDefaultBranches(): List<Branch> = branchTransferManager.ensureDefaultBranches()
@@ -547,9 +547,18 @@ class BeBossRepository(private val database: AppDatabase) {
         toBranchName: String,
         quantity: Double,
         notes: String,
-        transferredBy: String = "Store Manager"
+        transferredBy: String = "Store Manager",
+        transferredByRole: String = "STAFF"
     ): StockTransfer = branchTransferManager.recordStockTransfer(
-        productId, fromBranchId, fromBranchName, toBranchId, toBranchName, quantity, notes, transferredBy
+        productId = productId,
+        fromBranchId = fromBranchId,
+        fromBranchName = fromBranchName,
+        toBranchId = toBranchId,
+        toBranchName = toBranchName,
+        quantity = quantity,
+        notes = notes,
+        transferredBy = transferredBy,
+        transferredByRole = transferredByRole
     )
 
     suspend fun createStockTransfer(
@@ -560,9 +569,10 @@ class BeBossRepository(private val database: AppDatabase) {
         toBranchName: String,
         quantity: Double,
         notes: String,
-        transferredBy: String = "Store Manager"
+        transferredBy: String = "Store Manager",
+        transferredByRole: String = "STAFF"
     ): StockTransfer = recordStockTransfer(
-        productId, fromBranchId, fromBranchName, toBranchId, toBranchName, quantity, notes, transferredBy
+        productId, fromBranchId, fromBranchName, toBranchId, toBranchName, quantity, notes, transferredBy, transferredByRole
     )
 
     suspend fun deleteStockTransfer(transferId: String) = branchTransferManager.deleteStockTransfer(transferId)

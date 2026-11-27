@@ -1143,7 +1143,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     toBranchName = toBranchName,
                     quantity = quantity,
                     notes = notes,
-                    transferredBy = user?.name ?: "Store Manager"
+                    transferredBy = user?.name ?: "Store Manager",
+                    transferredByRole = user?.role?.name ?: "STAFF"
                 )
                 BeBossNotificationManager.sendStockTransferNotification(getApplication(), transfer)
                 scheduleAutoBranchSync()

@@ -404,4 +404,40 @@ class BranchTransferConcurrencyTest {
         }
     }
 
+
+    @Test
+    fun `branch and stock transfer mutations produce local audit events`() = runBlocking {
+        val db = inMemoryDatabase()
+        try {
+            val repository = BeBossRepository(db)
+            repository.branchTransferManager.saveBranch(
+                Branch(id = "audit-source", name = "Audit Store", code = "AUD-01"),
+                actorName = "Shop Owner",
+                actorRole = "OWNER"
+            )
+            db.branchDao().insertBranch(Branch(id = "audit-destination", name = "Destination", code = "DST-01"))
+            db.productDao().insertProduct(
+                Product(id = "audit-rice", name = "Rice", quantityInStock = 5.0, branchId = "audit-source")
+            )
+            repository.branchTransferManager.recordStockTransfer(
+                productId = "audit-rice",
+                fromBranchId = "audit-source",
+                fromBranchName = "ignored",
+                toBranchId = "audit-destination",
+                toBranchName = "ignored",
+                quantity = 1.0,
+                notes = "Audit proof",
+                transferredBy = "Branch Manager",
+                transferredByRole = "MANAGER"
+            )
+
+            val logs = db.localAuditLogDao().getRecentLogsDirect(20)
+
+            assertTrue(logs.any { it.action == "BRANCH_CREATED" && it.actorName == "Shop Owner" && it.actorRole == "OWNER" })
+            assertTrue(logs.any { it.action == "STOCK_TRANSFER_CREATED" && it.actorName == "Branch Manager" && it.actorRole == "MANAGER" })
+        } finally {
+            db.close()
+        }
+    }
+
 }

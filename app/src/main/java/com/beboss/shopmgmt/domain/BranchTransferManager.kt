@@ -84,7 +84,11 @@ class BranchTransferManager(
         branchDao.getAllActiveBranchesList()
     }
 
-    suspend fun saveBranch(branch: Branch) = withContext(Dispatchers.IO) {
+    suspend fun saveBranch(
+        branch: Branch,
+        actorName: String = "System",
+        actorRole: String = "SYSTEM"
+    ) = withContext(Dispatchers.IO) {
         val now = ClockGuard.effectiveNowMs()
         val normalizedLocationType = branch.locationType.trim().uppercase(Locale.ROOT).ifBlank { "STORE" }
         require(normalizedLocationType == "STORE" || normalizedLocationType == "WAREHOUSE") {
@@ -99,21 +103,38 @@ class BranchTransferManager(
             hlcTimestamp = HlcClock.tick(now),
             lastModifiedDeviceId = nodeId
         )
-        if (toSave.isMainBranch) {
-            branchDao.getAllActiveBranchesList()
-                .filter { it.id != toSave.id && it.isMainBranch }
-                .forEach { b ->
-                    branchDao.insertBranch(b.copy(
-                        isMainBranch = false,
-                        updatedAt = now,
-                        hlcTimestamp = HlcClock.tick(now),
-                        lastModifiedDeviceId = nodeId
-                    ))
-                }
+        val persistBranch: suspend () -> Unit = {
+            val existing = branchDao.getBranchById(toSave.id)
+            if (toSave.isMainBranch) {
+                branchDao.getAllActiveBranchesList()
+                    .filter { it.id != toSave.id && it.isMainBranch }
+                    .forEach { previousMain ->
+                        val cleared = previousMain.copy(
+                            isMainBranch = false,
+                            updatedAt = now,
+                            hlcTimestamp = HlcClock.tick(now),
+                            lastModifiedDeviceId = nodeId
+                        )
+                        branchDao.insertBranch(cleared)
+                        enqueueBranchSync(cleared, "UPDATE")
+                    }
+            }
+            branchDao.insertBranch(toSave)
+            syncTombstoneDao?.deleteTombstone(SyncTombstone.keyFor("branches", toSave.id))
+            enqueueBranchSync(toSave, "UPDATE")
+            appendLocalAudit(
+                action = if (existing == null) "BRANCH_CREATED" else "BRANCH_UPDATED",
+                actorName = actorName,
+                actorRole = actorRole,
+                targetId = toSave.id,
+                details = "${toSave.name} · type=${toSave.locationType} · main=${toSave.isMainBranch} · active=${toSave.isActive}"
+            )
         }
-        branchDao.insertBranch(toSave)
-        syncTombstoneDao?.deleteTombstone(SyncTombstone.keyFor("branches", toSave.id))
-        enqueueBranchSync(toSave, "UPDATE")
+        if (database != null) {
+            DbWriteMutex.withLock { database.withTransaction { persistBranch() } }
+        } else {
+            DbWriteMutex.withLock { persistBranch() }
+        }
     }
 
     suspend fun updateBranchOperationalStatus(branchId: String, status: String) = withContext(Dispatchers.IO) {
@@ -256,7 +277,8 @@ class BranchTransferManager(
         notes: String,
         transferredBy: String = "Store Manager",
         transferId: String? = null,
-        transferNumberOverride: String? = null
+        transferNumberOverride: String? = null,
+        transferredByRole: String = "STAFF"
     ): StockTransfer = withContext(Dispatchers.IO) {
         val now = ClockGuard.effectiveNowMs()
         if (fromBranchId == toBranchId) {
@@ -346,7 +368,7 @@ class BranchTransferManager(
             appendLocalAudit(
                 action = "STOCK_TRANSFER_CREATED",
                 actorName = transferredBy,
-                actorRole = "STAFF",
+                actorRole = transferredByRole,
                 targetId = transfer.id,
                 details = "${transfer.transferNumber} · ${transfer.productName} · ${transfer.quantity} ${transfer.unit} · ${transfer.fromBranchName} -> ${transfer.toBranchName} · ${transfer.costValueRwf} FRw"
             )
