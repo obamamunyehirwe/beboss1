@@ -68,6 +68,7 @@ export type NavKey =
   | "customers"
   | "purchases"
   | "reports"
+  | "finance"
   | "branches"
   | "staff"
   | "devices"
