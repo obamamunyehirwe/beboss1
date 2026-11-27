@@ -2304,6 +2304,9 @@ if (action === "submit_payment_proof") {
       for (const previous of previousMainBranches) {
         auditEvents.push({ action: "MAIN_BRANCH_REMOVED", detail: text(previous.name) + " · " + text(previous.code) + " · Replaced by " + row.name });
       }
+      if (old && auditEvents.length === 0) {
+        auditEvents.push({ action: "NO_CHANGE", detail: row.name + " · " + row.code + " · Branch save contained no field changes." });
+      }
       let auditLogged = true;
       for (const event of auditEvents) {
         const saved = await recordShopAuditEvent(
@@ -2312,7 +2315,8 @@ if (action === "submit_payment_proof") {
         );
         auditLogged = auditLogged && saved;
       }
-      return json(200, { ok: true, id: row.id, shopUsage, auditLogged });
+      if (!auditLogged) return json(503, { ok: false, mutationCommitted: true, auditLogged: false, message: "The branch change was saved, but its required cloud audit record could not be written. Do not repeat the change; refresh the branch and audit views, then contact support if the event is still missing." });
+      return json(200, { ok: true, id: row.id, shopUsage, auditLogged: true });
     }
 
     if (action === "branch_delete") {
@@ -2343,7 +2347,8 @@ if (action === "submit_payment_proof") {
         actor.actorDeviceId, "BRANCH", "DEACTIVATED",
         text(branch.name) + " · " + text(branch.code) + " · " + text(branch.operational_status) + " → CLOSED; active staff/device checks passed."
       );
-      return json(200, { ok: true, shopUsage, auditLogged });
+      if (!auditLogged) return json(503, { ok: false, mutationCommitted: true, auditLogged: false, message: "The branch was deactivated, but its required cloud audit record could not be written. Do not repeat the operation; refresh the branch and audit views, then contact support if the event is still missing." });
+      return json(200, { ok: true, shopUsage, auditLogged: true });
     }
 
     if (action === "branch_reconcile") {
@@ -2511,7 +2516,8 @@ if (action === "submit_payment_proof") {
         transferNumber + " · " + text(product.name) + " · " + quantity + " " + (text(product.unit) || "pcs") +
           " · " + from.name + " → " + to.name + (approvalRequired ? " · Approval: " + approvalReason : "")
       );
-      return json(200, { ok: true, id, transferNumber, status: "REQUESTED", approvalRequired, auditLogged });
+      if (!auditLogged) return json(503, { ok: false, mutationCommitted: true, transferId: id, transferNumber, status: "REQUESTED", auditLogged: false, message: "The transfer request was created, but its required cloud audit record could not be written. Do not create it again; refresh the transfer and audit views, then contact support if the event is still missing." });
+      return json(200, { ok: true, id, transferNumber, status: "REQUESTED", approvalRequired, auditLogged: true });
     }
 
     if (action === "transfer_command") {
@@ -2535,7 +2541,8 @@ if (action === "submit_payment_proof") {
         actor.actorDeviceId, "STOCK_TRANSFER", next,
         text(current.transfer_number) + " · " + text(current.product_name) + " · " + text(current.from_branch_name) + " → " + text(current.to_branch_name) + " · " + text(current.quantity) + " · " + current.status + " → " + next
       );
-      return json(200, { ok: true, status: updated.status, auditLogged });
+      if (!auditLogged) return json(503, { ok: false, mutationCommitted: true, status: updated.status, auditLogged: false, message: "The transfer command was saved, but its required cloud audit record could not be written. Do not repeat the command; refresh the transfer and audit views, then contact support if the event is still missing." });
+      return json(200, { ok: true, status: updated.status, auditLogged: true });
     }
 
     if (action === "device_create") {
