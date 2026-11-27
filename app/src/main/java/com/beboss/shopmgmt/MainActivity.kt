@@ -486,7 +486,13 @@ private fun BeBossMainContent(
             onCancel = { viewModel.cancelRegistration() },
             onToggleLanguage = { viewModel.toggleLanguage() },
             onSelectLanguage = { lang -> viewModel.setLanguage(lang) },
-            onToggleTheme = { viewModel.toggleDarkMode() }
+            onToggleTheme = { viewModel.toggleDarkMode() },
+            updateAvailable = updateAvailable,
+            updateVersion = currentPublicAndroidRelease?.versionName.orEmpty(),
+            onCheckForUpdates = {
+                showAndroidUpdateDialog = true
+                updateScope.launch { checkForAndroidUpdate() }
+            }
         )
     } else if (isLocked) {
         val activity = context as? Activity
@@ -521,7 +527,13 @@ private fun BeBossMainContent(
             onToggleLanguage = { viewModel.toggleLanguage() },
             onSelectLanguage = { lang -> viewModel.setLanguage(lang) },
             onToggleTheme = { viewModel.toggleDarkMode() },
-            onOpenRegister = { viewModel.showRegistrationScreen() }
+            onOpenRegister = { viewModel.showRegistrationScreen() },
+            updateAvailable = updateAvailable,
+            updateVersion = currentPublicAndroidRelease?.versionName.orEmpty(),
+            onCheckForUpdates = {
+                showAndroidUpdateDialog = true
+                updateScope.launch { checkForAndroidUpdate() }
+            }
         )
     } else {
         Scaffold(

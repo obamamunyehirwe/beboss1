@@ -127,6 +127,48 @@ import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 @Composable
+private fun AuthUpdateAction(
+    updateAvailable: Boolean,
+    updateVersion: String,
+    onClick: () -> Unit,
+    containerColor: Color,
+    borderColor: Color,
+    idleTextColor: Color
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = if (updateAvailable) OrangePrimary.copy(alpha = 0.12f) else containerColor,
+        border = BorderStroke(
+            1.dp,
+            if (updateAvailable) OrangePrimary.copy(alpha = 0.42f) else borderColor
+        ),
+        modifier = Modifier.heightIn(min = 42.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.CloudSync,
+                contentDescription = if (updateAvailable) "Update available" else "Check for updates",
+                tint = if (updateAvailable) OrangePrimary else idleTextColor,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = if (updateAvailable) "Update ${updateVersion.take(6)}" else "Updates",
+                fontFamily = GopherFontFamily,
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (updateAvailable) OrangePrimary else idleTextColor,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
 fun AuthLockScreen(
     currentUser: User?,
     allUsers: List<User>,
@@ -142,7 +184,10 @@ fun AuthLockScreen(
     onToggleLanguage: () -> Unit,
     onSelectLanguage: ((AppLanguage) -> Unit)? = null,
     onToggleTheme: () -> Unit,
-    onOpenRegister: () -> Unit
+    onOpenRegister: () -> Unit,
+    updateAvailable: Boolean = false,
+    updateVersion: String = "",
+    onCheckForUpdates: () -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) } // 0: PIN, 1: Password
     // Credential fields stay memory-only; process recreation clears secrets instead of restoring them.
@@ -225,21 +270,34 @@ fun AuthLockScreen(
                     }
                 }
 
-                Surface(
-                    onClick = onToggleTheme,
-                    shape = CircleShape,
-                    color = topPillBg,
-                    border = BorderStroke(1.dp, topPillBorder),
-                    shadowElevation = if (isDarkTheme) 0.dp else 2.dp,
-                    modifier = Modifier.size(48.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                            contentDescription = Localization.get("theme", language),
-                            tint = if (isDarkTheme) Color(0xFFFFD166) else OrangePrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                    AuthUpdateAction(
+                        updateAvailable = updateAvailable,
+                        updateVersion = updateVersion,
+                        onClick = onCheckForUpdates,
+                        containerColor = topPillBg,
+                        borderColor = topPillBorder,
+                        idleTextColor = topPillText
+                    )
+                    Surface(
+                        onClick = onToggleTheme,
+                        shape = CircleShape,
+                        color = topPillBg,
+                        border = BorderStroke(1.dp, topPillBorder),
+                        shadowElevation = if (isDarkTheme) 0.dp else 2.dp,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                contentDescription = Localization.get("theme", language),
+                                tint = if (isDarkTheme) Color(0xFFFFD166) else OrangePrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -635,7 +693,10 @@ fun ShopRegistrationScreen(
     onCancel: () -> Unit,
     onToggleLanguage: () -> Unit,
     onSelectLanguage: ((AppLanguage) -> Unit)? = null,
-    onToggleTheme: () -> Unit
+    onToggleTheme: () -> Unit,
+    updateAvailable: Boolean = false,
+    updateVersion: String = "",
+    onCheckForUpdates: () -> Unit = {}
 ) {
     var registrationMode by rememberSaveable { mutableIntStateOf(0) } // 0 = Create New Shop, 1 = Join Existing Shop (Add Device)
     var step by rememberSaveable { mutableIntStateOf(0) } // 0, 1, 2
@@ -825,20 +886,33 @@ fun ShopRegistrationScreen(
                     }
                 }
 
-                Surface(
-                    onClick = onToggleTheme,
-                    shape = CircleShape,
-                    color = topPillBg,
-                    border = BorderStroke(1.dp, topPillBorder),
-                    modifier = Modifier.size(48.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                            contentDescription = Localization.get("theme", language),
-                            tint = if (isDarkTheme) Color(0xFFFFD166) else OrangePrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
+                    AuthUpdateAction(
+                        updateAvailable = updateAvailable,
+                        updateVersion = updateVersion,
+                        onClick = onCheckForUpdates,
+                        containerColor = topPillBg,
+                        borderColor = topPillBorder,
+                        idleTextColor = topPillText
+                    )
+                    Surface(
+                        onClick = onToggleTheme,
+                        shape = CircleShape,
+                        color = topPillBg,
+                        border = BorderStroke(1.dp, topPillBorder),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                contentDescription = Localization.get("theme", language),
+                                tint = if (isDarkTheme) Color(0xFFFFD166) else OrangePrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
