@@ -17,7 +17,6 @@ jobs:
     timeout-minutes: 90
     env:
       ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
-      KEYSTORE_PATH: ${{ runner.temp }}\beboss-android-release.keystore
       STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD || secrets.STORE_PASSWORD }}
       KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD || secrets.KEY_PASSWORD }}
       KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS || secrets.KEY_ALIAS }}

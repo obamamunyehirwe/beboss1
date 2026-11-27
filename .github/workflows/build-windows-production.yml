@@ -21,7 +21,6 @@ jobs:
     env:
       WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
       WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
-      WINDOWS_CODESIGN_PFX_PATH: ${{ runner.temp }}\beboss-windows-codesign.pfx
       VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_SFUKqYETliLdgqluQBQ2xg_XJNudcvM
       VITE_SENTRY_DSN: https://bfef12cf8aa3fe3be99557e2371ecfc7@o4512498787287040.ingest.us.sentry.io/4512498794954752
