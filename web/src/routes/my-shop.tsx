@@ -298,6 +298,10 @@ function LookupPanel() {
               <TabsTrigger value="finance">
                 <Banknote className="size-4" /> Financial Journal
               </TabsTrigger>
+              <TabsTrigger value="audit">
+                <Search className="size-4" /> Audit Trail
+              </TabsTrigger>
+
               <TabsTrigger value="finance">
                 <Banknote className="size-4" /> Financial Journal
               </TabsTrigger>
@@ -478,6 +482,22 @@ function LookupPanel() {
                   catch { /* the financial server action reports write status */ }
                 }}
               />
+            </TabsContent>
+
+            <TabsContent value="finance" className="pt-3">
+              <MyShopFinance
+                username={username}
+                phone={phone}
+                activity={result.activity ?? []}
+                branches={result.branches ?? []}
+                onRefresh={async () => {
+                  try { await refreshLatest(false); }
+                  catch { /* the financial server action reports write status */ }
+                }}
+              />
+            </TabsContent>
+            <TabsContent value="audit" className="pt-3">
+              <MyShopAuditTrail activity={result.activity ?? []} />
             </TabsContent>
 
             {/* Branches & Transfers Tab */}
@@ -1664,6 +1684,70 @@ function MyShopFinance({ username, phone, activity, branches, onRefresh }: {
         </table>
       </div> : <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No financial journal entries have been posted yet.</div>}
     </div>
+  </div>;
+}
+
+
+function MyShopAuditTrail({ activity }: { activity: Lookup["activity"] }) {
+  const [entity, setEntity] = useState("ALL");
+  const [query, setQuery] = useState("");
+  const events = activity ?? [];
+  const visible = events.filter((event) => {
+    const raw = [event.entity, event.action, event.actor, event.device_id, event.detail].join(" ").toLowerCase();
+    return (entity === "ALL" || event.entity === entity) && (!query.trim() || raw.includes(query.trim().toLowerCase()));
+  });
+  const summary = (detail: string) => {
+    try {
+      const parsed = JSON.parse(detail);
+      if (Array.isArray(parsed.changes)) return parsed.changes.join(" · ");
+      return [
+        parsed.branchName, parsed.transferNumber, parsed.productName,
+        parsed.counterparty, parsed.note, parsed.reference
+      ].filter(Boolean).join(" · ") || JSON.stringify(parsed);
+    } catch {
+      return detail;
+    }
+  };
+  return <div className="space-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Badge variant="success">{events.length.toLocaleString()} events</Badge>
+        <span>Tenant-scoped cloud journal · newest first</span>
+      </div>
+      <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+        <Select value={entity} onValueChange={setEntity}>
+          <SelectTrigger className="w-full sm:w-52"><SelectValue placeholder="All event types" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All event types</SelectItem>
+            {["BRANCH", "STOCK_TRANSFER", "BRANCH_RECONCILIATION", "FINANCE_LEDGER", "STAFF", "APPROVAL_POLICY"].map((value) =>
+              <SelectItem key={value} value={value}>{value.replaceAll("_", " ")}</SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search actor, device, event..." />
+        </div>
+      </div>
+    </div>
+    {visible.length ? <div className="max-h-[560px] overflow-auto rounded-2xl border border-border">
+      <table className="w-full min-w-[900px] text-left text-xs">
+        <thead className="sticky top-0 bg-surface text-muted-foreground"><tr>
+          <th className="p-3">Time</th><th className="p-3">Entity</th><th className="p-3">Action</th><th className="p-3">Actor</th><th className="p-3">Device</th><th className="p-3">Detail</th>
+        </tr></thead>
+        <tbody className="divide-y divide-border">
+          {visible.map((event) => <tr key={event.id} className="hover:bg-surface/40">
+            <td className="whitespace-nowrap p-3">{formatDateTime(new Date(String(event.created_at)).getTime())}</td>
+            <td className="p-3"><Badge variant="outline">{event.entity.replaceAll("_", " ")}</Badge></td>
+            <td className="p-3 font-medium">{event.action.replaceAll("_", " ")}</td>
+            <td className="p-3">{event.actor || "—"}</td>
+            <td className="p-3 font-mono">{event.device_id || "—"}</td>
+            <td className="max-w-[440px] whitespace-normal p-3 text-muted-foreground">{summary(String(event.detail ?? ""))}</td>
+          </tr>)}
+        </tbody>
+      </table>
+    </div> : <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">No audit events match these filters.</div>}
+    <p className="text-xs text-muted-foreground">The audit journal is append-only at the application level. Older free-text events are shown as recorded; versioned events include structured state changes.</p>
   </div>;
 }
 
