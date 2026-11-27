@@ -330,7 +330,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
           <div className="enterprise-branch-top">
             <span className="enterprise-branch-symbol"><LocationIcon size={19} /></span>
             <div className="enterprise-branch-badges">
-              <span className={"enterprise-location-type-badge " + (locationType === "WAREHOUSE" ? "warehouse" : "store")}>{locationType}</span>
+              <span className={"enterprise-location-type-badge " + (locationType === "WAREHOUSE" ? "warehouse" : "store")} role="status" aria-label={locationType === "WAREHOUSE" ? "Stock warehouse location" : "Retail store location"} title={locationType === "WAREHOUSE" ? "Stock-holding location" : "Customer-facing retail and POS location"}>{locationType}</span>
               {branch.is_main_branch && <span className="enterprise-main-badge">Main branch</span>}
               <StatusPill value={statusLabel} />
             </div>
