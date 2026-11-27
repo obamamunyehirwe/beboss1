@@ -8,11 +8,11 @@ import { Empty, Modal, PageHeading, StatCard, StatusPill } from "../ui";
 
 type BranchDraft = {
   name: string; code: string; address: string; phone: string; managerUserId: string;
-  isMainBranch: boolean; operationalStatus: string; dailySalesTargetRwf: string;
-  monthlyTargetRwf: string; openingCashFloat: string; email: string; notes: string;
+  locationType: "STORE" | "WAREHOUSE"; isMainBranch: boolean; operationalStatus: string;
+  dailySalesTargetRwf: string; monthlyTargetRwf: string; openingCashFloat: string; email: string; notes: string;
 };
 const emptyDraft: BranchDraft = {
-  name: "", code: "", address: "", phone: "", managerUserId: "", isMainBranch: false,
+  name: "", code: "", address: "", phone: "", managerUserId: "", locationType: "STORE", isMainBranch: false,
   operationalStatus: "OPEN", dailySalesTargetRwf: "0", monthlyTargetRwf: "0",
   openingCashFloat: "0", email: "", notes: ""
 };
@@ -28,7 +28,8 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
   const [draft, setDraft] = useState<BranchDraft>(emptyDraft);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<BranchFilter>("ALL");
-  const [saving, setSaving] = useState(false);
+  const [locationFilter, setLocationFilter] = useState<"ALL" | "STORE" | "WAREHOUSE">("ALL");
+  const [saving, setSaving = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [formError, setFormError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -73,14 +74,16 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
   const filtered = useMemo(() => list.filter((branch) => {
     const status = s(branch.operational_status || "OPEN").toUpperCase();
     const isActive = branch.is_active !== false;
-    const searchable = [branch.name, branch.code, branch.address, branch.phone, branch.manager_name, branch.email]
+    const locationType = s(branch.location_type).toUpperCase() === "WAREHOUSE" ? "WAREHOUSE" : "STORE";
+    const searchable = [branch.name, branch.code, branch.address, branch.phone, branch.manager_name, branch.email, locationType]
       .map((value) => s(value).toLowerCase()).join(" ");
     const matchesQuery = !query.trim() || searchable.includes(query.trim().toLowerCase());
     const matchesFilter =
       filter === "ALL" ||
       (filter === "INACTIVE" ? !isActive : isActive && status === filter);
-    return matchesQuery && matchesFilter;
-  }), [list, query, filter]);
+    const matchesLocation = locationFilter === "ALL" || locationType === locationFilter;
+    return matchesQuery && matchesFilter && matchesLocation;
+  }), [list, query, filter, locationFilter]);
 
   function exportBranchNetwork() {
     const exported = list.map((branch) => {
@@ -90,7 +93,9 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
       const assignedDevices = rows(cloud.devices).filter((device) => device.is_active && s(device.branch_id) === branchId);
       const monthlyTarget = n(branch.monthly_target_rwf);
       return {
-        branch_name: s(branch.name), branch_code: s(branch.code), main_branch: branch.is_main_branch === true,
+        branch_name: s(branch.name), branch_code: s(branch.code),
+        location_type: s(branch.location_type).toUpperCase() === "WAREHOUSE" ? "WAREHOUSE" : "STORE",
+        main_branch: branch.is_main_branch === true,
         active: branch.is_active !== false, operating_status: s(branch.operational_status || "OPEN"),
         manager: s(branch.manager_name), manager_user_id: s(branch.manager_user_id),
         address: s(branch.address), phone: s(branch.phone), email: s(branch.email),
@@ -104,7 +109,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
       };
     });
     downloadCsv("BeBoss-Branch-Network-" + new Date().toISOString().slice(0,10) + ".csv",
-      ["branch_name","branch_code","main_branch","active","operating_status","manager","manager_user_id","address","phone","email","staff_count","active_device_count","sales_this_month","transactions_this_month","monthly_target_rwf","target_progress_percent","stock_value_rwf","product_count","daily_target_rwf","opening_cash_float_rwf","notes"],
+      ["branch_name","branch_code","location_type","main_branch","active","operating_status","manager","manager_user_id","address","phone","email","staff_count","active_device_count","sales_this_month","transactions_this_month","monthly_target_rwf","target_progress_percent","stock_value_rwf","product_count","daily_target_rwf","opening_cash_float_rwf","notes"],
       exported);
   }
 
@@ -113,7 +118,9 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
     setFormError("");
     setDraft(branch ? {
       name: s(branch.name), code: s(branch.code), address: s(branch.address), phone: s(branch.phone),
-      managerUserId: s(branch.manager_user_id), isMainBranch: branch.is_main_branch === true,
+      managerUserId: s(branch.manager_user_id),
+      locationType: s(branch.location_type).toUpperCase() === "WAREHOUSE" ? "WAREHOUSE" : "STORE",
+      isMainBranch: branch.is_main_branch === true,
       operationalStatus: s(branch.operational_status) || "OPEN",
       dailySalesTargetRwf: String(branch.daily_sales_target_rwf ?? 0),
       monthlyTargetRwf: String(branch.monthly_target_rwf ?? 0),
@@ -128,11 +135,13 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
     setSaving(true);
     setFormError("");
     try {
-      if (draft.name.trim().length < 2) throw new Error("Branch name must contain at least two characters.");
+      if (draft.name.trim().length < 2) throw new Error("Location name must contain at least two characters.");
+      if (draft.locationType === "WAREHOUSE" && draft.isMainBranch) throw new Error("A warehouse cannot be the main retail/POS branch. Keep a STORE as the main branch.");
       const manager = managers.find((user) => s(user.user_id) === draft.managerUserId);
       await onAction("branch_upsert", { branch: {
         id: editing ? s(editing.id) : id(),
         name: draft.name.trim(), code: draft.code.trim(), address: draft.address.trim(),
+        locationType: draft.locationType,
         phone: draft.phone.trim(), managerUserId: draft.managerUserId,
         managerName: manager ? s(manager.full_name) : "",
         isMainBranch: draft.isMainBranch, operationalStatus: draft.operationalStatus,
@@ -288,16 +297,19 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
     </div>
 
     <section className="enterprise-branch-toolbar panel">
-      <div className="enterprise-toolbar-copy"><span className="eyebrow muted">LOCATION DIRECTORY</span><h3>Store network</h3><p>{managedStaff} active staff identities · {rows(cloud.devices).filter((device) => device.is_active).length} active terminals across the shop</p></div>
+      <div className="enterprise-toolbar-copy"><span className="eyebrow muted">LOCATION DIRECTORY</span><h3>Stores & warehouses</h3><p>{managedStaff} active staff identities · {rows(cloud.devices).filter((device) => device.is_active).length} active terminals across the shop</p></div>
       <div className="enterprise-toolbar-controls">
-        <label className="enterprise-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search branch, manager, code or address" /></label>
-        <select aria-label="Filter branches by status" value={filter} onChange={(event) => setFilter(event.target.value as BranchFilter)}>
+        <label className="enterprise-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search location, manager, code or address" /></label>
+        <select aria-label="Filter locations by type" value={locationFilter} onChange={(event) => setLocationFilter(event.target.value as typeof locationFilter)}>
+          <option value="ALL">All location types</option><option value="STORE">Retail stores</option><option value="WAREHOUSE">Warehouses</option>
+        </select>
+        <select aria-label="Filter locations by status" value={filter} onChange={(event) => setFilter(event.target.value as BranchFilter)}>
           <option value="ALL">All branches</option><option value="OPEN">Open</option>
           <option value="CLOSED">Closed</option><option value="SUSPENDED">Suspended</option>
           <option value="INACTIVE">Deactivated</option>
         </select>
       </div>
-      <div className="enterprise-toolbar-foot"><span>Showing {filtered.length} of {list.length} locations</span><span>Branch records synchronize through the protected management API</span></div>
+      <div className="enterprise-toolbar-foot"><span>Showing {filtered.length} of {list.length} locations · {list.filter((item) => s(item.location_type).toUpperCase() === "WAREHOUSE").length} warehouses · {list.filter((item) => s(item.location_type).toUpperCase() !== "WAREHOUSE").length} stores</span><span>Location records synchronize through the protected management API</span></div>
     </section>
 
     {actionError && <div className="inline-alert error">{actionError}</div>}
@@ -312,10 +324,13 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
         const progress = target > 0 ? Math.min(100, (metrics.total / target) * 100) : 0;
         const status = s(branch.operational_status || "OPEN").toUpperCase();
         const statusLabel = branch.is_active === false ? "INACTIVE" : status;
+        const locationType = s(branch.location_type).toUpperCase() === "WAREHOUSE" ? "WAREHOUSE" : "STORE";
+        const LocationIcon = locationType === "WAREHOUSE" ? Warehouse : Store;
         return <article className="enterprise-branch-card" key={branchId}>
           <div className="enterprise-branch-top">
-            <span className="enterprise-branch-symbol"><Store size={19} /></span>
+            <span className="enterprise-branch-symbol"><LocationIcon size={19} /></span>
             <div className="enterprise-branch-badges">
+              <span className={"enterprise-location-type-badge " + (locationType === "WAREHOUSE" ? "warehouse" : "store")}>{locationType}</span>
               {branch.is_main_branch && <span className="enterprise-main-badge">Main branch</span>}
               <StatusPill value={statusLabel} />
             </div>
@@ -383,7 +398,8 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
     </Modal>}
     {open && <Modal title={editing ? "Edit branch profile" : "Create a branch"} onClose={() => !saving && setOpen(false)}>
       <form className="form-grid" onSubmit={(event) => void save(event)}>
-        <label className="field-wide">Branch name<input required minLength={2} maxLength={120} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="e.g. Downtown Store" /></label>
+        <label className="field-wide">Location name<input required minLength={2} maxLength={120} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="e.g. Downtown Store or Central Warehouse" /></label>
+        <label>Location type<select value={draft.locationType} onChange={(event) => setDraft({ ...draft, locationType: event.target.value as BranchDraft["locationType"], isMainBranch: event.target.value === "WAREHOUSE" ? false : draft.isMainBranch })}><option value="STORE">Retail store</option><option value="WAREHOUSE">Warehouse</option></select></label>
         <label>Branch code<input maxLength={40} value={draft.code} onChange={(event) => setDraft({ ...draft, code: event.target.value })} placeholder="BR-02" /></label>
         <label>Branch manager<select value={draft.managerUserId} onChange={(event) => setDraft({ ...draft, managerUserId: event.target.value })}><option value="">No manager assigned</option>{managers.map((manager) => <option key={s(manager.user_id)} value={s(manager.user_id)}>{s(manager.full_name)} · @{s(manager.username)}</option>)}</select></label>
         <label>Business phone<input maxLength={40} value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} /></label>
@@ -393,7 +409,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
         <label>Daily sales target (FRw)<input type="number" min="0" max="1000000000" value={draft.dailySalesTargetRwf} onChange={(event) => setDraft({ ...draft, dailySalesTargetRwf: event.target.value })} /></label>
         <label>Monthly sales target (FRw)<input type="number" min="0" max="1000000000" value={draft.monthlyTargetRwf} onChange={(event) => setDraft({ ...draft, monthlyTargetRwf: event.target.value })} /></label>
         <label>Opening cash float (FRw)<input type="number" min="0" max="1000000000" value={draft.openingCashFloat} onChange={(event) => setDraft({ ...draft, openingCashFloat: event.target.value })} /></label>
-        <label className="checkbox-field field-wide"><input type="checkbox" checked={draft.isMainBranch} onChange={(event) => setDraft({ ...draft, isMainBranch: event.target.checked })} /> Set as the main branch (replaces the current main designation)</label>
+        <label className="checkbox-field field-wide"><input type="checkbox" checked={draft.isMainBranch} disabled={draft.locationType === "WAREHOUSE"} onChange={(event) => setDraft({ ...draft, isMainBranch: event.target.checked })} /> Set as the main retail branch (warehouses cannot be the main POS location)</label>
         <label className="field-wide">Operating notes<textarea rows={3} maxLength={1000} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} placeholder="Opening hours, location instructions or branch-specific procedures" /></label>
         {formError && <div className="inline-alert error field-wide">{formError}</div>}
         <div className="modal-actions field-wide"><button type="button" className="btn-outline" disabled={saving} onClick={() => setOpen(false)}>Cancel</button><button className="btn-primary" disabled={saving || offline}>{saving ? "Saving..." : <><Check size={16} />{editing ? "Save changes" : "Create branch"}</>}</button></div>
