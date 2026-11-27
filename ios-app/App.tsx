@@ -11,12 +11,13 @@ import {
   StoreSnapshot
 } from './src/core/types';
 import {
-  adjustStock, archiveBranch, authenticate, cancelStockTransfer, checkout,
-  confirmStockTransfer, deleteProduct, buildIosCloudSnapshot, initializeStore, loadSnapshot,
-  markIosOutboxFailed, markIosOutboxSynced,
+  adjustStock, archiveBranch, authenticate, cancelStockTransfer, checkout, deleteCustomer,
+  deleteHeldCart, deleteProduct, deletePurchaseRecord, buildIosCloudSnapshot, initializeStore,
+  listArchivedCustomers, listArchivedProducts, loadSnapshot, markIosOutboxFailed, markIosOutboxSynced,
   mergeIosCloudSnapshots, recordCustomerPayment, recordPurchase, recordStockTransfer, registerOwner,
-  restoreEncryptedBackupData, reverseSale, saveBranch, saveCustomer, saveProduct, saveShopSettings,
-  saveStaff, setBranchOperationalStatus, storeDiagnostics, prepareEnrolledDeviceStaff, quickCustomSale
+  restoreCustomer, restoreEncryptedBackupData, restoreProduct, reverseSale, saveBranch, saveCustomer,
+  saveHeldCart, saveProduct, saveShopSettings, saveStaff, setBranchOperationalStatus,
+  storeDiagnostics, prepareEnrolledDeviceStaff, quickCustomSale
 } from './src/storage/repository';
 import { BarcodeScannerModal, useBluetoothPrinters } from './src/services/hardware';
 import { decryptBackupFile, exportEncryptedBackup } from './src/services/backup';
