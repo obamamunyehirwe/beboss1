@@ -138,6 +138,71 @@ class BranchTransferConcurrencyTest {
     }
 
     @Test
+    fun `warehouse cannot be saved as the main retail branch`() = runBlocking {
+        val db = inMemoryDatabase()
+        try {
+            val repository = BeBossRepository(db)
+            val result = runCatching {
+                repository.branchTransferManager.saveBranch(
+                    Branch(
+                        id = "warehouse-main",
+                        name = "Central Warehouse",
+                        code = "WH-01",
+                        locationType = "WAREHOUSE",
+                        isMainBranch = true
+                    )
+                )
+            }
+            assertTrue("A warehouse must never become the main POS branch", result.isFailure)
+            assertEquals(null, db.branchDao().getBranchById("warehouse-main"))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `stock transfers support an active warehouse destination and use verified location names`() = runBlocking {
+        val db = inMemoryDatabase()
+        try {
+            val repository = BeBossRepository(db)
+            db.branchDao().insertAllBranches(
+                listOf(
+                    Branch(id = "retail", name = "Retail Store", code = "ST-01"),
+                    Branch(id = "warehouse", name = "Central Warehouse", code = "WH-01", locationType = "WAREHOUSE")
+                )
+            )
+            db.productDao().insertProduct(
+                Product(
+                    id = "warehouse-rice",
+                    name = "Rice",
+                    costPrice = 700.0,
+                    sellingPrice = 900.0,
+                    quantityInStock = 10.0,
+                    branchId = "retail"
+                )
+            )
+
+            val transfer = repository.branchTransferManager.recordStockTransfer(
+                productId = "warehouse-rice",
+                fromBranchId = "retail",
+                fromBranchName = "Untrusted caller name",
+                toBranchId = "warehouse",
+                toBranchName = "Wrong destination label",
+                quantity = 3.0,
+                notes = "Warehouse replenishment",
+                transferredBy = "Store Manager"
+            )
+
+            assertEquals("Retail Store", transfer.fromBranchName)
+            assertEquals("Central Warehouse", transfer.toBranchName)
+            assertEquals("IN_TRANSIT", transfer.status)
+            assertEquals(7.0, db.productDao().getProductById("warehouse-rice")!!.quantityInStock, 0.001)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
     fun `concurrent cancellation restores source inventory once`() = runBlocking {
         val db = inMemoryDatabase()
         try {
