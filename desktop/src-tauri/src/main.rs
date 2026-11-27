@@ -524,7 +524,7 @@ struct FileExportResult {
 
 /// Strict allow-list for a diagnostic export. Business records, shop identities,
 /// hostnames, file paths and credentials are intentionally not accepted here.
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SupportBundleInput {
     os_platform: String,
