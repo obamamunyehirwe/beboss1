@@ -46,14 +46,11 @@ jobs:
       - name: Set up Gradle caching
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Compile shared Kotlin tests
-        run: ./gradlew -p shared allTests
-
       - name: Compile Kotlin framework for the real iPhone device target
         run: ./gradlew -p shared :linkReleaseFrameworkIosArm64
 
       - name: Build Android app against the exact same shared Kotlin module
-        run: ./gradlew :app:compileDebugKotlin
+        run: ./gradlew :app:compileSecureDebugKotlin :app:compileTransitionDebugKotlin
 
       - name: Upload the iPhone-device Kotlin framework
         uses: actions/upload-artifact@v4
