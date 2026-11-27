@@ -1,6 +1,6 @@
 /*
  * BeBoss QNX Neutrino edge-agent reference service.
- * A small native service for verifying QNX SDP 8.0 and demonstrating IPC.
+ * Native IPC endpoint used to verify an SDP 8.0 cross-build and QEMU target.
  */
 #include <errno.h>
 #include <stdint.h>
@@ -9,12 +9,15 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <sys/iofunc.h>
+#include <sys/iomsg.h>
 #include <sys/dispatch.h>
 #include <sys/neutrino.h>
 
 #define BEBOSS_QNX_SERVICE_NAME "beboss-edge-gateway"
 #define BEBOSS_EDGE_PROTOCOL_VERSION 1u
 #define BEBOSS_EDGE_PAYLOAD_BYTES 240u
+#define BEBOSS_EDGE_MSG_TYPE (_IO_MAX + 0x31)
 
 enum {
     BEBOSS_EDGE_OP_HEALTH = 1u,
@@ -22,8 +25,10 @@ enum {
 };
 
 typedef struct {
+    uint16_t type;
     uint16_t version;
     uint16_t opcode;
+    uint16_t reserved;
     uint32_t sequence;
     char payload[BEBOSS_EDGE_PAYLOAD_BYTES];
 } beboss_edge_request_t;
@@ -35,12 +40,24 @@ typedef struct {
     char payload[BEBOSS_EDGE_PAYLOAD_BYTES];
 } beboss_edge_reply_t;
 
+typedef union {
+    struct _pulse pulse;
+    beboss_edge_request_t request;
+} beboss_edge_received_t;
+
 static void make_reply(const beboss_edge_request_t *request,
                        beboss_edge_reply_t *reply)
 {
     memset(reply, 0, sizeof(*reply));
     reply->version = BEBOSS_EDGE_PROTOCOL_VERSION;
     reply->sequence = request->sequence;
+
+    if (request->type != BEBOSS_EDGE_MSG_TYPE) {
+        reply->status = EPROTO;
+        (void)snprintf(reply->payload, sizeof(reply->payload),
+                       "Unsupported message type");
+        return;
+    }
 
     if (request->version != BEBOSS_EDGE_PROTOCOL_VERSION) {
         reply->status = EPROTO;
@@ -93,13 +110,13 @@ int main(void)
     (void)fflush(stdout);
 
     for (;;) {
-        beboss_edge_request_t request;
+        beboss_edge_received_t received;
         beboss_edge_reply_t reply;
         int receive_id;
 
-        memset(&request, 0, sizeof(request));
-        receive_id = MsgReceive(attachment->chid, &request,
-                                sizeof(request), NULL);
+        memset(&received, 0, sizeof(received));
+        receive_id = MsgReceive(attachment->chid, &received,
+                                sizeof(received), NULL);
 
         if (receive_id == -1) {
             if (errno == EINTR) {
@@ -109,12 +126,14 @@ int main(void)
             break;
         }
 
-        /* QNX pulses have receive ID 0 and are not application requests. */
         if (receive_id == 0) {
+            if (received.pulse.code == _PULSE_CODE_DISCONNECT) {
+                (void)ConnectDetach(received.pulse.scoid);
+            }
             continue;
         }
 
-        make_reply(&request, &reply);
+        make_reply(&received.request, &reply);
 
         if (MsgReply(receive_id, EOK, &reply, sizeof(reply)) == -1) {
             perror("BeBoss QNX edge agent: MsgReply");
