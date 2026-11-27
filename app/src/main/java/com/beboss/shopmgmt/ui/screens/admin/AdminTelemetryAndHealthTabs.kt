@@ -603,7 +603,7 @@ fun AdminCloudActivityTab(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Platform Activity", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text(
-                            "Auditable cloud events • \${events.size} loaded",
+                            "Auditable cloud events • ${events.size} loaded",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -726,8 +726,8 @@ fun AdminCloudActivityTab(
                             Text(event.detail, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Actor: \${event.actor.ifBlank { "SYSTEM" }}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("#\${event.id}", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = FontFamily.Monospace)
+                            Text("Actor: ${event.actor.ifBlank { "SYSTEM" }}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("#${event.id}", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = FontFamily.Monospace)
                         }
                     }
                 }
