@@ -6,7 +6,11 @@ import type { CloudAction, CloudState, Row, Snapshot } from "../../lib/types";
 import { Empty, Modal, PageHeading, StatCard, StatusPill } from "../ui";
 
 export function TransfersPage({ cloud, snapshot, onAction, onRefresh, offline }: { cloud: CloudState; snapshot: Snapshot | null; onAction: CloudAction; onRefresh: () => Promise<void>; offline: boolean }) {
-  const [open, setOpen] = useState(false);\n  const [query, setQuery] = useState("");\n  const [statusFilter, setStatusFilter] = useState("ALL");\n  const [refreshing, setRefreshing] = useState(false);\n  const [pageError, setPageError] = useState("");
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [refreshing, setRefreshing] = useState(false);
+  const [pageError, setPageError] = useState("");
   const [showPolicy, setShowPolicy] = useState(false);
   const [transferThreshold, setTransferThreshold] = useState("0");
   const [varianceThreshold, setVarianceThreshold] = useState("0");
