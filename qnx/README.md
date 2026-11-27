@@ -81,8 +81,11 @@ Build a custom OS image using a valid target-specific buildfile:
 
     mkifs -v path/to/board.build path/to/source-directory path/to/new-image.ifs
 
-Prepare, launch and stop the QNX QEMU reference target from its image directory:
+From an x86-64 Ubuntu 22.04 or 24.04 host, unpack the quick-start package and run the commands from the nested image directory:
 
+    cd "$QNX_BASE/images/qemu"
+    ./unpack_qemu_image.sh
+    cd "$QNX_BASE/images/qemu/qemu"
     mkqnximage --type=qemu --arch=x86_64 --build
     mkqnximage --run
     mkqnximage --stop
