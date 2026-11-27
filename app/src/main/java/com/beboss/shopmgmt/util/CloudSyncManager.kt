@@ -10,6 +10,9 @@ import com.beboss.shopmgmt.data.model.UserRole
 import com.beboss.shopmgmt.data.repository.BranchMergeResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,6 +82,7 @@ class CloudSyncManager(private val database: AppDatabase) {
 
     private val TAG = "CloudSyncManager"
     private val MAX_QUEUE_RETRIES = 6
+    private val SNAPSHOT_UPLOAD_CONCURRENCY = 4
 
     private val pingClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -505,24 +509,34 @@ class CloudSyncManager(private val database: AppDatabase) {
 
                 val latestUsers = userDao.getAllUsersDirect()
                 var allChunksUploaded = chunkedTokens.isNotEmpty()
-                chunkedTokens.forEachIndexed { chunkIdx, token ->
-                    val chunkDeviceId = if (chunkIdx == 0) deviceId else "${deviceId}#c$chunkIdx"
-                    val ok = retryWithBackoff(maxAttempts = 3) {
-                        SupabaseAdminClient.upsertBranchSyncSnapshot(
-                            shopSyncKey = shopSyncKey,
-                            deviceId = chunkDeviceId,
-                            syncGeneration = syncGeneration,
-                            chunkIndex = chunkIdx,
-                            chunkCount = chunkedTokens.size,
-                            branchId = activeBranch?.id ?: activeBranchId,
-                            branchName = activeBranch?.name ?: "Main Store",
-                            shopName = profile.shopName,
-                            ownerUsername = ownerUsername,
-                            payloadToken = token,
-                            recordsSummary = recordsSummary
-                        )
+                // Upload independent immutable chunks in small parallel batches.
+                // Four concurrent requests reduce large-shop sync latency without
+                // flooding PostgREST or changing the generation-complete/prune gate.
+                chunkedTokens.chunked(SNAPSHOT_UPLOAD_CONCURRENCY).forEachIndexed { batchIndex, batch ->
+                    val batchResults = coroutineScope {
+                        batch.mapIndexed { batchOffset, token ->
+                            async(Dispatchers.IO) {
+                                val chunkIdx = batchIndex * SNAPSHOT_UPLOAD_CONCURRENCY + batchOffset
+                                val chunkDeviceId = if (chunkIdx == 0) deviceId else deviceId + "#c" + chunkIdx
+                                retryWithBackoff(maxAttempts = 3) {
+                                    SupabaseAdminClient.upsertBranchSyncSnapshot(
+                                        shopSyncKey = shopSyncKey,
+                                        deviceId = chunkDeviceId,
+                                        syncGeneration = syncGeneration,
+                                        chunkIndex = chunkIdx,
+                                        chunkCount = chunkedTokens.size,
+                                        branchId = activeBranch?.id ?: activeBranchId,
+                                        branchName = activeBranch?.name ?: "Main Store",
+                                        shopName = profile.shopName,
+                                        ownerUsername = ownerUsername,
+                                        payloadToken = token,
+                                        recordsSummary = recordsSummary
+                                    )
+                                }
+                            }
+                        }.awaitAll()
                     }
-                    if (!ok) allChunksUploaded = false
+                    if (batchResults.any { uploaded -> !uploaded }) allChunksUploaded = false
                 }
                 if (allChunksUploaded) {
                     val retentionApplied = SupabaseAdminClient.pruneUploadedSnapshotGenerations(
