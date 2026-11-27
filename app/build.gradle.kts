@@ -73,7 +73,7 @@ abstract class ValidateReleaseSigningTask : org.gradle.api.DefaultTask() {
     }
     if (!hasVerifiedCertificate.get()) {
       throw org.gradle.api.GradleException(
-        "The configured Android release keystore does not match ANDROID_UPLOAD_CERT_SHA256. Rotate the exposed signing material, register the new upload certificate with Google Play, and update the ignored root .env before building a release."
+        "The configured Android release keystore does not match ANDROID_RELEASE_CERT_SHA256 (or the legacy ANDROID_UPLOAD_CERT_SHA256 alias). Set the fingerprint of the owner-managed APK signing certificate. Google Play services or keys are not required for direct APK distribution."
       )
     }
   }
@@ -94,8 +94,10 @@ val releaseKeystoreFile = releaseKeystorePath?.let { rootProject.file(it) }
 val releaseStorePassword = signingSecret("STORE_PASSWORD")
 val releaseKeyPassword = signingSecret("KEY_PASSWORD")
 val releaseKeyAlias = signingSecret("KEY_ALIAS")
-val expectedUploadCertificateSha256 = signingSecret("ANDROID_UPLOAD_CERT_SHA256")
-  .orEmpty().filter { it.isLetterOrDigit() }.uppercase()
+val expectedReleaseCertificateSha256 = (
+  signingSecret("ANDROID_RELEASE_CERT_SHA256")
+    ?: signingSecret("ANDROID_UPLOAD_CERT_SHA256")
+  ).orEmpty().filter { it.isLetterOrDigit() }.uppercase()
 
 fun actualReleaseCertificateSha256(): String? {
   val file = releaseKeystoreFile ?: return null
@@ -116,9 +118,9 @@ fun actualReleaseCertificateSha256(): String? {
       .joinToString("") { "%02X".format(it) }
   }.getOrNull()
 }
-val configuredUploadCertificateMatches =
-  expectedUploadCertificateSha256.matches(Regex("[A-F0-9]{64}")) &&
-    actualReleaseCertificateSha256() == expectedUploadCertificateSha256
+val configuredReleaseCertificateMatches =
+  expectedReleaseCertificateSha256.matches(Regex("[A-F0-9]{64}")) &&
+    actualReleaseCertificateSha256() == expectedReleaseCertificateSha256
 
 android {
   namespace = "com.beboss.shopmgmt"
@@ -310,7 +312,7 @@ val validateReleaseSigningConfiguration = tasks.register<ValidateReleaseSigningT
   hasKeystore.set(releaseKeystoreConfigured)
   hasCredentials.set(releaseCredentialsConfigured)
   // Only a boolean enters the task; the keystore passwords and key material are not cached.
-  hasVerifiedCertificate.set(configuredUploadCertificateMatches)
+  hasVerifiedCertificate.set(configuredReleaseCertificateMatches)
 }
 
 tasks.configureEach {

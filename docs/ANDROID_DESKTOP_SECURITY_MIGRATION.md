@@ -114,9 +114,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-android-rel
 
 With Play App Signing, a reset of the upload key does not change the Google-managed app-signing key used for customer-delivered updates. This is the preferred route to rotate upload credentials while preserving normal Play upgrade identity.
 
-### When Play App Signing is not enabled
+### Direct APK distribution without Google Play
 
-Do not replace the certificate on an already-published self-signed or sideloaded APK and assume existing installs can update in place. Android normally rejects an update with a different signing certificate. First use the Google Play-supported app-signing key upgrade path if the app is distributed through Play, or plan a signed migration/reinstall and verified backup/restore route for direct APK customers. A new .p12 by itself does not transfer the old app identity.
+BeBoss can distribute and update APKs directly from its private Supabase release bucket. The Android app's update check, signed download URL and Package Installer handoff do not use Google Play Services, Google Play APIs or a Google Play upload key. Direct distribution still requires a BeBoss-owned Android application-signing key because Android verifies signatures on every install and update.
+
+For a new direct-distribution app, generate a self-managed key locally with `scripts/rotate-android-upload-key.ps1`, keep its PKCS#12 keystore outside Git, and configure `KEYSTORE_PATH`, `STORE_PASSWORD`, `KEY_PASSWORD`, `KEY_ALIAS` and `ANDROID_RELEASE_CERT_SHA256`. The legacy `ANDROID_UPLOAD_CERT_SHA256` environment name remains supported for existing environments.
+
+For an already-installed BeBoss package, changing to a new certificate without signing lineage will be rejected by Android. The repository includes two local helpers:
+- `scripts/create-android-signing-lineage.ps1` creates a proof-of-rotation lineage using the old and new private keystores.
+- `scripts/sign-android-apk-with-lineage.ps1` signs a release APK using both signers and that lineage, then verifies supported Android signature ranges.
+
+Both helpers prompt through Android SDK `apksigner`; passwords are not accepted as command-line parameters and no key material is committed. A standalone release owner can use this route without Play Console. The same key/lineage used for the APK must be the one selected in BeBoss Admin's Mobile release record.
+
+**Important old-device boundary:** BeBoss currently supports Android API 24+. APK signing rotation is supported by Android from API 28. With a rotation boundary of API 28, Android 7/8 devices (API 24–27) still need the old signing certificate to verify updates. Because the historical BeBoss key was exposed in public Git history, those older devices cannot be made fully safe by a repository-only change. Either keep a controlled legacy-signing migration for that limited install base, move those devices to a separately named app after a verified encrypted backup/restore, or raise the minimum supported Android version only after the owner has approved that compatibility change. Do not clear application data or silently change the package name.
+
+A proof-of-rotation lineage preserves Android's upgrade trust relationship; it does not retroactively make an exposed old key secret or prove that old releases were never tampered with. Verify the rotated APK on physical devices/emulators across API 24–27, 28–32 and 33+ before making it current.
+
+### When Play App Signing is enabled
+
+For deployments that also publish through Google Play, use Play Console's upload-key reset process to register a replacement upload certificate. This is a separate store-upload workflow; direct sideloaded BeBoss updates do not need Play Services or Play upload credentials. Do not confuse the Play upload certificate with the app-signing certificate installed on customer devices.
 
 ### Publish only after these checks
 

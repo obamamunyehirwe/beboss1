@@ -21,14 +21,20 @@ if (-not (Test-Path -LiteralPath $ArtifactPath -PathType Leaf)) {
     throw "Android release artifact does not exist: $ArtifactPath"
 }
 if ([string]::IsNullOrWhiteSpace($ExpectedSha256)) {
+    $ExpectedSha256 = $env:ANDROID_RELEASE_CERT_SHA256
+}
+if ([string]::IsNullOrWhiteSpace($ExpectedSha256)) {
     $ExpectedSha256 = $env:ANDROID_UPLOAD_CERT_SHA256
+}
+if ([string]::IsNullOrWhiteSpace($ExpectedSha256)) {
+    $ExpectedSha256 = Read-RootEnvValue "ANDROID_RELEASE_CERT_SHA256"
 }
 if ([string]::IsNullOrWhiteSpace($ExpectedSha256)) {
     $ExpectedSha256 = Read-RootEnvValue "ANDROID_UPLOAD_CERT_SHA256"
 }
 $expected = ($ExpectedSha256 -replace ":", "" -replace "\s", "").ToUpperInvariant()
 if ($expected -notmatch "^[A-F0-9]{64}$") {
-    throw "Set ANDROID_UPLOAD_CERT_SHA256 to the accepted rotated upload certificate SHA-256 fingerprint."
+    throw "Set ANDROID_RELEASE_CERT_SHA256 (or legacy ANDROID_UPLOAD_CERT_SHA256) to the owner-controlled APK signing certificate SHA-256 fingerprint."
 }
 
 $extension = [IO.Path]::GetExtension($ArtifactPath).ToLowerInvariant()
@@ -65,4 +71,4 @@ if ($extension -eq ".apk") {
 if ($actual -ne $expected) {
     throw "Signing certificate mismatch. Expected $expected but artifact was signed with $actual. Do not publish this artifact."
 }
-Write-Host "Signature verified. Artifact matches the configured rotated Android upload certificate ($actual)."
+Write-Host "Signature verified. Artifact matches the configured Android release certificate ($actual). No Google Play service is used by this check."

@@ -1,4 +1,4 @@
-# Generate a new Android upload key outside the repository.
+# Generate a new self-managed Android release-signing key outside the repository.
 # Passwords are requested interactively by keytool and are never passed as process arguments.
 
 $ErrorActionPreference = "Stop"
@@ -20,7 +20,7 @@ if (Test-Path $certificate) {
     throw "Refusing to overwrite an existing certificate export: $certificate"
 }
 
-Write-Host "Creating a new PKCS#12 upload key outside the repository."
+Write-Host "Creating a new PKCS#12 Android release key outside the repository."
 Write-Host "Store and key passwords will be requested securely by keytool."
 & keytool -genkeypair -v -storetype PKCS12 -keystore $keystore -alias $alias -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=BeBoss Android Upload,O=BeBoss Retail,C=RW"
 if ($LASTEXITCODE -ne 0) { throw "keytool failed to create the new upload key." }
@@ -37,12 +37,12 @@ $sha = [System.Security.Cryptography.SHA256]::Create()
 $fingerprint = [BitConverter]::ToString($sha.ComputeHash($x509.RawData)).Replace("-", "")
 
 Write-Host ""
-Write-Host "New upload key created:"
+Write-Host "New Android release key created:"
 Write-Host "  Keystore: $keystore"
 Write-Host "  Alias:    $alias"
 Write-Host "  Public certificate: $certificate"
 Write-Host "  SHA-256:  $fingerprint"
 Write-Host ""
-Write-Host "Next: submit the PEM certificate to Google Play Console using the official upload-key reset flow."
-Write-Host "After Google Play accepts the certificate, update KEYSTORE_PATH, STORE_PASSWORD, KEY_PASSWORD, KEY_ALIAS and ANDROID_UPLOAD_CERT_SHA256 in your ignored root .env / protected CI variables."
-Write-Host "Never commit the .p12 file, paste passwords into chat, or replace an installed app's signing certificate without the Play App Signing upgrade process."
+Write-Host "This key can sign directly distributed APKs. Google Play services or keys are not required."
+Write-Host "Update KEYSTORE_PATH, STORE_PASSWORD, KEY_PASSWORD, KEY_ALIAS and ANDROID_RELEASE_CERT_SHA256 in your ignored root .env / protected CI variables."
+Write-Host "Never commit the .p12 file or paste passwords into chat. For an existing app, create and test a signing lineage before changing certificates."
