@@ -1079,6 +1079,128 @@ export async function restoreEncryptedBackupData(backup: any, actor: Staff): Pro
   return summary;
 }
 
+export type IosCloudSnapshotPackage = {
+  snapshot: Record<string, unknown>;
+  outboxIds: string[];
+  expectedUpdatedAt: number;
+};
+
+/** Capture one complete local state for an authenticated, shop-bound iPhone sync. */
+export async function buildIosCloudSnapshot(actor: Staff): Promise<IosCloudSnapshotPackage> {
+  requirePermission(actor, 'canSellPOS', 'synchronize shop data');
+  const profile = await currentProfile();
+  if (!profile) throw new Error('Register this iPhone with the shop before synchronizing.');
+  const captured = await transaction(async tx => {
+    const [products, customers, sales, saleItems, payments, purchases, transfers, branches, users, tombstones, outbox, version] = await Promise.all([
+      query<Row>('SELECT data FROM products ORDER BY id', [], tx),
+      query<Row>('SELECT data FROM customers ORDER BY id', [], tx),
+      query<Row>('SELECT data FROM sales ORDER BY created_at,id', [], tx),
+      query<Row>('SELECT data FROM sale_items ORDER BY sale_id,id', [], tx),
+      query<Row>('SELECT data FROM customer_payments ORDER BY created_at,id', [], tx),
+      query<Row>('SELECT data FROM purchases ORDER BY created_at,id', [], tx),
+      query<Row>('SELECT data FROM stock_transfers ORDER BY created_at,id', [], tx),
+      query<Row>('SELECT data FROM branches ORDER BY id', [], tx),
+      query<Row>('SELECT data FROM users ORDER BY id', [], tx),
+      query<Row>('SELECT table_name,record_id,deleted_at,hlc FROM sync_tombstones ORDER BY deleted_at,id', [], tx),
+      query<Row>('SELECT id FROM sync_outbox WHERE status != "SYNCED" ORDER BY created_at,id LIMIT 5000', [], tx),
+      first<Row>('SELECT value FROM app_meta WHERE key=?', ['cloud_snapshot_updated_at'], tx)
+    ]);
+    return {
+      products: products.map(row => productFromRow(row)),
+      customers: customers.map(row => customerFromRow(row)),
+      sales: sales.map(row => saleFromRow(row)),
+      saleItems: saleItems.map(row => fromJson<Row>(row.data)),
+      customerPayments: payments.map(row => fromJson<CustomerPayment>(row.data)),
+      purchases: purchases.map(row => fromJson<Purchase>(row.data)),
+      stockTransfers: transfers.map(row => fromJson<StockTransfer>(row.data)),
+      branches: branches.map(row => branchFromRow(row)),
+      users: users.map(row => {
+        const staff = staffFromRow(row);
+        return { ...staff, pinHash: '', passwordHash: '' };
+      }),
+      tombstones: tombstones.map(row => ({
+        tableName: String(row.table_name),
+        recordId: String(row.record_id),
+        deletedAt: Number(row.deleted_at) || 0,
+        hlcTimestamp: String(row.hlc || '0')
+      })),
+      outboxIds: outbox.map(row => String(row.id)).filter(Boolean),
+      expectedUpdatedAt: Number(version?.value || 0)
+    };
+  });
+  const timestamp = Date.now();
+  return {
+    snapshot: {
+      metadata: {
+        app: 'BeBoss',
+        version: 'ios-1.0',
+        schemaVersion: 3,
+        format: 'beboss_branch_datashare_v3',
+        timestamp,
+        issuedAt: timestamp,
+        exportedBy: actor.username,
+        exportedByRole: actor.role,
+        devicePlatform: 'IOS'
+      },
+      shopProfile: profile,
+      products: captured.products,
+      customers: captured.customers,
+      sales: captured.sales,
+      saleItems: captured.saleItems,
+      customerPayments: captured.customerPayments,
+      purchases: captured.purchases,
+      stockTransfers: captured.stockTransfers,
+      branches: captured.branches,
+      users: captured.users,
+      tombstones: captured.tombstones
+    },
+    outboxIds: captured.outboxIds,
+    expectedUpdatedAt: captured.expectedUpdatedAt
+  };
+}
+
+export async function markIosOutboxSynced(ids: string[], syncedAt: number, cloudUpdatedAt: number): Promise<void> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  await transaction(async tx => {
+    for (let start = 0; start < unique.length; start += 100) {
+      const batch = unique.slice(start, start + 100);
+      if (!batch.length) continue;
+      const placeholders = batch.map(() => '?').join(',');
+      await execute(
+        'UPDATE sync_outbox SET status="SYNCED",last_error="",updated_at=? WHERE id IN (' + placeholders + ')',
+        [syncedAt, ...batch],
+        tx
+      );
+    }
+    await execute('INSERT INTO app_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      ['cloud_snapshot_updated_at', String(Math.max(0, cloudUpdatedAt))], tx);
+    await execute('INSERT INTO app_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      ['last_cloud_sync_at', String(syncedAt)], tx);
+    const row = await first<Row>('SELECT data FROM shop_profile WHERE id=1', [], tx);
+    if (row) {
+      const current = profileFromRow(row);
+      const updated = { ...current, lastSyncedAt: syncedAt };
+      await execute('UPDATE shop_profile SET data=?,updated_at=? WHERE id=1', [toJson(updated), current.updatedAt], tx);
+    }
+  });
+}
+
+export async function markIosOutboxFailed(ids: string[], reason: string): Promise<void> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  await transaction(async tx => {
+    for (let start = 0; start < unique.length; start += 100) {
+      const batch = unique.slice(start, start + 100);
+      if (!batch.length) continue;
+      const placeholders = batch.map(() => '?').join(',');
+      await execute(
+        'UPDATE sync_outbox SET status="FAILED",retry_count=retry_count+1,last_error=?,updated_at=? WHERE id IN (' + placeholders + ')',
+        [String(reason).slice(0, 1000), Date.now(), ...batch],
+        tx
+      );
+    }
+  });
+}
+
 export async function getOutbox(): Promise<SyncOutboxItem[]> {
   const rows = await query<Row>('SELECT * FROM sync_outbox WHERE status != "SYNCED" ORDER BY created_at');
   return rows.map(outboxFromRow);
