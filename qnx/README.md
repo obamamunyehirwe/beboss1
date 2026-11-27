@@ -10,7 +10,7 @@ BeBoss Desktop includes a host-side workbench for QNX SDP 8.0 development. It do
 - Builds a user-supplied QNX IFS buildfile with mkifs without overwriting existing output.
 - Uses mkqnximage to prepare, launch and stop a QEMU target when the official QNX reference image package is installed.
 
-The edge agent registers the beboss-edge-gateway service and processes health/echo requests with QNX Neutrino name_attach, MsgReceive and MsgReply. It is a native IPC/toolchain demonstration, not a production point-of-sale client or a complete retail system port.
+The edge agent registers the beboss-edge-gateway service and processes health/echo requests with QNX Neutrino name_attach, MsgReceive and MsgReply. It handles disconnect pulses and uses an application message type outside the reserved QNX I/O message range. The companion IPC client uses name_open and MsgSend to run health and echo request/reply checks. These are native IPC/toolchain demonstrations, not a production point-of-sale client or a complete retail system port.
 
 ## Host requirements
 
@@ -37,7 +37,7 @@ The expected QNX 8 target tree is:
 1. Open Administration, then QNX Development Center.
 2. Enter the QNX SDP installation directory, or set QNX_BASE before starting BeBoss Desktop.
 3. Select Refresh status. The workbench probes qcc, q++, mkifs, mkqnximage, target headers and compiler variants.
-4. Select x86_64 or aarch64le, then choose Build edge agent. The generated target binary and SHA-256 digest appear in the evidence panel.
+4. Select x86_64 or aarch64le, then choose Build edge agent and Build IPC client. The generated target binaries and SHA-256 digests appear in the evidence panel.
 5. To create a custom image, enter a valid QNX board-specific .build file and a new output path, then choose Build IFS.
 6. Install and unpack the QNX QEMU quick-start image package. Choose Prepare image, then Launch QEMU. Choose Stop QEMU to request shutdown.
 
@@ -70,6 +70,7 @@ Prepare, launch and stop the QNX QEMU reference target from its image directory:
 ## Reviewer evidence and limitations
 
 - qnx/edge-agent/main.c — Neutrino message-passing service source.
+- qnx/edge-agent/client.c — name_open/MsgSend IPC smoke-test client source.
 - desktop/src-tauri/src/qnx.rs — real SDK detection, qcc compilation, mkifs image build and QEMU lifecycle commands.
 - desktop/src/components/screens/QnxDevelopmentPage.tsx — interactive desktop workbench.
 
