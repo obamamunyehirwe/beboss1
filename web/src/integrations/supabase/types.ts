@@ -931,6 +931,7 @@ export type Database = {
         Row: {
           address: string
           code: string
+          location_type: string
           color_hex: string
           created_at: number
           daily_sales_target_rwf: number
@@ -958,6 +959,7 @@ export type Database = {
         Insert: {
           address?: string
           code?: string
+          location_type?: string
           color_hex?: string
           created_at?: number
           daily_sales_target_rwf?: number
