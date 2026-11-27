@@ -3075,11 +3075,26 @@ if (action === "submit_payment_proof") {
         created_at: now, updated_at: now, hlc_timestamp: now, last_modified_device_id: actor.actorDeviceId
       });
       if (error) throw new Error("Could not create the stock-transfer command: " + error.message);
+      const requestAuditDetail = JSON.stringify({
+        version: 1,
+        recordId: id,
+        transferNumber,
+        productId,
+        fromBranchId: fromId,
+        toBranchId: toId,
+        quantity,
+        transferCostRwf,
+        approvalRequired,
+        approverUsername: owner.username,
+        approvalDeviceId: actor.actorDeviceId,
+        policyVersion: policy.version,
+        approvedAt: now,
+        reason: approvalRequired ? approvalReason : ""
+      });
       const auditLogged = await recordShopAuditEvent(
         admin, owner.shopId, owner.shop.shop_name, "OWNER:" + owner.username,
         actor.actorDeviceId, "STOCK_TRANSFER", approvalRequired ? "REQUESTED_OWNER_APPROVED" : "REQUESTED",
-        transferNumber + " · " + text(product.name) + " · " + quantity + " " + (text(product.unit) || "pcs") +
-          " · " + from.name + " → " + to.name + (approvalRequired ? " · Approval: " + approvalReason : "")
+        requestAuditDetail
       );
       if (!auditLogged) return json(503, { ok: false, mutationCommitted: true, transferId: id, transferNumber, status: "REQUESTED", auditLogged: false, message: "The transfer request was created, but its required cloud audit record could not be written. Do not create it again; refresh the transfer and audit views, then contact support if the event is still missing." });
       return json(200, { ok: true, id, transferNumber, status: "REQUESTED", approvalRequired, auditLogged: true });
