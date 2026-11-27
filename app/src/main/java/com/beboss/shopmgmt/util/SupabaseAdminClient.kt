@@ -279,6 +279,18 @@ data class BatchApprovalResult(
     val issuedCodes: List<Pair<String, String>> = emptyList()
 )
 
+data class SupabaseCloudSyncEventDto(
+    val id: Long,
+    val shopSyncKey: String,
+    val shopName: String,
+    val entity: String,
+    val action: String,
+    val actor: String,
+    val deviceId: String,
+    val detail: String,
+    val createdAt: String
+)
+
 data class SupabaseDeviceTelemetryDto(
     val id: String,
     val shopSyncKey: String,
@@ -2256,6 +2268,43 @@ object SupabaseAdminClient {
             Log.w(TAG, "Security telemetry saved, but the separate shop-device heartbeat update failed for $deviceId")
         }
         telemetryOk
+    }
+
+    suspend fun fetchAdminCloudSyncEvents(
+        limit: Int = 200,
+        offset: Int = 0
+    ): List<SupabaseCloudSyncEventDto> = withContext(Dispatchers.IO) {
+        if (!isConfigured() || ensureValidAdminSession() == null) return@withContext emptyList()
+        try {
+            val req = buildRestRequest(
+                "cloud_sync_events?select=id,shop_sync_key,shop_name,entity,action,actor,device_id,detail,created_at&order=created_at.desc&limit=${limit.coerceIn(1, 500)}&offset=${offset.coerceAtLeast(0)}",
+                useAdminJwtIfAvailable = true
+            ).get().build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    Log.w(TAG, "fetchAdminCloudSyncEvents returned HTTP ${resp.code}")
+                    return@withContext emptyList()
+                }
+                val arr = JSONArray(resp.body?.string().orEmpty().ifBlank { "[]" })
+                (0 until arr.length()).map { index ->
+                    val event = arr.getJSONObject(index)
+                    SupabaseCloudSyncEventDto(
+                        id = event.optLong("id", 0L),
+                        shopSyncKey = event.optCleanString("shop_sync_key"),
+                        shopName = event.optCleanString("shop_name"),
+                        entity = event.optCleanString("entity", "EVENT"),
+                        action = event.optCleanString("action", "RECORDED"),
+                        actor = event.optCleanString("actor", "SYSTEM"),
+                        deviceId = event.optCleanString("device_id"),
+                        detail = event.optCleanString("detail"),
+                        createdAt = event.optCleanString("created_at")
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchAdminCloudSyncEvents error: ${e.safeMessage()}")
+            emptyList()
+        }
     }
 
     suspend fun fetchDeviceTelemetryForAdmin(
