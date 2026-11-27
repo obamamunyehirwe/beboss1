@@ -132,6 +132,8 @@ export type DesktopAction =
   | "save_snapshot"
   | "branch_upsert"
   | "branch_delete"
+  | "branch_reconcile"
+  | "approval_policy_save"
   | "transfer_create"
   | "transfer_command"
   | "staff_update"
