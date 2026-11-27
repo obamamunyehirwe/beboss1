@@ -1,6 +1,8 @@
 import java.util.Properties
 import java.security.KeyStore
 import java.security.MessageDigest
+import java.net.URI
+import java.util.Base64
 
 plugins {
   alias(libs.plugins.android.application)
@@ -39,6 +41,36 @@ abstract class ValidateSecureMigrationApprovalTask : org.gradle.api.DefaultTask(
     if (!approved.get() && !firstProductionRelease.get()) {
       throw org.gradle.api.GradleException(
         "Secure Android release is blocked. For an existing production install base, migrate every active terminal through Transition 2.4.1 and set SECURE_CREDENTIAL_MIGRATION_APPROVED=true. Only for the genuinely first customer production release, with no installed production APKs and no legacy credential backups to import, set ANDROID_FIRST_PRODUCTION_RELEASE=true."
+      )
+    }
+  }
+}
+
+abstract class ValidateAndroidCloudConfigurationTask : org.gradle.api.DefaultTask() {
+  @get:org.gradle.api.tasks.Input
+  abstract val hasValidHttpsUrl: org.gradle.api.provider.Property<Boolean>
+
+  @get:org.gradle.api.tasks.Input
+  abstract val hasPublicApiKey: org.gradle.api.provider.Property<Boolean>
+
+  @get:org.gradle.api.tasks.Input
+  abstract val hasValidCertificatePin: org.gradle.api.provider.Property<Boolean>
+
+  @org.gradle.api.tasks.TaskAction
+  fun validate() {
+    if (!hasValidHttpsUrl.get()) {
+      throw org.gradle.api.GradleException(
+        "Android release cloud configuration is incomplete. Set SUPABASE_URL to the HTTPS URL of the BeBoss Supabase project in the ignored root .env file."
+      )
+    }
+    if (!hasPublicApiKey.get()) {
+      throw org.gradle.api.GradleException(
+        "Android release requires a public Supabase API key. Set SUPABASE_PUBLISHABLE_KEY (sb_publishable_...) or a legacy SUPABASE_ANON_KEY with JWT role anon. Never use SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY in the Android app."
+      )
+    }
+    if (!hasValidCertificatePin.get()) {
+      throw org.gradle.api.GradleException(
+        "Android release TLS pinning is mandatory. Set SUPABASE_CERT_PINS to one or more valid sha256/<base64 SHA-256 certificate pins for the Supabase HTTPS host, separated by commas."
       )
     }
   }
@@ -280,6 +312,39 @@ ksp {
 
 // The project-wide DataShare HMAC stays server-side. Android signs new shares with
 // each registered shop random key protected by the platform Keystore.
+val configuredSupabaseUrl = signingSecret("SUPABASE_URL").orEmpty()
+val configuredSupabasePublishableKey = signingSecret("SUPABASE_PUBLISHABLE_KEY").orEmpty()
+val configuredSupabaseLegacyAnonKey = signingSecret("SUPABASE_ANON_KEY").orEmpty()
+val configuredSupabasePins = signingSecret("SUPABASE_CERT_PINS").orEmpty()
+
+val hasValidSupabaseHttpsUrl = runCatching {
+  val uri = URI(configuredSupabaseUrl)
+  uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() && uri.userInfo == null
+}.getOrDefault(false)
+
+val hasPublicSupabaseApiKey =
+  configuredSupabasePublishableKey.startsWith("sb_publishable_") ||
+    runCatching {
+      val segments = configuredSupabaseLegacyAnonKey.split(".")
+      if (segments.size != 3 || !segments[0].startsWith("eyJ")) {
+        false
+      } else {
+        val payload = String(Base64.getUrlDecoder().decode(segments[1]), Charsets.UTF_8)
+        Regex("\"role\"\\s*:\\s*\"anon\"").containsMatchIn(payload)
+      }
+    }.getOrDefault(false)
+
+val hasValidSupabaseCertificatePin = configuredSupabasePins
+  .split(",")
+  .map { it.trim() }
+  .any { Regex("sha256/[A-Za-z0-9+/]{43}=").matches(it) }
+
+val validateAndroidCloudConfiguration = tasks.register<ValidateAndroidCloudConfigurationTask>("validateAndroidCloudConfiguration") {
+  hasValidHttpsUrl.set(hasValidSupabaseHttpsUrl)
+  hasPublicApiKey.set(hasPublicSupabaseApiKey)
+  hasValidCertificatePin.set(hasValidSupabaseCertificatePin)
+}
+
 val configuredSentryDsn = signingSecret("SENTRY_DSN").orEmpty()
 val validateSentryDsnConfiguration = tasks.register<ValidateSentryDsnTask>("validateSentryDsnConfiguration") {
   hasValidDsn.set(
@@ -332,6 +397,7 @@ tasks.configureEach {
   if (releaseTask && releasePackagingTask) {
     dependsOn(validateReleaseSigningConfiguration)
     dependsOn(validateSentryDsnConfiguration)
+    dependsOn(validateAndroidCloudConfiguration)
     if (name.contains("Secure", ignoreCase = true)) {
       dependsOn(validateSecureMigrationApproval)
     }
