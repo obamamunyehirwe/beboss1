@@ -221,8 +221,9 @@ Open GitHub → repository **Settings → Secrets and variables → Actions → 
 - `ANDROID_RELEASE_KEYSTORE_BASE64`: base64 of the exact owner-held PKCS#12/JKS signing keystore used for this direct APK channel.
 - `ANDROID_RELEASE_STORE_PASSWORD`, `ANDROID_RELEASE_KEY_PASSWORD`, `ANDROID_RELEASE_KEY_ALIAS`: keystore credentials and alias.
 - `ANDROID_RELEASE_CERT_SHA256`: SHA-256 fingerprint of that APK signing certificate. The legacy `ANDROID_UPLOAD_CERT_SHA256` name is also accepted.
+- `ANDROID_SECURE_UPDATES_APPROVED`: set to `true` only after the first secure APK has been installed as the production base; this authorizes future secure releases without pretending each build is the first release or requiring an obsolete legacy migration.
 - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `ANDROID_SENTRY_DSN` (or the shared `SENTRY_DSN`).
-- Exactly one approval secret: `ANDROID_FIRST_PRODUCTION_RELEASE=true` only when no production APK has ever been installed by a customer and no legacy credential backup will be imported; otherwise `SECURE_CREDENTIAL_MIGRATION_APPROVED=true` only after all active devices have completed the transition migration.
+- Exactly one approval secret: `ANDROID_FIRST_PRODUCTION_RELEASE=true` only for the first customer APK when no production APK has ever been installed and no legacy credential backup will be imported; `SECURE_CREDENTIAL_MIGRATION_APPROVED=true` only after all active legacy devices complete the transition migration; or `ANDROID_SECURE_UPDATES_APPROVED=true` for later releases of an already-secure production install base. Turn off the first-release flag after publishing the first secure APK.
 - Optional `BEBOSS_ADMIN_URL` and `BEBOSS_ADMIN_WHATSAPP`.
 
 The workflow writes the base64-decoded keystore only to the ephemeral Windows runner, validates it against the declared certificate fingerprint, and deletes it after the build. Never add the raw keystore or passwords to Git. Do not create a new signing key for later updates.

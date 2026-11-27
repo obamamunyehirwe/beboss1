@@ -37,6 +37,15 @@ foreach ($pattern in @(
     }
 }
 $gradleConfig = Get-Content -Raw -LiteralPath (Join-Path $root "app/build.gradle.kts")
+foreach ($approvalName in @(
+    "ANDROID_FIRST_PRODUCTION_RELEASE",
+    "SECURE_CREDENTIAL_MIGRATION_APPROVED",
+    "ANDROID_SECURE_UPDATES_APPROVED"
+)) {
+    if (-not $gradleConfig.Contains($approvalName)) {
+        throw "Android release gate is missing an explicit approval path: $approvalName"
+    }
+}
 if ($gradleConfig -notmatch '"ANDROID_RELEASE_CERT_SHA256"\s*->\s*signingSecret\(key\)\s*\?:\s*signingSecret\("ANDROID_UPLOAD_CERT_SHA256"\)') {
     throw "Android BuildConfig must embed the same legacy-compatible signing certificate fingerprint accepted by release validation."
 }

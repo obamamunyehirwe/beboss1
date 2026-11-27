@@ -36,11 +36,19 @@ abstract class ValidateSecureMigrationApprovalTask : org.gradle.api.DefaultTask(
   @get:org.gradle.api.tasks.Input
   abstract val firstProductionRelease: org.gradle.api.provider.Property<Boolean>
 
+  @get:org.gradle.api.tasks.Input
+  abstract val secureUpdatesApproved: org.gradle.api.provider.Property<Boolean>
+
   @org.gradle.api.tasks.TaskAction
   fun validate() {
-    if (!approved.get() && !firstProductionRelease.get()) {
+    val approvalCount = listOf(
+      approved.get(),
+      firstProductionRelease.get(),
+      secureUpdatesApproved.get()
+    ).count { it }
+    if (approvalCount != 1) {
       throw org.gradle.api.GradleException(
-        "Secure Android release is blocked. For an existing production install base, migrate every active terminal through Transition 2.4.1 and set SECURE_CREDENTIAL_MIGRATION_APPROVED=true. Only for the genuinely first customer production release, with no installed production APKs and no legacy credential backups to import, set ANDROID_FIRST_PRODUCTION_RELEASE=true."
+        "Secure Android release requires exactly one approval: SECURE_CREDENTIAL_MIGRATION_APPROVED=true after every legacy terminal has migrated, ANDROID_FIRST_PRODUCTION_RELEASE=true only for the first customer release with no existing production installs or legacy backups, or ANDROID_SECURE_UPDATES_APPROVED=true for later releases of an already-secure production install base."
       )
     }
   }
@@ -357,6 +365,7 @@ val validateSentryDsnConfiguration = tasks.register<ValidateSentryDsnTask>("vali
 val validateSecureMigrationApproval = tasks.register<ValidateSecureMigrationApprovalTask>("validateSecureMigrationApproval") {
   approved.set(signingSecret("SECURE_CREDENTIAL_MIGRATION_APPROVED").equals("true", ignoreCase = true))
   firstProductionRelease.set(signingSecret("ANDROID_FIRST_PRODUCTION_RELEASE").equals("true", ignoreCase = true))
+  secureUpdatesApproved.set(signingSecret("ANDROID_SECURE_UPDATES_APPROVED").equals("true", ignoreCase = true))
 }
 val configuredSecurityPepper = signingSecret("BEBOSS_SECURITY_PEPPER").orEmpty()
 val validateCredentialPepperConfiguration = tasks.register<ValidateCredentialPepperTask>("validateCredentialPepperConfiguration") {

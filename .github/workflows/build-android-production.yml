@@ -26,6 +26,7 @@ jobs:
       SENTRY_DSN: ${{ secrets.ANDROID_SENTRY_DSN || secrets.SENTRY_DSN }}
       ANDROID_FIRST_PRODUCTION_RELEASE: ${{ secrets.ANDROID_FIRST_PRODUCTION_RELEASE }}
       SECURE_CREDENTIAL_MIGRATION_APPROVED: ${{ secrets.SECURE_CREDENTIAL_MIGRATION_APPROVED }}
+      ANDROID_SECURE_UPDATES_APPROVED: ${{ secrets.ANDROID_SECURE_UPDATES_APPROVED }}
       BEBOSS_ADMIN_URL: ${{ secrets.BEBOSS_ADMIN_URL }}
       BEBOSS_ADMIN_WHATSAPP: ${{ secrets.BEBOSS_ADMIN_WHATSAPP }}
     steps:
@@ -69,11 +70,13 @@ jobs:
           }
           $first = $env:ANDROID_FIRST_PRODUCTION_RELEASE -eq "true"
           $migrated = $env:SECURE_CREDENTIAL_MIGRATION_APPROVED -eq "true"
-          if (-not $first -and -not $migrated) {
-            throw "Set ANDROID_FIRST_PRODUCTION_RELEASE=true only for a genuinely first customer release, or SECURE_CREDENTIAL_MIGRATION_APPROVED=true after every existing active terminal has completed its credential migration."
-          }
-          if ($first -and $migrated) {
-            throw "Choose exactly one Android secure-release approval path; do not set both approval secrets to true."
+          $secureUpdates = $env:ANDROID_SECURE_UPDATES_APPROVED -eq "true"
+          $approvalCount = 0
+          if ($first) { $approvalCount++ }
+          if ($migrated) { $approvalCount++ }
+          if ($secureUpdates) { $approvalCount++ }
+          if ($approvalCount -ne 1) {
+            throw "Set exactly one approval: ANDROID_FIRST_PRODUCTION_RELEASE for the genuinely first production APK, SECURE_CREDENTIAL_MIGRATION_APPROVED after all legacy devices migrate, or ANDROID_SECURE_UPDATES_APPROVED for subsequent updates of an already-secure production install base."
           }
           $encoded = $env:ANDROID_RELEASE_KEYSTORE_BASE64 -replace '\s', ''
           try { $bytes = [Convert]::FromBase64String($encoded) }
