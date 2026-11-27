@@ -76,7 +76,7 @@ export function parseDesktopUpdateOffer(
   if (versionOrder <= 0) return null;
   const extension = expectedPlatform === "windows" ? ".exe" : expectedPlatform === "macos" ? ".dmg" : ".appimage";
   if (!fileName.toLowerCase().endsWith(extension) || fileName.length > 200 ||
-      fileName.includes("/") || fileName.includes("\\\\")) {
+      fileName.includes("/") || fileName.includes(String.fromCharCode(92))) {
     throw new Error("The desktop update file name is invalid.");
   }
   if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 536870912 || !/^[a-f0-9]{64}$/.test(sha256)) {

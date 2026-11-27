@@ -28,4 +28,5 @@ test("desktop update metadata accepts only newer same-platform official installe
   assert.throws(() => parseDesktopUpdateOffer({ ...offer, platform: "macos" }, "1.4.2", "windows"));
   assert.throws(() => parseDesktopUpdateOffer({ ...offer, downloadUrl: "https://evil.example/update.exe" }, "1.4.2", "windows"));
   assert.throws(() => parseDesktopUpdateOffer({ ...offer, sha256: "bad" }, "1.4.2", "windows"));
+  assert.throws(() => parseDesktopUpdateOffer({ ...offer, fileName: "..\\\\malicious.exe" }, "1.4.2", "windows"));
 });
