@@ -1,0 +1,64 @@
+name: Build BeBoss shared Kotlin for iPhone devices
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "shared/**"
+      - "app/**"
+      - "settings.gradle.kts"
+      - ".github/workflows/build-ios-device-framework.yml"
+  push:
+    branches: [main]
+    paths:
+      - "shared/**"
+      - "app/**"
+      - "settings.gradle.kts"
+      - ".github/workflows/build-ios-device-framework.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beboss-ios-device-framework-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-device-framework:
+    name: Compile shared Kotlin for physical iPhone/iPad (arm64)
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26.4
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -E "iphoneos" 
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle caching
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compile shared Kotlin tests
+        run: ./gradlew -p shared allTests
+
+      - name: Compile Kotlin framework for the real iPhone device target
+        run: ./gradlew -p shared :linkReleaseFrameworkIosArm64
+
+      - name: Build Android app against the exact same shared Kotlin module
+        run: ./gradlew :app:compileDebugKotlin
+
+      - name: Upload the iPhone-device Kotlin framework
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeBossShared-iosArm64
+          path: shared/build/bin/iosArm64/releaseFramework/BeBossShared.framework
+          if-no-files-found: error
+          retention-days: 30
