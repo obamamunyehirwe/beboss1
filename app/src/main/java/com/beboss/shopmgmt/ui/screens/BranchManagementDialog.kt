@@ -132,7 +132,6 @@ fun BranchManagementDialog(
     onSelectActiveBranch: (String) -> Unit = {},
     onSaveBranch: (Branch) -> Unit,
     onDeleteBranch: (String) -> Unit,
-    transferApprovalThresholdRwf: Long? = null,
     onCreateStockTransfer: (productId: String, fromBranchId: String, fromBranchName: String, toBranchId: String, toBranchName: String, quantity: Double, notes: String, ownerApprovalPin: String, approvalReason: String) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
     onConfirmTransferReceived: (String) -> Unit = {},
     onRejectStockTransfer: (String, String) -> Unit = { _, _ -> },
