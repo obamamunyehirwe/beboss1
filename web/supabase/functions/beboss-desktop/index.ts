@@ -889,7 +889,9 @@ Deno.serve(async (req: Request) => {
         const current = currentById.get(text(requested.id))!;
         if (number(current.updated_at) !== number(requested.updatedAt) ||
             number(current.hlc_timestamp) !== number(requested.hlcTimestamp) ||
-            text(current.last_modified_device_id) !== text(requested.lastModifiedDeviceId)) {
+            text(current.last_modified_device_id) !== text(requested.lastModifiedDeviceId) ||
+            text(current.last_modified_device_id) !== deviceId ||
+            text(requested.lastModifiedDeviceId) !== deviceId) {
           return json(409, { ok: false, message: "A record changed while its audit was being submitted. Synchronize the newest version and retry." });
         }
         verifiedRows.push(current);
