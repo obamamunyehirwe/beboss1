@@ -31,6 +31,16 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
   const [refreshing, setRefreshing] = useState(false);
   const [formError, setFormError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [reconcileBranch, setReconcileBranch] = useState<Row | null>(null);
+  const [reconcileDate, setReconcileDate] = useState(() => {
+    const now = new Date();
+    return [now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("-");
+  });
+  const [reconcileCash, setReconcileCash] = useState("");
+  const [reconcileNotes, setReconcileNotes] = useState("");
+  const [reconcileBusy, setReconcileBusy] = useState(false);
+  const [reconcileError, setReconcileError] = useState("");
+  const [reconcileResult, setReconcileResult] = useState<Row | null>(null);
 
   const list = rows(cloud.branches);
   const managers = rows(cloud.staff).filter((user) =>
@@ -154,6 +164,94 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
     }
   }
 
+  function openReconciliation(branch: Row) {
+    const now = new Date();
+    setReconcileDate([now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0")].join("-"));
+    setReconcileBranch(branch);
+    setReconcileCash("");
+    setReconcileNotes("");
+    setReconcileError("");
+    setReconcileResult(null);
+  }
+
+  function localReconciliationEstimate(branch: Row, day: string) {
+    const [year, month, date] = day.split("-").map(Number);
+    const start = new Date(year, month - 1, date).getTime();
+    const end = new Date(year, month - 1, date, 23, 59, 59, 999).getTime();
+    const branchId = s(branch.id);
+    const matchesBranch = (value: unknown) => {
+      const valueId = s(value);
+      return valueId === branchId || (!valueId && branchId === "main_branch");
+    };
+    const sales = rows(snapshot?.sales).filter((sale) => {
+      const timestamp = n(sale.saleDate ?? sale.sale_date);
+      return timestamp >= start && timestamp <= end && matchesBranch(sale.branchId ?? sale.branch_id);
+    });
+    const cashSales = sales.reduce((sum, sale) => {
+      if (s(sale.paymentMethod ?? sale.payment_method).toUpperCase() !== "CASH") return sum;
+      const paid = n(sale.amountPaid ?? sale.amount_paid);
+      return sum + (paid > 0 ? paid : s(sale.paymentStatus ?? sale.payment_status).toUpperCase() === "PAID"
+        ? n(sale.totalAmount ?? sale.total_amount) : 0);
+    }, 0);
+    const cashCollections = rows(snapshot?.customerPayments).filter((payment) => {
+      const timestamp = n(payment.paymentDate ?? payment.payment_date);
+      const method = s(payment.paymentMethod ?? payment.payment_method).toUpperCase();
+      return timestamp >= start && timestamp <= end && matchesBranch(payment.branchId ?? payment.branch_id) &&
+        (method === "CASH" || method === "CASH PAYMENT");
+    }).reduce((sum, payment) => sum + Math.max(0, n(payment.amount)), 0);
+    const openingFloat = Math.max(0, n(branch.opening_cash_float));
+    return { start, end, cashSales, cashCollections, openingFloat,
+      expected: Math.round(openingFloat + cashSales + cashCollections) };
+  }
+
+  async function submitReconciliation() {
+    if (!reconcileBranch) return;
+    const counted = Number(reconcileCash);
+    if (!Number.isFinite(counted) || counted < 0 || counted > 10000000000) {
+      setReconcileError("Enter the actual physical cash counted (FRw), from 0 to 10,000,000,000.");
+      return;
+    }
+    const estimate = localReconciliationEstimate(reconcileBranch, reconcileDate);
+    if (!Number.isFinite(estimate.start) || estimate.start <= 0 || !Number.isFinite(estimate.end)) {
+      setReconcileError("Choose a valid reconciliation date.");
+      return;
+    }
+    const approvalEvent = rows(cloud.activity).find((event) =>
+      s(event.entity).toUpperCase() === "APPROVAL_POLICY" && s(event.action).toUpperCase() === "UPDATED"
+    );
+    let threshold = 0;
+    try { threshold = Math.max(0, n(JSON.parse(s(approvalEvent?.detail)).reconciliationVarianceThresholdRwf)); }
+    catch { /* No saved policy means approval threshold is disabled. */ }
+    const variance = Math.round(counted - estimate.expected);
+    let approvalConfirmed = false;
+    let approvalReason = "";
+    if (threshold > 0 && Math.abs(variance) >= threshold) {
+      approvalConfirmed = window.confirm("The cash variance is " + money(Math.abs(variance)) +
+        ", meeting the shop's owner-review threshold of " + money(threshold) +
+        ". Confirm that the owner has reviewed this variance?");
+      if (!approvalConfirmed) return;
+      approvalReason = window.prompt("Enter the owner review explanation (at least 8 characters):", "")?.trim() ?? "";
+      if (approvalReason.length < 8) {
+        setReconcileError("A reason of at least 8 characters is required for this approved cash variance.");
+        return;
+      }
+    }
+    setReconcileBusy(true);
+    setReconcileError("");
+    try {
+      const result = await onAction("branch_reconcile", {
+        reconciliationId: id(), branchId: s(reconcileBranch.id),
+        startAt: estimate.start, endAt: estimate.end, cashCountedRwf: counted,
+        notes: reconcileNotes.trim(), approvalConfirmed, approvalReason
+      });
+      setReconcileResult((result.reconciliation ?? null) as Row | null);
+    } catch (error) {
+      setReconcileError(errorText(error));
+    } finally {
+      setReconcileBusy(false);
+    }
+  }
+
   async function refresh() {
     setRefreshing(true);
     setActionError("");
@@ -233,6 +331,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
           </div>
           {s(branch.notes) && <p className="enterprise-branch-notes">{s(branch.notes)}</p>}
           <div className="enterprise-branch-actions">
+            <button className="btn-outline small" type="button" disabled={offline || branch.is_active === false} onClick={() => openReconciliation(branch)}><Activity size={14} /> Cash close-out</button>
             <button className="btn-outline small" disabled={offline} onClick={() => start(branch)}><Pencil size={14} /> Edit branch</button>
             {!branch.is_main_branch && <button className="btn-outline small danger" disabled={offline || branch.is_active === false} onClick={() => void deactivate(branch)}><Trash2 size={14} /> Deactivate</button>}
           </div>
@@ -242,6 +341,34 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
 
     {!filtered.length && <Empty title={list.length ? "No branches match this view" : "No branches synchronized"} description={list.length ? "Change the search term or operating-state filter to see other branches." : "Create a branch from this owner workspace or refresh after the Android owner terminal synchronizes its branch registry."} icon={Building2} />}
 
+    {reconcileBranch && <Modal title={"Cash close-out · " + s(reconcileBranch.name)} onClose={() => !reconcileBusy && setReconcileBranch(null)}>
+      <div className="form-grid">
+        <label>Business date<input type="date" value={reconcileDate} onChange={(event) => setReconcileDate(event.target.value)} disabled={reconcileBusy} /></label>
+        <label>Physical cash counted (FRw)<input type="number" min="0" max="10000000000" step="1" value={reconcileCash} onChange={(event) => setReconcileCash(event.target.value)} placeholder="Enter cash physically counted" disabled={reconcileBusy} /></label>
+        {reconcileBranch && (() => {
+          const estimate = localReconciliationEstimate(reconcileBranch, reconcileDate);
+          return <div className="field-wide panel" style={{ padding: 14 }}>
+            <span className="eyebrow muted">LATEST LOCAL SNAPSHOT ESTIMATE</span>
+            <div className="metric-row"><span>Opening float</span><strong>{money(estimate.openingFloat)}</strong></div>
+            <div className="metric-row"><span>Cash sales collected</span><strong>{money(estimate.cashSales)}</strong></div>
+            <div className="metric-row"><span>Customer cash repayments</span><strong>{money(estimate.cashCollections)}</strong></div>
+            <div className="metric-row"><span>Expected cash before expenses/deposits</span><strong>{money(estimate.expected)}</strong></div>
+            {reconcileCash !== "" && <div className="metric-row"><span>Estimated variance</span><strong>{money(Number(reconcileCash) - estimate.expected)}</strong></div>}
+            <small className="panel-hint">The cloud recalculates from the latest verified snapshot before saving. Expenses, bank drops, refunds and float withdrawals are not yet represented in this cash-close calculation; reconcile those separately before treating the difference as a final cash balance.</small>
+          </div>;
+        })()}
+        <label className="field-wide">Close-out notes<textarea rows={3} maxLength={400} value={reconcileNotes} onChange={(event) => setReconcileNotes(event.target.value)} placeholder="Explain unusual cash movements or variances" disabled={reconcileBusy} /></label>
+        {reconcileError && <div className="inline-alert error field-wide">{reconcileError}</div>}
+        {reconcileResult && <div className="inline-alert success field-wide">
+          <strong>Cloud reconciliation saved.</strong>
+          <div>Expected: {money(reconcileResult.expectedCashRwf)} · Counted: {money(reconcileResult.cashCountedRwf)} · Variance: {money(reconcileResult.varianceRwf)}</div>
+        </div>}
+        <div className="modal-actions field-wide">
+          <button type="button" className="btn-outline" disabled={reconcileBusy} onClick={() => setReconcileBranch(null)}>Close</button>
+          <button type="button" className="btn-primary" disabled={offline || reconcileBusy || !reconcileCash.trim() || !reconcileDate} onClick={() => void submitReconciliation()}>{reconcileBusy ? "Reconciling..." : "Verify and save close-out"}</button>
+        </div>
+      </div>
+    </Modal>}
     {open && <Modal title={editing ? "Edit branch profile" : "Create a branch"} onClose={() => !saving && setOpen(false)}>
       <form className="form-grid" onSubmit={(event) => void save(event)}>
         <label className="field-wide">Branch name<input required minLength={2} maxLength={120} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="e.g. Downtown Store" /></label>
