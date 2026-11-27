@@ -10,6 +10,7 @@ import com.beboss.shopmgmt.data.model.PaymentVerificationRequest
 import com.beboss.shopmgmt.data.model.ShopDevice
 import com.beboss.shopmgmt.data.model.ShopProfile
 import com.beboss.shopmgmt.data.model.StockTransfer
+import com.beboss.shopmgmt.data.model.SyncTombstone
 import com.beboss.shopmgmt.data.model.Branch
 import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.data.model.UserRole
@@ -2601,6 +2602,67 @@ object SupabaseAdminClient {
     // -------------------------------------------------------------------------
     // BRANCHES (`shop_branches`)
     // -------------------------------------------------------------------------
+    /**
+     * Submit branch deletion tombstones only after they have been included in the
+     * latest complete signed snapshot. The Edge Function verifies the signature,
+     * applies a safe cloud deactivation, and appends an idempotent audit record.
+     */
+    suspend fun recordAndroidBranchDeletionAudits(
+        shopSyncKey: String,
+        tombstones: List<SyncTombstone>
+    ): Boolean = withContext(Dispatchers.IO) {
+        val branchDeletes = tombstones.filter { it.tableName == "branches" }
+        if (branchDeletes.isEmpty()) return@withContext true
+        if (!isConfigured() || shopSyncKey.isBlank()) return@withContext false
+        val saved = AndroidDeviceCredentialStore.readForShop(shopSyncKey)
+        if (saved == null) {
+            // Legacy compatibility remains available, but it cannot prove device identity
+            // for branch deletion audit. The owner must enroll this terminal to enable it.
+            Log.w(TAG, "Branch deletion audit deferred: this legacy terminal requires owner-approved device enrollment.")
+            return@withContext true
+        }
+        try {
+            val active = refreshAndroidDeviceCredential(saved)
+            for (batch in branchDeletes.chunked(250)) {
+                val records = JSONArray()
+                batch.forEach { tombstone ->
+                    records.put(JSONObject().apply {
+                        put("tableName", tombstone.tableName)
+                        put("recordId", tombstone.recordId)
+                        put("deletedAt", tombstone.deletedAt)
+                        put("hlcTimestamp", tombstone.hlcTimestamp)
+                        put("deletedByDeviceId", tombstone.deletedByDeviceId)
+                    })
+                }
+                val payload = JSONObject()
+                    .put("action", "record_device_branch_tombstones")
+                    .put("tombstones", records)
+                val request = Request.Builder()
+                    .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
+                    .addHeader("apikey", getSupabaseApiKey())
+                    .addHeader("X-BeBoss-Device-ID", active.deviceId)
+                    .addHeader("X-BeBoss-Device-Token", active.accessToken)
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody(jsonMediaType))
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    val raw = response.body?.string().orEmpty()
+                    val result = runCatching { JSONObject(raw) }.getOrNull()
+                    if (!response.isSuccessful || result?.optBoolean("ok") != true) {
+                        Log.w(TAG, "Branch deletion audit was not acknowledged (HTTP ${response.code}): ${result?.optString("message").orEmpty()}")
+                        return@withContext false
+                    }
+                }
+            }
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.w(TAG, "Branch deletion audit will retry with the next cloud sync: ${error.message}")
+            false
+        }
+    }
+
     suspend fun upsertShopBranches(shopSyncKey: String, shopName: String, branches: List<Branch>): Boolean =
         withContext(Dispatchers.IO) {
             if (!isConfigured() || shopSyncKey.isBlank()) return@withContext false
