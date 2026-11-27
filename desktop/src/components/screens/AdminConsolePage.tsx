@@ -11,9 +11,9 @@ import { Empty, Modal, PageHeading, StatCard, StatusPill } from "../ui";
 
 type AdminData = {
   shops: Row[]; payments: Row[]; devices: Row[]; users: Row[]; codes: Row[];
-  snapshots: Row[]; audit: Row[]; telemetry: Row[]; config: Row | null;
+  snapshots: Row[]; audit: Row[]; telemetry: Row[]; activity: Row[]; config: Row | null;
 };
-type AdminTab = "overview" | "payments" | "shops" | "devices" | "users" | "codes" | "branches" | "audit" | "telemetry" | "team" | "settings";
+type AdminTab = "overview" | "payments" | "shops" | "devices" | "activity" | "users" | "codes" | "branches" | "audit" | "telemetry" | "team" | "settings";
 type AdminTeamMember = {
   userId: string; email: string; roleKey: string; permissions: string[];
   active: boolean; expiresAt: number | string | null; since: string | number; lastSignIn: string | null;
@@ -38,6 +38,7 @@ const TABS: { id: AdminTab; label: string; icon: typeof Activity }[] = [
   { id: "payments", label: "Payments", icon: Wallet },
   { id: "shops", label: "Shops", icon: Store },
   { id: "devices", label: "Devices", icon: Smartphone },
+  { id: "activity", label: "Device activity", icon: Activity },
   { id: "users", label: "Shop users", icon: Users },
   { id: "codes", label: "Unlock codes", icon: KeyRound },
   { id: "branches", label: "Branch snapshots", icon: Download },
@@ -169,7 +170,7 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
     setLoadingData(true);
     setError("");
     try {
-      const [shops, payments, devices, users, codes, snapshots, audit, telemetry, configResult] = await Promise.all([
+      const [shops, payments, devices, users, codes, snapshots, audit, telemetry, activity, configResult] = await Promise.all([
         fetchAll("shop_accounts",
           "id,shop_name,owner_name,owner_username,owner_phone,branch_count,worker_count,device_count,device_limit,monthly_fee_rwf,subscription_status,subscription_expires_at,remote_kill_switch,min_app_version,admin_notes,admin_whatsapp,updated_at",
           "updated_at"),
@@ -190,13 +191,16 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
           "updated_at"),
         fetchAll("admin_audit_logs", "id,admin_email,action,target_id,details,created_at", "created_at", 3000),
         fetchAll("device_security_telemetry",
-          "id,shop_sync_key,shop_name,device_id,device_name,posture_label,risk_score,is_rooted,is_emulator,clock_rollback_detected,has_hooking,keystore_backing,tamper_incident_count,tamper_reason,unsynced_messages_count,permissions_summary,inspected_at,updated_at",
+          "id,shop_sync_key,shop_name,device_id,device_name,device_platform,manufacturer,model,os_release,sdk_int,app_version,app_build,locale_tag,timezone_id,posture_label,risk_score,is_rooted,is_emulator,clock_rollback_detected,has_hooking,keystore_backing,tamper_incident_count,tamper_reason,unsynced_messages_count,permissions_summary,latitude,longitude,accuracy_meters,location_captured_at,location_label,inspected_at,updated_at",
           "updated_at", 5000),
+        fetchAll("cloud_sync_events",
+          "id,shop_sync_key,shop_name,entity,action,actor,device_id,detail,created_at",
+          "created_at", 5000),
         masterAdminAuthClient.from("app_config").select("id,admin_whatsapp_number,mtn_momo_code,mtn_momo_phone,mtn_recipient_name,airtel_money_phone,airtel_recipient_name,per_device_fee_rwf,apk_download_url,apk_version,min_app_version,support_email,updated_at")
           .eq("id", "global").maybeSingle()
       ]);
       if (configResult.error) throw new Error("app_config: " + configResult.error.message);
-      setData({ shops, payments, devices, users, codes, snapshots, audit, telemetry, config: configResult.data as Row | null });
+      setData({ shops, payments, devices, users, codes, snapshots, audit, telemetry, activity, config: configResult.data as Row | null });
       if (configResult.data) {
         const c = configResult.data as Row;
         setConfigDraft({
@@ -649,6 +653,7 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
   const filteredPayments = data?.payments.filter(matches) ?? [];
   const filteredShops = data?.shops.filter(matches) ?? [];
   const filteredDevices = data?.devices.filter(matches) ?? [];
+  const filteredActivity = data?.activity.filter(matches) ?? [];
   const filteredUsers = data?.users.filter(matches) ?? [];
   const filteredCodes = data?.codes.filter(matches) ?? [];
   const exportRows = data ? ({
@@ -659,7 +664,8 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
     codes: filteredCodes,
     branches: data.snapshots.filter(matches),
     audit: data.audit.filter(matches),
-    telemetry: data.telemetry.filter(matches)
+    telemetry: data.telemetry.filter(matches),
+    activity: filteredActivity
   } as Partial<Record<AdminTab, Row[]>>)[tab] ?? [] : [];
   const exportColumns = Object.keys(exportRows[0] ?? {});
 
@@ -823,8 +829,27 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
       <td><button className="btn-outline" onClick={() => openShopControls(shop)}>Manage limits</button></td><td><div className="row-actions"><button className="btn-outline" disabled={!!busyKey} onClick={() => void extendShop(shop,30)}>+30 days</button><button className="btn-outline" disabled={!!busyKey} onClick={() => void setShopStatus(shop,s(shop.subscription_status)==="SUSPENDED"?"ACTIVE":"SUSPENDED")}>{s(shop.subscription_status)==="SUSPENDED"?"Activate":"Suspend"}</button><button className="icon-btn danger-icon" disabled={!!busyKey} title="Delete shop" onClick={() => void deleteShop(shop)}><Trash2 size={14}/></button></div></td>
     </tr>)}</tbody></table></div>{!filteredShops.length && <Empty title="No shops found" description="No shop accounts matched the current filter."/>}</section>}
 
-    {tab === "devices" && data && <section className="panel"><div className="table-wrap"><table><thead><tr><th>Shop</th><th>Device</th><th>Assigned operator</th><th>Branch / role</th><th>Last sync</th><th>Status</th><th>Actions</th></tr></thead><tbody>{filteredDevices.map((device)=><tr key={s(device.id)}><td>{s(device.shop_name)}<small className="cell-sub">{s(device.shop_sync_key)}</small></td><td><strong>{s(device.device_name)||s(device.device_id)}</strong><small className="cell-sub">{s(device.device_id)}</small></td><td>{s(device.assigned_user_name)||s(device.assigned_username)||"—"}</td><td>{s(device.branch_name)} · {s(device.role)}</td><td>{dateTime(device.last_synced_at)}</td><td><StatusPill value={device.is_active?"ACTIVE":"INACTIVE"}/></td><td><div className="row-actions"><button className="btn-outline" disabled={!!busyKey} onClick={()=>void toggleDevice(device)}>{device.is_active?"Deactivate":"Activate"}</button><button className="icon-btn danger-icon" disabled={!!busyKey} onClick={()=>void removeDevice(device)} title="Remove paired device"><Trash2 size={14}/></button></div></td></tr>)}</tbody></table></div>{!filteredDevices.length&&<Empty title="No paired devices" description="Device registrations sync from enrolled BeBoss terminals."/>}</section>}
+    {tab === "devices" && data && <section className="panel"><div className="table-wrap"><table><thead><tr><th>Shop</th><th>Device</th><th>Platform</th><th>Assigned operator</th><th>Branch / role</th><th>Last sync</th><th>Status</th><th>Actions</th></tr></thead><tbody>{filteredDevices.map((device)=><tr key={s(device.id)}><td>{s(device.shop_name)}<small className="cell-sub">{s(device.shop_sync_key)}</small></td><td><strong>{s(device.device_name)||s(device.device_id)}</strong><small className="cell-sub">{s(device.device_id)}</small></td><td>{s(device.device_id).startsWith("DESKTOP:") ? "Desktop app" : "Android terminal"}</td><td>{s(device.assigned_user_name)||s(device.assigned_username)||"—"}</td><td>{s(device.branch_name)} · {s(device.role)}</td><td>{dateTime(device.last_synced_at)}</td><td><StatusPill value={device.is_active?"ACTIVE":"INACTIVE"}/></td><td><div className="row-actions"><button className="btn-outline" disabled={!!busyKey} onClick={()=>void toggleDevice(device)}>{device.is_active?"Deactivate":"Activate"}</button><button className="icon-btn danger-icon" disabled={!!busyKey} onClick={()=>void removeDevice(device)} title="Remove paired device"><Trash2 size={14}/></button></div></td></tr>)}</tbody></table></div>{!filteredDevices.length&&<Empty title="No paired devices" description="Device registrations sync from enrolled BeBoss terminals."/>}</section>}
 
+    {tab === "activity" && data && <section className="panel">
+      <div className="panel-heading"><div><span className="eyebrow muted">AUDITABLE CLOUD EVENT STREAM</span><h3>Device & business activity</h3><p>Events come from database activity triggers and include pairing, device state, assignment, heartbeat, branch snapshot, staff, payment and license changes.</p></div><span className="muted">{filteredActivity.length.toLocaleString()} events</span></div>
+      <div className="table-wrap"><table><thead><tr><th>Time</th><th>Shop</th><th>Device / source</th><th>Type</th><th>Action</th><th>Actor</th><th>Details</th></tr></thead><tbody>
+        {filteredActivity.map((event)=>{
+          const deviceId = s(event.device_id);
+          const deviceType = deviceId.startsWith("DESKTOP:") ? "Desktop app" : deviceId ? "Android terminal" : "Cloud / platform";
+          return <tr key={s(event.id)}>
+            <td>{new Date(s(event.created_at)).toLocaleString()}</td>
+            <td><strong>{s(event.shop_name)||"—"}</strong><small className="cell-sub">{s(event.shop_sync_key)}</small></td>
+            <td><span>{deviceType}</span><small className="cell-sub mono">{deviceId||"No device id"}</small></td>
+            <td><StatusPill value={s(event.entity)||"EVENT"}/></td>
+            <td><StatusPill value={s(event.action)||"RECORDED"}/></td>
+            <td>{s(event.actor)||"SYSTEM"}</td>
+            <td>{s(event.detail)||"—"}</td>
+          </tr>;
+        })}
+      </tbody></table></div>
+      {!filteredActivity.length&&<Empty title="No activity events" description="New device and shop events appear here after the first cloud registration or synchronization."/>}
+    </section>}
     {tab === "users" && data && <section className="panel"><div className="table-wrap"><table><thead><tr><th>Shop</th><th>Staff member</th><th>Branch</th><th>Role</th><th>State</th><th>Actions</th></tr></thead><tbody>{filteredUsers.map((user)=><tr key={s(user.id)}><td>{s(user.shop_name)}</td><td><strong>{s(user.full_name)}</strong><small className="cell-sub">@{s(user.username)} · {s(user.phone)}</small></td><td>{s(user.assigned_branch_name)||"—"}</td><td><select value={s(user.role)} disabled={!!busyKey} onChange={(event)=>void updateUser(user,{role:event.target.value},"UPDATE_USER_ROLE")}><option value="OWNER">OWNER</option><option value="MANAGER">MANAGER</option><option value="CASHIER">CASHIER</option></select></td><td><StatusPill value={user.is_active?"ACTIVE":"INACTIVE"}/></td><td><button className="btn-outline" disabled={!!busyKey} onClick={()=>void updateUser(user,{is_active:user.is_active!==true}, "TOGGLE_USER")}>{user.is_active?"Deactivate":"Activate"}</button></td></tr>)}</tbody></table></div>{!filteredUsers.length&&<Empty title="No shop users" description="Synchronized shop staff accounts appear here. PINs and password hashes are never downloaded to this admin console."/>}</section>}
 
     {tab === "codes" && data && <section className="panel"><div className="table-wrap"><table><thead><tr><th>Unlock code</th><th>Shop</th><th>Plan</th><th>Issued by</th><th>Issued</th><th>Status</th><th>Action</th></tr></thead><tbody>{filteredCodes.map((code)=><tr key={s(code.id)}><td className="mono">{s(code.unlock_code)}</td><td>@{s(code.shop_username)}<small className="cell-sub">{s(code.shop_phone)}</small></td><td>{s(code.tier_code)} · {n(code.plan_days)} days · {money(code.amount_rwf)}</td><td>{s(code.issued_by_admin)}</td><td>{dateTime(code.issued_at)}</td><td><StatusPill value={s(code.status)}/></td><td>{s(code.status)==="ISSUED"?<button className="btn-outline" disabled={!!busyKey} onClick={()=>{if(window.confirm("Revoke this signed unlock code? It will no longer be accepted."))void revokeCode(code);}}>Revoke</button>:"—"}</td></tr>)}</tbody></table></div>{!filteredCodes.length&&<Empty title="No unlock code records" description="Issued signed codes are loaded from the payment ledger."/>}</section>}
@@ -833,7 +858,26 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
 
     {tab === "audit" && data && <section className="panel"><div className="table-wrap"><table><thead><tr><th>Time</th><th>Administrator</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>{data.audit.filter(matches).map((entry)=><tr key={s(entry.id)}><td>{dateTime(entry.created_at)}</td><td>{s(entry.admin_email)}</td><td><StatusPill value={s(entry.action)}/></td><td>{s(entry.target_id)}</td><td>{s(entry.details)}</td></tr>)}</tbody></table></div>{!data.audit.filter(matches).length&&<Empty title="No audit events" description="Privileged administration changes are recorded here."/>}</section>}
 
-    {tab === "telemetry" && data && <section className="panel"><div className="table-wrap"><table><thead><tr><th>Shop / device</th><th>Security posture</th><th>Risk score</th><th>Signals</th><th>Key store</th><th>Incidents</th><th>Inspected</th></tr></thead><tbody>{data.telemetry.filter(matches).map((item)=><tr key={s(item.id)}><td><strong>{s(item.shop_name)}</strong><small className="cell-sub">{s(item.device_name)||s(item.device_id)}</small></td><td><StatusPill value={s(item.posture_label)||"UNKNOWN"}/></td><td className={n(item.risk_score)>=50?"warn-text":"strong"}>{n(item.risk_score)}</td><td>{[item.is_rooted&&"Rooted",item.is_emulator&&"Emulator",item.has_hooking&&"Hooking",item.clock_rollback_detected&&"Clock rollback"].filter(Boolean).join(" · ")||"No flagged signal"}</td><td>{s(item.keystore_backing)}</td><td>{n(item.tamper_incident_count)}<small className="cell-sub">{s(item.tamper_reason)}</small></td><td>{dateTime(item.inspected_at||item.updated_at)}</td></tr>)}</tbody></table></div>{!data.telemetry.filter(matches).length&&<Empty title="No security telemetry" description="Device integrity and security reports appear after enrolled devices sync."/>}</section>}
+    {tab === "telemetry" && data && <section className="panel">
+      <div className="panel-heading"><div><span className="eyebrow muted">PRIVACY-AWARE DEVICE REPORTS</span><h3>Security, software & last shared location</h3><p>Locations are shown only when the device user opted in. A coordinate is the last captured foreground fix, never a live tracker.</p></div></div>
+      <div className="table-wrap"><table><thead><tr><th>Shop / device</th><th>Platform & software</th><th>Security posture</th><th>Risk</th><th>Signals</th><th>Last shared location</th><th>Key store</th><th>Incidents</th><th>Inspected</th></tr></thead><tbody>{data.telemetry.filter(matches).map((item)=>{
+        const latitude = n(item.latitude);
+        const longitude = n(item.longitude);
+        const capturedAt = n(item.location_captured_at);
+        const optedIn = /(?:^|;)location_sharing=enabled(?:;|$)/i.test(s(item.permissions_summary));
+        const hasLocation = optedIn && capturedAt > 0 && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180 && (latitude !== 0 || longitude !== 0);
+        return <tr key={s(item.id)}>
+          <td><strong>{s(item.shop_name)}</strong><small className="cell-sub">{s(item.device_name)||s(item.device_id)}</small><small className="cell-sub mono">{s(item.device_id)}</small></td>
+          <td><StatusPill value={s(item.device_platform)||"ANDROID"}/><small className="cell-sub">{[s(item.manufacturer),s(item.model)].filter(Boolean).join(" ")||"Hardware model not reported"}</small><small className="cell-sub">{s(item.os_release) ? "OS "+s(item.os_release)+" · API "+n(item.sdk_int) : "OS version unavailable"}</small><small className="cell-sub">{s(item.app_version) ? "BeBoss "+s(item.app_version)+" ("+n(item.app_build)+")" : "App version unavailable"}</small></td>
+          <td><StatusPill value={s(item.posture_label)||"UNKNOWN"}/></td>
+          <td className={n(item.risk_score)>=50?"warn-text":"strong"}>{n(item.risk_score)}/100</td>
+          <td>{[item.is_rooted&&"Rooted",item.is_emulator&&"Emulator",item.has_hooking&&"Hooking",item.clock_rollback_detected&&"Clock rollback"].filter(Boolean).join(" · ")||"No flagged signal"}</td>
+          <td>{hasLocation ? <><a className="text-link" href={`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`} target="_blank" rel="noreferrer">{s(item.location_label)||latitude.toFixed(5)+", "+longitude.toFixed(5)}</a><small className="cell-sub">Captured {dateTime(capturedAt)} · ±{Math.round(n(item.accuracy_meters))}m</small></> : <><StatusPill value={optedIn ? "OPT-IN · NO RECENT FIX" : "NOT SHARED"}/><small className="cell-sub">Coordinates hidden unless the device explicitly shares location.</small></>}</td>
+          <td>{s(item.keystore_backing)}</td>
+          <td>{n(item.tamper_incident_count)}<small className="cell-sub">{s(item.tamper_reason)}</small></td>
+          <td>{dateTime(item.inspected_at||item.updated_at)}</td>
+        </tr>;
+      })}</tbody></table></div>{!data.telemetry.filter(matches).length&&<Empty title="No security telemetry" description="Device integrity and security reports appear after enrolled devices sync."/>}</section>}
 
     {tab === "settings" && data && <section className="panel"><div className="panel-heading"><div><span className="eyebrow muted">GLOBAL APP SETTINGS</span><h3>Payment instructions and release settings</h3></div><StatusPill value="RLS PROTECTED"/></div><form className="form-grid" onSubmit={(event)=>void saveConfig(event)}>
       <label>Admin WhatsApp number<input value={configDraft.admin_whatsapp_number} onChange={(e)=>setConfigDraft({...configDraft,admin_whatsapp_number:e.target.value})}/></label>
