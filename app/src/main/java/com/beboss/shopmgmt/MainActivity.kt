@@ -447,7 +447,6 @@ private fun BeBossMainContent(
     val lastCapturedLocation by viewModel.lastCapturedLocation.collectAsState()
     val messageDispatchRecords by viewModel.messageDispatchRecords.collectAsState()
 
-    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
