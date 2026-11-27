@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { CheckCircle2, Loader2, Mail, MessageCircle, Send } from "lucide-react";
 import { useState } from "react";
@@ -105,12 +105,17 @@ function ContactPage() {
           </div>
         </div>
         {done ? (
-          <div className="grid place-items-center rounded-3xl border border-success/30 bg-card p-10 text-center">
+          <div className="grid place-items-center gap-4 rounded-3xl border border-success/30 bg-card p-10 text-center" role="status" aria-live="polite">
             <CheckCircle2 className="size-12 text-success" />
-            <p className="mt-4 text-lg font-semibold">{t("sent")}</p>
+            <div><p className="text-lg font-semibold">{t("sent")}</p><p className="mt-2 max-w-md text-sm text-muted-foreground">Your message has been submitted to the BeBoss support team. Keep the page open only if you want to send another request.</p></div>
+            <div className="flex flex-wrap justify-center gap-3">
+              <Button type="button" variant="outline" onClick={() => { setF({ full_name: "", phone: "", email: "", shop_name: "", topic: "GENERAL", message: "" }); setDone(false); }}>Send another message</Button>
+              <Button asChild variant="hero"><Link to="/faq">Browse FAQs</Link></Button>
+            </div>
           </div>
         ) : (
-          <form onSubmit={submit} className="grid gap-4 rounded-3xl border border-border bg-card p-6 sm:grid-cols-2">
+          <form onSubmit={submit} aria-busy={sending} className="grid gap-4 rounded-3xl border border-border bg-card p-6 sm:grid-cols-2">
+            <p className="text-sm text-muted-foreground sm:col-span-2">Share a phone number or email address so our team can reply. Your message is validated and submitted securely.</p>
             <div className="space-y-2">
               <Label>{t("fullName")}</Label>
               <Input value={f.full_name} onChange={(e) => setF({ ...f, full_name: e.target.value })} required maxLength={120} />
