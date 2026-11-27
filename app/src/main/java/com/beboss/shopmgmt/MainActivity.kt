@@ -420,6 +420,7 @@ private fun BeBossMainContent(
     val databaseStats by viewModel.databaseStats.collectAsState()
     val isOptimizingDb by viewModel.isOptimizingDb.collectAsState()
     val stockTransfers by viewModel.allStockTransfers.collectAsState()
+    val transferApprovalPolicy by viewModel.transferApprovalPolicy.collectAsState()
     val paymentVerificationRequests by viewModel.paymentVerificationRequests.collectAsState()
     val discoveredHubs by viewModel.discoveredHubs.collectAsState()
     val isDiscoveringHubs by viewModel.isDiscoveringHubs.collectAsState()
@@ -792,6 +793,8 @@ private fun BeBossMainContent(
                                 shopDevices = shopDevices,
                                 livePaymentConfig = adminPaymentConfig,
                                 products = allProducts,
+                                stockTransfers = stockTransfers,
+                                transferApprovalThresholdRwf = transferApprovalPolicy?.thresholdRwf,
                                 customers = customers,
                                 sales = allSales,
                                 customerPayments = allCustomerPayments,
@@ -836,8 +839,8 @@ private fun BeBossMainContent(
                                 onDeleteShopDevice = { deviceId ->
                                     viewModel.deleteShopDevice(deviceId)
                                 },
-                                onCreateStockTransfer = { prodId, fromId, fromName, toId, toName, qty, notes ->
-                                    viewModel.createStockTransfer(prodId, fromId, fromName, toId, toName, qty, notes)
+                                onCreateStockTransfer = { prodId, fromId, fromName, toId, toName, qty, notes, ownerPin, approvalReason ->
+                                    viewModel.createStockTransfer(prodId, fromId, fromName, toId, toName, qty, notes, ownerPin, approvalReason)
                                 },
                                 onDeleteStockTransfer = { id -> viewModel.deleteStockTransfer(id) },
                                 selectedBranchId = selectedBranchId,
