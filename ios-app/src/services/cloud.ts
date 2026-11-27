@@ -2,10 +2,29 @@ import Config from 'react-native-config';
 import { AppState } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 import * as Keychain from 'react-native-keychain';
+import QuickCrypto from 'react-native-quick-crypto';
 
 const AUTH_SERVICE = 'rw.beboss.ios.supabase-auth.';
+const DEVICE_SERVICE = 'rw.beboss.ios.device-credential';
+const DEVICE_ID_SERVICE = 'rw.beboss.ios.device-id';
 const url = (Config.SUPABASE_URL || '').trim().replace(/\/+$/, '');
 const publicKey = (Config.SUPABASE_PUBLISHABLE_KEY || '').trim();
+
+export type IosDeviceCredential = {
+  shopId: string;
+  shopName: string;
+  ownerUsername: string;
+  deviceId: string;
+  deviceRecordId: string;
+  assignedUserId: string;
+  role: 'OWNER' | 'MANAGER' | 'CASHIER';
+  branchId: string;
+  branchName: string;
+  accessToken: string;
+  refreshToken: string;
+  accessExpiresAt: number;
+  refreshExpiresAt: number;
+};
 
 const secureStorage = {
   async getItem(key: string): Promise<string | null> {
@@ -54,24 +73,167 @@ export function stopCloudSessionLifecycle(): void {
   supabase?.auth.stopAutoRefresh();
 }
 
+function normalizedRwandaPhone(phoneInput: string): string {
+  const digits = phoneInput.replace(/[^0-9]/g, '');
+  const local = digits.length === 9 ? digits
+    : digits.startsWith('250') && digits.length === 12 ? digits.slice(3)
+    : digits.startsWith('0') && digits.length === 10 ? digits.slice(1)
+    : '';
+  if (!/^7[0-9]{8}$/.test(local)) throw new Error('Enter the registered Rwanda mobile phone number.');
+  return '+250' + local;
+}
+
 export async function requestOwnerPhoneVerification(phoneInput: string): Promise<void> {
   if (!supabase) throw new Error('Secure cloud configuration is missing. Add the public Supabase URL and publishable key.');
-  const digits = phoneInput.replace(/[^0-9]/g, '');
-  const local = digits.startsWith('250') ? digits.slice(-9) : digits.slice(-9);
-  if (!/^7[0-9]{8}$/.test(local)) throw new Error('Enter the registered Rwanda mobile phone number.');
-  const result = await supabase.auth.signInWithOtp({ phone: '+250' + local });
+  const phone = normalizedRwandaPhone(phoneInput);
+  const result = await supabase.auth.signInWithOtp({ phone });
   if (result.error) throw new Error(result.error.message);
 }
 
 export async function verifyOwnerPhoneCode(phoneInput: string, code: string): Promise<string> {
   if (!supabase) throw new Error('Secure cloud configuration is missing.');
-  const digits = phoneInput.replace(/[^0-9]/g, '');
-  const local = digits.startsWith('250') ? digits.slice(-9) : digits.slice(-9);
-  if (!/^7[0-9]{8}$/.test(local)) throw new Error('Enter the registered Rwanda mobile phone number.');
+  const phone = normalizedRwandaPhone(phoneInput);
   if (!/^[0-9]{4,8}$/.test(code.trim())) throw new Error('Enter the SMS verification code.');
-  const result = await supabase.auth.verifyOtp({ phone: '+250' + local, token: code.trim(), type: 'sms' });
+  const result = await supabase.auth.verifyOtp({ phone, token: code.trim(), type: 'sms' });
   if (result.error || !result.data.session) throw new Error(result.error?.message || 'Owner phone verification did not complete.');
   return result.data.user?.id || '';
+}
+
+function makeStableIosDeviceId(rawHex: string): string {
+  const hex = rawHex.slice(0, 32).toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(hex)) throw new Error('A secure iPhone device identity could not be generated.');
+  const uuid = [
+    hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16),
+    hex.slice(16, 20), hex.slice(20, 32)
+  ].join('-');
+  return 'IOS:' + uuid;
+}
+
+export async function getStableIosDeviceId(): Promise<string> {
+  const saved = await Keychain.getGenericPassword({ service: DEVICE_ID_SERVICE });
+  if (saved?.password && /^IOS:[0-9a-f-]{36}$/i.test(saved.password)) return saved.password;
+  const created = makeStableIosDeviceId(QuickCrypto.randomBytes(16).toString('hex'));
+  await Keychain.setGenericPassword('BeBoss iPhone device identity', created, {
+    service: DEVICE_ID_SERVICE,
+    accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY
+  });
+  return created;
+}
+
+export async function getIosDeviceCredential(): Promise<IosDeviceCredential | null> {
+  const stored = await Keychain.getGenericPassword({ service: DEVICE_SERVICE });
+  if (!stored?.password) return null;
+  try {
+    const value = JSON.parse(stored.password) as IosDeviceCredential;
+    if (!value.shopId || !/^IOS:[0-9a-f-]{36}$/i.test(value.deviceId) ||
+        !/^[0-9a-f]{64}$/.test(value.accessToken) ||
+        !/^[0-9a-f]{64}$/.test(value.refreshToken) ||
+        !value.deviceRecordId || !value.assignedUserId ||
+        !['OWNER', 'MANAGER', 'CASHIER'].includes(value.role)) {
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+async function persistDeviceCredential(value: IosDeviceCredential): Promise<void> {
+  await Keychain.setGenericPassword('BeBoss enrolled iPhone device', JSON.stringify(value), {
+    service: DEVICE_SERVICE,
+    accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY
+  });
+}
+
+export async function enrollIosDevice(
+  ownerUsernameInput: string,
+  ownerPhone: string,
+  joinCodeInput: string,
+  deviceName = 'BeBoss iPhone'
+): Promise<IosDeviceCredential> {
+  if (!supabase) throw new Error('Secure cloud configuration is missing.');
+  const username = ownerUsernameInput.trim().toLowerCase();
+  if (!/^[a-z0-9._-]{2,80}$/.test(username)) throw new Error('Enter the registered owner username.');
+  normalizedRwandaPhone(ownerPhone);
+  const joinCode = joinCodeInput.trim().toUpperCase();
+  if (!/^[A-Z0-9-]{8,100}$/.test(joinCode)) throw new Error('Enter the invitation code issued by the registered owner terminal.');
+  const session = await supabase.auth.getSession();
+  if (session.error || !session.data.session) {
+    throw new Error('Verify the registered owner phone by SMS before pairing this iPhone.');
+  }
+  if (!session.data.session.user.phone_confirmed_at) {
+    throw new Error('The owner phone session is not verified.');
+  }
+  const deviceId = await getStableIosDeviceId();
+  const result = await supabase.functions.invoke('ios-device-auth', {
+    body: {
+      action: 'enroll',
+      username,
+      phone: normalizedRwandaPhone(ownerPhone),
+      joinCode,
+      deviceId,
+      deviceName: deviceName.trim().slice(0, 120) || 'BeBoss iPhone'
+    }
+  });
+  if (result.error) {
+    const details = (result.error as any).context?.json;
+    throw new Error(details?.message || result.error.message || 'The iPhone could not be enrolled.');
+  }
+  const payload = result.data as IosDeviceCredential & { ok?: boolean };
+  if (!payload?.ok || payload.deviceId !== deviceId || !payload.accessToken || !payload.refreshToken ||
+      !payload.deviceRecordId || !payload.assignedUserId) {
+    throw new Error('The server response did not contain a complete iPhone device credential.');
+  }
+  const credential: IosDeviceCredential = {
+    shopId: payload.shopId,
+    shopName: payload.shopName,
+    ownerUsername: payload.ownerUsername,
+    deviceId: payload.deviceId,
+    deviceRecordId: payload.deviceRecordId,
+    assignedUserId: payload.assignedUserId,
+    role: payload.role,
+    branchId: payload.branchId || '',
+    branchName: payload.branchName || '',
+    accessToken: payload.accessToken,
+    refreshToken: payload.refreshToken,
+    accessExpiresAt: payload.accessExpiresAt,
+    refreshExpiresAt: payload.refreshExpiresAt
+  };
+  await persistDeviceCredential(credential);
+  return credential;
+}
+
+export async function refreshIosDeviceCredential(force = false): Promise<IosDeviceCredential> {
+  if (!supabase) throw new Error('Secure cloud configuration is missing.');
+  const current = await getIosDeviceCredential();
+  if (!current) throw new Error('This iPhone has not been enrolled with a registered owner-issued invitation.');
+  if (!force && current.accessExpiresAt > Date.now() + 2 * 60 * 1000) return current;
+  if (current.refreshExpiresAt <= Date.now()) throw new Error('The iPhone device credential expired. Ask the owner to issue a new invitation.');
+  const result = await supabase.functions.invoke('ios-device-auth', {
+    body: {
+      action: 'refresh',
+      shopId: current.shopId,
+      deviceId: current.deviceId,
+      refreshToken: current.refreshToken
+    }
+  });
+  if (result.error || !result.data?.ok) {
+    const details = (result.error as any)?.context?.json;
+    throw new Error(details?.message || result.error?.message || 'The iPhone device credential could not be refreshed.');
+  }
+  const credential: IosDeviceCredential = {
+    ...current,
+    accessToken: result.data.accessToken,
+    refreshToken: result.data.refreshToken,
+    accessExpiresAt: result.data.accessExpiresAt,
+    refreshExpiresAt: result.data.refreshExpiresAt
+  };
+  await persistDeviceCredential(credential);
+  return credential;
+}
+
+export async function removeIosDeviceCredential(): Promise<void> {
+  await Keychain.resetGenericPassword({ service: DEVICE_SERVICE });
 }
 
 export async function signOutCloud(): Promise<void> {
@@ -80,36 +242,48 @@ export async function signOutCloud(): Promise<void> {
   if (result.error) throw new Error(result.error.message);
 }
 
-export async function cloudSessionState(): Promise<{ configured: boolean; authenticated: boolean; emailOrPhone: string }> {
-  if (!supabase) return { configured: false, authenticated: false, emailOrPhone: '' };
+export async function cloudSessionState(): Promise<{
+  configured: boolean; authenticated: boolean; emailOrPhone: string; enrolledDevice: boolean;
+}> {
+  if (!supabase) return { configured: false, authenticated: false, emailOrPhone: '', enrolledDevice: false };
   const result = await supabase.auth.getSession();
   if (result.error) throw new Error(result.error.message);
+  const credential = await getIosDeviceCredential();
   return {
     configured: true,
     authenticated: !!result.data.session,
-    emailOrPhone: result.data.session?.user.phone || result.data.session?.user.email || ''
+    emailOrPhone: result.data.session?.user.phone || result.data.session?.user.email || '',
+    enrolledDevice: !!credential
   };
 }
 
 /**
- * Tenant snapshots intentionally remain disabled until BeBoss issues this iOS
- * installation a platform-bound device credential. The existing Android
- * protocol requires X-BeBoss-Device-ID and X-BeBoss-Device-Token after enrollment;
- * an SMS-authenticated user session alone is not a substitute for that credential.
+ * The iPhone is enrolled with a server-issued device credential. Snapshot sync
+ * remains gated until the iOS adapter completes the same BeBoss BBSHARE2,
+ * chunk-generation, tombstone and conflict-resolution protocol as Android.
  */
 export async function requestSecureIosSyncReadiness(): Promise<{
   ready: false;
+  enrolledDevice: boolean;
   reason: string;
 }> {
   const state = await cloudSessionState();
   if (!state.configured) {
-    return { ready: false, reason: 'Add the public Supabase project URL and publishable key.' };
+    return { ready: false, enrolledDevice: false, reason: 'Add the public Supabase project URL and publishable key.' };
   }
   if (!state.authenticated) {
-    return { ready: false, reason: 'Verify the registered shop-owner phone first.' };
+    return { ready: false, enrolledDevice: false, reason: 'Verify the registered shop-owner phone first.' };
+  }
+  if (!state.enrolledDevice) {
+    return {
+      ready: false,
+      enrolledDevice: false,
+      reason: 'Enter an invitation code generated by the registered owner terminal to enroll this iPhone. SMS verification alone is not device authorization.'
+    };
   }
   return {
     ready: false,
-    reason: 'The BeBoss backend must enroll this iPhone and issue its device-bound sync token before tenant snapshots can be uploaded or downloaded. SMS login alone cannot authorize shop data access.'
+    enrolledDevice: true,
+    reason: 'This iPhone has a server-issued device credential stored in Apple Keychain. Cloud snapshot sync remains disabled until the iOS BBSHARE2 chunk upload/download, tombstone and conflict merge implementation is validated.'
   };
 }
