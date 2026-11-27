@@ -62,7 +62,15 @@ class BranchTransferManager(
 
     suspend fun saveBranch(branch: Branch) = withContext(Dispatchers.IO) {
         val now = ClockGuard.effectiveNowMs()
+        val normalizedLocationType = branch.locationType.trim().uppercase(Locale.ROOT).ifBlank { "STORE" }
+        require(normalizedLocationType == "STORE" || normalizedLocationType == "WAREHOUSE") {
+            "Location type must be STORE or WAREHOUSE."
+        }
+        require(normalizedLocationType != "WAREHOUSE" || !branch.isMainBranch) {
+            "A warehouse cannot be the main retail/POS branch."
+        }
         val toSave = branch.copy(
+            locationType = normalizedLocationType,
             updatedAt = now,
             hlcTimestamp = HlcClock.tick(now),
             lastModifiedDeviceId = nodeId
@@ -176,6 +184,19 @@ class BranchTransferManager(
         if (!quantity.isFinite() || quantity <= 0.0) {
             throw IllegalArgumentException("Transfer quantity must be a finite number greater than zero")
         }
+        val sourceBranch = branchDao.getBranchById(fromBranchId)
+            ?: throw IllegalArgumentException("The source location no longer exists.")
+        val destinationBranch = branchDao.getBranchById(toBranchId)
+            ?: throw IllegalArgumentException("The destination location no longer exists.")
+        if (!sourceBranch.isActive || !destinationBranch.isActive) {
+            throw IllegalArgumentException("Both source and destination locations must be active.")
+        }
+        if (sourceBranch.operationalStatus.uppercase(Locale.ROOT) != "OPEN" ||
+            destinationBranch.operationalStatus.uppercase(Locale.ROOT) != "OPEN") {
+            throw IllegalArgumentException("Both source and destination locations must be OPEN before stock can move.")
+        }
+        val verifiedFromBranchName = sourceBranch.name
+        val verifiedToBranchName = destinationBranch.name
         val safeQty = quantity
         val transferNumber = transferNumberOverride?.trim()?.takeIf { it.isNotBlank() }
             ?: ("TRF-" +
@@ -211,9 +232,9 @@ class BranchTransferManager(
                 productId = productId,
                 productName = product.name,
                 fromBranchId = fromBranchId,
-                fromBranchName = fromBranchName,
+                fromBranchName = verifiedFromBranchName,
                 toBranchId = toBranchId,
-                toBranchName = toBranchName,
+                toBranchName = verifiedToBranchName,
                 quantity = safeQty,
                 unit = product.unit,
                 costValueRwf = costValue,
@@ -265,7 +286,7 @@ class BranchTransferManager(
 
         BeBossLogger.i(
             TAG,
-            "Transfer $transferNumber: ${safeQty.toInt()} $productUnit of '$productName' from $fromBranchName -> $toBranchName (${transfer.costValueRwf} FRw)"
+            "Transfer $transferNumber: ${safeQty.toInt()} $productUnit of '$productName' from $verifiedFromBranchName -> $verifiedToBranchName (${transfer.costValueRwf} FRw)"
         )
         transfer
     }
