@@ -384,9 +384,26 @@ class PosCartCoordinator(
                 }
 
                 val user = currentUser.value
-                val branch = branches.value.firstOrNull { it.id == selectedBranchId.value }
-                    ?: branches.value.firstOrNull { it.isMainBranch }
-                    ?: Branch()
+                // POS is retail-only: a warehouse can hold and transfer stock but must
+                // never be silently selected as the source of a customer sale.
+                val retailBranches = branches.value.filter {
+                    it.isActive && it.locationType.uppercase() != "WAREHOUSE" && it.operationalStatus.uppercase() == "OPEN"
+                }
+                val requestedBranchId = selectedBranchId.value.trim()
+                val branch = if (requestedBranchId.isBlank() || requestedBranchId == "ALL") {
+                    retailBranches.firstOrNull { it.isMainBranch } ?: retailBranches.firstOrNull()
+                } else {
+                    retailBranches.firstOrNull { it.id == requestedBranchId }
+                }
+                if (branch == null) {
+                    emitSnackbar(
+                        if (language.value == AppLanguage.KINYARWANDA)
+                            "Iri shami ntirigenewe kugurisha. Hitamo iduka rikora; ububiko bugenewe kubika no kohereza ibicuruzwa."
+                        else
+                            "POS sales require an active, OPEN retail store. Warehouse locations are for stock holding and transfers; reassign this terminal to a retail store."
+                    )
+                    return@runWithBlurLoading
+                }
 
                 val finalNotes = if (state.paymentMethod == "SPLIT") {
                     val cashCents = MoneyUtils.toCents(state.splitCashAmount)
