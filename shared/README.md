@@ -13,8 +13,9 @@ This avoids changing the current Android Gradle plugin, Kotlin compiler, signing
 - Price × quantity calculations with rounding only at the final currency boundary
 - Currency rounding and cents conversion
 - Hybrid Logical Clock packing, ticking, remote observation and deterministic version conflict ordering
+- Offline demand forecasts for inventory reorder suggestions: recency weighting, bounded recent trend, weekday seasonality, lead-time demand, safety stock and branch isolation
 
-The Android `MoneyUtils` and `HlcClock` APIs remain in place as adapters, but delegate their calculations and causal-order rules to the shared Kotlin source.
+The Android `MoneyUtils`, `HlcClock` and `DemandForecastEngine` APIs remain in place as adapters. Existing Android UI/ViewModel/Room callers keep their current method and data-model contracts, while the numerical calculations and causal-order rules execute in the shared Kotlin source. The forecast adapter provides device-local calendar boundaries so DST/time-zone day grouping remains platform-correct.
 
 ## Build for a physical iPhone/iPad
 
