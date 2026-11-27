@@ -528,25 +528,109 @@ export async function recordPurchase(input: {
 }
 
 export async function saveBranch(input: Partial<Branch> & { name: string }, actor: Staff): Promise<Branch> {
-  requirePermission(actor, 'canManageShopSettings', 'manage branches');
+  if (!actor.isActive || !(actor.role === 'OWNER' || actor.role === 'MANAGER' || actor.canManageShopSettings)) {
+    throw new Error('Access denied: only an owner or manager can manage branches.');
+  }
   if (!input.name.trim()) throw new Error('Branch name is required.');
   const row = input.id ? await first<Row>('SELECT data FROM branches WHERE id=?', [input.id]) : null;
   const existing = row ? branchFromRow(row) : null;
   const now = Date.now();
+  const locationType = input.locationType || existing?.locationType || 'STORE';
+  const rawStatus = (input.operationalStatus || existing?.operationalStatus || 'OPEN').toUpperCase();
+  const operationalStatus = rawStatus === 'SUSPENDED' ? 'PAUSED' : rawStatus;
+  if (!['STORE', 'WAREHOUSE'].includes(locationType)) throw new Error('Location type must be STORE or WAREHOUSE.');
+  if (locationType === 'WAREHOUSE' && (input.isMainBranch ?? existing?.isMainBranch)) {
+    throw new Error('A warehouse cannot be the main retail/POS branch.');
+  }
+  if (!['OPEN', 'PAUSED', 'CLOSED'].includes(operationalStatus)) {
+    throw new Error('Branch status must be OPEN, PAUSED or CLOSED.');
+  }
   const branch: Branch = {
-    id: input.id || makeId(), name: input.name.trim(), code: (input.code || '').trim() || 'BR-' + now.toString().slice(-4),
-    locationType: input.locationType || 'STORE', address: (input.address || '').trim(),
-    phone: (input.phone || '').trim(), managerName: (input.managerName || '').trim(),
-    isMainBranch: existing?.isMainBranch || false, isActive: input.isActive ?? true,
-    operationalStatus: input.operationalStatus || 'OPEN', notes: (input.notes || '').trim(),
-    createdAt: existing?.createdAt || now, updatedAt: now
+    id: input.id || makeId(),
+    name: input.name.trim(),
+    code: (input.code ?? existing?.code ?? '').trim() || 'BR-' + now.toString().slice(-4),
+    locationType,
+    address: (input.address ?? existing?.address ?? '').trim(),
+    phone: (input.phone ?? existing?.phone ?? '').trim(),
+    managerName: (input.managerName ?? existing?.managerName ?? '').trim(),
+    isMainBranch: input.isMainBranch ?? existing?.isMainBranch ?? false,
+    isActive: input.isActive ?? existing?.isActive ?? true,
+    operationalStatus: operationalStatus as Branch['operationalStatus'],
+    notes: (input.notes ?? existing?.notes ?? '').trim(),
+    createdAt: existing?.createdAt || now,
+    updatedAt: now
   };
   await transaction(async tx => {
+    if (branch.isMainBranch) {
+      const others = await query<Row>('SELECT data FROM branches WHERE active=1', [], tx);
+      for (const otherRow of others) {
+        const other = branchFromRow(otherRow);
+        if (other.id !== branch.id && other.isMainBranch) {
+          const cleared = { ...other, isMainBranch: false, updatedAt: now };
+          await saveBranchRow(cleared, tx);
+          await enqueue('branches', cleared.id, 'UPDATE', cleared, tx);
+        }
+      }
+    }
     await saveBranchRow(branch, tx);
+    await execute('DELETE FROM sync_tombstones WHERE id=?', ['branches:' + branch.id], tx);
     await enqueue('branches', branch.id, existing ? 'UPDATE' : 'CREATE', branch, tx);
-    await audit(actor, existing ? 'BRANCH_UPDATED' : 'BRANCH_CREATED', branch.id, branch.name, tx);
+    await audit(actor, existing ? 'BRANCH_UPDATED' : 'BRANCH_CREATED', branch.id, branch.name + ' • ' + branch.locationType, tx);
   });
   return branch;
+}
+
+export async function setBranchOperationalStatus(
+  branchId: string,
+  statusInput: string,
+  actor: Staff
+): Promise<Branch> {
+  if (!actor.isActive || !(actor.role === 'OWNER' || actor.role === 'MANAGER' || actor.canManageShopSettings)) {
+    throw new Error('Access denied: you cannot change branch operating status.');
+  }
+  const status = statusInput.trim().toUpperCase() === 'SUSPENDED' ? 'PAUSED' : statusInput.trim().toUpperCase();
+  if (!['OPEN', 'PAUSED', 'CLOSED'].includes(status)) throw new Error('Branch status must be OPEN, PAUSED or CLOSED.');
+  return transaction(async tx => {
+    const row = await first<Row>('SELECT data FROM branches WHERE id=? AND active=1', [branchId], tx);
+    if (!row) throw new Error('Active branch not found.');
+    const branch = branchFromRow(row);
+    if (actor.branchId && actor.branchId !== branch.id && actor.role !== 'OWNER') {
+      throw new Error('Your account cannot change another branch operating status.');
+    }
+    const updated: Branch = { ...branch, operationalStatus: status as Branch['operationalStatus'], updatedAt: Date.now() };
+    await saveBranchRow(updated, tx);
+    await enqueue('branches', updated.id, 'UPDATE', updated, tx);
+    await audit(actor, 'BRANCH_STATUS_CHANGED', updated.id, branch.operationalStatus + ' → ' + status, tx);
+    return updated;
+  });
+}
+
+export async function archiveBranch(branchId: string, actor: Staff): Promise<void> {
+  if (!actor.isActive || !(actor.role === 'OWNER' || actor.canManageShopSettings || actor.canDeleteRecords)) {
+    throw new Error('Access denied: you cannot archive branches.');
+  }
+  await transaction(async tx => {
+    const row = await first<Row>('SELECT data FROM branches WHERE id=? AND active=1', [branchId], tx);
+    if (!row) throw new Error('Active branch not found.');
+    const branch = branchFromRow(row);
+    if (branch.isMainBranch) throw new Error('The main retail branch cannot be archived. Set another store as main first.');
+    const staffRows = await query<Row>('SELECT data FROM users WHERE active=1', [], tx);
+    const assignedStaff = staffRows.map(item => staffFromRow(item)).filter(item => item.branchId === branchId);
+    if (assignedStaff.length) throw new Error('Reassign or suspend all staff assigned to this branch before archiving it.');
+    const productCount = await first<Row>('SELECT COUNT(*) AS value FROM products WHERE branch_id=? AND deleted=0', [branchId], tx);
+    if (Number(productCount?.value || 0) > 0) throw new Error('Move or archive all active products assigned to this branch before archiving it.');
+    const transferCount = await first<Row>('SELECT COUNT(*) AS value FROM stock_transfers WHERE status="IN_TRANSIT" AND (from_branch_id=? OR to_branch_id=?)', [branchId, branchId], tx);
+    if (Number(transferCount?.value || 0) > 0) throw new Error('Complete or cancel all in-transit stock transfers before archiving this branch.');
+    const archived: Branch = { ...branch, isActive: false, updatedAt: Date.now() };
+    await saveBranchRow(archived, tx);
+    await execute(
+      'INSERT OR REPLACE INTO sync_tombstones(id,table_name,record_id,deleted_at,hlc) VALUES(?,?,?,?,?)',
+      ['branches:' + branchId, 'branches', branchId, archived.updatedAt, tickHlc('0', archived.updatedAt)],
+      tx
+    );
+    await enqueue('branches', branchId, 'DELETE', { id: branchId, updatedAt: archived.updatedAt }, tx);
+    await audit(actor, 'BRANCH_ARCHIVED', branchId, branch.name + ' archived after staff, inventory and transfer checks.', tx);
+  });
 }
 
 export async function recordStockTransfer(input: {
@@ -562,7 +646,12 @@ export async function recordStockTransfer(input: {
     if (!fromRow || !toRow || !productRow) throw new Error('The product or one of the branches is not available.');
     if (actor.branchId && actor.branchId !== input.fromBranchId) throw new Error('Your account cannot transfer stock from this branch.');
     const product = productFromRow(productRow);
+    const fromBranch = branchFromRow(fromRow);
+    const toBranch = branchFromRow(toRow);
     if (product.branchId && product.branchId !== input.fromBranchId) throw new Error('The product does not belong to the source branch.');
+    if (fromBranch.operationalStatus !== 'OPEN' || toBranch.operationalStatus !== 'OPEN') {
+      throw new Error('Both the sending and receiving branches must be open before stock can be transferred.');
+    }
     if (product.quantityInStock < input.quantity) throw new Error('Not enough stock to transfer.');
     const now = Date.now();
     product.quantityInStock -= input.quantity;
@@ -570,21 +659,34 @@ export async function recordStockTransfer(input: {
     product.syncVersion += 1;
     product.hlcTimestamp = tickHlc(product.hlcTimestamp, now);
     await saveProductRow(product, tx);
-    const fromBranch = branchFromRow(fromRow);
-    const toBranch = branchFromRow(toRow);
     const transfer: StockTransfer = {
-      id: makeId(), transferNumber: 'TRF-' + now.toString().slice(-8),
-      productId: product.id, productName: product.name,
-      fromBranchId: input.fromBranchId, toBranchId: input.toBranchId,
-      quantity: input.quantity, status: 'IN_TRANSIT', notes: input.notes.trim(),
-      transferredBy: actor.name, receivedBy: '',
-      transferDate: now, receivedAt: 0
+      id: makeId(),
+      transferNumber: 'TRF-' + now.toString().slice(-8),
+      productId: product.id,
+      productName: product.name,
+      fromBranchId: input.fromBranchId,
+      fromBranchName: fromBranch.name,
+      toBranchId: input.toBranchId,
+      toBranchName: toBranch.name,
+      quantity: input.quantity,
+      unit: product.unit,
+      costValue: roundMoney(product.costPrice * input.quantity),
+      status: 'IN_TRANSIT',
+      notes: input.notes.trim(),
+      transferredBy: actor.name,
+      receivedBy: '',
+      transferDate: now,
+      receivedAt: 0,
+      updatedAt: now
     };
-    await execute('INSERT INTO stock_transfers(id,product_id,from_branch_id,to_branch_id,quantity,status,created_at,data) VALUES(?,?,?,?,?,?,?,?)',
-      [transfer.id, transfer.productId, transfer.fromBranchId, transfer.toBranchId, transfer.quantity, transfer.status, now, toJson(transfer)], tx);
+    await execute(
+      'INSERT INTO stock_transfers(id,product_id,from_branch_id,to_branch_id,quantity,status,created_at,data) VALUES(?,?,?,?,?,?,?,?)',
+      [transfer.id, transfer.productId, transfer.fromBranchId, transfer.toBranchId, transfer.quantity, transfer.status, now, toJson(transfer)],
+      tx
+    );
     await enqueue('stock_transfers', transfer.id, 'CREATE', transfer, tx);
     await enqueue('products', product.id, 'UPDATE', product, tx);
-    await audit(actor, 'STOCK_TRANSFER_CREATED', transfer.id, fromBranch.name + ' to ' + toBranch.name, tx);
+    await audit(actor, 'STOCK_TRANSFER_CREATED', transfer.id, fromBranch.name + ' → ' + toBranch.name + ' • ' + input.quantity + ' ' + product.unit, tx);
     return transfer;
   });
 }
@@ -595,24 +697,109 @@ export async function confirmStockTransfer(transferId: string, actor: Staff): Pr
     const transferRow = await first<Row>('SELECT data FROM stock_transfers WHERE id=?', [transferId], tx);
     if (!transferRow) throw new Error('Stock transfer not found.');
     const transfer = fromJson<StockTransfer>(transferRow.data);
-    if (transfer.status !== 'IN_TRANSIT') throw new Error('Only an in-transit transfer can be received.');
-    if (actor.branchId && actor.branchId !== transfer.toBranchId) throw new Error('Your account cannot receive stock at this branch.');
-    const productRow = await first<Row>('SELECT data FROM products WHERE id=?', [transfer.productId], tx);
-    if (!productRow) throw new Error('Transferred product record was not found.');
-    const product = productFromRow(productRow);
-    product.branchId = transfer.toBranchId;
-    product.quantityInStock += transfer.quantity;
-    product.updatedAt = Date.now();
-    product.syncVersion += 1;
-    product.hlcTimestamp = tickHlc(product.hlcTimestamp, product.updatedAt);
+    if (transfer.status === 'COMPLETED') return;
+    if (transfer.status === 'CANCELLED') throw new Error('A cancelled transfer cannot be received.');
+    if (actor.branchId && actor.branchId !== transfer.toBranchId) {
+      throw new Error('Your account cannot receive stock at this branch.');
+    }
+    const sourceRow = await first<Row>('SELECT data FROM products WHERE id=?', [transfer.productId], tx);
+    if (!sourceRow) throw new Error('The source product is missing. Restore it before receiving this transfer.');
+    const source = productFromRow(sourceRow);
+    if (source.isDeleted) throw new Error('The source product is archived. Restore it before receiving this transfer.');
+    const destinationBranchRow = await first<Row>('SELECT data FROM branches WHERE id=? AND active=1', [transfer.toBranchId], tx);
+    if (!destinationBranchRow) throw new Error('The destination branch is no longer active.');
+    const destinationBranch = branchFromRow(destinationBranchRow);
+    if (destinationBranch.operationalStatus !== 'OPEN') throw new Error('The receiving branch must be open to accept stock.');
+
+    let destinationRow: Row | null = null;
+    if (source.barcode.trim()) {
+      destinationRow = await first<Row>(
+        'SELECT data FROM products WHERE barcode=? AND branch_id=? AND deleted=0 ORDER BY created_at LIMIT 1',
+        [source.barcode.trim(), transfer.toBranchId],
+        tx
+      );
+    }
+    if (!destinationRow) {
+      const allDestinationProducts = await query<Row>(
+        'SELECT data FROM products WHERE branch_id=? AND deleted=0',
+        [transfer.toBranchId],
+        tx
+      );
+      destinationRow = allDestinationProducts.find(item =>
+        productFromRow(item).name.trim().toLowerCase() === source.name.trim().toLowerCase()
+      ) || null;
+    }
+    const now = Date.now();
+    let credited: Product;
+    if (destinationRow) {
+      credited = productFromRow(destinationRow);
+      credited.quantityInStock += transfer.quantity;
+      credited.updatedAt = now;
+      credited.syncVersion += 1;
+      credited.hlcTimestamp = tickHlc(credited.hlcTimestamp, now);
+    } else {
+      credited = {
+        ...source,
+        id: makeId(),
+        branchId: transfer.toBranchId,
+        quantityInStock: transfer.quantity,
+        createdAt: now,
+        updatedAt: now,
+        syncVersion: 1,
+        hlcTimestamp: tickHlc('0', now)
+      };
+    }
+    await saveProductRow(credited, tx);
     transfer.status = 'COMPLETED';
     transfer.receivedBy = actor.name;
-    transfer.receivedAt = product.updatedAt;
-    await saveProductRow(product, tx);
-    await execute('UPDATE stock_transfers SET status=?,data=? WHERE id=?', [transfer.status, toJson(transfer), transfer.id], tx);
+    transfer.receivedAt = now;
+    transfer.updatedAt = now;
+    await execute(
+      'UPDATE stock_transfers SET status=?,data=? WHERE id=? AND status=?',
+      [transfer.status, toJson(transfer), transfer.id, 'IN_TRANSIT'],
+      tx
+    );
     await enqueue('stock_transfers', transfer.id, 'UPDATE', transfer, tx);
-    await enqueue('products', product.id, 'UPDATE', product, tx);
-    await audit(actor, 'STOCK_TRANSFER_RECEIVED', transfer.id, transfer.transferNumber, tx);
+    await enqueue('products', credited.id, destinationRow ? 'UPDATE' : 'CREATE', credited, tx);
+    await audit(actor, 'STOCK_TRANSFER_RECEIVED', transfer.id, transfer.transferNumber + ' • credited ' + credited.name + ' at ' + destinationBranch.name, tx);
+  });
+}
+
+export async function cancelStockTransfer(transferId: string, reason: string, actor: Staff): Promise<void> {
+  requirePermission(actor, 'canManageInventory', 'cancel stock transfers');
+  if (!reason.trim()) throw new Error('Enter a reason for cancelling this stock transfer.');
+  await transaction(async tx => {
+    const transferRow = await first<Row>('SELECT data FROM stock_transfers WHERE id=?', [transferId], tx);
+    if (!transferRow) throw new Error('Stock transfer not found.');
+    const transfer = fromJson<StockTransfer>(transferRow.data);
+    if (transfer.status === 'CANCELLED') return;
+    if (transfer.status === 'COMPLETED') {
+      throw new Error('A completed transfer cannot be cancelled. Create a return transfer to move the stock back.');
+    }
+    if (actor.branchId && actor.branchId !== transfer.fromBranchId && actor.role !== 'OWNER') {
+      throw new Error('Only the sending branch or shop owner can cancel this transfer.');
+    }
+    const sourceRow = await first<Row>('SELECT data FROM products WHERE id=? AND deleted=0', [transfer.productId], tx);
+    if (!sourceRow) throw new Error('The source product is missing. Restore it before returning the transferred stock.');
+    const source = productFromRow(sourceRow);
+    source.quantityInStock += transfer.quantity;
+    source.updatedAt = Date.now();
+    source.syncVersion += 1;
+    source.hlcTimestamp = tickHlc(source.hlcTimestamp, source.updatedAt);
+    await saveProductRow(source, tx);
+    transfer.status = 'CANCELLED';
+    transfer.receivedBy = actor.name;
+    transfer.receivedAt = source.updatedAt;
+    transfer.updatedAt = source.updatedAt;
+    transfer.notes = (transfer.notes ? transfer.notes + ' | ' : '') + '[CANCELLED: ' + reason.trim() + ']';
+    await execute(
+      'UPDATE stock_transfers SET status=?,data=? WHERE id=? AND status=?',
+      [transfer.status, toJson(transfer), transfer.id, 'IN_TRANSIT'],
+      tx
+    );
+    await enqueue('stock_transfers', transfer.id, 'UPDATE', transfer, tx);
+    await enqueue('products', source.id, 'UPDATE', source, tx);
+    await audit(actor, 'STOCK_TRANSFER_CANCELLED', transfer.id, transfer.transferNumber + ' • ' + reason.trim(), tx);
   });
 }
 
