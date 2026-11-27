@@ -345,6 +345,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/supabase-tls-pin-tool"
           javac -Xlint:all -d "$RUNNER_TEMP/supabase-tls-pin-tool" scripts/PrintSupabaseTlsPins.java
 
+      - name: Discover live Supabase TLS SPKI pins (temporary release diagnostic)
+        env:
+          SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
+        run: java ./scripts/PrintSupabaseTlsPins.java
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
