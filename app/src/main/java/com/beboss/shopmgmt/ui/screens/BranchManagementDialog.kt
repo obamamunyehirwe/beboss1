@@ -1230,7 +1230,7 @@ fun CreateStockTransferDialog(
                             Spacer(modifier = Modifier.height(8.dp))
                             OutlinedTextField(
                                 value = approvalReason,
-                                onValueChange = { approvalReason = it.take(600) },
+                                onValueChange = { approvalReason = it.take(300) },
                                 label = { Text("Approval explanation (required)") },
                                 placeholder = { Text("Explain the business reason for this transfer") },
                                 modifier = Modifier.fillMaxWidth(),
