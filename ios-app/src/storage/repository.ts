@@ -1925,7 +1925,7 @@ export async function buildIosCloudSnapshot(actor: Staff): Promise<IosCloudSnaps
       query<Row>('SELECT data FROM branches ORDER BY id', [], tx),
       query<Row>('SELECT data FROM users ORDER BY id', [], tx),
       query<Row>('SELECT table_name,record_id,deleted_at,hlc FROM sync_tombstones ORDER BY deleted_at,id', [], tx),
-      query<Row>('SELECT id FROM sync_outbox WHERE status != "SYNCED" ORDER BY created_at,id LIMIT 5000', [], tx),
+      query<Row>('SELECT id,table_name FROM sync_outbox WHERE status != "SYNCED" ORDER BY created_at,id LIMIT 5000', [], tx),
       first<Row>('SELECT value FROM app_meta WHERE key=?', ['cloud_snapshot_updated_at'], tx)
     ]);
     return {
@@ -1947,7 +1947,8 @@ export async function buildIosCloudSnapshot(actor: Staff): Promise<IosCloudSnaps
         deletedAt: Number(row.deleted_at) || 0,
         hlcTimestamp: String(row.hlc || '0')
       })),
-      outboxIds: outbox.map(row => String(row.id)).filter(Boolean),
+      outboxIds: outbox.map(row => ({ id: String(row.id), tableName: String(row.table_name || '') }))
+        .filter(row => !!row.id),
       expectedUpdatedAt: Number(version?.value || 0)
     };
   });
@@ -1994,10 +1995,16 @@ export async function buildIosCloudSnapshot(actor: Staff): Promise<IosCloudSnaps
       purchases: captured.purchases,
       stockTransfers: captured.stockTransfers,
       branches: captured.branches,
-      users: captured.users,
+      // Non-owner devices do not publish the shop-wide staff directory.
+      // The server merges staff records already committed by the primary owner terminal.
+      users: actor.role === 'OWNER'
+        ? captured.users
+        : captured.users.filter(user => user.id === actor.id),
       tombstones: captured.tombstones
     },
-    outboxIds: captured.outboxIds,
+    outboxIds: captured.outboxIds
+      .filter(item => actor.role === 'OWNER' || item.tableName !== 'users')
+      .map(item => item.id),
     expectedUpdatedAt: captured.expectedUpdatedAt
   };
 }
@@ -2527,111 +2534,6 @@ export async function mergeIosCloudSnapshots(parts: unknown[], actor: Staff): Pr
     await audit(actor, 'IOS_CLOUD_SNAPSHOT_MERGED', actor.id, JSON.stringify(summary), tx);
   });
   return summary;
-}
-
-export async function bindIosDeviceStaff(input: {
-  assignedUserId: string;
-  username: string;
-  name: string;
-  phone: string;
-  role: Role;
-  branchId: string;
-  branchName: string;
-  pin: string;
-  password: string;
-}): Promise<Staff> {
-  const username = input.username.trim().toLowerCase();
-  if (!input.assignedUserId.trim() || !/^[a-z0-9._-]{2,80}$/.test(username)) {
-    throw new Error('The enrolled device did not return a valid assigned staff identity.');
-  }
-  if (!['OWNER', 'MANAGER', 'CASHIER'].includes(input.role)) {
-    throw new Error('The enrolled device role is not supported.');
-  }
-  const byId = await first<Row>('SELECT data FROM users WHERE id=?', [input.assignedUserId]);
-  const byUsername = await first<Row>('SELECT data FROM users WHERE username=? COLLATE NOCASE', [username]);
-  if (byId && byUsername && String(byId.data) !== String(byUsername.data)) {
-    const idUser = staffFromRow(byId);
-    const usernameUser = staffFromRow(byUsername);
-    if (idUser.username.trim().toLowerCase() !== usernameUser.username.trim().toLowerCase()) {
-      throw new Error('A different local account already uses the assigned cloud staff identity. Resolve the duplicate before pairing.');
-    }
-  }
-  const existingRow = byId || byUsername;
-  const existing = existingRow ? staffFromRow(existingRow) : null;
-  let pinHash = existing?.pinHash || '';
-  let passwordHash = existing?.passwordHash || '';
-  const pin = input.pin.trim();
-  const password = input.password.trim();
-  if (pin || password) {
-    if (!pin || !password) throw new Error('Set both a local staff PIN and password.');
-    const pinIssue = validatePin(pin);
-    if (pinIssue) throw new Error(pinIssue);
-    const passwordIssue = validatePassword(password);
-    if (passwordIssue) throw new Error(passwordIssue);
-    pinHash = hashCredential(pin);
-    passwordHash = hashCredential(password);
-  }
-  if (!pinHash || !passwordHash) {
-    throw new Error('Create a local PIN and password for the staff account assigned to this iPhone.');
-  }
-
-  const now = Date.now();
-  const staff: Staff = {
-    id: input.assignedUserId,
-    name: input.name.trim() || existing?.name || username,
-    username,
-    phone: input.phone.trim() || existing?.phone || '',
-    role: input.role,
-    branchId: input.branchId,
-    branchName: input.branchName,
-    pinHash,
-    passwordHash,
-    isActive: true,
-    createdAt: existing?.createdAt || now,
-    updatedAt: now,
-    lastLoginAt: existing?.lastLoginAt || now,
-    ...ROLE_PERMISSIONS[input.role]
-  };
-
-  await transaction(async tx => {
-    const previousId = existing?.id || '';
-    if (previousId && previousId !== staff.id) {
-      const collision = await first<Row>('SELECT id FROM users WHERE id=?', [staff.id], tx);
-      if (collision) throw new Error('The assigned cloud staff ID is already linked to another local account.');
-      const saleRows = await query<Row>('SELECT id,data FROM sales', [], tx);
-      for (const row of saleRows) {
-        const sale = saleFromRow(row);
-        if (sale.cashierId === previousId) {
-          sale.cashierId = staff.id;
-          await execute('UPDATE sales SET data=? WHERE id=?', [toJson(sale), sale.id], tx);
-        }
-      }
-      await execute('UPDATE audit_logs SET actor_id=? WHERE actor_id=?', [staff.id, previousId], tx);
-      await execute('DELETE FROM auth_attempts WHERE bucket=?', ['login:' + previousId], tx);
-      await execute('UPDATE users SET id=? WHERE id=?', [staff.id, previousId], tx);
-    }
-
-    const others = await query<Row>('SELECT id,data FROM users WHERE id<>?', [staff.id], tx);
-    for (const row of others) {
-      const user = staffFromRow(row);
-      if (!user.isActive) continue;
-      user.isActive = false;
-      user.updatedAt = now;
-      await execute('UPDATE users SET active=0,data=?,updated_at=? WHERE id=?',
-        [toJson(user), now, user.id], tx);
-    }
-
-    await execute(
-      'INSERT INTO users(id,username,role,branch_id,active,data,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ' +
-      'ON CONFLICT(id) DO UPDATE SET username=excluded.username,role=excluded.role,branch_id=excluded.branch_id,active=excluded.active,data=excluded.data,updated_at=excluded.updated_at',
-      [staff.id, staff.username, staff.role, staff.branchId, 1, toJson(staff), staff.createdAt, staff.updatedAt],
-      tx
-    );
-    await execute('DELETE FROM auth_attempts WHERE bucket=?', ['login:' + staff.id], tx);
-    await audit(staff, 'IOS_DEVICE_STAFF_BOUND', staff.id,
-      'Bound the iPhone to the server-assigned ' + staff.role + ' account for branch ' + (staff.branchName || staff.branchId) + '.', tx);
-  });
-  return staff;
 }
 
 export async function getOutbox(): Promise<SyncOutboxItem[]> {
