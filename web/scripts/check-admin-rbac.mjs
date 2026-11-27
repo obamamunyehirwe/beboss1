@@ -179,9 +179,9 @@ const ownerGuardFunction = edgeSource.slice(
   edgeSource.indexOf("async function getShopDataShareSecret(")
 );
 if (ownerGuardIndex < 0 ||
-    !/auth\\.getUser/.test(ownerGuardFunction) ||
+    !/auth\.getUser/.test(ownerGuardFunction) ||
     !/phone_confirmed_at/.test(ownerGuardFunction) ||
-    !/normalizePhone\\(text\\(user\\.phone\\)\\)/.test(ownerGuardFunction) ||
+    !/normalizePhone\(text\(user\.phone\)\)/.test(ownerGuardFunction) ||
     !/shop_owner_memberships/.test(ownerGuardFunction) ||
     !/status !== "ACTIVE"/.test(ownerGuardFunction) ||
     !/revoked_at/.test(ownerGuardFunction)) {
@@ -240,7 +240,8 @@ for (const action of ownerEdgeActions) {
   const start = edgeSource.indexOf('if (action === "' + action + '"');
   if (start < 0) {
     // bootstrap is grouped with register_desktop in one action branch.
-    if (action === "bootstrap" && edgeSource.includes('action === "bootstrap" || action === "register_desktop"')) continue;
+    if ((action === "bootstrap" || action === "register_desktop") &&
+        edgeSource.includes('action === "bootstrap" || action === "register_desktop"')) continue;
     fail(edgeFile + " :: expected owner-protected action " + action + " is missing");
   } else if (start < ownerGuardIndex) {
     fail(edgeFile + " :: " + action + " is handled before the shared confirmed-owner membership gate");
@@ -268,7 +269,7 @@ for (const action of sensitiveEdgeMutations) {
   const start = edgeSource.indexOf('if (action === "' + action + '")');
   const next = edgeSource.indexOf('if (action === "', start + 1);
   const block = start >= 0 ? edgeSource.slice(start, next > start ? next : edgeSource.length) : "";
-  if (start < 0 || !/ownerManagementActorV2\\s*\\(/.test(block)) {
+  if (start < 0 || !/ownerManagementActorV2\s*\(/.test(block)) {
     fail(edgeFile + " :: sensitive management mutation " + action + " must verify an active owner-assigned device");
   }
 }
