@@ -865,14 +865,21 @@ Deno.serve(async (req: Request) => {
         return json(400, { ok: false, message: "Device audit records must have unique valid record identifiers." });
       }
 
-      const table = entity === "BRANCH" ? "shop_branches" : "shop_stock_transfers";
-      const columns = entity === "BRANCH"
-        ? "id,shop_sync_key,name,code,address,phone,email,manager_user_id,manager_name,is_active,is_main_branch,operational_status,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,created_at,updated_at,hlc_timestamp,last_modified_device_id"
-        : "id,shop_sync_key,transfer_number,product_id,product_name,from_branch_id,from_branch_name,to_branch_id,to_branch_name,quantity,unit,cost_value_rwf,status,transferred_by,received_by,received_at,created_at,updated_at,hlc_timestamp,last_modified_device_id";
-      const { data: currentRows, error: rowError } = await admin.from(table).select(columns)
-        .eq("shop_sync_key", text(shop.id)).in("id", ids).limit(250);
-      if (rowError) throw new Error("Could not verify the uploaded " + entity.toLowerCase() + " records before journaling: " + rowError.message);
-      const currentById = new Map((currentRows ?? []).map((row) => [text(row.id), row as Row]));
+      let currentRows: Row[] = [];
+      if (entity === "BRANCH") {
+        const result = await admin.from("shop_branches")
+          .select("id,shop_sync_key,name,code,address,phone,email,manager_user_id,manager_name,is_active,is_main_branch,operational_status,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,created_at,updated_at,hlc_timestamp,last_modified_device_id")
+          .eq("shop_sync_key", text(shop.id)).in("id", ids).limit(250);
+        if (result.error) throw new Error("Could not verify uploaded branch records before journaling: " + result.error.message);
+        currentRows = (result.data ?? []) as unknown as Row[];
+      } else {
+        const result = await admin.from("shop_stock_transfers")
+          .select("id,shop_sync_key,transfer_number,product_id,product_name,from_branch_id,from_branch_name,to_branch_id,to_branch_name,quantity,unit,cost_value_rwf,status,transferred_by,received_by,received_at,created_at,updated_at,hlc_timestamp,last_modified_device_id")
+          .eq("shop_sync_key", text(shop.id)).in("id", ids).limit(250);
+        if (result.error) throw new Error("Could not verify uploaded stock-transfer records before journaling: " + result.error.message);
+        currentRows = (result.data ?? []) as unknown as Row[];
+      }
+      const currentById = new Map<string, Row>(currentRows.map((row) => [text(row.id), row]));
       if (currentById.size !== ids.length) {
         return json(409, { ok: false, message: "Some records are not yet visible in the cloud. The device must retry the audit after the record upload completes." });
       }
@@ -892,7 +899,7 @@ Deno.serve(async (req: Request) => {
         .select("detail,created_at").eq("shop_sync_key", text(shop.id)).eq("entity", entity)
         .order("created_at", { ascending: false }).limit(1000);
       if (previousError) throw new Error("Could not read the previous shop audit journal: " + previousError.message);
-      const previousStates = new Map<string, Record<string, unknown>>();
+      const previousStates = new Map<string, ReturnType<typeof buildShopAuditSnapshot>>();
       for (const event of previousEvents ?? []) {
         try {
           const parsed = JSON.parse(text(event.detail));
