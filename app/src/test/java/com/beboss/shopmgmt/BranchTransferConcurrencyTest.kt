@@ -7,6 +7,9 @@ import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.data.model.Branch
 import com.beboss.shopmgmt.data.model.Product
 import com.beboss.shopmgmt.data.model.StockTransfer
+import com.beboss.shopmgmt.data.model.ShopDevice
+import com.beboss.shopmgmt.data.model.User
+import com.beboss.shopmgmt.data.model.UserRole
 import com.beboss.shopmgmt.data.repository.BeBossRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -251,4 +254,154 @@ class BranchTransferConcurrencyTest {
             db.close()
         }
     }
+
+    @Test
+    fun `main branch cannot be archived`() = runBlocking {
+        val db = inMemoryDatabase()
+        try {
+            val repository = BeBossRepository(db)
+            db.branchDao().insertBranch(
+                Branch(id = "main", name = "Main Store", code = "HQ", isMainBranch = true)
+            )
+
+            val result = runCatching { repository.branchTransferManager.deleteBranch("main") }
+
+            assertTrue("The main POS branch must remain active", result.isFailure)
+            assertTrue(db.branchDao().getBranchById("main")!!.isActive)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `branch archive is blocked while active staff or devices are assigned`() = runBlocking {
+        val db = inMemoryDatabase()
+        try {
+            val repository = BeBossRepository(db)
+            db.branchDao().insertBranch(Branch(id = "branch", name = "Retail", code = "BR-01"))
+            db.userDao().insertUser(
+                User(name = "Cashier", username = "cashier", role = UserRole.CASHIER, assignedBranchId = "branch")
+            )
+
+            val staffResult = runCatching { repository.branchTransferManager.deleteBranch("branch") }
+            assertTrue("Active assigned staff must block branch archival", staffResult.isFailure)
+            assertTrue(db.branchDao().getBranchById("branch")!!.isActive)
+
+            db.userDao().setUserActive(db.userDao().getUserByUsername("cashier")!!.id, false)
+            db.shopDeviceDao().insertOrUpdate(
+                ShopDevice(id = "device-1", deviceId = "DESKTOP:test", deviceName = "POS", branchId = "branch", isActive = true)
+            )
+
+            val deviceResult = runCatching { repository.branchTransferManager.deleteBranch("branch") }
+            assertTrue("Active assigned devices must block branch archival", deviceResult.isFailure)
+            assertTrue(db.branchDao().getBranchById("branch")!!.isActive)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `branch archive is blocked while products or transfers remain`() = runBlocking {
+        val db = inMemoryDatabase()
+        try {
+            val repository = BeBossRepository(db)
+            db.branchDao().insertBranch(Branch(id = "branch", name = "Retail", code = "BR-01"))
+            db.productDao().insertProduct(
+                Product(id = "branch-stock", name = "Rice", quantityInStock = 2.0, branchId = "branch")
+            )
+
+            val productResult = runCatching { repository.branchTransferManager.deleteBranch("branch") }
+            assertTrue("Active inventory must be moved or archived first", productResult.isFailure)
+
+            db.productDao().deleteProduct("branch-stock")
+            db.stockTransferDao().insertTransfer(
+                StockTransfer(
+                    id = "branch-open-transfer",
+                    productId = "old-product",
+                    productName = "Old item",
+                    fromBranchId = "branch",
+                    fromBranchName = "Retail",
+                    toBranchId = "other",
+                    toBranchName = "Other",
+                    quantity = 1.0,
+                    status = "IN_TRANSIT"
+                )
+            )
+            val transferResult = runCatching { repository.branchTransferManager.deleteBranch("branch") }
+            assertTrue("Unresolved stock transfers must block branch archival", transferResult.isFailure)
+            assertTrue(db.branchDao().getBranchById("branch")!!.isActive)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `requested or rejected transfers cannot complete or restore stock`() = runBlocking {
+        val db = inMemoryDatabase()
+        try {
+            val repository = BeBossRepository(db)
+            db.productDao().insertProduct(
+                Product(id = "request-stock", name = "Sugar", quantityInStock = 7.0, branchId = "source")
+            )
+            db.stockTransferDao().insertTransfers(
+                listOf(
+                    StockTransfer(
+                        id = "requested", productId = "request-stock", productName = "Sugar",
+                        fromBranchId = "source", fromBranchName = "Source",
+                        toBranchId = "destination", toBranchName = "Destination",
+                        quantity = 3.0, status = "REQUESTED"
+                    ),
+                    StockTransfer(
+                        id = "rejected", productId = "request-stock", productName = "Sugar",
+                        fromBranchId = "source", fromBranchName = "Source",
+                        toBranchId = "destination", toBranchName = "Destination",
+                        quantity = 4.0, status = "REJECTED"
+                    )
+                )
+            )
+
+            val receiveResult = runCatching {
+                repository.branchTransferManager.confirmTransferReceived("requested", "Receiver")
+            }
+            val cancelResult = runCatching {
+                repository.branchTransferManager.rejectOrCancelTransfer("rejected", "Manager")
+            }
+
+            assertTrue("Unvalidated requests cannot be received", receiveResult.isFailure)
+            assertTrue("Rejected requests cannot restore source stock again", cancelResult.isFailure)
+            assertEquals(7.0, db.productDao().getProductById("request-stock")!!.quantityInStock, 0.001)
+            assertEquals("REQUESTED", db.stockTransferDao().getTransferById("requested")!!.status)
+            assertEquals("REJECTED", db.stockTransferDao().getTransferById("rejected")!!.status)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `stock transfer ledger records cannot be deleted`() = runBlocking {
+        val db = inMemoryDatabase()
+        try {
+            val repository = BeBossRepository(db)
+            val transfer = StockTransfer(
+                id = "immutable-transfer",
+                productId = "rice",
+                productName = "Rice",
+                fromBranchId = "source",
+                fromBranchName = "Source",
+                toBranchId = "destination",
+                toBranchName = "Destination",
+                quantity = 2.0,
+                status = "COMPLETED"
+            )
+            db.stockTransferDao().insertTransfer(transfer)
+
+            val result = runCatching { repository.branchTransferManager.deleteStockTransfer(transfer.id) }
+
+            assertTrue("Deleting transfer evidence must be rejected", result.isFailure)
+            assertEquals(transfer.id, db.stockTransferDao().getTransferById(transfer.id)!!.id)
+        } finally {
+            db.close()
+        }
+    }
+
 }

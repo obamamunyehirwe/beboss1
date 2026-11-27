@@ -143,7 +143,6 @@ fun BranchManagementDialog(
     var isAddingNewBranch by remember { mutableStateOf(false) }
     var branchToDelete by remember { mutableStateOf<Branch?>(null) }
     var isCreatingTransfer by remember { mutableStateOf(false) }
-    var transferToDelete by remember { mutableStateOf<StockTransfer?>(null) }
     var transferToCancel by remember { mutableStateOf<StockTransfer?>(null) }
     var cancelTransferReason by remember { mutableStateOf("Cancelled at destination — returning to source stock") }
 
@@ -692,12 +691,12 @@ fun BranchManagementDialog(
                                                             )
                                                         }
                                                         Spacer(modifier = Modifier.width(4.dp))
-                                                        IconButton(
-                                                            onClick = { transferToDelete = transfer },
-                                                            modifier = Modifier.size(32.dp)
-                                                        ) {
-                                                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = LossRed, modifier = Modifier.size(16.dp))
-                                                        }
+                                                        Text(
+                                                            "Ledger record",
+                                                            fontSize = 9.sp,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(horizontal = 4.dp)
+                                                        )
                                                     }
                                                 }
 
@@ -938,31 +937,6 @@ fun BranchManagementDialog(
             dismissButton = {
                 OutlinedButton(onClick = { branchToDelete = null }) {
                     Text(if (language == AppLanguage.KINYARWANDA) "Kureka" else "Cancel")
-                }
-            }
-        )
-    }
-
-    // Delete Transfer Confirmation Dialog
-    transferToDelete?.let { deleteTransferTarget ->
-        AlertDialog(
-            onDismissRequest = { transferToDelete = null },
-            title = { Text(if (language == AppLanguage.KINYARWANDA) "Gusiba Transfer" else "Delete Transfer Record", fontWeight = FontWeight.Bold) },
-            text = { Text("Are you sure you want to remove transfer '${deleteTransferTarget.transferNumber}'?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onDeleteStockTransfer(deleteTransferTarget.id)
-                        transferToDelete = null
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = LossRed)
-                ) {
-                    Text("Delete", color = Color.White)
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { transferToDelete = null }) {
-                    Text("Cancel")
                 }
             }
         )

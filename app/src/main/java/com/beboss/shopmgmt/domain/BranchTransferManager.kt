@@ -9,6 +9,7 @@ import com.beboss.shopmgmt.data.dao.SyncQueueDao
 import com.beboss.shopmgmt.data.dao.SyncTombstoneDao
 import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.data.model.Branch
+import com.beboss.shopmgmt.data.model.LocalAuditLog
 import com.beboss.shopmgmt.data.model.StockTransfer
 import com.beboss.shopmgmt.data.model.SyncQueueItem
 import com.beboss.shopmgmt.data.model.SyncTombstone
@@ -52,6 +53,29 @@ class BranchTransferManager(
     private val nodeId: String
 ) {
     private val TAG = "BranchTransferManager"
+
+    /**
+     * Persist local accountability in the same Room transaction as the business mutation.
+     * Cloud audit events are still written by the trusted server when the queued event syncs.
+     */
+    private suspend fun appendLocalAudit(
+        action: String,
+        actorName: String,
+        actorRole: String,
+        targetId: String,
+        details: String
+    ) {
+        database?.localAuditLogDao()?.insertLog(
+            LocalAuditLog(
+                actorName = actorName.trim().ifBlank { "SYSTEM" }.take(80),
+                actorRole = actorRole.trim().ifBlank { "SYSTEM" }.take(40),
+                action = action.take(80),
+                targetId = targetId.take(120),
+                details = details.take(1_000),
+                createdAt = ClockGuard.effectiveNowMs()
+            )
+        )
+    }
 
     val allBranches: Flow<List<Branch>> = branchDao.getAllActiveBranches()
     val allStockTransfers: Flow<List<StockTransfer>> = stockTransferDao.getAllTransfers()
@@ -105,27 +129,84 @@ class BranchTransferManager(
         enqueueBranchSync(versioned, "UPDATE")
     }
 
-    suspend fun deleteBranch(branchId: String) = withContext(Dispatchers.IO) {
+    suspend fun deleteBranch(
+        branchId: String,
+        actorName: String = "System",
+        actorRole: String = "SYSTEM"
+    ) = withContext(Dispatchers.IO) {
         val now = ClockGuard.effectiveNowMs()
-        branchDao.softDeleteBranch(branchId, now)
-        syncTombstoneDao?.insertTombstone(
-            SyncTombstone(
-                id = SyncTombstone.keyFor("branches", branchId),
-                tableName = "branches",
-                recordId = branchId,
-                deletedAt = now,
+        val deactivateBranch: suspend () -> Unit = {
+            val branch = branchDao.getBranchById(branchId)
+                ?: throw IllegalArgumentException("Branch not found: $branchId")
+            require(branch.isActive) { "This branch is already archived." }
+            require(!branch.isMainBranch) {
+                "The main retail/POS branch cannot be deleted. Assign another retail store as main first."
+            }
+
+            val assignedUsers = database?.userDao()?.getAllActiveUsersList().orEmpty()
+                .filter { it.assignedBranchId == branchId }
+            val assignedDevices = database?.shopDeviceDao()?.getAllDevicesList().orEmpty()
+                .filter { it.isActive && it.branchId == branchId }
+            val branchProducts = productDao.getAllProductsList()
+                .filter { !it.isDeleted && it.branchId == branchId }
+            val openTransferStatuses = setOf("REQUESTED", "PENDING", "IN_TRANSIT", "RECEIPT_REQUESTED", "CANCEL_REQUESTED")
+            val openTransfers = stockTransferDao.getTransfersByBranchList(branchId)
+                .filter { it.status.uppercase(Locale.ROOT) in openTransferStatuses }
+
+            require(assignedUsers.isEmpty()) {
+                "Cannot archive this branch while active staff are assigned. Reassign or deactivate the staff first."
+            }
+            require(assignedDevices.isEmpty()) {
+                "Cannot archive this branch while active POS devices are assigned. Move or deactivate those devices first."
+            }
+            require(branchProducts.isEmpty()) {
+                "Cannot archive this branch while active products remain assigned. Move or archive the products first."
+            }
+            require(openTransfers.isEmpty()) {
+                "Cannot archive this branch while stock transfers are unresolved. Complete or cancel them first."
+            }
+
+            val archived = branch.copy(
+                isActive = false,
+                updatedAt = now,
                 hlcTimestamp = HlcClock.tick(now),
-                deletedByDeviceId = nodeId
+                lastModifiedDeviceId = nodeId
             )
-        )
-        syncQueueDao.enqueue(
-            SyncQueueItem(
-                tableName = "branches",
-                recordId = branchId,
-                operation = "DELETE",
-                payloadJson = JSONObject().put("id", branchId).toString()
+            branchDao.insertBranch(archived)
+            syncTombstoneDao?.insertTombstone(
+                SyncTombstone(
+                    id = SyncTombstone.keyFor("branches", branchId),
+                    tableName = "branches",
+                    recordId = branchId,
+                    deletedAt = now,
+                    hlcTimestamp = archived.hlcTimestamp,
+                    deletedByDeviceId = nodeId
+                )
             )
-        )
+            syncQueueDao.enqueue(
+                SyncQueueItem(
+                    tableName = "branches",
+                    recordId = branchId,
+                    operation = "DELETE",
+                    payloadJson = JSONObject().put("id", branchId).put("updatedAt", now)
+                        .put("hlcTimestamp", archived.hlcTimestamp)
+                        .put("lastModifiedDeviceId", nodeId).toString()
+                )
+            )
+            appendLocalAudit(
+                action = "BRANCH_ARCHIVED",
+                actorName = actorName,
+                actorRole = actorRole,
+                targetId = branchId,
+                details = "${branch.name} (${branch.locationType}) archived after staff, device, inventory and open-transfer checks."
+            )
+        }
+
+        if (database != null) {
+            DbWriteMutex.withLock { database.withTransaction { deactivateBranch() } }
+        } else {
+            DbWriteMutex.withLock { deactivateBranch() }
+        }
     }
 
     suspend fun ensureDefaultBranches(): List<Branch> = withContext(Dispatchers.IO) {
@@ -184,20 +265,9 @@ class BranchTransferManager(
         if (!quantity.isFinite() || quantity <= 0.0) {
             throw IllegalArgumentException("Transfer quantity must be a finite number greater than zero")
         }
-        val sourceBranch = branchDao.getBranchById(fromBranchId)
-            ?: throw IllegalArgumentException("The source location no longer exists.")
-        val destinationBranch = branchDao.getBranchById(toBranchId)
-            ?: throw IllegalArgumentException("The destination location no longer exists.")
-        if (!sourceBranch.isActive || !destinationBranch.isActive) {
-            throw IllegalArgumentException("Both source and destination locations must be active.")
-        }
-        if (sourceBranch.operationalStatus.uppercase(Locale.ROOT) != "OPEN" ||
-            destinationBranch.operationalStatus.uppercase(Locale.ROOT) != "OPEN") {
-            throw IllegalArgumentException("Both source and destination locations must be OPEN before stock can move.")
-        }
-        val verifiedFromBranchName = sourceBranch.name
-        val verifiedToBranchName = destinationBranch.name
         val safeQty = quantity
+        var verifiedFromBranchName = ""
+        var verifiedToBranchName = ""
         val transferNumber = transferNumberOverride?.trim()?.takeIf { it.isNotBlank() }
             ?: ("TRF-" +
                 SimpleDateFormat("yyMMdd-HHmmss", Locale.getDefault()).format(Date(now)) +
@@ -211,6 +281,22 @@ class BranchTransferManager(
         // Read the source product only after entering the serialized transaction.
         // Two concurrent transfers can no longer both validate and deduct the same stock.
         val createTransfer: suspend () -> Unit = {
+            // Revalidate branches inside the same serialized transaction as the stock
+            // deduction. A concurrent archive/closure must never race a transfer.
+            val sourceBranch = branchDao.getBranchById(fromBranchId)
+                ?: throw IllegalArgumentException("The source location no longer exists.")
+            val destinationBranch = branchDao.getBranchById(toBranchId)
+                ?: throw IllegalArgumentException("The destination location no longer exists.")
+            if (!sourceBranch.isActive || !destinationBranch.isActive) {
+                throw IllegalArgumentException("Both source and destination locations must be active.")
+            }
+            if (sourceBranch.operationalStatus.uppercase(Locale.ROOT) != "OPEN" ||
+                destinationBranch.operationalStatus.uppercase(Locale.ROOT) != "OPEN") {
+                throw IllegalArgumentException("Both source and destination locations must be OPEN before stock can move.")
+            }
+            verifiedFromBranchName = sourceBranch.name
+            verifiedToBranchName = destinationBranch.name
+
             val product = productDao.getProductById(productId)
                 ?: throw IllegalArgumentException("Product not found: $productId")
             if (product.isDeleted) {
@@ -257,6 +343,13 @@ class BranchTransferManager(
                 )
             )
             stockTransferDao.insertTransfer(transfer)
+            appendLocalAudit(
+                action = "STOCK_TRANSFER_CREATED",
+                actorName = transferredBy,
+                actorRole = "STAFF",
+                targetId = transfer.id,
+                details = "${transfer.transferNumber} · ${transfer.productName} · ${transfer.quantity} ${transfer.unit} · ${transfer.fromBranchName} -> ${transfer.toBranchName} · ${transfer.costValueRwf} FRw"
+            )
             productName = product.name
             productUnit = product.unit
         }
@@ -326,7 +419,16 @@ class BranchTransferManager(
             )
             if (database != null) {
                 DbWriteMutex.withLock {
-                    database.withTransaction { stockTransferDao.insertTransfer(rejected) }
+                    database.withTransaction {
+                        stockTransferDao.insertTransfer(rejected)
+                        appendLocalAudit(
+                            action = "STOCK_TRANSFER_REJECTED",
+                            actorName = rejected.transferredBy,
+                            actorRole = "SYSTEM",
+                            targetId = rejected.id,
+                            details = "${rejected.transferNumber} · ${reason}"
+                        )
+                    }
                 }
             } else {
                 DbWriteMutex.withLock { stockTransferDao.insertTransfer(rejected) }
@@ -387,8 +489,10 @@ class BranchTransferManager(
                 ?: throw IllegalArgumentException("Transfer not found: $transferId")
             when (current.status) {
                 "COMPLETED" -> completedTransfer = current
-                "CANCELLED" -> throw IllegalStateException("Cancelled transfers cannot be confirmed as received.")
-                else -> {
+                "CANCELLED", "REJECTED" -> throw IllegalStateException(
+                    "Cancelled or rejected transfers cannot be confirmed as received."
+                )
+                "IN_TRANSIT", "PENDING" -> {
                     // Conditional status transition is the idempotency boundary. The
                     // transition and inventory credit commit or roll back together.
                     val completionHlc = HlcClock.tick(now)
@@ -463,8 +567,18 @@ class BranchTransferManager(
                             lastModifiedDeviceId = nodeId
                         )
                         newlyCompleted = true
+                        appendLocalAudit(
+                            action = "STOCK_TRANSFER_RECEIVED",
+                            actorName = receivedBy,
+                            actorRole = "STAFF",
+                            targetId = transferId,
+                            details = "${current.transferNumber} · ${current.quantity} ${current.unit} · received at ${current.toBranchName}"
+                        )
                     }
                 }
+                else -> throw IllegalStateException(
+                    "Only IN_TRANSIT or PENDING transfers can be received. Current status: ${current.status}."
+                )
             }
         }
 
@@ -520,7 +634,8 @@ class BranchTransferManager(
                 "COMPLETED" -> throw IllegalStateException(
                     "Completed transfers cannot be cancelled. Issue a return transfer instead."
                 )
-                else -> {
+                "REJECTED" -> throw IllegalStateException("Rejected transfers cannot be cancelled or have stock restored.")
+                "IN_TRANSIT", "PENDING" -> {
                     val restoredProduct = productDao.getProductById(current.productId)
                         ?: throw IllegalStateException("The source product is missing. Restore it before cancelling this transfer.")
                     val cleanReason = reason.trim().ifBlank { "Returned to source branch" }
@@ -564,8 +679,18 @@ class BranchTransferManager(
                             lastModifiedDeviceId = nodeId
                         )
                         newlyCancelled = true
+                        appendLocalAudit(
+                            action = "STOCK_TRANSFER_CANCELLED",
+                            actorName = actor,
+                            actorRole = "STAFF",
+                            targetId = transferId,
+                            details = "${current.transferNumber} · ${current.quantity} ${current.unit} · returned to ${current.fromBranchName} · ${cleanReason}"
+                        )
                     }
                 }
+                else -> throw IllegalStateException(
+                    "Only IN_TRANSIT or PENDING transfers can be cancelled. Current status: ${current.status}."
+                )
             }
         }
 
@@ -598,25 +723,18 @@ class BranchTransferManager(
         updated
     }
 
-    suspend fun deleteStockTransfer(transferId: String) = withContext(Dispatchers.IO) {
-        val now = ClockGuard.effectiveNowMs()
-        stockTransferDao.deleteTransfer(transferId)
-        syncTombstoneDao?.insertTombstone(
-            SyncTombstone(
-                id = SyncTombstone.keyFor("stock_transfers", transferId),
-                tableName = "stock_transfers",
-                recordId = transferId,
-                deletedAt = now,
-                hlcTimestamp = HlcClock.tick(now)
-            )
-        )
-        syncQueueDao.enqueue(
-            SyncQueueItem(
-                tableName = "stock_transfers",
-                recordId = transferId,
-                operation = "DELETE",
-                payloadJson = JSONObject().put("id", transferId).toString()
-            )
+    /**
+     * Transfer records are inventory ledger evidence. Removing one would erase the
+     * reconciliation trail and can resurrect or duplicate stock after synchronization.
+     * Keep this legacy API fail-closed; use an audited cancellation or return transfer.
+     */
+    @Deprecated("Stock-transfer ledger records are immutable; use cancellation or a return transfer.")
+    suspend fun deleteStockTransfer(transferId: String): Nothing = withContext(Dispatchers.IO) {
+        val existing = stockTransferDao.getTransferById(transferId)
+            ?: throw IllegalArgumentException("Transfer not found: $transferId")
+        throw IllegalStateException(
+            "Transfer ${existing.transferNumber} is an immutable inventory audit record. " +
+                "Use the cancellation workflow for an in-transit transfer or create a return transfer."
         )
     }
 
