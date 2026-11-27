@@ -992,14 +992,24 @@ Deno.serve(async (req: Request) => {
       }
 
       const policy = await loadShopApprovalPolicy(admin, text(shop.id));
-      const snapshotResult = await latestVerifiedSnapshot(admin, text(shop.id), config.hmacSecret);
-      if (!snapshotResult.snapshot) {
-        return json(409, { ok: false, message: "A verified shop inventory snapshot is required before Android stock transfers can be accepted. Sync the primary terminal and retry." });
+      const existingResult = await admin.from("shop_stock_transfers")
+        .select("id,transfer_number,product_id,from_branch_id,to_branch_id,quantity,cost_value_rwf,status,created_at,updated_at")
+        .eq("shop_sync_key", text(shop.id)).in("id", ids);
+      if (existingResult.error) throw new Error("Could not load existing transfer ledger records.");
+      const existingById = new Map<string, Row>(
+        (existingResult.data ?? []).map((row) => [text(row.id), row])
+      );
+      const newTransfers = requested.filter((row) => !existingById.has(text(row.id).trim()));
+      const snapshotResult = newTransfers.length
+        ? await latestVerifiedSnapshot(admin, text(shop.id), config.hmacSecret)
+        : { snapshot: null };
+      if (newTransfers.length && !snapshotResult.snapshot) {
+        return json(409, { ok: false, message: "A verified shop inventory snapshot is required before new Android stock transfers can be accepted. Sync the primary terminal and retry." });
       }
       const productById = new Map<string, Row>(
-        (snapshotResult.snapshot.products ?? []).map((row) => [text(row.id), row])
+        (snapshotResult.snapshot?.products ?? []).map((row) => [text(row.id), row])
       );
-      const branchIds = [...new Set(requested.flatMap((row) => [
+      const newBranchIds = [...new Set(newTransfers.flatMap((row) => [
         text(row.from_branch_id).trim(), text(row.to_branch_id).trim()
       ]).filter(Boolean))];
       const assignedBranchId = transferWriterBranchId;
@@ -1008,69 +1018,164 @@ Deno.serve(async (req: Request) => {
             ![assignedBranchId].includes(text(row.to_branch_id).trim()))) {
         return json(403, { ok: false, message: "A manager terminal may synchronize only transfers involving its assigned branch." });
       }
-      const branchResult = branchIds.length
+      const branchResult = newBranchIds.length
         ? await admin.from("shop_branches").select("id,is_active,operational_status")
-            .eq("shop_sync_key", text(shop.id)).in("id", branchIds).limit(100)
+            .eq("shop_sync_key", text(shop.id)).in("id", newBranchIds).limit(100)
         : { data: [], error: null };
-      if (branchResult.error) throw new Error("Could not validate source and destination branches: " + branchResult.error.message);
+      if (branchResult.error) throw new Error("Could not validate new transfer branches: " + branchResult.error.message);
       const branchById = new Map<string, Row>((branchResult.data ?? []).map((row) => [text(row.id), row]));
 
       const rowsToSave: Row[] = [];
       const newApprovalAudit: Row[] = [];
       const verifiedPriorApprovalIds = new Set<string>();
+      const verifiedPortalApprovalIds = new Set<string>();
+      const statusChanges: Array<{ id: string; from: string; to: string }> = [];
+      const allowedExistingTransitions: Record<string, string[]> = {
+        REQUESTED: ["IN_TRANSIT", "REJECTED"],
+        RECEIPT_REQUESTED: ["COMPLETED"],
+        CANCEL_REQUESTED: ["CANCELLED"],
+        IN_TRANSIT: ["COMPLETED", "CANCELLED"],
+        PENDING: ["COMPLETED", "CANCELLED"],
+        COMPLETED: [],
+        CANCELLED: [],
+        REJECTED: []
+      };
+      const allowedNewStatuses = new Set(["IN_TRANSIT", "PENDING", "COMPLETED", "CANCELLED", "REJECTED"]);
+
       for (const transfer of requested) {
         const transferId = text(transfer.id).trim();
         const productId = text(transfer.product_id).trim();
         const fromBranchId = text(transfer.from_branch_id).trim();
         const toBranchId = text(transfer.to_branch_id).trim();
         const quantity = number(transfer.quantity);
-        if (!transferId || !productId || !fromBranchId || !toBranchId ||
+        const transferNumber = text(transfer.transfer_number).trim();
+        const incomingStatus = (text(transfer.status).trim() || "IN_TRANSIT").toUpperCase();
+        if (!transferId || !productId || !fromBranchId || !toBranchId || !transferNumber ||
             fromBranchId === toBranchId || !Number.isFinite(quantity) || quantity <= 0 || quantity > 1000000000) {
-          return json(400, { ok: false, message: "A transfer contains invalid product, branch or quantity data." });
-        }
-        const product = productById.get(productId);
-        const fromBranch = branchById.get(fromBranchId);
-        const toBranch = branchById.get(toBranchId);
-        if (!product || product.isDeleted === true || !fromBranch?.is_active || !toBranch?.is_active ||
-            text(fromBranch.operational_status).toUpperCase() !== "OPEN" ||
-            text(toBranch.operational_status).toUpperCase() !== "OPEN") {
-          return json(409, { ok: false, message: "A transfer references a deleted product or inactive/closed branch." });
-        }
-        if (text(product.branchId) && text(product.branchId) !== fromBranchId) {
-          return json(409, { ok: false, message: "The selected product is not assigned to the source branch in the latest verified inventory snapshot." });
-        }
-        const cost = Math.max(0, Math.round(quantity * number(product.costPrice)));
-        if (number(transfer.cost_value_rwf) !== cost) {
-          return json(409, { ok: false, message: "The transfer cost does not match the latest verified product cost. Refresh inventory and retry." });
+          return json(400, { ok: false, message: "A transfer contains invalid product, branch, quantity or transfer-number data." });
         }
 
-        const previouslyApproved = await admin.from("cloud_sync_events").select("detail")
-          .eq("shop_sync_key", text(shop.id)).eq("entity", "STOCK_TRANSFER")
-          .eq("action", "ANDROID_OWNER_APPROVED")
-          .like("detail", '%"recordId":"' + transferId + '"%')
-          .order("created_at", { ascending: false }).limit(1).maybeSingle();
-        if (previouslyApproved.error) throw new Error("Could not verify prior transfer approval evidence.");
+        const existing = existingById.get(transferId);
+        let cost = 0;
+        let approvalRequired = false;
         let priorApprovalValid = false;
-        if (previouslyApproved.data?.detail) {
-          try {
-            const previousProof = JSON.parse(text(previouslyApproved.data.detail)) as Row;
-            priorApprovalValid = text(previousProof.recordId) === transferId &&
-              number(previousProof.policyVersion) === policy.version &&
-              number(previousProof.transferCostRwf) === cost &&
-              text(previousProof.productId) === productId &&
-              text(previousProof.fromBranchId) === fromBranchId &&
-              text(previousProof.toBranchId) === toBranchId &&
-              normalizeTransferQuantity(previousProof.quantity) === normalizeTransferQuantity(transfer.quantity);
-          } catch { priorApprovalValid = false; }
+        let portalApprovalValid = false;
+
+        if (existing) {
+          // Existing transfer facts are immutable. Only the server-command lifecycle
+          // may advance; old ledger rows are not revalidated against today's open/active
+          // branch and product catalogue state.
+          const immutableMatch =
+            text(existing.product_id) === productId &&
+            text(existing.from_branch_id) === fromBranchId &&
+            text(existing.to_branch_id) === toBranchId &&
+            number(existing.quantity) === quantity &&
+            number(existing.cost_value_rwf) === number(transfer.cost_value_rwf) &&
+            (!text(existing.transfer_number) || text(existing.transfer_number) === transferNumber);
+          if (!immutableMatch) {
+            return json(409, { ok: false, message: "An existing transfer's product, branches, quantity, cost or transfer number was modified. The cloud ledger remains unchanged." });
+          }
+          cost = number(existing.cost_value_rwf);
+          const previousStatus = text(existing.status).toUpperCase();
+          if (incomingStatus !== previousStatus &&
+              !(allowedExistingTransitions[previousStatus] ?? []).includes(incomingStatus)) {
+            return json(409, { ok: false, message: "Invalid transfer lifecycle transition from " + previousStatus + " to " + incomingStatus + "." });
+          }
+          if (incomingStatus !== previousStatus) {
+            if (text(currentDevice.role).toUpperCase() === "MANAGER") {
+              if (incomingStatus === "COMPLETED" && toBranchId !== assignedBranchId) {
+                return json(403, { ok: false, message: "Only a manager assigned to the destination branch can confirm receipt." });
+              }
+              if (incomingStatus === "CANCELLED" && fromBranchId !== assignedBranchId) {
+                return json(403, { ok: false, message: "Only a manager assigned to the source branch can cancel a transfer." });
+              }
+            }
+            statusChanges.push({ id: transferId, from: previousStatus, to: incomingStatus });
+          }
+
+          if (incomingStatus === "IN_TRANSIT" && previousStatus === "REQUESTED") {
+            const portalEvent = await admin.from("cloud_sync_events").select("detail,created_at")
+              .eq("shop_sync_key", text(shop.id)).eq("entity", "STOCK_TRANSFER")
+              .eq("action", "REQUESTED_OWNER_APPROVED")
+              .like("detail", '%"recordId":"' + transferId + '"%')
+              .order("created_at", { ascending: false }).limit(1).maybeSingle();
+            if (portalEvent.error) throw new Error("Could not verify the original owner approval for this web transfer request.");
+            if (portalEvent.data?.detail) {
+              try {
+                const approval = JSON.parse(text(portalEvent.data.detail)) as Row;
+                portalApprovalValid =
+                  text(approval.recordId) === transferId &&
+                  text(approval.productId) === productId &&
+                  text(approval.fromBranchId) === fromBranchId &&
+                  text(approval.toBranchId) === toBranchId &&
+                  number(approval.quantity) === quantity &&
+                  number(approval.transferCostRwf) === cost &&
+                  approval.approvalRequired === true &&
+                  number(approval.policyVersion) >= 1 &&
+                  text(approval.reason).trim().length >= 8 &&
+                  Boolean(text(approval.approverUsername)) &&
+                  Boolean(text(approval.approvalDeviceId));
+              } catch { portalApprovalValid = false; }
+            }
+            const currentlyHighValue = policy.transferApprovalThresholdRwf > 0 &&
+              cost >= policy.transferApprovalThresholdRwf;
+            if (currentlyHighValue && !portalApprovalValid) {
+              return json(403, { ok: false, message: "This owner-created transfer request has no matching server-recorded approval for its current value. Keep it pending and request fresh owner approval." });
+            }
+            if (portalApprovalValid) verifiedPortalApprovalIds.add(transferId);
+          }
+
+          const previousAndroidApproval = await admin.from("cloud_sync_events").select("detail")
+            .eq("shop_sync_key", text(shop.id)).eq("entity", "STOCK_TRANSFER")
+            .eq("action", "ANDROID_OWNER_APPROVED")
+            .like("detail", '%"recordId":"' + transferId + '"%')
+            .order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (previousAndroidApproval.error) throw new Error("Could not verify prior transfer approval evidence.");
+          if (previousAndroidApproval.data?.detail) {
+            try {
+              const approval = JSON.parse(text(previousAndroidApproval.data.detail)) as Row;
+              priorApprovalValid =
+                text(approval.recordId) === transferId &&
+                text(approval.productId) === productId &&
+                text(approval.fromBranchId) === fromBranchId &&
+                text(approval.toBranchId) === toBranchId &&
+                number(approval.quantity) === quantity &&
+                number(approval.transferCostRwf) === cost &&
+                number(approval.policyVersion) >= 1 &&
+                text(approval.reason).trim().length >= 8 &&
+                Boolean(text(approval.signature));
+            } catch { priorApprovalValid = false; }
+          }
+          if (priorApprovalValid) verifiedPriorApprovalIds.add(transferId);
+        } else {
+          if (!allowedNewStatuses.has(incomingStatus)) {
+            return json(409, { ok: false, message: "A new Android transfer cannot be uploaded with server-command status " + incomingStatus + "." });
+          }
+          const product = productById.get(productId);
+          const fromBranch = branchById.get(fromBranchId);
+          const toBranch = branchById.get(toBranchId);
+          if (!product || product.isDeleted === true || !fromBranch?.is_active || !toBranch?.is_active ||
+              text(fromBranch.operational_status).toUpperCase() !== "OPEN" ||
+              text(toBranch.operational_status).toUpperCase() !== "OPEN") {
+            return json(409, { ok: false, message: "A new transfer references a deleted product or inactive/closed branch." });
+          }
+          if (text(product.branchId) && text(product.branchId) !== fromBranchId) {
+            return json(409, { ok: false, message: "The selected product is not assigned to the source branch in the latest verified inventory snapshot." });
+          }
+          cost = Math.max(0, Math.round(quantity * number(product.costPrice)));
+          if (number(transfer.cost_value_rwf) !== cost) {
+            return json(409, { ok: false, message: "The transfer cost does not match the latest verified product cost. Refresh inventory and retry." });
+          }
+          approvalRequired = policy.transferApprovalThresholdRwf > 0 &&
+            cost >= policy.transferApprovalThresholdRwf;
         }
-        const approvalRequired = policy.transferApprovalThresholdRwf > 0 &&
-          cost >= policy.transferApprovalThresholdRwf;
-        const proof = transfer.approval_proof && typeof transfer.approval_proof === "object"
-          ? transfer.approval_proof as Row : {};
-        if (approvalRequired && priorApprovalValid) {
-          verifiedPriorApprovalIds.add(transferId);
-        }
-        if (approvalRequired && !priorApprovalValid) {
+
+        // A record already in the cloud was originally committed under the authority
+        // of its creating workflow. Existing lifecycle updates do not need new approval.
+        // A new offline record above today's threshold must have a fresh signed proof.
+        if (!existing && approvalRequired) {
+          const proof = transfer.approval_proof && typeof transfer.approval_proof === "object"
+            ? transfer.approval_proof as Row : {};
           const reason = text(proof.reason).trim();
           const actorUserId = text(proof.actor_user_id).trim();
           const approvalDeviceId = text(proof.device_id).trim();
@@ -1082,7 +1187,7 @@ Deno.serve(async (req: Request) => {
               signatureText.length < 80 || proofPolicyVersion !== policy.version ||
               signedAt <= 0 || signedAt > Date.now() + 5 * 60 * 1000 ||
               Date.now() - signedAt > 90 * 24 * 60 * 60 * 1000) {
-            return json(403, { ok: false, message: "This transfer meets the current owner-approval threshold but has no valid, recent owner approval evidence. Keep it pending and request owner approval." });
+            return json(403, { ok: false, message: "This new transfer meets the current owner-approval threshold but has no valid, recent owner approval evidence. Keep it pending and request owner approval." });
           }
           const approvalDeviceResult = await admin.from("shop_devices")
             .select("id,device_id,is_active,is_owner_primary,assigned_user_id,role")
@@ -1155,7 +1260,7 @@ Deno.serve(async (req: Request) => {
           id: transferId,
           shop_sync_key: text(shop.id),
           shop_name: text(shop.shop_name),
-          transfer_number: text(transfer.transfer_number),
+          transfer_number: transferNumber,
           product_id: productId,
           product_name: text(transfer.product_name),
           from_branch_id: fromBranchId,
@@ -1166,20 +1271,23 @@ Deno.serve(async (req: Request) => {
           unit: text(transfer.unit) || "pcs",
           cost_value_rwf: cost,
           transfer_date: number(transfer.transfer_date) || Date.now(),
-          status: text(transfer.status).toUpperCase() || "IN_TRANSIT",
+          status: incomingStatus,
           notes: text(transfer.notes).slice(0, 1000),
           transferred_by: text(transfer.transferred_by).slice(0, 120),
           received_by: text(transfer.received_by).slice(0, 120),
           received_at: number(transfer.received_at),
           synced: true,
-          created_at: number(transfer.created_at) || Date.now(),
-          updated_at: Math.max(number(transfer.updated_at), number(transfer.created_at)),
+          created_at: number(existing?.created_at) || number(transfer.created_at) || Date.now(),
+          updated_at: Math.max(number(transfer.updated_at), number(existing?.updated_at), number(existing?.created_at), number(transfer.created_at)),
           hlc_timestamp: number(transfer.hlc_timestamp),
           last_modified_device_id: writerDeviceId
         });
       }
 
-      const upload = await admin.from("shop_stock_transfers").upsert(rowsToSave, { onConflict: "id" });
+      if (rowsToSave.length > 0) {
+        const upload = await admin.from("shop_stock_transfers").upsert(rowsToSave, { onConflict: "id" });
+        if (upload.error) throw new Error("The verified Android transfers could not be committed: " + upload.error.message);
+      }
       if (upload.error) throw new Error("The verified Android transfers could not be committed: " + upload.error.message);
 
       const existingSyncEvents = await admin.from("cloud_sync_events").select("detail")
