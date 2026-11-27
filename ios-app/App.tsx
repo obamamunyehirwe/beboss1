@@ -55,6 +55,8 @@ function AppRoot(): React.JSX.Element {
   const [customerChoice, setCustomerChoice] = useState('');
   const [discount, setDiscount] = useState('0');
   const [paid, setPaid] = useState('');
+  const [splitCash, setSplitCash] = useState('');
+  const [splitMomo, setSplitMomo] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [receiptNumber, setReceiptNumber] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -257,11 +259,21 @@ function AppRoot(): React.JSX.Element {
 
   const finishCheckout = async () => {
     const discountAmount = Number(discount || 0);
-    const amountPaid = paymentMethod === 'CREDIT_DEBT' ? 0 : Number(paid || checkoutTotal);
-    if (!Number.isFinite(discountAmount) || !Number.isFinite(amountPaid)) { setError('Enter valid discount and payment amounts.'); return; }
+    const splitCashAmount = Number(splitCash || 0);
+    const splitMomoAmount = Number(splitMomo || 0);
+    const amountPaid = paymentMethod === 'CREDIT_DEBT' ? 0
+      : paymentMethod === 'SPLIT' ? splitCashAmount + splitMomoAmount
+      : Number(paid || checkoutTotal);
+    if (!Number.isFinite(discountAmount) || !Number.isFinite(amountPaid) ||
+        (paymentMethod === 'SPLIT' && (!Number.isFinite(splitCashAmount) || !Number.isFinite(splitMomoAmount)))) {
+      setError('Enter valid discount and payment amounts.'); return;
+    }
     const input: CheckoutInput = {
       items: cart, customerId: customerChoice || null, discountAmount, amountPaid,
       paymentMethod: paymentMethod === 'CREDIT_DEBT' ? 'DEBT' : paymentMethod,
+      paymentBreakdown: paymentMethod === 'SPLIT'
+        ? [{ method: 'CASH', amount: splitCashAmount }, { method: 'MOMO', amount: splitMomoAmount }]
+        : undefined,
       notes: '', branchId: actor?.branchId || snapshot?.branches[0]?.id || 'main_branch'
     };
     const ok = await run(async () => {
@@ -271,6 +283,8 @@ function AppRoot(): React.JSX.Element {
       setCustomerChoice('');
       setDiscount('0');
       setPaid('');
+      setSplitCash('');
+      setSplitMomo('');
       setPaymentMethod('CASH');
       setModal(null);
       Alert.alert('Sale completed', sale.receiptNumber + '\nTotal: ' + money(sale.totalAmount, currency) + '\nPaid: ' + money(sale.amountPaid, currency) + '\nBalance: ' + money(sale.totalAmount - sale.amountPaid, currency));
@@ -973,9 +987,23 @@ function AppRoot(): React.JSX.Element {
                 <Metric label="Subtotal" value={money(cartSubtotal, currency)} />
                 <Field label="Discount" value={discount} onChangeText={setDiscount} keyboardType="decimal-pad" />
                 <SelectChips label="Customer" values={[{ label: 'Walk-in customer', value: '' }, ...(snapshot?.customers || []).map(item => ({ label: item.name, value: item.id }))]} value={customerChoice} onChange={setCustomerChoice} />
-                <SelectChips label="Payment method" values={['CASH', 'MOMO', 'AIRTEL', 'CARD', 'CREDIT_DEBT'].map(value => ({ label: value.replace('_', ' '), value }))} value={paymentMethod} onChange={value => { setPaymentMethod(value); if (value === 'CREDIT_DEBT') setPaid('0'); else setPaid(String(checkoutTotal)); }} />
-                {paymentMethod !== 'CREDIT_DEBT' ? <Field label="Amount paid" value={paid} onChangeText={setPaid} keyboardType="decimal-pad" /> : null}
-                <Metric label="Amount due" value={money(Math.max(0, checkoutTotal - (paymentMethod === 'CREDIT_DEBT' ? 0 : Number(paid || 0))), currency)} tone="amber" />
+                <SelectChips label="Payment method" values={['CASH', 'MOMO', 'AIRTEL', 'CARD', 'SPLIT', 'CREDIT_DEBT'].map(value => ({ label: value.replace('_', ' '), value }))} value={paymentMethod} onChange={value => {
+                  setPaymentMethod(value);
+                  if (value === 'CREDIT_DEBT') setPaid('0');
+                  else if (value === 'SPLIT') {
+                    const half = Math.round(checkoutTotal * 50) / 100;
+                    setSplitCash(String(half));
+                    setSplitMomo(String(Math.round((checkoutTotal - half) * 100) / 100));
+                  } else setPaid(String(checkoutTotal));
+                }} />
+                {paymentMethod === 'SPLIT' ? <>
+                  <Text style={styles.fieldLabel}>Enter each part of the split payment. Both methods are recorded on the receipt.</Text>
+                  <Field label="Cash amount" value={splitCash} onChangeText={setSplitCash} keyboardType="decimal-pad" />
+                  <Field label="Mobile Money amount" value={splitMomo} onChangeText={setSplitMomo} keyboardType="decimal-pad" />
+                  <Metric label="Total received" value={money(Number(splitCash || 0) + Number(splitMomo || 0), currency)} />
+                </> : null}
+                {paymentMethod !== 'CREDIT_DEBT' && paymentMethod !== 'SPLIT' ? <Field label="Amount paid" value={paid} onChangeText={setPaid} keyboardType="decimal-pad" /> : null}
+                <Metric label="Amount due" value={money(Math.max(0, checkoutTotal - (paymentMethod === 'CREDIT_DEBT' ? 0 : paymentMethod === 'SPLIT' ? Number(splitCash || 0) + Number(splitMomo || 0) : Number(paid || 0))), currency)} tone="amber" />
                 <ButtonPrimary title="Confirm and save sale" onPress={finishCheckout} loading={busy} />
                 <Text style={styles.muted}>Checkout re-reads every product from the encrypted database, validates stock and branch ownership, checks credit limits, then writes the receipt, sale lines, stock changes, customer balance and sync outbox in one transaction.</Text>
               </> : null}
@@ -1153,7 +1181,7 @@ function ProductRow({ product, currency, onPress }: { product: Product; currency
 function SaleRow({ sale, currency }: { sale: any; currency: string }): React.JSX.Element {
   return <View style={styles.compactRow}>
     <View style={styles.saleIcon}><Text style={styles.saleGlyph}>↗</Text></View>
-    <View style={{ flex: 1 }}><Text style={styles.rowTitle}>{sale.receiptNumber}</Text><Text style={styles.rowSub}>{sale.customerName} · {sale.paymentMethod}</Text></View>
+    <View style={{ flex: 1 }}><Text style={styles.rowTitle}>{sale.receiptNumber}</Text><Text style={styles.rowSub}>{sale.customerName} · {sale.paymentMethod}</Text>{sale.paymentBreakdown?.length ? <Text style={styles.rowSub}>{sale.paymentBreakdown.map(part => part.method + ' ' + money(part.amount, currency)).join(' + ')}</Text> : null}</View>
     <Text style={styles.price}>{money(sale.totalAmount, currency)}</Text>
   </View>;
 }
