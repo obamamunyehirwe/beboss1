@@ -1834,7 +1834,7 @@ if (action === "submit_payment_proof") {
         row.manager_name = text(manager.data.full_name);
       } else row.manager_name = "";
       const { data: old, error: readError } = await admin.from("shop_branches")
-        .select("id,shop_sync_key,created_at,name,code,manager_user_id,operational_status,is_active,is_main_branch")
+        .select("id,shop_sync_key,created_at,name,code,address,phone,email,notes,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,manager_user_id,operational_status,is_active,is_main_branch")
         .eq("id", row.id).maybeSingle();
       if (readError) throw new Error("Could not validate the branch record.");
       if (old && old.shop_sync_key !== owner.shopId) throw new Error("The branch belongs to another shop.");
@@ -1856,24 +1856,40 @@ if (action === "submit_payment_proof") {
       const { error } = await admin.from("shop_branches").upsert(row, { onConflict: "id" });
       if (error) throw new Error("Could not save the branch: " + error.message);
       const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
-      const auditAction = !old ? "CREATED"
-        : old.is_active === false && row.is_active ? "REACTIVATED"
-        : old.operational_status !== row.operational_status ? "OPERATING_STATUS_CHANGED"
-        : old.manager_user_id !== row.manager_user_id ? "MANAGER_CHANGED"
-        : old.is_main_branch !== row.is_main_branch ? "MAIN_BRANCH_CHANGED"
-        : "PROFILE_UPDATED";
-      let auditLogged = await recordShopAuditEvent(
-        admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
-        actor.actorDeviceId, "BRANCH", auditAction,
-        row.name + " · " + row.code + " · " + row.operational_status + " · Manager: " + (row.manager_name || "unassigned")
-      );
+      const auditEvents: Array<{ action: string; detail: string }> = [];
+      if (!old) {
+        auditEvents.push({ action: "CREATED", detail: row.name + " · " + row.code + " · " + row.operational_status });
+      } else {
+        if (old.is_active === false && row.is_active) {
+          auditEvents.push({ action: "REACTIVATED", detail: row.name + " · " + row.code });
+        } else if (old.is_active !== false && row.is_active === false) {
+          auditEvents.push({ action: "DEACTIVATED", detail: row.name + " · " + row.code });
+        }
+        if (text(old.operational_status) !== text(row.operational_status)) {
+          auditEvents.push({ action: "OPERATING_STATUS_CHANGED", detail: row.name + " · " + text(old.operational_status) + " → " + row.operational_status });
+        }
+        if (text(old.manager_user_id) !== text(row.manager_user_id)) {
+          auditEvents.push({ action: "MANAGER_CHANGED", detail: row.name + " · " + (text(old.manager_user_id) || "unassigned") + " → " + (text(row.manager_user_id) || "unassigned") });
+        }
+        if (old.is_main_branch !== row.is_main_branch) {
+          auditEvents.push({ action: row.is_main_branch ? "MAIN_BRANCH_SET" : "MAIN_BRANCH_UNSET", detail: row.name + " · " + row.code });
+        }
+        const profileFields = ["name","code","address","phone","email","notes","daily_sales_target_rwf","monthly_target_rwf","opening_cash_float"];
+        const profileChanged = profileFields.some((field) => text(old[field]) !== text(row[field]));
+        if (profileChanged) {
+          auditEvents.push({ action: "PROFILE_UPDATED", detail: row.name + " · " + row.code + " · Contact, address, targets, float or branch profile fields changed." });
+        }
+      }
       for (const previous of previousMainBranches) {
-        const removed = await recordShopAuditEvent(
+        auditEvents.push({ action: "MAIN_BRANCH_REMOVED", detail: text(previous.name) + " · " + text(previous.code) + " · Replaced by " + row.name });
+      }
+      let auditLogged = true;
+      for (const event of auditEvents) {
+        const saved = await recordShopAuditEvent(
           admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
-          actor.actorDeviceId, "BRANCH", "MAIN_BRANCH_REMOVED",
-          text(previous.name) + " · " + text(previous.code) + " · Replaced by " + row.name
+          actor.actorDeviceId, "BRANCH", event.action, event.detail
         );
-        auditLogged = auditLogged && removed;
+        auditLogged = auditLogged && saved;
       }
       return json(200, { ok: true, id: row.id, shopUsage, auditLogged });
     }
@@ -1883,7 +1899,7 @@ if (action === "submit_payment_proof") {
       const branchId = text(body.id);
       if (!branchId) throw new Error("A branch ID is required.");
       const { data: branch, error: readError } = await admin.from("shop_branches")
-        .select("id,is_main_branch").eq("id", branchId).eq("shop_sync_key", owner.shopId).maybeSingle();
+        .select("id,name,code,is_main_branch,is_active,operational_status").eq("id", branchId).eq("shop_sync_key", owner.shopId).maybeSingle();
       if (readError || !branch) throw new Error("The branch could not be found in this shop.");
       if (branch.is_main_branch) throw new Error("The main shop branch cannot be deactivated.");
       const [devices, staff] = await Promise.all([
@@ -1903,7 +1919,8 @@ if (action === "submit_payment_proof") {
       const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
       const auditLogged = await recordShopAuditEvent(
         admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
-        actor.actorDeviceId, "BRANCH", "DEACTIVATED", "Branch " + branchId + " was deactivated after assignment checks passed."
+        actor.actorDeviceId, "BRANCH", "DEACTIVATED",
+        text(branch.name) + " · " + text(branch.code) + " · " + text(branch.operational_status) + " → CLOSED; active staff/device checks passed."
       );
       return json(200, { ok: true, shopUsage, auditLogged });
     }
@@ -1921,7 +1938,7 @@ if (action === "submit_payment_proof") {
         throw new Error("Choose a valid branch, period of up to 31 days and non-negative counted cash amount.");
       }
       const { data: branch, error: branchError } = await admin.from("shop_branches")
-        .select("id,name,opening_cash_float,is_active").eq("shop_sync_key", owner.shopId)
+        .select("id,name,opening_cash_float,is_active,is_main_branch").eq("shop_sync_key", owner.shopId)
         .eq("id", branchId).maybeSingle();
       if (branchError || !branch || !branch.is_active) throw new Error("Choose an active branch belonging to this shop.");
       const verified = await latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret);
@@ -1929,7 +1946,7 @@ if (action === "submit_payment_proof") {
       if (!snapshot) throw new Error("No verified shop snapshot is available. Synchronize the owner terminal before reconciling cash.");
       const belongsToBranch = (value: unknown) => {
         const valueId = text(value);
-        return valueId === branchId || (!valueId && branchId === "main_branch");
+        return valueId === branchId || (!valueId && branch.is_main_branch === true);
       };
       const sales = snapshot.sales.filter((sale) => {
         const timestamp = number(sale.saleDate ?? sale.sale_date);
@@ -2024,6 +2041,10 @@ if (action === "submit_payment_proof") {
       if (!productId || !fromId || !toId || fromId === toId || !Number.isFinite(quantity) || quantity <= 0 || quantity > 1000000) {
         throw new Error("Choose a product, two different branches and a positive quantity.");
       }
+      const { data: existing, error: existingError } = await admin.from("shop_stock_transfers")
+        .select("id,status,transfer_number").eq("id", id).eq("shop_sync_key", owner.shopId).maybeSingle();
+      if (existingError) throw new Error("Could not validate the transfer command.");
+      if (existing) return json(200, { ok: true, id, status: existing.status, transferNumber: existing.transfer_number, reused: true });
       const { data: branches, error: branchError } = await admin.from("shop_branches")
         .select("id,name,is_active").eq("shop_sync_key", owner.shopId).in("id", [fromId,toId]);
       if (branchError || !branches || branches.length !== 2 || branches.some((b) => !b.is_active)) {
@@ -2049,10 +2070,6 @@ if (action === "submit_payment_proof") {
       if (approvalRequired && (body.approvalConfirmed !== true || approvalReason.length < 8)) {
         throw new Error("This transfer meets the shop's approval threshold. Confirm the owner approval and enter an explanation of at least 8 characters.");
       }
-      const { data: existing, error: existingError } = await admin.from("shop_stock_transfers")
-        .select("id,status").eq("id", id).eq("shop_sync_key", owner.shopId).maybeSingle();
-      if (existingError) throw new Error("Could not validate the transfer command.");
-      if (existing) return json(200, { ok: true, id, status: existing.status, reused: true });
       const now = Date.now();
       const { error } = await admin.from("shop_stock_transfers").insert({
         id, shop_sync_key: owner.shopId, shop_name: owner.shop.shop_name,
@@ -2082,7 +2099,7 @@ if (action === "submit_payment_proof") {
       const command = text(body.command).toUpperCase();
       if (!id || !["RECEIPT","CANCEL"].includes(command)) throw new Error("A valid stock-transfer command is required.");
       const { data: current, error: readError } = await admin.from("shop_stock_transfers")
-        .select("id,status,shop_sync_key").eq("id", id).eq("shop_sync_key", owner.shopId).maybeSingle();
+        .select("id,status,shop_sync_key,transfer_number,product_name,from_branch_name,to_branch_name,quantity").eq("id", id).eq("shop_sync_key", owner.shopId).maybeSingle();
       if (readError || !current) throw new Error("The stock transfer was not found in this shop.");
       if (current.status !== "IN_TRANSIT") throw new Error("A receipt or cancellation can only be requested while stock is in transit.");
       const now = Date.now();
@@ -2095,7 +2112,7 @@ if (action === "submit_payment_proof") {
       const auditLogged = await recordShopAuditEvent(
         admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
         actor.actorDeviceId, "STOCK_TRANSFER", next,
-        "Transfer " + id + " · " + current.status + " → " + next
+        text(current.transfer_number) + " · " + text(current.product_name) + " · " + text(current.from_branch_name) + " → " + text(current.to_branch_name) + " · " + text(current.quantity) + " · " + current.status + " → " + next
       );
       return json(200, { ok: true, status: updated.status, auditLogged });
     }
