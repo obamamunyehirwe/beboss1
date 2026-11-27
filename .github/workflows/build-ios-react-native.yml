@@ -72,6 +72,10 @@ jobs:
         working-directory: ios-app
         run: bundle exec pod install --project-directory=ios
 
+      - name: Prepare opaque 1024 iPhone app icon
+        working-directory: ios-app
+        run: ./scripts/prepare-ios-assets.sh
+
       - name: Compile and link the actual iPhone application
         working-directory: ios-app
         run: |

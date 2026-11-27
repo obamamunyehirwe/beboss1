@@ -32,6 +32,7 @@ From this directory:
     npm install
     npm run typecheck
     npm test -- --runInBand
+    ./scripts/prepare-ios-assets.sh
     bundle install
     bundle exec pod install --project-directory=ios
     xcodebuild -project ios/BeBoss.xcodeproj -scheme BeBoss -sdk iphoneos -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/ios-device CODE_SIGNING_ALLOWED=NO build
