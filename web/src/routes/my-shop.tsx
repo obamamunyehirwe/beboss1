@@ -794,6 +794,7 @@ function BranchManager({
     address: "",
     phoneBranch: "",
     managerName: "",
+    locationType: "STORE" as "STORE" | "WAREHOUSE",
     operationalStatus: "OPEN" as "OPEN" | "CLOSED" | "SUSPENDED",
     colorHex: "#FF6B1A",
     dailySalesTargetRwf: 0,
@@ -819,6 +820,7 @@ function BranchManager({
       address: b.address,
       phoneBranch: b.phone,
       managerName: b.manager_name,
+      locationType: b.location_type === "WAREHOUSE" ? "WAREHOUSE" : "STORE",
       operationalStatus: (b.operational_status as "OPEN" | "CLOSED" | "SUSPENDED") ?? "OPEN",
       colorHex: b.color_hex,
       dailySalesTargetRwf: b.daily_sales_target_rwf,
@@ -847,6 +849,7 @@ function BranchManager({
           address: form.address,
           phoneBranch: form.phoneBranch,
           managerName: form.managerName,
+          locationType: form.locationType,
           isMainBranch: form.isMainBranch,
           operationalStatus: form.operationalStatus,
           colorHex: form.colorHex,
@@ -986,7 +989,7 @@ function BranchManager({
       {/* Branches list */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h4 className="font-semibold">Branches ({branches.length})</h4>
+          <h4 className="font-semibold">Locations ({branches.length})</h4>
           {editing ? (
             <Button variant="ghost" size="sm" onClick={resetForm}>
               Cancel edit
@@ -1016,6 +1019,7 @@ function BranchManager({
                   <tr key={b.id} className="hover:bg-surface/50">
                     <td className="p-3 font-medium">
                       {b.name}
+                      <Badge variant={b.location_type === "WAREHOUSE" ? "warning" : "secondary"} className="ml-2 text-[10px]">{b.location_type === "WAREHOUSE" ? "WAREHOUSE" : "STORE"}</Badge>
                       {b.is_main_branch ? <Badge variant="info" className="ml-2 text-[10px]">HQ</Badge> : null}
                     </td>
                     <td className="p-3 font-mono text-muted-foreground">{b.code || "—"}</td>
@@ -1054,6 +1058,17 @@ function BranchManager({
         <div className="space-y-2">
           <Label>Code</Label>
           <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="BR-02" />
+        </div>
+        <div className="space-y-2">
+          <Label>Location type</Label>
+          <Select value={form.locationType} onValueChange={(value) => setForm({ ...form, locationType: value as typeof form.locationType, isMainBranch: value === "WAREHOUSE" ? false : form.isMainBranch })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="STORE">Retail store</SelectItem>
+              <SelectItem value="WAREHOUSE">Warehouse</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">Warehouses hold stock; only retail stores can be the main POS location.</p>
         </div>
         <div className="space-y-2">
           <Label>Phone</Label>
