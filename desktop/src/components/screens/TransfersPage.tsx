@@ -1,12 +1,32 @@
 import type React from "react";
 import { useMemo, useState } from "react";
-import { Activity, ArrowRight, Clock3, Download, Plus, Search, Truck, X } from "lucide-react";
+import { Activity, ArrowRight, Clock3, Download, Plus, Search, ShieldCheck, Truck, X } from "lucide-react";
 import { activeProducts, dateTime, downloadCsv, errorText, id, money, n, rows, s } from "../../lib/format";
 import type { CloudAction, CloudState, Row, Snapshot } from "../../lib/types";
 import { Empty, Modal, PageHeading, StatCard, StatusPill } from "../ui";
 
 export function TransfersPage({ cloud, snapshot, onAction, onRefresh, offline }: { cloud: CloudState; snapshot: Snapshot | null; onAction: CloudAction; onRefresh: () => Promise<void>; offline: boolean }) {
   const [open, setOpen] = useState(false);\n  const [query, setQuery] = useState("");\n  const [statusFilter, setStatusFilter] = useState("ALL");\n  const [refreshing, setRefreshing] = useState(false);\n  const [pageError, setPageError] = useState("");
+  const [showPolicy, setShowPolicy] = useState(false);
+  const [transferThreshold, setTransferThreshold] = useState("0");
+  const [varianceThreshold, setVarianceThreshold] = useState("0");
+  const [policySaving, setPolicySaving] = useState(false);
+  const [policyError, setPolicyError] = useState("");
+  const [policyNotice, setPolicyNotice] = useState("");
+  const latestPolicy = useMemo(() => {
+    const event = rows(cloud.activity).find((item) =>
+      s(item.entity).toUpperCase() === "APPROVAL_POLICY" && s(item.action).toUpperCase() === "UPDATED"
+    );
+    try {
+      const value = JSON.parse(s(event?.detail));
+      return {
+        transferApprovalThresholdRwf: Math.max(0, n(value.transferApprovalThresholdRwf)),
+        reconciliationVarianceThresholdRwf: Math.max(0, n(value.reconciliationVarianceThresholdRwf))
+      };
+    } catch {
+      return { transferApprovalThresholdRwf: 0, reconciliationVarianceThresholdRwf: 0 };
+    }
+  }, [cloud.activity]);
   const [form, setForm] = useState({ productId: "", fromBranchId: "", toBranchId: "", quantity: "1", notes: "" });
   const transfers = rows(cloud.transfers);
   const products = activeProducts(snapshot);
@@ -41,6 +61,39 @@ export function TransfersPage({ cloud, snapshot, onAction, onRefresh, offline }:
       })));
   }
 
+  function openPolicySettings() {
+    setTransferThreshold(String(latestPolicy.transferApprovalThresholdRwf));
+    setVarianceThreshold(String(latestPolicy.reconciliationVarianceThresholdRwf));
+    setPolicyError("");
+    setPolicyNotice("");
+    setShowPolicy(true);
+  }
+
+  async function saveApprovalPolicy(event: React.FormEvent) {
+    event.preventDefault();
+    const transferValue = Number(transferThreshold);
+    const varianceValue = Number(varianceThreshold);
+    if (!Number.isFinite(transferValue) || !Number.isFinite(varianceValue) ||
+        transferValue < 0 || varianceValue < 0 || transferValue > 10000000000 || varianceValue > 10000000000) {
+      setPolicyError("Enter valid non-negative FRw thresholds up to 10,000,000,000. Zero disables that approval threshold.");
+      return;
+    }
+    setPolicySaving(true);
+    setPolicyError("");
+    try {
+      await onAction("approval_policy_save", {
+        transferApprovalThresholdRwf: Math.round(transferValue),
+        reconciliationVarianceThresholdRwf: Math.round(varianceValue)
+      });
+      setPolicyNotice("Owner approval thresholds saved to the shop cloud audit policy.");
+      setShowPolicy(false);
+    } catch (error) {
+      setPolicyError(errorText(error));
+    } finally {
+      setPolicySaving(false);
+    }
+  }
+
   async function refreshTransfers() {
     setRefreshing(true); setPageError("");
     try { await onRefresh(); }
@@ -53,7 +106,23 @@ export function TransfersPage({ cloud, snapshot, onAction, onRefresh, offline }:
     const from = branches.find((x) => s(x.id) === form.fromBranchId);
     const to = branches.find((x) => s(x.id) === form.toBranchId);
     if (!p || !from || !to || n(form.quantity) <= 0) throw new Error("Choose a product, source/destination branches and quantity.");
-    const result = await onAction("transfer_create", { id: id(), productId: form.productId, fromBranchId: form.fromBranchId, toBranchId: form.toBranchId, quantity: n(form.quantity), notes: form.notes });
+    const estimatedValue = Math.max(0, n(p.costPrice) * n(form.quantity));
+    const approvalRequired = latestPolicy.transferApprovalThresholdRwf > 0 &&
+      estimatedValue >= latestPolicy.transferApprovalThresholdRwf;
+    let approvalConfirmed = false;
+    let approvalReason = "";
+    if (approvalRequired) {
+      approvalConfirmed = window.confirm("This transfer is valued at approximately " + money(estimatedValue) +
+        " and meets the owner approval threshold of " + money(latestPolicy.transferApprovalThresholdRwf) +
+        ". Confirm owner review before sending the request?");
+      if (!approvalConfirmed) return;
+      approvalReason = window.prompt("Enter the owner approval explanation (at least 8 characters):", "")?.trim() ?? "";
+      if (approvalReason.length < 8) throw new Error("An approval explanation of at least 8 characters is required.");
+    }
+    const result = await onAction("transfer_create", {
+      id: id(), productId: form.productId, fromBranchId: form.fromBranchId, toBranchId: form.toBranchId,
+      quantity: n(form.quantity), notes: form.notes, approvalConfirmed, approvalReason
+    });
     setOpen(false); setForm({ productId: "", fromBranchId: "", toBranchId: "", quantity: "1", notes: "" });
     alert("Transfer " + s(result.transferNumber) + " has been sent to paired BeBoss terminals for stock validation.");
   }
@@ -64,6 +133,7 @@ export function TransfersPage({ cloud, snapshot, onAction, onRefresh, offline }:
     <PageHeading eyebrow="INVENTORY · LOGISTICS · RECONCILIATION" title="Inter-branch stock transfers"
       description="Create governed branch-to-branch stock requests, follow mobile validation and monitor receiving confirmations."
       action={<div className="enterprise-page-actions">
+        <button className="btn-outline" disabled={offline} onClick={openPolicySettings}><ShieldCheck size={15} /> Approval policy</button>
         <button className="btn-outline" disabled={offline || refreshing} onClick={() => void refreshTransfers()}><Activity size={15} className={refreshing ? "spin" : ""} /> Refresh cloud</button>
         <button className="btn-outline" onClick={exportTransfers}><Download size={15} /> Export view</button>
         <button className="btn-primary" disabled={offline || !products.length || branches.length < 2} onClick={() => setOpen(true)}><Plus size={17} /> New transfer</button>
@@ -93,6 +163,32 @@ export function TransfersPage({ cloud, snapshot, onAction, onRefresh, offline }:
         return <tr key={s(t.id)}><td className="mono">{s(t.transfer_number) || s(t.id).slice(0,8)}</td><td><strong>{s(t.product_name)}</strong><small className="cell-sub mono">{s(t.product_id)}</small></td><td>{s(t.from_branch_name)} <ArrowRight size={13} /> {s(t.to_branch_name)}</td><td>{n(t.quantity)} {s(t.unit) || "pcs"}</td><td>{money(t.cost_value_rwf)}</td><td>{timestamp ? dateTime(timestamp) : "—"}</td><td>{timestamp ? ageHours < 24 ? ageHours + "h" : Math.floor(ageHours/24) + "d" : "—"}</td><td><StatusPill value={s(t.status)} /></td><td>{s(t.status).toUpperCase() === "IN_TRANSIT" ? <div className="row-actions"><button className="btn-outline small" disabled={offline} onClick={() => command(t, "RECEIPT").catch((e) => setPageError(errorText(e)))}>Request receipt</button><button className="icon-btn danger-icon" disabled={offline} title="Request cancellation" onClick={() => { if (window.confirm("Request cancellation of transfer " + s(t.transfer_number) + "? The source/destination terminal still validates the final movement.")) command(t, "CANCEL").catch((e) => setPageError(errorText(e))); }}><X size={15} /></button></div> : <span className="muted small-text">Terminal workflow</span>}</td></tr>;
       })}
     </tbody></table></div>{!visibleTransfers.length && <Empty title={transfers.length ? "No transfers match this view" : "No stock transfers"} description={transfers.length ? "Change the status filter or search to see other transfer records." : "Create a transfer request between two active branches."} icon={Truck} />}</div>
+    {showPolicy && <Modal title="Shop approval policy" onClose={() => !policySaving && setShowPolicy(false)}>
+      <form className="form-grid" onSubmit={(event) => void saveApprovalPolicy(event)}>
+        <div className="field-wide info-note"><ShieldCheck size={16} /> These thresholds are enforced by the cloud before transfer commands and branch cash close-outs are accepted. They record owner confirmation on the current authenticated owner terminal; this is not dual-person authorization.</div>
+        <label className="field-wide">Stock transfer approval threshold (FRw)
+          <input type="number" min="0" max="10000000000" step="1" value={transferThreshold}
+            onChange={(event) => setTransferThreshold(event.target.value)} disabled={policySaving} />
+          <small>Transfers at or above this recorded stock cost require owner confirmation and a reason. Set to 0 to disable.</small>
+        </label>
+        <label className="field-wide">Branch cash variance review threshold (FRw)
+          <input type="number" min="0" max="10000000000" step="1" value={varianceThreshold}
+            onChange={(event) => setVarianceThreshold(event.target.value)} disabled={policySaving} />
+          <small>Absolute cash variance at or above this threshold requires owner review and a written explanation. Set to 0 to disable.</small>
+        </label>
+        <div className="field-wide panel" style={{ padding: 12 }}>
+          <strong>Current policy</strong>
+          <div className="metric-row"><span>Transfer threshold</span><b>{latestPolicy.transferApprovalThresholdRwf ? money(latestPolicy.transferApprovalThresholdRwf) : "Disabled"}</b></div>
+          <div className="metric-row"><span>Cash variance threshold</span><b>{latestPolicy.reconciliationVarianceThresholdRwf ? money(latestPolicy.reconciliationVarianceThresholdRwf) : "Disabled"}</b></div>
+          <small className="panel-hint">The latest version is reconstructed from this shop's append-only cloud activity log.</small>
+        </div>
+        {policyError && <div className="field-wide inline-alert error">{policyError}</div>}
+        <div className="modal-actions field-wide">
+          <button type="button" className="btn-outline" disabled={policySaving} onClick={() => setShowPolicy(false)}>Cancel</button>
+          <button className="btn-primary" disabled={policySaving || offline}>{policySaving ? "Saving policy..." : <><ShieldCheck size={15} /> Save cloud policy</>}</button>
+        </div>
+      </form>
+    </Modal>}
     {open && <Modal title="Create transfer request" onClose={() => setOpen(false)}><form className="form-grid" onSubmit={(e) => create(e).catch((x) => alert(errorText(x)))}><label className="field-wide">Product<select required value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })}><option value="">Select product</option>{products.map((p) => <option key={s(p.id)} value={s(p.id)}>{s(p.name)} · {n(p.quantityInStock)} {s(p.unit)}</option>)}</select></label><label>From branch<select required value={form.fromBranchId} onChange={(e) => setForm({ ...form, fromBranchId: e.target.value })}><option value="">Source</option>{branches.map((b) => <option key={s(b.id)} value={s(b.id)}>{s(b.name)}</option>)}</select></label><label>To branch<select required value={form.toBranchId} onChange={(e) => setForm({ ...form, toBranchId: e.target.value })}><option value="">Destination</option>{branches.map((b) => <option key={s(b.id)} value={s(b.id)}>{s(b.name)}</option>)}</select></label><label>Quantity<input required type="number" min="0.001" step="0.001" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} /></label><label className="field-wide">Notes<input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label><div className="modal-actions field-wide"><button type="button" className="btn-outline" onClick={() => setOpen(false)}>Cancel</button><button className="btn-primary"><Truck size={16} /> Submit transfer</button></div></form></Modal>}
   </div>;
 }
