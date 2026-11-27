@@ -7,7 +7,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import { pick, keepLocalCopy, types as documentTypes, isErrorWithCode, errorCodes } from '@react-native-documents/picker';
 import {
-  Branch, CartLine, CheckoutInput, Customer, Product, Role, ShopProfile, Staff,
+  Branch, CartLine, CheckoutInput, Customer, Product, Role, Sale, ShopProfile, Staff,
   StoreSnapshot
 } from './src/core/types';
 import {
@@ -371,7 +371,7 @@ function AppRoot(): React.JSX.Element {
       await saveBranch({
         id: editingBranch?.id, name: form.name, code: form.code, address: form.address,
         phone: form.phone, managerName: form.managerName, locationType: form.locationType as any,
-        operationalStatus: form.operationalStatus || 'OPEN',
+        operationalStatus: (form.operationalStatus || 'OPEN') as Branch['operationalStatus'],
         isMainBranch: form.isMainBranch === 'true',
         isActive: form.isActive !== 'false',
         notes: form.notes
@@ -1003,8 +1003,8 @@ function AppRoot(): React.JSX.Element {
           <Text style={styles.rowSub}>{branch.address}</Text>
           <View style={styles.inlineActions}>
             <ActionLink label="Edit branch" onPress={() => openBranch(branch)} />
-            {branch.isActive ? <ActionLink label="Pause branch" onPress={() => run(async () => setBranchOperationalStatus(branch.id, 'PAUSED', actor!), 'Branch paused.')} /> : null}
-            {!branch.isActive && actor.role === 'OWNER' ? <ActionLink label="Reopen branch" onPress={() => run(async () => saveBranch({ id: branch.id, name: branch.name, isActive: true }, actor!), 'Branch reactivated.')} /> : null}
+            {branch.isActive ? <ActionLink label="Pause branch" onPress={() => run(async () => { await setBranchOperationalStatus(branch.id, 'PAUSED', actor!); }, 'Branch paused.')} /> : null}
+            {!branch.isActive && actor.role === 'OWNER' ? <ActionLink label="Reopen branch" onPress={() => run(async () => { await saveBranch({ id: branch.id, name: branch.name, isActive: true }, actor!); }, 'Branch reactivated.')} /> : null}
             {!branch.isMainBranch && branch.isActive && actor.role === 'OWNER' ? <ActionLink label="Archive" danger onPress={() => Alert.alert('Archive branch?', 'A branch can only be archived after all assigned staff, active products and in-transit transfers have been cleared.', [
               { text: 'Keep branch', style: 'cancel' },
               { text: 'Archive branch', style: 'destructive', onPress: () => run(async () => archiveBranch(branch.id, actor!), 'Branch archived.') }
@@ -1144,7 +1144,7 @@ function AppRoot(): React.JSX.Element {
 
   return (
     <SafeAreaView style={styles.appRoot} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.canvas} />
+      <StatusBar barStyle="dark-content" />
       <View style={styles.topBar}>
         <View style={styles.brandMark}><Text style={styles.brandGlyph}>B</Text></View>
         <View style={{ flex: 1 }}>
@@ -1423,7 +1423,7 @@ function ProductRow({ product, currency, onPress }: { product: Product; currency
     <Text style={styles.price}>{money(product.sellingPrice, currency)}</Text>
   </Pressable>;
 }
-function SaleRow({ sale, currency }: { sale: any; currency: string }): React.JSX.Element {
+function SaleRow({ sale, currency }: { sale: Sale; currency: string }): React.JSX.Element {
   return <View style={styles.compactRow}>
     <View style={styles.saleIcon}><Text style={styles.saleGlyph}>↗</Text></View>
     <View style={{ flex: 1 }}><Text style={styles.rowTitle}>{sale.receiptNumber}</Text><Text style={styles.rowSub}>{sale.customerName} · {sale.paymentMethod}</Text>{sale.paymentBreakdown?.length ? <Text style={styles.rowSub}>{sale.paymentBreakdown.map(part => part.method + ' ' + money(part.amount, currency)).join(' + ')}</Text> : null}</View>
@@ -1570,7 +1570,7 @@ const styles = StyleSheet.create({
   scanText: { color: '#fff', textAlign: 'center', fontSize: 13 },
   action: { backgroundColor: COLORS.orange, padding: 12, borderRadius: 10, marginTop: 12 },
   actionText: { color: '#fff', fontWeight: '800' },
-  overlay: { ...StyleSheet.absoluteFillObject, top: 70 }
+  overlay: { ...StyleSheet.absoluteFill, top: 70 }
 });
 
 export default function App(): React.JSX.Element {
