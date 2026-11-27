@@ -75,6 +75,10 @@ function AppRoot(): React.JSX.Element {
   const [receiptNumber, setReceiptNumber] = useState('');
   const [analyticsPeriod, setAnalyticsPeriod] = useState('THIS_MONTH');
   const [reportBranch, setReportBranch] = useState('ALL');
+  const [archivedProducts, setArchivedProducts] = useState<Product[]>([]);
+  const [archivedCustomers, setArchivedCustomers] = useState<Customer[]>([]);
+  const [showArchivedProducts, setShowArchivedProducts] = useState(false);
+  const [showArchivedCustomers, setShowArchivedCustomers] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
@@ -936,6 +940,13 @@ function AppRoot(): React.JSX.Element {
   const renderInventory = () => (
     <View>
       <PageHeading title="Inventory" subtitle="Products, selling prices, cost, stock and reorder thresholds." action="Add product" onAction={() => openNewProduct()} />
+      <ButtonSecondary title={showArchivedProducts ? 'Hide archived products' : 'View archived products'} onPress={async () => {
+        if (!showArchivedProducts) {
+          try { setArchivedProducts(await listArchivedProducts()); }
+          catch (caught: any) { setError(caught?.message || 'Could not load archived products.'); return; }
+        }
+        setShowArchivedProducts(value => !value);
+      }} />
       <Field label="Search inventory" value={search} onChangeText={setSearch} />
       {(snapshot?.products || []).filter(product => !search.trim() || [product.name, product.barcode, product.category].some(value => value.toLowerCase().includes(search.toLowerCase()))).map(product => (
         <View key={product.id} style={styles.inventoryCard}>
@@ -957,12 +968,35 @@ function AppRoot(): React.JSX.Element {
           </View>
         </View>
       ))}
+      {showArchivedProducts ? <>
+        <SectionHeader title="Archived products" />
+        {archivedProducts.map(product => (
+          <View key={product.id} style={styles.compactRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{product.name}</Text>
+              <Text style={styles.rowSub}>{product.category} · archived {new Date(product.updatedAt).toLocaleDateString()}</Text>
+            </View>
+            <ActionLink label="Restore product" onPress={() => run(async () => {
+              await restoreProduct(product.id, actor!);
+              setArchivedProducts(await listArchivedProducts());
+            }, 'Product restored to active inventory.')} />
+          </View>
+        ))}
+        {!archivedProducts.length ? <EmptyState title="No archived products" subtitle="Archived products appear here and can be restored without losing sales history." /> : null}
+      </> : null}
     </View>
   );
 
   const renderCustomers = () => (
     <View>
       <PageHeading title="Customers & credit" subtitle="Customer profiles, account balances and payment ledger." action="Add customer" onAction={() => openCustomer()} />
+      <ButtonSecondary title={showArchivedCustomers ? 'Hide archived customers' : 'View archived customers'} onPress={async () => {
+        if (!showArchivedCustomers) {
+          try { setArchivedCustomers(await listArchivedCustomers()); }
+          catch (caught: any) { setError(caught?.message || 'Could not load archived customers.'); return; }
+        }
+        setShowArchivedCustomers(value => !value);
+      }} />
       <Metric label="Total outstanding debt" value={money(snapshot?.totalDebt || 0, currency)} tone="red" />
       {(snapshot?.customers || []).map(customer => (
         <View key={customer.id} style={styles.customerCard}>
@@ -974,10 +1008,37 @@ function AppRoot(): React.JSX.Element {
           <View style={{ alignItems: 'flex-end' }}>
             <ActionLink label="Edit" onPress={() => openCustomer(customer)} />
             <ActionLink label="Receive payment" onPress={() => openPayment(customer)} disabled={customer.debtBalance <= 0 || !actor.canCollectDebt} />
+            {actor.canDeleteRecords ? <ActionLink label="Archive customer" danger onPress={() => Alert.alert(
+              'Archive customer?',
+              'The customer and payment history will be retained. The record can be restored later.',
+              [
+                { text: 'Keep customer', style: 'cancel' },
+                { text: 'Archive', style: 'destructive', onPress: () => run(async () => {
+                  await deleteCustomer(customer.id, actor!);
+                  setArchivedCustomers(await listArchivedCustomers());
+                }, 'Customer archived.') }
+              ]
+            )} /> : null}
           </View>
         </View>
       ))}
       {!snapshot?.customers.length ? <EmptyState title="No customer accounts" subtitle="Create customer records to keep contacts and credit balances in one place." /> : null}
+      {showArchivedCustomers ? <>
+        <SectionHeader title="Archived customers" />
+        {archivedCustomers.map(customer => (
+          <View key={customer.id} style={styles.compactRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{customer.name}</Text>
+              <Text style={styles.rowSub}>{customer.phone || 'No phone'} · debt {money(customer.debtBalance, currency)}</Text>
+            </View>
+            <ActionLink label="Restore customer" onPress={() => run(async () => {
+              await restoreCustomer(customer.id, actor!);
+              setArchivedCustomers(await listArchivedCustomers());
+            }, 'Customer restored.')} />
+          </View>
+        ))}
+        {!archivedCustomers.length ? <EmptyState title="No archived customers" subtitle="Archived customer records can be restored while preserving account history." /> : null}
+      </> : null}
     </View>
   );
 
@@ -1187,6 +1248,16 @@ function AppRoot(): React.JSX.Element {
           <Text style={styles.rowSub}>{purchase.productName} × {purchase.quantityPurchased}</Text>
           <Text style={styles.rowSub}>{purchase.supplierName} • {purchase.paymentStatus}</Text>
           <Text style={styles.price}>{money(purchase.totalPurchaseCost, currency)}</Text>
+          {actor.canDeleteRecords ? <ActionLink label="Delete purchase record" danger onPress={() => Alert.alert(
+            'Delete purchase record?',
+            'This removes the purchase ledger row but does not automatically change current stock. Use a stock adjustment if a physical stock correction is required.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete record', style: 'destructive', onPress: () => run(async () => {
+                await deletePurchaseRecord(purchase.id, actor!);
+              }, 'Purchase record deleted.') }
+            ]
+          )} /> : null}
         </View>
       ))}
     </View>
