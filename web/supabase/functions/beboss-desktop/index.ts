@@ -1046,7 +1046,7 @@ Deno.serve(async (req: Request) => {
         CANCELLED: [],
         REJECTED: []
       };
-      const allowedNewStatuses = new Set(["IN_TRANSIT", "PENDING", "COMPLETED", "CANCELLED", "REJECTED"]);
+      const allowedNewStatuses = new Set(["IN_TRANSIT", "PENDING"]);
 
       for (const transfer of requested) {
         const transferId = text(transfer.id).trim();
@@ -1054,7 +1054,7 @@ Deno.serve(async (req: Request) => {
         const fromBranchId = text(transfer.from_branch_id).trim();
         const toBranchId = text(transfer.to_branch_id).trim();
         const quantity = number(transfer.quantity);
-        const transferNumber = text(transfer.transfer_number).trim();
+        const transferNumber = text(transfer.transfer_number).trim() || ("TRF-" + transferId.slice(0, 8).toUpperCase());
         const incomingStatus = (text(transfer.status).trim() || "IN_TRANSIT").toUpperCase();
         if (!transferId || !productId || !fromBranchId || !toBranchId || !transferNumber ||
             fromBranchId === toBranchId || !Number.isFinite(quantity) || quantity <= 0 || quantity > 1000000000) {
@@ -1091,11 +1091,12 @@ Deno.serve(async (req: Request) => {
           }
           if (incomingStatus !== previousStatus) {
             if (text(currentDevice.role).toUpperCase() === "MANAGER") {
+              if (["IN_TRANSIT", "REJECTED", "CANCELLED"].includes(incomingStatus) &&
+                  fromBranchId !== assignedBranchId) {
+                return json(403, { ok: false, message: "Only a manager assigned to the source branch can start or reject/cancel this transfer." });
+              }
               if (incomingStatus === "COMPLETED" && toBranchId !== assignedBranchId) {
                 return json(403, { ok: false, message: "Only a manager assigned to the destination branch can confirm receipt." });
-              }
-              if (incomingStatus === "CANCELLED" && fromBranchId !== assignedBranchId) {
-                return json(403, { ok: false, message: "Only a manager assigned to the source branch can cancel a transfer." });
               }
             }
             statusChanges.push({ id: transferId, from: previousStatus, to: incomingStatus });
@@ -1273,22 +1274,26 @@ Deno.serve(async (req: Request) => {
           id: transferId,
           shop_sync_key: text(shop.id),
           shop_name: text(shop.shop_name),
-          transfer_number: transferNumber,
+          transfer_number: existing ? text(existing.transfer_number) : transferNumber,
           product_id: productId,
-          product_name: text(transfer.product_name),
+          product_name: existing ? text(existing.product_name) : text(transfer.product_name),
           from_branch_id: fromBranchId,
-          from_branch_name: text(transfer.from_branch_name),
+          from_branch_name: existing ? text(existing.from_branch_name) : text(transfer.from_branch_name),
           to_branch_id: toBranchId,
-          to_branch_name: text(transfer.to_branch_name),
+          to_branch_name: existing ? text(existing.to_branch_name) : text(transfer.to_branch_name),
           quantity,
-          unit: text(transfer.unit) || "pcs",
+          unit: existing ? text(existing.unit) : (text(transfer.unit) || "pcs"),
           cost_value_rwf: cost,
-          transfer_date: number(transfer.transfer_date) || Date.now(),
+          transfer_date: number(existing?.transfer_date) || number(transfer.transfer_date) || Date.now(),
           status: incomingStatus,
-          notes: text(transfer.notes).slice(0, 1000),
-          transferred_by: text(transfer.transferred_by).slice(0, 120),
-          received_by: text(transfer.received_by).slice(0, 120),
-          received_at: number(transfer.received_at),
+          notes: existing ? text(existing.notes) : text(transfer.notes).slice(0, 1000),
+          transferred_by: existing ? text(existing.transferred_by) : text(transfer.transferred_by).slice(0, 120),
+          received_by: incomingStatus === "COMPLETED"
+            ? (existing && text(existing.received_by) ? text(existing.received_by) : text(currentDevice.assigned_user_id))
+            : (existing ? text(existing.received_by) : text(transfer.received_by).slice(0, 120)),
+          received_at: incomingStatus === "COMPLETED"
+            ? (number(existing?.received_at) || Date.now())
+            : number(existing?.received_at) || 0,
           synced: true,
           created_at: number(existing?.created_at) || number(transfer.created_at) || Date.now(),
           updated_at: Math.max(number(transfer.updated_at), number(existing?.updated_at), number(existing?.created_at), number(transfer.created_at)),
