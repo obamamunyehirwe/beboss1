@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.io.File
 import android.os.Build
+import android.os.SystemClock
 import android.os.Bundle
 import android.view.MotionEvent
 import android.view.WindowManager
@@ -108,6 +109,9 @@ import com.beboss.shopmgmt.util.Localization
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicLong
+
+private const val ANDROID_UPDATE_RECHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L
 
 class MainActivity : ComponentActivity() {
 
@@ -284,6 +288,8 @@ private fun BeBossMainContent(
 ) {
     val context = LocalContext.current
     val updateScope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lastAutomaticAndroidUpdateCheck = remember(context.packageName) { AtomicLong(0L) }
     var currentPublicAndroidRelease by remember { mutableStateOf<AndroidAppRelease?>(null) }
     var installedAndroidVersionCode by remember { mutableStateOf(0L) }
     var installedAndroidVersionName by remember { mutableStateOf("") }
@@ -296,6 +302,7 @@ private fun BeBossMainContent(
 
     suspend fun checkForAndroidUpdate() {
         if (isCheckingAndroidUpdate || isDownloadingAndroidUpdate) return
+        lastAutomaticAndroidUpdateCheck.set(SystemClock.elapsedRealtime())
         isCheckingAndroidUpdate = true
         androidUpdateError = ""
         try {
@@ -331,6 +338,25 @@ private fun BeBossMainContent(
 
     LaunchedEffect(context.packageName) {
         checkForAndroidUpdate()
+    }
+
+    // Recheck official releases when the shop returns to the foreground. A
+    // six-hour throttle also covers long-running checkout sessions without
+    // interrupting an active sale or asking Android to install anything.
+    DisposableEffect(lifecycleOwner, context.packageName) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) {
+                val now = SystemClock.elapsedRealtime()
+                val previous = lastAutomaticAndroidUpdateCheck.get()
+                if (now - previous >= ANDROID_UPDATE_RECHECK_INTERVAL_MS &&
+                    lastAutomaticAndroidUpdateCheck.compareAndSet(previous, now)
+                ) {
+                    updateScope.launch { checkForAndroidUpdate() }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val updateAvailable = currentPublicAndroidRelease?.isNewerThan(installedAndroidVersionCode) == true
