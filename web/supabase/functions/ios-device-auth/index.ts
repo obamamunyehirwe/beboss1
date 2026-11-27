@@ -1,13 +1,13 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { shopShareSignature, verifyAndDecodeToken } from "../_shared/snapshot-integrity.ts";
-import { isCompleteSnapshotGeneration, snapshotDeviceBaseId } from "../_shared/snapshot-generations.ts";
+import { shopShareSignature, verifyAndDecodeToken } from "./_shared/snapshot-integrity.ts";
+import { isCompleteSnapshotGeneration, snapshotDeviceBaseId } from "./_shared/snapshot-generations.ts";
 import {
   createDeviceToken,
   DEVICE_ACCESS_TTL_MS,
   DEVICE_REFRESH_TTL_MS,
   isDeviceToken,
   sha256Hex,
-} from "../_shared/device-credentials.ts";
+} from "./_shared/device-credentials.ts";
 
 type Row = Record<string, unknown>;
 
