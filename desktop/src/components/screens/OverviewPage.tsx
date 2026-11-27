@@ -20,7 +20,7 @@ export function OverviewPage({ cloud, snapshot, offline, revenueToday, profitTod
   const monthSales = sales.filter((sale) => n(sale.saleDate ?? sale.sale_date) >= monthStart);
   const monthRevenue = monthSales.reduce((sum, sale) => sum + n(sale.totalAmount ?? sale.total_amount ?? sale.total), 0);
   const monthProfit = monthSales.reduce((sum, sale) => sum + n(sale.totalProfit ?? sale.total_profit), 0);
-  const activeBranches = rows(cloud.branches).filter((branch) => branch.is_active !== false);
+  const activeBranches = rows(cloud.branches).filter((branch) => branch.is_active === true);
   const branchPerformance = activeBranches.map((branch) => {
     const branchId = s(branch.id);
     const branchSales = monthSales.filter((sale) => s(sale.branchId ?? sale.branch_id) === branchId);
@@ -43,7 +43,7 @@ export function OverviewPage({ cloud, snapshot, offline, revenueToday, profitTod
     const createdAt = n(transfer.transfer_date ?? transfer.created_at);
     return createdAt > 0 && Date.now() - createdAt > 24 * 60 * 60 * 1000;
   });
-  const activeDevices = rows(cloud.devices).filter((device) => device.is_active !== false);
+  const activeDevices = rows(cloud.devices).filter((device) => device.is_active === true);
   const bestProducts = rows(snapshot?.saleItems).reduce((map, item) => {
     const key = s(item.productName) || "Product";
     map.set(key, (map.get(key) || 0) + n(item.quantitySold));
