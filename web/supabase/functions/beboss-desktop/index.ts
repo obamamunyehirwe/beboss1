@@ -102,7 +102,7 @@ function normalizeTransferQuantity(value: unknown): string {
   const expanded = point <= 0 ? "0." + "0".repeat(-point) + digits :
     point >= digits.length ? digits + "0".repeat(point - digits.length) :
     digits.slice(0, point) + "." + digits.slice(point);
-  const cleaned = expanded.includes(".") ? expanded.replace(/0+$/, "").replace(/\\.$/, "") : expanded;
+  const cleaned = expanded.includes(".") ? expanded.replace(/0+$/, "").replace(/\.$/, "") : expanded;
   return (negative ? "-" : "") + cleaned;
 }
 
@@ -1139,6 +1139,37 @@ Deno.serve(async (req: Request) => {
         );
         if (!saved) {
           return json(503, { ok: false, message: "Transfers were committed, but owner approval evidence could not be journaled. Keep synchronization pending and retry." });
+        }
+      }
+
+      const approvalAuditIds = new Set(newApprovalAudit.map((item) => text(item.recordId)));
+      for (const transfer of requested) {
+        const recordId = text(transfer.id);
+        const savedTransfer = rowsToSave.find((row) => text(row.id) === recordId);
+        const approvalRequired = policy.transferApprovalThresholdRwf > 0 &&
+          number(savedTransfer?.cost_value_rwf) >= policy.transferApprovalThresholdRwf;
+        const eventDetail = JSON.stringify({
+          version: 1,
+          recordId,
+          transferNumber: text(transfer.transfer_number),
+          productId: text(transfer.product_id),
+          fromBranchId: text(transfer.from_branch_id),
+          toBranchId: text(transfer.to_branch_id),
+          quantity: number(transfer.quantity),
+          costValueRwf: number(savedTransfer?.cost_value_rwf),
+          status: text(transfer.status).toUpperCase(),
+          sourceDeviceId: text(transfer.last_modified_device_id) || deviceId,
+          syncedAt: Date.now(),
+          approvalRequired,
+          approvalVerified: approvalAuditIds.has(recordId) || approvalRequired
+        });
+        const saved = await recordShopAuditEvent(
+          admin, text(shop.id), text(shop.shop_name),
+          "ANDROID_DEVICE:" + text(currentDevice.assigned_user_id),
+          deviceId, "STOCK_TRANSFER", "ANDROID_TRANSFER_SYNCED", eventDetail
+        );
+        if (!saved) {
+          return json(503, { ok: false, message: "Transfers were saved, but the synchronization audit could not be recorded. Retry synchronization." });
         }
       }
       return json(200, {
