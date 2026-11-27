@@ -79,7 +79,8 @@ fun AdminFleetTelemetryTab(
     val dateFmt = remember { SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()) }
 
     fun hasConsentedLocation(item: SupabaseDeviceTelemetryDto): Boolean =
-        item.locationCapturedAt > 0L &&
+        item.permissionsSummary.contains("location_sharing=enabled", ignoreCase = true) &&
+            item.locationCapturedAt > 0L &&
             item.latitude in -90.0..90.0 &&
             item.longitude in -180.0..180.0 &&
             (item.latitude != 0.0 || item.longitude != 0.0)
@@ -226,6 +227,7 @@ fun AdminFleetTelemetryTab(
                                 )
                                 Text(
                                     buildString {
+                                        append(item.deviceName.ifBlank { "Terminal" }).append(" • ")
                                         append(item.devicePlatform.ifBlank { "ANDROID" })
                                         val hardware = listOf(item.manufacturer, item.model).filter { it.isNotBlank() }.joinToString(" ")
                                         if (hardware.isNotBlank()) append(" • ").append(hardware)
@@ -309,8 +311,8 @@ fun AdminFleetTelemetryTab(
                                             " • ±${item.accuracyMeters.toInt()}m"
                                     } else {
                                         when {
+                                            item.permissionsSummary.isBlank() -> "Location sharing status unavailable on this report"
                                             !locationSharingEnabled -> "Location not shared • Device privacy setting"
-                                            item.permissionsSummary.isBlank() -> "No location report supplied by this terminal"
                                             else -> "Opt-in enabled • No recent foreground location fix"
                                         } + " • Reported " + dateFmt.format(Date(item.updatedAt.coerceAtLeast(item.inspectedAt)))
                                     },
