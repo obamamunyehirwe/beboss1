@@ -33,6 +33,7 @@ import { DevicesPage } from "./components/screens/DevicesPage";
 import { TransfersPage } from "./components/screens/TransfersPage";
 import { BillingPage } from "./components/screens/BillingPage";
 import { DiagnosticsPage } from "./components/screens/DiagnosticsPage";
+import { QnxDevelopmentPage } from "./components/screens/QnxDevelopmentPage";
 import { SyncHubPage } from "./components/screens/SyncHubPage";
 import { OwnerAccessPage } from "./components/screens/OwnerAccessPage";
 import { AdminConsolePage } from "./components/screens/AdminConsolePage";
@@ -110,6 +111,7 @@ const NAV: { id: NavKey; label: string; icon: typeof LayoutDashboard; group: str
   { id: "transfers", label: "Stock transfers", icon: Warehouse, group: "Organization" },
   { id: "billing", label: "Subscription", icon: CreditCard, group: "Administration" },
   { id: "diagnostics", label: "System diagnostics", icon: Activity, group: "Administration" },
+  { id: "qnx", label: "QNX Development Center", icon: Activity, group: "Administration" },
   { id: "sync", label: "Sync hub", icon: RefreshCw, group: "Administration" },
   { id: "admin", label: "Owner access", icon: ShieldCheck, group: "Administration" },
   { id: "masterAdmin", label: "Master Admin Console", icon: ShieldAlert, group: "Administration" },
@@ -1327,6 +1329,7 @@ function NativeDesktopApp() {
           return result as Row;
         }} />}
         {view === "diagnostics" && <DiagnosticsPage cloud={cloud} snapshot={snapshot} onRefresh={refresh} />}
+        {view === "qnx" && <QnxDevelopmentPage />}
         {view === "sync" && <SyncHubPage
           cloud={cloud}
           deviceId={deviceId}
