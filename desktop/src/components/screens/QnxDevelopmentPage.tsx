@@ -19,7 +19,7 @@ type QnxStatus = {
   sdp8Ready: boolean;
   qccVariants: string[];
   qemuImageDir: string | null;
-  qemuImagePresent: boolean;
+  qemuPackageDirectoryPresent: boolean;
   notes: string[];
 };
 
@@ -99,7 +99,10 @@ export function QnxDevelopmentPage() {
   }
 
   const sdkReady = Boolean(status?.sdp8Ready);
-  const canBuildImage = sdkReady && Boolean(status?.mkqnximagePath);
+  const selectedVariant = targetArch === "x86_64" ? "gcc_ntox86_64" : "gcc_ntoaarch64le";
+  const selectedTargetVerified = Boolean(status?.qccVariants.includes(selectedVariant));
+  const canBuildImage = sdkReady && selectedTargetVerified
+    && Boolean(status?.mkqnximagePath) && Boolean(status?.qemuPackageDirectoryPresent);
 
   return <div className="page-stack">
     <PageHeading eyebrow="DEVELOPER TOOLING · QNX SDP 8.0" title="QNX Development Center"
@@ -122,9 +125,9 @@ export function QnxDevelopmentPage() {
 
     <div className="stat-grid four">
       <StatCard label="QNX SDP 8.0" value={sdkReady ? "Ready" : status ? "Not ready" : "Checking"} sub={status?.hostSupported ? status.hostOs + " · " + status.hostArch : "Supported x86-64 Windows/Linux host required"} icon={Cpu} tone={sdkReady ? "green" : "orange"} />
-      <StatCard label="qcc compiler" value={status?.qccFound ? "Detected" : "Missing"} sub={status?.qccPath || "Install QNX SDP 8.0"} icon={Terminal} tone={status?.qccFound ? "green" : "red"} />
+      <StatCard label="qcc compiler" value={status?.qccVariants.length ? "Compile-tested" : status?.qccFound ? "Detected only" : "Missing"} sub={status?.qccVariants.length ? "Verified: " + status.qccVariants.join(", ") : status?.qccPath || "Install QNX SDP 8.0"} icon={Terminal} tone={status?.qccVariants.length ? "green" : status?.qccFound ? "orange" : "red"} />
       <StatCard label="mkifs" value={status?.mkifsPath ? "Detected" : "Missing"} sub="QNX OS image filesystem builder" icon={FileCode2} tone={status?.mkifsPath ? "green" : "orange"} />
-      <StatCard label="QEMU image" value={status?.qemuImagePresent ? "Available" : "Not installed"} sub={status?.qemuImageDir || "Install QNX QEMU reference image"} icon={HardDrive} tone={status?.qemuImagePresent ? "green" : "orange"} />
+      <StatCard label="QEMU package directory" value={status?.qemuPackageDirectoryPresent ? "Files detected" : "Missing or empty"} sub={status?.qemuImageDir || "Install the QNX QEMU reference package"} icon={HardDrive} tone={status?.qemuPackageDirectoryPresent ? "orange" : "orange"} />
     </div>
 
     {error && <div className="global-alert error"><AlertTriangle size={16} /><span>{error}</span></div>}
@@ -149,16 +152,16 @@ export function QnxDevelopmentPage() {
         <p className="settings-section-description">Compile a native QNX service that registers beboss-edge-gateway and processes health/echo messages with name_attach, MsgReceive and MsgReply.</p>
         <label className="field-wide">Target architecture
           <select value={targetArch} onChange={(event) => setTargetArch(event.target.value)}>
-            <option value="x86_64">QNX x86-64</option>
-            <option value="aarch64le">QNX AArch64 little-endian</option>
+            <option value="x86_64" disabled={!status?.qccVariants.includes("gcc_ntox86_64")}>QNX x86-64{status?.qccVariants.includes("gcc_ntox86_64") ? "" : " · compiler not verified"}</option>
+            <option value="aarch64le" disabled={!status?.qccVariants.includes("gcc_ntoaarch64le")}>QNX AArch64 little-endian{status?.qccVariants.includes("gcc_ntoaarch64le") ? "" : " · compiler not verified"}</option>
           </select>
         </label>
         <div className="form-footer">
           <span className="muted small-text">qcc · compiler output · SHA-256</span>
-          <button className="btn-primary" disabled={!sdkReady || Boolean(busy)} onClick={() => void runOperation("agent", () => invoke<QnxResult>("qnx_build_agent", { installRoot: installRoot.trim() || null, targetArch }))}>
+          <button className="btn-primary" disabled={!sdkReady || !selectedTargetVerified || Boolean(busy)} onClick={() => void runOperation("agent", () => invoke<QnxResult>("qnx_build_agent", { installRoot: installRoot.trim() || null, targetArch }))}>
             {busy === "agent" ? <LoaderCircle size={15} className="spin" /> : <Wrench size={15} />} Build edge agent
           </button>
-          <button className="btn-outline" disabled={!sdkReady || Boolean(busy)} onClick={() => void runOperation("client", () => invoke<QnxResult>("qnx_build_ipc_client", { installRoot: installRoot.trim() || null, targetArch }))}>
+          <button className="btn-outline" disabled={!sdkReady || !selectedTargetVerified || Boolean(busy)} onClick={() => void runOperation("client", () => invoke<QnxResult>("qnx_build_ipc_client", { installRoot: installRoot.trim() || null, targetArch }))}>
             {busy === "client" ? <LoaderCircle size={15} className="spin" /> : <Terminal size={15} />} Build IPC client
           </button>
         </div>
@@ -179,9 +182,9 @@ export function QnxDevelopmentPage() {
 
       <section className="panel diag-card">
         <div className="panel-heading"><div><span className="eyebrow muted">VIRTUAL TARGET</span><h3>QEMU lifecycle</h3></div><Activity size={18} className="muted-icon" /></div>
-        <p className="settings-section-description">Build or launch the QNX virtual machine through the official mkqnximage utility when the QNX QEMU image package is installed.</p>
+        <p className="settings-section-description">mkqnximage prepares and launches the QNX QEMU reference target. A non-empty package directory is only a preliminary check; the build command must still validate its contents, and the guest boot must be confirmed in QEMU or its serial console.</p>
         <div className="form-footer">
-          <span className="muted small-text">{status?.qemuImagePresent ? "Reference image directory detected" : "Reference image package required"}</span>
+          <span className="muted small-text">{status?.qemuPackageDirectoryPresent ? "Files found in QEMU package directory" : "QEMU reference package missing or directory empty"}</span>
           <button className="btn-outline" disabled={!sdkReady || !status?.mkqnximagePath || Boolean(busy)} onClick={() => void runOperation("qemu-build", () => invoke<QnxResult>("qnx_build_qemu_image", { installRoot: installRoot.trim() || null, architecture: targetArch }))}>
             {busy === "qemu-build" ? <LoaderCircle size={15} className="spin" /> : <Wrench size={15} />} Prepare image
           </button>
