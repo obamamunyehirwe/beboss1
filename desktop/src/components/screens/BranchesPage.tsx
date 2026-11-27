@@ -1,7 +1,7 @@
 import type React from "react";
 import { useMemo, useState } from "react";
 import { Activity, Building2, Check, MapPin, Pencil, Plus, Search, Store, Trash2, Users, Warehouse } from "lucide-react";
-import { errorText, id, money, n, rows, s } from "../../lib/format";
+import { downloadCsv, errorText, id, money, n, rows, s } from "../../lib/format";
 import type { CloudAction, CloudState, Row, Snapshot } from "../../lib/types";
 import { Empty, Modal, PageHeading, StatCard, StatusPill } from "../ui";
 
@@ -71,6 +71,32 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
     return matchesQuery && matchesFilter;
   }), [list, query, filter]);
 
+  function exportBranchNetwork() {
+    const exported = list.map((branch) => {
+      const branchId = s(branch.id);
+      const metrics = salesByBranch.get(branchId) ?? { count: 0, total: 0 };
+      const assignedStaff = rows(cloud.staff).filter((user) => user.is_active !== false && s(user.assigned_branch_id) === branchId);
+      const assignedDevices = rows(cloud.devices).filter((device) => device.is_active && s(device.branch_id) === branchId);
+      const monthlyTarget = n(branch.monthly_target_rwf);
+      return {
+        branch_name: s(branch.name), branch_code: s(branch.code), main_branch: branch.is_main_branch === true,
+        active: branch.is_active !== false, operating_status: s(branch.operational_status || "OPEN"),
+        manager: s(branch.manager_name), manager_user_id: s(branch.manager_user_id),
+        address: s(branch.address), phone: s(branch.phone), email: s(branch.email),
+        staff_count: assignedStaff.length, active_device_count: assignedDevices.length,
+        sales_this_month: Math.round(metrics.total), transactions_this_month: metrics.count,
+        monthly_target_rwf: monthlyTarget,
+        target_progress_percent: monthlyTarget > 0 ? Number((metrics.total / monthlyTarget * 100).toFixed(1)) : "",
+        stock_value_rwf: n(branch.stock_value_rwf), product_count: n(branch.product_count),
+        daily_target_rwf: n(branch.daily_sales_target_rwf), opening_cash_float_rwf: n(branch.opening_cash_float),
+        notes: s(branch.notes)
+      };
+    });
+    downloadCsv("BeBoss-Branch-Network-" + new Date().toISOString().slice(0,10) + ".csv",
+      ["branch_name","branch_code","main_branch","active","operating_status","manager","manager_user_id","address","phone","email","staff_count","active_device_count","sales_this_month","transactions_this_month","monthly_target_rwf","target_progress_percent","stock_value_rwf","product_count","daily_target_rwf","opening_cash_float_rwf","notes"],
+      exported);
+  }
+
   function start(branch?: Row) {
     setEditing(branch ?? null);
     setFormError("");
@@ -139,7 +165,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
   return <div className="page-stack enterprise-branch-page">
     <PageHeading eyebrow="ORGANIZATION · MULTI-LOCATION CONTROL" title="Branch management"
       description="Operate every store location from one owner workspace. Manage branch leaders, targets, operating states and cloud-shared performance."
-      action={<div className="enterprise-page-actions">
+      action={<div className="enterprise-page-actions">\n        <button className="btn-outline" type="button" onClick={exportBranchNetwork}><Activity size={15} /> Export network</button>
         <button className="btn-outline" disabled={offline || refreshing} onClick={() => void refresh()}><Activity size={15} className={refreshing ? "spin" : ""} /> Refresh cloud</button>
         <button className="btn-primary" disabled={offline} onClick={() => start()}><Plus size={17} /> Add branch</button>
       </div>} />
