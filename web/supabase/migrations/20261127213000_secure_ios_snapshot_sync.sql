@@ -114,12 +114,9 @@ begin
     into v_latest
   from (
     select
-      max(updated_at) as generation_updated_at,
-      max(coalesce(nullif(chunk_count, 0), 1)) as expected_count,
-      count(*) as actual_count,
-      count(distinct chunk_index) as distinct_indexes,
-      min(chunk_index) as min_index,
-      max(chunk_index) as max_index
+      pg_catalog.regexp_replace(device_id, '#c[0-9]+$', '') as base_device_id,
+      coalesce(nullif(sync_generation, ''), 'legacy') as generation_key,
+      max(updated_at) as generation_updated_at
     from public.branch_sync_snapshots
     where shop_sync_key = p_shop_sync_key
     group by
@@ -129,7 +126,11 @@ begin
        and count(distinct chunk_index) = max(coalesce(nullif(chunk_count, 0), 1))
        and min(chunk_index) = 0
        and max(chunk_index) = max(coalesce(nullif(chunk_count, 0), 1)) - 1
-  ) complete_generations;
+  ) complete_generations
+  where not (
+    complete_generations.base_device_id = p_device_id
+    and complete_generations.generation_key = p_sync_generation
+  );
 
   if v_latest <> greatest(0, coalesce(p_expected_latest_updated_at, 0)) then
     delete from public.branch_sync_snapshots
