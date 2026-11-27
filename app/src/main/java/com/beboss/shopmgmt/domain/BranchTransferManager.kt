@@ -27,6 +27,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.roundToLong
 
 /**
  * Domain Manager: Multi-Branch Stores & Inter-Branch Stock Transfers.
@@ -164,13 +165,7 @@ class BranchTransferManager(
                 operationalStatus = normalizedStatus,
                 updatedAt = now,
                 hlcTimestamp = HlcClock.tick(now),
-                lastModifiedDeviceId = nodeId,
-                approvalReason = approvalProof?.reason.orEmpty(),
-                approvalActorUserId = approvalProof?.actorUserId.orEmpty(),
-                approvalSignedAt = approvalProof?.signedAt ?: 0L,
-                approvalPolicyVersion = approvalProof?.policyVersion ?: 0L,
-                approvalDeviceId = approvalProof?.deviceId.orEmpty(),
-                approvalSignature = approvalProof?.signature.orEmpty()
+                lastModifiedDeviceId = nodeId
             )
             branchDao.insertBranch(versioned)
             enqueueBranchSync(versioned, "UPDATE")
@@ -373,7 +368,7 @@ class BranchTransferManager(
                 )
             }
 
-            val costValue = (product.costPrice * safeQty).toLong().coerceAtLeast(0L)
+            val costValue = (product.costPrice * safeQty).roundToLong().coerceAtLeast(0L)
             transfer = StockTransfer(
                 id = transferId?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
                 transferNumber = transferNumber,
@@ -393,7 +388,13 @@ class BranchTransferManager(
                 createdAt = now,
                 updatedAt = now,
                 hlcTimestamp = HlcClock.tick(now),
-                lastModifiedDeviceId = nodeId
+                lastModifiedDeviceId = nodeId,
+                approvalReason = approvalProof?.reason.orEmpty(),
+                approvalActorUserId = approvalProof?.actorUserId.orEmpty(),
+                approvalSignedAt = approvalProof?.signedAt ?: 0L,
+                approvalPolicyVersion = approvalProof?.policyVersion ?: 0L,
+                approvalDeviceId = approvalProof?.deviceId.orEmpty(),
+                approvalSignature = approvalProof?.signature.orEmpty()
             )
 
             newSourceQty = product.quantityInStock - safeQty
@@ -902,6 +903,12 @@ class BranchTransferManager(
         put("updatedAt", t.updatedAt)
         put("hlcTimestamp", t.hlcTimestamp)
         put("lastModifiedDeviceId", t.lastModifiedDeviceId)
+        put("approvalReason", t.approvalReason)
+        put("approvalActorUserId", t.approvalActorUserId)
+        put("approvalSignedAt", t.approvalSignedAt)
+        put("approvalPolicyVersion", t.approvalPolicyVersion)
+        put("approvalDeviceId", t.approvalDeviceId)
+        put("approvalSignature", t.approvalSignature)
         put("notes", t.notes)
     }.toString()
 }
