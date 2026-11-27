@@ -181,14 +181,19 @@ export type StockTransfer = {
   productId: string;
   productName: string;
   fromBranchId: string;
+  fromBranchName: string;
   toBranchId: string;
+  toBranchName: string;
   quantity: number;
+  unit: string;
+  costValue: number;
   status: 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED';
   notes: string;
   transferredBy: string;
   receivedBy: string;
   transferDate: number;
   receivedAt: number;
+  updatedAt: number;
 };
 
 export type SyncOutboxItem = {
