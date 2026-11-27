@@ -101,7 +101,7 @@ for (const module of modules) {
 // only the explicitly listed enrollment/public read/download endpoints may be anonymous.
 const ownerPortalFile = "src/lib/public.functions.ts";
 const ownerPortal = readFileSync(ownerPortalFile, "utf8");
-const ownerDeclarations = [...ownerPortal.matchAll(/^export const (\\w+)\\s*=\\s*createServerFn/mg)];
+const ownerDeclarations = [...ownerPortal.matchAll(/^export const (\w+)\s*=\s*createServerFn/mg)];
 const publicActions = new Set([
   "requestMyShopOwnerOtp",
   "getPublicSite",
@@ -128,7 +128,7 @@ for (let index = 0; index < ownerDeclarations.length; index += 1) {
   const block = ownerPortal.slice(declaration.index, ownerDeclarations[index + 1]?.index ?? ownerPortal.length);
   checked += 1;
   if (publicActions.has(action)) {
-    if (/\\.middleware\\(\\s*\\[\\s*requireSupabaseAuth\\s*\\]\\s*\\)/s.test(block)) {
+    if (/\.middleware\(\s*\[\s*requireSupabaseAuth\s*\]\s*\)/s.test(block)) {
       fail(ownerPortalFile + " :: public action " + action + " unexpectedly changes its documented authentication contract");
     }
     if (action === "requestMyShopOwnerOtp" &&
@@ -138,28 +138,28 @@ for (let index = 0; index < ownerDeclarations.length; index += 1) {
       fail(ownerPortalFile + " :: requestMyShopOwnerOtp must verify the stored owner identity and rate-limit OTPs");
     }
     if (action === "createPublicDesktopDownload" &&
-        (!/eq\\("is_public",\\s*true\\)/.test(block) ||
+        (!/eq\("is_public",\s*true\)/.test(block) ||
          !/createSignedUrl/.test(block))) {
       fail(ownerPortalFile + " :: createPublicDesktopDownload must only sign downloads for public releases");
     }
-    if (action === "getPublicDesktopRelease" && !/eq\\("is_public",\\s*true\\)/.test(block)) {
+    if (action === "getPublicDesktopRelease" && !/eq\("is_public",\s*true\)/.test(block)) {
       fail(ownerPortalFile + " :: getPublicDesktopRelease must return only public releases");
     }
     continue;
   }
 
-  if (!/\\.middleware\\(\\s*\\[\\s*requireSupabaseAuth\\s*\\]\\s*\\)/s.test(block)) {
+  if (!/\.middleware\(\s*\[\s*requireSupabaseAuth\s*\]\s*\)/s.test(block)) {
     fail(ownerPortalFile + " :: " + action + " is missing authenticated-user middleware");
   }
   if (action === "claimMyShopOwner") {
-    if (!/auth\\.getUser/.test(block) ||
+    if (!/auth\.getUser/.test(block) ||
         !/phone_confirmed_at/.test(block) ||
         !/shop_owner_memberships/.test(block) ||
-        !/status:\\s*"ACTIVE"/.test(block)) {
+        !/status:\s*"ACTIVE"/.test(block)) {
       fail(ownerPortalFile + " :: claimMyShopOwner must verify the caller's confirmed owner phone and active shop membership");
     }
   } else if (ownerScopedActions.has(action)) {
-    if (!/\\b(?:requireOwnerTenantAdmin|requireOwnerSession)\\s*\\(/.test(block)) {
+    if (!/\b(?:requireOwnerTenantAdmin|requireOwnerSession)\s*\(/.test(block)) {
       fail(ownerPortalFile + " :: " + action + " is missing a verified tenant-owner membership check");
     }
   } else {
@@ -170,13 +170,13 @@ for (let index = 0; index < ownerDeclarations.length; index += 1) {
 // The platform stats endpoint is intentionally public and read-only.
 const platformFile = "src/lib/platform.functions.ts";
 const platformSource = readFileSync(platformFile, "utf8");
-const platformDeclarations = [...platformSource.matchAll(/^export const (\\w+)\\s*=\\s*createServerFn/mg)];
+const platformDeclarations = [...platformSource.matchAll(/^export const (\w+)\s*=\s*createServerFn/mg)];
 if (platformDeclarations.length !== 1 || platformDeclarations[0]?.[1] !== "getPlatformStats") {
   fail(platformFile + " :: unexpected public platform server-function surface");
 } else {
   const block = platformSource.slice(platformDeclarations[0].index);
   if (!/createPublicClient|public_platform_stats/.test(block) ||
-      /\\.from\\([^)]*\\)\\.(?:insert|update|upsert|delete)\\(/s.test(block)) {
+      /\.from\([^)]*\)\.(?:insert|update|upsert|delete)\(/s.test(block)) {
     fail(platformFile + " :: getPlatformStats must remain a public read-only projection");
   }
   checked += 1;
