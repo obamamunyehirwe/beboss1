@@ -22,6 +22,11 @@ jobs:
     defaults:
       run:
         working-directory: desktop
+    env:
+      VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_SFUKqYETliLdgqluQBQ2xg_XJNudcvM
+      VITE_SENTRY_DSN: https://bfef12cf8aa3fe3be99557e2371ecfc7@o4512498787287040.ingest.us.sentry.io/4512498794954752
+      SENTRY_DSN: https://bfef12cf8aa3fe3be99557e2371ecfc7@o4512498787287040.ingest.us.sentry.io/4512498794954752
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -40,9 +45,6 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/package-lock.json
-        env:
-          VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
-          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -54,6 +56,7 @@ jobs:
         run: |
           npm run check:versions
           npm run check:installer
+          npm run validate:telemetry
           npm run check:types
           npm test
           npm run build:web
@@ -91,6 +94,11 @@ jobs:
     defaults:
       run:
         working-directory: desktop
+    env:
+      VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_SFUKqYETliLdgqluQBQ2xg_XJNudcvM
+      VITE_SENTRY_DSN: https://bfef12cf8aa3fe3be99557e2371ecfc7@o4512498787287040.ingest.us.sentry.io/4512498794954752
+      SENTRY_DSN: https://bfef12cf8aa3fe3be99557e2371ecfc7@o4512498787287040.ingest.us.sentry.io/4512498794954752
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -101,9 +109,6 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/package-lock.json
-        env:
-          VITE_SUPABASE_URL: https://ahlpvlhmpfiyeoercxol.supabase.co
-          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -114,6 +119,7 @@ jobs:
       - name: Verify desktop release inputs
         run: |
           npm run check:versions
+          npm run validate:telemetry
           npm run check:types
           npm test
           npm run build:web
