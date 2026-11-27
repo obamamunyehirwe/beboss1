@@ -2538,6 +2538,66 @@ object SupabaseAdminClient {
         }
     }
 
+    /**
+     * Write a device-authenticated audit journal after the tenant-scoped record upload.
+     * The server re-reads the saved row and accepts the event only when its updatedAt,
+     * HLC and writer identity still match the version uploaded by this terminal.
+     */
+    private fun recordDeviceSyncAuditEvents(
+        shopSyncKey: String,
+        entity: String,
+        uploadedRows: JSONArray
+    ): Boolean {
+        if (uploadedRows.length() == 0) return true
+        val saved = AndroidDeviceCredentialStore.readForShop(shopSyncKey)
+        if (saved == null) {
+            // Older installations remain on the explicitly supported legacy sync path.
+            // They cannot authenticate audit writes and must be re-enrolled by the owner.
+            Log.w(TAG, "Device audit journal deferred: this legacy terminal needs owner-approved device enrollment.")
+            return true
+        }
+        return try {
+            val active = refreshAndroidDeviceCredential(saved)
+            val records = JSONArray()
+            for (index in 0 until uploadedRows.length()) {
+                val row = uploadedRows.getJSONObject(index)
+                records.put(JSONObject().apply {
+                    put("id", row.optString("id"))
+                    put("updatedAt", row.optLong("updated_at"))
+                    put("hlcTimestamp", row.optLong("hlc_timestamp"))
+                    put("lastModifiedDeviceId", row.optString("last_modified_device_id"))
+                })
+            }
+            val payload = JSONObject()
+                .put("action", "record_device_sync_audit")
+                .put("entity", entity)
+                .put("records", records)
+            val request = Request.Builder()
+                .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
+                .addHeader("apikey", getSupabaseApiKey())
+                .addHeader("X-BeBoss-Device-ID", active.deviceId)
+                .addHeader("X-BeBoss-Device-Token", active.accessToken)
+                .addHeader("Content-Type", "application/json")
+                .post(payload.toString().toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                val result = runCatching { JSONObject(raw) }.getOrNull()
+                if (!response.isSuccessful || result?.optBoolean("ok") != true) {
+                    Log.w(TAG, "Device audit journal was not acknowledged (HTTP ${response.code}): ${result?.optString("message").orEmpty()}")
+                    false
+                } else {
+                    true
+                }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.w(TAG, "Device audit journal will retry with the next cloud sync: ${error.message}")
+            false
+        }
+    }
+
     // -------------------------------------------------------------------------
     // BRANCHES (`shop_branches`)
     // -------------------------------------------------------------------------
@@ -2580,12 +2640,13 @@ object SupabaseAdminClient {
                     .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
                     .post(arr.toString().toRequestBody(jsonMediaType))
                     .build()
-                client.newCall(req).execute().use { resp ->
+                val uploaded = client.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) {
                         Log.w(TAG, "upsertShopBranches HTTP ${resp.code}: ${resp.body?.string()}")
                     }
                     resp.isSuccessful
                 }
+                uploaded && recordDeviceSyncAuditEvents(shopSyncKey, "BRANCH", arr)
             } catch (e: Exception) {
                 Log.e(TAG, "upsertShopBranches error: ${e.message}")
                 false
@@ -2652,12 +2713,13 @@ object SupabaseAdminClient {
                     .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
                     .post(arr.toString().toRequestBody(jsonMediaType))
                     .build()
-                client.newCall(req).execute().use { resp ->
+                val uploaded = client.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) {
                         Log.w(TAG, "upsertShopStockTransfers HTTP ${resp.code}: ${resp.body?.string()}")
                     }
                     resp.isSuccessful
                 }
+                uploaded && recordDeviceSyncAuditEvents(shopSyncKey, "STOCK_TRANSFER", arr)
             } catch (e: Exception) {
                 Log.e(TAG, "upsertShopStockTransfers error: ${e.message}")
                 false
