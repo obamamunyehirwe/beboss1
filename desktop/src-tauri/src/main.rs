@@ -522,6 +522,102 @@ struct FileExportResult {
 }
 
 
+/// Strict allow-list for a diagnostic export. Business records, shop identities,
+/// hostnames, file paths and credentials are intentionally not accepted here.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SupportBundleInput {
+    os_platform: String,
+    os_arch: String,
+    uptime_seconds: u64,
+    db_size_bytes: u64,
+    pending_outbox_count: u64,
+    oldest_pending_at: Option<i64>,
+    database_encrypted: bool,
+    database_cipher_version: String,
+    database_integrity: String,
+    journal_mode: String,
+    default_printer_configured: bool,
+    network_online: bool,
+    cloud_test_performed: bool,
+    cloud_reachable: Option<bool>,
+    cloud_latency_ms: Option<u64>,
+    verified_cloud_chunks: u64,
+    last_cloud_snapshot_at: Option<i64>,
+}
+
+fn support_bundle_document(input: SupportBundleInput, generated_at: i64) -> Result<Value, String> {
+    let safe_label = |value: &str, max: usize| {
+        !value.is_empty()
+            && value.len() <= max
+            && value.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b' ' | b'.' | b'-' | b'_')
+            })
+    };
+    if input.os_platform != env::consts::OS || input.os_arch != env::consts::ARCH {
+        return Err("Support bundle platform details do not match this application runtime.".into());
+    }
+    if !safe_label(&input.database_cipher_version, 64)
+        || !safe_label(&input.database_integrity, 128)
+        || !safe_label(&input.journal_mode, 16)
+    {
+        return Err("Support bundle diagnostic labels contain invalid or oversized values.".into());
+    }
+    if input.cloud_test_performed != input.cloud_reachable.is_some()
+        || input.cloud_latency_ms.is_some() && !input.cloud_test_performed
+        || input.cloud_latency_ms.is_some_and(|latency| latency > 120_000)
+        || input.oldest_pending_at.is_some_and(|timestamp| timestamp < 0)
+        || input.last_cloud_snapshot_at.is_some_and(|timestamp| timestamp < 0)
+    {
+        return Err("Support bundle network or timestamp values are inconsistent.".into());
+    }
+
+    Ok(serde_json::json!({
+        "format": "BEBOSS_DESKTOP_SUPPORT_BUNDLE",
+        "schemaVersion": 1,
+        "bundleId": Uuid::new_v4().to_string(),
+        "generatedAt": generated_at,
+        "application": {
+            "name": "BeBoss Desktop",
+            "version": env!("CARGO_PKG_VERSION")
+        },
+        "runtime": {
+            "osPlatform": input.os_platform,
+            "osArch": input.os_arch,
+            "uptimeSeconds": input.uptime_seconds,
+            "networkOnline": input.network_online
+        },
+        "storage": {
+            "databaseEncrypted": input.database_encrypted,
+            "databaseCipherVersion": input.database_cipher_version,
+            "databaseIntegrity": input.database_integrity,
+            "journalMode": input.journal_mode,
+            "databaseSizeBytes": input.db_size_bytes,
+            "pendingOutboxCount": input.pending_outbox_count,
+            "oldestPendingAt": input.oldest_pending_at
+        },
+        "printer": {
+            "defaultPrinterConfigured": input.default_printer_configured
+        },
+        "cloud": {
+            "testPerformed": input.cloud_test_performed,
+            "reachable": input.cloud_reachable,
+            "latencyMs": input.cloud_latency_ms,
+            "verifiedChunks": input.verified_cloud_chunks,
+            "lastSnapshotAt": input.last_cloud_snapshot_at
+        },
+        "privacy": {
+            "businessRecordsIncluded": false,
+            "personalIdentifiersIncluded": false,
+            "credentialsOrSecretsIncluded": false,
+            "databaseOrBackupFilesIncluded": false,
+            "localFilePathsIncluded": false,
+            "hostnamesIncluded": false
+        }
+    }))
+}
+
+
 // ────────────────────── TAURI COMMANDS ──────────────────────
 
 #[derive(Debug, Clone, Serialize)]
@@ -1339,6 +1435,38 @@ fn export_backup_file(app: tauri::AppHandle, encrypted_content: String) -> Resul
 // renderer. Do not expose an arbitrary-path filesystem read command to web content.
 
 
+#[tauri::command]
+fn export_support_bundle(app: tauri::AppHandle, payload: SupportBundleInput) -> Result<FileExportResult, String> {
+    let document = support_bundle_document(payload, now_millis()?)?;
+    let bytes = serde_json::to_vec_pretty(&document).map_err(|error| error.to_string())?;
+    if bytes.len() > 32_768 {
+        return Err("The diagnostic support bundle exceeds the 32 KB safety limit.".into());
+    }
+
+    let app_dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let support_dir = app_dir.join("support");
+    fs::create_dir_all(&support_dir).map_err(|error| error.to_string())?;
+    let filename = format!("beboss-support-{}.json", Uuid::new_v4().simple());
+    let target_file = support_dir.join(filename);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target_file)
+        .map_err(|error| format!("Could not create the support bundle: {error}"))?;
+    file.write_all(&bytes).map_err(|error| format!("Could not write the support bundle: {error}"))?;
+    file.sync_all().map_err(|error| format!("Could not finalize the support bundle: {error}"))?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Ok(FileExportResult {
+        success: true,
+        file_path: target_file.to_string_lossy().to_string(),
+        file_size_bytes: bytes.len(),
+        sha256: format!("{:x}", hasher.finalize()),
+    })
+}
+
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LanHub {
@@ -1871,7 +1999,7 @@ fn main() {
             setup_preflight, test_credential_vault,
             local_load, local_save_baseline, local_queue, local_pending, local_outbox_count, local_unassigned_outbox_count, local_ack,
             system_diagnostics, network_ping, print_escpos_thermal,
-            export_backup_file, lan_store_shop_secret, lan_discover_hubs, lan_pull_from_hub, lan_sync_with_hub
+            export_backup_file, export_support_bundle, lan_store_shop_secret, lan_discover_hubs, lan_pull_from_hub, lan_sync_with_hub
         ])
         .run(tauri::generate_context!())
         .expect("error while running BeBoss Desktop");
@@ -1881,6 +2009,67 @@ fn main() {
 #[cfg(test)]
 mod database_encryption_tests {
     use super::*;
+
+    fn sample_support_bundle_input() -> SupportBundleInput {
+        SupportBundleInput {
+            os_platform: env::consts::OS.to_string(),
+            os_arch: env::consts::ARCH.to_string(),
+            uptime_seconds: 1800,
+            db_size_bytes: 8192,
+            pending_outbox_count: 2,
+            oldest_pending_at: Some(1_790_000_000_000),
+            database_encrypted: true,
+            database_cipher_version: "4.12.0".into(),
+            database_integrity: "ok".into(),
+            journal_mode: "wal".into(),
+            default_printer_configured: true,
+            network_online: true,
+            cloud_test_performed: true,
+            cloud_reachable: Some(true),
+            cloud_latency_ms: Some(42),
+            verified_cloud_chunks: 4,
+            last_cloud_snapshot_at: Some(1_790_000_000_000),
+        }
+    }
+
+    #[test]
+    fn support_bundle_contains_operational_health_but_no_business_or_identity_data() {
+        let document = support_bundle_document(sample_support_bundle_input(), 1_790_000_000_000)
+            .expect("safe diagnostic bundle should be created");
+        assert_eq!(document["format"], "BEBOSS_DESKTOP_SUPPORT_BUNDLE");
+        assert_eq!(document["storage"]["databaseEncrypted"], true);
+        assert_eq!(document["storage"]["pendingOutboxCount"], 2);
+        assert_eq!(document["cloud"]["reachable"], true);
+        assert_eq!(document["privacy"]["businessRecordsIncluded"], false);
+        assert_eq!(document["privacy"]["credentialsOrSecretsIncluded"], false);
+        assert_eq!(document["privacy"]["databaseOrBackupFilesIncluded"], false);
+        assert!(document.get("shop").is_none());
+        assert!(document.get("owner").is_none());
+        assert!(document.get("hostname").is_none());
+        assert!(document.get("dbPath").is_none());
+        assert!(document.get("customers").is_none());
+        assert!(document.get("sales").is_none());
+        assert!(document.get("products").is_none());
+    }
+
+    #[test]
+    fn support_bundle_rejects_arbitrary_or_oversized_diagnostic_values() {
+        let mut invalid = sample_support_bundle_input();
+        invalid.database_cipher_version = "x".repeat(65);
+        assert!(support_bundle_document(invalid, 1).is_err());
+
+        let mut inconsistent = sample_support_bundle_input();
+        inconsistent.cloud_test_performed = false;
+        assert!(support_bundle_document(inconsistent, 1).is_err());
+    }
+
+    #[test]
+    fn support_bundle_input_rejects_unapproved_fields() {
+        let mut value = serde_json::to_value(sample_support_bundle_input())
+            .expect("support input should serialize");
+        value["customerRecords"] = serde_json::json!([{"name":"private"}]);
+        assert!(serde_json::from_value::<SupportBundleInput>(value).is_err());
+    }
 
     fn test_path(label: &str) -> PathBuf {
         let directory = env::temp_dir().join(format!(

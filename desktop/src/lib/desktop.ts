@@ -68,6 +68,7 @@ window.beBossDesktop = Object.freeze({
   networkPing: (targetHost?: string) => nativeInvoke<any>("network_ping", { targetHost }),
   printEscposThermal: (payload: any) => nativeInvoke<any>("print_escpos_thermal", { payload }),
   exportBackupFile: (encryptedContent: string) => nativeInvoke<any>("export_backup_file", { encryptedContent }),
+  exportSupportBundle: (payload: import("../env").SupportBundleInput) => nativeInvoke<import("../env").FileExportResult>("export_support_bundle", { payload }),
   lan: Object.freeze({
     storeShopSecret: (shopSyncKey: string, secret: string) =>
       nativeInvoke<void>("lan_store_shop_secret", { shopSyncKey, secret }),

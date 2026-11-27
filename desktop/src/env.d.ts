@@ -75,6 +75,27 @@ export interface FileExportResult {
   sha256: string;
 }
 
+
+export interface SupportBundleInput {
+  osPlatform: string;
+  osArch: string;
+  uptimeSeconds: number;
+  dbSizeBytes: number;
+  pendingOutboxCount: number;
+  oldestPendingAt: number | null;
+  databaseEncrypted: boolean;
+  databaseCipherVersion: string;
+  databaseIntegrity: string;
+  journalMode: string;
+  defaultPrinterConfigured: boolean;
+  networkOnline: boolean;
+  cloudTestPerformed: boolean;
+  cloudReachable: boolean | null;
+  cloudLatencyMs: number | null;
+  verifiedCloudChunks: number;
+  lastCloudSnapshotAt: number | null;
+}
+
 export interface LanHub {
   id: string;
   shopName: string;
@@ -136,6 +157,7 @@ declare global {
       networkPing(targetHost?: string): Promise<NetworkPingResult>;
       printEscposThermal(payload: ReceiptPrintPayload): Promise<EscposPrintResult>;
       exportBackupFile(encryptedContent: string): Promise<FileExportResult>;
+      exportSupportBundle(payload: SupportBundleInput): Promise<FileExportResult>;
       lan: {
         storeShopSecret(shopSyncKey: string, secret: string): Promise<void>;
         discoverHubs(shopSyncKey: string, timeoutMs?: number): Promise<LanHub[]>;

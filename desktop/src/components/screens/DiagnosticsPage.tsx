@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, AlertTriangle, Clock3, Cpu, Database, HardDrive, MemoryStick, Printer, RefreshCw, Server, ShieldCheck, Wifi } from "lucide-react";
+import { Activity, AlertTriangle, Clock3, Cpu, Database, FileDown, HardDrive, MemoryStick, Printer, RefreshCw, Server, ShieldCheck, Wifi } from "lucide-react";
 import { dateTime, errorText, n, s } from "../../lib/format";
 import { checkCloudDatabase } from "../../lib/cloud";
 import type { CloudState, Snapshot } from "../../lib/types";
@@ -37,6 +37,8 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
   const [error, setError] = useState("");
   const [printerBusy, setPrinterBusy] = useState(false);
   const [printerMessage, setPrinterMessage] = useState("");
+  const [supportBusy, setSupportBusy] = useState(false);
+  const [supportMessage, setSupportMessage] = useState("");
 
   const load = useCallback(async () => {
     setBusy(true); setError("");
@@ -96,12 +98,52 @@ export function DiagnosticsPage({ cloud, snapshot, onRefresh }: {
     }
   }
 
+  async function exportSupportBundle() {
+    setSupportBusy(true);
+    setError("");
+    setSupportMessage("");
+    try {
+      const [fresh, pending] = await Promise.all([
+        window.beBossDesktop.systemDiagnostics(),
+        window.beBossDesktop.local.outboxCount()
+      ]);
+      setDiag(fresh as Diagnostics);
+      setOutbox(pending);
+      const result = await window.beBossDesktop.exportSupportBundle({
+        osPlatform: fresh.osPlatform,
+        osArch: fresh.osArch,
+        uptimeSeconds: fresh.uptimeSeconds,
+        dbSizeBytes: fresh.dbSizeBytes,
+        pendingOutboxCount: Math.max(0, pending),
+        oldestPendingAt: fresh.oldestPendingAt,
+        databaseEncrypted: fresh.databaseEncrypted,
+        databaseCipherVersion: fresh.databaseCipherVersion,
+        databaseIntegrity: fresh.databaseIntegrity,
+        journalMode: fresh.journalMode,
+        defaultPrinterConfigured: Boolean(fresh.defaultPrinterName),
+        networkOnline: navigator.onLine,
+        cloudTestPerformed: ping !== null,
+        cloudReachable: ping ? ping.reachable : null,
+        cloudLatencyMs: ping ? ping.latencyMs : null,
+        verifiedCloudChunks: Math.max(0, cloud.verifiedChunks),
+        lastCloudSnapshotAt: cloud.snapshotUpdatedAt > 0 ? cloud.snapshotUpdatedAt : null
+      });
+      setSupportMessage("Privacy-filtered support bundle saved to " + result.filePath +
+        " · " + result.fileSizeBytes.toLocaleString() + " bytes · SHA-256 " + result.sha256.slice(0, 16) + "…");
+    } catch (supportError) {
+      setError(errorText(supportError));
+    } finally {
+      setSupportBusy(false);
+    }
+  }
+
   const online = navigator.onLine;
 
   return <div className="page-stack">
-    <PageHeading eyebrow="SYSTEM HEALTH" title="Diagnostics & system health" description="Native device diagnostics plus a live Supabase PostgreSQL API check. Shop records are authoritative in the cloud; the local encrypted store is only for cache, credentials and retry recovery." action={<div className="heading-actions"><button className="btn-outline" onClick={() => void printTestReceipt()} disabled={printerBusy || busy || !diag?.defaultPrinterName}><Printer size={15} /> {printerBusy ? "Printing…" : "Print test receipt"}</button><button className="btn-outline" onClick={runPing} disabled={busy}><Wifi size={15} /> Test cloud DB</button><button className="btn-primary" onClick={() => { void load(); onRefresh(); }} disabled={busy}><RefreshCw size={15} className={busy ? "spin" : ""} /> Refresh</button></div>} />
+    <PageHeading eyebrow="SYSTEM HEALTH" title="Diagnostics & system health" description="Native device diagnostics plus a live Supabase PostgreSQL API check. Shop records are authoritative in the cloud; the local encrypted store is only for cache, credentials and retry recovery." action={<div className="heading-actions"><button className="btn-outline" onClick={() => void exportSupportBundle()} disabled={supportBusy || busy}><FileDown size={15} /> {supportBusy ? "Preparing bundle…" : "Export support bundle"}</button><button className="btn-outline" onClick={() => void printTestReceipt()} disabled={printerBusy || busy || !diag?.defaultPrinterName}><Printer size={15} /> {printerBusy ? "Printing…" : "Print test receipt"}</button><button className="btn-outline" onClick={runPing} disabled={busy}><Wifi size={15} /> Test cloud DB</button><button className="btn-primary" onClick={() => { void load(); onRefresh(); }} disabled={busy}><RefreshCw size={15} className={busy ? "spin" : ""} /> Refresh</button></div>} />
     {error && <div className="global-alert error"><AlertTriangle size={16} /><span>{error}</span></div>}
     {printerMessage && <div className="global-alert success"><Printer size={16} /><span>{printerMessage}</span></div>}
+    {supportMessage && <div className="global-alert success"><FileDown size={16} /><span>{supportMessage} This export excludes shop records, customer data, hostnames, local database paths and secrets.</span></div>}
 
     <div className="stat-grid four">
       <StatCard label="Cloud database" value={ping ? (ping.reachable ? "Connected" : "Unavailable") : online ? "Not checked" : "Offline"} sub={ping ? ping.details : "Test the live Supabase PostgreSQL Data API"} icon={Wifi} tone={ping?.reachable ? "green" : online ? "orange" : "red"} />

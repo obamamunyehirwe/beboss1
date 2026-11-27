@@ -1,389 +1,147 @@
-# BeBoss — The Retail Operating System for Growing Businesses
+<p align="center">
+  <a href="https://beboss.rw">
+    <img src="https://raw.githubusercontent.com/obamamunyehirwe/beboss1/main/web/public/beboss-app-logo.png" alt="BeBoss" width="260">
+  </a>
+</p>
 
-**One connected workspace for sales, inventory, customer accounts, branches, staff, devices and business performance.**
-
-BeBoss is an offline-first point-of-sale and retail management platform built for independent stores and multi-location operators. It combines a native Android POS, a native Windows/macOS/Linux desktop workspace, a merchant web portal and a central administration platform on one shop-scoped data model.
-
-Built for the realities of retail in Rwanda and East Africa, BeBoss is designed to keep checkout and day-to-day shop operations available when internet access is unreliable, while giving owners the tools to manage people, stock, money, locations and devices from a single operational view.
+<h1 align="center">BeBoss — The Retail Operating System</h1>
 
 <p align="center">
-  <strong>Sell confidently. Control every branch. Know what is happening in your business.</strong>
+  <strong>Sell faster. Stay in control. Grow every location.</strong>
+</p>
+
+<p align="center">
+  One connected platform for point of sale, inventory, purchasing, customers, finance, teams, branches and business performance.
+</p>
+
+<p align="center">
+  <a href="https://beboss.rw"><strong>Explore BeBoss</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://beboss.rw">Product website</a>
 </p>
 
 ---
 
-## Local web environment
+## Your whole shop. One clear view.
 
-The web server reads its Supabase credentials from the repository-root `.env` or `.env.local` file (or the hosting provider's server-only environment settings). Start with the template:
+Running a retail business means balancing customers, stock, suppliers, cash, staff and daily decisions—often across more than one location. BeBoss brings those moving parts into one connected operating workspace.
 
-```powershell
-Copy-Item .env.example .env
-```
+From the counter to the back office, owners and teams can record sales, manage stock, follow customer balances, coordinate branches and understand performance without juggling disconnected tools.
 
-Set `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SECRET_KEY` using the values from your Supabase project's **Settings → API Keys** page. Existing deployments may continue using `SUPABASE_SERVICE_ROLE_KEY` as a backward-compatible fallback. Never use a `VITE_` prefix for either secret key, commit a real key, or place a secret key in Android/desktop client configuration.
+Designed with the realities of Rwanda and East African retail in mind, BeBoss combines practical point-of-sale workflows with the visibility and controls growing businesses need.
 
-Vite loads the repository-root environment file for local web development. After changing environment variables, stop and restart the dev server.
+## Built for the work that happens every day
 
----
+<table>
+  <tr>
+    <td width="50%">
+      <h3>⚡ Point of sale that keeps business moving</h3>
+      <p>Serve customers with product search, barcode-assisted workflows, discounts, held carts, split tenders, customer credit and clear receipts. Keep the checkout flow focused on completing the sale and recording the result.</p>
+    </td>
+    <td width="50%">
+      <h3>📦 Inventory you can act on</h3>
+      <p>Manage product details, stock quantities, cost and selling prices, reorder thresholds, stock adjustments, purchasing and transfers. See what needs attention before an empty shelf becomes a lost sale.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>🤝 Customers and account balances</h3>
+      <p>Keep customer records, purchase history, outstanding balances and payment activity together. Follow up on credit with a clearer picture of who owes what and how accounts are changing.</p>
+    </td>
+    <td width="50%">
+      <h3>💳 Financial control</h3>
+      <p>Bring sales, collections, payment methods, purchases, costs, margins and receivables into the management view. Review cash movement and business results with practical reports and financial controls.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>🏬 Multi-branch operations</h3>
+      <p>Coordinate branch records, assigned teams, POS terminals and stock transfers. Follow movements between locations and compare branch activity from a shared business view.</p>
+    </td>
+    <td width="50%">
+      <h3>👥 People, roles and devices</h3>
+      <p>Organize staff access, role assignments, branch responsibilities and registered POS devices. Keep operational access connected to the shop and the people authorized to use it.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>📊 Reports that support decisions</h3>
+      <p>Understand sales trends, product performance, gross profit, margins, customer balances, payment mix and branch activity. Turn everyday records into a more useful management picture.</p>
+    </td>
+    <td width="50%">
+      <h3>🔔 Operational awareness</h3>
+      <p>Bring low-stock attention, pending transfers, device status, synchronization health and business announcements into the workspace so important work is easier to spot and follow up.</p>
+    </td>
+  </tr>
+</table>
 
-## Local web environment
+## One platform across the counter, office and web
 
-The web application runs as a full-stack **Cloudflare Worker with Static Assets**. Both the React frontend and TanStack Start server functions / API routes are served by the same Worker. The existing Supabase project remains the data backend for Auth, PostgreSQL, Storage and Supabase Edge Functions.
+### Android POS — for the shop floor
 
-For local development, keep public Supabase configuration in the repository-root `.env` or `.env.local`, and put Worker-only secrets in `web/.dev.vars`. Start from the examples:
+A mobile-first workspace for day-to-day selling and store operations. Android brings checkout, products, purchasing, customers, payment collection, staff access and device pairing together in a portable terminal. Supported devices can also use camera-assisted scanning and compatible receipt-printing hardware.
 
-```powershell
-Copy-Item .env.example .env
-Copy-Item web/.dev.vars.example web/.dev.vars
-cd web
-npm install
-npm run dev
-```
+### BeBoss Desktop — for owners and managers
 
-The checked-in Wrangler configuration contains only the Supabase project URL and publishable key. Those values are public client configuration. Never put `SUPABASE_SECRET_KEY`, legacy `SUPABASE_SERVICE_ROLE_KEY`, payment credentials, signing keys or other privileged values in `wrangler.jsonc`, a `VITE_*` variable, Android resources or a desktop bundle.
+A native desktop workspace for deeper operational control on Windows, macOS and Linux. The larger-screen experience brings together checkout, inventory, sales history, customer accounts, purchasing, finance, reporting, branches, staff, devices, transfers, subscription controls, backup and recovery, synchronization and system diagnostics.
 
-Cloudflare's Workers runtime exposes configured variables and secrets through `process.env` for this application because the Worker compatibility date enables Node.js compatibility. Local Worker secrets belong in the ignored `.dev.vars` file; production secrets belong in Cloudflare Worker secrets.
+Desktop is built for the realities of a working shop: keyboard-driven barcode scanners, operating-system printer queues, protected local recovery data and a management workspace that remains useful when connectivity is interrupted.
 
-## Cloudflare Workers deployment
+### Merchant web portal — for connected self-service
 
-BeBoss uses the official Cloudflare Vite plugin for TanStack Start. This is **not a static-only Pages export**: SSR, TanStack server functions, the public download API route and frontend assets are deployed together to Cloudflare Workers. Browser requests to TanStack server functions stay same-origin with the BeBoss website; Supabase client requests continue to use the project's public URL and publishable key.
+The web experience gives authorized merchants access to account and shop services, including supported branch, staff, device and transfer operations. Public product information and official app release downloads are available through the BeBoss website.
 
-From `web/`:
+### Master Admin — for platform operations
 
-```powershell
-npm install
-npm run cf-typegen
-npm run build
-npm run preview
-npm run deploy
-```
+A separate, permission-controlled administration workspace supports platform teams with shop oversight, device and synchronization monitoring, subscription and payment review, release management, announcement publishing, delegated administration and audit visibility.
 
-The deployment script builds the Worker and runs Wrangler. The first deployment requires a Cloudflare account and an API token with permission to edit Workers. The GitHub deployment workflow expects repository secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; deploys can then run from the `main` branch or be started manually from GitHub Actions. The API token is never committed to the repository.
+## Designed for connected operations—even when the connection is not
 
-After the first Worker is created, configure the required server-only secret in Cloudflare:
+Retail cannot always stop because a network is unstable. BeBoss uses an offline-first approach for supported shop workflows: local operations are protected on the device, pending changes are queued, and synchronization resumes when connectivity returns.
 
-```powershell
-cd web
-npx wrangler secret put SUPABASE_SECRET_KEY
-```
+Android uses encrypted local database storage. Native desktop uses SQLCipher-protected recovery storage and operating-system credential protection. The cloud remains the authoritative business-data source; an operation waiting in a local queue is shown as pending rather than falsely reported as cloud-confirmed.
 
-Paste the Supabase secret API key when Wrangler prompts for it. Do not put the key in a command-line argument, source file, `wrangler.jsonc`, or GitHub commit. If the BeBoss AI copilot is enabled, also set `LOVABLE_API_KEY` as a Worker secret. Other optional credentials should only be added when the corresponding integration is intentionally enabled.
+When devices reconnect, BeBoss uses its synchronization and conflict-handling mechanisms to bring supported records back together. Cloud-only actions—such as account verification, invitations, provider settlement checks and cross-device synchronization—still require connectivity.
 
-The production Worker hostname is **https://bebossnow.workers.dev**. Before directing customers to it, set the Supabase Edge Function secret `BEBOSS_PUBLIC_URL` to `https://bebossnow.workers.dev`, and add that exact URL to Supabase Auth's Site URL and allowed redirect URLs. This keeps checkout return links and email authentication redirects on the active host. Test sign-in, recovery, merchant portal, admin operations, public downloads and all payment callbacks at `https://bebossnow.workers.dev` before switching a custom domain.
+## Security and control are part of the product
 
-The intended public workers.dev hostname is `bebossnow.workers.dev` (not a prefixed hostname such as `beboss-web.<account>.workers.dev`). A custom domain can be attached later when its DNS zone is on the Cloudflare account. Keep the previous Vercel deployment available as a rollback until the Cloudflare Worker and every external redirect have been verified. Cloudflare's Free Workers plan has a 10 ms CPU budget per request; monitor Worker metrics and logs because unusually CPU-heavy server rendering may require optimization or a higher plan.
+- **Shop-scoped access:** business operations are tied to the authenticated shop and its authorized members.
+- **Role-aware administration:** delegated platform roles and shop staff responsibilities are enforced through protected authorization paths.
+- **Protected data at rest:** Android data is encrypted, and desktop recovery data uses SQLCipher with secrets held by the operating-system credential vault.
+- **Controlled device operations:** enrolled terminals use device-aware authorization and shop-scoped synchronization credentials.
+- **Recovery with safeguards:** encrypted portable backups and signed branch-exchange packages support controlled portability and restoration.
+- **Operational visibility:** device, database, printer, cloud and synchronization diagnostics help teams identify issues without exposing the business database as a support attachment.
+- **Privacy-aware device oversight:** optional device location sharing is off by default and depends on the user's permission and consent.
 
-## What BeBoss helps a business run
+BeBoss does not claim that a visible payment method, device capability or provider name means an external service is already activated. Payment gateways, SMS services, hardware functions and other third-party integrations depend on supported devices, valid provider accounts, credentials, permissions and deployment configuration.
 
-| Business area | Capabilities |
-| --- | --- |
-| **Point of sale** | Product lookup, barcode-assisted checkout, discounts, held carts, split tenders, customer credit, receipts and sales history |
-| **Inventory** | Product catalogue, stock levels, cost and selling prices, stock adjustments, purchases, low-stock alerts and reorder analysis |
-| **Customers and credit** | Customer directory, account balances, debt collection, payment history and customer purchase insights |
-| **Branches** | Branch records, branch-scoped access, stock transfers, paired terminals and consolidated reporting |
-| **People and access** | Staff accounts, role-based permissions, branch assignments, device assignments and access status |
-| **Business intelligence** | Sales trends, product performance, gross profit and margin, customer value, debt ageing, payment mix and branch comparisons |
-| **Devices and continuity** | Device pairing, secure device credentials, offline transaction capture, encrypted local storage, sync queues and operational telemetry |
-| **Administration** | Shop oversight, subscriptions, payment review, release publishing, announcements, delegated admin roles and audit history |
+## Made for inventory-led businesses
 
-BeBoss supports retail, pharmacies, hardware and construction shops, wholesalers, electronics stores, fashion businesses, cafés, salons and other inventory-led operators. The business vertical selected during onboarding can tailor product categories and units to the operation.
+BeBoss supports the workflows used by a broad range of operators, including:
 
-## Product experiences
+- Retail and convenience shops
+- Electronics and computer stores
+- Pharmacies and health-product retailers
+- Hardware and construction-material suppliers
+- Wholesalers and distributors
+- Fashion and clothing stores
+- Cafés, salons and service businesses with stock or customer accounts
 
-### Android POS
+Whether a business operates one counter or coordinates several branches, BeBoss is designed to give its team a shared operating picture.
 
-The Android application is the mobile checkout and store-operations terminal.
+## A stronger way to run the business
 
-- Fast checkout with barcode and QR-assisted workflows.
-- Multi-cart hold and resume, discounts and split payment methods.
-- Cash, MTN MoMo, Airtel Money, card and customer-credit workflows.
-- Sales receipts, receipt sharing, supported thermal printing and exports.
-- Products, purchases, stock adjustments, customers, balances and debt payments.
-- Branch-aware workflows, staff permissions, device pairing and stock transfers.
-- Offline-first local records with an encrypted Room/SQLCipher database.
-- A durable synchronization outbox, retry handling, conflict resolution and recovery diagnostics.
-- English, Ikinyarwanda, French and Kiswahili interface resources.
+**Less time reconciling disconnected records. More time serving customers and growing the business.**
 
-Camera, biometric, Bluetooth printer, nearby Wi-Fi and other hardware capabilities depend on the Android version, hardware, operating-system permission and the relevant device provider. They are not represented as universal features on every phone.
+With checkout, stock, customer accounts, purchasing, finance, teams, devices and reporting connected in one place, BeBoss helps business owners move from day-to-day transactions to more confident operational decisions.
 
-### Native desktop workspace
-
-The Tauri desktop application provides a larger-screen workspace for shop owners and managers on Windows, macOS and Linux.
-
-- POS checkout, catalogue and inventory management.
-- Customers, purchases, sales, staff and branch operations.
-- Reports and management views designed for desktop workflows.
-- Persistent held orders and active checkout state in the encrypted local workspace.
-- Keyboard-wedge barcode scanners and the operating system's print dialog.
-- Local encrypted SQLCipher data and operating-system credential storage.
-- Cloud synchronization, diagnostics, backup and recovery tools.
-- A first-launch installation wizard that checks the native runtime, database encryption, device identity, credential vault and cloud reachability.
-- A separate Master Admin entry point and protected administrative sign-in.
-
-The first-launch desktop wizard configures and validates the local installation. Shop registration and owner authorization still use the real merchant sign-in flow. Windows/macOS/Linux do not inherit Android-only APIs such as CameraX, Android Keystore or Android Bluetooth services; the desktop application uses the appropriate native desktop facilities instead.
-
-### Web platform and merchant portal
-
-The web application combines the public BeBoss product site with merchant self-service and platform administration. It is served by Cloudflare Workers, including its SSR routes and TanStack server functions.
-
-- Public product information, features, pricing and support contact, plus official Android APK and native Windows/macOS/Linux desktop downloads with release integrity details.
-- Interactive subscription and device-fee calculations.
-- Merchant shop portal for account information, branches, transfers, staff and device operations available to the authenticated owner.
-- Secure owner sign-in and shop membership checks.
-- Release downloads routed through the private release store.
-- Announcement cards for website visitors and signed-in app users, outside the homepage hero.
-- A responsive administrative workspace for platform operations.
-
-### Master Admin command centre
-
-The central administration workspace is for authorized BeBoss platform operators—not shop cashiers.
-
-- Shop, device, staff, branch and synchronization oversight.
-- Payment claim review and subscription controls.
-- Device security posture and cloud health monitoring.
-- Administrative audit history.
-- App release management and download analytics.
-- Scheduled, translated, audience-targeted announcements.
-- Delegated admin invitations with server-enforced permissions.
+<p align="center">
+  <a href="https://beboss.rw"><strong>Discover BeBoss at beboss.rw →</strong></a>
+</p>
 
 ---
 
-## Enterprise administration
+<p align="center">
+  <sub>BeBoss — One business. One connected operating view.</sub>
+</p>
 
-### Delegated admin roles
-
-A Super Admin can assign a role to an existing account or invite a teammate by email. New teammates receive a Supabase Auth invitation and must complete the secure account flow before signing in. Passwords and service credentials are never stored in the browser, the Android app or a desktop bundle.
-
-| Role | Intended access |
-| --- | --- |
-| **Super Admin** | Full platform administration, team assignment and security-sensitive controls |
-| **Release Manager** | Upload and publish app releases, select the current build and control public visibility |
-| **Announcement Manager** | Create, translate, schedule and target platform announcements |
-| **Device Auditor** | Review device security posture, consented device location and synchronization health |
-| **Support** | Work the support inbox and view permitted shop information |
-| **Finance Reviewer** | Read payment claims and reconciliation details; payment approval and BB3 issuance remain Super Admin-only |
-| **Analyst** | Read-only platform analytics across shops, payment status, downloads and device health |
-| **Operations Manager** | Review operational shops, devices and synchronization workflows |\n| **Staff Manager** | Activate, suspend, assign and remove shop staff accounts; cannot modify shop-owner accounts |
-
-The permission catalogue is defined on the server and stored in a protected grant table. The browser cannot submit an arbitrary permission list, modify its own grant, or elevate an account by editing user metadata. Super Admin access remains a separate role, and the last Super Admin cannot be removed or downgraded accidentally.
-
-A role name is not a security boundary by itself: server functions call the database permission check before performing privileged work, and sensitive tables remain protected by Row Level Security and server-side credentials.
-
-### Release management
-
-The Admin → App Releases workspace has two separate interactive tabs: **Mobile releases** and **Desktop releases**. They maintain separate version histories and public download pointers.
-
-**Mobile**
-- Build the production-signed Android APK locally from the repository root with `./gradlew :app:assembleRelease` (Windows: `gradlew.bat :app:assembleRelease`). Select the resulting `app/build/outputs/apk/release/app-release.apk` in the Admin page; do not upload a debug APK.
-- Upload signed Android APKs with version name, monotonically increasing version code, minimum Android version, release notes and SHA-256 metadata. The browser calculates the file's SHA-256 before upload.
-- Select the current APK, manage public visibility of archived releases, and review download totals and channel activity.
-- Edit release metadata without replacing the immutable APK binary. Destructive archive deletion remains a Super Admin action.
-
-**Desktop**
-- Build Windows, macOS and Linux installers locally on the matching operating systems. The Admin page does not dispatch GitHub Actions or fetch binaries from GitHub Releases.
-- Choose one platform, select the local `.exe`, `.dmg` or `.AppImage` artifact, calculate SHA-256 in the browser, upload it to the private Supabase release bucket and publish it.
-- Publish platforms independently. Making a new Windows build current does not change macOS, Linux or Android.
-- Review per-platform current versions, archive history, checksums and download counts; change the public current build, hide an archived version, or delete an old package (Super Admin only).
-
-Desktop installer binaries stay in private storage. The public download page exposes metadata for each current platform build and for archived versions that an administrator has explicitly made public. The server issues a short-lived signed download link only after rechecking the selected release's public visibility, and increments its associated download counter. The storage service key and private object paths are never exposed to the browser.
-
-Production Android distribution still requires the real upload keystore, signing passwords, package validation and a tested update path. A debug APK is for internal testing and must not replace an already installed production-signed build. Windows customer installers must pass local Authenticode signing and verification; macOS signing/notarization and Linux compatibility must be tested on their corresponding platforms before broad distribution.
-
-### In-app announcements
-
-Administrators can publish notices with:
-
-- A headline, message, severity and optional call-to-action.
-- Website, Android/app or all-audience targeting.
-- Optional targeting to a single shop.
-- Start and end times, including scheduled notices.
-- Translations into Ikinyarwanda, French and Kiswahili when the configured translation service is available.
-
-Active notices are delivered through the same announcement service. The Android and desktop workspace dashboards display in-app notices as operational cards; they are not embedded in the homepage hero. Audience and shop targeting are enforced by the database policies as well as the client UI.
-
-### Device oversight and location privacy
-
-The device console combines last-sync heartbeats, pairing and assignment state with security telemetry such as device posture, root/emulator/hooking signals, clock-integrity signals and permission summaries.
-
-**Location is optional and off by default.** A device user must enable the location-sharing setting and grant Android foreground location permission. When enabled, BeBoss can attach a fresh location fix while the application is in use. Disabling sharing clears the locally cached fix and subsequent telemetry updates clear the cloud location value.
-
-BeBoss does not add hidden location collection or background GPS tracking. Device location availability depends on the phone, location services, foreground permission, user consent and network connectivity. A stale or unavailable GPS reading is not presented as a live location.
-
----
-
-## Offline-first architecture
-
-BeBoss is designed around reliable store operations and controlled synchronization—not a cloud-only checkout screen.
-
-```text
- Android POS ────────┐
-                     │
- Native Desktop ─────┼── Encrypted local operations
-                     │
- Merchant Web ───────┘
-                          │
-                          ▼
-                 Supabase Auth + API
-                          │
-                          ▼
-                  PostgreSQL + RLS
-                          │
-                 Server-side functions
-                          │
-             ┌────────────┼────────────┐
-             ▼            ▼            ▼
-          Admin       Private files   Integrations
-          console     and releases    (when configured)
-```
-
-Core engineering mechanisms include:
-
-- Room database persistence with SQLCipher encryption at rest on Android.
-- OS credential-vault storage for native desktop secrets.
-- Device-scoped authentication credentials for enrolled Android terminals.
-- Durable sync queues, retry schedules and dead-letter handling.
-- Hybrid Logical Clocks, tombstones and conflict-resolution rules for supported sync entities.
-- Shop-scoped access policies and authenticated owner membership.
-- Server-only privileged operations for platform administration, release files and sensitive secrets.
-
-Offline work can continue while disconnected, but cloud-only actions—such as account verification, invitation acceptance, payment verification, release downloads and cross-device synchronization—require a working connection. The application reports unavailable cloud operations instead of claiming they succeeded.
-
-## Commercial and payment controls
-
-BeBoss supports subscription plans and device-linked licensing. The configured plan calculator accounts for branches, staff, additional POS terminals and billing cycles. The additional-terminal price currently configured by the platform is **2,000 FRw per month per additional active paired device**; the primary owner terminal is included in that device calculation.
-
-MTN MoMo, Airtel Money and other payment-provider integrations require valid merchant credentials, provider configuration, callback URLs and provider-side testing. A submitted SMS, screenshot or payment note is not proof of settlement. Payment approval must rely on an independently verified provider transaction or a documented manual check against the merchant account.
-
-BeBoss does not promise that every provider integration is automatically active merely because a payment option is visible in the interface.
-
----
-
-## Technology stack
-
-| Layer | Main technologies |
-| --- | --- |
-| Android | Kotlin, Jetpack Compose, Room, SQLCipher, WorkManager, CameraX, Android Keystore |
-| Desktop | Tauri 2, Rust, React, TypeScript, Vite, SQLite/SQLCipher |
-| Web | TanStack Start, TanStack Router, React, TypeScript, Tailwind CSS, Cloudflare Workers |
-| Cloud | Supabase Auth, PostgreSQL, Row Level Security, Storage, Edge Functions |
-| Testing | Vitest, ESLint, TypeScript checks, Android unit tests, Rust tests and CI build jobs |
-
-## Repository layout
-
-```text
-/
-├── app/                         # Android POS application
-├── desktop/                     # Tauri native desktop application
-├── web/                         # Public site, merchant portal and admin platform
-│   ├── src/routes/               # Public, merchant and admin routes
-│   ├── src/lib/                  # Server functions, domain logic and queries
-│   └── supabase/
-│       ├── functions/            # Server-side Edge Functions
-│       └── migrations/           # Database schema, indexes and RLS policies
-├── .github/workflows/            # Source checks and CI-only installation smoke tests; no production release uploads
-└── README.md
-```
-
-## Run the projects locally
-
-### 1. Prerequisites
-
-- Node.js 22 and npm.
-- Java and the Android SDK required by the Gradle wrapper.
-- Rust stable and the platform prerequisites for Tauri 2 when building desktop.
-- A Supabase project for authenticated cloud features.
-- Provider credentials only for the external services you intend to test.
-
-### 2. Configure secrets
-
-Start from the root `.env.example` and keep real values in the ignored root `.env` or in your deployment secret manager.
-
-For web server operations, configure the project URL, publishable key, service-role key (server only), production admin invite redirect, and the optional integration secrets required by your deployment.
-
-For desktop, copy `desktop/.env.example` to `desktop/.env.local` and set only:
-
-```dotenv
-VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
-```
-
-Never place `SUPABASE_SERVICE_ROLE_KEY`, Supabase secret keys, signing keys, payment-provider secrets, SMS keys or DataShare HMAC keys in a `VITE_*` variable, Android resource, mobile asset or desktop client bundle.
-
-For Android production builds, configure the release keystore and protected security secrets using the variables documented in the root `.env.example`. Do not commit those values.
-
-### 3. Web application
-
-```powershell
-cd web
-npm install
-npm run dev
-```
-
-Validation:
-
-```powershell
-npm run lint
-npm test
-npm run build
-```
-
-### 4. Desktop application
-
-```powershell
-cd desktop
-npm ci
-npm run dev
-```
-
-`npm run dev` starts the native Tauri application and its first-launch wizard. `npm run dev:ui` is a browser-only preview and intentionally cannot access the native SQLCipher database or operating-system credential vault.
-
-Build the current platform's installer with `npm run dist`, or use `npm run dist:win`, `npm run dist:mac` and `npm run dist:linux` on the respective operating systems.
-
-### 5. Android application
-
-From the repository root:
-
-```powershell
-./gradlew :app:testDebugUnitTest
-./gradlew :app:assembleDebug
-```
-
-On Windows Command Prompt, use `gradlew.bat` instead of `./gradlew`.
-
-A debug build is intended for local validation. Use the protected production signing configuration for store or customer distribution.
-
-### 6. Database and Edge Functions
-
-Apply migrations in order using the Supabase CLI or your project's migration workflow. Review the SQL and Row Level Security policy changes before applying them to production. Deploy Edge Functions from `web/supabase/functions/` using the configured Supabase project and keep all privileged environment variables in Supabase Function Secrets.
-
-The delegated admin roles and Android release-visibility controls require the migration:
-
-`20261125211854_enterprise_admin_roles_public_release_visibility.sql`
-
-The platform-specific locally uploaded desktop release workspace requires:
-
-`20261126103000_admin_local_desktop_releases.sql`
-
-Apply every pending migration in chronological order before enabling the new Admin upload experience. This migration creates the private desktop release metadata table, extends the private release bucket limit and installs the permission-checked current-release, visibility and download-counter functions.
-
-The public APK Edge Function must also be deployed from `web/supabase/functions/public-apk-download/` for the public download endpoint to enforce the visibility flag.
-
----
-
-## Security and operational boundaries
-
-- The service-role key is a server-side credential and bypasses Row Level Security. It must never ship to a client.
-- Browser and mobile clients use publishable project configuration and authenticated/tenant-scoped access.
-- Admin account invitations and grant mutations run on trusted server code.
-- Admin permission grants are not client-editable; server functions verify the relevant permission for privileged actions.
-- Device telemetry is limited to the operational and security signals described above. Location sharing is separately consented and foreground-only.
-- Local encryption does not remove the need for tested backups, secure device access and controlled recovery.
-- CI build success is not a substitute for merchant-device testing, provider certification, production signing, database migration review or an independent security assessment.
-
-## Project status
-
-BeBoss is an actively developed multi-platform retail system. The repository contains implemented Android, desktop, web, cloud and administration workflows; the depth of integration available in a deployment depends on its configured secrets, published migrations, deployed Edge Functions, signed releases, hardware and provider accounts.
-
-The intended rollout is to validate one real shop and its devices first, reconcile the product catalogue and opening balances, test cashier permissions and offline recovery, verify printers and payment flows, and then expand by branch.
-
-**BeBoss — one business, one operating view.**
