@@ -25,7 +25,3 @@ dependencyResolutionManagement {
 rootProject.name = "BeBoss"
 
 include(":app")
-
-// The shared KMP build is isolated so its newer Kotlin toolchain does not
-// change the existing Android application build plugins or release pipeline.
-includeBuild("shared")
