@@ -74,3 +74,31 @@
 .access-result small { display: block; margin-top: 3px; color: #9fb0c8; font-size: 11px; line-height: 1.5; }
 .access-meta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; color: #c3d0e2; font-size: 11px; }
 .access-meta span { display: inline-flex; align-items: center; gap: 5px; }
+
+.command-shortcut-help {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 13px;
+  padding: 9px 16px 10px;
+  border-top: 1px solid var(--border);
+  color: #8fa1ba;
+  font-size: 10px;
+}
+.command-shortcut-help span { display: inline-flex; align-items: center; gap: 4px; }
+.command-shortcut-help kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 19px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: #b7c5d8;
+  background: #152136;
+  font-size: 9.5px;
+}
+@media (max-width: 560px) {
+  .command-shortcut-help { gap: 6px 9px; }
+  .command-shortcut-help span:first-child { width: 100%; }
+}

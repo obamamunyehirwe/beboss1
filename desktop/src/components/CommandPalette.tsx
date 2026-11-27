@@ -117,9 +117,18 @@ export function CommandPalette({ cloud, snapshot, nav, onClose, onNavigate, onQu
           })}
         </div>)}
       </div>
+      <div className="command-shortcut-help" aria-label="Desktop keyboard shortcuts">
+        <span>Quick navigation:</span>
+        <span><kbd>Ctrl / ⌘</kbd><kbd>1</kbd> Overview</span>
+        <span><kbd>2</kbd> POS</span>
+        <span><kbd>3</kbd> Inventory</span>
+        <span><kbd>4</kbd> Sales</span>
+        <span><kbd>5</kbd> Reports</span>
+      </div>
       <div className="command-foot">
         <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
         <span><kbd>↵</kbd> open</span>
+        <span><kbd>Esc</kbd> close</span>
         <span className="command-foot-brand"><img src="/beboss-app-icon.png" alt="" /> BeBoss Command</span>
       </div>
     </section>

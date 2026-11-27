@@ -12,6 +12,7 @@ import { BrowserRuntimeNotice } from "./components/BrowserRuntimeNotice";
 import { ensureSnapshot, errorText, isToday, n, rows, s } from "./lib/format";
 import { mergeSnapshots } from "./lib/snapshot-merge";
 import { parseDesktopUpdateOffer, type DesktopUpdateOffer } from "./lib/desktop-update";
+import { resolveDesktopNavigationShortcut } from "./lib/desktop-keyboard-shortcuts";
 import type { CloudState, DesktopPreferences, LanSyncResult, NavKey, ReceiptPayload, RestorePreview, Row, Snapshot } from "./lib/types";
 import { AuthScreen } from "./components/AuthScreen";
 import { DeviceRestorePrompt } from "./components/DeviceRestorePrompt";
@@ -525,10 +526,22 @@ function NativeDesktopApp() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      const modifierPressed = event.ctrlKey || event.metaKey;
+      if (!modifierPressed) return;
+      if (event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
       }
+      const target = event.target;
+      const isEditing = target instanceof HTMLElement &&
+        (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+      const destination = resolveDesktopNavigationShortcut(event.key, modifierPressed, event.shiftKey, isEditing);
+      if (!destination) return;
+      event.preventDefault();
+      setView(destination);
+      setMenuOpen(false);
+      setPaletteOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

@@ -85,7 +85,7 @@ A mobile-first workspace for day-to-day selling and store operations. Android br
 
 A native desktop workspace for deeper operational control on Windows, macOS and Linux. The larger-screen experience brings together checkout, inventory, sales history, customer accounts, purchasing, finance, reporting, branches, staff, devices, transfers, subscription controls, backup and recovery, synchronization and system diagnostics.
 
-Desktop is built for the realities of a working shop: keyboard-driven barcode scanners, operating-system printer queues, protected local recovery data and a management workspace that remains useful when connectivity is interrupted.
+Desktop is built for the realities of a working shop: keyboard-driven barcode scanners, operating-system printer queues, protected local recovery data, privacy-filtered support exports and quick keyboard navigation—with a management workspace that remains useful when connectivity is interrupted.
 
 ### Merchant web portal — for connected self-service
 
