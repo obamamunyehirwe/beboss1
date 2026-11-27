@@ -9,13 +9,14 @@ type FinancePeriod = "TODAY" | "7D" | "30D" | "90D" | "ALL";
 
 function timestampOf(row: Row, ...keys: string[]) {
   for (const key of keys) {
-    const value = n(row[key]);
-    if (value > 0) return value;
+    const raw = row[key];
+    const parsed = typeof raw === "string" && !/^\\d+(?:\\.\\d+)?$/.test(raw) ? Date.parse(raw) : n(raw);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
   return 0;
 }
-function branchOf(row: Row) {
-  return s(row.branchId ?? row.branch_id) || "main_branch";
+function branchOf(row: Row, mainBranchId = "main_branch") {
+  return s(row.branchId ?? row.branch_id) || mainBranchId;
 }
 function tenderOf(row: Row) {
   return s(row.paymentMethod ?? row.payment_method).trim().toUpperCase();
@@ -41,9 +42,10 @@ function parseReconciliation(event: Row): Row | null {
 export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; snapshot: Snapshot | null }) {
   const [period, setPeriod] = useState<FinancePeriod>("30D");
   const [branchFilter, setBranchFilter] = useState("ALL");
-  const [includeUnpaid, setIncludeUnpaid] = useState(false);
+  
 
   const branches = rows(cloud.branches).filter((branch) => branch.is_active !== false);
+  const mainBranchId = s(branches.find((branch) => branch.is_main_branch === true)?.id) || "main_branch";
   const branchNames = new Map<string, string>(branches.map((branch) => [s(branch.id), s(branch.name)]));
   const startAt = useMemo(() => {
     const now = new Date();
@@ -51,7 +53,7 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
     const days = period === "7D" ? 7 : period === "30D" ? 30 : period === "90D" ? 90 : 0;
     return days ? Date.now() - days * DAY : 0;
   }, [period]);
-  const branchMatches = (record: Row) => branchFilter === "ALL" || branchOf(record) === branchFilter;
+  const branchMatches = (record: Row) => branchFilter === "ALL" || branchOf(record, mainBranchId) === branchFilter;
   const sales = rows(snapshot?.sales).filter((sale) => {
     const time = timestampOf(sale, "saleDate", "sale_date");
     return (!startAt || time >= startAt) && branchMatches(sale);
@@ -81,8 +83,8 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
 
   const branchSummary = useMemo(() => branches.map((branch) => {
     const id = s(branch.id);
-    const localSales = sales.filter((sale) => branchOf(sale) === (id || "main_branch"));
-    const localPayments = payments.filter((payment) => branchOf(payment) === (id || "main_branch"));
+    const localSales = sales.filter((sale) => branchOf(sale, mainBranchId) === (id || mainBranchId));
+    const localPayments = payments.filter((payment) => branchOf(payment, mainBranchId) === (id || mainBranchId));
     const salesTotal = localSales.reduce((sum, sale) => sum + Math.max(0, n(sale.totalAmount ?? sale.total_amount)), 0);
     const collectedTotal = localSales.reduce((sum, sale) => sum + amountCollected(sale), 0) +
       localPayments.reduce((sum, payment) => sum + Math.max(0, n(payment.amount)), 0);
@@ -107,7 +109,7 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
     const rowsForExport = [
       ...sales.map((sale) => ({
         record_type: "SALE", timestamp: new Date(timestampOf(sale, "saleDate", "sale_date")).toISOString(),
-        branch: branchNames.get(branchOf(sale)) || branchOf(sale),
+        branch: branchNames.get(branchOf(sale, mainBranchId)) || branchOf(sale, mainBranchId),
         reference: s(sale.receiptNumber ?? sale.receipt_number ?? sale.id),
         counterparty: s(sale.customerName ?? sale.customer_name) || "Walk-in Customer",
         method: tenderOf(sale), gross_amount_rwf: n(sale.totalAmount ?? sale.total_amount),
@@ -117,7 +119,7 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
       })),
       ...payments.map((payment) => ({
         record_type: "CUSTOMER_REPAYMENT", timestamp: new Date(timestampOf(payment, "paymentDate", "payment_date")).toISOString(),
-        branch: branchNames.get(branchOf(payment)) || branchOf(payment),
+        branch: branchNames.get(branchOf(payment, mainBranchId)) || branchOf(payment, mainBranchId),
         reference: s(payment.receiptNumber ?? payment.receipt_number ?? payment.id),
         counterparty: s(payment.customerName ?? payment.customer_name),
         method: tenderOf(payment), gross_amount_rwf: n(payment.amount), collected_amount_rwf: n(payment.amount),
@@ -163,7 +165,7 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
       <StatCard label="Gross sales" value={money(revenue)} sub={sales.length.toLocaleString() + " transactions · average " + money(averageOrder)} icon={Store} />
       <StatCard label="Cost of goods" value={money(cost)} sub="Recorded cost value at sale time" icon={ArrowDownRight} tone="blue" />
       <StatCard label="Gross profit" value={money(grossProfit)} sub={margin.toFixed(1) + "% gross margin · " + money(discounts) + " discounts"} icon={ArrowUpRight} tone={grossProfit >= 0 ? "green" : "orange"} />
-      <StatCard label="Customer receivables" value={money(receivables)} sub={money(outstandingSales) + " unpaid value in selected sales"} icon={Wallet} tone="orange" />
+      <StatCard label="Shop-wide receivables" value={money(receivables)} sub={money(outstandingSales) + " unpaid value in selected sales"} icon={Wallet} tone="orange" />
     </div>
     <div className="stat-grid four">
       <StatCard label="Cash collections" value={money(cashSales + cashRepayments)} sub={money(cashSales) + " sales · " + money(cashRepayments) + " repayments"} icon={Banknote} />
@@ -205,7 +207,7 @@ export function FinanceControlPage({ cloud, snapshot }: { cloud: CloudState; sna
       </tbody></table></div> : <Empty title="No saved cash close-outs yet" description="Complete a branch cash close-out from Branch management. Saved results are retained in the shop-scoped cloud activity journal." />}
     </section>
     <section className="panel">
-      <div className="panel-heading"><div><span className="eyebrow muted">RECEIVABLES · FINANCIAL EXPOSURE</span><h3>Top customer balances</h3></div><Wallet size={18} className="muted-icon" /></div>
+      <div className="panel-heading"><div><span className="eyebrow muted">RECEIVABLES · FINANCIAL EXPOSURE</span><h3>Top customer balances · shop-wide</h3></div><Wallet size={18} className="muted-icon" /></div>
       {customers.filter((customer) => n(customer.debtBalance) > 0).sort((a, b) => n(b.debtBalance) - n(a.debtBalance)).slice(0, 15).length
         ? <div className="table-wrap"><table><thead><tr><th>Customer</th><th>Phone</th><th>Balance</th><th>Credit limit</th><th>Exposure</th></tr></thead><tbody>
           {customers.filter((customer) => n(customer.debtBalance) > 0).sort((a, b) => n(b.debtBalance) - n(a.debtBalance)).slice(0, 15).map((customer) => {
