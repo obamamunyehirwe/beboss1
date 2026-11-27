@@ -13,6 +13,8 @@ data class Branch(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val name: String = "Main Branch",
     val code: String = "BR-01",
+    // STORE locations serve retail/POS operations; WAREHOUSE locations hold stock.
+    val locationType: String = "STORE",
     val address: String = "Kigali, Rwanda",
     val phone: String = "+250 788 000 000",
     val managerUserId: String = "",
