@@ -1985,3 +1985,10 @@ select option { background: var(--panel-bg); color: var(--text); }
   .executive-network-meta{flex-direction:column}
 }
 @media(prefers-reduced-motion:reduce){.executive-branch-track i{transition:none}}
+
+
+.enterprise-location-type-badge{display:inline-flex;align-items:center;justify-content:center;padding:4px 7px;border:1px solid var(--border);border-radius:999px;font-size:7px;font-weight:950;letter-spacing:.65px}
+.enterprise-location-type-badge.store{border-color:color-mix(in srgb,#3eaa83 38%,var(--border));background:color-mix(in srgb,#3eaa83 9%,var(--panel-bg));color:color-mix(in srgb,#26916d 75%,var(--text))}
+.enterprise-location-type-badge.warehouse{border-color:color-mix(in srgb,#5594d8 44%,var(--border));background:color-mix(in srgb,#5594d8 10%,var(--panel-bg));color:color-mix(in srgb,#4d8ac9 80%,var(--text))}
+.enterprise-toolbar-controls select{min-width:132px;max-width:100%}
+@media(max-width:620px){.enterprise-toolbar-controls select{flex:1 1 140px}}
