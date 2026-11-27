@@ -16,7 +16,7 @@ Deno.test("branch creation and profile/status/manager changes produce distinct a
   const updated = buildShopAuditSnapshot("BRANCH", {
     id: "branch-1", name: "Kigali Central", code: "KG-01", is_active: true,
     is_main_branch: true, operational_status: "SUSPENDED",
-    manager_user_id: "manager-1", manager_name: "Branch Manager",
+    manager_user_id: "manager-1", manager_name: "Branch Manager", notes: "Extended opening hours",
     created_at: 100, updated_at: 200
   });
   const status = classifyShopAuditTransition("BRANCH", created, updated);
@@ -42,7 +42,7 @@ Deno.test("transfer state and receipt changes are tracked without changing the p
   const before = buildShopAuditSnapshot("STOCK_TRANSFER", {
     id: "transfer-1", transfer_number: "TRF-1", status: "IN_TRANSIT",
     product_name: "Product", from_branch_name: "A", to_branch_name: "B",
-    quantity: 4, cost_value_rwf: 4000, created_at: 100, updated_at: 150
+    quantity: 4, cost_value_rwf: 4000, notes: "Urgent replenishment", created_at: 100, updated_at: 150
   });
   const after = {
     ...before, status: "COMPLETED", receivedBy: "manager", receivedAt: 200,
@@ -51,6 +51,10 @@ Deno.test("transfer state and receipt changes are tracked without changing the p
   const change = classifyShopAuditTransition("STOCK_TRANSFER", before, after);
   assertEquals(change?.action, "STATUS_CHANGED");
   assert(change?.detail.includes("receipt confirmation changed"));
+  const noteEdit = { ...after, notes: "Received in two sealed cartons" };
+  const noteChange = classifyShopAuditTransition("STOCK_TRANSFER", after, noteEdit);
+  assertEquals(noteChange?.action, "DETAILS_UPDATED");
+  assert(noteChange?.detail.includes("notes changed"));
 });
 
 Deno.test("audit snapshots parse only matching versioned record details", () => {
