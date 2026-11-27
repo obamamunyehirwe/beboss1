@@ -1243,6 +1243,7 @@ fun BranchFormDialog(
 ) {
     var name by remember { mutableStateOf(initialBranch?.name ?: "") }
     var code by remember { mutableStateOf(initialBranch?.code ?: "BR-0${branchesCount + 1}") }
+    var locationType by remember { mutableStateOf(initialBranch?.locationType?.uppercase()?.takeIf { it == "WAREHOUSE" } ?: "STORE") }
     var address by remember { mutableStateOf(initialBranch?.address ?: "Kigali, Rwanda") }
     var phone by remember { mutableStateOf(initialBranch?.phone ?: "+250 ") }
     var email by remember { mutableStateOf(initialBranch?.email ?: "") }
@@ -1315,6 +1316,41 @@ fun BranchFormDialog(
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true
                 )
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(if (language == AppLanguage.KINYARWANDA) "Ubwoko bw'ahantu" else "Location Type",
+                    fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { locationType = "STORE" },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (locationType == "STORE") OrangePrimary.copy(alpha = 0.14f) else Color.Transparent
+                        ),
+                        border = BorderStroke(1.dp, if (locationType == "STORE") OrangePrimary else MaterialTheme.colorScheme.outline)
+                    ) {
+                        Icon(Icons.Default.Store, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (language == AppLanguage.KINYARWANDA) "Iduka" else "Retail store", fontSize = 11.sp)
+                    }
+                    OutlinedButton(
+                        onClick = { locationType = "WAREHOUSE"; isMain = false },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (locationType == "WAREHOUSE") OrangePrimary.copy(alpha = 0.14f) else Color.Transparent
+                        ),
+                        border = BorderStroke(1.dp, if (locationType == "WAREHOUSE") OrangePrimary else MaterialTheme.colorScheme.outline)
+                    ) {
+                        Icon(Icons.Default.Inventory, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (language == AppLanguage.KINYARWANDA) "Ububiko" else "Warehouse", fontSize = 11.sp)
+                    }
+                }
+                Text(if (locationType == "WAREHOUSE") {
+                    if (language == AppLanguage.KINYARWANDA) "Ububiko bw'ibicuruzwa; ntibukoreshwa nka POS nkuru." else "Stock-holding location. Warehouses cannot be the main POS branch."
+                } else {
+                    if (language == AppLanguage.KINYARWANDA) "Ishami ricuruza kandi rishobora kwakira POS." else "Customer-facing retail location that can host POS operations."
+                }, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -1533,6 +1569,7 @@ fun BranchFormDialog(
                                     id = initialBranch?.id ?: UUID.randomUUID().toString(),
                                     name = name.trim(),
                                     code = code.trim().ifBlank { "BR-01" },
+                                    locationType = locationType,
                                     address = address.trim().ifBlank { "Kigali, Rwanda" },
                                     phone = phone.trim(),
                                     managerUserId = managerUserId,
