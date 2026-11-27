@@ -122,6 +122,8 @@ export type SaleLine = {
   branchId: string;
 };
 
+export type PaymentAllocation = { method: 'CASH' | 'MOMO' | 'AIRTEL' | 'CARD' | 'BANK'; amount: number };
+
 export type Sale = {
   id: string;
   receiptNumber: string;
@@ -135,6 +137,7 @@ export type Sale = {
   paymentMethod: string;
   paymentStatus: 'PAID' | 'PARTIAL' | 'UNPAID';
   amountPaid: number;
+  paymentBreakdown?: PaymentAllocation[];
   notes: string;
   branchId: string;
   branchName: string;
@@ -234,6 +237,7 @@ export type CheckoutInput = {
   discountAmount: number;
   amountPaid: number;
   paymentMethod: string;
+  paymentBreakdown?: PaymentAllocation[];
   notes: string;
   branchId: string;
   enforceCreditLimit?: boolean;
