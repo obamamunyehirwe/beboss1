@@ -973,13 +973,34 @@ Deno.serve(async (req: Request) => {
         if (text(item.tableName) !== "branches" || !id || id.length > 120 ||
             !Number.isFinite(number(item.deletedAt)) || number(item.deletedAt) <= 0 ||
             !Number.isFinite(number(item.hlcTimestamp)) || number(item.hlcTimestamp) <= 0 ||
+            (text(item.deletedByDeviceId).trim() && text(item.deletedByDeviceId).trim() !== deviceId) ||
             seen.has(id)) {
           return json(400, { ok: false, message: "The branch deletion tombstone is malformed or duplicated." });
         }
         seen.add(id);
       }
 
-      // Deletion is accepted only when the same tombstone is present in a complete,
+      // Already journaled tombstones are acknowledged cheaply on later sync cycles.
+      // Their exact deletion timestamp and HLC are included in the versioned audit detail.
+      const { data: previousDeletionEvents, error: previousDeletionError } = await admin.from("cloud_sync_events")
+        .select("detail").eq("shop_sync_key", text(shop.id)).eq("entity", "BRANCH")
+        .eq("action", "DELETED").eq("device_id", deviceId).order("created_at", { ascending: false }).limit(1000);
+      if (previousDeletionError) throw new Error("Could not read previous branch deletion audit events: " + previousDeletionError.message);
+      const acknowledged = new Set<string>();
+      for (const event of previousDeletionEvents ?? []) {
+        try {
+          const detail = JSON.parse(text(event.detail));
+          if (detail?.version === 1 && text(detail.recordId) && detail.state) {
+            acknowledged.add(text(detail.recordId) + ":" + number(detail.state.updatedAt) + ":" + number(detail.state.hlcTimestamp));
+          }
+        } catch { /* Older plain-text events are not deletion acknowledgements. */ }
+      }
+      const pendingTombstones = requested.filter((item) =>
+        !acknowledged.has(text(item.recordId) + ":" + number(item.deletedAt) + ":" + number(item.hlcTimestamp))
+      );
+      if (!pendingTombstones.length) return json(200, { ok: true, auditedCount: 0, unchangedCount: requested.length });
+
+      // Deletion is accepted only when the same pending tombstone is present in a complete,
       // HMAC-verified snapshot from this enrolled device. A client cannot fabricate
       // a standalone deletion request and remove another shop's branch.
       const verified = await latestVerifiedSnapshot(admin, text(shop.id), config.hmacSecret);
@@ -989,7 +1010,7 @@ Deno.serve(async (req: Request) => {
       const signedTombstones = verified.snapshot.tombstones;
       let auditedCount = 0;
       let unchangedCount = 0;
-      for (const tombstone of requested) {
+      for (const tombstone of pendingTombstones) {
         const recordId = text(tombstone.recordId);
         const signed = signedTombstones.find((candidate) =>
           text(candidate.tableName) === "branches" &&
