@@ -158,6 +158,9 @@ export function QnxDevelopmentPage() {
           <button className="btn-primary" disabled={!sdkReady || Boolean(busy)} onClick={() => void runOperation("agent", () => invoke<QnxResult>("qnx_build_agent", { installRoot: installRoot.trim() || null, targetArch }))}>
             {busy === "agent" ? <LoaderCircle size={15} className="spin" /> : <Wrench size={15} />} Build edge agent
           </button>
+          <button className="btn-outline" disabled={!sdkReady || Boolean(busy)} onClick={() => void runOperation("client", () => invoke<QnxResult>("qnx_build_ipc_client", { installRoot: installRoot.trim() || null, targetArch }))}>
+            {busy === "client" ? <LoaderCircle size={15} className="spin" /> : <Terminal size={15} />} Build IPC client
+          </button>
         </div>
       </section>
 
