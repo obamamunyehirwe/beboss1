@@ -29,7 +29,7 @@ export function BarcodeScannerModal({ visible, onClose, onDetected }: ScanProps)
           <CodeScanner
             style={StyleSheet.absoluteFill}
             isActive={visible}
-            barcodeFormats={['ean-13', 'ean-8', 'upc-a', 'upc-e', 'code-128', 'code-39', 'qr-code']}
+            barcodeFormats={['all-formats']}
             onBarcodeScanned={(codes: any[]) => {
               const value = codes?.[0]?.rawValue || codes?.[0]?.displayValue || codes?.[0]?.value;
               if (typeof value === 'string' && value.trim()) { onDetected(value.trim()); onClose(); }
