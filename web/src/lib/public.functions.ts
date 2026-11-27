@@ -528,7 +528,9 @@ const branchSchema = z.object({
   managerName: z.string().trim().max(120).default(""),
   isMainBranch: z.boolean().default(false),
   locationType: z.enum(["STORE", "WAREHOUSE"]).optional(),
-  operationalStatus: z.enum(["OPEN", "CLOSED", "SUSPENDED"]).default("OPEN"),
+  operationalStatus: z.enum(["OPEN", "PAUSED", "CLOSED", "SUSPENDED"])
+    .transform((status) => status === "SUSPENDED" ? "PAUSED" : status)
+    .default("OPEN"),
   colorHex: z.string().trim().max(16).default("#FF6B1A"),
   dailySalesTargetRwf: z.number().int().min(0).max(1_000_000_000).default(0),
   monthlyTargetRwf: z.number().int().min(0).max(1_000_000_000).default(0),
@@ -646,18 +648,29 @@ export const deleteMyShopBranch = createServerFn({ method: "POST" })
     const ownerContext = context as unknown as OwnerAuthContext;
     const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const { data: branch, error: branchError } = await sb.from("shop_branches")
-      .select("id,name,code,is_main_branch,is_active,operational_status")
+      .select("id,name,code,is_main_branch,is_active,operational_status,product_count,stock_value_rwf")
       .eq("id", data.id).eq("shop_sync_key", key).maybeSingle();
     if (branchError || !branch || !branch.is_active) throw new Error("The active branch could not be found in this shop.");
     if (branch.is_main_branch) throw new Error("The main branch cannot be deleted. Set another branch as main first.");
 
-    const [devices, staff] = await Promise.all([
+    const unresolvedTransferStatuses = ["REQUESTED", "PENDING", "IN_TRANSIT", "RECEIPT_REQUESTED", "CANCEL_REQUESTED"];
+    const [devices, staff, outgoingTransfers, incomingTransfers] = await Promise.all([
       sb.from("shop_devices").select("id").eq("shop_sync_key", key).eq("branch_id", data.id).eq("is_active", true).limit(1),
       sb.from("shop_users").select("user_id").eq("shop_sync_key", key).eq("assigned_branch_id", data.id).eq("is_active", true).limit(1),
+      sb.from("shop_stock_transfers").select("id,status").eq("shop_sync_key", key).eq("from_branch_id", data.id).in("status", unresolvedTransferStatuses).limit(1),
+      sb.from("shop_stock_transfers").select("id,status").eq("shop_sync_key", key).eq("to_branch_id", data.id).in("status", unresolvedTransferStatuses).limit(1),
     ]);
-    if (devices.error || staff.error) throw new Error("Could not verify the branch's active assignments.");
+    if (devices.error || staff.error || outgoingTransfers.error || incomingTransfers.error) {
+      throw new Error("Could not verify the branch's active staff, devices and stock-transfer dependencies.");
+    }
     if ((devices.data?.length ?? 0) > 0 || (staff.data?.length ?? 0) > 0) {
-      throw new Error("Move active devices and staff to another branch before deleting this branch.");
+      throw new Error("Move active devices and staff to another branch before archiving this branch.");
+    }
+    if ((outgoingTransfers.data?.length ?? 0) > 0 || (incomingTransfers.data?.length ?? 0) > 0) {
+      throw new Error("Complete or cancel all unresolved stock transfers involving this branch before archiving it.");
+    }
+    if (Number(branch.product_count ?? 0) > 0 || Number(branch.stock_value_rwf ?? 0) > 0) {
+      throw new Error("Move or archive this branch's product inventory first. The latest cloud reconciliation still reports assigned products or stock value.");
     }
 
     const now = Date.now();
@@ -674,7 +687,7 @@ export const deleteMyShopBranch = createServerFn({ method: "POST" })
       action: "DEACTIVATED",
       actor: "OWNER:" + data.username.trim().toLowerCase(),
       device_id: "WEB:OWNER_PORTAL",
-      detail: String(branch.name ?? "") + " · " + String(branch.code ?? "") + " · " + String(branch.operational_status ?? "") + " → INACTIVE; active staff/device checks passed.",
+      detail: String(branch.name ?? "") + " · " + String(branch.code ?? "") + " · " + String(branch.operational_status ?? "") + " → INACTIVE; active staff/devices, assigned product counts, stock value and unresolved transfers were checked.",
     });
     if (auditError) throw new Error("The branch was deactivated, but its required audit event could not be recorded. Refresh the branch and audit history before retrying.");
     return { ok: true, auditLogged: true };

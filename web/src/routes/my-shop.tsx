@@ -795,7 +795,7 @@ function BranchManager({
     phoneBranch: "",
     managerName: "",
     locationType: "STORE" as "STORE" | "WAREHOUSE",
-    operationalStatus: "OPEN" as "OPEN" | "CLOSED" | "SUSPENDED",
+    operationalStatus: "OPEN" as "OPEN" | "PAUSED" | "CLOSED",
     colorHex: "#FF6B1A",
     dailySalesTargetRwf: 0,
     monthlyTargetRwf: 0,
@@ -821,7 +821,7 @@ function BranchManager({
       phoneBranch: b.phone,
       managerName: b.manager_name,
       locationType: b.location_type === "WAREHOUSE" ? "WAREHOUSE" : "STORE",
-      operationalStatus: (b.operational_status as "OPEN" | "CLOSED" | "SUSPENDED") ?? "OPEN",
+      operationalStatus: (b.operational_status === "SUSPENDED" ? "PAUSED" : (b.operational_status ?? "OPEN")) as "OPEN" | "PAUSED" | "CLOSED",
       colorHex: b.color_hex,
       dailySalesTargetRwf: b.daily_sales_target_rwf,
       monthlyTargetRwf: b.monthly_target_rwf,
@@ -1025,8 +1025,8 @@ function BranchManager({
                     <td className="p-3 font-mono text-muted-foreground">{b.code || "—"}</td>
                     <td className="p-3 text-muted-foreground">{b.manager_name || "—"}</td>
                     <td className="p-3">
-                      <Badge variant={b.operational_status === "OPEN" ? "success" : b.operational_status === "SUSPENDED" ? "danger" : "muted"} className="text-[10px]">
-                        {b.operational_status}
+                      <Badge variant={b.operational_status === "OPEN" ? "success" : (b.operational_status === "PAUSED" || b.operational_status === "SUSPENDED") ? "warning" : "muted"} className="text-[10px]">
+                        {b.operational_status === "SUSPENDED" ? "PAUSED" : b.operational_status}
                       </Badge>
                     </td>
                     <td className="p-3 font-mono">{formatRwf(b.stock_value_rwf)}</td>
@@ -1091,7 +1091,7 @@ function BranchManager({
             <SelectContent>
               <SelectItem value="OPEN">OPEN</SelectItem>
               <SelectItem value="CLOSED">CLOSED</SelectItem>
-              <SelectItem value="SUSPENDED">SUSPENDED</SelectItem>
+              <SelectItem value="PAUSED">PAUSED</SelectItem>
             </SelectContent>
           </Select>
         </div>

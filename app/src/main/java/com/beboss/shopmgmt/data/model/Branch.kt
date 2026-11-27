@@ -30,7 +30,7 @@ data class Branch(
     // Branch-level stock value snapshot (updated on each sync)
     val stockValueRwf: Long = 0L,
     val productCount: Int = 0,
-    // Operational status: OPEN | CLOSED | SUSPENDED
+    // Operational status: OPEN | PAUSED | CLOSED (legacy SUSPENDED is normalized on import)
     val operationalStatus: String = "OPEN",
     // Email for branch-level reports
     val email: String = "",
