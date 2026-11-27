@@ -2132,15 +2132,16 @@ if (action === "submit_payment_proof") {
       };
       const existingRows = await admin.from("cloud_sync_events").select("detail")
         .eq("shop_sync_key", owner.shopId).eq("entity", "FINANCE_LEDGER")
-        .eq("action", "POSTED").order("created_at", { ascending: false }).limit(1000);
+        .eq("action", "POSTED").like("detail", '%"entryId":"' + entryId + '"%')
+        .limit(1).maybeSingle();
       if (existingRows.error) throw new Error("Could not check the financial journal before posting.");
-      for (const old of existingRows.data ?? []) {
+      if (existingRows.data?.detail) {
         try {
-          const prior = JSON.parse(text(old.detail));
+          const prior = JSON.parse(text(existingRows.data.detail));
           if (prior?.version === 1 && text(prior.entryId) === entryId) {
             return json(200, { ok: true, entry: prior, reused: true });
           }
-        } catch { /* Non-JSON legacy activity records are not finance entries. */ }
+        } catch { /* Invalid legacy detail cannot satisfy the versioned idempotency check. */ }
       }
       const detail = JSON.stringify(entry);
       if (detail.length > 1000) throw new Error("The financial journal entry is too large. Shorten its reference or note.");
@@ -2179,17 +2180,18 @@ if (action === "submit_payment_proof") {
         } catch { /* Ignore unrelated activity records. */ }
       }
       if (!original || text(original.type) === "REVERSAL") throw new Error("The original posted financial entry could not be found.");
-      const { data: previousReversals, error: reversalReadError } = await admin.from("cloud_sync_events")
-        .select("detail").eq("shop_sync_key", owner.shopId).eq("entity", "FINANCE_LEDGER")
-        .eq("action", "REVERSED").order("created_at", { ascending: false }).limit(1000);
-      if (reversalReadError) throw new Error("Could not validate existing financial reversals.");
-      for (const event of previousReversals ?? []) {
+      const previousReversal = await admin.from("cloud_sync_events").select("detail")
+        .eq("shop_sync_key", owner.shopId).eq("entity", "FINANCE_LEDGER")
+        .eq("action", "REVERSED").like("detail", '%"reversalOf":"' + originalEntryId + '"%')
+        .limit(1).maybeSingle();
+      if (previousReversal.error) throw new Error("Could not validate existing financial reversals.");
+      if (previousReversal.data?.detail) {
         try {
-          const parsed = JSON.parse(text(event.detail));
+          const parsed = JSON.parse(text(previousReversal.data.detail));
           if (text(parsed?.reversalOf) === originalEntryId) {
             return json(200, { ok: true, entry: parsed, reused: true });
           }
-        } catch { /* Ignore unrelated activity records. */ }
+        } catch { /* Invalid reversal details cannot satisfy the versioned check. */ }
       }
       const oldFlow = text(original.flow).toUpperCase();
       const newFlow = oldFlow === "OUTFLOW" ? "INFLOW" : oldFlow === "INFLOW" ? "OUTFLOW" : "TRANSFER";
