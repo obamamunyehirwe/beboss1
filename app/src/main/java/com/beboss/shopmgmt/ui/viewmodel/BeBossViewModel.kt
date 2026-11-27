@@ -103,6 +103,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import kotlin.math.roundToLong
 import java.util.concurrent.atomic.AtomicLong
 
 enum class AppScreen(val stringKey: String, val title: String) {
@@ -1141,7 +1142,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun refreshTransferApprovalPolicyNow() {
         val shopId = AndroidDeviceCredentialStore.currentShopId()
         if (shopId.isBlank()) return
-        val cached = TransferApprovalPolicyCache.load(getApplication(), shopId)
+        val cached = TransferApprovalPolicyCache.load(getApplication<Application>(), shopId)
         if (cached != null) _transferApprovalPolicy.value = cached
         val fetched = SupabaseAdminClient.fetchAndroidTransferApprovalPolicy(shopId) ?: return
         val actor = currentUser.value
@@ -1156,7 +1157,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
         }
         val ready = fetched.copy(signingKeyRegistered = registered)
         TransferApprovalPolicyCache.save(
-            getApplication(),
+            getApplication<Application>(),
             shopId,
             ready.version,
             ready.thresholdRwf,
