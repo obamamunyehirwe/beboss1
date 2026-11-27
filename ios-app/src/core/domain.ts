@@ -207,10 +207,12 @@ export type BB3VoucherValidation = {
 };
 
 /** Public key pinned in the Android SubscriptionSecurityManager. The private key is server-only. */
-const BEBOSS_BB3_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEnH8Qg10M7lur8WocoKgklEJ98F6
-UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==
------END PUBLIC KEY-----`;
+const BEBOSS_BB3_PUBLIC_KEY = [
+  '-----BEGIN PUBLIC KEY-----',
+  'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEEnH8Qg10M7lur8WocoKgklEJ98F6',
+  'UF9J9ektcbwahKU79+sHZdQAejA76NlwNldXfWaZGFNYu+ziDItMapV7dA==',
+  '-----END PUBLIC KEY-----'
+].join('\n');
 
 function sha256Hex(value: string): string {
   return QuickCrypto.createHash('sha256').update(value, 'utf8').digest('hex').toUpperCase();
