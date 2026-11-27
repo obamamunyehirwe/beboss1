@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import com.beboss.shopmgmt.data.model.DatabaseEngineStats
 import com.beboss.shopmgmt.data.model.DatabaseMaintenanceResult
+import com.beboss.shopmgmt.data.model.User
 import com.beboss.shopmgmt.data.repository.BeBossRepository
 import com.beboss.shopmgmt.util.AppLanguage
 import com.beboss.shopmgmt.util.BeBossLogger
@@ -117,11 +118,11 @@ class DatabaseMaintenanceCoordinator(
         }
     }
 
-    fun clearTransactionalDataOnly(context: Context? = null) {
+    fun clearTransactionalDataOnly(context: Context? = null, actor: User? = null) {
         val targetCtx = context ?: application
         scope.launch {
             try {
-                repository.clearTransactionalDataOnly()
+                repository.clearTransactionalDataOnly(actor)
                 onClearUiSessionState()
                 refreshDatabaseStats(targetCtx)
                 repository.recordLocalAudit(
@@ -142,11 +143,11 @@ class DatabaseMaintenanceCoordinator(
         }
     }
 
-    fun clearAllProducts(context: Context? = null, onClearedQuery: () -> Unit) {
+    fun clearAllProducts(context: Context? = null, actor: User? = null, onClearedQuery: () -> Unit) {
         val targetCtx = context ?: application
         scope.launch {
             try {
-                repository.clearAllProducts()
+                repository.clearAllProducts(actor)
                 onClearedQuery()
                 refreshDatabaseStats(targetCtx)
                 repository.recordLocalAudit(
@@ -167,11 +168,11 @@ class DatabaseMaintenanceCoordinator(
         }
     }
 
-    fun clearAllCustomers(context: Context? = null, onClearedQuery: () -> Unit) {
+    fun clearAllCustomers(context: Context? = null, actor: User? = null, onClearedQuery: () -> Unit) {
         val targetCtx = context ?: application
         scope.launch {
             try {
-                repository.clearAllCustomers()
+                repository.clearAllCustomers(actor)
                 onClearedQuery()
                 refreshDatabaseStats(targetCtx)
                 repository.recordLocalAudit(
@@ -192,11 +193,11 @@ class DatabaseMaintenanceCoordinator(
         }
     }
 
-    fun resetWholeApp(context: Context? = null, onClearedAllQueries: () -> Unit) {
+    fun resetWholeApp(context: Context? = null, actor: User? = null, onClearedAllQueries: () -> Unit) {
         val targetCtx = context ?: application
         scope.launch {
             try {
-                repository.resetWholeApp(targetCtx)
+                repository.resetWholeApp(targetCtx, actor)
                 onClearUiSessionState()
                 onClearedAllQueries()
                 refreshDatabaseStats(targetCtx)
