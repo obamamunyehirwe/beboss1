@@ -22,6 +22,7 @@ import com.beboss.shopmgmt.util.SupabaseAdminClient
 import com.beboss.shopmgmt.util.SupabaseAdminSession
 import com.beboss.shopmgmt.util.SupabaseAuditLogDto
 import com.beboss.shopmgmt.util.SupabaseBranchSnapshotDto
+import com.beboss.shopmgmt.util.SupabaseCloudSyncEventDto
 import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
 import com.beboss.shopmgmt.util.SupabasePaymentRequestDto
 import com.beboss.shopmgmt.util.SupabaseShopAccountDto
@@ -84,6 +85,9 @@ class AdminConsoleCoordinator(
 
     private val _adminDeviceTelemetry = MutableStateFlow<List<SupabaseDeviceTelemetryDto>>(emptyList())
     val adminDeviceTelemetry: StateFlow<List<SupabaseDeviceTelemetryDto>> = _adminDeviceTelemetry.asStateFlow()
+
+    private val _adminCloudActivity = MutableStateFlow<List<SupabaseCloudSyncEventDto>>(emptyList())
+    val adminCloudActivity: StateFlow<List<SupabaseCloudSyncEventDto>> = _adminCloudActivity.asStateFlow()
 
     private val _adminCloudHealth = MutableStateFlow<CloudHealthDiagnosticsDto?>(null)
     val adminCloudHealth: StateFlow<CloudHealthDiagnosticsDto?> = _adminCloudHealth.asStateFlow()
@@ -178,6 +182,7 @@ class AdminConsoleCoordinator(
             _adminUnlockCodes.value = emptyList()
             _adminAuditLogs.value = emptyList()
             _adminDeviceTelemetry.value = emptyList()
+            _adminCloudActivity.value = emptyList()
             _adminCloudHealth.value = null
             _adminAuthError.value = null
             if (prev != null) {
@@ -359,6 +364,7 @@ class AdminConsoleCoordinator(
             _adminUnlockCodes.value = SupabaseAdminClient.fetchAllUnlockCodes()
             _adminAuditLogs.value = SupabaseAdminClient.fetchAdminAuditLogs()
             _adminDeviceTelemetry.value = SupabaseAdminClient.fetchDeviceTelemetryForAdmin()
+            _adminCloudActivity.value = SupabaseAdminClient.fetchAdminCloudSyncEvents()
             SupabaseAdminClient.fetchPublicAppConfig()?.let { cfg ->
                 OfflineSubscriptionManager.saveDynamicPaymentConfig(application, cfg)
                 _adminPaymentConfig.value = cfg
@@ -440,6 +446,25 @@ class AdminConsoleCoordinator(
                 throw e
             } catch (e: Exception) {
                 emitSnackbar("Load more telemetry failed: ${e.safeMessage()}")
+            }
+        }
+    }
+
+    fun loadMoreAdminCloudActivity() {
+        if (_adminSession.value == null) return
+        scope.launch {
+            try {
+                val offset = _adminCloudActivity.value.size
+                val next = SupabaseAdminClient.fetchAdminCloudSyncEvents(limit = 200, offset = offset)
+                if (next.isEmpty()) {
+                    emitSnackbar("All cloud activity records are loaded (${_adminCloudActivity.value.size}).")
+                } else {
+                    _adminCloudActivity.value = (_adminCloudActivity.value + next).distinctBy { it.id }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emitSnackbar("Load more activity failed: ${e.safeMessage()}")
             }
         }
     }
