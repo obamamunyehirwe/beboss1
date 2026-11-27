@@ -1187,7 +1187,10 @@ function NativeDesktopApp() {
   }
 
   if ((!owner || !cloud) && view === "masterAdmin") {
-    return <AdminConsolePage theme={preferences.theme} onExit={() => setView("welcome")} />;
+    const adminTheme = preferences.theme === "system"
+      ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+      : preferences.theme;
+    return <AdminConsolePage theme={adminTheme} onExit={() => setView("welcome")} />;
   }
 
   if (!owner || !cloud) {
