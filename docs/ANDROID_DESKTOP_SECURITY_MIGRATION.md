@@ -1,6 +1,6 @@
 # Android, desktop telemetry and signing migration
 
-**Target:** Android 2.5.0 secure release; Desktop 1.4.2 production telemetry  
+**Target:** Android 2.6.0 first direct-production secure release; Desktop 1.4.2 production telemetry  
 **Repository:** obamamunyehirwe/beboss1  
 **Safety rule:** do not publish the final secure Android build until every active terminal has completed the transition release and the owner-controlled signing identity has passed the appropriate direct-APK lineage or store-distribution upgrade checks.
 
@@ -39,6 +39,14 @@ Secure 2.5.0 has no compile-time pepper field. It can verify an old v1 credentia
 3. Install and open Transition 2.4.1 on every active Android terminal. Check Admin → Device Security telemetry and confirm the permissions/migration summary reports SECURED_IN_ANDROID_KEYSTORE.
 4. Keep the transition release running until previously offline terminals reconnect and report their migration state. Missing or stale device telemetry is not proof of migration.
 5. Review all active terminals. Only after every active device has reported a recent successful migration should the release owner set SECURE_CREDENTIAL_MIGRATION_APPROVED=true in the ignored .env / protected release environment.
+
+### First customer production release (no prior production APK installations)
+
+If the owner confirms that no customer has an installed production BeBoss APK signed with the historical certificate, the new self-managed certificate can be the first production signing identity. No signing lineage is needed for customers because there are no old production installations to upgrade. The secure release gate accepts the explicit local-only setting ANDROID_FIRST_PRODUCTION_RELEASE=true instead of SECURE_CREDENTIAL_MIGRATION_APPROVED=true.
+
+This exception is valid only when no customer production installation exists and no customer database/backup containing legacy PBKDF2-v1 staff hashes will be imported without a separately approved credential migration/reset. The first production APK must use the new BeBoss keystore; every later APK must keep the same signing identity and application ID.
+
+The first secure direct-distribution release uses versionCode 20 / versionName 2.6.0, above the repository's earlier migration/test version codes. A debug-signed or historical-key test APK cannot be upgraded in place by this new certificate. Back up any test data before replacing such a test installation. Do not set this flag to bypass migration for real customer installations.
 6. Build Secure 2.5.0. CI checks that the secure BuildConfig does not contain either legacy field.
 7. After transition is complete, remove the transition-only pepper from build environments and rotate the server-only DataShare HMAC separately. Keep device Keystore envelopes; do not clear app data or reset Keystore.
 
@@ -120,7 +128,7 @@ BeBoss can distribute and update APKs directly from its private Supabase release
 
 For a new direct-distribution app, generate a self-managed key locally with `scripts/rotate-android-upload-key.ps1`, keep its PKCS#12 keystore outside Git, and configure `KEYSTORE_PATH`, `STORE_PASSWORD`, `KEY_PASSWORD`, `KEY_ALIAS` and `ANDROID_RELEASE_CERT_SHA256`. The legacy `ANDROID_UPLOAD_CERT_SHA256` environment name remains supported for existing environments.
 
-For an already-installed BeBoss package, changing to a new certificate without signing lineage will be rejected by Android. The repository includes two local helpers:
+For an already-installed BeBoss package, changing to a new certificate without signing lineage will be rejected by Android. If there are genuinely no customer production installs yet, the new key can be the first production signer and no lineage is required for customers. If any old-signed production APK is already installed, the repository includes two local helpers:
 - `scripts/create-android-signing-lineage.ps1` creates a proof-of-rotation lineage using the old and new private keystores.
 - `scripts/sign-android-apk-with-lineage.ps1` signs a release APK using both signers and that lineage, then verifies supported Android signature ranges.
 
@@ -152,4 +160,4 @@ The build now blocks:
 - Android release if the configured keystore/certificate fingerprint does not match.
 - Desktop installer creation without both renderer and native crash telemetry configured.
 
-The remaining external actions are: supply the exact historical credential pepper, migrate every active terminal, create/configure Sentry project DSNs and verify event delivery, reset/register the Android upload key in Play Console, and test upgrades on existing customer devices.
+The remaining external actions depend on release history: for a first production launch, configure the locally held signing keystore and fingerprint, set ANDROID_FIRST_PRODUCTION_RELEASE=true only after confirming there are no customer production installs or legacy credential backups to import, configure a real SENTRY_DSN, build and verify the APK, publish it through BeBoss Admin, and test update delivery on physical devices. For an existing install base, complete the transition migration and signing-compatibility path instead. Play Console is not required for direct APK distribution.

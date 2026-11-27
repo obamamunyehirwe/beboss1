@@ -31,11 +31,14 @@ abstract class ValidateSecureMigrationApprovalTask : org.gradle.api.DefaultTask(
   @get:org.gradle.api.tasks.Input
   abstract val approved: org.gradle.api.provider.Property<Boolean>
 
+  @get:org.gradle.api.tasks.Input
+  abstract val firstProductionRelease: org.gradle.api.provider.Property<Boolean>
+
   @org.gradle.api.tasks.TaskAction
   fun validate() {
-    if (!approved.get()) {
+    if (!approved.get() && !firstProductionRelease.get()) {
       throw org.gradle.api.GradleException(
-        "Secure Android release is blocked. First install Transition 2.4.1 on every active Android terminal and verify that each device reports its legacy credential pepper secured in Android Keystore. Then set SECURE_CREDENTIAL_MIGRATION_APPROVED=true."
+        "Secure Android release is blocked. For an existing production install base, migrate every active terminal through Transition 2.4.1 and set SECURE_CREDENTIAL_MIGRATION_APPROVED=true. Only for the genuinely first customer production release, with no installed production APKs and no legacy credential backups to import, set ANDROID_FIRST_PRODUCTION_RELEASE=true."
       )
     }
   }
@@ -132,8 +135,8 @@ android {
     minSdk = 24
     targetSdk = 36
     // Migration build 18 must be installed before secure build 19 on every device.
-    versionCode = 19
-    versionName = "2.5.0"
+    versionCode = 20
+    versionName = "2.6.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -204,8 +207,8 @@ android {
     }
     create("secure") {
       dimension = "credentialCompatibility"
-      versionCode = 19
-      versionName = "2.5.0"
+      versionCode = 20
+      versionName = "2.6.0"
       // No global DataShare HMAC or credential pepper is packaged in the final secure APK.
     }
   }
@@ -285,6 +288,7 @@ val validateSentryDsnConfiguration = tasks.register<ValidateSentryDsnTask>("vali
 }
 val validateSecureMigrationApproval = tasks.register<ValidateSecureMigrationApprovalTask>("validateSecureMigrationApproval") {
   approved.set(signingSecret("SECURE_CREDENTIAL_MIGRATION_APPROVED").equals("true", ignoreCase = true))
+  firstProductionRelease.set(signingSecret("ANDROID_FIRST_PRODUCTION_RELEASE").equals("true", ignoreCase = true))
 }
 val configuredSecurityPepper = signingSecret("BEBOSS_SECURITY_PEPPER").orEmpty()
 val validateCredentialPepperConfiguration = tasks.register<ValidateCredentialPepperTask>("validateCredentialPepperConfiguration") {
