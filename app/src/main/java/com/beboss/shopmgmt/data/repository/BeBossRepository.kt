@@ -235,11 +235,17 @@ class BeBossRepository(private val database: AppDatabase) {
         branchId: String = "main_branch",
         branchName: String = "Main Store",
         buyerId: String = "",
-        buyerName: String = "Store Manager"
-    ): PurchaseRecord = inventoryManager.recordPurchase(
-        productId, quantity, unitCostPrice, newSellingPrice, supplierName, supplierPhone,
-        paymentStatus, invoiceNumber, notes, branchId, branchName, buyerId, buyerName
-    )
+        buyerName: String = "Store Manager",
+        actor: User? = null
+    ): PurchaseRecord {
+        requirePermission(actor, "RECORD_PURCHASE") {
+            it.canManageInventory || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+        }
+        return inventoryManager.recordPurchase(
+            productId, quantity, unitCostPrice, newSellingPrice, supplierName, supplierPhone,
+            paymentStatus, invoiceNumber, notes, branchId, branchName, buyerId, buyerName
+        )
+    }
 
     suspend fun recordPurchaseOrder(
         productId: String,
@@ -254,13 +260,19 @@ class BeBossRepository(private val database: AppDatabase) {
         branchId: String = "main_branch",
         branchName: String = "Main Store",
         buyerId: String = "",
-        buyerName: String = "Store Manager"
+        buyerName: String = "Store Manager",
+        actor: User? = null
     ): PurchaseRecord = recordPurchase(
         productId, quantity, unitCostPrice, newSellingPrice, supplierName, supplierPhone,
-        paymentStatus, invoiceNumber, notes, branchId, branchName, buyerId, buyerName
+        paymentStatus, invoiceNumber, notes, branchId, branchName, buyerId, buyerName, actor
     )
 
-    suspend fun deletePurchaseRecord(purchaseId: String) = inventoryManager.deletePurchaseRecord(purchaseId)
+    suspend fun deletePurchaseRecord(purchaseId: String, actor: User? = null) {
+        requirePermission(actor, "DELETE_PURCHASE_RECORD", purchaseId) {
+            it.canManageInventory || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+        }
+        inventoryManager.deletePurchaseRecord(purchaseId)
+    }
 
     // -------------------------------------------------------------
     // BRANCHES & MULTI-STORE MANAGEMENT
@@ -357,8 +369,12 @@ class BeBossRepository(private val database: AppDatabase) {
     fun getSalesForCustomer(customerId: String): Flow<List<Sale>> =
         customerDebtManager.getSalesForCustomer(customerId)
 
-    suspend fun recordCustomerPayment(payment: CustomerPayment): CustomerPayment =
-        customerDebtManager.recordCustomerPayment(payment)
+    suspend fun recordCustomerPayment(payment: CustomerPayment, actor: User? = null): CustomerPayment {
+        requirePermission(actor, "RECORD_CUSTOMER_PAYMENT", payment.customerId) {
+            it.canCollectDebt || it.canManageCustomers || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+        }
+        return customerDebtManager.recordCustomerPayment(payment)
+    }
 
     // -------------------------------------------------------------
     // SHOP PROFILE
@@ -486,21 +502,27 @@ class BeBossRepository(private val database: AppDatabase) {
         branchName: String = "Main Store",
         cashierId: String = "",
         cashierName: String = "Shop Operator",
-        enforceCreditLimit: Boolean = true
-    ): Sale = salesManager.processSale(
-        items = items,
-        customerId = customerId,
-        customerName = customerName,
-        discountAmount = discountAmount,
-        paymentMethod = paymentMethod,
-        amountPaid = amountPaid,
-        notes = notes,
-        branchId = branchId,
-        branchName = branchName,
-        cashierId = cashierId,
-        cashierName = cashierName,
-        enforceCreditLimit = enforceCreditLimit
-    )
+        enforceCreditLimit: Boolean = true,
+        actor: User? = null
+    ): Sale {
+        requirePermission(actor, "PROCESS_SALE", branchId) {
+            it.canMakeSales || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+        }
+        return salesManager.processSale(
+            items = items,
+            customerId = customerId,
+            customerName = customerName,
+            discountAmount = discountAmount,
+            paymentMethod = paymentMethod,
+            amountPaid = amountPaid,
+            notes = notes,
+            branchId = branchId,
+            branchName = branchName,
+            cashierId = cashierId,
+            cashierName = cashierName,
+            enforceCreditLimit = enforceCreditLimit
+        )
+    }
 
     // -------------------------------------------------------------
     // ANALYTICS & REPORTS
@@ -592,7 +614,12 @@ class BeBossRepository(private val database: AppDatabase) {
         transferId = transferId
     )
 
-    suspend fun deleteStockTransfer(transferId: String) = branchTransferManager.deleteStockTransfer(transferId)
+    suspend fun deleteStockTransfer(transferId: String, actor: User? = null) {
+        requirePermission(actor, "DELETE_STOCK_TRANSFER", transferId) {
+            it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+        }
+        branchTransferManager.deleteStockTransfer(transferId)
+    }
 
     // -------------------------------------------------------------
     // SUBSCRIPTION, VOUCHERS & SUPABASE ADMIN LICENSING
