@@ -617,11 +617,17 @@ function branchPayload(data: Row, shopId: string) {
   if (name.length < 2 || name.length > 120) throw new Error("Branch name must contain 2–120 characters.");
   const status = text(data.operationalStatus || "OPEN").toUpperCase();
   if (!["OPEN", "CLOSED", "SUSPENDED"].includes(status)) throw new Error("Invalid branch operating status.");
+  const locationType = text(data.locationType || "STORE").trim().toUpperCase();
+  if (!["STORE", "WAREHOUSE"].includes(locationType)) throw new Error("Location type must be STORE or WAREHOUSE.");
+  if (locationType === "WAREHOUSE" && data.isMainBranch === true) {
+    throw new Error("A warehouse cannot be the main retail/POS branch. Keep a STORE as the main branch.");
+  }
   return {
     id: text(data.id) || crypto.randomUUID(),
     shop_sync_key: shopId,
     name,
     code: text(data.code).trim().slice(0, 40),
+    location_type: locationType,
     address: text(data.address).trim().slice(0, 240),
     phone: text(data.phone).trim().slice(0, 40),
     manager_user_id: text(data.managerUserId).slice(0, 120),
@@ -868,7 +874,7 @@ Deno.serve(async (req: Request) => {
       let currentRows: Row[] = [];
       if (entity === "BRANCH") {
         const result = await admin.from("shop_branches")
-          .select("id,shop_sync_key,name,code,address,phone,email,notes,manager_user_id,manager_name,is_active,is_main_branch,operational_status,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,created_at,updated_at,hlc_timestamp,last_modified_device_id")
+          .select("id,shop_sync_key,name,code,location_type,address,phone,email,notes,manager_user_id,manager_name,is_active,is_main_branch,operational_status,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,created_at,updated_at,hlc_timestamp,last_modified_device_id")
           .eq("shop_sync_key", text(shop.id)).in("id", ids).limit(250);
         if (result.error) throw new Error("Could not verify uploaded branch records before journaling: " + result.error.message);
         currentRows = (result.data ?? []) as unknown as Row[];
@@ -2236,6 +2242,13 @@ if (action === "submit_payment_proof") {
         .eq("id", row.id).maybeSingle();
       if (readError) throw new Error("Could not validate the branch record.");
       if (old && old.shop_sync_key !== owner.shopId) throw new Error("The branch belongs to another shop.");
+      // Older installed clients do not send locationType; preserve a warehouse classification.
+      if (!text((body.branch as Row | undefined)?.locationType).trim() && old?.location_type) {
+        row.location_type = text(old.location_type).toUpperCase() === "WAREHOUSE" ? "WAREHOUSE" : "STORE";
+      }
+      if (row.location_type === "WAREHOUSE" && old?.is_main_branch === true) {
+        throw new Error("A main retail branch cannot be reclassified as a warehouse. Assign another STORE as main first.");
+      }
       row.created_at = number(old?.created_at) || row.created_at;
       let previousMainBranches: Row[] = [];
       if (row.is_main_branch) {
