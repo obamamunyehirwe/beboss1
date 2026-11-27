@@ -20,8 +20,8 @@ import { BarcodeScannerModal, useBluetoothPrinters } from './src/services/hardwa
 import { decryptBackupFile, exportEncryptedBackup } from './src/services/backup';
 import { enableBiometricUnlock, requireBiometricUnlock, biometricAvailable } from './src/services/biometrics';
 import {
-  cloudConfigured, cloudSessionState, requestOwnerPhoneVerification,
-  requestSecureIosSyncReadiness, signOutCloud, verifyOwnerPhoneCode
+  cloudConfigured, cloudSessionState, enrollIosDevice, getIosDeviceCredential,
+  requestOwnerPhoneVerification, requestSecureIosSyncReadiness, signOutCloud, verifyOwnerPhoneCode
 } from './src/services/cloud';
 import { isSubscriptionActive, roundMoney } from './src/core/domain';
 import { CLOUD_SYNC_NOTICE } from './src/services/cloud-status';
@@ -75,8 +75,12 @@ function AppRoot(): React.JSX.Element {
   const [diagnostics, setDiagnostics] = useState({ pending: 0, failed: 0, localRows: 0, lastSyncAt: 0, subscriptionActive: false });
   const [online, setOnline] = useState(false);
   const [cloudAuthenticated, setCloudAuthenticated] = useState(false);
+  const [ownerOtpUsername, setOwnerOtpUsername] = useState('');
   const [ownerOtpPhone, setOwnerOtpPhone] = useState('');
   const [ownerOtp, setOwnerOtp] = useState('');
+  const [ownerJoinCode, setOwnerJoinCode] = useState('');
+  const [iosDeviceEnrolled, setIosDeviceEnrolled] = useState(false);
+  const [enrolledDeviceSummary, setEnrolledDeviceSummary] = useState('');
   const [otpRequested, setOtpRequested] = useState(false);
   const [backupPassword, setBackupPassword] = useState('');
   const [backupMode, setBackupMode] = useState<'EXPORT' | 'RESTORE'>('EXPORT');
@@ -457,11 +461,18 @@ function AppRoot(): React.JSX.Element {
       const [stats, cloud] = await Promise.all([storeDiagnostics(), cloudSessionState()]);
       setDiagnostics(stats);
       setCloudAuthenticated(cloud.authenticated);
+      setIosDeviceEnrolled(cloud.enrolledDevice);
+      const enrolled = await getIosDeviceCredential();
+      if (enrolled) setEnrolledDeviceSummary(enrolled.shopName + ' · ' + enrolled.role + ' · ' + (enrolled.branchName || 'Assigned branch'));
     } catch (caught: any) { setError(caught?.message || 'Unable to load sync status.'); }
     setScreen('sync');
   };
 
   const requestOtp = async () => {
+    if (!ownerOtpUsername.trim() || !ownerOtpPhone.trim()) {
+      setError('Enter the registered shop-owner username and phone number.');
+      return;
+    }
     setBusy(true); setError('');
     try {
       await requestOwnerPhoneVerification(ownerOtpPhone);
@@ -479,6 +490,30 @@ function AppRoot(): React.JSX.Element {
       const readiness = await requestSecureIosSyncReadiness();
       setNotice('Owner phone verified. ' + readiness.reason);
     } catch (caught: any) { setError(caught?.message || 'Phone verification failed.'); }
+    finally { setBusy(false); }
+  };
+
+  const enrollThisIphone = async () => {
+    if (!ownerOtpUsername.trim() || !ownerOtpPhone.trim() || !ownerJoinCode.trim()) {
+      setError('Enter the owner username, registered phone and invitation code from the enrolled owner terminal.');
+      return;
+    }
+    setBusy(true); setError('');
+    try {
+      const enrolled = await enrollIosDevice(ownerOtpUsername, ownerOtpPhone, ownerJoinCode, 'BeBoss iPhone');
+      const localAssignedUser = snapshot?.staff.find(user => user.id === enrolled.assignedUserId);
+      if (!localAssignedUser) {
+        setError('The iPhone was securely enrolled as ' + enrolled.role + ', but its assigned staff profile is not available locally yet. Download/restore the shop roster before signing into this assigned terminal.');
+      } else {
+        setActor(localAssignedUser);
+        await reload(localAssignedUser.id);
+      }
+      setIosDeviceEnrolled(true);
+      setEnrolledDeviceSummary(enrolled.shopName + ' · ' + enrolled.role + ' · ' + (enrolled.branchName || 'Assigned branch'));
+      setOwnerJoinCode('');
+      const readiness = await requestSecureIosSyncReadiness();
+      setNotice('iPhone device credential issued and stored in Apple Keychain. ' + readiness.reason);
+    } catch (caught: any) { setError(caught?.message || 'iPhone device enrollment failed.'); }
     finally { setBusy(false); }
   };
 
@@ -1003,16 +1038,25 @@ function AppRoot(): React.JSX.Element {
         <Text style={styles.noticeHeading}>Cloud data protection</Text>
         <Text style={styles.rowSub}>{CLOUD_SYNC_NOTICE}</Text>
       </View>
-      <SectionHeader title="Verify shop owner phone" />
+      <SectionHeader title="Owner-verified iPhone enrollment" />
+      <Field label="Registered shop-owner username" value={ownerOtpUsername} autoCapitalize="none" onChangeText={setOwnerOtpUsername} />
       <Field label="Registered owner phone" value={ownerOtpPhone} onChangeText={setOwnerOtpPhone} keyboardType="phone-pad" />
-      {!otpRequested ? <ButtonPrimary title="Request SMS code" onPress={requestOtp} loading={busy} disabled={!cloudConfigured} /> : (
+      {!otpRequested ? <ButtonPrimary title="Request owner SMS code" onPress={requestOtp} loading={busy} disabled={!cloudConfigured} /> : (
         <>
           <Field label="SMS verification code" value={ownerOtp} onChangeText={setOwnerOtp} keyboardType="number-pad" />
-          <ButtonPrimary title="Verify phone" onPress={confirmOtp} loading={busy} />
+          <ButtonPrimary title="Verify owner phone" onPress={confirmOtp} loading={busy} />
         </>
       )}
-      <ButtonSecondary title="Recheck readiness" onPress={async () => {
+      <Field label="Owner-issued device invitation code" value={ownerJoinCode} onChangeText={setOwnerJoinCode} autoCapitalize="characters" />
+      <ButtonPrimary title="Enroll this iPhone securely" onPress={enrollThisIphone} loading={busy} disabled={!cloudConfigured || !cloudAuthenticated} />
+      {iosDeviceEnrolled ? <View style={styles.noticeCard}>
+        <Text style={styles.noticeHeading}>iPhone device enrolled</Text>
+        <Text style={styles.rowSub}>{enrolledDeviceSummary}</Text>
+        <Text style={styles.rowSub}>Device credentials are stored in Apple Keychain. Snapshot synchronization is still disabled until the iOS data-transfer protocol is completed.</Text>
+      </View> : null}
+      <ButtonSecondary title="Recheck sync readiness" onPress={async () => {
         const readiness = await requestSecureIosSyncReadiness();
+        setIosDeviceEnrolled(readiness.enrolledDevice);
         setNotice(readiness.reason);
       }} />
       <Text style={styles.muted}>Cloud sync is never reported as successful until the backend issues an iPhone-bound tenant credential and the complete snapshot generation is accepted.</Text>
