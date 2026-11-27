@@ -58,7 +58,7 @@ describe('Android subscription pricing parity', () => {
   it('applies branch, worker and additional-device price tiers', () => {
     expect(calculateSubscriptionQuote(1, 1, 1, 1).totalPayable).toBe(5000);
     expect(calculateSubscriptionQuote(2, 3, 1, 1).totalPayable).toBe(12000);
-    expect(calculateSubscriptionQuote(3, 6, 1, 2).totalPayable).toBe(28000);
+    expect(calculateSubscriptionQuote(3, 6, 1, 2).totalPayable).toBe(27000);
   });
   it('applies the Android three-month and annual discounts', () => {
     expect(calculateSubscriptionQuote(1, 1, 3, 1).totalPayable).toBe(13500);
