@@ -1784,3 +1784,35 @@ select option { background: var(--panel-bg); color: var(--text); }
   .topbar-context strong,.topbar-context small { max-width:28vw; }
   .topbar-quick-action span { display:none; } .topbar-quick-action { width:36px;padding:0; }
 }
+
+
+/* Enterprise bulk-governance controls */
+.staff-bulk-panel,.device-bulk-panel {
+  display: grid; gap: 12px; margin: 13px 0; padding: 14px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: color-mix(in srgb,var(--panel-raised) 45%,var(--panel-bg));
+}
+.staff-bulk-heading,.device-bulk-panel>div:first-child {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 7px;
+}
+.staff-bulk-heading>div,.device-bulk-panel>div:first-child { min-width: 0; }
+.staff-bulk-heading strong,.device-bulk-panel strong { color: var(--text); font-size: 12px; font-weight: 850; }
+.staff-bulk-heading small,.device-bulk-panel small { display: block; color: var(--muted); font-size: 10px; }
+.staff-bulk-controls { display: grid; grid-template-columns: repeat(3,minmax(130px,1fr)) auto; align-items: end; gap: 9px; }
+.staff-bulk-controls label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; font-weight: 750; }
+.staff-bulk-controls select { width: 100%; min-height: 36px; padding: 0 9px; border: 1px solid var(--input); border-radius: 8px; background: var(--panel-bg); color: var(--text); font-size: 11px; }
+.staff-bulk-controls .btn-primary { min-height: 36px; white-space: nowrap; }
+.staff-bulk-progress,.device-bulk-progress { margin: 0; color: var(--primary); font-size: 10px; font-weight: 750; }
+.staff-table th:first-child,.staff-table td:first-child { width: 34px; text-align: center; }
+.staff-table input[type="checkbox"],.device-select-control input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
+.device-bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.device-select-control { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 800; }
+.enterprise-device-card.is-selected { border-color: color-mix(in srgb,var(--primary) 60%,var(--border)); box-shadow: 0 0 0 2px color-mix(in srgb,var(--primary) 12%,transparent); }
+.enterprise-device-card-top { gap: 8px; }
+@media (max-width: 760px) {
+  .staff-bulk-controls { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .staff-bulk-controls .btn-primary { grid-column: 1/-1; }
+}
+@media (max-width: 460px) {
+  .staff-bulk-controls { grid-template-columns: 1fr; }
+}
