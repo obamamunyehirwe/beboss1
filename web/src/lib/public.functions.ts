@@ -527,6 +527,7 @@ const branchSchema = z.object({
   phoneBranch: z.string().trim().max(40).default(""),
   managerName: z.string().trim().max(120).default(""),
   isMainBranch: z.boolean().default(false),
+  locationType: z.enum(["STORE", "WAREHOUSE"]).optional(),
   operationalStatus: z.enum(["OPEN", "CLOSED", "SUSPENDED"]).default("OPEN"),
   colorHex: z.string().trim().max(16).default("#FF6B1A"),
   dailySalesTargetRwf: z.number().int().min(0).max(1_000_000_000).default(0),
@@ -545,18 +546,24 @@ export const upsertMyShopBranch = createServerFn({ method: "POST" })
     const now = Date.now();
     const { data: existing, error: readError } = await sb
       .from("shop_branches")
-      .select("id,shop_sync_key,created_at")
+      .select("id,shop_sync_key,created_at,location_type")
       .eq("id", data.id)
       .maybeSingle();
     if (readError) throw new Error("Could not verify the branch identity. Please retry.");
     if (existing && existing.shop_sync_key !== key) {
       throw new Error("This branch identifier is already registered to another shop.");
     }
+    const locationType = data.locationType ?? (existing?.location_type === "WAREHOUSE" ? "WAREHOUSE" : "STORE");
+    if (!["STORE", "WAREHOUSE"].includes(locationType)) throw new Error("Choose STORE or WAREHOUSE as the location type.");
+    if (locationType === "WAREHOUSE" && data.isMainBranch) {
+      throw new Error("A warehouse cannot be the main retail/POS branch. Keep a STORE as the main branch.");
+    }
 
     const branchPayload = {
       shop_sync_key: key,
       name: data.name,
       code: data.code,
+      location_type: locationType,
       address: data.address,
       phone: data.phoneBranch,
       manager_user_id: "",
