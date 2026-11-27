@@ -403,3 +403,9 @@ export async function requestSecureIosSyncReadiness(): Promise<{
     };
   }
 }
+
+
+export function getCloudRestConfiguration(): { url: string; publishableKey: string } {
+  if (!cloudConfigured) throw new Error('Secure cloud configuration is missing.');
+  return { url, publishableKey: publicKey };
+}
