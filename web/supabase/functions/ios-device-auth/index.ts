@@ -345,6 +345,10 @@ async function authorizeIosDevice(
   }
 
   const branchId = text(device.branch_id).trim();
+  const staffBranchId = text(staff.assigned_branch_id).trim();
+  if (role !== "OWNER" && (!branchId || !staffBranchId || staffBranchId !== branchId)) {
+    throw new Error("This iPhone is not assigned to the same active branch as its staff account.");
+  }
   const branchResult = branchId
     ? await scoped.from("shop_branches").select("id,name,is_active").eq("id", branchId).maybeSingle()
     : { data: null, error: null };
@@ -617,6 +621,217 @@ async function latestVerifiedShopSnapshot(
   };
 }
 
+function snapshotRows(value: unknown): Row[] {
+  return arrayRows(value);
+}
+function snapshotBranchId(row: Row): string {
+  return text(row.branchId || row.branch_id).trim();
+}
+function approxEqual(left: unknown, right: unknown): boolean {
+  const a = number(left);
+  const b = number(right);
+  return Math.abs(a - b) <= 0.011;
+}
+
+/**
+ * The service-role snapshot writer must enforce the same role/branch boundary
+ * as the mobile repositories and tenant RLS. Never trust a client-supplied
+ * owner profile, staff list, tombstone or cashier inventory valuation.
+ */
+function scopeIosSnapshotByDeviceRole(
+  incoming: Snapshot,
+  existing: Snapshot | null,
+  device: IosDeviceContext
+): Snapshot {
+  if (device.role === "OWNER") return incoming;
+  if (!existing) {
+    throw new Error("An owner or manager must publish the first complete shop catalogue before this staff iPhone can synchronize.");
+  }
+  if (!device.branchId) {
+    throw new Error("This staff iPhone has no active branch assignment and cannot synchronize operational records.");
+  }
+
+  const base = existing;
+  const branchId = device.branchId;
+  const baseBranches = arrayRows(base.branches);
+  const branch = baseBranches.find(row => text(row.id) === branchId);
+  if (!branch) throw new Error("The assigned branch is not present in the latest verified shop snapshot.");
+
+  if (device.role === "MANAGER") {
+    const sales = arrayRows(incoming.sales).filter(row => snapshotBranchId(row) === branchId);
+    const saleIds = new Set(sales.map(row => text(row.id)));
+    return {
+      ...incoming,
+      shopProfile: base.shopProfile,
+      // Manager accounts can run branch operations, but cannot administer the
+      // tenant owner record, shop-wide staff directory or delete shop records.
+      users: [],
+      tombstones: [],
+      products: arrayRows(incoming.products).filter(row => snapshotBranchId(row) === branchId),
+      customers: arrayRows(incoming.customers),
+      sales,
+      saleItems: arrayRows(incoming.saleItems).filter(row => saleIds.has(text(row.saleId || row.sale_id))),
+      customerPayments: arrayRows(incoming.customerPayments).filter(row => snapshotBranchId(row) === branchId),
+      purchases: arrayRows(incoming.purchases).filter(row => snapshotBranchId(row) === branchId),
+      stockTransfers: arrayRows(incoming.stockTransfers).filter(row =>
+        text(row.fromBranchId || row.from_branch_id) === branchId ||
+        text(row.toBranchId || row.to_branch_id) === branchId),
+      branches: arrayRows(incoming.branches).filter(row => text(row.id) === branchId)
+    };
+  }
+
+  if (device.role !== "CASHIER") {
+    throw new Error("This iPhone role is not authorised to publish business snapshots.");
+  }
+
+  const existingProducts = arrayRows(base.products);
+  const existingProductById = new Map(existingProducts.map(row => [text(row.id), row]));
+  const existingSales = arrayRows(base.sales);
+  const existingSaleIds = new Set(existingSales.flatMap(row => [text(row.id), text(row.receiptNumber || row.receipt_number)]));
+  const newSales = arrayRows(incoming.sales).filter(row =>
+    !existingSaleIds.has(text(row.id)) &&
+    !existingSaleIds.has(text(row.receiptNumber || row.receipt_number))
+  );
+  const incomingLines = arrayRows(incoming.saleItems);
+  const linesBySale = new Map<string, Row[]>();
+  for (const line of incomingLines) {
+    const id = text(line.saleId || line.sale_id);
+    if (!id) continue;
+    const bucket = linesBySale.get(id) || [];
+    bucket.push(line);
+    linesBySale.set(id, bucket);
+  }
+
+  const soldQuantity = new Map<string, number>();
+  const approvedSales: Row[] = [];
+  const approvedSaleLines: Row[] = [];
+  for (const sale of newSales) {
+    const saleId = text(sale.id);
+    if (!saleId || text(sale.cashierId || sale.cashier_id) !== device.assignedUserId) {
+      throw new Error("A cashier iPhone can only upload sales recorded by its assigned staff account.");
+    }
+    if (snapshotBranchId(sale) !== branchId) {
+      throw new Error("A cashier iPhone can only upload sales for its assigned branch.");
+    }
+    const discount = number(sale.discountAmount || sale.discount_amount);
+    const total = number(sale.totalAmount || sale.total_amount);
+    const paid = number(sale.amountPaid || sale.amount_paid);
+    if (discount > 0.001 || total <= 0 || !approxEqual(paid, total)) {
+      throw new Error("Cashier sync permits fully paid, non-discounted sales only. A manager must approve credit or discounts.");
+    }
+    const lines = linesBySale.get(saleId) || arrayRows(sale.items);
+    if (!lines.length || lines.length > 500) throw new Error("A cashier sale must contain valid saved receipt lines.");
+    let subtotal = 0;
+    let costTotal = 0;
+    const acceptedLines: Row[] = [];
+    let customLineCount = 0;
+    for (const line of lines) {
+      const productId = text(line.productId || line.product_id);
+      const quantity = number(line.quantitySold || line.quantity_sold || line.quantity);
+      const unitPrice = number(line.unitPriceAtSale || line.unit_price_at_sale);
+      const unitCost = number(line.costPriceAtSale || line.cost_price_at_sale);
+      const lineTotal = number(line.subtotal || line.total);
+      if (!productId || quantity <= 0 || unitPrice <= 0 || lineTotal <= 0 ||
+          !approxEqual(lineTotal, unitPrice * quantity)) {
+        throw new Error("A cashier receipt contains an invalid or inconsistent line item.");
+      }
+      if (productId.startsWith("custom_" + saleId)) {
+        customLineCount++;
+      } else {
+        const product = existingProductById.get(productId);
+        if (!product || snapshotBranchId(product) !== branchId) {
+          throw new Error("A cashier receipt references a product outside its assigned branch catalogue.");
+        }
+        if (!approxEqual(unitPrice, product.sellingPrice || product.selling_price) ||
+            !approxEqual(unitCost, product.costPrice || product.cost_price)) {
+          throw new Error("A cashier receipt contains a price or cost override. Only manager-approved catalogue prices can sync.");
+        }
+        soldQuantity.set(productId, (soldQuantity.get(productId) || 0) + quantity);
+      }
+      subtotal += lineTotal;
+      costTotal += unitCost * quantity;
+      acceptedLines.push(line);
+    }
+    if (customLineCount > 0 && (customLineCount !== 1 || acceptedLines.length !== 1 ||
+        number(acceptedLines[0].quantitySold || acceptedLines[0].quantity_sold || acceptedLines[0].quantity) !== 1)) {
+      throw new Error("A quick custom sale must contain exactly one custom item with quantity one.");
+    }
+    if (!approxEqual(subtotal, total) ||
+        (!customLineCount && !approxEqual(costTotal, number(sale.totalCost || sale.total_cost))) ||
+        (!customLineCount && !approxEqual(total - costTotal, number(sale.totalProfit || sale.total_profit)))) {
+      throw new Error("A cashier receipt total does not match its saved line items.");
+    }
+    approvedSales.push(sale);
+    for (const line of acceptedLines) {
+      if (!linesBySale.has(saleId)) {
+        approvedSaleLines.push({ ...line, saleId });
+      } else {
+        approvedSaleLines.push(line);
+      }
+    }
+  }
+
+  const products: Row[] = [];
+  const now = Date.now();
+  for (const product of existingProducts) {
+    const productId = text(product.id);
+    const quantity = soldQuantity.get(productId) || 0;
+    if (quantity <= 0) continue;
+    const stock = number(product.quantityInStock || product.quantity_in_stock || product.stock);
+    if (stock < quantity) {
+      throw new Error("The cashier sold more stock than the latest cloud catalogue contains. Refresh this iPhone and retry.");
+    }
+    products.push({
+      ...product,
+      quantityInStock: stock - quantity,
+      quantity_in_stock: undefined,
+      stock: stock - quantity,
+      updatedAt: now,
+      syncVersion: number(product.syncVersion || product.sync_version) + 1,
+      hlcTimestamp: String((BigInt(now) << 16n).toString())
+    });
+  }
+
+  // Customer profiles are shared shop records; a cashier may edit contact details,
+  // but may neither collect debt nor manufacture a debt balance through sync.
+  const existingCustomers = new Map(arrayRows(base.customers).map(row => [text(row.id), row]));
+  const customers: Row[] = [];
+  for (const raw of arrayRows(incoming.customers)) {
+    const id = text(raw.id);
+    if (!id) continue;
+    const old = existingCustomers.get(id);
+    const oldDebt = old ? number(old.debtBalance || old.debt_balance) : 0;
+    const newDebt = number(raw.debtBalance || raw.debt_balance);
+    if (!approxEqual(oldDebt, newDebt)) {
+      throw new Error("Cashier sync cannot change customer debt. Record debt collection with an authorised manager.");
+    }
+    if (old) customers.push({ ...raw, debtBalance: oldDebt });
+    else if (newDebt <= 0) customers.push(raw);
+    else throw new Error("A cashier cannot create a customer with an opening debt balance.");
+  }
+
+  return {
+    ...incoming,
+    shopProfile: base.shopProfile,
+    users: [],
+    tombstones: [],
+    products,
+    customers,
+    sales: approvedSales,
+    saleItems: approvedSaleLines,
+    customerPayments: [],
+    purchases: [],
+    stockTransfers: [],
+    branches: [],
+    metadata: {
+      ...incoming.metadata,
+      exportedBy: device.actorName,
+      exportedByRole: "CASHIER",
+      activeBranchId: branchId
+    }
+  };
+}
+
 async function handleIosSnapshotAction(
   action: string,
   req: Request,
@@ -653,7 +868,7 @@ async function handleIosSnapshotAction(
   }
 
   if (action !== "sync_upload") throw new Error("Unsupported iPhone snapshot operation.");
-  const incoming = validateSnapshot(body.snapshot, device);
+  const incoming = scopeIosSnapshotByDeviceRole(validateSnapshot(body.snapshot, device), cloud.snapshot, device);
   const expectedUpdatedAt = Math.max(0, Math.floor(number(body.expectedUpdatedAt)));
   if (expectedUpdatedAt !== cloud.latestUpdatedAt) {
     return {
