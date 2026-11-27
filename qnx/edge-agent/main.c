@@ -13,6 +13,7 @@
 #include <sys/iomsg.h>
 #include <sys/dispatch.h>
 #include <sys/neutrino.h>
+#include <sys/procmgr.h>
 
 #define BEBOSS_QNX_SERVICE_NAME "beboss-edge-gateway"
 #define BEBOSS_EDGE_PROTOCOL_VERSION 1u
@@ -95,8 +96,21 @@ static void make_reply(const beboss_edge_request_t *request,
 
 int main(void)
 {
-    name_attach_t *attachment =
-        name_attach(NULL, BEBOSS_QNX_SERVICE_NAME, 0);
+    unsigned domain = (geteuid() == 0) ? PROCMGR_ADN_ROOT : PROCMGR_ADN_NONROOT;
+    name_attach_t *attachment;
+
+    /*
+     * Request only the public-channel ability needed by name_attach().
+     * System security policy can still refuse the request.
+     */
+    if (procmgr_ability(0,
+            domain | PROCMGR_AOP_ALLOW | PROCMGR_AID_PUBLIC_CHANNEL,
+            PROCMGR_AID_EOL) != EOK) {
+        perror("BeBoss QNX edge agent: public-channel ability");
+        return EXIT_FAILURE;
+    }
+
+    attachment = name_attach(NULL, BEBOSS_QNX_SERVICE_NAME, 0);
 
     if (attachment == NULL) {
         perror("BeBoss QNX edge agent: name_attach");
