@@ -78,9 +78,15 @@ fun AdminFleetTelemetryTab(
     val context = LocalContext.current
     val dateFmt = remember { SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()) }
 
+    fun hasConsentedLocation(item: SupabaseDeviceTelemetryDto): Boolean =
+        item.locationCapturedAt > 0L &&
+            item.latitude in -90.0..90.0 &&
+            item.longitude in -180.0..180.0 &&
+            (item.latitude != 0.0 || item.longitude != 0.0)
+
     val highRiskCount = telemetryList.count { it.riskScore >= 40 }
     val tamperCount = telemetryList.count { it.clockRollbackDetected || it.isRooted || it.hasHooking }
-    val gpsActiveCount = telemetryList.count { it.latitude != 0.0 || it.longitude != 0.0 }
+    val gpsActiveCount = telemetryList.count(::hasConsentedLocation)
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -112,7 +118,7 @@ fun AdminFleetTelemetryTab(
                                 fontSize = 14.sp
                             )
                             Text(
-                                "${telemetryList.size} terminal reports • $gpsActiveCount with GPS fix",
+                                "${telemetryList.size} terminal reports • $gpsActiveCount with a consented location report",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -143,12 +149,17 @@ fun AdminFleetTelemetryTab(
                         modifier = Modifier.weight(1f)
                     )
                     TelemetrySummaryPill(
-                        label = "GPS Online",
+                        label = "Opt-in GPS",
                         value = "$gpsActiveCount",
                         color = OrangePrimary,
                         modifier = Modifier.weight(1f)
                     )
                 }
+                Text(
+                    "Device location is shared only after the device user opts in. Any point shown below is the last captured location, not live tracking.",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
@@ -214,7 +225,14 @@ fun AdminFleetTelemetryTab(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    "${item.deviceName.ifBlank { "Android Device" }} • ${item.deviceId.take(12)}",
+                                    buildString {
+                                        append(item.devicePlatform.ifBlank { "ANDROID" })
+                                        val hardware = listOf(item.manufacturer, item.model).filter { it.isNotBlank() }.joinToString(" ")
+                                        if (hardware.isNotBlank()) append(" • ").append(hardware)
+                                        if (item.osRelease.isNotBlank()) append(" • Android ").append(item.osRelease)
+                                        if (item.appVersion.isNotBlank()) append(" • BeBoss ").append(item.appVersion)
+                                        append(" • ").append(item.deviceId.take(12))
+                                    },
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontFamily = FontFamily.Monospace
@@ -265,7 +283,8 @@ fun AdminFleetTelemetryTab(
                             )
                         }
 
-                        val hasGps = item.latitude != 0.0 || item.longitude != 0.0
+                        val hasGps = hasConsentedLocation(item)
+                        val locationSharingEnabled = item.permissionsSummary.contains("location_sharing=enabled", ignoreCase = true)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -284,11 +303,16 @@ fun AdminFleetTelemetryTab(
                                 Spacer(Modifier.width(4.dp))
                                 Text(
                                     text = if (hasGps) {
-                                        item.locationLabel.ifBlank {
-                                            String.format(Locale.US, "%.4f, %.4f (±%.0fm)", item.latitude, item.longitude, item.accuracyMeters)
-                                        }
+                                        (item.locationLabel.ifBlank {
+                                            String.format(Locale.US, "%.4f, %.4f", item.latitude, item.longitude)
+                                        }) + " • Captured " + dateFmt.format(Date(item.locationCapturedAt)) +
+                                            " • ±${item.accuracyMeters.toInt()}m"
                                     } else {
-                                        "No GPS fix • Checked ${dateFmt.format(Date(item.updatedAt.coerceAtLeast(item.inspectedAt)))}"
+                                        when {
+                                            !locationSharingEnabled -> "Location not shared • Device privacy setting"
+                                            item.permissionsSummary.isBlank() -> "No location report supplied by this terminal"
+                                            else -> "Opt-in enabled • No recent foreground location fix"
+                                        } + " • Reported " + dateFmt.format(Date(item.updatedAt.coerceAtLeast(item.inspectedAt)))
                                     },
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
