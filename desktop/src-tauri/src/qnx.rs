@@ -6,6 +6,7 @@ use std::{
     process::{Command, Stdio},
 };
 use tauri::Manager;
+use uuid::Uuid;
 
 const EDGE_AGENT_SOURCE: &str = include_str!("../../../qnx/edge-agent/main.c");
 const EDGE_CLIENT_SOURCE: &str = include_str!("../../../qnx/edge-agent/client.c");
@@ -28,7 +29,7 @@ pub struct QnxToolchainStatus {
     pub sdp8_ready: bool,
     pub qcc_variants: Vec<String>,
     pub qemu_image_dir: Option<String>,
-    pub qemu_image_present: bool,
+    pub qemu_package_directory_present: bool,
     pub notes: Vec<String>,
 }
 
@@ -187,10 +188,62 @@ fn qemu_image_directory(root: Option<&Path>) -> Option<PathBuf> {
     root.and_then(|base| canonical_dir(base.join("images/qemu")))
 }
 
-fn has_qemu_image(directory: Option<&Path>) -> bool {
+fn has_qemu_package_files(directory: Option<&Path>) -> bool {
     directory
         .and_then(|path| fs::read_dir(path).ok())
-        .is_some_and(|mut entries| entries.next().is_some())
+        .is_some_and(|entries| entries.filter_map(Result::ok).any(|entry| {
+            entry.file_type().map(|kind| kind.is_file() || kind.is_dir()).unwrap_or(false)
+        }))
+}
+
+/// Compile and link a tiny target program so "ready" means more than finding
+/// qcc on disk. This also catches missing target packages and rejected licenses.
+fn verify_qcc_variants(
+    qcc: &Path,
+    host: &Path,
+    target: &Path,
+    listed_variants: &[String],
+) -> Vec<String> {
+    let probe_directory = env::temp_dir().join(format!(
+        "beboss-qnx-qcc-probe-{}",
+        Uuid::new_v4().simple()
+    ));
+    if fs::create_dir_all(&probe_directory).is_err() {
+        return Vec::new();
+    }
+
+    let source = probe_directory.join("qnx-toolchain-probe.c");
+    let source_text = "#include <sys/neutrino.h>\\nint main(void) { return 0; }\\n";
+    if fs::write(&source, source_text).is_err() {
+        let _ = fs::remove_dir_all(&probe_directory);
+        return Vec::new();
+    }
+
+    let mut verified = Vec::new();
+    for variant in ["gcc_ntox86_64", "gcc_ntoaarch64le"] {
+        if !listed_variants.iter().any(|candidate| candidate == variant) {
+            continue;
+        }
+        let output = probe_directory.join(format!("qnx-toolchain-probe-{variant}"));
+        let args = vec![
+            "-V".into(),
+            variant.into(),
+            "-Wall".into(),
+            "-Wextra".into(),
+            "-Werror".into(),
+            source.display().to_string(),
+            "-o".into(),
+            output.display().to_string(),
+        ];
+        if run_checked(qcc, host, target, &args, Some(&probe_directory)).is_ok()
+            && fs::metadata(&output).is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+        {
+            verified.push(variant.to_string());
+        }
+    }
+
+    let _ = fs::remove_dir_all(&probe_directory);
+    verified
 }
 
 fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
@@ -215,7 +268,13 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
         String::new()
     };
 
-    let variants = known_variants(&qcc_output);
+    let listed_variants = known_variants(&qcc_output);
+    let variants = match (qcc.as_deref(), host.as_deref(), target.as_deref()) {
+        (Some(qcc), Some(host), Some(target)) => {
+            verify_qcc_variants(qcc, host, target, &listed_variants)
+        }
+        _ => Vec::new(),
+    };
     let target_tree_present = target
         .as_deref()
         .is_some_and(|path| path.join("usr/include/sys/neutrino.h").is_file());
@@ -224,7 +283,7 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
         && env::consts::ARCH == "x86_64";
 
     let image_directory = qemu_image_directory(root.as_deref());
-    let qemu_image_present = has_qemu_image(image_directory.as_deref());
+    let qemu_package_directory_present = has_qemu_package_files(image_directory.as_deref());
 
     let mut notes = Vec::new();
     if !host_supported {
@@ -239,8 +298,12 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
     if !target_tree_present {
         notes.push("The QNX target headers were not found at target/qnx8/usr/include/sys/neutrino.h.".into());
     }
-    if variants.is_empty() && qcc.is_some() {
-        notes.push("qcc is present, but the x86-64 and AArch64 compiler variants were not confirmed by qcc -V.".into());
+    if listed_variants.is_empty() && qcc.is_some() {
+        notes.push("qcc was found, but it did not report the supported x86-64 or AArch64 compiler variants.".into());
+    } else if variants.is_empty() && qcc.is_some() {
+        notes.push("qcc reported target variants, but neither passed a compile-and-link smoke test. Check the QNX license, target packages and SDK environment.".into());
+    } else if variants.len() < listed_variants.len() {
+        notes.push("Only the listed compiler variants passed the compile-and-link smoke test; unverified architectures are disabled.".into());
     }
     if mkifs.is_none() {
         notes.push("mkifs was not found; custom IFS image creation is unavailable.".into());
@@ -248,8 +311,8 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
     if mkqnximage.is_none() {
         notes.push("mkqnximage was not found; QEMU image management is unavailable.".into());
     }
-    if !qemu_image_present {
-        notes.push("No QNX QEMU reference image was detected under QNX_BASE/images/qemu.".into());
+    if !qemu_package_directory_present {
+        notes.push("The QNX QEMU package directory is missing or empty under QNX_BASE/images/qemu.".into());
     }
 
     let host_tree_present = host.is_some();
@@ -284,7 +347,7 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
         sdp8_ready,
         qcc_variants: variants,
         qemu_image_dir: image_directory.as_ref().map(|path| path.display().to_string()),
-        qemu_image_present,
+        qemu_package_directory_present,
         notes,
     })
 }
@@ -510,8 +573,8 @@ fn qemu_directory(status: &QnxToolchainStatus) -> Result<PathBuf, String> {
     let directory = status.qemu_image_dir.as_deref()
         .ok_or("The QNX QEMU image directory was not found under QNX_BASE/images/qemu.")?;
     let path = PathBuf::from(directory);
-    if !has_qemu_image(Some(&path)) {
-        return Err("The QNX QEMU image directory is empty. Install and unpack the QNX SDP 8.0 QEMU reference image first.".into());
+    if !has_qemu_package_files(Some(&path)) {
+        return Err("The QNX QEMU package directory is empty. Install and unpack the QNX SDP 8.0 QEMU reference package first.".into());
     }
     Ok(path)
 }
@@ -612,13 +675,12 @@ mod tests {
     }
 
     #[test]
-    fn qemu_image_detection_requires_a_non_empty_directory() {
-        let directory = env::temp_dir().join(format!("beboss-qnx-image-test-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&directory);
+    fn qemu_package_directory_detection_requires_content() {
+        let directory = env::temp_dir().join(format!("beboss-qnx-image-test-{}", Uuid::new_v4().simple()));
         fs::create_dir_all(&directory).expect("fixture directory should be created");
-        assert!(!has_qemu_image(Some(&directory)));
-        fs::write(directory.join("README.txt"), "image fixture").expect("fixture file should be written");
-        assert!(has_qemu_image(Some(&directory)));
+        assert!(!has_qemu_package_files(Some(&directory)));
+        fs::write(directory.join("README.txt"), "package fixture").expect("fixture file should be written");
+        assert!(has_qemu_package_files(Some(&directory)));
         let _ = fs::remove_dir_all(directory);
     }
 }
