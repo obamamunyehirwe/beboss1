@@ -98,9 +98,7 @@ fn host_directory(root: Option<&Path>) -> Option<PathBuf> {
             root.join("host/win64"),
             root.join("host/linux"),
         ];
-        if let Some(path) = candidates.into_iter().find_map(canonical_dir) {
-            return Some(path);
-        }
+        return candidates.into_iter().find_map(canonical_dir);
     }
 
     env::var_os("QNX_HOST").and_then(|value| canonical_dir(PathBuf::from(value)))
@@ -108,9 +106,7 @@ fn host_directory(root: Option<&Path>) -> Option<PathBuf> {
 
 fn target_directory(root: Option<&Path>) -> Option<PathBuf> {
     if let Some(root) = root {
-        if let Some(path) = canonical_dir(root.join("target/qnx8")) {
-            return Some(path);
-        }
+        return canonical_dir(root.join("target/qnx8"));
     }
     env::var_os("QNX_TARGET").and_then(|value| canonical_dir(PathBuf::from(value)))
 }
@@ -152,6 +148,21 @@ fn configured_command(executable: &Path, host: Option<&Path>, target: Option<&Pa
     let mut command = Command::new(executable);
     if let Some(host) = host {
         command.env("QNX_HOST", host);
+        let bin_directories = [host.join("usr/bin"), host.join("bin")];
+        let mut paths: Vec<PathBuf> = bin_directories.into_iter().filter(|path| path.is_dir()).collect();
+        if let Some(existing) = env::var_os("PATH") {
+            paths.extend(env::split_paths(&existing));
+        }
+        if let Ok(path_value) = env::join_paths(paths) {
+            command.env("PATH", path_value);
+        }
+        let qcc_config = host.join("etc/qcc");
+        if qcc_config.is_dir() {
+            command.env("QCC_CONF_PATH", qcc_config);
+        }
+        if let Some(base) = host.parent().and_then(Path::parent).and_then(Path::parent) {
+            command.env("QNX_BASE", base);
+        }
     }
     if let Some(target) = target {
         command.env("QNX_TARGET", target);
@@ -240,7 +251,21 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
         notes.push("No QNX QEMU reference image was detected under QNX_BASE/images/qemu.".into());
     }
 
-    let sdp8_ready = host_supported && qcc.is_some() && target_tree_present && !variants.is_empty();
+    let host_tree_present = host.is_some();
+    let target_path_present = target.is_some();
+    if !host_tree_present {
+        notes.push("The QNX host tool directory could not be resolved from the selected installation.".into());
+    }
+    if !target_path_present {
+        notes.push("The QNX target directory could not be resolved from the selected installation.".into());
+    }
+
+    let sdp8_ready = host_supported
+        && host_tree_present
+        && target_path_present
+        && qcc.is_some()
+        && target_tree_present
+        && !variants.is_empty();
 
     Ok(QnxToolchainStatus {
         host_os: env::consts::OS.to_string(),
