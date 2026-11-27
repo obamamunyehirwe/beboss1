@@ -4,7 +4,8 @@ $required = @(
     "scripts/create-android-signing-lineage.ps1",
     "scripts/sign-android-apk-with-lineage.ps1",
     "scripts/verify-android-release-signing.ps1",
-    "scripts/rotate-android-upload-key.ps1"
+    "scripts/rotate-android-upload-key.ps1",
+    "scripts/build-first-production-apk.ps1"
 )
 foreach ($relative in $required) {
     $path = Join-Path $root $relative
