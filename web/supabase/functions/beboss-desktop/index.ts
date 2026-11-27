@@ -2238,7 +2238,7 @@ if (action === "submit_payment_proof") {
         row.manager_name = text(manager.data.full_name);
       } else row.manager_name = "";
       const { data: old, error: readError } = await admin.from("shop_branches")
-        .select("id,shop_sync_key,created_at,name,code,address,phone,email,notes,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,manager_user_id,operational_status,is_active,is_main_branch")
+        .select("id,shop_sync_key,created_at,name,code,location_type,address,phone,email,notes,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,manager_user_id,operational_status,is_active,is_main_branch")
         .eq("id", row.id).maybeSingle();
       if (readError) throw new Error("Could not validate the branch record.");
       if (old && old.shop_sync_key !== owner.shopId) throw new Error("The branch belongs to another shop.");
@@ -2300,9 +2300,13 @@ if (action === "submit_payment_proof") {
         if (old.is_main_branch !== row.is_main_branch) {
           auditEvents.push({ action: row.is_main_branch ? "MAIN_BRANCH_SET" : "MAIN_BRANCH_UNSET", detail: row.name + " · " + row.code });
         }
+        if (text(old.location_type || "STORE") !== text(row.location_type || "STORE")) {
+          auditEvents.push({ action: "LOCATION_TYPE_CHANGED", detail: row.name + " · " + row.code + " · " + text(old.location_type || "STORE") + " → " + text(row.location_type || "STORE") });
+        }
         const profileChanged =
           text(old.name) !== text(row.name) ||
           text(old.code) !== text(row.code) ||
+          text(old.location_type || "STORE") !== text(row.location_type || "STORE") ||
           text(old.address) !== text(row.address) ||
           text(old.phone) !== text(row.phone) ||
           text(old.email) !== text(row.email) ||
