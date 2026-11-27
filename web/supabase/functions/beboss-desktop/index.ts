@@ -907,6 +907,23 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      if (action === "android_transfer_sync") {
+        const writerUserId = text(currentDevice.assigned_user_id).trim();
+        const writerResult = await admin.from("shop_users")
+          .select("user_id,role,is_active,assigned_branch_id")
+          .eq("shop_sync_key", text(shop.id)).eq("user_id", writerUserId).maybeSingle();
+        const writer = writerResult.data;
+        const deviceRole = text(currentDevice.role).toUpperCase();
+        if (writerResult.error || !writer || writer.is_active !== true ||
+            !["OWNER", "MANAGER"].includes(text(writer.role).toUpperCase()) ||
+            text(writer.role).toUpperCase() !== deviceRole) {
+          return json(403, { ok: false, message: "This terminal is not assigned to an active owner or manager account authorized to synchronize stock transfers." });
+        }
+        if (deviceRole === "MANAGER" && text(writer.assigned_branch_id).trim() === "") {
+          return json(403, { ok: false, message: "A manager terminal must be assigned to an active branch before synchronizing transfers." });
+        }
+      }
+
       if (action === "android_transfer_register_approval_key") {
         if (currentDevice.is_owner_primary !== true || text(currentDevice.role).toUpperCase() !== "OWNER") {
           return json(403, { ok: false, message: "Only the active primary-owner Android terminal may register an approval key." });
@@ -1029,7 +1046,7 @@ Deno.serve(async (req: Request) => {
           const signedAt = number(proof.signed_at);
           const proofPolicyVersion = number(proof.policy_version);
           const signatureText = text(proof.signature).trim();
-          if (reason.length < 8 || reason.length > 600 || !actorUserId ||
+          if (reason.length < 8 || reason.length > 300 || !actorUserId ||
               !approvalDeviceId || !/^[A-Za-z0-9+/]+={0,2}$/.test(signatureText) ||
               signatureText.length < 80 || proofPolicyVersion !== policy.version ||
               signedAt <= 0 || signedAt > Date.now() + 5 * 60 * 1000 ||
@@ -1121,7 +1138,7 @@ Deno.serve(async (req: Request) => {
           received_at: number(transfer.received_at),
           synced: true,
           created_at: number(transfer.created_at) || Date.now(),
-          updated_at: Math.max(number(transfer.updated_at), number(transfer.created_at), Date.now()),
+          updated_at: Math.max(number(transfer.updated_at), number(transfer.created_at)),
           hlc_timestamp: number(transfer.hlc_timestamp),
           last_modified_device_id: writerDeviceId
         });
@@ -1129,6 +1146,22 @@ Deno.serve(async (req: Request) => {
 
       const upload = await admin.from("shop_stock_transfers").upsert(rowsToSave, { onConflict: "id" });
       if (upload.error) throw new Error("The verified Android transfers could not be committed: " + upload.error.message);
+
+      const existingSyncEvents = await admin.from("cloud_sync_events").select("detail")
+        .eq("shop_sync_key", text(shop.id)).eq("entity", "STOCK_TRANSFER")
+        .eq("action", "ANDROID_TRANSFER_SYNCED").order("created_at", { ascending: false }).limit(1000);
+      if (existingSyncEvents.error) {
+        throw new Error("Could not verify prior Android transfer synchronization audit events.");
+      }
+      const lastSyncByTransfer = new Map<string, number>();
+      for (const item of existingSyncEvents.data ?? []) {
+        try {
+          const detail = JSON.parse(text(item.detail)) as Row;
+          const recordId = text(detail.recordId);
+          const updatedAt = number(detail.updatedAt);
+          if (recordId && !lastSyncByTransfer.has(recordId)) lastSyncByTransfer.set(recordId, updatedAt);
+        } catch { /* malformed audit detail is ignored; the next valid event repairs the history */ }
+      }
 
       for (const evidence of newApprovalAudit) {
         const detail = JSON.stringify({ version: 1, ...evidence });
@@ -1146,6 +1179,8 @@ Deno.serve(async (req: Request) => {
       for (const transfer of requested) {
         const recordId = text(transfer.id);
         const savedTransfer = rowsToSave.find((row) => text(row.id) === recordId);
+        const updatedAt = number(savedTransfer?.updated_at);
+        if ((lastSyncByTransfer.get(recordId) ?? -1) >= updatedAt) continue;
         const approvalRequired = policy.transferApprovalThresholdRwf > 0 &&
           number(savedTransfer?.cost_value_rwf) >= policy.transferApprovalThresholdRwf;
         const eventDetail = JSON.stringify({
@@ -1159,6 +1194,7 @@ Deno.serve(async (req: Request) => {
           costValueRwf: number(savedTransfer?.cost_value_rwf),
           status: text(transfer.status).toUpperCase(),
           sourceDeviceId: text(transfer.last_modified_device_id) || deviceId,
+          updatedAt,
           syncedAt: Date.now(),
           approvalRequired,
           approvalVerified: approvalAuditIds.has(recordId) || approvalRequired
