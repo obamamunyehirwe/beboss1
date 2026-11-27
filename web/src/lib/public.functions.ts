@@ -546,7 +546,7 @@ export const upsertMyShopBranch = createServerFn({ method: "POST" })
     const now = Date.now();
     const { data: existing, error: readError } = await sb
       .from("shop_branches")
-      .select("id,shop_sync_key,created_at,location_type")
+      .select("id,shop_sync_key,created_at,location_type,name,code,address,phone,manager_name,is_main_branch,operational_status,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,email,notes")
       .eq("id", data.id)
       .maybeSingle();
     if (readError) throw new Error("Could not verify the branch identity. Please retry.");
@@ -595,7 +595,42 @@ export const upsertMyShopBranch = createServerFn({ method: "POST" })
       if (mainBranchError) throw new Error("The branch was saved, but the main-branch setting could not be synchronized.");
     }
 
-    return { ok: true, id: data.id };
+    const { data: shop, error: shopError } = await sb.from("shop_accounts")
+      .select("shop_name").eq("id", key).maybeSingle();
+    if (shopError || !shop) throw new Error("The branch was saved, but the shop identity could not be verified for its audit event.");
+    const auditEvents: Array<{ action: string; detail: string }> = [];
+    if (!existing) {
+      auditEvents.push({ action: "CREATED", detail: data.name + " · " + data.code + " · " + locationType });
+    } else {
+      if (String(existing.location_type ?? "STORE") !== locationType) {
+        auditEvents.push({ action: "LOCATION_TYPE_CHANGED", detail: data.name + " · " + data.code + " · " + String(existing.location_type ?? "STORE") + " → " + locationType });
+      }
+      if (existing.is_main_branch !== data.isMainBranch) {
+        auditEvents.push({ action: data.isMainBranch ? "MAIN_BRANCH_SET" : "MAIN_BRANCH_UNSET", detail: data.name + " · " + data.code });
+      }
+      if (String(existing.name ?? "") !== data.name || String(existing.code ?? "") !== data.code ||
+          String(existing.address ?? "") !== data.address || String(existing.phone ?? "") !== data.phoneBranch ||
+          String(existing.manager_name ?? "") !== data.managerName || String(existing.operational_status ?? "") !== data.operationalStatus ||
+          Number(existing.daily_sales_target_rwf ?? 0) !== data.dailySalesTargetRwf ||
+          Number(existing.monthly_target_rwf ?? 0) !== data.monthlyTargetRwf ||
+          Number(existing.opening_cash_float ?? 0) !== data.openingCashFloat ||
+          String(existing.email ?? "") !== data.email || String(existing.notes ?? "") !== data.notes) {
+        auditEvents.push({ action: "PROFILE_UPDATED", detail: data.name + " · " + data.code + " · Branch profile, manager, contact, operating status or financial targets changed." });
+      }
+      if (auditEvents.length === 0) auditEvents.push({ action: "NO_CHANGE", detail: data.name + " · " + data.code + " · Owner portal save contained no field changes." });
+    }
+    const auditRows = auditEvents.map((event) => ({
+      shop_sync_key: key,
+      shop_name: String(shop.shop_name ?? ""),
+      entity: "BRANCH",
+      action: event.action,
+      actor: "OWNER:" + data.username.trim().toLowerCase(),
+      device_id: "WEB:OWNER_PORTAL",
+      detail: event.detail,
+    }));
+    const { error: auditError } = await sb.from("cloud_sync_events").insert(auditRows);
+    if (auditError) throw new Error("The branch was saved, but its required audit event could not be recorded. Refresh the branch and audit history before retrying.");
+    return { ok: true, id: data.id, auditLogged: true };
   });
 
 const branchIdSchema = z.object({
