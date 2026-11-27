@@ -668,7 +668,7 @@ async function refreshShopUsageSummaryV2(admin: SupabaseClient, shopId: string) 
 }
 
 async function loadManagementRecordsV2(admin: SupabaseClient, shopId: string, ownerUsername: string) {
-  const [shop, devices, branches, transfers, staff, announcements, payments, codes] = await Promise.all([
+  const [shop, devices, branches, transfers, staff, announcements, payments, codes, activity] = await Promise.all([
     admin.from("shop_accounts").select("id,shop_name,owner_name,owner_username,owner_phone,subscription_status,subscription_expires_at,branch_count,worker_count,device_count,device_limit,monthly_fee_rwf,business_type,updated_at").eq("id", shopId).maybeSingle(),
     admin.from("shop_devices").select("id,device_name,device_id,role,branch_name,branch_id,is_active,is_owner_primary,assigned_user_id,assigned_username,assigned_user_name,last_synced_at,created_at,updated_at,monthly_fee_addon_rwf").eq("shop_sync_key", shopId).order("updated_at", { ascending: false }).limit(500),
     admin.from("shop_branches").select("*").eq("shop_sync_key", shopId).order("is_main_branch", { ascending: false }).limit(500),
@@ -676,14 +676,16 @@ async function loadManagementRecordsV2(admin: SupabaseClient, shopId: string, ow
     admin.from("shop_users").select("user_id,full_name,username,phone,role,assigned_branch_id,assigned_branch_name,is_active,updated_at").eq("shop_sync_key", shopId).order("full_name", { ascending: true }).limit(1000),
     admin.from("announcements").select("id,title,body,severity,audience,target_shop_key,cta_label,cta_url,starts_at,ends_at,is_active,translations").in("audience", ["ALL","APP"]).eq("is_active", true).or(`target_shop_key.eq.${shopId},target_shop_key.eq.`).order("starts_at", { ascending: false }).limit(50),
     admin.from("payment_requests").select("id,provider,amount_rwf,duration_months,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,rejection_reason,created_at,updated_at,gateway_provider,gateway_reference,gateway_verified_at").eq("owner_username", ownerUsername).order("created_at", { ascending: false }).limit(100),
-    admin.from("unlock_codes").select("unlock_code,tier_code,plan_days,status,issued_at,redeemed_at").eq("shop_username", ownerUsername).order("issued_at", { ascending: false }).limit(100)
+    admin.from("unlock_codes").select("unlock_code,tier_code,plan_days,status,issued_at,redeemed_at").eq("shop_username", ownerUsername).order("issued_at", { ascending: false }).limit(100),
+    admin.from("cloud_sync_events").select("id,entity,action,actor,device_id,detail,created_at").eq("shop_sync_key", shopId).order("created_at", { ascending: false }).limit(300)
   ]);
-  for (const result of [shop, devices, branches, transfers, staff, announcements, payments, codes]) {
+  for (const result of [shop, devices, branches, transfers, staff, announcements, payments, codes, activity]) {
     if (result.error) throw new Error("Could not refresh shop management records: " + result.error.message);
   }
   if (!shop.data) throw new Error("The registered shop account is unavailable.");
   return { shop: shop.data, devices: devices.data ?? [], branches: branches.data ?? [], transfers: transfers.data ?? [],
-    staff: staff.data ?? [], announcements: announcements.data ?? [], payments: payments.data ?? [], codes: codes.data ?? [], serverTime: Date.now() };
+    staff: staff.data ?? [], announcements: announcements.data ?? [], payments: payments.data ?? [], codes: codes.data ?? [],
+    activity: activity.data ?? [], serverTime: Date.now() };
 }
 
 async function ownerManagementActorV2(admin: SupabaseClient, shopId: string, actorDeviceId: string, ownerUsername: string) {
@@ -1301,7 +1303,7 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      const [snapshotResult, paymentsResult, codesResult, devicesResult, branchesResult, transfersResult, staffResult, newsResult] = await Promise.all([
+      const [snapshotResult, paymentsResult, codesResult, devicesResult, branchesResult, transfersResult, staffResult, newsResult, activityResult] = await Promise.all([
         latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret),
         admin.from("payment_requests").select("id,provider,amount_rwf,duration_months,payment_time_ms,payment_note,status,approval_mode,generated_unlock_code,rejection_reason,created_at,updated_at,gateway_provider,gateway_reference,gateway_verified_at").eq("owner_username", owner.username).order("created_at", { ascending: false }).limit(100),
         admin.from("unlock_codes").select("unlock_code,tier_code,plan_days,status,issued_at,redeemed_at").eq("shop_username", owner.username).order("issued_at", { ascending: false }).limit(100),
@@ -1309,9 +1311,10 @@ Deno.serve(async (req: Request) => {
         admin.from("shop_branches").select("*").eq("shop_sync_key", owner.shopId).order("is_main_branch", { ascending: false }).limit(500),
         admin.from("shop_stock_transfers").select("*").eq("shop_sync_key", owner.shopId).order("updated_at", { ascending: false }).limit(1000),
         admin.from("shop_users").select("user_id,full_name,username,phone,role,assigned_branch_id,assigned_branch_name,is_active,updated_at").eq("shop_sync_key", owner.shopId).order("full_name", { ascending: true }).limit(1000),
-        admin.from("announcements").select("id,title,body,severity,audience,target_shop_key,cta_label,cta_url,starts_at,ends_at,is_active,translations").in("audience", ["ALL","APP"]).eq("is_active", true).or(`target_shop_key.eq.${owner.shopId},target_shop_key.eq.`).order("starts_at", { ascending: false }).limit(30)
+        admin.from("announcements").select("id,title,body,severity,audience,target_shop_key,cta_label,cta_url,starts_at,ends_at,is_active,translations").in("audience", ["ALL","APP"]).eq("is_active", true).or(`target_shop_key.eq.${owner.shopId},target_shop_key.eq.`).order("starts_at", { ascending: false }).limit(30),
+        admin.from("cloud_sync_events").select("id,entity,action,actor,device_id,detail,created_at").eq("shop_sync_key", owner.shopId).order("created_at", { ascending: false }).limit(300)
       ]);
-      for (const result of [paymentsResult, codesResult, devicesResult, branchesResult, transfersResult, staffResult, newsResult]) {
+      for (const result of [paymentsResult, codesResult, devicesResult, branchesResult, transfersResult, staffResult, newsResult, activityResult]) {
         if (result.error) throw new Error("Could not load a BeBoss management record: " + result.error.message);
       }
       return json(200, {
@@ -1329,6 +1332,7 @@ Deno.serve(async (req: Request) => {
         transfers: transfersResult.data ?? [],
         staff: staffResult.data ?? [],
         announcements: newsResult.data ?? [],
+        activity: activityResult.data ?? [],
         serverTime: Date.now()
       });
     }
