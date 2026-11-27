@@ -1,46 +1,22 @@
 package com.beboss.shopmgmt.util
 
-import java.math.BigDecimal
-import java.math.RoundingMode
-import kotlin.math.roundToLong
+import com.beboss.shared.MoneyMath
 
 /**
- * Exact integer-cents / BigDecimal currency math utilities preventing floating-point
- * rounding drift across POS line totals, discounts, VAT, customer debts, and P&L.
+ * Android compatibility facade.
+ *
+ * Currency calculations now come from the Kotlin Multiplatform core, so the
+ * Android POS and the iOS client execute the same rounding and line-total code.
  */
 object MoneyUtils {
+    fun toCents(amount: Double): Long = MoneyMath.toCents(amount)
 
-    private const val SCALE_FACTOR = 100.0
+    fun toSignedCents(amount: Double): Long = MoneyMath.toSignedCents(amount)
 
-    fun toCents(amount: Double): Long {
-        if (!amount.isFinite() || amount <= 0.0) return 0L
-        return BigDecimal.valueOf(amount)
-            .multiply(BigDecimal(100))
-            .setScale(0, RoundingMode.HALF_UP)
-            .longValueExact()
-    }
+    fun centsToDouble(cents: Long): Double = MoneyMath.centsToDouble(cents)
 
-    fun toSignedCents(amount: Double): Long {
-        if (!amount.isFinite()) return 0L
-        return BigDecimal.valueOf(amount)
-            .multiply(BigDecimal(100))
-            .setScale(0, RoundingMode.HALF_UP)
-            .longValueExact()
-    }
+    fun multiplyPriceQuantityCents(unitPrice: Double, quantity: Double): Long =
+        MoneyMath.multiplyPriceQuantityCents(unitPrice, quantity)
 
-    fun centsToDouble(cents: Long): Double = cents / SCALE_FACTOR
-
-    fun multiplyPriceQuantityCents(unitPrice: Double, quantity: Double): Long {
-        if (!unitPrice.isFinite() || !quantity.isFinite() || unitPrice <= 0.0 || quantity <= 0.0) return 0L
-        return BigDecimal.valueOf(unitPrice)
-            .multiply(BigDecimal.valueOf(quantity))
-            .multiply(BigDecimal(100))
-            .setScale(0, RoundingMode.HALF_UP)
-            .longValueExact()
-    }
-
-    fun roundMoney(amount: Double): Double {
-        if (!amount.isFinite()) return 0.0
-        return (amount * SCALE_FACTOR).roundToLong() / SCALE_FACTOR
-    }
+    fun roundMoney(amount: Double): Double = MoneyMath.roundMoney(amount)
 }
