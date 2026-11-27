@@ -1079,6 +1079,491 @@ export async function restoreEncryptedBackupData(backup: any, actor: Staff): Pro
   return summary;
 }
 
+function remoteVersionIsNewer(
+  local: { hlc: string; updatedAt: number; version: number; deviceId: string },
+  remote: { hlc: string; updatedAt: number; version: number; deviceId: string }
+): boolean {
+  return compareHlcVersions(local, remote) > 0;
+}
+function safeRemoteNumber(value: unknown, fallback = 0): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+function remoteHlc(value: unknown): string {
+  if (typeof value === 'string') return value || '0';
+  const parsed = safeRemoteNumber(value);
+  return parsed > 0 ? String(Math.trunc(parsed)) : '0';
+}
+function normalizeRemoteBranchStatus(value: unknown): Branch['operationalStatus'] {
+  const clean = String(value || 'OPEN').toUpperCase();
+  if (clean === 'SUSPENDED' || clean === 'PAUSED') return 'PAUSED';
+  if (clean === 'CLOSED') return 'CLOSED';
+  return 'OPEN';
+}
+
+/**
+ * Merge authenticated Android/iPhone BBSHARE2 snapshots using the Android HLC
+ * ordering rules. It does not import credentials, subscription claims, device
+ * tokens or cloud keys, and does not create outbox echo records.
+ */
+export async function mergeAndroidSharePackages(
+  packages: Array<Record<string, any>>,
+  expectedShopId: string
+): Promise<number> {
+  if (!packages.length) return 0;
+  const profile = await currentProfile();
+  if (!profile) throw new Error('This iPhone has no local shop profile.');
+  const localPhone = profile.phone.replace(/\D/g, '').slice(-9);
+  const localShopId = profile.username.trim().toLowerCase() + '_' + localPhone;
+  if (expectedShopId !== localShopId) throw new Error('The remote snapshots do not belong to this iPhone shop identity.');
+
+  const merged = await transaction(async tx => {
+    const now = Date.now();
+    let changed = 0;
+    const allSales = new Map<string, Sale>();
+    const allSaleItems = new Map<string, SaleLine>();
+    const allTombstones = new Map<string, Record<string, any>>();
+
+    for (const root of packages) {
+      const remoteProfile = root.shopProfile || {};
+      const remotePhone = String(remoteProfile.phone || '').replace(/\D/g, '').slice(-9);
+      if (remotePhone && remotePhone !== localPhone) throw new Error('A remote snapshot owner phone does not match this shop.');
+
+      const branchRows: Record<string, any>[] = Array.isArray(root.branches) ? root.branches : [];
+      for (const row of branchRows) {
+        const id = String(row.id || '');
+        if (!id || !String(row.name || '').trim()) continue;
+        const existingRow = await first<Row>('SELECT data FROM branches WHERE id=?', [id], tx);
+        const existing = existingRow ? branchFromRow(existingRow) : null;
+        const candidate: Branch = {
+          id,
+          name: String(row.name).trim(),
+          code: String(row.code || 'BR-01'),
+          locationType: String(row.locationType || 'STORE').toUpperCase() === 'WAREHOUSE' ? 'WAREHOUSE' : 'STORE',
+          address: String(row.address || ''),
+          phone: String(row.phone || ''),
+          managerName: String(row.managerName || ''),
+          isMainBranch: Boolean(row.isMainBranch),
+          isActive: row.isActive !== false,
+          operationalStatus: normalizeRemoteBranchStatus(row.operationalStatus),
+          notes: String(row.notes || ''),
+          createdAt: safeRemoteNumber(row.createdAt, now),
+          updatedAt: safeRemoteNumber(row.updatedAt, now)
+        };
+        const remoteVersion = {
+          hlc: remoteHlc(row.hlcTimestamp),
+          updatedAt: candidate.updatedAt,
+          version: safeRemoteNumber(row.syncVersion, 1),
+          deviceId: String(row.lastModifiedDeviceId || '')
+        };
+        const localVersion = existing ? {
+          hlc: '0', updatedAt: existing.updatedAt, version: 1, deviceId: ''
+        } : null;
+        if (!existing || remoteVersionIsNewer(localVersion!, remoteVersion)) {
+          await saveBranchRow({ ...candidate, createdAt: existing?.createdAt || candidate.createdAt }, tx);
+          changed += 1;
+        }
+      }
+
+      const productRows: Record<string, any>[] = Array.isArray(root.products) ? root.products : [];
+      for (const row of productRows) {
+        const id = String(row.id || '');
+        if (!id || !String(row.name || '').trim()) continue;
+        const existingRow = await first<Row>('SELECT data FROM products WHERE id=?', [id], tx);
+        const existing = existingRow ? productFromRow(existingRow) : null;
+        const candidate: Product = {
+          id,
+          name: String(row.name).trim(),
+          category: String(row.category || 'General'),
+          barcode: String(row.barcode || ''),
+          unit: String(row.unit || 'pcs'),
+          branchId: String(row.branchId || 'main_branch'),
+          costPrice: roundMoney(safeRemoteNumber(row.costPrice)),
+          sellingPrice: roundMoney(safeRemoteNumber(row.sellingPrice)),
+          quantityInStock: safeRemoteNumber(row.quantityInStock),
+          lowStockThreshold: safeRemoteNumber(row.lowStockThreshold, 5),
+          isDeleted: Boolean(row.isDeleted),
+          syncVersion: safeRemoteNumber(row.syncVersion, 1),
+          hlcTimestamp: remoteHlc(row.hlcTimestamp),
+          createdAt: safeRemoteNumber(row.createdAt, now),
+          updatedAt: safeRemoteNumber(row.updatedAt, now)
+        };
+        if (candidate.quantityInStock < 0 || candidate.costPrice < 0 || candidate.sellingPrice < 0) {
+          throw new Error('The remote snapshot contains invalid product amounts or stock.');
+        }
+        const localVersion = existing ? {
+          hlc: existing.hlcTimestamp, updatedAt: existing.updatedAt,
+          version: existing.syncVersion, deviceId: ''
+        } : null;
+        const remoteVersion = {
+          hlc: candidate.hlcTimestamp, updatedAt: candidate.updatedAt,
+          version: candidate.syncVersion, deviceId: String(row.lastModifiedDeviceId || '')
+        };
+        if (!existing || remoteVersionIsNewer(localVersion!, remoteVersion)) {
+          await saveProductRow({ ...candidate, createdAt: existing?.createdAt || candidate.createdAt }, tx);
+          changed += 1;
+        }
+      }
+
+      const customerRows: Record<string, any>[] = Array.isArray(root.customers) ? root.customers : [];
+      for (const row of customerRows) {
+        const id = String(row.id || '');
+        if (!id || !String(row.name || '').trim()) continue;
+        const existingRow = await first<Row>('SELECT data FROM customers WHERE id=?', [id], tx);
+        const existing = existingRow ? customerFromRow(existingRow) : null;
+        const candidate: Customer = {
+          id,
+          name: String(row.name).trim(),
+          phone: String(row.phone || ''),
+          email: String(row.email || ''),
+          address: String(row.address || ''),
+          city: String(row.city || ''),
+          taxIdOrNin: String(row.taxIdOrNin || ''),
+          category: String(row.category || 'Regular Customer'),
+          creditLimit: safeRemoteNumber(row.creditLimit, 500000),
+          notes: String(row.notes || ''),
+          debtBalance: safeRemoteNumber(row.debtBalance),
+          isDeleted: Boolean(row.isDeleted),
+          createdAt: safeRemoteNumber(row.createdAt, now),
+          updatedAt: safeRemoteNumber(row.updatedAt, now)
+        };
+        if (candidate.creditLimit < 0 || candidate.debtBalance < 0) throw new Error('The remote snapshot contains an invalid customer balance.');
+        const localVersion = existing ? {
+          hlc: '0', updatedAt: existing.updatedAt, version: 1, deviceId: ''
+        } : null;
+        const remoteVersion = {
+          hlc: remoteHlc(row.hlcTimestamp), updatedAt: candidate.updatedAt,
+          version: safeRemoteNumber(row.syncVersion, 1), deviceId: String(row.lastModifiedDeviceId || '')
+        };
+        if (!existing || remoteVersionIsNewer(localVersion!, remoteVersion)) {
+          await saveCustomerRow({ ...candidate, createdAt: existing?.createdAt || candidate.createdAt }, tx);
+          changed += 1;
+        }
+      }
+
+      const userRows: Record<string, any>[] = Array.isArray(root.users) ? root.users : [];
+      for (const row of userRows) {
+        const id = String(row.id || '');
+        const username = String(row.username || '').trim().toLowerCase();
+        if (!id || !username) continue;
+        const existingRow = await first<Row>('SELECT data FROM users WHERE id=?', [id], tx);
+        const existing = existingRow ? staffFromRow(existingRow) : null;
+        const role: Role = ['OWNER', 'MANAGER', 'CASHIER'].includes(String(row.role).toUpperCase())
+          ? String(row.role).toUpperCase() as Role : 'CASHIER';
+        const permissions = ROLE_PERMISSIONS[role];
+        const remoteUpdatedAt = safeRemoteNumber(row.updatedAt, now);
+        const remoteHlcValue = remoteHlc(row.hlcTimestamp);
+        const shouldUpdate = !existing || remoteVersionIsNewer(
+          { hlc: '0', updatedAt: existing.updatedAt, version: 1, deviceId: '' },
+          { hlc: remoteHlcValue, updatedAt: remoteUpdatedAt, version: safeRemoteNumber(row.syncVersion, 1), deviceId: String(row.lastModifiedDeviceId || '') }
+        );
+        if (!shouldUpdate) continue;
+        const candidate: Staff = {
+          id,
+          name: String(row.name || username),
+          username,
+          phone: String(row.phone || ''),
+          role,
+          branchId: String(row.assignedBranchId || row.branchId || ''),
+          branchName: String(row.assignedBranchName || ''),
+          pinHash: existing?.pinHash || '',
+          passwordHash: existing?.passwordHash || '',
+          isActive: row.isActive !== false,
+          createdAt: existing?.createdAt || safeRemoteNumber(row.createdAt, now),
+          updatedAt: remoteUpdatedAt,
+          lastLoginAt: safeRemoteNumber(row.lastLoginAt),
+          ...permissions,
+          canSellPOS: Boolean(row.canSellPOS ?? permissions.canSellPOS),
+          canApplyDiscounts: Boolean(row.canApplyDiscounts ?? permissions.canApplyDiscounts),
+          canManageInventory: Boolean(row.canManageInventory ?? permissions.canManageInventory),
+          canViewCostAndProfit: Boolean(row.canViewCostAndProfit ?? permissions.canViewCostAndProfit),
+          canViewAnalytics: Boolean(row.canViewAnalytics ?? permissions.canViewAnalytics),
+          canManageCustomers: Boolean(row.canManageCustomers ?? permissions.canManageCustomers),
+          canCollectDebt: Boolean(row.canCollectDebt ?? permissions.canCollectDebt),
+          canDeleteRecords: Boolean(row.canDeleteRecords ?? permissions.canDeleteRecords),
+          canExportReports: Boolean(row.canExportReports ?? permissions.canExportReports),
+          canManageCollaborators: Boolean(row.canManageCollaborators ?? permissions.canManageCollaborators),
+          canManageShopSettings: Boolean(row.canManageShopSettings ?? permissions.canManageShopSettings),
+          canExportImportData: Boolean(row.canExportImportData ?? permissions.canExportImportData)
+        };
+        await execute(
+          'INSERT INTO users(id,username,role,branch_id,active,data,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username,role=excluded.role,branch_id=excluded.branch_id,active=excluded.active,data=excluded.data,updated_at=excluded.updated_at',
+          [candidate.id, candidate.username, candidate.role, candidate.branchId, candidate.isActive ? 1 : 0, toJson(candidate), candidate.createdAt, candidate.updatedAt],
+          tx
+        );
+        changed += 1;
+      }
+
+      const saleRows: Record<string, any>[] = Array.isArray(root.sales) ? root.sales : [];
+      for (const row of saleRows) {
+        const id = String(row.id || '');
+        const receiptNumber = String(row.receiptNumber || '');
+        if (!id || !receiptNumber) continue;
+        const existingRow = await first<Row>('SELECT data FROM sales WHERE id=?', [id], tx);
+        const existing = existingRow ? saleFromRow(existingRow) : null;
+        const items = (Array.isArray(row.items) ? row.items : []).map((item: any) => ({
+          id: String(item.id || makeId()),
+          saleId: id,
+          productId: String(item.productId || ''),
+          productName: String(item.productName || ''),
+          category: String(item.category || 'General'),
+          unit: String(item.unit || 'pcs'),
+          quantitySold: safeRemoteNumber(item.quantitySold),
+          costPriceAtSale: safeRemoteNumber(item.costPriceAtSale),
+          unitPriceAtSale: safeRemoteNumber(item.unitPriceAtSale),
+          subtotal: safeRemoteNumber(item.subtotal),
+          profit: safeRemoteNumber(item.profit),
+          branchId: String(item.branchId || row.branchId || 'main_branch')
+        }));
+        const candidate: Sale = {
+          id,
+          receiptNumber,
+          customerId: row.customerId ? String(row.customerId) : null,
+          customerName: String(row.customerName || 'Walk-in Customer'),
+          saleDate: safeRemoteNumber(row.saleDate, now),
+          totalAmount: safeRemoteNumber(row.totalAmount),
+          totalCost: safeRemoteNumber(row.totalCost),
+          totalProfit: safeRemoteNumber(row.totalProfit),
+          discountAmount: safeRemoteNumber(row.discountAmount),
+          paymentMethod: String(row.paymentMethod || 'CASH'),
+          paymentStatus: ['PAID', 'PARTIAL', 'UNPAID'].includes(String(row.paymentStatus).toUpperCase())
+            ? String(row.paymentStatus).toUpperCase() as Sale['paymentStatus'] : 'PAID',
+          amountPaid: safeRemoteNumber(row.amountPaid),
+          notes: String(row.notes || ''),
+          branchId: String(row.branchId || 'main_branch'),
+          branchName: String(row.branchName || ''),
+          cashierId: String(row.cashierId || ''),
+          cashierName: String(row.cashierName || ''),
+          items
+        };
+        if (!existing) {
+          const receiptExists = await first<Row>('SELECT id FROM sales WHERE receipt_number=?', [receiptNumber], tx);
+          if (!receiptExists) {
+            await execute(
+              'INSERT INTO sales(id,receipt_number,customer_id,branch_id,total_cents,paid_cents,profit_cents,created_at,data) VALUES(?,?,?,?,?,?,?,?,?)',
+              [candidate.id, candidate.receiptNumber, candidate.customerId, candidate.branchId, toCents(candidate.totalAmount),
+                toCents(candidate.amountPaid), toCents(candidate.totalProfit), candidate.saleDate, toJson(candidate)],
+              tx
+            );
+            changed += 1;
+          }
+        } else {
+          const remoteVersion = {
+            hlc: remoteHlc(row.hlcTimestamp), updatedAt: safeRemoteNumber(row.updatedAt, candidate.saleDate),
+            version: safeRemoteNumber(row.syncVersion, 1), deviceId: String(row.lastModifiedDeviceId || '')
+          };
+          if (remoteVersionIsNewer(
+            { hlc: '0', updatedAt: existing.saleDate, version: 1, deviceId: '' },
+            remoteVersion
+          )) {
+            await execute(
+              'UPDATE sales SET customer_id=?,branch_id=?,total_cents=?,paid_cents=?,profit_cents=?,created_at=?,data=? WHERE id=?',
+              [candidate.customerId, candidate.branchId, toCents(candidate.totalAmount), toCents(candidate.amountPaid),
+                toCents(candidate.totalProfit), candidate.saleDate, toJson({ ...candidate, items: existing.items }), id],
+              tx
+            );
+            changed += 1;
+          }
+        }
+        allSales.set(id, candidate);
+      }
+
+      const lineRows: Record<string, any>[] = Array.isArray(root.saleItems) ? root.saleItems : [];
+      for (const row of lineRows) {
+        const id = String(row.id || '');
+        const saleId = String(row.saleId || '');
+        if (!id || !saleId) continue;
+        const line: SaleLine = {
+          id, saleId, productId: String(row.productId || ''), productName: String(row.productName || ''),
+          category: String(row.category || 'General'), unit: String(row.unit || 'pcs'),
+          quantitySold: safeRemoteNumber(row.quantitySold), costPriceAtSale: safeRemoteNumber(row.costPriceAtSale),
+          unitPriceAtSale: safeRemoteNumber(row.unitPriceAtSale), subtotal: safeRemoteNumber(row.subtotal),
+          profit: safeRemoteNumber(row.profit), branchId: String(row.branchId || 'main_branch')
+        };
+        if (line.quantitySold <= 0 || !line.productId) continue;
+        allSaleItems.set(id, line);
+        const exists = await first<Row>('SELECT id FROM sale_items WHERE id=?', [id], tx);
+        if (!exists) {
+          const parent = await first<Row>('SELECT id FROM sales WHERE id=?', [saleId], tx);
+          if (parent) {
+            await execute('INSERT INTO sale_items(id,sale_id,product_id,quantity,data) VALUES(?,?,?,?,?)',
+              [id, saleId, line.productId, line.quantitySold, toJson(line)], tx);
+          }
+        }
+      }
+
+      const paymentRows: Record<string, any>[] = Array.isArray(root.customerPayments) ? root.customerPayments : [];
+      for (const row of paymentRows) {
+        const id = String(row.id || '');
+        const customerId = String(row.customerId || '');
+        const amount = safeRemoteNumber(row.amount);
+        if (!id || !customerId || amount <= 0) continue;
+        const exists = await first<Row>('SELECT id FROM customer_payments WHERE id=?', [id], tx);
+        if (exists) continue;
+        const customer = await first<Row>('SELECT id FROM customers WHERE id=?', [customerId], tx);
+        if (!customer) continue;
+        const payment: CustomerPayment = {
+          id, customerId, customerName: String(row.customerName || ''),
+          amount, previousDebt: safeRemoteNumber(row.previousDebt),
+          remainingDebt: safeRemoteNumber(row.remainingDebt),
+          paymentMethod: String(row.paymentMethod || 'CASH'), notes: String(row.notes || ''),
+          receiptNumber: String(row.receiptNumber || id),
+          paymentDate: safeRemoteNumber(row.paymentDate, now),
+          recordedBy: String(row.recordedBy || ''),
+          branchId: String(row.branchId || 'main_branch')
+        };
+        await execute('INSERT INTO customer_payments(id,customer_id,amount_cents,created_at,data) VALUES(?,?,?,?,?)',
+          [payment.id, payment.customerId, toCents(payment.amount), payment.paymentDate, toJson(payment)], tx);
+        changed += 1;
+      }
+
+      const purchaseRows: Record<string, any>[] = Array.isArray(root.purchases) ? root.purchases : [];
+      for (const row of purchaseRows) {
+        const id = String(row.id || '');
+        if (!id) continue;
+        const exists = await first<Row>('SELECT id FROM purchases WHERE id=?', [id], tx);
+        if (exists) continue;
+        const purchase: Purchase = {
+          id,
+          productId: String(row.productId || ''),
+          productName: String(row.productName || ''),
+          supplierName: String(row.supplierName || ''),
+          supplierPhone: String(row.supplierPhone || ''),
+          quantityPurchased: safeRemoteNumber(row.quantityPurchased),
+          unitCostPrice: safeRemoteNumber(row.unitCostPrice),
+          totalPurchaseCost: safeRemoteNumber(row.totalPurchaseCost),
+          sellingPriceAtPurchase: safeRemoteNumber(row.sellingPriceAtPurchase),
+          paymentStatus: String(row.paymentStatus || 'PAID_CASH'),
+          invoiceNumber: String(row.invoiceNumber || id),
+          branchId: String(row.branchId || 'main_branch'),
+          notes: String(row.notes || ''),
+          purchaseDate: safeRemoteNumber(row.purchaseDate, now)
+        };
+        await execute('INSERT INTO purchases(id,product_id,branch_id,total_cents,created_at,data) VALUES(?,?,?,?,?,?)',
+          [purchase.id, purchase.productId, purchase.branchId, toCents(purchase.totalPurchaseCost), purchase.purchaseDate, toJson(purchase)], tx);
+        changed += 1;
+      }
+
+      const transferRows: Record<string, any>[] = Array.isArray(root.stockTransfers) ? root.stockTransfers : [];
+      for (const row of transferRows) {
+        const id = String(row.id || '');
+        if (!id) continue;
+        const exists = await first<Row>('SELECT id FROM stock_transfers WHERE id=?', [id], tx);
+        if (exists) continue;
+        const transfer: StockTransfer = {
+          id, transferNumber: String(row.transferNumber || id),
+          productId: String(row.productId || ''), productName: String(row.productName || ''),
+          fromBranchId: String(row.fromBranchId || ''), fromBranchName: String(row.fromBranchName || ''),
+          toBranchId: String(row.toBranchId || ''), toBranchName: String(row.toBranchName || ''),
+          quantity: safeRemoteNumber(row.quantity), unit: String(row.unit || 'pcs'),
+          costValue: safeRemoteNumber(row.costValueRwf ?? row.costValue),
+          status: ['IN_TRANSIT', 'COMPLETED', 'CANCELLED'].includes(String(row.status).toUpperCase())
+            ? String(row.status).toUpperCase() as StockTransfer['status'] : 'IN_TRANSIT',
+          notes: String(row.notes || ''), transferredBy: String(row.transferredBy || ''),
+          receivedBy: String(row.receivedBy || ''),
+          transferDate: safeRemoteNumber(row.transferDate, now),
+          receivedAt: safeRemoteNumber(row.receivedAt),
+          updatedAt: safeRemoteNumber(row.updatedAt, now)
+        };
+        await execute('INSERT INTO stock_transfers(id,product_id,from_branch_id,to_branch_id,quantity,status,created_at,data) VALUES(?,?,?,?,?,?,?,?)',
+          [transfer.id, transfer.productId, transfer.fromBranchId, transfer.toBranchId, transfer.quantity, transfer.status, transfer.transferDate, toJson(transfer)], tx);
+        changed += 1;
+      }
+
+      const tombstoneRows: Record<string, any>[] = Array.isArray(root.tombstones) ? root.tombstones : [];
+      for (const row of tombstoneRows) {
+        const tableName = String(row.tableName || '');
+        const recordId = String(row.recordId || '');
+        const deletedAt = safeRemoteNumber(row.deletedAt);
+        if (!tableName || !recordId || !deletedAt) continue;
+        const id = String(row.id || (tableName + ':' + recordId));
+        allTombstones.set(id, row);
+      }
+
+      // Merge only shop-display fields. Plan status, expiry, payment references and
+      // all device/security secrets remain controlled by BeBoss Cloud and this device.
+      if (remoteProfile.phone && String(remoteProfile.phone).replace(/\D/g, '').slice(-9) !== localPhone) {
+        throw new Error('The shop owner phone in a peer snapshot does not match this iPhone.');
+      }
+      const mergedProfile: ShopProfile = {
+        ...profile,
+        shopName: String(remoteProfile.shopName || remoteProfile.name || profile.shopName),
+        ownerName: String(remoteProfile.name || profile.ownerName),
+        address: String(remoteProfile.address || profile.address),
+        email: String(remoteProfile.email || profile.email),
+        currencyCode: String(remoteProfile.currencyCode || profile.currencyCode),
+        currencySymbol: String(remoteProfile.currencySymbol || profile.currencySymbol),
+        taxRate: safeRemoteNumber(remoteProfile.taxRate, profile.taxRate),
+        receiptHeader: String(remoteProfile.receiptHeader ?? profile.receiptHeader),
+        receiptFooter: String(remoteProfile.receiptFooter ?? profile.receiptFooter),
+        businessType: String(remoteProfile.businessType || profile.businessType),
+        updatedAt: Math.max(profile.updatedAt, safeRemoteNumber(remoteProfile.updatedAt, profile.updatedAt))
+      };
+      await execute('UPDATE shop_profile SET data=?,updated_at=? WHERE id=1',
+        [toJson(mergedProfile), mergedProfile.updatedAt], tx);
+    }
+
+    for (const [id, row] of allTombstones) {
+      const tableName = String(row.tableName || '');
+      const recordId = String(row.recordId || '');
+      const deletedAt = safeRemoteNumber(row.deletedAt, now);
+      const hlc = remoteHlc(row.hlcTimestamp);
+      await execute(
+        'INSERT OR REPLACE INTO sync_tombstones(id,table_name,record_id,deleted_at,hlc) VALUES(?,?,?,?,?)',
+        [id, tableName, recordId, deletedAt, hlc], tx
+      );
+      if (tableName === 'products') {
+        const existing = await first<Row>('SELECT data FROM products WHERE id=?', [recordId], tx);
+        if (existing) {
+          const product = productFromRow(existing);
+          if (product.updatedAt <= deletedAt) {
+            await saveProductRow({ ...product, isDeleted: true, updatedAt: deletedAt, syncVersion: product.syncVersion + 1, hlcTimestamp: hlc }, tx);
+            changed += 1;
+          }
+        }
+      } else if (tableName === 'customers') {
+        const existing = await first<Row>('SELECT data FROM customers WHERE id=?', [recordId], tx);
+        if (existing) {
+          const customer = customerFromRow(existing);
+          if (customer.updatedAt <= deletedAt) {
+            await saveCustomerRow({ ...customer, isDeleted: true, updatedAt: deletedAt }, tx);
+            changed += 1;
+          }
+        }
+      } else if (tableName === 'branches') {
+        const existing = await first<Row>('SELECT data FROM branches WHERE id=?', [recordId], tx);
+        if (existing) {
+          const branch = branchFromRow(existing);
+          if (branch.updatedAt <= deletedAt && !branch.isMainBranch) {
+            await saveBranchRow({ ...branch, isActive: false, updatedAt: deletedAt }, tx);
+            changed += 1;
+          }
+        }
+      } else if (tableName === 'users') {
+        const existing = await first<Row>('SELECT data FROM users WHERE id=?', [recordId], tx);
+        if (existing) {
+          const staff = staffFromRow(existing);
+          if (staff.updatedAt <= deletedAt) {
+            const disabled = { ...staff, isActive: false, updatedAt: deletedAt };
+            await execute('UPDATE users SET active=0,data=?,updated_at=? WHERE id=?', [toJson(disabled), deletedAt, recordId], tx);
+            changed += 1;
+          }
+        }
+      } else if (tableName === 'sales') {
+        const existing = await first<Row>('SELECT id FROM sales WHERE id=?', [recordId], tx);
+        if (existing) {
+          await execute('DELETE FROM sale_items WHERE sale_id=?', [recordId], tx);
+          await execute('DELETE FROM sales WHERE id=?', [recordId], tx);
+          changed += 1;
+        }
+      }
+    }
+    await audit(null, 'CLOUD_SNAPSHOT_MERGED', expectedShopId, changed + ' records merged from authenticated peer snapshots.', tx);
+    return changed;
+  });
+  return merged;
+}
+
 export type IosCloudSnapshotPackage = {
   snapshot: Record<string, unknown>;
   outboxIds: string[];
