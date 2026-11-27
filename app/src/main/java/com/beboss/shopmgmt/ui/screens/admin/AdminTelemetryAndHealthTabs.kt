@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Storage
@@ -40,10 +41,14 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -62,6 +67,7 @@ import com.beboss.shopmgmt.ui.theme.ProfitGreenLight
 import com.beboss.shopmgmt.ui.theme.WarningAmber
 import com.beboss.shopmgmt.ui.theme.WarningAmberLight
 import com.beboss.shopmgmt.util.CloudHealthDiagnosticsDto
+import com.beboss.shopmgmt.util.SupabaseCloudSyncEventDto
 import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -552,5 +558,190 @@ private fun TelemetryFlagChip(text: String, color: Color) {
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
         )
+    }
+}
+
+
+@Composable
+fun AdminCloudActivityTab(
+    events: List<SupabaseCloudSyncEventDto>,
+    isLoading: Boolean,
+    onRefresh: () -> Unit,
+    onLoadMore: () -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredEvents = remember(events, searchQuery) {
+        val query = searchQuery.trim()
+        if (query.isBlank()) events else events.filter { event ->
+            listOf(
+                event.shopName, event.shopSyncKey, event.entity, event.action,
+                event.actor, event.deviceId, event.detail
+            ).any { it.contains(query, ignoreCase = true) }
+        }
+    }
+    val distinctShops = events.map { it.shopSyncKey }.filter { it.isNotBlank() }.distinct().size
+    val deviceEvents = events.count { it.deviceId.isNotBlank() }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Platform Activity", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            "Auditable cloud events • \${events.size} loaded",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedButton(onClick = onRefresh, enabled = !isLoading) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh activity", modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Refresh", fontSize = 11.sp)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    TelemetrySummaryPill(label = "Shops", value = distinctShops.toString(), color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    TelemetrySummaryPill(label = "Device events", value = deviceEvents.toString(), color = OrangePrimary, modifier = Modifier.weight(1f))
+                    TelemetrySummaryPill(label = "Loaded", value = events.size.toString(), color = ProfitGreen, modifier = Modifier.weight(1f))
+                }
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth().testTag("admin_cloud_activity_search"),
+                    label = { Text("Search activity") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+        }
+
+        if (filteredEvents.isEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(22.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(30.dp))
+                    Text(
+                        if (isLoading) "Loading platform activity…" else if (searchQuery.isBlank()) "No cloud activity loaded" else "No matching activity",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        if (searchQuery.isBlank()) "Device pairing, activation, synchronization, branch, staff and payment events appear here." else "Try a different shop, device, event or actor name.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else {
+            filteredEvents.forEach { event ->
+                val deviceType = when {
+                    event.deviceId.startsWith("DESKTOP:", ignoreCase = true) -> "Desktop app"
+                    event.deviceId.isNotBlank() -> "Android terminal"
+                    event.actor.equals("SYSTEM", ignoreCase = true) -> "Cloud / system"
+                    else -> "Admin / web"
+                }
+                val createdAt = runCatching {
+                    val patterns = listOf("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "yyyy-MM-dd'T'HH:mm:ssXXX")
+                    patterns.firstNotNullOfOrNull { pattern ->
+                        runCatching {
+                            SimpleDateFormat(pattern, Locale.US).apply { isLenient = false }.parse(event.createdAt)
+                        }.getOrNull()
+                    }
+                }.getOrNull()
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(13.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    event.shopName.ifBlank { event.shopSyncKey.ifBlank { "Platform event" } },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    createdAt?.let { SimpleDateFormat("dd MMM yyyy • HH:mm:ss", Locale.getDefault()).format(it) }
+                                        ?: event.createdAt.replace('T', ' ').take(19),
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(999.dp)
+                            ) {
+                                Text(
+                                    event.entity.ifBlank { "EVENT" },
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(event.action.ifBlank { "RECORDED" }, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = OrangePrimary)
+                            Text("•", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(deviceType, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (event.deviceId.isNotBlank()) {
+                            Text(event.deviceId, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (event.detail.isNotBlank()) {
+                            Text(event.detail, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Actor: \${event.actor.ifBlank { "SYSTEM" }}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("#\${event.id}", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (events.size >= 200) {
+            OutlinedButton(
+                onClick = onLoadMore,
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth().testTag("admin_load_more_cloud_activity")
+            ) {
+                Text("Load more activity", fontSize = 12.sp)
+            }
+        }
     }
 }
