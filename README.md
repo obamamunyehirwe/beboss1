@@ -89,7 +89,7 @@ Desktop is built for the realities of a working shop: keyboard-driven barcode sc
 
 ### QNX 8.0 development workbench
 
-BeBoss Desktop also includes a host-side QNX Development Center for engineers working with QNX SDP 8.0. It detects the QNX toolchain, cross-compiles a native Neutrino IPC edge-agent sample with qcc for x86-64 or AArch64, builds user-supplied IFS images with mkifs, and manages the QNX QEMU reference image through mkqnximage when that package is installed. The workbench records compiler output and SHA-256 build evidence. This is host-based QNX development support; it does not claim that the BeBoss retail desktop, Android or web client itself runs on QNX. See qnx/README.md for setup and reviewer evidence.
+BeBoss Desktop also includes a host-side QNX Development Center for engineers working with QNX SDP 8.0. It detects the QNX toolchain and runs a compile-and-link smoke test for each reported qcc target variant before enabling x86-64 or AArch64 builds. It can cross-compile a native Neutrino IPC edge-agent and companion client, build user-supplied IFS images with mkifs, and invoke mkqnximage to prepare, launch and stop a QNX QEMU reference target when the required package is installed. The workbench records command output and SHA-256 build evidence. A successful launch command is not treated as proof that the QEMU guest booted; that must be confirmed in the guest window or serial console. This is host-based QNX development support; it does not claim that the BeBoss retail desktop, Android or web client itself runs on QNX. See qnx/README.md for setup and reviewer evidence.
 
 
 ### Merchant web portal — for connected self-service
