@@ -2246,8 +2246,8 @@ if (action === "submit_payment_proof") {
       if (!text((body.branch as Row | undefined)?.locationType).trim() && old?.location_type) {
         row.location_type = text(old.location_type).toUpperCase() === "WAREHOUSE" ? "WAREHOUSE" : "STORE";
       }
-      if (row.location_type === "WAREHOUSE" && old?.is_main_branch === true) {
-        throw new Error("A main retail branch cannot be reclassified as a warehouse. Assign another STORE as main first.");
+      if (row.location_type === "WAREHOUSE" && row.is_main_branch === true) {
+        throw new Error("A warehouse cannot be the main retail/POS branch. Keep a STORE as the main branch.");
       }
       row.created_at = number(old?.created_at) || row.created_at;
       let previousMainBranches: Row[] = [];
