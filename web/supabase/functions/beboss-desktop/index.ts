@@ -6,6 +6,7 @@ import {
   DEVICE_REFRESH_TTL_MS,
 } from "../_shared/device-credentials.ts";
 import { EXTRA_DEVICE_MONTHLY_FEE_RWF, monthlyShopFeeRwf } from "../_shared/shop-management.ts";
+import { assertBranchesOpenForTransfer, normalizeBranchOperationalStatus } from "../_shared/branch-rules.ts";
 import {
   buildShopAuditSnapshot,
   classifyShopAuditTransition,
@@ -615,8 +616,7 @@ function isUuid(value: string) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{
 function branchPayload(data: Row, shopId: string) {
   const name = text(data.name).trim();
   if (name.length < 2 || name.length > 120) throw new Error("Branch name must contain 2–120 characters.");
-  const status = text(data.operationalStatus || "OPEN").toUpperCase();
-  if (!["OPEN", "CLOSED", "SUSPENDED"].includes(status)) throw new Error("Invalid branch operating status.");
+  const status = normalizeBranchOperationalStatus(data.operationalStatus || "OPEN");
   const locationType = text(data.locationType || "STORE").trim().toUpperCase();
   if (!["STORE", "WAREHOUSE"].includes(locationType)) throw new Error("Location type must be STORE or WAREHOUSE.");
   if (locationType === "WAREHOUSE" && data.isMainBranch === true) {
@@ -2492,10 +2492,13 @@ if (action === "submit_payment_proof") {
       if (existingError) throw new Error("Could not validate the transfer command.");
       if (existing) return json(200, { ok: true, id, status: existing.status, transferNumber: existing.transfer_number, reused: true });
       const { data: branches, error: branchError } = await admin.from("shop_branches")
-        .select("id,name,is_active").eq("shop_sync_key", owner.shopId).in("id", [fromId,toId]);
+        .select("id,name,is_active,operational_status").eq("shop_sync_key", owner.shopId).in("id", [fromId,toId]);
       if (branchError || !branches || branches.length !== 2 || branches.some((b) => !b.is_active)) {
         throw new Error("Both source and destination branches must be active in this shop.");
       }
+      const sourceBranch = branches.find((branch) => branch.id === fromId)!;
+      const destinationBranch = branches.find((branch) => branch.id === toId)!;
+      assertBranchesOpenForTransfer(sourceBranch.operational_status, destinationBranch.operational_status);
       const merged = (await latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret)).snapshot;
       const product = merged?.products.find((p) => text(p.id) === productId && p.isDeleted !== true);
       if (!product) throw new Error("The selected product is not present in the latest verified shop inventory.");

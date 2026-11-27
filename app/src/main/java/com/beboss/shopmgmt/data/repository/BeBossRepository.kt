@@ -298,7 +298,9 @@ class BeBossRepository(private val database: AppDatabase) {
         requirePermission(actor, "UPDATE_BRANCH_STATUS", branchId) {
             it.role == UserRole.OWNER || it.role == UserRole.MANAGER || it.canManageShopSettings
         }
-        branchTransferManager.updateBranchOperationalStatus(branchId, status)
+        branchTransferManager.updateBranchOperationalStatus(
+            branchId, status, actor?.name ?: "System", actor?.role?.name ?: "SYSTEM"
+        )
     }
 
     suspend fun refreshAllBranchStockSnapshots() =

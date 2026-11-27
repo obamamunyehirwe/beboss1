@@ -97,8 +97,14 @@ class BranchTransferManager(
         require(normalizedLocationType != "WAREHOUSE" || !branch.isMainBranch) {
             "A warehouse cannot be the main retail/POS branch."
         }
+        val rawStatus = branch.operationalStatus.trim().uppercase(Locale.ROOT).ifBlank { "OPEN" }
+        val normalizedStatus = if (rawStatus == "SUSPENDED") "PAUSED" else rawStatus
+        require(normalizedStatus in setOf("OPEN", "PAUSED", "CLOSED")) {
+            "Branch operating status must be OPEN, PAUSED or CLOSED."
+        }
         val toSave = branch.copy(
             locationType = normalizedLocationType,
+            operationalStatus = normalizedStatus,
             updatedAt = now,
             hlcTimestamp = HlcClock.tick(now),
             lastModifiedDeviceId = nodeId
@@ -137,17 +143,43 @@ class BranchTransferManager(
         }
     }
 
-    suspend fun updateBranchOperationalStatus(branchId: String, status: String) = withContext(Dispatchers.IO) {
+    suspend fun updateBranchOperationalStatus(
+        branchId: String,
+        status: String,
+        actorName: String = "System",
+        actorRole: String = "SYSTEM"
+    ) = withContext(Dispatchers.IO) {
+        val rawStatus = status.trim().uppercase(Locale.ROOT)
+        val normalizedStatus = if (rawStatus == "SUSPENDED") "PAUSED" else rawStatus
+        require(normalizedStatus in setOf("OPEN", "PAUSED", "CLOSED")) {
+            "Branch operating status must be OPEN, PAUSED or CLOSED."
+        }
         val now = ClockGuard.effectiveNowMs()
-        branchDao.updateOperationalStatus(branchId, status, now)
-        val branch = branchDao.getBranchById(branchId) ?: return@withContext
-        val versioned = branch.copy(
-            updatedAt = now,
-            hlcTimestamp = HlcClock.tick(now),
-            lastModifiedDeviceId = nodeId
-        )
-        branchDao.insertBranch(versioned)
-        enqueueBranchSync(versioned, "UPDATE")
+        val updateStatus: suspend () -> Unit = {
+            val branch = branchDao.getBranchById(branchId)
+                ?: throw IllegalArgumentException("Branch not found: $branchId")
+            require(branch.isActive) { "An archived branch cannot change operating status." }
+            val versioned = branch.copy(
+                operationalStatus = normalizedStatus,
+                updatedAt = now,
+                hlcTimestamp = HlcClock.tick(now),
+                lastModifiedDeviceId = nodeId
+            )
+            branchDao.insertBranch(versioned)
+            enqueueBranchSync(versioned, "UPDATE")
+            appendLocalAudit(
+                action = "BRANCH_STATUS_CHANGED",
+                actorName = actorName,
+                actorRole = actorRole,
+                targetId = branchId,
+                details = "${branch.name}: ${branch.operationalStatus} -> ${normalizedStatus}"
+            )
+        }
+        if (database != null) {
+            DbWriteMutex.withLock { database.withTransaction { updateStatus() } }
+        } else {
+            DbWriteMutex.withLock { updateStatus() }
+        }
     }
 
     suspend fun deleteBranch(

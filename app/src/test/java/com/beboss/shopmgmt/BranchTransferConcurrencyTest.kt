@@ -493,4 +493,33 @@ class BranchTransferConcurrencyTest {
         }
     }
 
+
+    @Test
+    fun `branch operational status is canonical and legacy suspended is supported`() = runBlocking {
+        val db = inMemoryDatabase()
+        try {
+            val repository = BeBossRepository(db)
+            repository.branchTransferManager.saveBranch(
+                Branch(id = "status-branch", name = "Status Store", code = "ST-01", operationalStatus = "SUSPENDED")
+            )
+            assertEquals("PAUSED", db.branchDao().getBranchById("status-branch")!!.operationalStatus)
+
+            repository.branchTransferManager.updateBranchOperationalStatus(
+                "status-branch", "OPEN", actorName = "Owner", actorRole = "OWNER"
+            )
+            assertEquals("OPEN", db.branchDao().getBranchById("status-branch")!!.operationalStatus)
+
+            val invalid = runCatching {
+                repository.branchTransferManager.updateBranchOperationalStatus("status-branch", "DELETED")
+            }
+            assertTrue("Unknown status values must be rejected", invalid.isFailure)
+            assertEquals("OPEN", db.branchDao().getBranchById("status-branch")!!.operationalStatus)
+
+            val logs = db.localAuditLogDao().getRecentLogsDirect(20)
+            assertTrue(logs.any { it.action == "BRANCH_STATUS_CHANGED" && it.actorName == "Owner" && it.actorRole == "OWNER" })
+        } finally {
+            db.close()
+        }
+    }
+
 }

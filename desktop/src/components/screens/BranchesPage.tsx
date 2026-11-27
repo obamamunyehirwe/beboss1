@@ -17,7 +17,7 @@ const emptyDraft: BranchDraft = {
   openingCashFloat: "0", email: "", notes: ""
 };
 
-type BranchFilter = "ALL" | "OPEN" | "CLOSED" | "SUSPENDED" | "INACTIVE";
+type BranchFilter = "ALL" | "OPEN" | "PAUSED" | "CLOSED" | "INACTIVE";
 
 export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: {
   cloud: CloudState; snapshot: Snapshot | null; onAction: CloudAction;
@@ -72,7 +72,8 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
   const networkRevenue = Array.from(salesByBranch.values()).reduce((sum, item) => sum + item.total, 0);
   const managedStaff = rows(cloud.staff).filter((user) => user.is_active !== false).length;
   const filtered = useMemo(() => list.filter((branch) => {
-    const status = s(branch.operational_status || "OPEN").toUpperCase();
+    const rawStatus = s(branch.operational_status || "OPEN").toUpperCase();
+    const status = rawStatus === "SUSPENDED" ? "PAUSED" : rawStatus;
     const isActive = branch.is_active !== false;
     const locationType = s(branch.location_type).toUpperCase() === "WAREHOUSE" ? "WAREHOUSE" : "STORE";
     const searchable = [branch.name, branch.code, branch.address, branch.phone, branch.manager_name, branch.email, locationType]
@@ -121,7 +122,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
       managerUserId: s(branch.manager_user_id),
       locationType: s(branch.location_type).toUpperCase() === "WAREHOUSE" ? "WAREHOUSE" : "STORE",
       isMainBranch: branch.is_main_branch === true,
-      operationalStatus: s(branch.operational_status) || "OPEN",
+      operationalStatus: s(branch.operational_status).toUpperCase() === "SUSPENDED" ? "PAUSED" : s(branch.operational_status) || "OPEN",
       dailySalesTargetRwf: String(branch.daily_sales_target_rwf ?? 0),
       monthlyTargetRwf: String(branch.monthly_target_rwf ?? 0),
       openingCashFloat: String(branch.opening_cash_float ?? 0),
@@ -305,7 +306,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
         </select>
         <select aria-label="Filter locations by status" value={filter} onChange={(event) => setFilter(event.target.value as BranchFilter)}>
           <option value="ALL">All branches</option><option value="OPEN">Open</option>
-          <option value="CLOSED">Closed</option><option value="SUSPENDED">Suspended</option>
+          <option value="PAUSED">Paused</option><option value="CLOSED">Closed</option>
           <option value="INACTIVE">Deactivated</option>
         </select>
       </div>
@@ -322,7 +323,8 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
         const deviceCount = rows(cloud.devices).filter((device) => device.is_active && s(device.branch_id) === branchId).length;
         const target = n(branch.monthly_target_rwf);
         const progress = target > 0 ? Math.min(100, (metrics.total / target) * 100) : 0;
-        const status = s(branch.operational_status || "OPEN").toUpperCase();
+        const rawStatus = s(branch.operational_status || "OPEN").toUpperCase();
+    const status = rawStatus === "SUSPENDED" ? "PAUSED" : rawStatus;
         const statusLabel = branch.is_active === false ? "INACTIVE" : status;
         const locationType = s(branch.location_type).toUpperCase() === "WAREHOUSE" ? "WAREHOUSE" : "STORE";
         const LocationIcon = locationType === "WAREHOUSE" ? Warehouse : Store;
@@ -405,7 +407,7 @@ export function BranchesPage({ cloud, snapshot, onAction, onRefresh, offline }: 
         <label>Business phone<input maxLength={40} value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} /></label>
         <label>Branch email<input type="email" maxLength={120} value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} /></label>
         <label className="field-wide">Physical address<input maxLength={240} value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} /></label>
-        <label>Operating state<select value={draft.operationalStatus} onChange={(event) => setDraft({ ...draft, operationalStatus: event.target.value })}>{["OPEN", "CLOSED", "SUSPENDED"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label>Operating state<select value={draft.operationalStatus} onChange={(event) => setDraft({ ...draft, operationalStatus: event.target.value })}>{["OPEN", "PAUSED", "CLOSED"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label>Daily sales target (FRw)<input type="number" min="0" max="1000000000" value={draft.dailySalesTargetRwf} onChange={(event) => setDraft({ ...draft, dailySalesTargetRwf: event.target.value })} /></label>
         <label>Monthly sales target (FRw)<input type="number" min="0" max="1000000000" value={draft.monthlyTargetRwf} onChange={(event) => setDraft({ ...draft, monthlyTargetRwf: event.target.value })} /></label>
         <label>Opening cash float (FRw)<input type="number" min="0" max="1000000000" value={draft.openingCashFloat} onChange={(event) => setDraft({ ...draft, openingCashFloat: event.target.value })} /></label>
