@@ -1134,6 +1134,10 @@ Deno.serve(async (req: Request) => {
           }
           newApprovalAudit.push({
             recordId: transferId,
+            productId,
+            fromBranchId,
+            toBranchId,
+            quantity,
             approverUserId: actorUserId,
             approvalDeviceId,
             signedAt,
