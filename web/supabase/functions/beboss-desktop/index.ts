@@ -2076,6 +2076,145 @@ if (action === "submit_payment_proof") {
       return json(200, { ok: true, policy });
     }
 
+    if (action === "finance_ledger_post") {
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
+      const entryId = text(body.entryId).trim();
+      const type = text(body.type).trim().toUpperCase();
+      const amountRwf = Number(body.amountRwf);
+      const allowedTypes = [
+        "OPERATING_EXPENSE", "PAYROLL_PAYMENT", "SUPPLIER_SETTLEMENT",
+        "TAX_PAYMENT", "OWNER_DRAW", "CASH_WITHDRAWAL",
+        "CAPITAL_CONTRIBUTION", "BANK_DEPOSIT"
+      ];
+      const allowedAccounts = ["CASH", "BANK", "MOBILE_MONEY", "OTHER"];
+      if (!isUuid(entryId) || !allowedTypes.includes(type) ||
+          !Number.isSafeInteger(amountRwf) || amountRwf <= 0 || amountRwf > 10000000000) {
+        throw new Error("Provide a unique entry ID, supported financial category and positive whole-RWF amount up to FRw 10,000,000,000.");
+      }
+      const effectiveAt = Number(body.effectiveAt);
+      if (!Number.isFinite(effectiveAt) || effectiveAt < Date.UTC(2000, 0, 1) || effectiveAt > Date.now() + 5 * 60 * 1000) {
+        throw new Error("Choose a valid transaction date no later than the current date.");
+      }
+      const branchId = text(body.branchId).trim();
+      let branchName = "All branches";
+      if (branchId) {
+        const { data: branch, error: branchError } = await admin.from("shop_branches")
+          .select("id,name,is_active").eq("shop_sync_key", owner.shopId).eq("id", branchId).maybeSingle();
+        if (branchError || !branch || branch.is_active !== true) {
+          throw new Error("Choose an active branch belonging to this shop, or use All branches.");
+        }
+        branchName = text(branch.name);
+      }
+      const sourceAccount = text(body.sourceAccount).trim().toUpperCase();
+      const destinationAccount = text(body.destinationAccount).trim().toUpperCase();
+      const account = text(body.account).trim().toUpperCase();
+      let flow: "OUTFLOW" | "INFLOW" | "TRANSFER" = "OUTFLOW";
+      if (type === "CAPITAL_CONTRIBUTION") flow = "INFLOW";
+      if (type === "BANK_DEPOSIT") {
+        if (!allowedAccounts.includes(sourceAccount) || destinationAccount !== "BANK" || sourceAccount === "BANK") {
+          throw new Error("A bank deposit must move funds from Cash, Mobile Money or Other into the Bank account.");
+        }
+        flow = "TRANSFER";
+      } else if (!allowedAccounts.includes(account)) {
+        throw new Error("Choose a valid source account: Cash, Bank, Mobile Money or Other.");
+      }
+      const counterparty = text(body.counterparty).trim().slice(0, 100);
+      const reference = text(body.reference).trim().slice(0, 48);
+      const note = text(body.note).trim().slice(0, 240);
+      const entry = {
+        version: 1, entryId, type, flow, amountRwf: Math.round(amountRwf),
+        account: flow === "TRANSFER" ? "" : account,
+        sourceAccount: flow === "TRANSFER" ? sourceAccount : "",
+        destinationAccount: flow === "TRANSFER" ? destinationAccount : "",
+        branchId, branchName, effectiveAt: Math.floor(effectiveAt),
+        counterparty, reference, note, postedAt: Date.now(),
+        actorUsername: owner.username, actorDeviceId: actor.actorDeviceId
+      };
+      const existingRows = await admin.from("cloud_sync_events").select("detail")
+        .eq("shop_sync_key", owner.shopId).eq("entity", "FINANCE_LEDGER")
+        .eq("action", "POSTED").order("created_at", { ascending: false }).limit(1000);
+      if (existingRows.error) throw new Error("Could not check the financial journal before posting.");
+      for (const old of existingRows.data ?? []) {
+        try {
+          const prior = JSON.parse(text(old.detail));
+          if (prior?.version === 1 && text(prior.entryId) === entryId) {
+            return json(200, { ok: true, entry: prior, reused: true });
+          }
+        } catch { /* Non-JSON legacy activity records are not finance entries. */ }
+      }
+      const detail = JSON.stringify(entry);
+      if (detail.length > 1000) throw new Error("The financial journal entry is too large. Shorten its reference or note.");
+      const { data: inserted, error: insertError } = await admin.from("cloud_sync_events").insert({
+        shop_sync_key: owner.shopId, shop_name: text(owner.shop.shop_name),
+        entity: "FINANCE_LEDGER", action: "POSTED",
+        actor: "OWNER:" + owner.username, device_id: actor.actorDeviceId, detail
+      }).select("id,created_at").single();
+      if (insertError || !inserted) {
+        console.error("[BeBoss financial journal]", insertError);
+        return json(503, { ok: false, message: "The financial entry could not be written to the shop cloud journal. Nothing was reported as posted; refresh and retry." });
+      }
+      return json(200, { ok: true, entry, eventId: inserted.id, createdAt: inserted.created_at });
+    }
+
+    if (action === "finance_ledger_reverse") {
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
+      const reversalEntryId = text(body.reversalEntryId).trim();
+      const originalEntryId = text(body.originalEntryId).trim();
+      const reason = text(body.reason).trim().slice(0, 300);
+      if (!isUuid(reversalEntryId) || !isUuid(originalEntryId) || reason.length < 8) {
+        throw new Error("A valid original entry, unique reversal ID and explanation of at least 8 characters are required.");
+      }
+      const { data: entries, error: entriesError } = await admin.from("cloud_sync_events")
+        .select("detail").eq("shop_sync_key", owner.shopId).eq("entity", "FINANCE_LEDGER")
+        .eq("action", "POSTED").order("created_at", { ascending: false }).limit(1000);
+      if (entriesError) throw new Error("Could not load the original financial entry.");
+      let original: Row | null = null;
+      for (const event of entries ?? []) {
+        try {
+          const parsed = JSON.parse(text(event.detail));
+          if (parsed?.version === 1 && text(parsed.entryId) === originalEntryId) {
+            original = parsed as Row;
+            break;
+          }
+        } catch { /* Ignore unrelated activity records. */ }
+      }
+      if (!original || text(original.type) === "REVERSAL") throw new Error("The original posted financial entry could not be found.");
+      const { data: previousReversals, error: reversalReadError } = await admin.from("cloud_sync_events")
+        .select("detail").eq("shop_sync_key", owner.shopId).eq("entity", "FINANCE_LEDGER")
+        .eq("action", "REVERSED").order("created_at", { ascending: false }).limit(1000);
+      if (reversalReadError) throw new Error("Could not validate existing financial reversals.");
+      for (const event of previousReversals ?? []) {
+        try {
+          const parsed = JSON.parse(text(event.detail));
+          if (text(parsed?.reversalOf) === originalEntryId) {
+            return json(200, { ok: true, entry: parsed, reused: true });
+          }
+        } catch { /* Ignore unrelated activity records. */ }
+      }
+      const oldFlow = text(original.flow).toUpperCase();
+      const newFlow = oldFlow === "OUTFLOW" ? "INFLOW" : oldFlow === "INFLOW" ? "OUTFLOW" : "TRANSFER";
+      const reversal = {
+        version: 1, entryId: reversalEntryId, type: "REVERSAL", originalType: text(original.type),
+        reversalOf: originalEntryId, flow: newFlow, amountRwf: number(original.amountRwf),
+        account: text(original.account), sourceAccount: text(original.destinationAccount),
+        destinationAccount: text(original.sourceAccount), branchId: text(original.branchId),
+        branchName: text(original.branchName), effectiveAt: Date.now(), counterparty: text(original.counterparty),
+        reference: text(original.reference), note: reason, postedAt: Date.now(),
+        actorUsername: owner.username, actorDeviceId: actor.actorDeviceId
+      };
+      const detail = JSON.stringify(reversal);
+      const { data: inserted, error: insertError } = await admin.from("cloud_sync_events").insert({
+        shop_sync_key: owner.shopId, shop_name: text(owner.shop.shop_name),
+        entity: "FINANCE_LEDGER", action: "REVERSED",
+        actor: "OWNER:" + owner.username, device_id: actor.actorDeviceId, detail
+      }).select("id,created_at").single();
+      if (insertError || !inserted) {
+        console.error("[BeBoss financial reversal]", insertError);
+        return json(503, { ok: false, message: "The financial reversal could not be saved to the cloud journal. The original entry remains unchanged." });
+      }
+      return json(200, { ok: true, entry: reversal, eventId: inserted.id, createdAt: inserted.created_at });
+    }
+
     if (action === "branch_upsert") {
       const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const row = branchPayload((body.branch ?? {}) as Row, owner.shopId);
