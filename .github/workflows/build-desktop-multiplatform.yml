@@ -41,7 +41,7 @@ jobs:
           sudo apt-get install -y \
             build-essential curl wget file pkg-config \
             libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
-            libayatana-appindicator3-dev librsvg2-dev patchelf
+            libayatana-appindicator3-dev librsvg2-dev patchelf xvfb
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -68,6 +68,62 @@ jobs:
 
       - name: Build Linux packages
         run: npx tauri build --bundles appimage,deb
+
+      - name: Install, launch and reinstall Debian package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t debs < <(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' | sort)
+          if [ "${#debs[@]}" -ne 1 ]; then
+            echo "Expected exactly one Debian package, found ${#debs[@]}."
+            exit 1
+          fi
+          deb="${debs[0]}"
+          package_name="$(dpkg-deb -f "$deb" Package)"
+          fixture="$HOME/.local/share/com.beboss.desktop/release-qualification/upgrade-preservation.json"
+          mkdir -p "$(dirname "$fixture")"
+          printf '%s\\n' '{"fixture":"linux-upgrade-preservation","version":1,"encryptedData":"must-survive-package-replacement"}' > "$fixture"
+          expected="$(sha256sum "$fixture" | awk '{print $1}')"
+
+          sudo apt-get install -y "./$deb"
+          binary="$(dpkg-query -L "$package_name" | awk '/^\\/usr\\/bin\\/[^/]+$/ { print; exit }')"
+          if [ -z "$binary" ] || [ ! -x "$binary" ]; then
+            echo "Could not locate the installed BeBoss executable for package $package_name."
+            dpkg-query -L "$package_name"
+            exit 1
+          fi
+          xvfb-run -a bash -euc '
+            "$1" > "$RUNNER_TEMP/beboss-linux-launch.log" 2>&1 &
+            app_pid=$!
+            sleep 8
+            kill -0 "$app_pid"
+            kill "$app_pid"
+            wait "$app_pid" || true
+          ' _ "$binary" || {
+            cat "$RUNNER_TEMP/beboss-linux-launch.log" || true
+            exit 1
+          }
+
+          sudo apt-get install --reinstall -y "./$deb"
+          actual="$(sha256sum "$fixture" | awk '{print $1}')"
+          test "$actual" = "$expected"
+          echo "Debian install/reinstall preserved the existing application-data fixture."
+
+      - name: Extract and verify AppImage launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t images < <(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' | sort)
+          if [ "${#images[@]}" -ne 1 ]; then
+            echo "Expected exactly one AppImage, found ${#images[@]}."
+            exit 1
+          fi
+          chmod +x "${images[0]}"
+          mkdir -p "$RUNNER_TEMP/beboss-appimage"
+          cd "$RUNNER_TEMP/beboss-appimage"
+          "$GITHUB_WORKSPACE/desktop/${images[0]}" --appimage-extract
+          test -x squashfs-root/AppRun
+          echo "AppImage extraction and launcher verification passed."
 
       - name: Generate Linux SHA-256 manifests
         run: |
@@ -107,6 +163,51 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Prepare optional Apple Developer ID signing and notarization
+        id: apple-signing
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          signing_enabled=false
+          notarization_enabled=false
+          if [ -n "$APPLE_CERTIFICATE_BASE64" ] &&
+             [ -n "$APPLE_CERTIFICATE_PASSWORD" ] &&
+             [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            keychain="$RUNNER_TEMP/beboss-release.keychain-db"
+            keychain_password="$(openssl rand -hex 24)"
+            printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/apple-developer-id.p12"
+            security create-keychain -p "$keychain_password" "$keychain"
+            security set-keychain-settings -lut 21600 "$keychain"
+            security unlock-keychain -p "$keychain_password" "$keychain"
+            security import "$RUNNER_TEMP/apple-developer-id.p12" \\
+              -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" \\
+              -T /usr/bin/codesign -T /usr/bin/security
+            security set-key-partition-list -S apple-tool:,apple: -s \\
+              -k "$keychain_password" "$keychain"
+            security list-keychains -d user -s "$keychain" login.keychain-db
+            security default-keychain -s "$keychain"
+            signing_enabled=true
+          else
+            echo "::warning::Apple Developer ID signing secrets are incomplete; this DMG will remain unsigned."
+          fi
+          if [ "$signing_enabled" = true ] &&
+             [ -n "$APPLE_ID" ] &&
+             [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] &&
+             [ -n "$APPLE_TEAM_ID" ]; then
+            notarization_enabled=true
+          else
+            echo "::warning::Notarization credentials are not configured; the DMG will not be notarized or stapled."
+          fi
+          echo "signing_enabled=$signing_enabled" >> "$GITHUB_OUTPUT"
+          echo "notarization_enabled=$notarization_enabled" >> "$GITHUB_OUTPUT"
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -130,7 +231,97 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Build native macOS DMG
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: npx tauri build --bundles dmg
+
+      - name: Verify signature and optionally notarize macOS DMG
+        shell: bash
+        env:
+          SIGNING_ENABLED: ${{ steps.apple-signing.outputs.signing_enabled }}
+          NOTARIZATION_ENABLED: ${{ steps.apple-signing.outputs.notarization_enabled }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          mapfile -t dmgs < <(find src-tauri/target/release/bundle/dmg -maxdepth 1 -type f -name '*.dmg' | sort)
+          if [ "${#dmgs[@]}" -ne 1 ]; then
+            echo "Expected exactly one macOS DMG, found ${#dmgs[@]}."
+            exit 1
+          fi
+          dmg="${dmgs[0]}"
+          if [ "$SIGNING_ENABLED" = true ]; then
+            mount="$RUNNER_TEMP/beboss-dmg-signature-check"
+            mkdir -p "$mount"
+            hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
+            app="$(find "$mount" -maxdepth 3 -type d -name '*.app' -print -quit)"
+            if [ -z "$app" ]; then
+              hdiutil detach "$mount"
+              echo "No BeBoss app bundle was found in the signed DMG."
+              exit 1
+            fi
+            codesign --verify --deep --strict --verbose=2 "$app"
+            spctl --assess --type execute --verbose=2 "$app"
+            hdiutil detach "$mount"
+          else
+            echo "Unsigned package: signature verification is intentionally not reported as passed."
+          fi
+          if [ "$NOTARIZATION_ENABLED" = true ]; then
+            xcrun notarytool submit "$dmg" \\
+              --apple-id "$APPLE_ID" \\
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \\
+              --team-id "$APPLE_TEAM_ID" \\
+              --wait
+            xcrun stapler staple "$dmg"
+            xcrun stapler validate "$dmg"
+          else
+            echo "Notarization/stapling skipped because the required Apple credentials are not configured."
+          fi
+
+      - name: Install and replace macOS app while preserving user data
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t dmgs < <(find src-tauri/target/release/bundle/dmg -maxdepth 1 -type f -name '*.dmg' | sort)
+          dmg="${dmgs[0]}"
+          mount="$RUNNER_TEMP/beboss-dmg-install"
+          mkdir -p "$mount"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
+          source_app="$(find "$mount" -maxdepth 3 -type d -name '*.app' -print -quit)"
+          if [ -z "$source_app" ]; then
+            hdiutil detach "$mount"
+            echo "DMG does not contain a BeBoss application bundle."
+            exit 1
+          fi
+
+          app_data="$HOME/Library/Application Support/com.beboss.desktop"
+          fixture="$app_data/release-qualification/upgrade-preservation.json"
+          mkdir -p "$(dirname "$fixture")" /Applications
+          printf '%s\\n' '{"fixture":"macos-upgrade-preservation","version":1,"encryptedData":"must-survive-app-replacement"}' > "$fixture"
+          expected="$(shasum -a 256 "$fixture" | awk '{print $1}')"
+
+          sudo rm -rf /Applications/BeBoss.app
+          sudo ditto "$source_app" /Applications/BeBoss.app
+          sudo rm -rf /Applications/BeBoss.app
+          sudo ditto "$source_app" /Applications/BeBoss.app
+          actual="$(shasum -a 256 "$fixture" | awk '{print $1}')"
+          test "$actual" = "$expected"
+
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' /Applications/BeBoss.app/Contents/Info.plist)"
+          test -x "/Applications/BeBoss.app/Contents/MacOS/$executable"
+          xattr -dr com.apple.quarantine /Applications/BeBoss.app || true
+          open -g -a /Applications/BeBoss.app
+          sleep 10
+          if ! pgrep -x "$executable" >/dev/null; then
+            echo "BeBoss did not remain running after macOS installation."
+            hdiutil detach "$mount"
+            exit 1
+          fi
+          pkill -x "$executable" || true
+          hdiutil detach "$mount"
+          echo "macOS install/replacement preserved the application-data fixture."
+
 
       - name: Generate macOS SHA-256 manifest
         run: node scripts/generate-bundle-checksums.mjs src-tauri/target/release/bundle/dmg
@@ -138,7 +329,7 @@ jobs:
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
-          name: BeBoss-macOS-${{ matrix.architecture }}-unsigned
+          name: BeBoss-macOS-${{ matrix.architecture }}-${{ steps.apple-signing.outputs.signing_enabled == 'true' && 'signed' || 'unsigned' }}
           path: desktop/src-tauri/target/release/bundle/dmg/*
           if-no-files-found: error
           retention-days: 30
