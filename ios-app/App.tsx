@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
-import DocumentPicker from 'react-native-document-picker';
+import { pick, keepLocalCopy, types as documentTypes, isErrorWithCode, errorCodes } from '@react-native-documents/picker';
 import {
   Branch, CartLine, CheckoutInput, Customer, Product, Role, ShopProfile, Staff,
   StoreSnapshot
@@ -535,13 +535,25 @@ function AppRoot(): React.JSX.Element {
     setBusy(true); setError('');
     try {
       requireRoleFeature('canExportImportData', 'restore backups');
-      const picked = await DocumentPicker.pickSingle({
-        type: [DocumentPicker.types.allFiles],
-        copyTo: 'cachesDirectory',
+      const selectedFiles = await pick({
+        type: [documentTypes.allFiles],
+        mode: 'import',
+        allowMultiSelection: false,
         presentationStyle: 'pageSheet'
       });
-      const fileUri = picked.fileCopyUri || picked.uri;
-      if (!fileUri) throw new Error('The selected backup file could not be opened.');
+      const picked = selectedFiles[0];
+      if (!picked?.uri) throw new Error('The selected backup file could not be opened.');
+      const [copy] = await keepLocalCopy({
+        files: [{
+          uri: picked.uri,
+          fileName: picked.name || 'beboss-backup.beboss'
+        }],
+        destination: 'cachesDirectory'
+      });
+      if (!copy || copy.status !== 'success' || !copy.localUri) {
+        throw new Error('The selected backup could not be copied into the app cache.');
+      }
+      const fileUri = copy.localUri;
       const filePath = fileUri.startsWith('file://') ? decodeURIComponent(fileUri.slice(7)) : fileUri;
       const backup = await decryptBackupFile(filePath, backupPassword);
       const summary = await restoreEncryptedBackupData(backup, actor!);
@@ -552,7 +564,9 @@ function AppRoot(): React.JSX.Element {
         summary.products + ' products, ' + summary.customers + ' customers, ' +
         summary.sales + ' sales and ' + summary.payments + ' payments. Staff credentials, subscriptions and cloud device keys were preserved.');
     } catch (caught: any) {
-      if (!DocumentPicker.isCancel(caught)) setError(caught?.message || 'Backup restore failed.');
+      if (!(isErrorWithCode(caught) && caught.code === errorCodes.OPERATION_CANCELED)) {
+        setError(caught?.message || 'Backup restore failed.');
+      }
     } finally { setBusy(false); }
   };
 
