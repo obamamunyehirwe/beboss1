@@ -17,11 +17,18 @@ The edge agent registers the beboss-edge-gateway service and processes health/ec
 
 Use a supported 64-bit x86 Windows or Linux development host with QNX SDP 8.0 installed and licensed. QNX SDP 8.0 is not supported as a macOS or ARM-host development environment. Check the release notes for the precise maintenance-release host operating-system support.
 
-The workbench only treats a non-empty `images/qemu` directory as a preliminary package-presence check; it does not claim this directory contains a bootable image. The actual `mkqnximage --build` command must complete successfully, and a QEMU boot must be confirmed in the guest window or serial console.
+**QEMU host restriction:** the QNX SDP 8.0 quick-start QEMU reference-image workflow is supported on an x86-64 Ubuntu 22.04 or Ubuntu 24.04 host. On other supported QNX development hosts, SDK detection, qcc cross-compilation and mkifs workflows can still be used, but the BeBoss QEMU controls remain disabled.
 
-The QEMU workflow also needs the QNX SDP 8.0 QEMU quick-start/reference-image package unpacked under:
+The QEMU workflow requires the QNX SDP 8.0 quick-start/reference-image package installed from QNX Software Center and unpacked into:
 
-    <QNX_BASE>/images/qemu
+    <QNX_BASE>/images/qemu/qemu
+
+From an Ubuntu terminal, unpack the installed package with:
+
+    cd "$QNX_BASE/images/qemu"
+    ./unpack_qemu_image.sh
+
+The workbench treats a non-empty unpacked image directory as a preliminary package-presence check; it does not claim the image is bootable. The actual `mkqnximage --build` command must complete successfully, and a QEMU boot must be confirmed in the guest window or serial console.
 
 ## Environment
 
@@ -60,11 +67,11 @@ Use the matching aarch64le binary names for an AArch64 target. A successful clie
 
 After sourcing the SDP environment, cross-compile for QNX x86-64:
 
-    qcc -V gcc_ntox86_64 -Wall -Wextra -O2 qnx/edge-agent/main.c -o beboss-qnx-edge-agent-x86_64
+    qcc -Vgcc_ntox86_64 -Wall -Wextra -O2 qnx/edge-agent/main.c -o beboss-qnx-edge-agent-x86_64
 
 Cross-compile for QNX AArch64:
 
-    qcc -V gcc_ntoaarch64le -Wall -Wextra -O2 qnx/edge-agent/main.c -o beboss-qnx-edge-agent-aarch64le
+    qcc -Vgcc_ntoaarch64le -Wall -Wextra -O2 qnx/edge-agent/main.c -o beboss-qnx-edge-agent-aarch64le
 
 Inspect compiler variants:
 
