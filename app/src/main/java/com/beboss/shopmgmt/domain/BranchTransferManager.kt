@@ -634,6 +634,7 @@ class BranchTransferManager(
             put("id", branch.id)
             put("name", branch.name)
             put("code", branch.code)
+            put("locationType", branch.locationType)
             put("address", branch.address)
             put("phone", branch.phone)
             put("managerUserId", branch.managerUserId)
