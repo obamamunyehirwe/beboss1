@@ -2832,6 +2832,12 @@ object SupabaseAdminClient {
         withContext(Dispatchers.IO) {
             if (!isConfigured() || shopSyncKey.isBlank()) return@withContext false
             if (transfers.isEmpty()) return@withContext true
+            if (transfers.size > 200) {
+                for (batch in transfers.chunked(200)) {
+                    if (!upsertShopStockTransfers(shopSyncKey, shopName, batch)) return@withContext false
+                }
+                return@withContext true
+            }
             try {
                 val saved = AndroidDeviceCredentialStore.readForShop(shopSyncKey)
                     ?: throw SecurityException("Secure device enrollment is required to upload stock transfers.")
