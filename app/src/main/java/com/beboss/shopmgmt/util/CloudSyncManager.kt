@@ -753,6 +753,13 @@ class CloudSyncManager(private val database: AppDatabase) {
                     )
                 }
                 if (!transfersUploaded) allChunksUploaded = false
+                val branchDeletionAuditUploaded = retryWithBackoff(maxAttempts = 3) {
+                    SupabaseAdminClient.recordAndroidBranchDeletionAudits(
+                        shopSyncKey = shopSyncKey,
+                        tombstones = tombstones
+                    )
+                }
+                if (!branchDeletionAuditUploaded) allChunksUploaded = false
                 supabaseSyncOk = allChunksUploaded && accountUploaded && usersUploaded && allDevicesUploaded && peerSnapshotExchangeSucceeded
 
                 // Message dispatches are acknowledged only after the telemetry upsert succeeds.
