@@ -749,6 +749,8 @@ class BranchDataShareTest {
 
         try {
             val repo = BeBossRepository(db)
+            val owner = User(id = "u_owner", name = "Owner", username = "owner", role = UserRole.OWNER, isActive = true)
+            db.userDao().insertUser(owner)
             val prod = Product(
                 id = "p_coffee",
                 name = "Espresso Beans",
@@ -775,7 +777,8 @@ class BranchDataShareTest {
                 discountAmount = 0.97,
                 paymentMethod = "PARTIAL",
                 amountPaid = 20.00,
-                notes = "Test atomic checkout"
+                notes = "Test atomic checkout",
+                actor = owner
             )
 
             assertTrue(sale.receiptNumber.matches(Regex("""REC-\d{6}-\d{6}-[A-F0-9]{8}""")))
@@ -788,7 +791,6 @@ class BranchDataShareTest {
             assertEquals(44.0, db.customerDao().getCustomerById("c_alice")!!.debtBalance, 0.001)
 
             // Deleting the sale as owner must restock (+3.0 -> 10.0), reduce debt (-39.0 -> 5.0), and emit tombstone
-            val owner = User(id = "u_owner", name = "Owner", username = "owner", role = UserRole.OWNER, isActive = true)
             repo.deleteSale(sale.id, actor = owner)
 
             assertEquals(10.0, db.productDao().getProductById("p_coffee")!!.quantityInStock, 0.001)
@@ -808,6 +810,8 @@ class BranchDataShareTest {
 
         try {
             val repo = BeBossRepository(db)
+            val owner = User(id = "u_sale_guard", name = "Owner", username = "owner_sale_guard", role = UserRole.OWNER, isActive = true)
+            db.userDao().insertUser(owner)
             val product = Product(
                 id = "p_guarded",
                 name = "Guarded product",
@@ -826,7 +830,8 @@ class BranchDataShareTest {
                         discountAmount = 0.0,
                         paymentMethod = "CASH",
                         amountPaid = 0.0,
-                        notes = "Invalid negative quantity"
+                        notes = "Invalid negative quantity",
+                        actor = owner
                     )
                 }
             }
@@ -840,7 +845,8 @@ class BranchDataShareTest {
                         discountAmount = 0.0,
                         paymentMethod = "PARTIAL",
                         amountPaid = 5.0,
-                        notes = "Unassigned debt"
+                        notes = "Unassigned debt",
+                        actor = owner
                     )
                 }
             }
@@ -854,7 +860,8 @@ class BranchDataShareTest {
                         discountAmount = 0.0,
                         paymentMethod = "CASH",
                         amountPaid = 25.0,
-                        notes = "Overpayment"
+                        notes = "Overpayment",
+                        actor = owner
                     )
                 }
             }
@@ -868,7 +875,8 @@ class BranchDataShareTest {
                         discountAmount = 25.0,
                         paymentMethod = "CASH",
                         amountPaid = 0.0,
-                        notes = "Discount above subtotal"
+                        notes = "Discount above subtotal",
+                        actor = owner
                     )
                 }
             }
@@ -884,7 +892,8 @@ class BranchDataShareTest {
                         discountAmount = 0.0,
                         paymentMethod = "CASH",
                         amountPaid = 20.0,
-                        notes = "Stale cart price"
+                        notes = "Stale cart price",
+                        actor = owner
                     )
                 }
             }
@@ -912,6 +921,7 @@ class BranchDataShareTest {
                 isActive = true,
                 canDeleteRecords = false
             )
+            db.userDao().insertUser(cashier)
             db.saleDao().insertSale(
                 Sale(id = "s_protected", receiptNumber = "RC-99", totalAmount = 1500.0)
             )
