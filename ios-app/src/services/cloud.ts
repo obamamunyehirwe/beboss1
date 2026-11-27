@@ -111,7 +111,7 @@ function makeStableIosDeviceId(rawHex: string): string {
 
 export async function getStableIosDeviceId(): Promise<string> {
   const saved = await Keychain.getGenericPassword({ service: DEVICE_ID_SERVICE });
-  if (saved?.password && /^IOS:[0-9a-f-]{36}$/i.test(saved.password)) return saved.password;
+  if (saved !== false && saved.password && /^IOS:[0-9a-f-]{36}$/i.test(saved.password)) return saved.password;
   const created = makeStableIosDeviceId(QuickCrypto.randomBytes(16).toString('hex'));
   await Keychain.setGenericPassword('BeBoss iPhone device identity', created, {
     service: DEVICE_ID_SERVICE,
@@ -122,7 +122,7 @@ export async function getStableIosDeviceId(): Promise<string> {
 
 export async function getIosDeviceCredential(): Promise<IosDeviceCredential | null> {
   const stored = await Keychain.getGenericPassword({ service: DEVICE_SERVICE });
-  if (!stored?.password) return null;
+  if (stored === false || !stored.password) return null;
   try {
     const value = JSON.parse(stored.password) as IosDeviceCredential;
     if (!value.shopId || !/^IOS:[0-9a-f-]{36}$/i.test(value.deviceId) ||
