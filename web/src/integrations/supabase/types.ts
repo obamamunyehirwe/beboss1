@@ -987,6 +987,7 @@ export type Database = {
         Update: {
           address?: string
           code?: string
+          location_type?: string
           color_hex?: string
           created_at?: number
           daily_sales_target_rwf?: number
