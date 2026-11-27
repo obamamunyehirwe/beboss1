@@ -543,7 +543,8 @@ class BeBossRepository(private val database: AppDatabase) {
         transferredBy: String = "Store Manager",
         transferredByRole: String = "STAFF",
         actor: User? = null,
-        approvalProof: TransferApprovalProof? = null
+        approvalProof: TransferApprovalProof? = null,
+        transferId: String? = null
     ): StockTransfer {
         requirePermission(actor, "CREATE_STOCK_TRANSFER") {
             it.canManageInventory || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
@@ -558,7 +559,8 @@ class BeBossRepository(private val database: AppDatabase) {
             notes = notes,
             transferredBy = transferredBy,
             transferredByRole = transferredByRole,
-            approvalProof = approvalProof
+            approvalProof = approvalProof,
+            transferId = transferId
         )
     }
 
@@ -573,10 +575,21 @@ class BeBossRepository(private val database: AppDatabase) {
         transferredBy: String = "Store Manager",
         transferredByRole: String = "STAFF",
         actor: User? = null,
-        approvalProof: TransferApprovalProof? = null
+        approvalProof: TransferApprovalProof? = null,
+        transferId: String? = null
     ): StockTransfer = recordStockTransfer(
-        productId, fromBranchId, fromBranchName, toBranchId, toBranchName, quantity, notes,
-        transferredBy, transferredByRole, actor, approvalProof
+        productId = productId,
+        fromBranchId = fromBranchId,
+        fromBranchName = fromBranchName,
+        toBranchId = toBranchId,
+        toBranchName = toBranchName,
+        quantity = quantity,
+        notes = notes,
+        transferredBy = transferredBy,
+        transferredByRole = transferredByRole,
+        actor = actor,
+        approvalProof = approvalProof,
+        transferId = transferId
     )
 
     suspend fun deleteStockTransfer(transferId: String) = branchTransferManager.deleteStockTransfer(transferId)
