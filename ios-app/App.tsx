@@ -11,7 +11,7 @@ import {
   StoreSnapshot
 } from './src/core/types';
 import {
-  adjustStock, archiveBranch, authenticate, bindIosDeviceStaff, cancelStockTransfer, checkout,
+  adjustStock, archiveBranch, authenticate, cancelStockTransfer, checkout,
   confirmStockTransfer, deleteProduct, buildIosCloudSnapshot, initializeStore, loadSnapshot,
   markIosOutboxFailed, markIosOutboxSynced,
   mergeIosCloudSnapshots, recordCustomerPayment, recordPurchase, recordStockTransfer, registerOwner,
@@ -32,15 +32,6 @@ import { exportInventoryCsv, exportSalesCsv } from './src/services/reports';
 
 type Screen = 'dashboard' | 'pos' | 'inventory' | 'customers' | 'sales' | 'reports' | 'purchases' | 'branches' | 'staff' | 'sync' | 'subscription' | 'settings';
 type ModalName = 'product' | 'adjust' | 'customer' | 'payment' | 'checkout' | 'purchase' | 'branch' | 'transfer' | 'staff' | 'settings' | 'scanner' | 'backup' | null;
-type IosAssignedStaff = {
-  assignedUserId: string;
-  username: string;
-  name: string;
-  phone: string;
-  role: Role;
-  branchId: string;
-  branchName: string;
-};
 
 const money = (value: number, symbol = 'RWF') =>
   symbol + ' ' + roundMoney(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -101,9 +92,6 @@ function AppRoot(): React.JSX.Element {
   const [iosSyncRole, setIosSyncRole] = useState('');
   const [latestCloudUpdatedAt, setLatestCloudUpdatedAt] = useState(0);
   const [enrolledDeviceSummary, setEnrolledDeviceSummary] = useState('');
-  const [iosPendingStaff, setIosPendingStaff] = useState<IosAssignedStaff | null>(null);
-  const [iosLocalPin, setIosLocalPin] = useState('');
-  const [iosLocalPassword, setIosLocalPassword] = useState('');
   const [otpRequested, setOtpRequested] = useState(false);
   const [backupPassword, setBackupPassword] = useState('');
   const [backupMode, setBackupMode] = useState<'EXPORT' | 'RESTORE'>('EXPORT');
@@ -129,13 +117,6 @@ function AppRoot(): React.JSX.Element {
         setSnapshot(initial);
         setRegistered(!!initial.profile);
         if (initial.profile) setLoginName(initial.profile.username);
-        const enrolled = await getIosDeviceCredential();
-        if (enrolled) {
-          if (!mounted) return;
-          setIosDeviceEnrolled(true);
-          setLoginName(enrolled.assignedUsername);
-          setEnrolledDeviceSummary(enrolled.shopName + ' · ' + enrolled.role + ' · ' + (enrolled.branchName || 'Assigned branch'));
-        }
         const enrolled = await getIosDeviceCredential();
         if (mounted && enrolled) {
           setIosDeviceEnrolled(true);
@@ -621,81 +602,46 @@ function AppRoot(): React.JSX.Element {
       setError('Enter the owner username, registered phone and invitation code from the enrolled owner terminal.');
       return;
     }
+    if (!deviceLocalPin.trim() || !deviceLocalPassword.trim()) {
+      setError('Create a local PIN and password for this iPhone. These credentials are stored only on this device.');
+      return;
+    }
     setBusy(true); setError('');
     try {
       const enrolled = await enrollIosDevice(ownerOtpUsername, ownerOtpPhone, ownerJoinCode, 'BeBoss iPhone');
-      const pending: IosAssignedStaff = {
+      const user = await prepareEnrolledDeviceStaff({
+        shopId: enrolled.shopId,
+        ownerUsername: enrolled.ownerUsername,
         assignedUserId: enrolled.assignedUserId,
-        username: enrolled.assignedUsername,
-        name: enrolled.assignedUserName,
-        phone: enrolled.assignedPhone,
+        assignedUsername: enrolled.assignedUsername,
+        assignedUserName: enrolled.assignedUserName,
+        assignedPhone: enrolled.assignedPhone,
         role: enrolled.role,
         branchId: enrolled.branchId,
         branchName: enrolled.branchName
-      };
-      const localAssignedUser = snapshot?.staff.find(user =>
-        user.id === enrolled.assignedUserId ||
-        user.username.trim().toLowerCase() === enrolled.assignedUsername
-      );
-      setIosDeviceEnrolled(true);
-      setEnrolledDeviceSummary(enrolled.shopName + ' · @' + enrolled.assignedUsername + ' · ' +
-        enrolled.role + ' · ' + (enrolled.branchName || 'Assigned branch'));
+      }, {
+        pin: deviceLocalPin,
+        password: deviceLocalPassword
+      });
+      setActor(user);
+      setLoginName(user.username);
+      setDeviceLocalPin('');
+      setDeviceLocalPassword('');
       setOwnerJoinCode('');
-      setIosPendingStaff(null);
-      setActor(null);
-      setSnapshot(previous => previous ? { ...previous, currentUser: null } : previous);
-      if (localAssignedUser?.pinHash && localAssignedUser?.passwordHash) {
-        const bound = await bindIosDeviceStaff({
-          ...pending,
-          pin: '',
-          password: ''
-        });
-        setActor(bound);
-        setLoginName(bound.username);
-        await reload(bound.id);
-        setNotice('This iPhone is now restricted to the server-assigned ' + bound.role + ' account. ' +
-          'Other local staff accounts have been locked on this device.');
-      } else {
-        setIosPendingStaff(pending);
-        setLoginName(pending.username);
-        setIosLocalPin('');
-        setIosLocalPassword('');
-        setNotice('The owner invitation was accepted. Create local sign-in credentials for the assigned ' +
-          pending.role + ' account to finish pairing this iPhone.');
-      }
+      setIosDeviceEnrolled(true);
+      setEnrolledDeviceSummary(enrolled.shopName + ' · @' + user.username + ' · ' +
+        user.role + ' · ' + (user.branchName || 'Assigned branch'));
+      await reload(user.id);
       const readiness = await requestSecureIosSyncReadiness();
       setIosSyncReady(readiness.ready);
       if (readiness.status) {
         setIosSyncRole(readiness.status.role);
         setLatestCloudUpdatedAt(readiness.status.latestUpdatedAt);
       }
-    } catch (caught: any) { setError(caught?.message || 'iPhone device enrollment failed.'); }
+      setNotice('iPhone enrollment and local staff binding completed. This terminal can sign in only as @' +
+        user.username + ' (' + user.role + '). ' + readiness.reason);
+    } catch (caught: any) { setError(caught?.message || 'iPhone enrollment or local staff provisioning failed.'); }
     finally { setBusy(false); }
-  };
-
-  const provisionIosAssignedStaff = async () => {
-    if (!iosPendingStaff) return;
-    setBusy(true); setError('');
-    try {
-      const user = await bindIosDeviceStaff({
-        ...iosPendingStaff,
-        pin: iosLocalPin,
-        password: iosLocalPassword
-      });
-      setActor(user);
-      setLoginName(user.username);
-      setIosLocalPin('');
-      setIosLocalPassword('');
-      setIosPendingStaff(null);
-      await reload(user.id);
-      await refreshIosSyncStatus();
-      setNotice('iPhone pairing completed. This terminal can now sign in only as @' + user.username +
-        ' (' + user.role + ') for ' + (user.branchName || user.branchId || 'the assigned shop') + '.');
-    } catch (caught: any) {
-      setError(caught?.message || 'The assigned iPhone staff account could not be provisioned.');
-    } finally {
-      setBusy(false);
-    }
   };
 
   const saveBackup = async () => {
@@ -802,26 +748,6 @@ function AppRoot(): React.JSX.Element {
         <Field label="Password" value={profileForm.password} secureTextEntry onChangeText={value => setProfileForm({ ...profileForm, password: value })} />
         <ButtonPrimary title="Create encrypted shop workspace" onPress={doRegister} loading={busy} />
         <Text style={styles.muted}>The four-day trial is recorded locally. Paid access and remote entitlement changes must be verified by BeBoss Cloud.</Text>
-        <Message error={error} notice={notice} />
-      </AuthShell>
-    );
-  }
-
-  if (iosPendingStaff) {
-    return (
-      <AuthShell
-        title="Finish iPhone pairing"
-        subtitle={profile.shopName + ' · Assigned terminal identity'}
-      >
-        <View style={styles.noticeCard}>
-          <Text style={styles.noticeHeading}>{iosPendingStaff.name || iosPendingStaff.username}</Text>
-          <Text style={styles.rowSub}>@{iosPendingStaff.username} · {iosPendingStaff.role}</Text>
-          <Text style={styles.rowSub}>{iosPendingStaff.branchName || iosPendingStaff.branchId || 'Assigned branch'}</Text>
-          <Text style={styles.rowSub}>This iPhone will be restricted to this cloud-assigned staff identity. Existing credentials are never downloaded from another device.</Text>
-        </View>
-        <Field label="Create local PIN (4–6 digits)" value={iosLocalPin} onChangeText={setIosLocalPin} secureTextEntry keyboardType="number-pad" />
-        <Field label="Create local password" value={iosLocalPassword} onChangeText={setIosLocalPassword} secureTextEntry />
-        <ButtonPrimary title="Activate assigned iPhone account" onPress={provisionIosAssignedStaff} loading={busy} />
         <Message error={error} notice={notice} />
       </AuthShell>
     );
