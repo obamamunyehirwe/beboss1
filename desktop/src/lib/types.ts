@@ -75,6 +75,7 @@ export type NavKey =
   | "transfers"
   | "billing"
   | "diagnostics"
+  | "qnx"
   | "sync"
   | "admin"
   | "masterAdmin"
