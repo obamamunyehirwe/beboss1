@@ -130,11 +130,17 @@ class BeBossRepository(private val database: AppDatabase) {
     val deadLetterItems: Flow<List<DeadLetterItem>> = database.deadLetterDao().getAllItems()
     val localAuditLogs: Flow<List<LocalAuditLog>> = localAuditLogDao.getRecentLogs()
 
-    suspend fun requeueSyncItem(id: String) = withContext(Dispatchers.IO) {
+    suspend fun requeueSyncItem(id: String, actor: User? = null) = withContext(Dispatchers.IO) {
+        requirePermission(actor, "RETRY_SYNC_RECORD", id) {
+            it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+        }
         cloudSyncManager.requeueSingleDeadLetter(id)
     }
 
-    suspend fun requeueAllDeadLetters(): Int = withContext(Dispatchers.IO) {
+    suspend fun requeueAllDeadLetters(actor: User? = null): Int = withContext(Dispatchers.IO) {
+        requirePermission(actor, "RETRY_ALL_SYNC_RECORDS") {
+            it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+        }
         val now = System.currentTimeMillis()
         var count = syncQueueDao.requeueDeadLetters(now)
         val dlList = database.deadLetterDao().getAllItemsList()
@@ -145,11 +151,15 @@ class BeBossRepository(private val database: AppDatabase) {
         count
     }
 
-    suspend fun discardDeadLetterItem(id: String) = withContext(Dispatchers.IO) {
+    suspend fun discardDeadLetterItem(id: String, actor: User? = null) = withContext(Dispatchers.IO) {
+        requirePermission(actor, "DISCARD_SYNC_RECORD", id) {
+            it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+        }
         cloudSyncManager.discardDeadLetter(id)
     }
 
-    suspend fun clearAllPendingSyncQueue() = withContext(Dispatchers.IO) {
+    suspend fun clearAllPendingSyncQueue(actor: User? = null) = withContext(Dispatchers.IO) {
+        requirePermission(actor, "CLEAR_PENDING_SYNC_QUEUE") { it.role == UserRole.OWNER }
         syncQueueDao.clearQueue()
     }
 
@@ -652,8 +662,11 @@ class BeBossRepository(private val database: AppDatabase) {
         existing.firstOrNull { it.deviceId == deviceId }?.let { return@withContext it }
 
         val existingPrimary = existing.firstOrNull { it.isOwnerPrimary }
-        val owner = ownerUser?.takeIf { it.role == UserRole.OWNER }
-            ?: throw IllegalStateException("A registered shop owner is required before the primary device can sync.")
+        val suppliedOwner = ownerUser
+            ?: throw SecurityException("A registered shop owner is required before the primary device can sync.")
+        val owner = userDao.getUserById(suppliedOwner.id)
+            ?.takeIf { it.isActive && it.role == UserRole.OWNER }
+            ?: throw SecurityException("The shop owner account is no longer active. Re-authenticate before registering this terminal.")
         val username = owner.username.trim().lowercase(Locale.ROOT)
         val phone = owner.phone.ifBlank { shopProfile.phone }.trim()
         val normalizedPhone = phone.filter { it.isDigit() }.takeLast(9)
@@ -1298,7 +1311,16 @@ class BeBossRepository(private val database: AppDatabase) {
         shopProfile: ShopProfile,
         ownerUser: User?
     ): Boolean = withContext(Dispatchers.IO) {
-        // 1. Always persist offline-first in Room
+        val suppliedOwner = ownerUser
+            ?: throw SecurityException("Only the signed-in shop owner can submit subscription payment proof.")
+        val owner = userDao.getUserById(suppliedOwner.id)
+            ?.takeIf { it.isActive && it.role == UserRole.OWNER }
+            ?: throw SecurityException("The shop owner account is inactive or no longer registered.")
+        val primaryDevice = shopDeviceDao.getAllDevicesList().firstOrNull {
+            it.isOwnerPrimary && it.isActive && it.assignedUserId == owner.id
+        } ?: throw SecurityException("A registered active primary-owner terminal is required to submit payment proof.")
+
+        // 1. Always persist offline-first in Room only after checking the owner and terminal.
         paymentVerificationDao.insertOrUpdate(request)
 
         // 2. Sync to Supabase if configured & reachable
@@ -1311,7 +1333,7 @@ class BeBossRepository(private val database: AppDatabase) {
                 ?: SupabaseAdminClient.computeShopSyncKey(canonicalOwnerUsername, shopProfile.phone)
             val accountUploaded = SupabaseAdminClient.upsertShopAccount(
                 shopProfile = shopProfile,
-                ownerUser = ownerUser?.takeIf { it.role == UserRole.OWNER },
+                ownerUser = owner,
                 branchCount = request.branchCount,
                 workerCount = request.workerCount,
                 deviceCount = request.deviceCount.coerceAtLeast(1),
@@ -1369,10 +1391,13 @@ class BeBossRepository(private val database: AppDatabase) {
             val terminalUser = currentTerminal?.let { userDao.getUserById(it.assignedUserId) }
             if (currentTerminal == null ||
                 !currentTerminal.isActive ||
+                !currentTerminal.isOwnerPrimary ||
                 currentTerminal.shopSyncKey != shopSyncKey ||
                 terminalUser == null ||
                 !terminalUser.isActive ||
-                terminalUser.role.name != currentTerminal.role
+                terminalUser.role != UserRole.OWNER ||
+                terminalUser.role.name != currentTerminal.role ||
+                ownerUser?.id != terminalUser.id
             ) {
                 return@withContext SupabaseSyncResult(
                     success = false,
