@@ -2611,8 +2611,6 @@ object SupabaseAdminClient {
         shopSyncKey: String,
         tombstones: List<SyncTombstone>
     ): Boolean = withContext(Dispatchers.IO) {
-        val branchDeletes = tombstones.filter { it.tableName == "branches" }
-        if (branchDeletes.isEmpty()) return@withContext true
         if (!isConfigured() || shopSyncKey.isBlank()) return@withContext false
         val saved = AndroidDeviceCredentialStore.readForShop(shopSyncKey)
         if (saved == null) {
@@ -2621,6 +2619,11 @@ object SupabaseAdminClient {
             Log.w(TAG, "Branch deletion audit deferred: this legacy terminal requires owner-approved device enrollment.")
             return@withContext true
         }
+        val branchDeletes = tombstones.filter {
+            it.tableName == "branches" &&
+                (it.deletedByDeviceId.isBlank() || it.deletedByDeviceId == saved.deviceId)
+        }
+        if (branchDeletes.isEmpty()) return@withContext true
         try {
             val active = refreshAndroidDeviceCredential(saved)
             for (batch in branchDeletes.chunked(250)) {
