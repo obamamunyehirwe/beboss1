@@ -275,6 +275,15 @@ type IosCloudSnapshotReply = {
   snapshotCount: number;
 };
 
+export type IosCloudUploadResult = {
+  uploadedAt: number;
+  latestUpdatedAt: number;
+  accepted: boolean;
+  conflict: boolean;
+  message: string;
+  chunkCount: number;
+};
+
 async function postIosDeviceAction<T extends Record<string, any>>(
   action: string,
   payload: Record<string, unknown> = {},
@@ -331,14 +340,18 @@ export async function getIosCloudSyncStatus(): Promise<IosCloudSyncStatus> {
 export async function uploadIosCloudSnapshot(
   snapshot: Record<string, unknown>,
   expectedUpdatedAt: number
-): Promise<{ uploadedAt: number; latestUpdatedAt: number; accepted: boolean }> {
+): Promise<IosCloudUploadResult> {
   const reply = await postIosDeviceAction<{
-    ok: true; uploadedAt: number; latestUpdatedAt: number; accepted: boolean;
+    ok: true; uploadedAt?: number; latestUpdatedAt: number; accepted: boolean;
+    conflict?: boolean; message?: string; chunkCount?: number;
   }>('sync_upload', { snapshot, expectedUpdatedAt: Math.max(0, Math.floor(expectedUpdatedAt)) });
   return {
-    uploadedAt: Number(reply.uploadedAt) || Date.now(),
-    latestUpdatedAt: Number(reply.latestUpdatedAt) || Number(reply.uploadedAt) || Date.now(),
-    accepted: reply.accepted === true
+    uploadedAt: Number(reply.uploadedAt) || 0,
+    latestUpdatedAt: Number(reply.latestUpdatedAt) || 0,
+    accepted: reply.accepted === true,
+    conflict: reply.conflict === true,
+    message: String(reply.message || ''),
+    chunkCount: Math.max(0, Number(reply.chunkCount) || 0)
   };
 }
 
