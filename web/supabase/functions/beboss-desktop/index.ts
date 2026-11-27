@@ -1031,22 +1031,37 @@ Deno.serve(async (req: Request) => {
         }
 
         const { data: branch, error: branchError } = await admin.from("shop_branches")
-          .select("id,shop_sync_key,name,code,address,phone,email,manager_user_id,manager_name,is_active,is_main_branch,operational_status,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,created_at,updated_at,hlc_timestamp,last_modified_device_id")
+          .select("id,shop_sync_key,name,code,address,phone,email,manager_user_id,manager_name,is_active,is_main_branch,operational_status,product_count,stock_value_rwf,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,created_at,updated_at,hlc_timestamp,last_modified_device_id")
           .eq("shop_sync_key", text(shop.id)).eq("id", recordId).maybeSingle();
         if (branchError) throw new Error("Could not validate deleted branch " + recordId + ": " + branchError.message);
         if (branch?.is_main_branch === true || recordId === "main_branch") {
           return json(409, { ok: false, message: "The main shop branch cannot be deleted. Restore it and deactivate a secondary branch instead." });
         }
         if (branch?.is_active === true) {
-          const [devices, staff] = await Promise.all([
+          const unresolvedTransferStatuses = ["REQUESTED", "PENDING", "IN_TRANSIT", "RECEIPT_REQUESTED", "CANCEL_REQUESTED"];
+          const [devices, staff, outgoingTransfers, incomingTransfers] = await Promise.all([
             admin.from("shop_devices").select("id", { count: "exact", head: true })
               .eq("shop_sync_key", text(shop.id)).eq("branch_id", recordId).eq("is_active", true),
             admin.from("shop_users").select("user_id", { count: "exact", head: true })
-              .eq("shop_sync_key", text(shop.id)).eq("assigned_branch_id", recordId).eq("is_active", true)
+              .eq("shop_sync_key", text(shop.id)).eq("assigned_branch_id", recordId).eq("is_active", true),
+            admin.from("shop_stock_transfers").select("id")
+              .eq("shop_sync_key", text(shop.id)).eq("from_branch_id", recordId)
+              .in("status", unresolvedTransferStatuses).limit(1),
+            admin.from("shop_stock_transfers").select("id")
+              .eq("shop_sync_key", text(shop.id)).eq("to_branch_id", recordId)
+              .in("status", unresolvedTransferStatuses).limit(1)
           ]);
-          if (devices.error || staff.error) throw new Error("Could not check assignments before applying the branch deletion.");
+          if (devices.error || staff.error || outgoingTransfers.error || incomingTransfers.error) {
+            throw new Error("Could not check branch staff, devices and stock-transfer dependencies before applying the branch deletion.");
+          }
           if ((devices.count ?? 0) > 0 || (staff.count ?? 0) > 0) {
             return json(409, { ok: false, message: "Reassign active staff and devices before deleting this branch. The deletion remains queued for retry." });
+          }
+          if ((outgoingTransfers.data?.length ?? 0) > 0 || (incomingTransfers.data?.length ?? 0) > 0) {
+            return json(409, { ok: false, message: "Complete or cancel unresolved stock transfers involving this branch before deleting it. The deletion remains queued for retry." });
+          }
+          if (number(branch.product_count) > 0 || number(branch.stock_value_rwf) > 0) {
+            return json(409, { ok: false, message: "Move or archive this branch's remaining product inventory before deleting it. The deletion remains queued for retry." });
           }
           const { error: updateError } = await admin.from("shop_branches").update({
             is_active: false,
