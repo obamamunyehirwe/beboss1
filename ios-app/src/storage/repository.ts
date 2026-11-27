@@ -1917,12 +1917,10 @@ export async function mergeIosCloudSnapshots(parts: unknown[], actor: Staff): Pr
 
     // A full cloud snapshot never contains PIN/password material. Keep local hashes for
     // users already provisioned on this iPhone, and lock newly imported cloud users.
-    const seenUserIds = new Set<string>();
     for (const raw of rows.users) {
       const id = cloudString(raw, 'id', 'user_id');
       const username = cloudString(raw, 'username', 'username').trim().toLowerCase();
       if (!id || !username || isDeleted(['users'], id, cloudNumber(raw, 'updatedAt', 'updated_at', 0))) continue;
-      seenUserIds.add(id);
       const existing = await first<Row>('SELECT data FROM users WHERE id=? OR username=? COLLATE NOCASE LIMIT 1', [id, username], tx);
       const role = cloudRole(raw.role);
       if (existing) {
@@ -2186,7 +2184,7 @@ export async function mergeIosCloudSnapshots(parts: unknown[], actor: Staff): Pr
           const user = staffFromRow(old);
           user.isActive = false;
           user.updatedAt = Math.max(user.updatedAt, now);
-          await execute('UPDATE users SET active=0,data=?,updated_at=? WHERE id=?', [toJson(user), user.updatedAt, id], tx);
+          await execute('UPDATE users SET active=0,data=?,updated_at=? WHERE id=?', [toJson(user), user.updatedAt, item.id], tx);
         }
       } else {
         await execute('DELETE FROM ' + table + ' WHERE id=?', [item.id], tx);
