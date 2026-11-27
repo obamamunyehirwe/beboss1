@@ -1206,8 +1206,12 @@ export const reverseMyShopFinanceEntry = createServerFn({ method: "POST" })
       actorUsername: ownerUsername,
       actorDeviceId: "WEB:OWNER_PORTAL"
     };
+    const { data: shop, error: shopError } = await sb.from("shop_accounts")
+      .select("shop_name").eq("id", key).maybeSingle();
+    if (shopError || !shop) throw new Error("Could not verify the shop before reversing this financial entry.");
     const { data: inserted, error } = await sb.from("cloud_sync_events").insert({
       shop_sync_key: key,
+      shop_name: String(shop.shop_name ?? ""),
       entity: "FINANCE_LEDGER",
       action: "REVERSED",
       actor: "OWNER:" + ownerUsername,
