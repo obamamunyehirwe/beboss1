@@ -1816,3 +1816,17 @@ select option { background: var(--panel-bg); color: var(--text); }
 @media (max-width: 460px) {
   .staff-bulk-controls { grid-template-columns: 1fr; }
 }
+
+
+/* Enterprise transfer logistics toolbar */
+.enterprise-transfer-toolbar { display: grid; gap: 10px; padding: 14px; }
+.enterprise-transfer-toolbar .enterprise-toolbar-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+.enterprise-transfer-toolbar .enterprise-search { flex: 1 1 340px; }
+.enterprise-transfer-toolbar select { min-height: 38px; padding: 0 10px; border: 1px solid var(--input); border-radius: 8px; background: var(--panel-bg); color: var(--text); font-size: 11px; }
+.enterprise-transfer-toolbar .enterprise-toolbar-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; color: var(--muted); font-size: 9px; }
+@media (max-width: 650px) {
+  .enterprise-transfer-toolbar .enterprise-toolbar-controls { align-items: stretch; flex-direction: column; }
+  .enterprise-transfer-toolbar .enterprise-search { flex-basis: auto; }
+  .enterprise-transfer-toolbar select { width: 100%; }
+  .enterprise-transfer-toolbar .enterprise-toolbar-foot { flex-direction: column; }
+}
