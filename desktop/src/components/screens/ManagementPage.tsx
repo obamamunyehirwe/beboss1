@@ -67,10 +67,16 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnounc
       const id = s(branch.id);
       const metric = totals.get(id) ?? { count: 0, total: 0 };
       const target = n(branch.monthly_target_rwf);
+      const manager = staff.find((person) =>
+        s(person.id) === s(branch.manager_user_id) || s(person.user_id) === s(branch.manager_user_id)
+      );
+      const managerName = s(branch.manager_name) ||
+        s(manager?.full_name ?? manager?.fullName ?? manager?.name ?? manager?.username);
       return {
         ...branch,
         branchId: id,
         branchName: s(branch.name) || "Unnamed branch",
+        managerName,
         status: branch.is_active === false ? "INACTIVE" : s(branch.operational_status || "OPEN").toUpperCase(),
         monthlySales: metric.total,
         transactionCount: metric.count,
@@ -168,7 +174,7 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnounc
       { Section: "SUMMARY", Item: "Open stock transfers", Status: openTransfers.length ? "REVIEW" : "CLEAR", Value: openTransfers.length, Details: "Requested, in transit or receipt requested" },
       ...branchPerformance.map((branch) => ({
         Section: "BRANCH", Item: branch.branchName, Status: branch.status,
-        Value: Math.round(branch.monthlySales), Details: branch.transactionCount + " sales this month · target " + (branch.target ? Math.round(branch.targetProgress) + "%" : "not set") + " · manager " + (s(branch.manager_name) || "unassigned")
+        Value: Math.round(branch.monthlySales), Details: branch.transactionCount + " sales this month · target " + (branch.target ? Math.round(branch.targetProgress) + "%" : "not set") + " · manager " + (branch.managerName || "unassigned")
       })),
       ...lowStock.map((item) => ({
         Section: "LOW STOCK", Item: s(item.name) || "Unnamed product", Status: "REORDER",
@@ -249,7 +255,7 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onAnnounc
         <div className="panel-heading"><div><span className="eyebrow muted">MULTI-LOCATION PERFORMANCE</span><h3>Branch performance</h3><p>Sales are grouped by branch for the current calendar month.</p></div><button className="text-action" onClick={() => onNavigate("branches")}>Manage branches <ArrowRight size={14} /></button></div>
         {branchPerformance.length ? <div className="management-branch-list">
           {branchPerformance.slice(0, 6).map((branch) => <div className="management-branch-row" key={branch.branchId}>
-            <div className="management-branch-main"><span className="management-branch-avatar"><Building2 size={15} /></span><div><strong>{branch.branchName}</strong><small>{s(branch.manager_name) || "Manager not assigned"} · {branch.transactionCount} transactions</small></div></div>
+            <div className="management-branch-main"><span className="management-branch-avatar"><Building2 size={15} /></span><div><strong>{branch.branchName}</strong><small>{branch.managerName || "Manager not assigned"} · {branch.transactionCount} transactions</small></div></div>
             <div className="management-branch-metrics"><strong>{money(branch.monthlySales)}</strong><StatusPill value={branch.status} /></div>
             <div className="management-progress-track"><span style={{ width: branch.target > 0 ? branch.targetProgress + "%" : "0%" }} /></div>
             <small className="management-branch-target">{branch.target > 0 ? branch.targetProgress.toFixed(1) + "% of " + money(branch.target) + " monthly target" : "Monthly target not configured"}</small>
