@@ -755,7 +755,7 @@ async function recordShopAuditEvent(
 async function loadShopApprovalPolicy(admin: SupabaseClient, shopId: string) {
   const defaults = { version: 1, transferApprovalThresholdRwf: 0, reconciliationVarianceThresholdRwf: 0 };
   const { data, error } = await admin.from("cloud_sync_events")
-    .select("detail").eq("shop_sync_key", shopId).eq("entity", "APPROVAL_POLICY")
+    .select("detail,created_at").eq("shop_sync_key", shopId).eq("entity", "APPROVAL_POLICY")
     .eq("action", "UPDATED").order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Error("Could not load the shop approval policy: " + error.message);
   if (!data?.detail) return defaults;
@@ -768,7 +768,13 @@ async function loadShopApprovalPolicy(admin: SupabaseClient, shopId: string) {
       transfer > 10000000000 || variance > 10000000000) {
     throw new Error("The saved shop approval policy contains an invalid threshold.");
   }
-  return { version: 1, transferApprovalThresholdRwf: Math.round(transfer),
+  const policyTimestamp = Date.parse(text(data.created_at));
+  const configuredVersion = Math.max(
+    1,
+    Math.floor(number(value.version)),
+    Number.isFinite(policyTimestamp) ? policyTimestamp : 1
+  );
+  return { version: configuredVersion, transferApprovalThresholdRwf: Math.round(transfer),
     reconciliationVarianceThresholdRwf: Math.round(variance) };
 }
 
@@ -994,6 +1000,12 @@ Deno.serve(async (req: Request) => {
       const branchIds = [...new Set(requested.flatMap((row) => [
         text(row.from_branch_id).trim(), text(row.to_branch_id).trim()
       ]).filter(Boolean))];
+      const assignedBranchId = text(writerResult.data?.assigned_branch_id).trim();
+      if (text(currentDevice.role).toUpperCase() === "MANAGER" &&
+          requested.some((row) => ![assignedBranchId].includes(text(row.from_branch_id).trim()) &&
+            ![assignedBranchId].includes(text(row.to_branch_id).trim()))) {
+        return json(403, { ok: false, message: "A manager terminal may synchronize only transfers involving its assigned branch." });
+      }
       const branchResult = branchIds.length
         ? await admin.from("shop_branches").select("id,is_active,operational_status")
             .eq("shop_sync_key", text(shop.id)).in("id", branchIds).limit(100)
