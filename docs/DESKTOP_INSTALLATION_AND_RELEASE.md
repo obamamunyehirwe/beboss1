@@ -106,6 +106,10 @@ The bucket is private. Public downloads are issued from a server-controlled, sho
 
 A failed or interrupted upload is not made public. The Admin page attempts to remove incomplete uploads; check the release archive before retrying in case the network connection was interrupted after a successful publication.
 
-## In-app updater boundary
+## Desktop update checks and safe in-place upgrades
 
-Publishing a desktop installer through the Admin page is a manual installer distribution process; it does not enable silent in-app updates. Tauri's updater requires a separate keypair: the public key is embedded in the app and each update package must be signed with the matching private key. Do not advertise or enable an automatic update channel until that keypair and its verification path have been provisioned and tested. Windows Authenticode signatures and Tauri updater signatures are separate trust systems.
+The native desktop app checks the public release service when startup setup completes and provides a manual refresh control. It compares the installed version with the current public release for the detected operating system. The check returns only public version metadata, checksum, release notes and an official same-origin download endpoint. Private Storage paths and server credentials stay on the server.
+
+When a newer version is available, BeBoss opens the signed, short-lived installer download in the system browser. The user runs the downloaded platform installer and confirms the upgrade. The Windows NSIS installer replaces application binaries and shortcuts while preserving the encrypted SQLCipher database, OS credential-vault entry, DPAPI key backup, pending sync outbox and recovery archives.
+
+This is a release check plus a user-approved installer update, not a silent background install. A fully automatic Tauri updater is intentionally not enabled yet: it requires a separate updater signing keypair and signed update packages. The private updater key must be generated and held by the release owner outside Git; Windows Authenticode signing and Tauri updater signatures are separate trust systems. Do not enable an unsigned updater payload or store updater private keys in the repository.

@@ -26,11 +26,11 @@ The Android build now has two flavors:
 | Variant | Version | Purpose | Legacy pepper in APK |
 |---|---:|---|---|
 | transition | 2.4.1 / versionCode 18 | One-time transfer of the original legacy pepper into that device's Keystore | Temporarily yes |
-| secure | 2.5.0 / versionCode 19 | Final APK; v2 credentials need no pepper, v1 reads only the Keystore envelope | No |
+| secure | 2.6.0 / versionCode 20 | Final APK; v2 credentials need no pepper, v1 reads only the Keystore envelope | No |
 
 On first launch of Transition 2.4.1, BeBoss seals the old value using Android Keystore AES-GCM and stores only the encrypted envelope in private device storage. It is not synced or exported. Existing v1 hashes remain usable offline on that device. When a staff member successfully signs in, existing app flows upgrade that hash to PBKDF2v2 using a random per-credential salt and no pepper.
 
-Secure 2.5.0 has no compile-time pepper field. It can verify an old v1 credential only through the device-local Keystore envelope. All v2 authentication remains offline.
+Secure 2.6.0 has no compile-time pepper field. It can verify an old v1 credential only through the device-local Keystore envelope. All v2 authentication remains offline.
 
 ### Mandatory release order
 
@@ -55,7 +55,7 @@ java ./scripts/PrintSupabaseTlsPins.java --update-env
 
 This performs a real TLS handshake to the configured `SUPABASE_URL` using the Java runtime's normal trusted CA store and HTTPS hostname verification. It derives OkHttp `sha256/` pins from the live peer certificate chain's SubjectPublicKeyInfo keys, excludes a self-signed root, and writes only `SUPABASE_CERT_PINS` in the ignored `.env`. It does not disable certificate validation, use a placeholder, or read any Supabase API secret. Run it again when the endpoint's certificate chain changes.
 
-Build Secure 2.5.0. CI checks that the secure BuildConfig does not contain either legacy field.
+Build Secure 2.6.0. CI checks that the secure BuildConfig does not contain either legacy field.
 7. After transition is complete, remove the transition-only pepper from build environments and rotate the server-only DataShare HMAC separately. Keep device Keystore envelopes; do not clear app data or reset Keystore.
 
 **Do not skip versionCode 18.** Play can update a device directly to the newest eligible version and is not required to install an intermediate release. Publishing version 19 too early can leave an offline device with old v1 hashes but no Keystore envelope. If any device has not migrated, do not clear data or uninstall BeBoss. Keep that device on its existing release, restore Transition 2.4.1 with the exact original pepper when possible, or complete an owner-authorized staff PIN/password reset after verifying a full backup.
@@ -99,7 +99,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-android-rel
 
 Expected output: app\build\outputs\apk\secure\release\app-secure-release.apk. Upload that exact APK in BeBoss Admin → App Releases → Mobile. Do not upload a debug APK, the transition flavor, or an AAB to the direct APK channel.
 
-For every later direct APK release, keep the same .p12 key, alias and application ID; increase the secure flavor versionCode and versionName, rebuild, and enter those exact values in Admin. Android's installer preserves app data when the application ID/signing identity remain compatible and the new version code is accepted.
+For every later direct APK release, keep the same .p12 key, alias and application ID; increase the secure flavor versionCode and versionName, rebuild, and enter those exact values in Admin. The same build-and-verify script can be reused for later updates after the release owner changes the secure flavor version and keeps the approved secure migration gate configured. Each update must be signed with the same application-signing certificate as the installed APK; Android's Package Installer requires user confirmation. Android's installer preserves app data when the application ID/signing identity remain compatible and the new version code is accepted.
 
 CI builds both debug flavors, runs their unit tests, runs the secure emulator smoke test, and checks that the secure APK is secret-free. The release signing key and external project DSNs are owner-controlled local/protected configuration and are not committed.
 
