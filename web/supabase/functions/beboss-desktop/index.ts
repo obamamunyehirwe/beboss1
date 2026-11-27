@@ -913,6 +913,7 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      let transferWriterBranchId = "";
       if (action === "android_transfer_sync") {
         const writerUserId = text(currentDevice.assigned_user_id).trim();
         const writerResult = await admin.from("shop_users")
@@ -925,7 +926,8 @@ Deno.serve(async (req: Request) => {
             text(writer.role).toUpperCase() !== deviceRole) {
           return json(403, { ok: false, message: "This terminal is not assigned to an active owner or manager account authorized to synchronize stock transfers." });
         }
-        if (deviceRole === "MANAGER" && text(writer.assigned_branch_id).trim() === "") {
+        transferWriterBranchId = text(writer.assigned_branch_id).trim();
+        if (deviceRole === "MANAGER" && !transferWriterBranchId) {
           return json(403, { ok: false, message: "A manager terminal must be assigned to an active branch before synchronizing transfers." });
         }
       }
@@ -1000,7 +1002,7 @@ Deno.serve(async (req: Request) => {
       const branchIds = [...new Set(requested.flatMap((row) => [
         text(row.from_branch_id).trim(), text(row.to_branch_id).trim()
       ]).filter(Boolean))];
-      const assignedBranchId = text(writerResult.data?.assigned_branch_id).trim();
+      const assignedBranchId = transferWriterBranchId;
       if (text(currentDevice.role).toUpperCase() === "MANAGER" &&
           requested.some((row) => ![assignedBranchId].includes(text(row.from_branch_id).trim()) &&
             ![assignedBranchId].includes(text(row.to_branch_id).trim()))) {
