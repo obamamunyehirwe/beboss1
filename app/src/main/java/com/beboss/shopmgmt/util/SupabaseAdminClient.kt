@@ -2552,10 +2552,11 @@ object SupabaseAdminClient {
         if (uploadedRows.length() == 0) return true
         val saved = AndroidDeviceCredentialStore.readForShop(shopSyncKey)
         if (saved == null) {
-            // Older installations remain on the explicitly supported legacy sync path.
-            // They cannot authenticate audit writes and must be re-enrolled by the owner.
-            Log.w(TAG, "Device audit journal deferred: this legacy terminal needs owner-approved device enrollment.")
-            return true
+            // Do not report a branch/transfer upload as fully synchronized when its
+            // audit event cannot be attributed to an authenticated enrolled device.
+            // The owner must complete secure device enrollment before this sync is acknowledged.
+            Log.w(TAG, "Device audit journal blocked: this terminal needs owner-approved secure device enrollment.")
+            return false
         }
         return try {
             val active = refreshAndroidDeviceCredential(saved)
