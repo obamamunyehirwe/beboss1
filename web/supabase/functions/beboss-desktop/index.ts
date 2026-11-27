@@ -714,6 +714,26 @@ async function recordShopAuditEvent(
   return true;
 }
 
+async function loadShopApprovalPolicy(admin: SupabaseClient, shopId: string) {
+  const defaults = { version: 1, transferApprovalThresholdRwf: 0, reconciliationVarianceThresholdRwf: 0 };
+  const { data, error } = await admin.from("cloud_sync_events")
+    .select("detail").eq("shop_sync_key", shopId).eq("entity", "APPROVAL_POLICY")
+    .eq("action", "UPDATED").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error("Could not load the shop approval policy: " + error.message);
+  if (!data?.detail) return defaults;
+  let value: Record<string, unknown>;
+  try { value = JSON.parse(text(data.detail)); }
+  catch { throw new Error("The saved shop approval policy is unreadable. Ask the owner to review it before continuing."); }
+  const transfer = number(value.transferApprovalThresholdRwf);
+  const variance = number(value.reconciliationVarianceThresholdRwf);
+  if (!Number.isFinite(transfer) || !Number.isFinite(variance) || transfer < 0 || variance < 0 ||
+      transfer > 10000000000 || variance > 10000000000) {
+    throw new Error("The saved shop approval policy contains an invalid threshold.");
+  }
+  return { version: 1, transferApprovalThresholdRwf: Math.round(transfer),
+    reconciliationVarianceThresholdRwf: Math.round(variance) };
+}
+
 async function ownerManagementActorV2(admin: SupabaseClient, shopId: string, actorDeviceId: string, ownerUsername: string) {
   const normalizedActorDeviceId = text(actorDeviceId).trim();
   const normalizedOwnerUsername = text(ownerUsername).trim().toLowerCase();
@@ -1782,6 +1802,25 @@ if (action === "submit_payment_proof") {
       });
     }
 
+    if (action === "approval_policy_save") {
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
+      const transferThreshold = Number(body.transferApprovalThresholdRwf);
+      const varianceThreshold = Number(body.reconciliationVarianceThresholdRwf);
+      if (!Number.isFinite(transferThreshold) || !Number.isFinite(varianceThreshold) ||
+          transferThreshold < 0 || varianceThreshold < 0 ||
+          transferThreshold > 10000000000 || varianceThreshold > 10000000000) {
+        throw new Error("Approval thresholds must be valid non-negative amounts up to FRw 10,000,000,000. Use 0 to disable a threshold.");
+      }
+      const policy = { version: 1, transferApprovalThresholdRwf: Math.round(transferThreshold),
+        reconciliationVarianceThresholdRwf: Math.round(varianceThreshold), updatedAt: Date.now() };
+      const auditLogged = await recordShopAuditEvent(
+        admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
+        actor.actorDeviceId, "APPROVAL_POLICY", "UPDATED", JSON.stringify(policy)
+      );
+      if (!auditLogged) throw new Error("The approval policy was not saved because its audit record could not be written. Refresh and retry.");
+      return json(200, { ok: true, policy });
+    }
+
     if (action === "branch_upsert") {
       const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const row = branchPayload((body.branch ?? {}) as Row, owner.shopId);
@@ -1794,15 +1833,25 @@ if (action === "submit_payment_proof") {
         }
         row.manager_name = text(manager.data.full_name);
       } else row.manager_name = "";
-      if (row.is_main_branch) {
-        await admin.from("shop_branches").update({
-          is_main_branch: false, updated_at: Date.now(), hlc_timestamp: Date.now(), last_modified_device_id: "DESKTOP"
-        }).eq("shop_sync_key", owner.shopId).eq("is_main_branch", true).neq("id", row.id);
-      }
-      const { data: old, error: readError } = await admin.from("shop_branches").select("id,shop_sync_key,created_at,name,code,manager_user_id,operational_status,is_active,is_main_branch").eq("id", row.id).maybeSingle();
+      const { data: old, error: readError } = await admin.from("shop_branches")
+        .select("id,shop_sync_key,created_at,name,code,manager_user_id,operational_status,is_active,is_main_branch")
+        .eq("shop_sync_key", owner.shopId).eq("id", row.id).maybeSingle();
       if (readError) throw new Error("Could not validate the branch record.");
-      if (old && old.shop_sync_key !== owner.shopId) throw new Error("The branch belongs to another shop.");
       row.created_at = number(old?.created_at) || row.created_at;
+      let previousMainBranches: Row[] = [];
+      if (row.is_main_branch) {
+        const previous = await admin.from("shop_branches").select("id,name,code")
+          .eq("shop_sync_key", owner.shopId).eq("is_active", true).eq("is_main_branch", true).neq("id", row.id).limit(20);
+        if (previous.error) throw new Error("Could not inspect the current main-branch designation.");
+        previousMainBranches = previous.data ?? [];
+        if (previousMainBranches.length) {
+          const cleared = await admin.from("shop_branches").update({
+            is_main_branch: false, updated_at: Date.now(), hlc_timestamp: Date.now(),
+            last_modified_device_id: actor.actorDeviceId
+          }).eq("shop_sync_key", owner.shopId).eq("is_main_branch", true).neq("id", row.id);
+          if (cleared.error) throw new Error("Could not safely replace the main-branch designation: " + cleared.error.message);
+        }
+      }
       const { error } = await admin.from("shop_branches").upsert(row, { onConflict: "id" });
       if (error) throw new Error("Could not save the branch: " + error.message);
       const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
@@ -1812,11 +1861,19 @@ if (action === "submit_payment_proof") {
         : old.manager_user_id !== row.manager_user_id ? "MANAGER_CHANGED"
         : old.is_main_branch !== row.is_main_branch ? "MAIN_BRANCH_CHANGED"
         : "PROFILE_UPDATED";
-      const auditLogged = await recordShopAuditEvent(
+      let auditLogged = await recordShopAuditEvent(
         admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
         actor.actorDeviceId, "BRANCH", auditAction,
         row.name + " · " + row.code + " · " + row.operational_status + " · Manager: " + (row.manager_name || "unassigned")
       );
+      for (const previous of previousMainBranches) {
+        const removed = await recordShopAuditEvent(
+          admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
+          actor.actorDeviceId, "BRANCH", "MAIN_BRANCH_REMOVED",
+          text(previous.name) + " · " + text(previous.code) + " · Replaced by " + row.name
+        );
+        auditLogged = auditLogged && removed;
+      }
       return json(200, { ok: true, id: row.id, shopUsage, auditLogged });
     }
 
@@ -1850,15 +1907,83 @@ if (action === "submit_payment_proof") {
       return json(200, { ok: true, shopUsage, auditLogged });
     }
 
+    if (action === "branch_reconcile") {
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
+      const branchId = text(body.branchId).trim();
+      const startAt = Number(body.startAt);
+      const endAt = Number(body.endAt);
+      const cashCountedRwf = Number(body.cashCountedRwf);
+      const reconciliationId = text(body.reconciliationId).trim() || crypto.randomUUID();
+      if (!branchId || !Number.isFinite(startAt) || !Number.isFinite(endAt) || startAt <= 0 ||
+          endAt < startAt || endAt - startAt > 31 * 24 * 60 * 60 * 1000 ||
+          !Number.isFinite(cashCountedRwf) || cashCountedRwf < 0 || cashCountedRwf > 10000000000) {
+        throw new Error("Choose a valid branch, period of up to 31 days and non-negative counted cash amount.");
+      }
+      const { data: branch, error: branchError } = await admin.from("shop_branches")
+        .select("id,name,opening_cash_float,is_active").eq("shop_sync_key", owner.shopId)
+        .eq("id", branchId).maybeSingle();
+      if (branchError || !branch || !branch.is_active) throw new Error("Choose an active branch belonging to this shop.");
+      const verified = await latestVerifiedSnapshot(admin, owner.shopId, config.hmacSecret);
+      const snapshot = verified.snapshot;
+      if (!snapshot) throw new Error("No verified shop snapshot is available. Synchronize the owner terminal before reconciling cash.");
+      const belongsToBranch = (value: unknown) => {
+        const valueId = text(value);
+        return valueId === branchId || (!valueId && branchId === "main_branch");
+      };
+      const sales = snapshot.sales.filter((sale) => {
+        const timestamp = number(sale.saleDate ?? sale.sale_date);
+        return timestamp >= startAt && timestamp <= endAt && belongsToBranch(sale.branchId ?? sale.branch_id);
+      });
+      const cashSalesRwf = sales.reduce((sum, sale) => {
+        if (text(sale.paymentMethod ?? sale.payment_method).toUpperCase() !== "CASH") return sum;
+        const paid = number(sale.amountPaid ?? sale.amount_paid);
+        return sum + (paid > 0 ? paid : text(sale.paymentStatus ?? sale.payment_status).toUpperCase() === "PAID"
+          ? number(sale.totalAmount ?? sale.total_amount) : 0);
+      }, 0);
+      const customerCashPaymentsRwf = snapshot.customerPayments.filter((payment) => {
+        const timestamp = number(payment.paymentDate ?? payment.payment_date);
+        const method = text(payment.paymentMethod ?? payment.payment_method).trim().toUpperCase();
+        return timestamp >= startAt && timestamp <= endAt && belongsToBranch(payment.branchId ?? payment.branch_id) &&
+          (method === "CASH" || method === "CASH PAYMENT");
+      }).reduce((sum, payment) => sum + Math.max(0, number(payment.amount)), 0);
+      const openingFloatRwf = Math.max(0, number(branch.opening_cash_float));
+      const expectedCashRwf = Math.round(openingFloatRwf + cashSalesRwf + customerCashPaymentsRwf);
+      const varianceRwf = Math.round(cashCountedRwf - expectedCashRwf);
+      const policy = await loadShopApprovalPolicy(admin, owner.shopId);
+      const needsApproval = policy.reconciliationVarianceThresholdRwf > 0 &&
+        Math.abs(varianceRwf) >= policy.reconciliationVarianceThresholdRwf;
+      const approvalReason = text(body.approvalReason).trim().slice(0, 500);
+      if (needsApproval && (body.approvalConfirmed !== true || approvalReason.length < 8)) {
+        throw new Error("This cash variance meets the shop's approval threshold. Confirm the owner review and enter an explanation of at least 8 characters.");
+      }
+      const record = {
+        version: 1, reconciliationId, branchId, branchName: text(branch.name),
+        startAt, endAt, salesCount: sales.length,
+        grossSalesRwf: Math.round(sales.reduce((sum, sale) => sum + Math.max(0, number(sale.totalAmount ?? sale.total_amount)), 0)),
+        cashSalesRwf: Math.round(cashSalesRwf),
+        customerCashPaymentsRwf: Math.round(customerCashPaymentsRwf),
+        openingFloatRwf, expectedCashRwf, cashCountedRwf: Math.round(cashCountedRwf),
+        varianceRwf, approvalRequired: needsApproval, approvalConfirmed: needsApproval && body.approvalConfirmed === true,
+        approvalReason, notes: text(body.notes).trim().slice(0, 400), recordedAt: Date.now()
+      };
+      const auditLogged = await recordShopAuditEvent(
+        admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
+        actor.actorDeviceId, "BRANCH_RECONCILIATION", "COMPLETED", JSON.stringify(record)
+      );
+      if (!auditLogged) throw new Error("The cash calculation was not recorded because the cloud audit journal is unavailable. Refresh and retry.");
+      return json(200, { ok: true, reconciliation: record, auditLogged: true });
+    }
+
     if (action === "staff_update") {
-      await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
+      const actor = await ownerManagementActorV2(admin, owner.shopId, text(body.actorDeviceId), owner.username);
       const userId = text(body.userId);
       const role = text(body.role).toUpperCase();
       const isActive = body.isActive === true;
       const branchId = text(body.branchId);
       if (!userId || !["OWNER","MANAGER","CASHIER"].includes(role)) throw new Error("The staff update is invalid.");
       const { data: staff, error: staffError } = await admin.from("shop_users")
-        .select("user_id,role,full_name").eq("shop_sync_key", owner.shopId).eq("user_id", userId).maybeSingle();
+        .select("user_id,role,full_name,assigned_branch_id,assigned_branch_name,is_active,username")
+        .eq("shop_sync_key", owner.shopId).eq("user_id", userId).maybeSingle();
       if (staffError || !staff) throw new Error("The staff account was not found in this shop.");
       if (staff.role === "OWNER" || role === "OWNER") throw new Error("Owner access and owner role changes must be handled through the reviewed owner-security process.");
       if (branchId) {
@@ -1868,16 +1993,24 @@ if (action === "submit_payment_proof") {
       const { data: branchRow } = branchId
         ? await admin.from("shop_branches").select("name").eq("id", branchId).eq("shop_sync_key", owner.shopId).maybeSingle()
         : { data: null };
+      const nextBranchName = text(branchRow?.name) || "All Branches";
       const { error } = await admin.from("shop_users").update({
-        role,
-        assigned_branch_id: branchId,
-        assigned_branch_name: text(branchRow?.name) || "All Branches",
-        is_active: isActive,
-        updated_at: Date.now()
+        role, assigned_branch_id: branchId, assigned_branch_name: nextBranchName,
+        is_active: isActive, updated_at: Date.now()
       }).eq("shop_sync_key", owner.shopId).eq("user_id", userId);
       if (error) throw new Error("Could not update staff access: " + error.message);
       const shopUsage = await refreshShopUsageSummaryV2(admin, owner.shopId);
-      return json(200, { ok: true, shopUsage });
+      const changes = [
+        staff.role !== role ? "role " + staff.role + " → " + role : "",
+        text(staff.assigned_branch_id) !== branchId ? "branch " + (text(staff.assigned_branch_name) || "All Branches") + " → " + nextBranchName : "",
+        staff.is_active !== isActive ? (isActive ? "activated" : "deactivated") : ""
+      ].filter(Boolean);
+      const auditLogged = changes.length === 0 || await recordShopAuditEvent(
+        admin, owner.shopId, text(owner.shop.shop_name), "OWNER:" + owner.username,
+        actor.actorDeviceId, "STAFF", "ACCESS_UPDATED",
+        text(staff.full_name) + " · @" + text(staff.username) + " · " + changes.join("; ")
+      );
+      return json(200, { ok: true, shopUsage, auditLogged });
     }
 
     if (action === "transfer_create") {
@@ -1907,6 +2040,14 @@ if (action === "submit_payment_proof") {
       const from = branches.find((b) => b.id === fromId)!;
       const to = branches.find((b) => b.id === toId)!;
       const transferNumber = "TRF-" + Date.now().toString().slice(-9);
+      const transferCostRwf = Math.max(0, Math.round(quantity * number(product.costPrice)));
+      const policy = await loadShopApprovalPolicy(admin, owner.shopId);
+      const approvalRequired = policy.transferApprovalThresholdRwf > 0 &&
+        transferCostRwf >= policy.transferApprovalThresholdRwf;
+      const approvalReason = text(body.approvalReason).trim().slice(0, 500);
+      if (approvalRequired && (body.approvalConfirmed !== true || approvalReason.length < 8)) {
+        throw new Error("This transfer meets the shop's approval threshold. Confirm the owner approval and enter an explanation of at least 8 characters.");
+      }
       const { data: existing, error: existingError } = await admin.from("shop_stock_transfers")
         .select("id,status").eq("id", id).eq("shop_sync_key", owner.shopId).maybeSingle();
       if (existingError) throw new Error("Could not validate the transfer command.");
@@ -1918,7 +2059,7 @@ if (action === "submit_payment_proof") {
         from_branch_id: fromId, from_branch_name: from.name,
         to_branch_id: toId, to_branch_name: to.name,
         quantity, unit: text(product.unit) || "pcs",
-        cost_value_rwf: Math.max(0, Math.round(quantity * number(product.costPrice))),
+        cost_value_rwf: transferCostRwf,
         transfer_date: now, status: "REQUESTED",
         notes: text(body.notes).slice(0, 1000), transferred_by: owner.username,
         received_by: "", received_at: 0, synced: false,
@@ -1927,11 +2068,11 @@ if (action === "submit_payment_proof") {
       if (error) throw new Error("Could not create the stock-transfer command: " + error.message);
       const auditLogged = await recordShopAuditEvent(
         admin, owner.shopId, owner.shop.shop_name, "OWNER:" + owner.username,
-        actor.actorDeviceId, "STOCK_TRANSFER", "REQUESTED",
+        actor.actorDeviceId, "STOCK_TRANSFER", approvalRequired ? "REQUESTED_OWNER_APPROVED" : "REQUESTED",
         transferNumber + " · " + text(product.name) + " · " + quantity + " " + (text(product.unit) || "pcs") +
-          " · " + from.name + " → " + to.name
+          " · " + from.name + " → " + to.name + (approvalRequired ? " · Approval: " + approvalReason : "")
       );
-      return json(200, { ok: true, id, transferNumber, status: "REQUESTED", auditLogged });
+      return json(200, { ok: true, id, transferNumber, status: "REQUESTED", approvalRequired, auditLogged });
     }
 
     if (action === "transfer_command") {
@@ -1945,16 +2086,17 @@ if (action === "submit_payment_proof") {
       if (current.status !== "IN_TRANSIT") throw new Error("A receipt or cancellation can only be requested while stock is in transit.");
       const now = Date.now();
       const next = command === "RECEIPT" ? "RECEIPT_REQUESTED" : "CANCEL_REQUESTED";
-      const { error } = await admin.from("shop_stock_transfers").update({
+      const { data: updated, error } = await admin.from("shop_stock_transfers").update({
         status: next, updated_at: now, hlc_timestamp: now, last_modified_device_id: actor.actorDeviceId
-      }).eq("id", id).eq("shop_sync_key", owner.shopId).eq("status", "IN_TRANSIT");
-      if (error) throw new Error("Could not submit the transfer command: " + error.message);
+      }).eq("id", id).eq("shop_sync_key", owner.shopId).eq("status", "IN_TRANSIT")
+        .select("id,status").maybeSingle();
+      if (error || !updated) throw new Error("The transfer changed on another terminal. Refresh the transfer queue before trying again.");
       const auditLogged = await recordShopAuditEvent(
-        admin, owner.shopId, owner.shop.shop_name, "OWNER:" + owner.username,
+        admin, owner.shopId, owner.shop_name, "OWNER:" + owner.username,
         actor.actorDeviceId, "STOCK_TRANSFER", next,
         "Transfer " + id + " · " + current.status + " → " + next
       );
-      return json(200, { ok: true, status: next, auditLogged });
+      return json(200, { ok: true, status: updated.status, auditLogged });
     }
 
     if (action === "device_create") {
