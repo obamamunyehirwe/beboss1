@@ -52,6 +52,10 @@ jobs:
           grep -F 'SUPPORTED_PLATFORMS = iphoneos;' ios-app/ios/BeBoss.xcodeproj/project.pbxproj
           grep -F "TARGETED_DEVICE_FAMILY = 1;" ios-app/ios/BeBoss.xcodeproj/project.pbxproj
 
+      - name: Configure public iPhone cloud client
+        working-directory: ios-app
+        run: cp .env.example .env
+
       - name: Install React Native dependencies
         working-directory: ios-app
         run: npm install --no-audit --no-fund
