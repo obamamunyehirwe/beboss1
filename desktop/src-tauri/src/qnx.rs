@@ -530,7 +530,7 @@ pub fn qnx_build_ipc_client(
     fs::write(&source, EDGE_CLIENT_SOURCE).map_err(|error| error.to_string())?;
 
     let args = vec![
-        "-V".into(), variant.into(),
+        format!("-V{variant}"),
         "-Wall".into(), "-Wextra".into(), "-O2".into(),
         source.display().to_string(),
         "-o".into(), output.display().to_string(),
