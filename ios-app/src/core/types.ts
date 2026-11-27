@@ -218,6 +218,15 @@ export type StockTransfer = {
   updatedAt: number;
 };
 
+export type RedeemedVoucher = {
+  fingerprint: string;
+  voucherCode: string;
+  planName: string;
+  daysAdded: number;
+  verifiedAmountRwf: number;
+  redeemedAt: number;
+};
+
 export type SyncOutboxItem = {
   id: string;
   tableName: string;
@@ -242,6 +251,8 @@ export type StoreSnapshot = {
   purchases: Purchase[];
   transfers: StockTransfer[];
   heldCarts: HeldCart[];
+  redeemedVouchers: RedeemedVoucher[];
+  voucherClockHighWaterMs: number;
   outbox: SyncOutboxItem[];
   totalSales: number;
   totalProfit: number;

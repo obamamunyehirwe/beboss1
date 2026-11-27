@@ -30,7 +30,9 @@ export async function exportEncryptedBackup(snapshot: StoreSnapshot, passphrase:
     sales: snapshot.sales,
     payments: snapshot.payments,
     purchases: snapshot.purchases,
-    transfers: snapshot.transfers
+    transfers: snapshot.transfers,
+    redeemedVouchers: snapshot.redeemedVouchers,
+    voucherClockHighWaterMs: snapshot.voucherClockHighWaterMs
   });
   const salt = QuickCrypto.randomBytes(16);
   const iv = QuickCrypto.randomBytes(12);

@@ -5,7 +5,7 @@ import {
 } from '../core/domain';
 import {
   Branch, CartLine, CheckoutInput, Customer, CustomerPayment, HeldCart, Permissions, Product, Purchase,
-  Role, Sale, SaleLine, ShopProfile, Staff, StockTransfer, StoreSnapshot, SyncOutboxItem,
+  Role, Sale, SaleLine, ShopProfile, RedeemedVoucher, Staff, StockTransfer, StoreSnapshot, SyncOutboxItem,
   ROLE_PERMISSIONS
 } from '../core/types';
 
@@ -155,6 +155,8 @@ export async function loadSnapshot(userId: string | null): Promise<StoreSnapshot
   const purchaseRows = await query<Row>('SELECT data FROM purchases ORDER BY created_at DESC LIMIT 500');
   const transferRows = await query<Row>('SELECT data FROM stock_transfers ORDER BY created_at DESC LIMIT 500');
   const heldCartRows = await query<Row>('SELECT data FROM held_carts ORDER BY created_at DESC');
+  const redeemedVoucherRows = await query<Row>('SELECT * FROM redeemed_vouchers ORDER BY redeemed_at DESC');
+  const voucherClockRow = await first<Row>('SELECT value FROM app_meta WHERE key=?', ['voucher_clock_highwater_ms']);
   const outboxRows = await query<Row>('SELECT * FROM sync_outbox WHERE status != "SYNCED" ORDER BY created_at');
   const products = productRows.map(row => productFromRow(row));
   const customers = customerRows.map(row => customerFromRow(row));
@@ -173,6 +175,15 @@ export async function loadSnapshot(userId: string | null): Promise<StoreSnapshot
     purchases,
     transfers,
     heldCarts: heldCartRows.map(row => fromJson<HeldCart>(row.data)),
+    redeemedVouchers: redeemedVoucherRows.map(row => ({
+      fingerprint: String(row.fingerprint),
+      voucherCode: String(row.voucher_code),
+      planName: String(row.plan_name),
+      daysAdded: Number(row.days_added) || 0,
+      verifiedAmountRwf: Number(row.verified_amount_rwf) || 0,
+      redeemedAt: Number(row.redeemed_at) || 0
+    })),
+    voucherClockHighWaterMs: Number(voucherClockRow?.value || 0),
     outbox: outboxRows.map(row => outboxFromRow(row)),
     totalSales: sales.reduce((total, sale) => total + sale.totalAmount, 0),
     totalProfit: sales.reduce((total, sale) => total + sale.totalProfit, 0),
@@ -1232,8 +1243,10 @@ export async function restoreEncryptedBackupData(backup: any, actor: Staff): Pro
   const payments = Array.isArray(backup.payments) ? backup.payments as CustomerPayment[] : [];
   const purchases = Array.isArray(backup.purchases) ? backup.purchases as Purchase[] : [];
   const transfers = Array.isArray(backup.transfers) ? backup.transfers as StockTransfer[] : [];
+  const redeemedVouchers = Array.isArray(backup.redeemedVouchers) ? backup.redeemedVouchers as RedeemedVoucher[] : [];
   if (branches.length > 500 || products.length > 100000 || customers.length > 100000 ||
-      sales.length > 250000 || payments.length > 250000 || purchases.length > 100000 || transfers.length > 100000) {
+      sales.length > 250000 || payments.length > 250000 || purchases.length > 100000 || transfers.length > 100000 ||
+      redeemedVouchers.length > 10000) {
     throw new Error('Backup exceeds supported record limits.');
   }
   const now = Date.now();
@@ -1365,6 +1378,24 @@ export async function restoreEncryptedBackupData(backup: any, actor: Staff): Pro
       await enqueue('stock_transfers', transfer.id, 'CREATE', transfer, tx);
       summary.transfers += 1;
     }
+
+    for (const voucher of redeemedVouchers) {
+      if (!/^[0-9a-f]{64}$/i.test(voucher.fingerprint) || !voucher.voucherCode.startsWith('BB3-') ||
+          !Number.isInteger(voucher.daysAdded) || voucher.daysAdded < 1 || voucher.daysAdded > 800) {
+        throw new Error('Backup contains an invalid redeemed voucher ledger entry.');
+      }
+      await execute(
+        'INSERT OR IGNORE INTO redeemed_vouchers(fingerprint,voucher_code,plan_name,days_added,verified_amount_rwf,redeemed_at) VALUES(?,?,?,?,?,?)',
+        [voucher.fingerprint.toLowerCase(), voucher.voucherCode, voucher.planName, voucher.daysAdded,
+          Math.max(0, Math.floor(voucher.verifiedAmountRwf)), voucher.redeemedAt || now],
+        tx
+      );
+    }
+    const backedUpClock = Math.max(0, Number(backup.voucherClockHighWaterMs) || 0);
+    const existingClockRow = await first<Row>('SELECT value FROM app_meta WHERE key=?', ['voucher_clock_highwater_ms'], tx);
+    const mergedClock = Math.max(backedUpClock, Number(existingClockRow?.value || 0), now);
+    await execute('INSERT INTO app_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      ['voucher_clock_highwater_ms', String(mergedClock)], tx);
 
     // Staff credentials, subscription claims and cloud device secrets are never restored from a portable backup.
     const safeProfile: ShopProfile = {
