@@ -294,17 +294,19 @@ class BeBossRepository(private val database: AppDatabase) {
 
     suspend fun ensureDefaultBranches(): List<Branch> = branchTransferManager.ensureDefaultBranches()
 
-    suspend fun updateBranchOperationalStatus(branchId: String, status: String) =
+    suspend fun updateBranchOperationalStatus(branchId: String, status: String, actor: User? = null) {
+        requirePermission(actor, "UPDATE_BRANCH_STATUS", branchId) {
+            it.role == UserRole.OWNER || it.role == UserRole.MANAGER || it.canManageShopSettings
+        }
         branchTransferManager.updateBranchOperationalStatus(branchId, status)
+    }
 
     suspend fun refreshAllBranchStockSnapshots() =
         branchTransferManager.refreshAllBranchStockSnapshots()
 
     suspend fun confirmTransferReceived(transferId: String, receivedBy: String, actor: User? = null): StockTransfer {
-        if (actor != null) {
-            requirePermission(actor, "CONFIRM_TRANSFER", transferId) {
-                it.canManageInventory || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
-            }
+        requirePermission(actor, "CONFIRM_TRANSFER", transferId) {
+            it.canManageInventory || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
         }
         return branchTransferManager.confirmTransferReceived(transferId, receivedBy)
     }
@@ -315,10 +317,8 @@ class BeBossRepository(private val database: AppDatabase) {
         reason: String = "",
         actor: User? = null
     ): StockTransfer {
-        if (actor != null) {
-            requirePermission(actor, "CANCEL_TRANSFER", transferId) {
-                it.canManageInventory || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
-            }
+        requirePermission(actor, "CANCEL_TRANSFER", transferId) {
+            it.canManageInventory || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
         }
         return branchTransferManager.rejectOrCancelTransfer(transferId, actorName, reason)
     }
@@ -548,18 +548,24 @@ class BeBossRepository(private val database: AppDatabase) {
         quantity: Double,
         notes: String,
         transferredBy: String = "Store Manager",
-        transferredByRole: String = "STAFF"
-    ): StockTransfer = branchTransferManager.recordStockTransfer(
-        productId = productId,
-        fromBranchId = fromBranchId,
-        fromBranchName = fromBranchName,
-        toBranchId = toBranchId,
-        toBranchName = toBranchName,
-        quantity = quantity,
-        notes = notes,
-        transferredBy = transferredBy,
-        transferredByRole = transferredByRole
-    )
+        transferredByRole: String = "STAFF",
+        actor: User? = null
+    ): StockTransfer {
+        requirePermission(actor, "CREATE_STOCK_TRANSFER") {
+            it.canManageInventory || it.role == UserRole.OWNER || it.role == UserRole.MANAGER
+        }
+        return branchTransferManager.recordStockTransfer(
+            productId = productId,
+            fromBranchId = fromBranchId,
+            fromBranchName = fromBranchName,
+            toBranchId = toBranchId,
+            toBranchName = toBranchName,
+            quantity = quantity,
+            notes = notes,
+            transferredBy = transferredBy,
+            transferredByRole = transferredByRole
+        )
+    }
 
     suspend fun createStockTransfer(
         productId: String,
@@ -570,9 +576,11 @@ class BeBossRepository(private val database: AppDatabase) {
         quantity: Double,
         notes: String,
         transferredBy: String = "Store Manager",
-        transferredByRole: String = "STAFF"
+        transferredByRole: String = "STAFF",
+        actor: User? = null
     ): StockTransfer = recordStockTransfer(
-        productId, fromBranchId, fromBranchName, toBranchId, toBranchName, quantity, notes, transferredBy, transferredByRole
+        productId, fromBranchId, fromBranchName, toBranchId, toBranchName, quantity, notes,
+        transferredBy, transferredByRole, actor
     )
 
     suspend fun deleteStockTransfer(transferId: String) = branchTransferManager.deleteStockTransfer(transferId)

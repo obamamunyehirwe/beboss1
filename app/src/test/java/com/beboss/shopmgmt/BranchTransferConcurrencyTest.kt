@@ -440,4 +440,57 @@ class BranchTransferConcurrencyTest {
         }
     }
 
+
+    @Test
+    fun `cashier cannot create stock transfers or change branch status`() = runBlocking {
+        val db = inMemoryDatabase()
+        try {
+            val repository = BeBossRepository(db)
+            db.branchDao().insertAllBranches(
+                listOf(
+                    Branch(id = "source", name = "Source", code = "SRC"),
+                    Branch(id = "destination", name = "Destination", code = "DST")
+                )
+            )
+            db.productDao().insertProduct(
+                Product(id = "cashier-rice", name = "Rice", quantityInStock = 5.0, branchId = "source")
+            )
+            val cashier = User(
+                id = "cashier-user",
+                name = "Cashier",
+                username = "cashier-ops",
+                role = UserRole.CASHIER,
+                assignedBranchId = "source",
+                canManageInventory = false,
+                canManageShopSettings = false
+            )
+
+            val transferResult = runCatching {
+                repository.createStockTransfer(
+                    productId = "cashier-rice",
+                    fromBranchId = "source",
+                    fromBranchName = "Source",
+                    toBranchId = "destination",
+                    toBranchName = "Destination",
+                    quantity = 1.0,
+                    notes = "Permission test",
+                    transferredBy = cashier.name,
+                    transferredByRole = cashier.role.name,
+                    actor = cashier
+                )
+            }
+            val branchResult = runCatching {
+                repository.updateBranchOperationalStatus("source", "CLOSED", actor = cashier)
+            }
+
+            assertTrue("Cashiers without inventory permission cannot create transfers", transferResult.isFailure)
+            assertTrue("Cashiers without shop settings permission cannot change branch status", branchResult.isFailure)
+            assertEquals(5.0, db.productDao().getProductById("cashier-rice")!!.quantityInStock, 0.001)
+            assertTrue(db.stockTransferDao().getAllTransfersList().isEmpty())
+            assertEquals("OPEN", db.branchDao().getBranchById("source")!!.operationalStatus)
+        } finally {
+            db.close()
+        }
+    }
+
 }

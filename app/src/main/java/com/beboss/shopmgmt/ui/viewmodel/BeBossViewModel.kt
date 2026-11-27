@@ -1144,7 +1144,8 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
                     quantity = quantity,
                     notes = notes,
                     transferredBy = user?.name ?: "Store Manager",
-                    transferredByRole = user?.role?.name ?: "STAFF"
+                    transferredByRole = user?.role?.name ?: "STAFF",
+                    actor = user
                 )
                 BeBossNotificationManager.sendStockTransferNotification(getApplication(), transfer)
                 scheduleAutoBranchSync()
@@ -1217,7 +1218,7 @@ class BeBossViewModel(application: Application) : AndroidViewModel(application) 
     fun updateBranchOperationalStatus(branchId: String, status: String) {
         viewModelScope.launch {
             try {
-                repository.updateBranchOperationalStatus(branchId, status)
+                repository.updateBranchOperationalStatus(branchId, status, actor = currentUser.value)
                 scheduleAutoBranchSync()
                 _snackbarMessage.emit("Branch status updated to $status.")
             } catch (e: CancellationException) {
