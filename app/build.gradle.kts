@@ -206,20 +206,13 @@ android {
       exampleFile.inputStream().use { load(it) }
     }
   }
-  val envProps = Properties().apply {
-    putAll(defaultEnvProps)
-    val envFile = rootProject.file(".env")
-    if (envFile.exists()) {
-      envFile.inputStream().use { load(it) }
-    }
-  }
   fun envConfigString(key: String): String {
-    // Explicit developer/CI overrides win; .env.example is only the final fallback.
-    // This prevents a stale example key from masking a rotated project key in CI.
+    // Use the exact same resolver as release validation: environment/Gradle
+    // overrides first, ignored root .env second, and .env.example last.
+    // This prevents a stale invalid .env pin from being embedded after a
+    // valid CI/local override has already passed the release gate.
     val raw = (
-      envProps.getProperty(key)?.takeIf { it.isNotBlank() }
-        ?: (project.findProperty(key) as? String)?.takeIf { it.isNotBlank() }
-        ?: System.getenv(key)?.takeIf { it.isNotBlank() }
+      signingSecret(key)
         ?: defaultEnvProps.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: ""
       ).trim()

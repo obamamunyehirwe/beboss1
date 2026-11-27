@@ -47,7 +47,15 @@ If the owner confirms that no customer has an installed production BeBoss APK si
 This exception is valid only when no customer production installation exists and no customer database/backup containing legacy PBKDF2-v1 staff hashes will be imported without a separately approved credential migration/reset. The first production APK must use the new BeBoss keystore; every later APK must keep the same signing identity and application ID.
 
 The first secure direct-distribution release uses versionCode 20 / versionName 2.6.0, above the repository's earlier migration/test version codes. A debug-signed or historical-key test APK cannot be upgraded in place by this new certificate. Back up any test data before replacing such a test installation. Do not set this flag to bypass migration for real customer installations.
-6. Build Secure 2.5.0. CI checks that the secure BuildConfig does not contain either legacy field.
+6. Before building, generate the TLS pins from the exact Supabase project configured in the ignored root `.env` file:
+
+~~~powershell
+java .\\scripts\\PrintSupabaseTlsPins.java --update-env
+~~~
+
+This performs a real TLS handshake to the configured `SUPABASE_URL` using the Java runtime's normal trusted CA store and HTTPS hostname verification. It derives OkHttp `sha256/` pins from the live peer certificate chain's SubjectPublicKeyInfo keys, excludes a self-signed root, and writes only `SUPABASE_CERT_PINS` in the ignored `.env`. It does not disable certificate validation, use a placeholder, or read any Supabase API secret. Run it again when the endpoint's certificate chain changes.
+
+Build Secure 2.5.0. CI checks that the secure BuildConfig does not contain either legacy field.
 7. After transition is complete, remove the transition-only pepper from build environments and rotate the server-only DataShare HMAC separately. Keep device Keystore envelopes; do not clear app data or reset Keystore.
 
 **Do not skip versionCode 18.** Play can update a device directly to the newest eligible version and is not required to install an intermediate release. Publishing version 19 too early can leave an offline device with old v1 hashes but no Keystore envelope. If any device has not migrated, do not clear data or uninstall BeBoss. Keep that device on its existing release, restore Transition 2.4.1 with the exact original pepper when possible, or complete an owner-authorized staff PIN/password reset after verifying a full backup.
