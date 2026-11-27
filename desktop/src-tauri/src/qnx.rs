@@ -192,14 +192,20 @@ fn qemu_image_directory(root: Option<&Path>) -> Option<PathBuf> {
 }
 
 fn supports_qemu_host_os(release: &str) -> bool {
-    let value = |key: &str| {
-        release.lines().find_map(|line| {
-            let (name, value) = line.split_once('=')?;
-            (name == key).then(|| value.trim().trim_matches('"').trim_matches('\''))
-        })
-    };
-    value("ID") == Some("ubuntu")
-        && matches!(value("VERSION_ID"), Some("22.04" | "24.04"))
+    let mut distribution_id = "";
+    let mut version_id = "";
+    for line in release.lines() {
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+        match name {
+            "ID" => distribution_id = value,
+            "VERSION_ID" => version_id = value,
+            _ => {}
+        }
+    }
+    distribution_id == "ubuntu" && matches!(version_id, "22.04" | "24.04")
 }
 
 fn qemu_host_supported() -> bool {
