@@ -646,7 +646,8 @@ async function handleIosSnapshotAction(
   const expectedUpdatedAt = Math.max(0, Math.floor(number(body.expectedUpdatedAt)));
   if (expectedUpdatedAt !== cloud.latestUpdatedAt) {
     return {
-      ok: false,
+      ok: true,
+      accepted: false,
       conflict: true,
       latestUpdatedAt: cloud.latestUpdatedAt,
       message: "A different shop device synchronized newer data. Download and merge the latest cloud data, then retry."
@@ -729,7 +730,8 @@ async function handleIosSnapshotAction(
   const result = committed as Row;
   if (result?.accepted !== true) {
     return {
-      ok: false,
+      ok: true,
+      accepted: false,
       conflict: result?.conflict === true,
       latestUpdatedAt: number(result?.latestUpdatedAt) || cloud.latestUpdatedAt,
       message: result?.conflict === true
@@ -752,7 +754,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json(405, { ok: false, message: "Method not allowed." });
   try {
     const raw = await req.text();
-    if (raw.length > 8192) return json(413, { ok: false, message: "iPhone device enrollment request is too large." });
+    if (raw.length > 12 * 1024 * 1024) return json(413, { ok: false, message: "iPhone device-auth or snapshot request is too large." });
     const body = JSON.parse(raw) as Row;
     const url = Deno.env.get("SUPABASE_URL") || "";
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -775,7 +777,7 @@ Deno.serve(async (req: Request) => {
         return json(413, { ok: false, message: "The iPhone snapshot request exceeds the safe upload size." });
       }
       const result = await handleIosSnapshotAction(text(body.action), req, body, { url, serviceKey, publishableKey }, admin);
-      return json(result.ok === false ? 409 : 200, result);
+      return json(200, result);
     }
     return json(400, { ok: false, message: "Unsupported iPhone device-auth operation." });
   } catch (error) {
