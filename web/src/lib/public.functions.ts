@@ -646,7 +646,7 @@ export const deleteMyShopBranch = createServerFn({ method: "POST" })
     const ownerContext = context as unknown as OwnerAuthContext;
     const { key, supabase: sb } = await requireOwnerTenantAdmin(ownerContext, data.username, data.phone);
     const { data: branch, error: branchError } = await sb.from("shop_branches")
-      .select("id,is_main_branch,is_active")
+      .select("id,name,code,is_main_branch,is_active,operational_status")
       .eq("id", data.id).eq("shop_sync_key", key).maybeSingle();
     if (branchError || !branch || !branch.is_active) throw new Error("The active branch could not be found in this shop.");
     if (branch.is_main_branch) throw new Error("The main branch cannot be deleted. Set another branch as main first.");
@@ -665,7 +665,19 @@ export const deleteMyShopBranch = createServerFn({ method: "POST" })
       .update({ is_active: false, updated_at: now, hlc_timestamp: now, last_modified_device_id: "WEB" })
       .eq("id", data.id).eq("shop_sync_key", key).eq("is_main_branch", false);
     if (error) throw new Error("Could not delete the branch. Please try again.");
-    return { ok: true };
+    const { data: shop, error: shopError } = await sb.from("shop_accounts").select("shop_name").eq("id", key).maybeSingle();
+    if (shopError || !shop) throw new Error("The branch was deactivated, but its audit identity could not be verified.");
+    const { error: auditError } = await sb.from("cloud_sync_events").insert({
+      shop_sync_key: key,
+      shop_name: String(shop.shop_name ?? ""),
+      entity: "BRANCH",
+      action: "DEACTIVATED",
+      actor: "OWNER:" + data.username.trim().toLowerCase(),
+      device_id: "WEB:OWNER_PORTAL",
+      detail: String(branch.name ?? "") + " · " + String(branch.code ?? "") + " · " + String(branch.operational_status ?? "") + " → INACTIVE; active staff/device checks passed.",
+    });
+    if (auditError) throw new Error("The branch was deactivated, but its required audit event could not be recorded. Refresh the branch and audit history before retrying.");
+    return { ok: true, auditLogged: true };
   });
 
 const transferSchema = z.object({
