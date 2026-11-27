@@ -64,6 +64,14 @@ fn qnx_root_from_environment() -> Option<PathBuf> {
         }
     }
 
+    if let Some(host) = env::var_os("QNX_HOST").and_then(|value| canonical_dir(PathBuf::from(value))) {
+        if let Some(base) = host.parent().and_then(Path::parent).and_then(Path::parent) {
+            if let Some(base) = canonical_dir(base) {
+                return Some(base);
+            }
+        }
+    }
+
     None
 }
 
@@ -185,9 +193,10 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
 
     let qcc_output = if let Some(tool) = qcc.as_deref() {
         configured_command(tool, host.as_deref(), target.as_deref())
-            .arg("-V")
+            .arg("-Vgcc,")
             .output()
             .ok()
+            .filter(|result| result.status.success())
             .map(|result| format!("{}\n{}", output_text(&result.stdout), output_text(&result.stderr)))
             .unwrap_or_default()
     } else {
