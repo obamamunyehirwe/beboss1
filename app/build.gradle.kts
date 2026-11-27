@@ -166,8 +166,10 @@ val configuredReleaseCertificateMatches =
     actualReleaseCertificateSha256() == expectedReleaseCertificateSha256
 
 android {
-  // Compile the exact same commonMain Kotlin source files into the Android app.
-  sourceSets.getByName("main").java.srcDir(rootProject.file("shared/src/commonMain/kotlin"))
+  // AGP 9 built-in Kotlin requires added Kotlin sources on AndroidSourceSet.kotlin.
+  sourceSets.named("main") {
+    kotlin.directories += rootProject.file("shared/src/commonMain/kotlin")
+  }
   namespace = "com.beboss.shopmgmt"
   compileSdk = 36
   flavorDimensions += "credentialCompatibility"
