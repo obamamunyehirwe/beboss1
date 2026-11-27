@@ -900,6 +900,10 @@ export async function saveBranch(input: Partial<Branch> & { name: string }, acto
     isMainBranch: input.isMainBranch ?? existing?.isMainBranch ?? false,
     isActive: input.isActive ?? existing?.isActive ?? true,
     operationalStatus: operationalStatus as Branch['operationalStatus'],
+    dailySalesTargetRwf: Math.max(0, Number(input.dailySalesTargetRwf ?? existing?.dailySalesTargetRwf ?? 0)),
+    monthlyTargetRwf: Math.max(0, Number(input.monthlyTargetRwf ?? existing?.monthlyTargetRwf ?? 0)),
+    stockValueRwf: Math.max(0, Number(input.stockValueRwf ?? existing?.stockValueRwf ?? 0)),
+    productCount: Math.max(0, Math.floor(Number(input.productCount ?? existing?.productCount ?? 0))),
     notes: (input.notes ?? existing?.notes ?? '').trim(),
     createdAt: existing?.createdAt || now,
     updatedAt: now

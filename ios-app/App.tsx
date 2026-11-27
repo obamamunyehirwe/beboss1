@@ -29,6 +29,7 @@ import {
 } from './src/services/cloud';
 import { calculateSubscriptionQuote, isSubscriptionActive, roundMoney } from './src/core/domain';
 import { buildReorderSuggestions } from './src/core/forecast';
+import { computeBranchPerformance, computeCategorySalesBreakdown, computeCustomerAging, computeStaffPerformance } from './src/core/analytics';
 import { exportInventoryCsv, exportSalesCsv } from './src/services/reports';
 
 type Screen = 'dashboard' | 'pos' | 'inventory' | 'customers' | 'sales' | 'reports' | 'purchases' | 'branches' | 'staff' | 'sync' | 'subscription' | 'settings';
@@ -466,6 +467,8 @@ function AppRoot(): React.JSX.Element {
       name: branch?.name || '', code: branch?.code || '', address: branch?.address || '',
       phone: branch?.phone || '', managerName: branch?.managerName || '',
       locationType: branch?.locationType || 'STORE', notes: branch?.notes || '',
+      dailySalesTargetRwf: String(branch?.dailySalesTargetRwf || 0),
+      monthlyTargetRwf: String(branch?.monthlyTargetRwf || 0),
       operationalStatus: branch?.operationalStatus || 'OPEN',
       isMainBranch: String(branch?.isMainBranch ?? false),
       isActive: String(branch?.isActive ?? true)
@@ -478,6 +481,8 @@ function AppRoot(): React.JSX.Element {
         id: editingBranch?.id, name: form.name, code: form.code, address: form.address,
         phone: form.phone, managerName: form.managerName, locationType: form.locationType as any,
         operationalStatus: (form.operationalStatus || 'OPEN') as Branch['operationalStatus'],
+        dailySalesTargetRwf: Number(form.dailySalesTargetRwf || 0),
+        monthlyTargetRwf: Number(form.monthlyTargetRwf || 0),
         isMainBranch: form.isMainBranch === 'true',
         isActive: form.isActive !== 'false',
         notes: form.notes
@@ -1177,16 +1182,16 @@ function AppRoot(): React.JSX.Element {
       }
     }
     const topProducts = Array.from(productTotals.entries()).sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 6);
-    const branchTotals = new Map<string, { name: string; revenue: number; profit: number; sales: number }>();
-    for (const sale of filteredSales) {
-      const current = branchTotals.get(sale.branchId) || {
-        name: sale.branchName || sale.branchId, revenue: 0, profit: 0, sales: 0
-      };
-      current.revenue += sale.totalAmount;
-      current.profit += sale.totalProfit;
-      current.sales += 1;
-      branchTotals.set(sale.branchId, current);
-    }
+    const branchPerformance = computeBranchPerformance(
+      snapshot?.branches || [],
+      filteredSales,
+      filteredProducts,
+      analyticsPeriod,
+      now.getTime()
+    ).filter(item => effectiveBranch === 'ALL' || item.branchId === effectiveBranch);
+    const staffPerformance = computeStaffPerformance(filteredSales, analyticsPeriod, effectiveBranch, now.getTime());
+    const categoryBreakdown = computeCategorySalesBreakdown(filteredSales);
+    const customerAging = computeCustomerAging(snapshot?.customers || [], snapshot?.sales || [], now.getTime());
     const reorderSuggestions = buildReorderSuggestions(filteredProducts, snapshot?.sales || [], {
       branchId: effectiveBranch,
       leadTimeDays: 7,
@@ -1271,18 +1276,67 @@ function AppRoot(): React.JSX.Element {
           </View>
         ))}
         {!topProducts.length ? <EmptyState title="No sales in this period" subtitle="Sales must be recorded before product performance can be calculated." /> : null}
-        {branchTotals.size > 1 ? <>
-          <SectionHeader title="Branch performance" />
-          {Array.from(branchTotals.entries()).sort((a, b) => b[1].revenue - a[1].revenue).map(([id, item]) => (
-            <View key={id} style={styles.compactRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.rowTitle}>{item.name}</Text>
-                <Text style={styles.rowSub}>{item.sales} transactions · Profit {money(item.profit, currency)}</Text>
+        {branchPerformance.length > 1 ? <>
+          <SectionHeader title="Branch performance and targets" />
+          {branchPerformance.map(item => (
+            <View key={item.branchId} style={styles.card}>
+              <View style={styles.inlineBetween}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>{item.branchName} · {item.branchCode}</Text>
+                  <Text style={styles.rowSub}>{item.operationalStatus} · {item.salesCount} sales · margin {item.marginPercent.toFixed(1)}%</Text>
+                </View>
+                <Text style={styles.price}>{money(item.revenue, currency)}</Text>
               </View>
-              <Text style={styles.price}>{money(item.revenue, currency)}</Text>
+              {item.dailyTargetRwf > 0 || item.monthlyTargetRwf > 0 ? <>
+                <Text style={styles.rowSub}>Target progress {item.targetProgressPercent.toFixed(1)}%</Text>
+                <View style={styles.trendTrack}><View style={[styles.trendBar, { width: Math.min(100, item.targetProgressPercent) + '%' }]} /></View>
+              </> : <Text style={styles.rowSub}>No sales target configured for this branch.</Text>}
+              {actor.canViewCostAndProfit ? <Text style={styles.rowSub}>Cost {money(item.cost, currency)} · Profit {money(item.netProfit, currency)} · Live stock value {money(item.stockValueRwf, currency)}</Text> : null}
             </View>
           ))}
         </> : null}
+        <SectionHeader title="Category sales mix" />
+        {categoryBreakdown.slice(0, 8).map(item => (
+          <View key={item.category} style={styles.card}>
+            <View style={styles.inlineBetween}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowTitle}>{item.category}</Text>
+                <Text style={styles.rowSub}>{item.quantitySold} units · {item.salesCount} receipts · {item.revenueSharePercent.toFixed(1)}% of revenue</Text>
+              </View>
+              <Text style={styles.price}>{money(item.revenue, currency)}</Text>
+            </View>
+            <View style={styles.trendTrack}><View style={[styles.trendBar, { width: Math.max(1, item.revenueSharePercent) + '%' }]} /></View>
+            {actor.canViewCostAndProfit ? <Text style={styles.rowSub}>Cost {money(item.cost, currency)} · Profit {money(item.profit, currency)}</Text> : null}
+          </View>
+        ))}
+        <SectionHeader title="Staff performance" />
+        {staffPerformance.slice(0, 8).map(item => (
+          <View key={item.cashierId} style={styles.compactRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{item.cashierName}</Text>
+              <Text style={styles.rowSub}>{item.salesCount} sales · average order {money(item.averageOrderValue, currency)} · discounts {money(item.totalDiscountsGiven, currency)}</Text>
+            </View>
+            <Text style={styles.price}>{money(item.revenue, currency)}</Text>
+          </View>
+        ))}
+        {!staffPerformance.length ? <Text style={styles.muted}>No staff sales recorded in this reporting period.</Text> : null}
+        <SectionHeader title="Customer debt aging" />
+        <View style={styles.metricGrid}>
+          <Metric label="0–30 days" value={money(customerAging.bucket0To30, currency)} />
+          <Metric label="31–60 days" value={money(customerAging.bucket31To60, currency)} />
+          <Metric label="61–90 days" value={money(customerAging.bucket61To90, currency)} />
+          <Metric label="90+ days" value={money(customerAging.bucket90Plus, currency)} tone="red" />
+        </View>
+        <Text style={styles.rowSub}>Total receivable {money(customerAging.totalReceivable, currency)} · {customerAging.overLimitCount} customers over credit limit</Text>
+        {customerAging.entries.slice(0, 8).map(item => (
+          <View key={item.customerId} style={styles.compactRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{item.customerName} {item.isOverLimit ? '· OVER LIMIT' : ''}</Text>
+              <Text style={styles.rowSub}>{item.agingBucket} · {item.oldestUnpaidDays} days · credit use {item.creditUtilizationPercent.toFixed(0)}%</Text>
+            </View>
+            <Text style={[styles.price, { color: item.isOverLimit ? COLORS.red : COLORS.ink }]}>{money(item.debtBalance, currency)}</Text>
+          </View>
+        ))}
         <SectionHeader title="Payment method mix" />
         {Array.from(paymentTotals.entries()).map(([method, amount]) => (
           <View key={method} style={styles.compactRow}>
@@ -1739,6 +1793,8 @@ function AppRoot(): React.JSX.Element {
                 <Field label="Address" value={form.address || ''} onChangeText={value => setForm({ ...form, address: value })} />
                 <Field label="Phone" value={form.phone || ''} onChangeText={value => setForm({ ...form, phone: value })} />
                 <Field label="Manager name" value={form.managerName || ''} onChangeText={value => setForm({ ...form, managerName: value })} />
+                <Field label="Daily sales target (RWF)" value={form.dailySalesTargetRwf || '0'} onChangeText={value => setForm({ ...form, dailySalesTargetRwf: value })} keyboardType="decimal-pad" />
+                <Field label="Monthly sales target (RWF)" value={form.monthlyTargetRwf || '0'} onChangeText={value => setForm({ ...form, monthlyTargetRwf: value })} keyboardType="decimal-pad" />
                 <SelectChips label="Operating status" values={['OPEN', 'PAUSED', 'CLOSED'].map(value => ({ label: value, value }))} value={form.operationalStatus || 'OPEN'} onChange={value => setForm({ ...form, operationalStatus: value })} />
                 <SelectChips label="Main retail branch" values={[{ label: 'Standard branch', value: 'false' }, { label: 'Main retail branch', value: 'true' }]} value={form.isMainBranch || 'false'} onChange={value => setForm({ ...form, isMainBranch: value })} />
                 <SelectChips label="Branch record" values={[{ label: 'Active', value: 'true' }, { label: 'Archived', value: 'false' }]} value={form.isActive || 'true'} onChange={value => setForm({ ...form, isActive: value })} />
@@ -2019,6 +2075,7 @@ const styles = StyleSheet.create({
   rowSub: { color: COLORS.sub, fontSize: 10, marginTop: 3, lineHeight: 15 },
   price: { color: COLORS.ink, fontSize: 12, fontWeight: '900' },
   warningText: { color: COLORS.amber, fontSize: 10, marginTop: 4, fontWeight: '900' },
+  inlineBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   permissionGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, rowGap: 4, marginTop: 8 },
   permissionRow: { flexDirection: 'row', alignItems: 'center', width: '48%', minHeight: 40, gap: 8, paddingVertical: 4 },
   permissionBox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: COLORS.muted, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.paper },

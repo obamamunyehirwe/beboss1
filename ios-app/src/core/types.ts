@@ -104,6 +104,10 @@ export type Branch = {
   isMainBranch: boolean;
   isActive: boolean;
   operationalStatus: 'OPEN' | 'PAUSED' | 'CLOSED';
+  dailySalesTargetRwf?: number;
+  monthlyTargetRwf?: number;
+  stockValueRwf?: number;
+  productCount?: number;
   notes: string;
   createdAt: number;
   updatedAt: number;
