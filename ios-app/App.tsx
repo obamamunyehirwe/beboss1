@@ -10,10 +10,10 @@ import {
   StoreSnapshot
 } from './src/core/types';
 import {
-  adjustStock, authenticate, checkout, confirmStockTransfer, deleteProduct,
+  adjustStock, archiveBranch, authenticate, cancelStockTransfer, checkout, confirmStockTransfer, deleteProduct,
   initializeStore, loadSnapshot, recordCustomerPayment, recordPurchase,
   recordStockTransfer, registerOwner, reverseSale, saveBranch, saveCustomer,
-  saveProduct, saveShopSettings, saveStaff, storeDiagnostics
+  saveProduct, saveShopSettings, saveStaff, setBranchOperationalStatus, storeDiagnostics
 } from './src/storage/repository';
 import { BarcodeScannerModal, useBluetoothPrinters } from './src/services/hardware';
 import { exportEncryptedBackup } from './src/services/backup';
@@ -335,7 +335,10 @@ function AppRoot(): React.JSX.Element {
     setForm({
       name: branch?.name || '', code: branch?.code || '', address: branch?.address || '',
       phone: branch?.phone || '', managerName: branch?.managerName || '',
-      locationType: branch?.locationType || 'STORE', notes: branch?.notes || ''
+      locationType: branch?.locationType || 'STORE', notes: branch?.notes || '',
+      operationalStatus: branch?.operationalStatus || 'OPEN',
+      isMainBranch: String(branch?.isMainBranch ?? false),
+      isActive: String(branch?.isActive ?? true)
     });
     setModal('branch');
   };
@@ -344,6 +347,9 @@ function AppRoot(): React.JSX.Element {
       await saveBranch({
         id: editingBranch?.id, name: form.name, code: form.code, address: form.address,
         phone: form.phone, managerName: form.managerName, locationType: form.locationType as any,
+        operationalStatus: form.operationalStatus || 'OPEN',
+        isMainBranch: form.isMainBranch === 'true',
+        isActive: form.isActive !== 'false',
         notes: form.notes
       }, actor!);
       setModal(null);
@@ -368,9 +374,20 @@ function AppRoot(): React.JSX.Element {
       setModal(null);
     }, 'Stock transfer created. The receiving branch must confirm receipt.');
   };
-  const receiveTransfer = (transferId: string) => Alert.alert('Confirm stock receipt', 'This adds the transferred quantity to the destination branch stock.', [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Confirm receipt', onPress: () => run(async () => confirmStockTransfer(transferId, actor!), 'Transfer received and stock updated.') }
+  const receiveTransfer = (transferId: string) => Alert.alert('Stock transfer', 'Choose the inventory action for this in-transit transfer.', [
+    { text: 'Keep in transit', style: 'cancel' },
+    { text: 'Cancel and restore source stock', style: 'destructive', onPress: () => {
+      Alert.prompt(
+        'Cancel stock transfer',
+        'Enter a reason. The quantity will be restored to the sending branch.',
+        reason => {
+          if (!reason?.trim()) { setError('A cancellation reason is required.'); return; }
+          run(async () => cancelStockTransfer(transferId, reason, actor!), 'Transfer cancelled and source stock restored.');
+        },
+        'plain-text'
+      );
+    }},
+    { text: 'Confirm receipt', onPress: () => run(async () => confirmStockTransfer(transferId, actor!), 'Transfer received into a branch-specific product record.') }
   ]);
 
   const openStaff = (staff?: Staff) => {
@@ -734,9 +751,18 @@ function AppRoot(): React.JSX.Element {
       <PageHeading title="Branches & transfers" subtitle="Manage store locations and controlled stock transfers." action="Add branch" onAction={() => openBranch()} />
       {(snapshot?.branches || []).map(branch => (
         <View key={branch.id} style={styles.card}>
-          <Text style={styles.rowTitle}>{branch.name} {branch.isMainBranch ? '• HQ' : ''}</Text>
-          <Text style={styles.rowSub}>{branch.locationType} • {branch.operationalStatus} • {branch.address}</Text>
-          <ActionLink label="Edit branch" onPress={() => openBranch(branch)} />
+          <Text style={styles.rowTitle}>{branch.name} {branch.isMainBranch ? '• MAIN RETAIL' : ''}</Text>
+          <Text style={styles.rowSub}>{branch.locationType} • {branch.operationalStatus} • {branch.isActive ? 'Active' : 'Archived'}</Text>
+          <Text style={styles.rowSub}>{branch.address}</Text>
+          <View style={styles.inlineActions}>
+            <ActionLink label="Edit branch" onPress={() => openBranch(branch)} />
+            {branch.isActive ? <ActionLink label="Pause branch" onPress={() => run(async () => setBranchOperationalStatus(branch.id, 'PAUSED', actor!), 'Branch paused.')} /> : null}
+            {!branch.isActive && actor.role === 'OWNER' ? <ActionLink label="Reopen branch" onPress={() => run(async () => saveBranch({ id: branch.id, name: branch.name, isActive: true }, actor!), 'Branch reactivated.')} /> : null}
+            {!branch.isMainBranch && branch.isActive && actor.role === 'OWNER' ? <ActionLink label="Archive" danger onPress={() => Alert.alert('Archive branch?', 'A branch can only be archived after all assigned staff, active products and in-transit transfers have been cleared.', [
+              { text: 'Keep branch', style: 'cancel' },
+              { text: 'Archive branch', style: 'destructive', onPress: () => run(async () => archiveBranch(branch.id, actor!), 'Branch archived.') }
+            ])} /> : null}
+          </View>
         </View>
       ))}
       <SectionHeader title="Stock transfers" action="New transfer" onAction={openTransfer} />
@@ -745,7 +771,7 @@ function AppRoot(): React.JSX.Element {
           <Text style={styles.rowTitle}>{transfer.transferNumber} · {transfer.productName}</Text>
           <Text style={styles.rowSub}>{transfer.quantity} units • {transfer.status}</Text>
           <Text style={styles.rowSub}>{transfer.fromBranchId} → {transfer.toBranchId}</Text>
-          {transfer.status === 'IN_TRANSIT' ? <ActionLink label="Confirm receipt" onPress={() => receiveTransfer(transfer.id)} /> : null}
+          {transfer.status === 'IN_TRANSIT' ? <ActionLink label="Receive or cancel transfer" onPress={() => receiveTransfer(transfer.id)} /> : null}
         </View>
       ))}
       {!snapshot?.transfers.length ? <EmptyState title="No stock transfers" subtitle="Transfers remain in transit until the receiving branch confirms receipt." /> : null}
@@ -972,6 +998,9 @@ function AppRoot(): React.JSX.Element {
                 <Field label="Address" value={form.address || ''} onChangeText={value => setForm({ ...form, address: value })} />
                 <Field label="Phone" value={form.phone || ''} onChangeText={value => setForm({ ...form, phone: value })} />
                 <Field label="Manager name" value={form.managerName || ''} onChangeText={value => setForm({ ...form, managerName: value })} />
+                <SelectChips label="Operating status" values={['OPEN', 'PAUSED', 'CLOSED'].map(value => ({ label: value, value }))} value={form.operationalStatus || 'OPEN'} onChange={value => setForm({ ...form, operationalStatus: value })} />
+                <SelectChips label="Main retail branch" values={[{ label: 'Standard branch', value: 'false' }, { label: 'Main retail branch', value: 'true' }]} value={form.isMainBranch || 'false'} onChange={value => setForm({ ...form, isMainBranch: value })} />
+                <SelectChips label="Branch record" values={[{ label: 'Active', value: 'true' }, { label: 'Archived', value: 'false' }]} value={form.isActive || 'true'} onChange={value => setForm({ ...form, isActive: value })} />
                 <Field label="Notes" value={form.notes || ''} onChangeText={value => setForm({ ...form, notes: value })} />
                 <ButtonPrimary title="Save branch" onPress={saveBranchForm} loading={busy} />
               </> : null}
