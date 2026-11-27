@@ -1,7 +1,7 @@
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Activity, ArrowLeft, Check, Download, KeyRound, LogOut, RefreshCw,
+  Activity, ArrowLeft, ArrowRight, Check, Download, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, RefreshCw,
   Search, Settings, ShieldAlert, ShieldCheck, Smartphone, Store, Trash2, UserPlus, UserX, Users, UsersRound, Wallet, X
 } from "lucide-react";
 import { masterAdminAuthClient } from "../../lib/cloud";
@@ -109,9 +109,10 @@ async function verifyMasterAdmin(userId: string) {
   return profile.data as Row;
 }
 
-export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
+export function AdminConsolePage({ onExit, theme = "dark" }: { onExit?: () => void; theme?: "dark" | "light" }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [adminEmail, setAdminEmail] = useState("");
   const [adminName, setAdminName] = useState("");
   const [verified, setVerified] = useState(false);
@@ -670,20 +671,75 @@ export function AdminConsolePage({ onExit }: { onExit?: () => void }) {
   const exportColumns = Object.keys(exportRows[0] ?? {});
 
   if (checking) return <div className="setup-loading"><RefreshCw className="spin" size={24} /><span>Verifying Master Admin access…</span></div>;
-  if (!verified) return <div className="page-stack">
-    <PageHeading eyebrow="PRIVILEGED WORKSPACE" title="BeBoss Master Admin" description="Sign in with a dedicated Supabase administrator account. Shop-owner credentials do not grant global admin access." action={onExit ? <button className="btn-outline" onClick={onExit}><ArrowLeft size={14} /> Back to BeBoss home</button> : undefined} />
-    <section className="panel admin-login-panel">
-      <div className="admin-login-icon"><ShieldAlert size={25} /></div>
-      <h3>Secure administrator sign-in</h3>
-      <p className="panel-hint">Access is verified against the live is_beboss_admin() policy, the admin role record and an active SUPER_ADMIN profile. No service-role key is stored in this desktop application.</p>
-      {error && <div className="global-alert error">{error}</div>}
-      <form className="form-grid" onSubmit={(event) => void signIn(event)}>
-        <label className="field-wide">Administrator email<input type="email" required autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@example.com" /></label>
-        <label className="field-wide">Password<input type="password" required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-        <div className="form-actions field-wide"><button className="btn-primary" type="submit" disabled={loginBusy}>{loginBusy ? "Verifying access…" : "Sign in to Master Admin"}</button></div>
-      </form>
-    </section>
-  </div>;
+  if (!verified) return <main className="master-admin-auth" data-mode={theme}>
+    <div className="master-admin-auth-atmosphere" aria-hidden="true"><i /><b /><span /></div>
+    <header className="master-admin-auth-header">
+      <a className="master-admin-auth-brand" href="#master-admin-auth" aria-label="BeBoss Master Admin">
+        <img src="/beboss-app-icon.png" alt="" />
+        <span><strong>BeBoss</strong><small>PRIVILEGED WORKSPACE</small></span>
+      </a>
+      {onExit && <button className="master-admin-auth-back" type="button" onClick={onExit}><ArrowLeft size={15} /> Back to BeBoss home</button>}
+    </header>
+    <div className="master-admin-auth-layout" id="master-admin-auth">
+      <section className="master-admin-auth-story" aria-labelledby="master-admin-auth-title">
+        <span className="master-admin-auth-eyebrow"><i /> <ShieldCheck size={15} /> GLOBAL OPERATIONS · RESTRICTED ACCESS</span>
+        <h1 id="master-admin-auth-title">One secure command center.<em>Every shop in view.</em></h1>
+        <p>Review payments, manage shop access, monitor registered devices, publish trusted releases and oversee the BeBoss platform from one protected administrator workspace.</p>
+        <div className="master-admin-auth-visual">
+          <img src="/Friendly Modern Store Checkout.png" alt="BeBoss retail operations environment" />
+          <div className="master-admin-auth-visual-shade" />
+          <div className="master-admin-auth-visual-brand">
+            <span className="master-admin-auth-visual-icon"><ShieldCheck size={20} /></span>
+            <span><strong>BeBoss Master Admin</strong><small>LIVE PLATFORM · ROLE-VERIFIED ACCESS</small></span>
+          </div>
+          <div className="master-admin-auth-visual-stamp"><LockKeyhole size={14} /> Dedicated administrator identity</div>
+        </div>
+        <div className="master-admin-auth-proof">
+          <span><ShieldCheck size={15} /> Policy checked</span>
+          <span><KeyRound size={15} /> Password protected</span>
+          <span><Activity size={15} /> Audited controls</span>
+        </div>
+      </section>
+      <section className="master-admin-auth-form-wrap" aria-labelledby="master-admin-form-title">
+        <div className="master-admin-auth-card">
+          <div className="master-admin-auth-form-icon"><LockKeyhole size={22} /></div>
+          <p className="master-admin-auth-kicker">BE BOSS · ADMIN ACCESS</p>
+          <h2 id="master-admin-form-title">Secure administrator sign-in</h2>
+          <p className="master-admin-auth-intro">Sign in with a dedicated Supabase administrator account. Shop-owner credentials do not grant global admin access.</p>
+          <div className="master-admin-auth-policy">
+            <ShieldCheck size={16} />
+            <span>Access is verified against the live <code>is_beboss_admin()</code> policy, the admin role record and an active <strong>SUPER_ADMIN</strong> profile. No service-role key is stored in this desktop application.</span>
+          </div>
+          {error && <div className="master-admin-auth-error" role="alert"><ShieldAlert size={16} /><span>{error}</span></div>}
+          <form className="master-admin-auth-form" onSubmit={(event) => void signIn(event)}>
+            <div className="master-admin-auth-field">
+              <label htmlFor="master-admin-email">Imeyili y'umuyobozi</label>
+              <input id="master-admin-email" type="email" required autoComplete="username" autoCapitalize="none" spellCheck={false}
+                value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@example.com"
+                disabled={loginBusy || checking} />
+            </div>
+            <div className="master-admin-auth-field">
+              <label htmlFor="master-admin-password">Ijambobanga</label>
+              <div className="master-admin-auth-password">
+                <input id="master-admin-password" type={passwordVisible ? "text" : "password"} required autoComplete="current-password"
+                  value={password} onChange={(event) => setPassword(event.target.value)} disabled={loginBusy || checking} />
+                <button type="button" onClick={() => setPasswordVisible((visible) => !visible)}
+                  aria-label={passwordVisible ? "Hide password" : "Show password"} aria-pressed={passwordVisible}
+                  disabled={loginBusy || checking}>{passwordVisible ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+              </div>
+            </div>
+            <button className="master-admin-auth-submit" type="submit" disabled={loginBusy || checking || !email.trim() || !password}>
+              {loginBusy ? <RefreshCw size={17} className="spin" /> : <LockKeyhole size={17} />}
+              {loginBusy ? "Verifying access…" : "Sign in to Master Admin"}
+              {!loginBusy && <ArrowRight size={16} />}
+            </button>
+          </form>
+          <div className="master-admin-auth-card-foot"><span><LockKeyhole size={13} /> Secure administrator session</span><span>Authorized access only</span></div>
+        </div>
+      </section>
+    </div>
+    <footer className="master-admin-auth-footer"><span>© {new Date().getFullYear()} BeBoss POS</span><span>Privileged workspace · No shop-owner role elevation</span></footer>
+  </main>;
 
   return <div className="page-stack">
     <PageHeading eyebrow="PRIVILEGED WORKSPACE · RLS VERIFIED" title="BeBoss Master Admin" description={"Authenticated as " + adminName + " · " + adminEmail + ". Live cloud records, payment verification and audited shop controls."} action={<div className="heading-actions"><button className="btn-outline" onClick={() => void refreshData()} disabled={loadingData}><RefreshCw size={15} className={loadingData ? "spin" : ""} /> Refresh</button><button className="btn-outline" onClick={() => void signOutAdmin()} disabled={busyKey === "signout"}><LogOut size={15} /> Sign out</button></div>} />
