@@ -201,7 +201,22 @@ The remaining external actions depend on release history: for a first production
 
 The repository includes a manual workflow: **Actions → Build signed BeBoss Android production APK → Run workflow**. It builds only the Secure Release APK, derives the TLS pin from the configured live Supabase HTTPS endpoint, runs the release gates and secure unit tests, inspects the APK package/version, verifies the configured signer certificate and uploads the APK plus SHA-256 checksum as a 30-day workflow artifact. It does not publish the artifact automatically; download the artifact and publish the exact APK through Admin → App Releases → Mobile releases after reviewing the version, release notes and signing identity.
 
-Configure these GitHub Actions repository secrets before running it:
+Configure these GitHub Actions repository secrets before running it.
+
+To convert the exact owner-managed Android keystore to the required base64 secret on Windows (replace the path with the protected .p12/.jks file; do not commit the file):
+
+~~~powershell
+$keystorePath = "C:\BeBossSigning\beboss-upload-2026.p12"
+$bytes = [IO.File]::ReadAllBytes($keystorePath)
+try {
+  [Convert]::ToBase64String($bytes) | Set-Clipboard
+  Write-Host "Keystore base64 copied. Paste it only into the GitHub Actions secret field."
+} finally {
+  [Array]::Clear($bytes, 0, $bytes.Length)
+}
+~~~
+
+Open GitHub → repository **Settings → Secrets and variables → Actions → New repository secret**. Add the listed values there; do not paste the keystore, password, or base64 value into a chat, issue, commit, or workflow log. After the secrets have been saved, open **Actions → Build signed BeBoss Android production APK → Run workflow**. The job must finish successfully and produce a downloadable artifact before an APK can be uploaded in the Admin release page.
 
 - `ANDROID_RELEASE_KEYSTORE_BASE64`: base64 of the exact owner-held PKCS#12/JKS signing keystore used for this direct APK channel.
 - `ANDROID_RELEASE_STORE_PASSWORD`, `ANDROID_RELEASE_KEY_PASSWORD`, `ANDROID_RELEASE_KEY_ALIAS`: keystore credentials and alias.

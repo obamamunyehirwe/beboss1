@@ -119,7 +119,22 @@ This is a release check plus a user-approved installer update, not a silent back
 
 The repository includes **Actions → Build signed BeBoss Windows desktop installer → Run workflow**. This Windows-only workflow runs the same version, installer-policy, TypeScript, regression, Rust and production-build checks as the local release script, signs the NSIS setup executable with Authenticode and a trusted RFC 3161 timestamp, verifies the resulting signature, writes SHA-256 checksums and uploads a 30-day artifact. It does not publish automatically; download the signed artifact and upload the exact `.exe` through Admin → App Releases → Desktop releases.
 
-Configure these GitHub Actions repository secrets:
+Configure these GitHub Actions repository secrets.
+
+Convert the new CA-issued signing PFX to the base64 form expected by the workflow on Windows (use the new replacement certificate, not the PFX previously exposed in Git history):
+
+~~~powershell
+$pfxPath = "C:\BeBossSigning\replacement-code-signing.pfx"
+$bytes = [IO.File]::ReadAllBytes($pfxPath)
+try {
+  [Convert]::ToBase64String($bytes) | Set-Clipboard
+  Write-Host "PFX base64 copied. Paste it only into the GitHub Actions secret field."
+} finally {
+  [Array]::Clear($bytes, 0, $bytes.Length)
+}
+~~~
+
+Open GitHub → repository **Settings → Secrets and variables → Actions → New repository secret**. Add both values below. After saving them, open **Actions → Build signed BeBoss Windows desktop installer → Run workflow**. The resulting artifact must have a valid Authenticode signature and checksum before it is uploaded in the Admin release page.
 
 - `WINDOWS_CODESIGN_PFX_BASE64`: base64 of a new CA-issued code-signing PFX containing its private key and Code Signing EKU.
 - `WINDOWS_CODESIGN_PFX_PASSWORD`: password for that PFX.
