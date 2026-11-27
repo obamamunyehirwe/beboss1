@@ -2823,17 +2823,23 @@ object SupabaseAdminClient {
     // -------------------------------------------------------------------------
     // STOCK TRANSFERS (`shop_stock_transfers`)
     // -------------------------------------------------------------------------
+    /**
+     * Upload Android transfer changes through the device-authenticated Edge Function.
+     * Direct PostgREST writes are intentionally not used: the server must re-read the
+     * current approval threshold and verify any owner signature before accepting rows.
+     */
     suspend fun upsertShopStockTransfers(shopSyncKey: String, shopName: String, transfers: List<StockTransfer>): Boolean =
         withContext(Dispatchers.IO) {
             if (!isConfigured() || shopSyncKey.isBlank()) return@withContext false
             if (transfers.isEmpty()) return@withContext true
             try {
+                val saved = AndroidDeviceCredentialStore.readForShop(shopSyncKey)
+                    ?: throw SecurityException("Secure device enrollment is required to upload stock transfers.")
+                val active = refreshAndroidDeviceCredential(saved)
                 val arr = JSONArray()
                 for (t in transfers) {
                     arr.put(JSONObject().apply {
                         put("id", t.id)
-                        put("shop_sync_key", shopSyncKey)
-                        put("shop_name", shopName)
                         put("transfer_number", t.transferNumber)
                         put("product_id", t.productId)
                         put("product_name", t.productName)
@@ -2854,22 +2860,119 @@ object SupabaseAdminClient {
                         put("created_at", t.createdAt)
                         put("updated_at", t.updatedAt.coerceAtLeast(t.createdAt))
                         put("hlc_timestamp", t.hlcTimestamp.takeIf { it > 0L } ?: HlcClock.tick(t.updatedAt.coerceAtLeast(t.createdAt)))
-                        put("last_modified_device_id", t.lastModifiedDeviceId.ifBlank { "ANDROID" })
+                        put("last_modified_device_id", t.lastModifiedDeviceId.ifBlank { active.deviceId })
+                        put("approval_proof", JSONObject().apply {
+                            put("reason", t.approvalReason)
+                            put("actor_user_id", t.approvalActorUserId)
+                            put("signed_at", t.approvalSignedAt)
+                            put("policy_version", t.approvalPolicyVersion)
+                            put("device_id", t.approvalDeviceId)
+                            put("signature", t.approvalSignature)
+                        })
                     })
                 }
-                val req = buildRestRequest("shop_stock_transfers?on_conflict=id", tenantSyncKey = shopSyncKey)
-                    .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
-                    .post(arr.toString().toRequestBody(jsonMediaType))
+                val payload = JSONObject()
+                    .put("action", "android_transfer_sync")
+                    .put("shopName", shopName)
+                    .put("transfers", arr)
+                val request = Request.Builder()
+                    .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
+                    .addHeader("apikey", getSupabaseApiKey())
+                    .addHeader("X-BeBoss-Device-ID", active.deviceId)
+                    .addHeader("X-BeBoss-Device-Token", active.accessToken)
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody(jsonMediaType))
                     .build()
-                val uploaded = client.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) {
-                        Log.w(TAG, "upsertShopStockTransfers HTTP ${resp.code}: ${resp.body?.string()}")
+                client.newCall(request).execute().use { response ->
+                    val raw = response.body?.string().orEmpty()
+                    val result = runCatching { JSONObject(raw) }.getOrNull()
+                    if (!response.isSuccessful || result?.optBoolean("ok") != true) {
+                        Log.w(TAG, "android transfer sync rejected (HTTP ${response.code}): ${result?.optString("message").orEmpty()}")
+                        false
+                    } else {
+                        true
                     }
-                    resp.isSuccessful
                 }
-                uploaded && recordDeviceSyncAuditEvents(shopSyncKey, "STOCK_TRANSFER", arr)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "upsertShopStockTransfers error: ${e.message}")
+                false
+            }
+        }
+
+    /**
+     * Fetch the authoritative owner approval policy using an enrolled device credential.
+     * The result is cached locally by the ViewModel for offline transfer UX.
+     */
+    suspend fun fetchAndroidTransferApprovalPolicy(shopSyncKey: String): CachedTransferApprovalPolicy? =
+        withContext(Dispatchers.IO) {
+            if (!isConfigured() || shopSyncKey.isBlank()) return@withContext null
+            val saved = AndroidDeviceCredentialStore.readForShop(shopSyncKey) ?: return@withContext null
+            try {
+                val active = refreshAndroidDeviceCredential(saved)
+                val payload = JSONObject().put("action", "android_transfer_policy")
+                val request = Request.Builder()
+                    .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
+                    .addHeader("apikey", getSupabaseApiKey())
+                    .addHeader("X-BeBoss-Device-ID", active.deviceId)
+                    .addHeader("X-BeBoss-Device-Token", active.accessToken)
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody(jsonMediaType))
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    val raw = response.body?.string().orEmpty()
+                    val result = runCatching { JSONObject(raw) }.getOrNull()
+                    if (!response.isSuccessful || result?.optBoolean("ok") != true) {
+                        Log.w(TAG, "Transfer policy fetch rejected (HTTP ${response.code}).")
+                        return@withContext null
+                    }
+                    CachedTransferApprovalPolicy(
+                        version = result.optLong("version", -1L),
+                        thresholdRwf = result.optLong("transferApprovalThresholdRwf", -1L),
+                        fetchedAt = result.optLong("serverTime", System.currentTimeMillis()),
+                        signingKeyRegistered = false
+                    ).takeIf { it.version >= 0L && it.thresholdRwf in 0L..10_000_000_000L }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Transfer approval policy remains cached/offline: ${e.message}")
+                null
+            }
+        }
+
+    /**
+     * Register the owner's non-exportable Android Keystore public key. The Edge Function
+     * allows this action only from the active primary-owner device and stores the key in
+     * the cloud audit journal for subsequent server-side signature verification.
+     */
+    suspend fun registerAndroidTransferApprovalKey(shopSyncKey: String, publicKeyBase64: String): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!isConfigured() || shopSyncKey.isBlank() || publicKeyBase64.isBlank()) return@withContext false
+            val saved = AndroidDeviceCredentialStore.readForShop(shopSyncKey) ?: return@withContext false
+            try {
+                val active = refreshAndroidDeviceCredential(saved)
+                val payload = JSONObject()
+                    .put("action", "android_transfer_register_approval_key")
+                    .put("publicKey", publicKeyBase64)
+                val request = Request.Builder()
+                    .url("${getSupabaseUrl()}/functions/v1/beboss-desktop")
+                    .addHeader("apikey", getSupabaseApiKey())
+                    .addHeader("X-BeBoss-Device-ID", active.deviceId)
+                    .addHeader("X-BeBoss-Device-Token", active.accessToken)
+                    .addHeader("Content-Type", "application/json")
+                    .post(payload.toString().toRequestBody(jsonMediaType))
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    val raw = response.body?.string().orEmpty()
+                    val result = runCatching { JSONObject(raw) }.getOrNull()
+                    response.isSuccessful && result?.optBoolean("ok") == true
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Owner approval key registration is pending: ${e.message}")
                 false
             }
         }
