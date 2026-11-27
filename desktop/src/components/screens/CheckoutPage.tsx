@@ -81,7 +81,22 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
   snapshot: Snapshot | null; onCommit: CommitSnapshot; onReceipt: (sale: Row, items: Row[]) => void;
   offline: boolean; busy: boolean; storageKey: string; cashierName: string;
 }) {
-  const products = activeProducts(snapshot);
+  const branchRows = rows(snapshot?.branches);
+  const isRetailBranch = (branch: Row) =>
+    branch.isActive !== false && branch.is_active !== false &&
+    s(branch.locationType ?? branch.location_type).toUpperCase() !== "WAREHOUSE" &&
+    s(branch.operationalStatus ?? branch.operational_status ?? "OPEN").toUpperCase() === "OPEN";
+  const mainRetailBranch = branchRows.find((branch) =>
+    (branch.isMainBranch === true || branch.is_main_branch === true) && isRetailBranch(branch)
+  );
+  const isRetailSaleProduct = (product: Row) => {
+    const branchId = s(product.branchId ?? product.branch_id);
+    const branch = branchRows.find((item) => s(item.id) === branchId);
+    if (branch) return isRetailBranch(branch);
+    if (!branchId || branchId === "main_branch") return !mainRetailBranch || isRetailBranch(mainRetailBranch);
+    return true;
+  };
+  const products = activeProducts(snapshot).filter(isRetailSaleProduct);
   const customers = activeCustomers(snapshot);
   const [search, setSearch] = useState("");
   const [customerId, setCustomerId] = useState("");
@@ -272,6 +287,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
     const saleCart = cart.map((line) => {
       const product = latestById.get(s(line.product.id));
       if (!product) throw new Error(s(line.product.name) + " is no longer active in this shop catalogue.");
+      if (!isRetailSaleProduct(product)) throw new Error(s(product.name) + " belongs to a warehouse or a closed location. Transfer the stock to an active retail store before selling it.");
       const available = n(product.quantityInStock);
       if (!Number.isFinite(line.quantity) || line.quantity <= 0) throw new Error("A basket quantity is invalid.");
       if (line.quantity > available) throw new Error(s(product.name) + " has only " + available + " " + (s(product.unit) || "units") + " available. Refresh the basket before checkout.");
@@ -356,7 +372,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
     if (!Number.isFinite(amount) || amount <= 0) { setQuickSaleError("Sale amount must be greater than zero."); return; }
     if (!Number.isFinite(cost) || cost < 0) { setQuickSaleError("Cost estimate must be zero or greater."); return; }
 
-    const availableBranches = rows(snapshot.branches).filter((branch) => branch.isActive !== false);
+    const availableBranches = branchRows.filter(isRetailBranch);
     const chosenBranch = availableBranches.find((branch) => s(branch.id) === quickSaleBranchId)
       ?? availableBranches.find((branch) => branch.isMainBranch === true)
       ?? availableBranches[0];
@@ -465,7 +481,7 @@ export function CheckoutPage({ snapshot, onCommit, onReceipt, offline, busy, sto
         <label>Sale amount (FRw)<input required type="number" min="1" step="1" value={quickSaleAmount} onChange={(event) => setQuickSaleAmount(event.target.value)} placeholder="0" /></label>
         <label>Cost estimate (FRw)<input type="number" min="0" step="1" value={quickSaleCost} onChange={(event) => setQuickSaleCost(event.target.value)} placeholder={quickSaleAmount ? String(Math.round(n(quickSaleAmount) * 0.7)) + " · 70% estimate" : "Enter cost"} /></label>
         <label>Payment method<select value={quickSalePayment} onChange={(event) => setQuickSalePayment(event.target.value)}><option value="CASH">Cash</option><option value="MOMO">MTN MoMo</option><option value="AIRTEL">Airtel Money</option><option value="CARD">Card</option></select></label>
-        <label>Branch<select value={quickSaleBranchId} onChange={(event) => setQuickSaleBranchId(event.target.value)}>{rows(snapshot?.branches).filter((branch) => branch.isActive !== false).map((branch) => <option key={s(branch.id)} value={s(branch.id)}>{s(branch.name) || s(branch.code)}</option>)}{!rows(snapshot?.branches).length && <option value="main_branch">Main Branch</option>}</select></label>
+        <label>Branch<select value={quickSaleBranchId} onChange={(event) => setQuickSaleBranchId(event.target.value)}>{branchRows.filter(isRetailBranch).map((branch) => <option key={s(branch.id)} value={s(branch.id)}>{s(branch.name) || s(branch.code)}</option>)}{!rows(snapshot?.branches).length && <option value="main_branch">Main Branch</option>}</select></label>
         <label className="field-wide">Notes (optional)<textarea rows={2} maxLength={500} value={quickSaleNotes} onChange={(event) => setQuickSaleNotes(event.target.value)} placeholder="Service details or transaction note" /></label>
         <p className="panel-hint field-wide">This creates a paid sale and receipt in the shared ledger without adding a catalogue product or deducting stock. A blank cost uses the Android app's 70% estimated-cost rule; enter the actual cost to improve margin reporting.</p>
         <div className="form-actions field-wide"><button type="button" className="btn-outline" disabled={quickSaleBusy} onClick={() => setQuickSaleOpen(false)}>Cancel</button><button type="submit" className="btn-primary" disabled={quickSaleBusy}>{quickSaleBusy ? "Saving sale…" : "Record quick sale"}</button></div>
