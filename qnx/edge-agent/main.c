@@ -133,6 +133,25 @@ int main(void)
             continue;
         }
 
+        /*
+         * name_open() first sends an ordinary QNX connection message. Answer
+         * it using the connection protocol before accepting app-level IPC.
+         */
+        if (received.request.type == _IO_CONNECT) {
+            if (MsgReply(receive_id, EOK, NULL, 0) == -1) {
+                perror("BeBoss QNX edge agent: connection reply");
+            }
+            continue;
+        }
+
+        /* Never interpret reserved QNX I/O messages as BeBoss application data. */
+        if (received.request.type <= _IO_MAX) {
+            if (MsgError(receive_id, ENOSYS) == -1) {
+                perror("BeBoss QNX edge agent: unsupported system message");
+            }
+            continue;
+        }
+
         make_reply(&received.request, &reply);
 
         if (MsgReply(receive_id, EOK, &reply, sizeof(reply)) == -1) {
