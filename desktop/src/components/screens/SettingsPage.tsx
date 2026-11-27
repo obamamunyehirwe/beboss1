@@ -18,7 +18,7 @@ type RuntimeDiagnostics = {
 };
 
 const DEFAULT_PREFERENCES: DesktopPreferences = {
-  theme: "system", density: "comfortable", accent: "orange", defaultView: "welcome",
+  theme: "light", density: "comfortable", accent: "orange", defaultView: "welcome",
   language: "en", autoSync: true, refreshMinutes: 5, reducedMotion: false
 };
 
