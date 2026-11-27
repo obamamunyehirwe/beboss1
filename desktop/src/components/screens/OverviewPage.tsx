@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, ArrowUpRight, Boxes, CreditCard, Search, ShieldCheck, ShoppingCart, Tags, Wallet } from "lucide-react";
+import { Activity, ArrowRight, ArrowUpRight, Boxes, Building2, CreditCard, Search, ShieldCheck, ShoppingCart, Tags, Truck, Wallet } from "lucide-react";
 import { activeProducts, money, n, rows, s } from "../../lib/format";
 import type { CloudState, NavKey, Snapshot } from "../../lib/types";
 import { Empty, PageHeading, SalesTable, StatCard } from "../ui";
@@ -16,6 +16,34 @@ export function OverviewPage({ cloud, snapshot, offline, revenueToday, profitTod
     return { label: day.toLocaleDateString(undefined, { weekday: "short" }), total };
   });
   const maxDay = Math.max(1, ...lastDays.map((day) => day.total));
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
+  const monthSales = sales.filter((sale) => n(sale.saleDate ?? sale.sale_date) >= monthStart);
+  const monthRevenue = monthSales.reduce((sum, sale) => sum + n(sale.totalAmount ?? sale.total_amount ?? sale.total), 0);
+  const monthProfit = monthSales.reduce((sum, sale) => sum + n(sale.totalProfit ?? sale.total_profit), 0);
+  const activeBranches = rows(cloud.branches).filter((branch) => branch.is_active !== false);
+  const branchPerformance = activeBranches.map((branch) => {
+    const branchId = s(branch.id);
+    const branchSales = monthSales.filter((sale) => s(sale.branchId ?? sale.branch_id) === branchId);
+    const revenue = branchSales.reduce((sum, sale) => sum + n(sale.totalAmount ?? sale.total_amount ?? sale.total), 0);
+    const target = Math.max(0, n(branch.monthly_target_rwf));
+    return {
+      id: branchId, name: s(branch.name) || "Unnamed location",
+      manager: s(branch.manager_name) || "Manager not assigned",
+      revenue, transactions: branchSales.length, target,
+      progress: target > 0 ? Math.min(100, revenue / target * 100) : 0,
+      status: s(branch.operational_status || "OPEN").toUpperCase()
+    };
+  }).sort((a, b) => b.revenue - a.revenue);
+  const targetTotal = branchPerformance.reduce((sum, branch) => sum + branch.target, 0);
+  const targetCoverage = targetTotal > 0 ? monthRevenue / targetTotal * 100 : 0;
+  const openTransfers = rows(cloud.transfers).filter((transfer) =>
+    ["REQUESTED", "IN_TRANSIT", "RECEIPT_REQUESTED", "CANCEL_REQUESTED"].includes(s(transfer.status).toUpperCase())
+  );
+  const agedTransfers = openTransfers.filter((transfer) => {
+    const createdAt = n(transfer.transfer_date ?? transfer.created_at);
+    return createdAt > 0 && Date.now() - createdAt > 24 * 60 * 60 * 1000;
+  });
+  const activeDevices = rows(cloud.devices).filter((device) => device.is_active !== false);
   const bestProducts = rows(snapshot?.saleItems).reduce((map, item) => {
     const key = s(item.productName) || "Product";
     map.set(key, (map.get(key) || 0) + n(item.quantitySold));
@@ -56,6 +84,31 @@ export function OverviewPage({ cloud, snapshot, offline, revenueToday, profitTod
       <StatCard label="Inventory cost value" value={money(stockCost)} sub={products.length + " active products"} icon={Boxes} tone="purple" />
       <StatCard label="Customer receivables" value={money(receivables)} sub="Outstanding shop credit" icon={CreditCard} tone="orange" />
     </div>
+    <section className="panel span-2 executive-network-panel">
+      <div className="panel-heading">
+        <div><span className="eyebrow muted">EXECUTIVE OPERATIONS · MONTH TO DATE</span><h3>Branch and stock-location performance</h3>
+          <p className="panel-hint">Live figures are derived from the latest available shop snapshot and branch registry.</p>
+        </div>
+        <button className="btn-outline small" onClick={() => onNavigate("branches")}><Building2 size={14} /> Manage locations <ArrowRight size={14} /></button>
+      </div>
+      <div className="executive-network-kpis">
+        <article><span>Network revenue</span><strong>{money(monthRevenue)}</strong><small>{monthSales.length.toLocaleString()} transactions this month</small></article>
+        <article><span>Gross profit</span><strong>{money(monthProfit)}</strong><small>Recorded sale-cost basis</small></article>
+        <article><span>Target coverage</span><strong>{targetTotal > 0 ? Math.round(targetCoverage) + "%" : "Not set"}</strong><small>{targetTotal > 0 ? money(targetTotal) + " combined branch target" : "Set monthly targets for comparison"}</small></article>
+        <article className={agedTransfers.length ? "attention" : ""}><span>Open stock movements</span><strong>{openTransfers.length.toLocaleString()}</strong><small>{agedTransfers.length} waiting longer than 24 hours</small></article>
+      </div>
+      <div className="executive-branch-list">
+        {branchPerformance.length ? branchPerformance.slice(0, 6).map((branch, index) => <div className="executive-branch-row" key={branch.id || branch.name}>
+          <span className="executive-branch-rank">{index + 1}</span>
+          <div className="executive-branch-identity"><strong>{branch.name}</strong><small>{branch.manager} · {branch.status.replaceAll("_", " ")}</small></div>
+          <div className="executive-branch-progress"><div><span>{branch.target > 0 ? Math.round(branch.progress) + "% of target" : "No target set"}</span><strong>{money(branch.revenue)}</strong></div>
+            <div className="executive-branch-track"><i style={{ width: branch.progress + "%" }} /></div></div>
+          <span className="executive-branch-transactions">{branch.transactions} sales</span>
+        </div>) : <Empty title="No active locations available" description="Create or synchronize a branch to see location-level performance." icon={Building2} />}
+      </div>
+      {openTransfers.length > 0 && <div className="executive-network-foot"><Truck size={15} /><span>{agedTransfers.length ? agedTransfers.length + " transfer(s) need attention after 24 hours." : "Stock movements are being processed across the network."}</span><button className="text-btn" onClick={() => onNavigate("transfers")}>Review transfers</button></div>}
+      <div className="executive-network-meta"><span><ShieldCheck size={13} /> {offline ? "Protected local snapshot · changes queued for cloud" : cloud.verifiedChunks > 0 ? "Verified cloud snapshot" : "Cloud snapshot not yet verified"}</span><span>{activeBranches.length} active locations · {activeDevices.length} active devices</span></div>
+    </section>
     <div className="dashboard-grid">
       <section className="panel span-2">
         <div className="panel-heading"><div><span className="eyebrow muted">SALES TREND</span><h3>Last seven days</h3></div><button className="btn-outline small" onClick={() => onNavigate("reports")}>Full report <ArrowUpRight size={14} /></button></div>
