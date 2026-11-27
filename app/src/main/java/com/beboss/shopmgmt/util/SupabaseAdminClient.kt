@@ -2559,11 +2559,17 @@ object SupabaseAdminClient {
         }
         return try {
             val active = refreshAndroidDeviceCredential(saved)
-            for (start in 0 until uploadedRows.length() step 250) {
+            // Merged uploads can contain rows last written by another registered terminal.
+            // Never attribute those events to the device performing this sync.
+            val locallyAuthoredRows = (0 until uploadedRows.length())
+                .map { uploadedRows.getJSONObject(it) }
+                .filter { it.optString("last_modified_device_id").trim() == active.deviceId }
+            if (locallyAuthoredRows.isEmpty()) return true
+            for (start in locallyAuthoredRows.indices step 250) {
                 val records = JSONArray()
-                val end = minOf(start + 250, uploadedRows.length())
+                val end = minOf(start + 250, locallyAuthoredRows.size)
                 for (index in start until end) {
-                    val row = uploadedRows.getJSONObject(index)
+                    val row = locallyAuthoredRows[index]
                     records.put(JSONObject().apply {
                         put("id", row.optString("id"))
                         put("updatedAt", row.optLong("updated_at"))
