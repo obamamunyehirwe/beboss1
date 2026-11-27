@@ -30,6 +30,7 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onRefresh
   const [moduleCategory, setModuleCategory] = useState<ModuleCategory>("ALL");
   const [showAllAlerts, setShowAllAlerts] = useState(false);
   const [activityQuery, setActivityQuery] = useState("");
+  const [activityEntityFilter, setActivityEntityFilter] = useState("ALL");
   const [activityRefreshing, setActivityRefreshing] = useState(false);
   const [activityError, setActivityError] = useState("");
 
@@ -167,8 +168,10 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onRefresh
   const activity = rows(cloud.activity);
   const visibleActivity = activity.filter((event) => {
     const term = activityQuery.trim().toLowerCase();
-    return !term || [event.entity, event.action, event.actor, event.device_id, event.detail]
+    const matchesEntity = activityEntityFilter === "ALL" || s(event.entity).toUpperCase() === activityEntityFilter;
+    const matchesSearch = !term || [event.entity, event.action, event.actor, event.device_id, event.detail]
       .some((value) => s(value).toLowerCase().includes(term));
+    return matchesEntity && matchesSearch;
   });
 
   async function refreshAuditFeed() {
@@ -295,7 +298,19 @@ export function ManagementPage({ cloud, snapshot, offline, onNavigate, onRefresh
           <button className="btn-outline small" disabled={offline || activityRefreshing} onClick={() => void refreshAuditFeed()}><RefreshCw size={13} className={activityRefreshing ? "spin" : ""} /> Refresh audit</button>
         </div>
       </div>
-      <label className="management-audit-search"><Search size={15} /><input value={activityQuery} onChange={(event) => setActivityQuery(event.target.value)} placeholder="Filter by event, action, actor, device or detail…" /></label>
+      <div className="management-audit-filter-row">
+        <label className="management-audit-search"><Search size={15} /><input value={activityQuery} onChange={(event) => setActivityQuery(event.target.value)} placeholder="Filter by actor, device, action or detail…" /></label>
+        <select aria-label="Filter audit events by area" value={activityEntityFilter} onChange={(event) => setActivityEntityFilter(event.target.value)}>
+          <option value="ALL">All audit areas</option>
+          <option value="BRANCH">Branches & warehouses</option>
+          <option value="STOCK_TRANSFER">Stock transfers</option>
+          <option value="BRANCH_RECONCILIATION">Cash reconciliation</option>
+          <option value="STAFF">Staff & user access</option>
+          <option value="DEVICE">Devices & terminals</option>
+          <option value="FINANCE_LEDGER">Finance journal</option>
+          <option value="APPROVAL_POLICY">Approval policy</option>
+        </select>
+      </div>
       {activityError && <div className="inline-alert error">{activityError}</div>}
       {visibleActivity.length ? <div className="management-audit-table table-wrap">
         <table><thead><tr><th>Time</th><th>Area</th><th>Action</th><th>Actor</th><th>Device</th><th>Details</th></tr></thead><tbody>
