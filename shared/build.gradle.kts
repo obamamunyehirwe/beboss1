@@ -11,4 +11,10 @@ kotlin {
             isStatic = true
         }
     }
+
+    sourceSets {
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+    }
 }
