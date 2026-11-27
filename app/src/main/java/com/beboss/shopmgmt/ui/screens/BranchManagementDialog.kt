@@ -125,6 +125,7 @@ fun BranchManagementDialog(
     products: List<Product> = emptyList(),
     sales: List<Sale> = emptyList(),
     stockTransfers: List<StockTransfer> = emptyList(),
+    transferApprovalThresholdRwf: Long? = null,
     currencySymbol: String = "FRw",
     selectedBranchId: String = "ALL",
     language: AppLanguage = AppLanguage.ENGLISH,
