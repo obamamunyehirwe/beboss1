@@ -1889,8 +1889,16 @@ if (action === "submit_payment_proof") {
         if (old.is_main_branch !== row.is_main_branch) {
           auditEvents.push({ action: row.is_main_branch ? "MAIN_BRANCH_SET" : "MAIN_BRANCH_UNSET", detail: row.name + " · " + row.code });
         }
-        const profileFields = ["name","code","address","phone","email","notes","daily_sales_target_rwf","monthly_target_rwf","opening_cash_float"];
-        const profileChanged = profileFields.some((field) => text(old[field]) !== text(row[field]));
+        const profileChanged =
+          text(old.name) !== text(row.name) ||
+          text(old.code) !== text(row.code) ||
+          text(old.address) !== text(row.address) ||
+          text(old.phone) !== text(row.phone) ||
+          text(old.email) !== text(row.email) ||
+          text(old.notes) !== text(row.notes) ||
+          number(old.daily_sales_target_rwf) !== number(row.daily_sales_target_rwf) ||
+          number(old.monthly_target_rwf) !== number(row.monthly_target_rwf) ||
+          number(old.opening_cash_float) !== number(row.opening_cash_float);
         if (profileChanged) {
           auditEvents.push({ action: "PROFILE_UPDATED", detail: row.name + " · " + row.code + " · Contact, address, targets, float or branch profile fields changed." });
         }
