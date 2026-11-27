@@ -1421,16 +1421,23 @@ object SupabaseAdminClient {
      * The private storage path remains server-side; only public metadata is returned.
      */
     suspend fun fetchCurrentPublicAndroidRelease(): AndroidAppRelease? = withContext(Dispatchers.IO) {
-        if (!isConfigured()) return@withContext null
+        if (!isConfigured()) {
+            throw IOException("BeBoss cloud configuration is unavailable. Updates cannot be checked right now.")
+        }
         try {
             val path = "app_releases?select=id,version_name,version_code,file_name,size_bytes,sha256,min_android,release_notes&is_current=eq.true&is_public=eq.true&limit=1"
             val request = buildRestRequest(path).get().build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    Log.w(TAG, "Public Android release lookup returned HTTP ${response.code}")
-                    return@withContext null
+                    val status = response.code
+                    val detail = response.body?.string().orEmpty().take(180)
+                    throw IOException(
+                        detail.ifBlank { "The public release service returned HTTP $status." }
+                    )
                 }
                 val releases = JSONArray(response.body?.string().orEmpty())
+                // An empty public result is a real "no public release" state; a
+                // transport, gateway, RLS or server error is not.
                 if (releases.length() == 0) return@withContext null
                 val row = releases.getJSONObject(0)
                 val release = AndroidAppRelease(
@@ -1445,15 +1452,18 @@ object SupabaseAdminClient {
                 )
                 if (!release.hasValidPublicMetadata()) {
                     Log.e(TAG, "The current public Android release metadata failed validation.")
-                    return@withContext null
+                    throw IOException("The public Android release metadata is incomplete or invalid.")
                 }
                 release
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (error: IOException) {
+            Log.w(TAG, "Could not check for a public Android update: ${error.message}")
+            throw error
         } catch (error: Exception) {
             Log.w(TAG, "Could not check for a public Android update: ${error.message}")
-            null
+            throw IOException("Could not reach the BeBoss update service. Your shop data remains available.", error)
         }
     }
 

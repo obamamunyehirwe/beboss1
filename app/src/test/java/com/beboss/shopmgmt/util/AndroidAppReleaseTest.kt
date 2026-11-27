@@ -33,4 +33,10 @@ class AndroidAppReleaseTest {
         assertFalse(release.copy(sizeBytes = 0L).hasValidPublicMetadata())
         assertFalse(release.copy(versionCode = 0L).hasValidPublicMetadata())
     }
+    @Test
+    fun publicReleaseVersionAndFileNameAreBounded() {
+        assertFalse(release.copy(versionName = " ".repeat(81)).hasValidPublicMetadata())
+        assertFalse(release.copy(fileName = "x".repeat(181) + ".apk").hasValidPublicMetadata())
+        assertFalse(release.copy(versionCode = 1_000_001L).hasValidPublicMetadata())
+    }
 }
