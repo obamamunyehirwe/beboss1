@@ -166,6 +166,8 @@ val configuredReleaseCertificateMatches =
     actualReleaseCertificateSha256() == expectedReleaseCertificateSha256
 
 android {
+  // Compile the exact same commonMain Kotlin source files into the Android app.
+  sourceSets.getByName("main").java.srcDir(rootProject.file("../shared/src/commonMain/kotlin"))
   namespace = "com.beboss.shopmgmt"
   compileSdk = 36
   flavorDimensions += "credentialCompatibility"
@@ -418,8 +420,6 @@ tasks.configureEach {
 }
 
 dependencies {
-  // Shared Kotlin business logic also compiles to a native iOS framework.
-  implementation("com.beboss:shared:1.0.0")
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
