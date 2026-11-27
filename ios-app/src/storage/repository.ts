@@ -406,6 +406,75 @@ export async function deleteProduct(productId: string, actor: Staff): Promise<vo
   });
 }
 
+export async function restoreProduct(productId: string, actor: Staff): Promise<Product> {
+  requirePermission(actor, 'canManageInventory', 'restore products');
+  const row = await first<Row>('SELECT data FROM products WHERE id=?', [productId]);
+  if (!row) throw new Error('Archived product not found.');
+  const product = productFromRow(row);
+  if (!product.isDeleted) return product;
+  const now = Date.now();
+  product.isDeleted = false;
+  product.updatedAt = now;
+  product.syncVersion += 1;
+  product.hlcTimestamp = tickHlc(product.hlcTimestamp, now);
+  await transaction(async tx => {
+    await saveProductRow(product, tx);
+    await execute('DELETE FROM sync_tombstones WHERE id=?', ['products:' + product.id], tx);
+    await enqueue('products', product.id, 'UPDATE', { ...product, restored: true }, tx);
+    await audit(actor, 'PRODUCT_RESTORED', product.id, product.name, tx);
+  });
+  return product;
+}
+
+export async function listArchivedProducts(): Promise<Product[]> {
+  const rows = await query<Row>('SELECT data FROM products WHERE deleted=1 ORDER BY updated_at DESC');
+  return rows.map(row => productFromRow(row));
+}
+
+export async function listArchivedCustomers(): Promise<Customer[]> {
+  const rows = await query<Row>('SELECT data FROM customers WHERE deleted=1 ORDER BY updated_at DESC');
+  return rows.map(row => customerFromRow(row));
+}
+
+export async function deleteCustomer(customerId: string, actor: Staff): Promise<void> {
+  requirePermission(actor, 'canManageCustomers', 'manage customers');
+  requirePermission(actor, 'canDeleteRecords', 'archive customers');
+  await transaction(async tx => {
+    const row = await first<Row>('SELECT data FROM customers WHERE id=? AND deleted=0', [customerId], tx);
+    if (!row) throw new Error('Customer not found.');
+    const customer = customerFromRow(row);
+    const now = Date.now();
+    customer.isDeleted = true;
+    customer.updatedAt = now;
+    await saveCustomerRow(customer, tx);
+    await execute(
+      'INSERT OR REPLACE INTO sync_tombstones(id,table_name,record_id,deleted_at,hlc) VALUES(?,?,?,?,?)',
+      ['customers:' + customer.id, 'customers', customer.id, now, tickHlc('0', now)],
+      tx
+    );
+    await enqueue('customers', customer.id, 'DELETE', { id: customer.id }, tx);
+    await audit(actor, 'CUSTOMER_ARCHIVED', customer.id, customer.name, tx);
+  });
+}
+
+export async function restoreCustomer(customerId: string, actor: Staff): Promise<Customer> {
+  requirePermission(actor, 'canManageCustomers', 'restore customers');
+  const row = await first<Row>('SELECT data FROM customers WHERE id=?', [customerId]);
+  if (!row) throw new Error('Archived customer not found.');
+  const customer = customerFromRow(row);
+  if (!customer.isDeleted) return customer;
+  const now = Date.now();
+  customer.isDeleted = false;
+  customer.updatedAt = now;
+  await transaction(async tx => {
+    await saveCustomerRow(customer, tx);
+    await execute('DELETE FROM sync_tombstones WHERE id=?', ['customers:' + customer.id], tx);
+    await enqueue('customers', customer.id, 'UPDATE', { ...customer, restored: true }, tx);
+    await audit(actor, 'CUSTOMER_RESTORED', customer.id, customer.name, tx);
+  });
+  return customer;
+}
+
 export async function saveCustomer(input: Partial<Customer> & { name: string }, actor: Staff): Promise<Customer> {
   requirePermission(actor, 'canManageCustomers', 'manage customers');
   if (!input.name.trim()) throw new Error('Customer name is required.');
@@ -653,6 +722,25 @@ export async function recordPurchase(input: {
     await enqueue('products', product.id, 'UPDATE', product, tx);
     await audit(actor, 'PURCHASE_RECORDED', purchase.id, purchase.invoiceNumber, tx);
     return purchase;
+  });
+}
+
+export async function deletePurchaseRecord(purchaseId: string, actor: Staff): Promise<void> {
+  requirePermission(actor, 'canManageInventory', 'manage purchasing');
+  requirePermission(actor, 'canDeleteRecords', 'delete purchase records');
+  await transaction(async tx => {
+    const row = await first<Row>('SELECT data FROM purchases WHERE id=?', [purchaseId], tx);
+    if (!row) throw new Error('Purchase record not found.');
+    const purchase = fromJson<Purchase>(row.data);
+    await execute('DELETE FROM purchases WHERE id=?', [purchaseId], tx);
+    const now = Date.now();
+    await execute(
+      'INSERT OR REPLACE INTO sync_tombstones(id,table_name,record_id,deleted_at,hlc) VALUES(?,?,?,?,?)',
+      ['purchases:' + purchaseId, 'purchases', purchaseId, now, tickHlc('0', now)],
+      tx
+    );
+    await enqueue('purchases', purchaseId, 'DELETE', { id: purchaseId }, tx);
+    await audit(actor, 'PURCHASE_RECORD_DELETED', purchaseId, purchase.invoiceNumber, tx);
   });
 }
 
