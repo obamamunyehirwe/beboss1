@@ -687,7 +687,7 @@ mod tests {
     #[test]
     fn compiler_probe_source_includes_the_qnx_neutrino_target_header() {
         assert!(QNX_COMPILER_PROBE_SOURCE.contains("#include <sys/neutrino.h>"));
-        assert!(QNX_COMPILER_PROBE_SOURCE.contains("\\nint main(void)"));
+        assert!(QNX_COMPILER_PROBE_SOURCE.contains("\nint main(void)"));
     }
 
     #[test]
