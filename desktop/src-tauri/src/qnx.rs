@@ -8,6 +8,7 @@ use std::{
 use tauri::Manager;
 
 const EDGE_AGENT_SOURCE: &str = include_str!("../../../qnx/edge-agent/main.c");
+const EDGE_CLIENT_SOURCE: &str = include_str!("../../../qnx/edge-agent/client.c");
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -387,6 +388,61 @@ pub fn qnx_build_agent(
         success: true,
         message: format!("Compiled the BeBoss Neutrino edge agent for {target_arch}."),
         command: format!("qcc -V {variant} -Wall -Wextra -O2 <source> -o <binary>"),
+        output_path: Some(output.display().to_string()),
+        sha256: Some(sha256),
+        process_id: None,
+        stdout,
+        stderr,
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn qnx_build_ipc_client(
+    app: tauri::AppHandle,
+    install_root: Option<String>,
+    target_arch: String,
+) -> Result<QnxOperationResult, String> {
+    let status = required_status(install_root)?;
+    let variant = match target_arch.as_str() {
+        "x86_64" => "gcc_ntox86_64",
+        "aarch64le" => "gcc_ntoaarch64le",
+        _ => return Err("Choose either x86_64 or aarch64le as the QNX target architecture.".into()),
+    };
+    if !status.qcc_variants.iter().any(|available| available == variant) {
+        return Err(format!("The installed qcc toolchain did not report {variant}. Install the matching QNX SDP target package."));
+    }
+
+    let qcc = PathBuf::from(status.qcc_path.as_deref().ok_or("qcc is unavailable.")?);
+    let (host, target) = status_paths(&status);
+    let build_directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("qnx-workbench")
+        .join("edge-agent");
+    fs::create_dir_all(&build_directory).map_err(|error| error.to_string())?;
+
+    let source = build_directory.join("beboss-qnx-ipc-client.c");
+    let output = build_directory.join(format!("beboss-qnx-ipc-client-{target_arch}"));
+    fs::write(&source, EDGE_CLIENT_SOURCE).map_err(|error| error.to_string())?;
+
+    let args = vec![
+        "-V".into(), variant.into(),
+        "-Wall".into(), "-Wextra".into(), "-O2".into(),
+        source.display().to_string(),
+        "-o".into(), output.display().to_string(),
+    ];
+    let (stdout, stderr) = run_checked(&qcc, &host, &target, &args, Some(&build_directory))?;
+    let bytes = fs::read(&output).map_err(|error| {
+        format!("qcc reported success but the IPC client binary could not be read: {error}")
+    })?;
+    let digest = Sha256::digest(&bytes);
+    let sha256 = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+
+    Ok(QnxOperationResult {
+        success: true,
+        message: format!("Compiled the BeBoss Neutrino IPC smoke-test client for {target_arch}."),
+        command: format!("qcc -V {variant} -Wall -Wextra -O2 <client-source> -o <client-binary>"),
         output_path: Some(output.display().to_string()),
         sha256: Some(sha256),
         process_id: None,
