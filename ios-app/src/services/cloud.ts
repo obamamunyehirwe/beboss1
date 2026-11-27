@@ -17,6 +17,9 @@ export type IosDeviceCredential = {
   deviceId: string;
   deviceRecordId: string;
   assignedUserId: string;
+  assignedUsername: string;
+  assignedUserName: string;
+  assignedPhone: string;
   role: 'OWNER' | 'MANAGER' | 'CASHIER';
   branchId: string;
   branchName: string;
@@ -128,7 +131,7 @@ export async function getIosDeviceCredential(): Promise<IosDeviceCredential | nu
     if (!value.shopId || !/^IOS:[0-9a-f-]{36}$/i.test(value.deviceId) ||
         !/^[0-9a-f]{64}$/.test(value.accessToken) ||
         !/^[0-9a-f]{64}$/.test(value.refreshToken) ||
-        !value.deviceRecordId || !value.assignedUserId ||
+        !value.deviceRecordId || !value.assignedUserId || !value.assignedUsername ||
         !['OWNER', 'MANAGER', 'CASHIER'].includes(value.role)) {
       return null;
     }
@@ -181,7 +184,7 @@ export async function enrollIosDevice(
   }
   const payload = result.data as IosDeviceCredential & { ok?: boolean };
   if (!payload?.ok || payload.deviceId !== deviceId || !payload.accessToken || !payload.refreshToken ||
-      !payload.deviceRecordId || !payload.assignedUserId) {
+      !payload.deviceRecordId || !payload.assignedUserId || !payload.assignedUsername) {
     throw new Error('The server response did not contain a complete iPhone device credential.');
   }
   const credential: IosDeviceCredential = {
@@ -191,6 +194,9 @@ export async function enrollIosDevice(
     deviceId: payload.deviceId,
     deviceRecordId: payload.deviceRecordId,
     assignedUserId: payload.assignedUserId,
+    assignedUsername: String(payload.assignedUsername).trim().toLowerCase(),
+    assignedUserName: String(payload.assignedUserName || payload.assignedUsername),
+    assignedPhone: String(payload.assignedPhone || ''),
     role: payload.role,
     branchId: payload.branchId || '',
     branchName: payload.branchName || '',
