@@ -1116,12 +1116,30 @@ export async function mergeAndroidSharePackages(
   const localPhone = profile.phone.replace(/\D/g, '').slice(-9);
   const localShopId = profile.username.trim().toLowerCase() + '_' + localPhone;
   if (expectedShopId !== localShopId) throw new Error('The remote snapshots do not belong to this iPhone shop identity.');
+  const remoteSaleLinesBySale = new Map<string, SaleLine[]>();
+  for (const root of packages) {
+    const rows: Record<string, any>[] = Array.isArray(root.saleItems) ? root.saleItems : [];
+    for (const row of rows) {
+      const saleId = String(row.saleId || '');
+      const id = String(row.id || '');
+      if (!saleId || !id) continue;
+      const line: SaleLine = {
+        id, saleId, productId: String(row.productId || ''), productName: String(row.productName || ''),
+        category: String(row.category || 'General'), unit: String(row.unit || 'pcs'),
+        quantitySold: safeRemoteNumber(row.quantitySold), costPriceAtSale: safeRemoteNumber(row.costPriceAtSale),
+        unitPriceAtSale: safeRemoteNumber(row.unitPriceAtSale), subtotal: safeRemoteNumber(row.subtotal),
+        profit: safeRemoteNumber(row.profit), branchId: String(row.branchId || 'main_branch')
+      };
+      const list = remoteSaleLinesBySale.get(saleId) || [];
+      if (!list.some(item => item.id === line.id)) list.push(line);
+      remoteSaleLinesBySale.set(saleId, list);
+    }
+  }
 
   const merged = await transaction(async tx => {
     const now = Date.now();
     let changed = 0;
     const allSales = new Map<string, Sale>();
-    const allSaleItems = new Map<string, SaleLine>();
     const allTombstones = new Map<string, Record<string, any>>();
 
     for (const root of packages) {
@@ -1301,7 +1319,7 @@ export async function mergeAndroidSharePackages(
         if (!id || !receiptNumber) continue;
         const existingRow = await first<Row>('SELECT data FROM sales WHERE id=?', [id], tx);
         const existing = existingRow ? saleFromRow(existingRow) : null;
-        const items = (Array.isArray(row.items) ? row.items : []).map((item: any) => ({
+        const items = (Array.isArray(row.items) ? row.items : (remoteSaleLinesBySale.get(id) || [])).map((item: any) => ({
           id: String(item.id || makeId()),
           saleId: id,
           productId: String(item.productId || ''),
@@ -1381,7 +1399,6 @@ export async function mergeAndroidSharePackages(
           profit: safeRemoteNumber(row.profit), branchId: String(row.branchId || 'main_branch')
         };
         if (line.quantitySold <= 0 || !line.productId) continue;
-        allSaleItems.set(id, line);
         const exists = await first<Row>('SELECT id FROM sale_items WHERE id=?', [id], tx);
         if (!exists) {
           const parent = await first<Row>('SELECT id FROM sales WHERE id=?', [saleId], tx);
@@ -1501,6 +1518,17 @@ export async function mergeAndroidSharePackages(
       };
       await execute('UPDATE shop_profile SET data=?,updated_at=? WHERE id=1',
         [toJson(mergedProfile), mergedProfile.updatedAt], tx);
+    }
+
+    for (const [saleId, sale] of allSales) {
+      const linesForSale = remoteSaleLinesBySale.get(saleId);
+      if (!linesForSale?.length) continue;
+      const currentRow = await first<Row>('SELECT data FROM sales WHERE id=?', [saleId], tx);
+      if (!currentRow) continue;
+      const currentSale = saleFromRow(currentRow);
+      const lineRows = await query<Row>('SELECT data FROM sale_items WHERE sale_id=? ORDER BY id', [saleId], tx);
+      const storedLines = lineRows.map(row => fromJson<SaleLine>(row.data));
+      await execute('UPDATE sales SET data=? WHERE id=?', [toJson({ ...currentSale, items: storedLines }), saleId], tx);
     }
 
     for (const [id, row] of allTombstones) {
@@ -1623,11 +1651,30 @@ export async function buildIosCloudSnapshot(actor: Staff): Promise<IosCloudSnaps
         format: 'beboss_branch_datashare_v3',
         timestamp,
         issuedAt: timestamp,
+        expiresAt: timestamp + 30 * 24 * 60 * 60 * 1000,
+        nonce: makeId(),
+        shopSyncKey: profile.username.trim().toLowerCase() + '_' + profile.phone.replace(/\D/g, '').slice(-9),
         exportedBy: actor.username,
         exportedByRole: actor.role,
         devicePlatform: 'IOS'
       },
-      shopProfile: profile,
+      shopProfile: {
+        id: profile.id,
+        shopName: profile.shopName,
+        name: profile.ownerName,
+        phone: profile.phone,
+        email: profile.email || '',
+        address: profile.address,
+        currencyCode: profile.currencyCode,
+        currencySymbol: profile.currencySymbol,
+        taxRate: profile.taxRate,
+        receiptHeader: profile.receiptHeader,
+        receiptFooter: profile.receiptFooter,
+        businessType: profile.businessType,
+        lastSyncedAt: profile.lastSyncedAt,
+        createdAt: profile.createdAt,
+        updatedAt: profile.updatedAt
+      },
       products: captured.products,
       customers: captured.customers,
       sales: captured.sales,
