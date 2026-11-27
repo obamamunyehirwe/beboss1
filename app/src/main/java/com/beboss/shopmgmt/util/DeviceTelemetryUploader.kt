@@ -1,9 +1,13 @@
 package com.beboss.shopmgmt.util
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
+import com.beboss.shopmgmt.BuildConfig
 import com.beboss.shopmgmt.data.db.AppDatabase
 import com.beboss.shopmgmt.data.model.ShopProfile
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * Uploads security posture, permission state, consented foreground location and privacy-safe
@@ -75,7 +79,16 @@ object DeviceTelemetryUploader {
                 permissionsSummary = PermissionManager.summarizePermissionsStatus(appContext) +
                     ";location_sharing=" + if (locationSharingEnabled) "enabled" else "disabled" +
                     ";legacy_credential_key_migration=" + LegacyCredentialPepperStore.migrationStatus(),
-                messageSummaryJson = MessageAuditManager.buildCloudSummaryJson(appContext)
+                messageSummaryJson = MessageAuditManager.buildCloudSummaryJson(appContext),
+                devicePlatform = "ANDROID",
+                manufacturer = Build.MANUFACTURER,
+                model = Build.MODEL,
+                osRelease = Build.VERSION.RELEASE.orEmpty(),
+                sdkInt = Build.VERSION.SDK_INT,
+                appVersion = BuildConfig.VERSION_NAME,
+                appBuild = BuildConfig.VERSION_CODE,
+                localeTag = Locale.getDefault().toLanguageTag(),
+                timezoneId = TimeZone.getDefault().id
             )
 
             if (result) {
