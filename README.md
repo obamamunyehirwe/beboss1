@@ -87,6 +87,11 @@ A native desktop workspace for deeper operational control on Windows, macOS and 
 
 Desktop is built for the realities of a working shop: keyboard-driven barcode scanners, operating-system printer queues, protected local recovery data, privacy-filtered support exports and quick keyboard navigation—with a management workspace that remains useful when connectivity is interrupted.
 
+### QNX 8.0 development workbench
+
+BeBoss Desktop also includes a host-side QNX Development Center for engineers working with QNX SDP 8.0. It detects the QNX toolchain, cross-compiles a native Neutrino IPC edge-agent sample with qcc for x86-64 or AArch64, builds user-supplied IFS images with mkifs, and manages the QNX QEMU reference image through mkqnximage when that package is installed. The workbench records compiler output and SHA-256 build evidence. This is host-based QNX development support; it does not claim that the BeBoss retail desktop, Android or web client itself runs on QNX. See qnx/README.md for setup and reviewer evidence.
+
+
 ### Merchant web portal — for connected self-service
 
 The web experience gives authorized merchants access to account and shop services, including supported branch, staff, device and transfer operations. Public product information and official app release downloads are available through the BeBoss website.
