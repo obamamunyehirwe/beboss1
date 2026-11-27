@@ -80,8 +80,10 @@ jobs:
           try { $bytes = [Convert]::FromBase64String($encoded) }
           catch { throw "ANDROID_RELEASE_KEYSTORE_BASE64 is not valid base64." }
           if ($bytes.Length -lt 1024) { throw "The decoded Android signing keystore is unexpectedly small." }
-          [IO.File]::WriteAllBytes($env:KEYSTORE_PATH, $bytes)
+          $keystorePath = Join-Path $env:RUNNER_TEMP "beboss-android-release.keystore"
+          [IO.File]::WriteAllBytes($keystorePath, $bytes)
           [Array]::Clear($bytes, 0, $bytes.Length)
+          "KEYSTORE_PATH=$keystorePath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           if (-not (Test-Path -LiteralPath ".env")) {
             New-Item -ItemType File -Path ".env" | Out-Null
           }

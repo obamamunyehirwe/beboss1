@@ -54,8 +54,10 @@ jobs:
           try { $bytes = [Convert]::FromBase64String($encoded) }
           catch { throw "WINDOWS_CODESIGN_PFX_BASE64 is not valid base64." }
           if ($bytes.Length -lt 1024) { throw "The decoded Windows signing PFX is unexpectedly small." }
-          [IO.File]::WriteAllBytes($env:WINDOWS_CODESIGN_PFX_PATH, $bytes)
+          $pfxPath = Join-Path $env:RUNNER_TEMP "beboss-windows-codesign.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, $bytes)
           [Array]::Clear($bytes, 0, $bytes.Length)
+          "WINDOWS_CODESIGN_PFX_PATH=$pfxPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Windows signing certificate has been materialized in the ephemeral runner."
 
       - name: Install desktop dependencies
