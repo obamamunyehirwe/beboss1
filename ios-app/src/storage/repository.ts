@@ -1149,7 +1149,7 @@ export async function cancelStockTransfer(transferId: string, reason: string, ac
 
 export async function saveStaff(input: {
   id?: string; name: string; username: string; phone: string; role: Role; branchId: string;
-  pin: string; password: string; isActive: boolean;
+  pin: string; password: string; isActive: boolean; permissions?: Partial<Permissions>;
 }, actor: Staff): Promise<Staff> {
   requirePermission(actor, 'canManageCollaborators', 'manage staff');
   if (!input.name.trim()) throw new Error('Staff name is required.');
@@ -1175,7 +1175,8 @@ export async function saveStaff(input: {
     pinHash: input.pin.trim() ? hashCredential(input.pin) : existing?.pinHash || '',
     passwordHash: input.password.trim() ? hashCredential(input.password) : existing?.passwordHash || '',
     createdAt: existing?.createdAt || now, updatedAt: now, lastLoginAt: existing?.lastLoginAt || 0,
-    ...ROLE_PERMISSIONS[input.role]
+    ...ROLE_PERMISSIONS[input.role],
+    ...(input.permissions || existing || {})
   };
   await transaction(async tx => {
     await execute('INSERT INTO users(id,username,role,branch_id,active,data,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username,role=excluded.role,branch_id=excluded.branch_id,active=excluded.active,data=excluded.data,updated_at=excluded.updated_at',

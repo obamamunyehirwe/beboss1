@@ -7,8 +7,8 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import { pick, keepLocalCopy, types as documentTypes, isErrorWithCode, errorCodes } from '@react-native-documents/picker';
 import {
-  Branch, CartLine, CheckoutInput, Customer, HeldCart, Product, Role, Sale, ShopProfile, Staff,
-  StoreSnapshot
+  Branch, CartLine, CheckoutInput, Customer, HeldCart, Permissions, Product, Role, Sale, ShopProfile, Staff,
+  StoreSnapshot, ROLE_PERMISSIONS
 } from './src/core/types';
 import {
   adjustStock, archiveBranch, authenticate, cancelStockTransfer, checkout, confirmStockTransfer, deleteCustomer,
@@ -522,22 +522,71 @@ function AppRoot(): React.JSX.Element {
 
   const openStaff = (staff?: Staff) => {
     setEditingStaff(staff || null);
+    const role = staff?.role || 'CASHIER';
+    const permissions = staff || ROLE_PERMISSIONS[role];
     setForm({
       name: staff?.name || '', username: staff?.username || '', phone: staff?.phone || '',
-      role: staff?.role || 'CASHIER', branchId: staff?.branchId || actor?.branchId || '',
-      pin: '', password: '', isActive: String(staff?.isActive ?? true)
+      role, branchId: staff?.branchId || actor?.branchId || '',
+      pin: '', password: '', isActive: String(staff?.isActive ?? true),
+      permission_canSellPOS: String(permissions.canSellPOS),
+      permission_canApplyDiscounts: String(permissions.canApplyDiscounts),
+      permission_canManageInventory: String(permissions.canManageInventory),
+      permission_canViewCostAndProfit: String(permissions.canViewCostAndProfit),
+      permission_canViewAnalytics: String(permissions.canViewAnalytics),
+      permission_canManageCustomers: String(permissions.canManageCustomers),
+      permission_canCollectDebt: String(permissions.canCollectDebt),
+      permission_canDeleteRecords: String(permissions.canDeleteRecords),
+      permission_canExportReports: String(permissions.canExportReports),
+      permission_canManageCollaborators: String(permissions.canManageCollaborators),
+      permission_canManageShopSettings: String(permissions.canManageShopSettings),
+      permission_canExportImportData: String(permissions.canExportImportData)
     });
     setModal('staff');
   };
+  const setStaffRole = (roleInput: string) => {
+    const role = roleInput as Role;
+    const defaults = ROLE_PERMISSIONS[role];
+    setForm(previous => ({
+      ...previous,
+      role,
+      permission_canSellPOS: String(defaults.canSellPOS),
+      permission_canApplyDiscounts: String(defaults.canApplyDiscounts),
+      permission_canManageInventory: String(defaults.canManageInventory),
+      permission_canViewCostAndProfit: String(defaults.canViewCostAndProfit),
+      permission_canViewAnalytics: String(defaults.canViewAnalytics),
+      permission_canManageCustomers: String(defaults.canManageCustomers),
+      permission_canCollectDebt: String(defaults.canCollectDebt),
+      permission_canDeleteRecords: String(defaults.canDeleteRecords),
+      permission_canExportReports: String(defaults.canExportReports),
+      permission_canManageCollaborators: String(defaults.canManageCollaborators),
+      permission_canManageShopSettings: String(defaults.canManageShopSettings),
+      permission_canExportImportData: String(defaults.canExportImportData)
+    }));
+  };
+
   const saveStaffForm = async () => {
+    const permissions: Permissions = {
+      canSellPOS: form.permission_canSellPOS === 'true',
+      canApplyDiscounts: form.permission_canApplyDiscounts === 'true',
+      canManageInventory: form.permission_canManageInventory === 'true',
+      canViewCostAndProfit: form.permission_canViewCostAndProfit === 'true',
+      canViewAnalytics: form.permission_canViewAnalytics === 'true',
+      canManageCustomers: form.permission_canManageCustomers === 'true',
+      canCollectDebt: form.permission_canCollectDebt === 'true',
+      canDeleteRecords: form.permission_canDeleteRecords === 'true',
+      canExportReports: form.permission_canExportReports === 'true',
+      canManageCollaborators: form.permission_canManageCollaborators === 'true',
+      canManageShopSettings: form.permission_canManageShopSettings === 'true',
+      canExportImportData: form.permission_canExportImportData === 'true'
+    };
     await run(async () => {
       await saveStaff({
         id: editingStaff?.id, name: form.name, username: form.username, phone: form.phone,
         role: form.role as Role, branchId: form.branchId, pin: form.pin, password: form.password,
-        isActive: form.isActive !== 'false'
+        isActive: form.isActive !== 'false', permissions
       }, actor!);
       setModal(null);
-    }, 'Staff account saved.');
+    }, 'Staff account and individual permissions saved.');
   };
 
   const openSettings = () => {
@@ -1708,7 +1757,31 @@ function AppRoot(): React.JSX.Element {
                 <Field label="Full name" value={form.name || ''} onChangeText={value => setForm({ ...form, name: value })} />
                 <Field label="Username" value={form.username || ''} autoCapitalize="none" onChangeText={value => setForm({ ...form, username: value })} />
                 <Field label="Phone" value={form.phone || ''} onChangeText={value => setForm({ ...form, phone: value })} />
-                <SelectChips label="Role" values={(['OWNER', 'MANAGER', 'CASHIER'] as Role[]).map(value => ({ label: value, value }))} value={form.role || 'CASHIER'} onChange={value => setForm({ ...form, role: value })} />
+                <SelectChips label="Role preset" values={(['OWNER', 'MANAGER', 'CASHIER'] as Role[]).map(value => ({ label: value, value }))} value={form.role || 'CASHIER'} onChange={setStaffRole} />
+                <Text style={styles.fieldLabel}>Individual access permissions · custom selections override the role preset</Text>
+                <View style={styles.permissionGrid}>
+                  {([
+                    ['canSellPOS', 'Sell through POS'],
+                    ['canApplyDiscounts', 'Apply discounts and price overrides'],
+                    ['canManageInventory', 'Manage inventory and purchases'],
+                    ['canViewCostAndProfit', 'View product cost and profit'],
+                    ['canViewAnalytics', 'View business analytics'],
+                    ['canManageCustomers', 'Manage customer records'],
+                    ['canCollectDebt', 'Collect customer debt'],
+                    ['canDeleteRecords', 'Archive and reverse records'],
+                    ['canExportReports', 'Export reports'],
+                    ['canManageCollaborators', 'Manage staff'],
+                    ['canManageShopSettings', 'Manage shop and branches'],
+                    ['canExportImportData', 'Export and restore backups']
+                  ] as Array<[keyof Permissions, string]>).map(([key, label]) => (
+                    <PermissionToggle
+                      key={key}
+                      label={label}
+                      checked={form['permission_' + key] === 'true'}
+                      onChange={checked => setForm(previous => ({ ...previous, ['permission_' + key]: String(checked) }))}
+                    />
+                  ))}
+                </View>
                 <SelectChips label="Assigned branch" values={[{ label: 'All branches', value: '' }, ...(snapshot?.branches || []).map(item => ({ label: item.name, value: item.id }))]} value={form.branchId || ''} onChange={value => setForm({ ...form, branchId: value })} />
                 <Field label={editingStaff ? 'New PIN (leave blank to keep current)' : 'PIN'} value={form.pin || ''} secureTextEntry keyboardType="number-pad" onChangeText={value => setForm({ ...form, pin: value })} />
                 <Field label={editingStaff ? 'New password (leave blank to keep current)' : 'Password'} value={form.password || ''} secureTextEntry onChangeText={value => setForm({ ...form, password: value })} />
@@ -1859,6 +1932,22 @@ function EmptyState({ title, subtitle, action, onAction }: { title: string; subt
 function ActionLink({ label, onPress, danger, disabled }: { label: string; onPress: () => void; danger?: boolean; disabled?: boolean }): React.JSX.Element {
   return <Pressable onPress={onPress} disabled={disabled} style={{ paddingVertical: 5, opacity: disabled ? 0.35 : 1 }}><Text style={[styles.actionLink, danger && { color: COLORS.red }]}>{label}</Text></Pressable>;
 }
+function PermissionToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }): React.JSX.Element {
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      onPress={() => onChange(!checked)}
+      style={styles.permissionRow}
+    >
+      <View style={[styles.permissionBox, checked && styles.permissionBoxChecked]}>
+        {checked ? <Text style={styles.permissionTick}>✓</Text> : null}
+      </View>
+      <Text style={styles.permissionLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function PrinterControls({ printer }: { printer: ReturnType<typeof useBluetoothPrinters> }): React.JSX.Element {
   return <View style={styles.card}>
     <Text style={styles.rowTitle}>{printer.connected ? 'Connected: ' + (printer.connected.name || printer.connected.id) : 'No BLE printer connected'}</Text>
@@ -1930,6 +2019,12 @@ const styles = StyleSheet.create({
   rowSub: { color: COLORS.sub, fontSize: 10, marginTop: 3, lineHeight: 15 },
   price: { color: COLORS.ink, fontSize: 12, fontWeight: '900' },
   warningText: { color: COLORS.amber, fontSize: 10, marginTop: 4, fontWeight: '900' },
+  permissionGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, rowGap: 4, marginTop: 8 },
+  permissionRow: { flexDirection: 'row', alignItems: 'center', width: '48%', minHeight: 40, gap: 8, paddingVertical: 4 },
+  permissionBox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: COLORS.muted, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.paper },
+  permissionBoxChecked: { backgroundColor: COLORS.orange, borderColor: COLORS.orange },
+  permissionTick: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
+  permissionLabel: { flex: 1, fontSize: 10, fontWeight: '700', color: COLORS.ink },
   trendRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
   trendLabel: { width: 34, color: COLORS.sub, fontSize: 10, fontWeight: '700' },
   trendTrack: { height: 9, flex: 1, backgroundColor: COLORS.canvas, borderRadius: 6, overflow: 'hidden' },
