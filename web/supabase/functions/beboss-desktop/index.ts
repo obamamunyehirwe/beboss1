@@ -1076,6 +1076,8 @@ Deno.serve(async (req: Request) => {
             return json(409, { ok: false, message: "An existing transfer's product, branches, quantity, cost or transfer number was modified. The cloud ledger remains unchanged." });
           }
           cost = number(existing.cost_value_rwf);
+          approvalRequired = policy.transferApprovalThresholdRwf > 0 &&
+            cost >= policy.transferApprovalThresholdRwf;
           const previousStatus = text(existing.status).toUpperCase();
           if (incomingStatus !== previousStatus &&
               !(allowedExistingTransitions[previousStatus] ?? []).includes(incomingStatus)) {
@@ -1291,7 +1293,6 @@ Deno.serve(async (req: Request) => {
 
       if (rowsToSave.length > 0) {
         const upload = await admin.from("shop_stock_transfers").upsert(rowsToSave, { onConflict: "id" });
-        if (upload.error) throw new Error("The verified Android transfers could not be committed: " + upload.error.message);
       }
       const existingSyncEvents = await admin.from("cloud_sync_events").select("detail")
         .eq("shop_sync_key", text(shop.id)).eq("entity", "STOCK_TRANSFER")
