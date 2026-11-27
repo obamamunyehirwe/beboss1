@@ -199,6 +199,112 @@ export async function registerOwner(input: {
   return owner;
 }
 
+export type EnrolledIosStaffAssignment = {
+  shopId: string;
+  ownerUsername: string;
+  assignedUserId: string;
+  assignedUsername: string;
+  assignedUserName: string;
+  assignedPhone: string;
+  role: Role;
+  branchId: string;
+  branchName: string;
+};
+
+export async function prepareEnrolledDeviceStaff(
+  assignment: EnrolledIosStaffAssignment,
+  localCredentials: { pin: string; password: string }
+): Promise<Staff> {
+  const profile = await currentProfile();
+  if (!profile) throw new Error('Create or restore this shop profile before pairing an iPhone.');
+  const ownerUsername = profile.username.trim().toLowerCase();
+  const ownerPhone = profile.phone.replace(/\D/g, '').slice(-9);
+  const expectedShopId = ownerUsername + '_' + ownerPhone;
+  if (assignment.shopId !== expectedShopId || assignment.ownerUsername.trim().toLowerCase() !== ownerUsername) {
+    throw new Error('The enrolled device belongs to a different shop owner. The local BeBoss records were not changed.');
+  }
+  const username = assignment.assignedUsername.trim().toLowerCase();
+  if (!/^[a-z0-9._-]{2,80}$/.test(username) || !assignment.assignedUserId) {
+    throw new Error('The owner-issued device invitation did not return a valid assigned staff identity.');
+  }
+  if (!['OWNER', 'MANAGER', 'CASHIER'].includes(assignment.role)) {
+    throw new Error('The owner-issued invitation returned an unsupported staff role.');
+  }
+  const pinIssue = validatePin(localCredentials.pin);
+  if (pinIssue) throw new Error(pinIssue);
+  const passwordIssue = validatePassword(localCredentials.password);
+  if (passwordIssue) throw new Error(passwordIssue);
+
+  return transaction(async tx => {
+    const targetRow = await first<Row>('SELECT data FROM users WHERE id=?', [assignment.assignedUserId], tx);
+    const usernameRow = await first<Row>('SELECT data FROM users WHERE username=? COLLATE NOCASE', [username], tx);
+    const target = targetRow ? staffFromRow(targetRow) : null;
+    const matching = usernameRow ? staffFromRow(usernameRow) : null;
+    if (target && matching && target.id !== matching.id) {
+      throw new Error('This iPhone already has a different local staff account using that username. Resolve the local account before pairing.');
+    }
+    const existing = target || matching;
+    const now = Date.now();
+    const rolePermissions = ROLE_PERMISSIONS[assignment.role];
+    const staff: Staff = {
+      id: assignment.assignedUserId,
+      name: assignment.assignedUserName.trim() || existing?.name || username,
+      username,
+      phone: assignment.assignedPhone.trim() || existing?.phone || '',
+      role: assignment.role,
+      branchId: assignment.branchId || '',
+      branchName: assignment.branchName || 'Assigned branch',
+      // These are iPhone-local unlock credentials only. The cloud never receives them.
+      pinHash: hashCredential(localCredentials.pin),
+      passwordHash: hashCredential(localCredentials.password),
+      isActive: true,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+      lastLoginAt: existing?.lastLoginAt || now,
+      ...rolePermissions
+    };
+
+    if (existing && existing.id !== staff.id) {
+      // The local first-run owner may have a different UUID from the cloud owner row.
+      // Re-key only that same-username local row, preserving its records and audit history.
+      await execute(
+        'UPDATE users SET id=?,username=?,role=?,branch_id=?,active=?,data=?,updated_at=? WHERE id=?',
+        [staff.id, staff.username, staff.role, staff.branchId, 1, toJson(staff), staff.updatedAt, existing.id],
+        tx
+      );
+      await execute('UPDATE audit_logs SET actor_id=? WHERE actor_id=?', [staff.id, existing.id], tx);
+      const pending = await query<Row>(
+        'SELECT id,payload_json FROM sync_outbox WHERE table_name="users" AND record_id=?',
+        [existing.id], tx
+      );
+      for (const item of pending) {
+        let payload: Row = {};
+        try { payload = JSON.parse(String(item.payload_json || '{}')); } catch { payload = {}; }
+        await execute('UPDATE sync_outbox SET record_id=?,payload_json=?,updated_at=? WHERE id=?',
+          [staff.id, toJson({ ...payload, id: staff.id, username: staff.username }), now, item.id], tx);
+      }
+      const sales = await query<Row>('SELECT id,data FROM sales', [], tx);
+      for (const saleRow of sales) {
+        try {
+          const sale = fromJson<Sale>(saleRow.data);
+          if (sale.cashierId === existing.id) {
+            await execute('UPDATE sales SET data=? WHERE id=?', [toJson({ ...sale, cashierId: staff.id }), saleRow.id], tx);
+          }
+        } catch { /* Keep unreadable historical records unchanged; no transaction data is discarded. */ }
+      }
+    } else {
+      await execute(
+        'INSERT INTO users(id,username,role,branch_id,active,data,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username,role=excluded.role,branch_id=excluded.branch_id,active=excluded.active,data=excluded.data,updated_at=excluded.updated_at',
+        [staff.id, staff.username, staff.role, staff.branchId, 1, toJson(staff), staff.createdAt, staff.updatedAt],
+        tx
+      );
+    }
+    await audit(staff, 'IOS_DEVICE_STAFF_PROVISIONED', staff.id,
+      'Mapped the owner-approved iPhone device assignment to a local staff unlock credential. Local PIN/password hashes were not sent to cloud.', tx);
+    return staff;
+  });
+}
+
 export async function authenticate(usernameInput: string, secret: string): Promise<Staff> {
   const username = usernameInput.trim().toLowerCase();
   const staff = username
