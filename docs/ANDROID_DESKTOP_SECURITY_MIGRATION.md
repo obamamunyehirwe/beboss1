@@ -54,17 +54,46 @@ The first secure direct-distribution release uses versionCode 20 / versionName 2
 
 If the original pepper is unavailable or has changed since those hashes were created, do not guess a replacement. The transition cannot verify those v1 hashes. Keep existing devices intact and use the owner-authorized staff credential reset/re-enrollment process after securing backups.
 
-### Build commands (Windows)
+### First-production build commands (Windows, direct APK distribution)
 
-~~~powershell
-# One-time compatibility release
-.\gradlew.bat :app:assembleTransitionRelease
+Configure the ignored repository-root .env with the owner's local values:
 
-# Final release; requires SECURE_CREDENTIAL_MIGRATION_APPROVED=true
-.\gradlew.bat :app:bundleSecureRelease
+~~~dotenv
+KEYSTORE_PATH=C:/Users/Q.C/.beboss/android-signing/beboss-upload-2026.p12
+KEY_ALIAS=beboss-upload-2026
+ANDROID_RELEASE_CERT_SHA256=74239C5863FA312DF2920844D40FF167DDC88B821A75D0A2FCFE316BF81740D4
+ANDROID_FIRST_PRODUCTION_RELEASE=true
+SECURE_CREDENTIAL_MIGRATION_APPROVED=false
+
+SUPABASE_URL=https://<your-project>.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_<your-public-key>
+SUPABASE_CERT_PINS=sha256/<base64-pin>[,sha256/<backup-pin>]
+SENTRY_DSN=https://<public-key>@<sentry-host>/<project-id>
+
+# Set the actual values securely; never commit this file.
+STORE_PASSWORD=<your-keystore-password>
+KEY_PASSWORD=<your-private-key-password>
 ~~~
 
-CI builds both debug flavors, runs their unit tests, runs the secure emulator smoke test, and checks that the secure APK is secret-free.
+SUPABASE_CERT_PINS must contain one or more real SHA-256 pins for the HTTPS Supabase host in OkHttp sha256/base64 format. The build rejects placeholder URL/key/pin values and rejects a service-role key. The public certificate fingerprint can be present in .env.example; the private .p12 and passwords must remain outside Git.
+
+Build and verify the actual standalone production APK:
+
+~~~powershell
+.\gradlew.bat :app:validateReleaseSigningConfiguration
+.\gradlew.bat :app:validateSecureMigrationApproval
+.\gradlew.bat :app:validateSentryDsnConfiguration
+.\gradlew.bat :app:validateAndroidCloudConfiguration
+.\gradlew.bat :app:assembleSecureRelease
+
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-android-release-signing.ps1 -ArtifactPath .\app\build\outputs\apk\secure\release\app-secure-release.apk
+~~~
+
+Expected output: app\build\outputs\apk\secure\release\app-secure-release.apk. Upload that exact APK in BeBoss Admin → App Releases → Mobile. Do not upload a debug APK, the transition flavor, or an AAB to the direct APK channel.
+
+For every later direct APK release, keep the same .p12 key, alias and application ID; increase the secure flavor versionCode and versionName, rebuild, and enter those exact values in Admin. Android's installer preserves app data when the application ID/signing identity remain compatible and the new version code is accepted.
+
+CI builds both debug flavors, runs their unit tests, runs the secure emulator smoke test, and checks that the secure APK is secret-free. The release signing key and external project DSNs are owner-controlled local/protected configuration and are not committed.
 
 ## 3. Production crash and native panic reporting
 
@@ -155,9 +184,10 @@ The scripts automate local key generation and certificate checking. Play Console
 ## 5. Release gates and remaining owner actions
 
 The build now blocks:
-- Secure Android release unless SECURE_CREDENTIAL_MIGRATION_APPROVED=true.
+- Secure Android release unless either SECURE_CREDENTIAL_MIGRATION_APPROVED=true is set after every legacy production device completes the transition, or ANDROID_FIRST_PRODUCTION_RELEASE=true is explicitly set for the genuinely first production launch with no customer installs/legacy credential backups.
 - Android release without a valid Sentry DSN.
 - Android release if the configured keystore/certificate fingerprint does not match.
+- Android release unless the Supabase URL is HTTPS, the configured API key is public/publishable (or a legacy anon JWT with role anon), and at least one valid Supabase SHA-256 TLS certificate pin is present.
 - Desktop installer creation without both renderer and native crash telemetry configured.
 
 The remaining external actions depend on release history: for a first production launch, configure the locally held signing keystore and fingerprint, set ANDROID_FIRST_PRODUCTION_RELEASE=true only after confirming there are no customer production installs or legacy credential backups to import, configure a real SENTRY_DSN, build and verify the APK, publish it through BeBoss Admin, and test update delivery on physical devices. For an existing install base, complete the transition migration and signing-compatibility path instead. Play Console is not required for direct APK distribution.
