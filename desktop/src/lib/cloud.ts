@@ -134,6 +134,8 @@ export type DesktopAction =
   | "branch_delete"
   | "branch_reconcile"
   | "approval_policy_save"
+  | "finance_ledger_post"
+  | "finance_ledger_reverse"
   | "transfer_create"
   | "transfer_command"
   | "staff_update"
