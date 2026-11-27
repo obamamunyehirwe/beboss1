@@ -176,6 +176,16 @@ async function enrollDevice(req: Request, body: Row, config: { url: string; publ
   if (!assignedUserId || !deviceRecordId || !["OWNER", "MANAGER", "CASHIER"].includes(role)) {
     throw new Error("The enrolled iPhone has no valid assigned user or role.");
   }
+  const assignedResult = await admin.from("shop_users")
+    .select("user_id,username,full_name,phone,role,is_active,assigned_branch_id")
+    .eq("shop_sync_key", owner.shopId)
+    .eq("user_id", assignedUserId)
+    .maybeSingle();
+  const assignedUser = assignedResult.data as Row | null;
+  if (assignedResult.error || !assignedUser || assignedUser.is_active !== true ||
+      text(assignedUser.role).toUpperCase() !== role || !text(assignedUser.username).trim()) {
+    throw new Error("The invitation's staff assignment is no longer active. Ask the owner to issue a new device invitation.");
+  }
 
   const accessToken = createDeviceToken();
   const refreshToken = createDeviceToken();
@@ -202,6 +212,9 @@ async function enrollDevice(req: Request, body: Row, config: { url: string; publ
     deviceId,
     deviceRecordId,
     assignedUserId,
+    assignedUsername: text(assignedUser.username).trim().toLowerCase(),
+    assignedUserName: text(assignedUser.full_name || assignedUser.username).trim(),
+    assignedPhone: text(assignedUser.phone),
     role,
     branchId: text((device as Row).branchId),
     branchName: text((device as Row).branchName),
