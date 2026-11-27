@@ -678,6 +678,90 @@ export async function checkout(input: CheckoutInput, actor: Staff): Promise<Sale
   });
 }
 
+export async function quickCustomSale(
+  descriptionInput: string,
+  amountInput: number,
+  paymentMethodInput: string,
+  actor: Staff
+): Promise<Sale> {
+  requirePermission(actor, 'canSellPOS', 'complete quick sales');
+  const description = descriptionInput.trim().slice(0, 160) || 'Custom Quick Item';
+  const totalCents = toCents(assertAmount(amountInput, 'Quick sale amount', false));
+  if (totalCents <= 0) throw new Error('Quick sale amount must be greater than zero.');
+  const method = paymentMethodInput.trim().toUpperCase() || 'CASH';
+  if (!['CASH', 'MOMO', 'AIRTEL', 'CARD', 'BANK'].includes(method)) {
+    throw new Error('Choose a supported quick-sale payment method.');
+  }
+
+  return transaction(async tx => {
+    const branchRows = await query<Row>('SELECT data FROM branches WHERE active=1', [], tx);
+    const branches = branchRows.map(row => branchFromRow(row));
+    const eligible = branches.filter(branch =>
+      branch.isActive &&
+      branch.locationType.toUpperCase() !== 'WAREHOUSE' &&
+      branch.operationalStatus.toUpperCase() === 'OPEN'
+    );
+    const branch = actor.branchId
+      ? eligible.find(item => item.id === actor.branchId)
+      : eligible.find(item => item.isMainBranch) || eligible[0];
+    if (!branch) {
+      throw new Error('Quick sales require an active, OPEN retail branch. Warehouse branches cannot process POS sales.');
+    }
+
+    const now = Date.now();
+    const saleId = makeId();
+    const receiptNumber = 'REC-' + new Date(now).toISOString().slice(2, 10).replace(/-/g, '') + '-' + saleId.slice(0, 8).toUpperCase();
+    const costCents = Math.round(totalCents * 0.7);
+    const line: SaleLine = {
+      id: makeId(),
+      saleId,
+      productId: 'custom_' + saleId,
+      productName: description,
+      category: 'Quick Sale',
+      unit: 'item',
+      quantitySold: 1,
+      costPriceAtSale: centsToMoney(costCents),
+      unitPriceAtSale: centsToMoney(totalCents),
+      subtotal: centsToMoney(totalCents),
+      profit: centsToMoney(totalCents - costCents),
+      branchId: branch.id
+    };
+    const sale: Sale = {
+      id: saleId,
+      receiptNumber,
+      customerId: null,
+      customerName: 'Quick Cash Customer',
+      saleDate: now,
+      totalAmount: centsToMoney(totalCents),
+      totalCost: centsToMoney(costCents),
+      totalProfit: centsToMoney(totalCents - costCents),
+      discountAmount: 0,
+      paymentMethod: method,
+      paymentStatus: 'PAID',
+      amountPaid: centsToMoney(totalCents),
+      notes: 'Quick POS Sale: ' + description,
+      branchId: branch.id,
+      branchName: branch.name,
+      cashierId: actor.id,
+      cashierName: actor.name,
+      items: [line]
+    };
+    await execute(
+      'INSERT INTO sales(id,receipt_number,customer_id,branch_id,total_cents,paid_cents,profit_cents,created_at,data) VALUES(?,?,?,?,?,?,?,?,?)',
+      [sale.id, sale.receiptNumber, null, sale.branchId, totalCents, totalCents, totalCents - costCents, now, toJson(sale)],
+      tx
+    );
+    await execute(
+      'INSERT INTO sale_items(id,sale_id,product_id,quantity,data) VALUES(?,?,?,?,?)',
+      [line.id, sale.id, line.productId, 1, toJson(line)],
+      tx
+    );
+    await enqueue('sales', sale.id, 'CREATE', sale, tx);
+    await audit(actor, 'QUICK_CUSTOM_SALE_COMPLETED', sale.id, sale.receiptNumber + ' • ' + description + ' • ' + centsToMoney(totalCents), tx);
+    return sale;
+  });
+}
+
 export async function reverseSale(saleId: string, actor: Staff): Promise<void> {
   requirePermission(actor, 'canDeleteRecords', 'reverse sales');
   await transaction(async tx => {
