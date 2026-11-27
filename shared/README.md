@@ -1,40 +1,39 @@
 # BeBoss shared Kotlin core
 
-This is a Kotlin Multiplatform build included alongside the existing Android application. It deliberately does not replace the Android app module.
+This directory is a Kotlin Multiplatform source set compiled twice from the same source files:
 
-## What is shared now
+- The existing Android application compiles `commonMain` directly using its existing Android/Kotlin toolchain.
+- Kotlin Multiplatform compiles that same `commonMain` into a native `iosArm64` framework for physical iPhones and iPads.
 
-- Exact decimal-to-minor-unit conversion for POS prices, totals and balances
-- Price × quantity calculation with decimal rounding applied once at the final currency boundary
+This avoids changing the current Android Gradle plugin, Kotlin compiler, signing flavors, Room database, or Android release pipeline.
+
+## Shared code migrated so far
+
+- Exact decimal-to-minor-unit conversion used for POS prices, totals and balances
+- Price × quantity calculations with rounding only at the final currency boundary
 - Currency rounding and cents conversion
+- Hybrid Logical Clock packing, ticking, remote observation and deterministic version conflict ordering
 
-The Android app calls this same implementation through its existing `MoneyUtils` facade. The iOS framework exports the same Kotlin implementation to Swift.
+The Android `MoneyUtils` and `HlcClock` APIs remain in place as adapters, but delegate their calculations and causal-order rules to the shared Kotlin source.
 
-## Targets
+## Build for a physical iPhone/iPad
 
-- Android library: consumed by the existing Kotlin/Jetpack Compose Android application
-- iOS device: `iosArm64` only
-
-No iOS simulator target or emulator workflow is defined.
-
-## Build the shared code for an actual iPhone architecture
-
-From the repository root on macOS with Xcode installed:
+On macOS with Xcode and the iOS device SDK installed:
 
 ```sh
 ./gradlew -p shared :linkReleaseFrameworkIosArm64
 ```
 
-The resulting device framework is written to:
+The device framework is generated at:
 
 ```
 shared/build/bin/iosArm64/releaseFramework/BeBossShared.framework
 ```
 
-The root Android build resolves `com.beboss:shared:1.0.0` from this included build, so Android and iOS use the same Kotlin implementation.
+The framework is not an installable app by itself. A native iOS application target must link it and provide Apple platform services.
 
-## Migration boundary
+## Why the Android implementation is not copied wholesale
 
-The current Android application is a native Kotlin/Jetpack Compose app with 134 Kotlin source files. Its Room/SQLCipher database, Android Keystore credentials, WorkManager scheduling, CameraX barcode scanning, Android biometrics, Android installer and Bluetooth integrations are platform-specific. They are intentionally not copied into iOS or stubbed as if they were portable.
+The Android project currently contains 134 Kotlin files. Its Jetpack Compose entry point, Room/SQLCipher storage, Android Keystore, WorkManager, CameraX, Android biometrics, Bluetooth/USB printing and Android APK updater rely on Android APIs. They cannot run on iOS unchanged.
 
-Continue moving portable domain logic and serialization into `commonMain`. Put Apple Keychain, iOS background scheduling, camera, Face ID/Touch ID, local persistence and printer transport behind iOS implementations. Keep the Android implementations in the existing `app` module until each shared service has an equivalent, tested iOS implementation. Preserve database schema and sync wire-format compatibility during each move.
+Move platform-neutral business rules, data contracts, pricing, sync validation and conflict resolution to `commonMain`. Implement iOS services using Apple Keychain, an iOS-compatible encrypted database, native background tasks, camera/Face ID permissions and certified printer transports. Keep the Android implementations in `app` until each iOS counterpart is ready. Preserve Room schema, cloud payload formats and pending sync records during migration.
