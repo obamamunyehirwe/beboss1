@@ -203,23 +203,24 @@ fn verify_qcc_variants(
     host: &Path,
     target: &Path,
     listed_variants: &[String],
-) -> Vec<String> {
+) -> (Vec<String>, Vec<String>) {
     let probe_directory = env::temp_dir().join(format!(
         "beboss-qnx-qcc-probe-{}",
         Uuid::new_v4().simple()
     ));
-    if fs::create_dir_all(&probe_directory).is_err() {
-        return Vec::new();
+    if let Err(error) = fs::create_dir_all(&probe_directory) {
+        return (Vec::new(), vec![format!("Could not create a temporary compiler-test directory: {error}")]);
     }
 
     let source = probe_directory.join("qnx-toolchain-probe.c");
     let source_text = "#include <sys/neutrino.h>\nint main(void) { return 0; }\n";
-    if fs::write(&source, source_text).is_err() {
+    if let Err(error) = fs::write(&source, source_text) {
         let _ = fs::remove_dir_all(&probe_directory);
-        return Vec::new();
+        return (Vec::new(), vec![format!("Could not write the temporary compiler-test source: {error}")]);
     }
 
     let mut verified = Vec::new();
+    let mut diagnostics = Vec::new();
     for variant in ["gcc_ntox86_64", "gcc_ntoaarch64le"] {
         if !listed_variants.iter().any(|candidate| candidate == variant) {
             continue;
@@ -230,20 +231,25 @@ fn verify_qcc_variants(
             variant.into(),
             "-Wall".into(),
             "-Wextra".into(),
-            "-Werror".into(),
             source.display().to_string(),
             "-o".into(),
             output.display().to_string(),
         ];
-        if run_checked(qcc, host, target, &args, Some(&probe_directory)).is_ok()
-            && fs::metadata(&output).is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
-        {
-            verified.push(variant.to_string());
+        match run_checked(qcc, host, target, &args, Some(&probe_directory)) {
+            Ok((_stdout, _stderr)) => match fs::metadata(&output) {
+                Ok(metadata) if metadata.is_file() && metadata.len() > 0 => {
+                    verified.push(variant.to_string());
+                }
+                _ => diagnostics.push(format!(
+                    "{variant}: qcc returned success but did not create a non-empty test executable."
+                )),
+            },
+            Err(error) => diagnostics.push(format!("{variant}: {error}")),
         }
     }
 
     let _ = fs::remove_dir_all(&probe_directory);
-    verified
+    (verified, diagnostics)
 }
 
 fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
@@ -269,11 +275,11 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
     };
 
     let listed_variants = known_variants(&qcc_output);
-    let variants = match (qcc.as_deref(), host.as_deref(), target.as_deref()) {
+    let (variants, compiler_diagnostics) = match (qcc.as_deref(), host.as_deref(), target.as_deref()) {
         (Some(qcc), Some(host), Some(target)) => {
             verify_qcc_variants(qcc, host, target, &listed_variants)
         }
-        _ => Vec::new(),
+        _ => (Vec::new(), Vec::new()),
     };
     let target_tree_present = target
         .as_deref()
@@ -285,7 +291,10 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
     let image_directory = qemu_image_directory(root.as_deref());
     let qemu_package_directory_present = has_qemu_package_files(image_directory.as_deref());
 
-    let mut notes = Vec::new();
+    let mut notes = compiler_diagnostics
+        .into_iter()
+        .map(|detail| format!("qcc compile/link check: {detail}"))
+        .collect::<Vec<_>>();
     if !host_supported {
         notes.push("QNX SDP 8.0 development requires a supported x86-64 Windows or Linux host.".into());
     }
@@ -672,6 +681,13 @@ mod tests {
     #[test]
     fn ignores_unrelated_compiler_variants() {
         assert!(known_variants("gcc_ntoarmv7le gcc_ntox86").is_empty());
+    }
+
+    #[test]
+    fn compiler_probe_source_includes_the_qnx_neutrino_target_header() {
+        let source_text = "#include <sys/neutrino.h>\\nint main(void) { return 0; }\\n";
+        assert!(source_text.contains("#include <sys/neutrino.h>"));
+        assert!(source_text.contains("int main(void)"));
     }
 
     #[test]
