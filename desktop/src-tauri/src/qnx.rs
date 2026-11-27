@@ -213,7 +213,7 @@ fn verify_qcc_variants(
     }
 
     let source = probe_directory.join("qnx-toolchain-probe.c");
-    let source_text = "#include <sys/neutrino.h>\\nint main(void) { return 0; }\\n";
+    let source_text = "#include <sys/neutrino.h>\nint main(void) { return 0; }\n";
     if fs::write(&source, source_text).is_err() {
         let _ = fs::remove_dir_all(&probe_directory);
         return Vec::new();
