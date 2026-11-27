@@ -1,6 +1,6 @@
 import { execute, first, getDatabase, query, transaction } from './database';
 import {
-  centsToMoney, hashCredential, isSubscriptionActive, makeId, multiplyPriceQuantityCents,
+  centsToMoney, compareHlcVersions, hashCredential, isSubscriptionActive, makeId, multiplyPriceQuantityCents,
   nowHlc, roundMoney, tickHlc, toCents, validatePassword, validatePin, verifyCredential
 } from '../core/domain';
 import {
@@ -1199,6 +1199,493 @@ export async function markIosOutboxFailed(ids: string[], reason: string): Promis
       );
     }
   });
+}
+
+export type IosCloudMergeSummary = {
+  products: number;
+  customers: number;
+  branches: number;
+  sales: number;
+  payments: number;
+  purchases: number;
+  transfers: number;
+  staff: number;
+  tombstones: number;
+};
+
+function cloudValue(row: Row, camel: string, snake: string, fallback: unknown = ''): any {
+  return row[camel] !== undefined && row[camel] !== null
+    ? row[camel]
+    : row[snake] !== undefined && row[snake] !== null ? row[snake] : fallback;
+}
+function cloudNumber(row: Row, camel: string, snake: string, fallback = 0): number {
+  const value = Number(cloudValue(row, camel, snake, fallback));
+  return Number.isFinite(value) ? value : fallback;
+}
+function cloudString(row: Row, camel: string, snake: string, fallback = ''): string {
+  return String(cloudValue(row, camel, snake, fallback) ?? fallback);
+}
+function cloudRole(value: unknown): Role {
+  const role = String(value || '').toUpperCase();
+  return role === 'OWNER' || role === 'MANAGER' ? role : 'CASHIER';
+}
+function cloudVersion(row: Row): { updatedAt: number; hlc: string; version: number; deviceId: string } {
+  return {
+    updatedAt: cloudNumber(row, 'updatedAt', 'updated_at', cloudNumber(row, 'saleDate', 'sale_date', 0)),
+    hlc: cloudString(row, 'hlcTimestamp', 'hlc_timestamp', '0'),
+    version: cloudNumber(row, 'syncVersion', 'sync_version', 0),
+    deviceId: cloudString(row, 'lastModifiedDeviceId', 'last_modified_device_id', 'CLOUD')
+  };
+}
+function tombstoneIsNewer(item: { deletedAt: number; hlc: string }, updatedAt: number, hlc: string): boolean {
+  try {
+    const deleted = BigInt(item.hlc || '0');
+    const current = BigInt(hlc || '0');
+    if (deleted > 0n && current > 0n) return deleted >= current;
+  } catch {
+    // Fall back to wall-clock timestamps for old records without packed HLC values.
+  }
+  return item.deletedAt >= updatedAt;
+}
+
+/**
+ * Merge a server-HMAC-verified full shop snapshot without re-enqueueing remote rows.
+ * Existing local credential hashes are retained; cloud staff without local credentials
+ * are visible but remain locked until an authorised administrator provisions them.
+ */
+export async function mergeIosCloudSnapshots(parts: unknown[], actor: Staff): Promise<IosCloudMergeSummary> {
+  requirePermission(actor, 'canSellPOS', 'receive synchronized shop data');
+  if (!Array.isArray(parts) || parts.length > 100) throw new Error('The cloud returned an invalid snapshot generation set.');
+  const snapshots = parts.filter((part): part is Row => !!part && typeof part === 'object' && !Array.isArray(part));
+  const rows = {
+    products: snapshots.flatMap(part => Array.isArray(part.products) ? part.products : []),
+    customers: snapshots.flatMap(part => Array.isArray(part.customers) ? part.customers : []),
+    branches: snapshots.flatMap(part => Array.isArray(part.branches) ? part.branches : []),
+    sales: snapshots.flatMap(part => Array.isArray(part.sales) ? part.sales : []),
+    saleItems: snapshots.flatMap(part => Array.isArray(part.saleItems) ? part.saleItems : []),
+    payments: snapshots.flatMap(part => Array.isArray(part.customerPayments) ? part.customerPayments : []),
+    purchases: snapshots.flatMap(part => Array.isArray(part.purchases) ? part.purchases : []),
+    transfers: snapshots.flatMap(part => Array.isArray(part.stockTransfers) ? part.stockTransfers : []),
+    users: snapshots.flatMap(part => Array.isArray(part.users) ? part.users : []),
+    tombstones: snapshots.flatMap(part => Array.isArray(part.tombstones) ? part.tombstones : [])
+  };
+  for (const [key, collection] of Object.entries(rows)) {
+    const limit = key === 'saleItems' ? 1000000 : key === 'tombstones' ? 250000 : 500000;
+    if (collection.length > limit) throw new Error('The cloud ' + key + ' collection exceeds the safe iPhone merge limit.');
+  }
+
+  const summary: IosCloudMergeSummary = {
+    products: 0, customers: 0, branches: 0, sales: 0,
+    payments: 0, purchases: 0, transfers: 0, staff: 0, tombstones: 0
+  };
+
+  await transaction(async tx => {
+    const tombstones = new Map<string, { table: string; id: string; deletedAt: number; hlc: string }>();
+    for (const raw of rows.tombstones) {
+      const table = cloudString(raw, 'tableName', 'table_name');
+      const id = cloudString(raw, 'recordId', 'record_id');
+      if (!table || !id) continue;
+      const key = table + ':' + id;
+      const incoming = {
+        table, id,
+        deletedAt: cloudNumber(raw, 'deletedAt', 'deleted_at', 0),
+        hlc: cloudString(raw, 'hlcTimestamp', 'hlc', '0')
+      };
+      const previous = tombstones.get(key);
+      if (!previous || tombstoneIsNewer(incoming, previous.deletedAt, previous.hlc)) tombstones.set(key, incoming);
+    }
+    const isDeleted = (tables: string[], id: string, updatedAt: number, hlc = '0') => {
+      for (const table of tables) {
+        const item = tombstones.get(table + ':' + id);
+        if (item && tombstoneIsNewer(item, updatedAt, hlc)) return true;
+      }
+      return false;
+    };
+
+    for (const raw of rows.branches) {
+      const branch: Branch = {
+        id: cloudString(raw, 'id', 'id'),
+        name: cloudString(raw, 'name', 'name'),
+        code: cloudString(raw, 'code', 'code'),
+        locationType: cloudString(raw, 'locationType', 'location_type') === 'WAREHOUSE' ? 'WAREHOUSE' : 'STORE',
+        address: cloudString(raw, 'address', 'address'),
+        phone: cloudString(raw, 'phone', 'phone'),
+        managerName: cloudString(raw, 'managerName', 'manager_name'),
+        isMainBranch: raw.isMainBranch === true || raw.is_main_branch === true,
+        isActive: raw.isActive !== false && raw.is_active !== false,
+        operationalStatus: ['OPEN', 'PAUSED', 'CLOSED'].includes(cloudString(raw, 'operationalStatus', 'operational_status'))
+          ? cloudString(raw, 'operationalStatus', 'operational_status') as Branch['operationalStatus'] : 'OPEN',
+        notes: cloudString(raw, 'notes', 'notes'),
+        createdAt: cloudNumber(raw, 'createdAt', 'created_at', Date.now()),
+        updatedAt: cloudNumber(raw, 'updatedAt', 'updated_at', Date.now())
+      };
+      if (!branch.id || !branch.name || isDeleted(['branches'], branch.id, branch.updatedAt)) continue;
+      const old = await first<Row>('SELECT data FROM branches WHERE id=?', [branch.id], tx);
+      if (old && branchFromRow(old).updatedAt > branch.updatedAt) continue;
+      await saveBranchRow(branch, tx);
+      summary.branches++;
+    }
+
+    for (const raw of rows.products) {
+      const product: Product = {
+        id: cloudString(raw, 'id', 'id'),
+        name: cloudString(raw, 'name', 'name'),
+        category: cloudString(raw, 'category', 'category', 'General'),
+        barcode: cloudString(raw, 'barcode', 'barcode'),
+        unit: cloudString(raw, 'unit', 'unit', 'pcs'),
+        branchId: cloudString(raw, 'branchId', 'branch_id', 'main_branch'),
+        costPrice: Math.max(0, cloudNumber(raw, 'costPrice', 'cost_price', 0)),
+        sellingPrice: Math.max(0, cloudNumber(raw, 'sellingPrice', 'selling_price', 0)),
+        quantityInStock: Math.max(0, cloudNumber(raw, 'quantityInStock', 'quantity_in_stock', cloudNumber(raw, 'stock', 'stock', 0))),
+        lowStockThreshold: Math.max(0, cloudNumber(raw, 'lowStockThreshold', 'low_stock_threshold', 0)),
+        isDeleted: raw.isDeleted === true || raw.is_deleted === true,
+        syncVersion: Math.max(0, cloudNumber(raw, 'syncVersion', 'sync_version', 0)),
+        hlcTimestamp: cloudString(raw, 'hlcTimestamp', 'hlc_timestamp', '0'),
+        createdAt: cloudNumber(raw, 'createdAt', 'created_at', Date.now()),
+        updatedAt: cloudNumber(raw, 'updatedAt', 'updated_at', Date.now())
+      };
+      if (!product.id || !product.name || product.isDeleted ||
+          isDeleted(['products'], product.id, product.updatedAt, product.hlcTimestamp)) continue;
+      const old = await first<Row>('SELECT data FROM products WHERE id=?', [product.id], tx);
+      if (old) {
+        const local = productFromRow(old);
+        if (compareHlcVersions(
+          { hlc: local.hlcTimestamp, updatedAt: local.updatedAt, version: local.syncVersion, deviceId: 'IOS' },
+          { hlc: product.hlcTimestamp, updatedAt: product.updatedAt, version: product.syncVersion, deviceId: 'CLOUD' }
+        ) > 0) continue;
+      }
+      await saveProductRow(product, tx);
+      summary.products++;
+    }
+
+    for (const raw of rows.customers) {
+      const customer: Customer = {
+        id: cloudString(raw, 'id', 'id'),
+        name: cloudString(raw, 'name', 'name'),
+        phone: cloudString(raw, 'phone', 'phone'),
+        email: cloudString(raw, 'email', 'email'),
+        address: cloudString(raw, 'address', 'address'),
+        city: cloudString(raw, 'city', 'city'),
+        taxIdOrNin: cloudString(raw, 'taxIdOrNin', 'tax_id_or_nin'),
+        category: cloudString(raw, 'category', 'category', 'Regular'),
+        creditLimit: Math.max(0, cloudNumber(raw, 'creditLimit', 'credit_limit', 0)),
+        notes: cloudString(raw, 'notes', 'notes'),
+        debtBalance: Math.max(0, cloudNumber(raw, 'debtBalance', 'debt_balance', 0)),
+        isDeleted: raw.isDeleted === true || raw.is_deleted === true,
+        createdAt: cloudNumber(raw, 'createdAt', 'created_at', Date.now()),
+        updatedAt: cloudNumber(raw, 'updatedAt', 'updated_at', Date.now())
+      };
+      if (!customer.id || !customer.name || customer.isDeleted ||
+          isDeleted(['customers'], customer.id, customer.updatedAt)) continue;
+      const old = await first<Row>('SELECT data FROM customers WHERE id=?', [customer.id], tx);
+      if (old && customerFromRow(old).updatedAt > customer.updatedAt) continue;
+      await saveCustomerRow(customer, tx);
+      summary.customers++;
+    }
+
+    // A full cloud snapshot never contains PIN/password material. Keep local hashes for
+    // users already provisioned on this iPhone, and lock newly imported cloud users.
+    const seenUserIds = new Set<string>();
+    for (const raw of rows.users) {
+      const id = cloudString(raw, 'id', 'user_id');
+      const username = cloudString(raw, 'username', 'username').trim().toLowerCase();
+      if (!id || !username || isDeleted(['users'], id, cloudNumber(raw, 'updatedAt', 'updated_at', 0))) continue;
+      seenUserIds.add(id);
+      const existing = await first<Row>('SELECT data FROM users WHERE id=? OR username=? COLLATE NOCASE LIMIT 1', [id, username], tx);
+      const role = cloudRole(raw.role);
+      if (existing) {
+        const local = staffFromRow(existing);
+        const updated: Staff = {
+          ...local,
+          name: cloudString(raw, 'name', 'full_name', local.name),
+          phone: cloudString(raw, 'phone', 'phone', local.phone),
+          username,
+          role,
+          branchId: cloudString(raw, 'branchId', 'assigned_branch_id', local.branchId),
+          branchName: cloudString(raw, 'branchName', 'assigned_branch_name', local.branchName),
+          isActive: raw.isActive === false || raw.is_active === false ? false : true,
+          updatedAt: Math.max(local.updatedAt, cloudNumber(raw, 'updatedAt', 'updated_at', Date.now())),
+          ...ROLE_PERMISSIONS[role]
+        };
+        await execute(
+          'UPDATE users SET username=?,role=?,branch_id=?,active=?,data=?,updated_at=? WHERE id=?',
+          [updated.username, updated.role, updated.branchId, updated.isActive ? 1 : 0, toJson(updated), updated.updatedAt, local.id],
+          tx
+        );
+      } else {
+        const created: Staff = {
+          id, name: cloudString(raw, 'name', 'full_name', username), username,
+          phone: cloudString(raw, 'phone', 'phone'),
+          role, branchId: cloudString(raw, 'branchId', 'assigned_branch_id'),
+          branchName: cloudString(raw, 'branchName', 'assigned_branch_name'),
+          pinHash: '', passwordHash: '', isActive: false,
+          createdAt: cloudNumber(raw, 'createdAt', 'created_at', Date.now()),
+          updatedAt: cloudNumber(raw, 'updatedAt', 'updated_at', Date.now()),
+          lastLoginAt: 0, ...ROLE_PERMISSIONS[role]
+        };
+        await execute(
+          'INSERT INTO users(id,username,role,branch_id,active,data,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
+          [created.id, created.username, created.role, created.branchId, 0, toJson(created), created.createdAt, created.updatedAt],
+          tx
+        );
+      }
+      summary.staff++;
+    }
+
+    const saleItems = new Map<string, Row[]>();
+    for (const line of rows.saleItems) {
+      const saleId = cloudString(line, 'saleId', 'sale_id');
+      if (!saleId) continue;
+      const values = saleItems.get(saleId) || [];
+      values.push(line);
+      saleItems.set(saleId, values);
+    }
+    for (const raw of rows.sales) {
+      const id = cloudString(raw, 'id', 'id');
+      const receipt = cloudString(raw, 'receiptNumber', 'receipt_number');
+      const saleDate = cloudNumber(raw, 'saleDate', 'sale_date', Date.now());
+      if (!id || !receipt || isDeleted(['sales'], id, saleDate)) continue;
+      if (await first<Row>('SELECT id FROM sales WHERE id=? OR receipt_number=? LIMIT 1', [id, receipt], tx)) continue;
+      const lineRows = saleItems.get(id) || arrayRows(raw.items);
+      const items: SaleLine[] = lineRows.map(line => ({
+        id: cloudString(line, 'id', 'id', makeId()),
+        saleId: id,
+        productId: cloudString(line, 'productId', 'product_id'),
+        productName: cloudString(line, 'productName', 'product_name'),
+        category: cloudString(line, 'category', 'category', 'General'),
+        unit: cloudString(line, 'unit', 'unit', 'pcs'),
+        quantitySold: Math.max(0, cloudNumber(line, 'quantitySold', 'quantity_sold', cloudNumber(line, 'quantity', 'quantity', 0))),
+        costPriceAtSale: Math.max(0, cloudNumber(line, 'costPriceAtSale', 'cost_price_at_sale', 0)),
+        unitPriceAtSale: Math.max(0, cloudNumber(line, 'unitPriceAtSale', 'unit_price_at_sale', 0)),
+        subtotal: Math.max(0, cloudNumber(line, 'subtotal', 'subtotal', cloudNumber(line, 'total', 'total', 0))),
+        profit: cloudNumber(line, 'profit', 'profit', 0),
+        branchId: cloudString(line, 'branchId', 'branch_id', cloudString(raw, 'branchId', 'branch_id', 'main_branch'))
+      })).filter(line => !!line.productId && line.quantitySold > 0);
+      if (!items.length) continue;
+      const sale: Sale = {
+        id, receiptNumber: receipt,
+        customerId: cloudValue(raw, 'customerId', 'customer_id', null) as string | null,
+        customerName: cloudString(raw, 'customerName', 'customer_name', 'Walk-in customer'),
+        saleDate,
+        totalAmount: Math.max(0, cloudNumber(raw, 'totalAmount', 'total_amount', 0)),
+        totalCost: Math.max(0, cloudNumber(raw, 'totalCost', 'total_cost', 0)),
+        totalProfit: Math.max(0, cloudNumber(raw, 'totalProfit', 'total_profit', 0)),
+        discountAmount: Math.max(0, cloudNumber(raw, 'discountAmount', 'discount_amount', 0)),
+        paymentMethod: cloudString(raw, 'paymentMethod', 'payment_method', 'CASH'),
+        paymentStatus: (['PAID','PARTIAL','UNPAID'].includes(cloudString(raw, 'paymentStatus', 'payment_status', 'PAID').toUpperCase())
+          ? cloudString(raw, 'paymentStatus', 'payment_status', 'PAID').toUpperCase() : 'PAID') as Sale['paymentStatus'],
+        amountPaid: Math.max(0, cloudNumber(raw, 'amountPaid', 'amount_paid', 0)),
+        paymentBreakdown: Array.isArray(raw.paymentBreakdown) ? raw.paymentBreakdown as Sale['paymentBreakdown'] : undefined,
+        notes: cloudString(raw, 'notes', 'notes'),
+        branchId: cloudString(raw, 'branchId', 'branch_id', 'main_branch'),
+        branchName: cloudString(raw, 'branchName', 'branch_name', 'Main Store'),
+        cashierId: cloudString(raw, 'cashierId', 'cashier_id'),
+        cashierName: cloudString(raw, 'cashierName', 'cashier_name'),
+        items
+      };
+      await execute(
+        'INSERT INTO sales(id,receipt_number,customer_id,branch_id,total_cents,paid_cents,profit_cents,created_at,data) VALUES(?,?,?,?,?,?,?,?,?)',
+        [sale.id, sale.receiptNumber, sale.customerId, sale.branchId, toCents(sale.totalAmount), toCents(sale.amountPaid), toCents(sale.totalProfit), sale.saleDate, toJson(sale)],
+        tx
+      );
+      for (const line of items) {
+        await execute(
+          'INSERT OR IGNORE INTO sale_items(id,sale_id,product_id,quantity,data) VALUES(?,?,?,?,?)',
+          [line.id, sale.id, line.productId, line.quantitySold, toJson(line)],
+          tx
+        );
+      }
+      summary.sales++;
+    }
+
+    for (const raw of rows.payments) {
+      const id = cloudString(raw, 'id', 'id');
+      const customerId = cloudString(raw, 'customerId', 'customer_id');
+      const amount = Math.max(0, cloudNumber(raw, 'amount', 'amount', 0));
+      const paymentDate = cloudNumber(raw, 'paymentDate', 'payment_date', Date.now());
+      if (!id || !customerId || amount <= 0 ||
+          isDeleted(['customer_payments', 'customerPayments'], id, paymentDate) ||
+          await first<Row>('SELECT id FROM customer_payments WHERE id=?', [id], tx) ||
+          !await first<Row>('SELECT id FROM customers WHERE id=?', [customerId], tx)) continue;
+      const payment: CustomerPayment = {
+        id, customerId,
+        customerName: cloudString(raw, 'customerName', 'customer_name'),
+        amount,
+        previousDebt: Math.max(0, cloudNumber(raw, 'previousDebt', 'previous_debt', 0)),
+        remainingDebt: Math.max(0, cloudNumber(raw, 'remainingDebt', 'remaining_debt', 0)),
+        paymentMethod: cloudString(raw, 'paymentMethod', 'payment_method', 'CASH'),
+        notes: cloudString(raw, 'notes', 'notes'),
+        receiptNumber: cloudString(raw, 'receiptNumber', 'receipt_number'),
+        paymentDate,
+        recordedBy: cloudString(raw, 'recordedBy', 'recorded_by'),
+        branchId: cloudString(raw, 'branchId', 'branch_id', 'main_branch')
+      };
+      await execute(
+        'INSERT INTO customer_payments(id,customer_id,amount_cents,created_at,data) VALUES(?,?,?,?,?)',
+        [payment.id, payment.customerId, toCents(payment.amount), payment.paymentDate, toJson(payment)],
+        tx
+      );
+      summary.payments++;
+    }
+
+    for (const raw of rows.purchases) {
+      const id = cloudString(raw, 'id', 'id');
+      const purchaseDate = cloudNumber(raw, 'purchaseDate', 'purchase_date', Date.now());
+      if (!id || isDeleted(['purchases'], id, purchaseDate) ||
+          await first<Row>('SELECT id FROM purchases WHERE id=?', [id], tx)) continue;
+      const purchase: Purchase = {
+        id,
+        productId: cloudString(raw, 'productId', 'product_id'),
+        productName: cloudString(raw, 'productName', 'product_name'),
+        supplierName: cloudString(raw, 'supplierName', 'supplier_name'),
+        supplierPhone: cloudString(raw, 'supplierPhone', 'supplier_phone'),
+        quantityPurchased: Math.max(0, cloudNumber(raw, 'quantityPurchased', 'quantity_purchased', 0)),
+        unitCostPrice: Math.max(0, cloudNumber(raw, 'unitCostPrice', 'unit_cost_price', 0)),
+        totalPurchaseCost: Math.max(0, cloudNumber(raw, 'totalPurchaseCost', 'total_purchase_cost', 0)),
+        sellingPriceAtPurchase: Math.max(0, cloudNumber(raw, 'sellingPriceAtPurchase', 'selling_price_at_purchase', 0)),
+        paymentStatus: cloudString(raw, 'paymentStatus', 'payment_status', 'PAID'),
+        invoiceNumber: cloudString(raw, 'invoiceNumber', 'invoice_number'),
+        branchId: cloudString(raw, 'branchId', 'branch_id', 'main_branch'),
+        notes: cloudString(raw, 'notes', 'notes'),
+        purchaseDate
+      };
+      await execute(
+        'INSERT INTO purchases(id,product_id,branch_id,total_cents,created_at,data) VALUES(?,?,?,?,?,?)',
+        [purchase.id, purchase.productId, purchase.branchId, toCents(purchase.totalPurchaseCost), purchase.purchaseDate, toJson(purchase)],
+        tx
+      );
+      summary.purchases++;
+    }
+
+    for (const raw of rows.transfers) {
+      const id = cloudString(raw, 'id', 'id');
+      const transferDate = cloudNumber(raw, 'transferDate', 'transfer_date', Date.now());
+      if (!id || isDeleted(['stock_transfers', 'stockTransfers'], id, cloudNumber(raw, 'updatedAt', 'updated_at', transferDate))) continue;
+      const transfer: StockTransfer = {
+        id,
+        transferNumber: cloudString(raw, 'transferNumber', 'transfer_number'),
+        productId: cloudString(raw, 'productId', 'product_id'),
+        productName: cloudString(raw, 'productName', 'product_name'),
+        fromBranchId: cloudString(raw, 'fromBranchId', 'from_branch_id'),
+        fromBranchName: cloudString(raw, 'fromBranchName', 'from_branch_name'),
+        toBranchId: cloudString(raw, 'toBranchId', 'to_branch_id'),
+        toBranchName: cloudString(raw, 'toBranchName', 'to_branch_name'),
+        quantity: Math.max(0, cloudNumber(raw, 'quantity', 'quantity', 0)),
+        unit: cloudString(raw, 'unit', 'unit', 'pcs'),
+        costValue: Math.max(0, cloudNumber(raw, 'costValue', 'cost_value_rwf', 0)),
+        status: (['IN_TRANSIT','COMPLETED','CANCELLED'].includes(cloudString(raw, 'status', 'status').toUpperCase())
+          ? cloudString(raw, 'status', 'status').toUpperCase() : 'IN_TRANSIT') as StockTransfer['status'],
+        notes: cloudString(raw, 'notes', 'notes'),
+        transferredBy: cloudString(raw, 'transferredBy', 'transferred_by'),
+        receivedBy: cloudString(raw, 'receivedBy', 'received_by'),
+        transferDate,
+        receivedAt: cloudNumber(raw, 'receivedAt', 'received_at', 0),
+        updatedAt: cloudNumber(raw, 'updatedAt', 'updated_at', transferDate)
+      };
+      const old = await first<Row>('SELECT data FROM stock_transfers WHERE id=?', [id], tx);
+      if (old) {
+        const current = fromJson<StockTransfer>(old.data);
+        if (current.updatedAt > transfer.updatedAt) continue;
+        await execute('UPDATE stock_transfers SET status=?,data=? WHERE id=?', [transfer.status, toJson(transfer), id], tx);
+      } else {
+        await execute(
+          'INSERT INTO stock_transfers(id,product_id,from_branch_id,to_branch_id,quantity,status,created_at,data) VALUES(?,?,?,?,?,?,?,?)',
+          [transfer.id, transfer.productId, transfer.fromBranchId, transfer.toBranchId, transfer.quantity, transfer.status, transfer.transferDate, toJson(transfer)],
+          tx
+        );
+      }
+      summary.transfers++;
+    }
+
+    // Persist tombstones before applying them so deleted data cannot reappear on a retry.
+    for (const item of tombstones.values()) {
+      const aliases: Record<string, string> = {
+        product: 'products', products: 'products',
+        customer: 'customers', customers: 'customers',
+        branch: 'branches', branches: 'branches',
+        user: 'users', users: 'users',
+        sale: 'sales', sales: 'sales',
+        sale_items: 'sale_items', saleItems: 'sale_items',
+        customer_payment: 'customer_payments', customer_payments: 'customer_payments',
+        customerPayments: 'customer_payments',
+        purchase: 'purchases', purchases: 'purchases',
+        stock_transfer: 'stock_transfers', stock_transfers: 'stock_transfers',
+        stockTransfers: 'stock_transfers'
+      };
+      const table = aliases[item.table] || '';
+      if (!table) continue;
+      const now = Math.max(Date.now(), item.deletedAt);
+      const tombstoneId = item.table + ':' + item.id;
+      const previous = await first<Row>('SELECT deleted_at,hlc FROM sync_tombstones WHERE id=?', [tombstoneId], tx);
+      if (!previous || tombstoneIsNewer(item, Number(previous.deleted_at || 0), String(previous.hlc || '0'))) {
+        await execute(
+          'INSERT INTO sync_tombstones(id,table_name,record_id,deleted_at,hlc) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET deleted_at=excluded.deleted_at,hlc=excluded.hlc',
+          [tombstoneId, table, item.id, now, item.hlc],
+          tx
+        );
+      }
+      if (table === 'products') {
+        const old = await first<Row>('SELECT data FROM products WHERE id=?', [item.id], tx);
+        if (old) {
+          const product = productFromRow(old);
+          product.isDeleted = true;
+          product.updatedAt = Math.max(product.updatedAt, now);
+          await saveProductRow(product, tx);
+        }
+      } else if (table === 'customers') {
+        const old = await first<Row>('SELECT data FROM customers WHERE id=?', [item.id], tx);
+        if (old) {
+          const customer = customerFromRow(old);
+          customer.isDeleted = true;
+          customer.updatedAt = Math.max(customer.updatedAt, now);
+          await saveCustomerRow(customer, tx);
+        }
+      } else if (table === 'branches') {
+        const old = await first<Row>('SELECT data FROM branches WHERE id=?', [item.id], tx);
+        if (old) {
+          const branch = branchFromRow(old);
+          branch.isActive = false;
+          branch.updatedAt = Math.max(branch.updatedAt, now);
+          await saveBranchRow(branch, tx);
+        }
+      } else if (table === 'users') {
+        const old = await first<Row>('SELECT data FROM users WHERE id=?', [item.id], tx);
+        if (old) {
+          const user = staffFromRow(old);
+          user.isActive = false;
+          user.updatedAt = Math.max(user.updatedAt, now);
+          await execute('UPDATE users SET active=0,data=?,updated_at=? WHERE id=?', [toJson(user), user.updatedAt, id], tx);
+        }
+      } else {
+        await execute('DELETE FROM ' + table + ' WHERE id=?', [item.id], tx);
+      }
+      summary.tombstones++;
+    }
+
+    const remoteProfile = snapshots.find(item => item.shopProfile)?.shopProfile as ShopProfile | undefined;
+    const localProfile = await currentProfile();
+    if (remoteProfile && localProfile &&
+        remoteProfile.username?.trim().toLowerCase() === localProfile.username.trim().toLowerCase() &&
+        remoteProfile.phone.replace(/\D/g, '').slice(-9) === localProfile.phone.replace(/\D/g, '').slice(-9)) {
+      // Subscription/license and local sync cursors are not overwritten by a portable snapshot.
+      const updated: ShopProfile = {
+        ...localProfile,
+        shopName: remoteProfile.shopName || localProfile.shopName,
+        ownerName: remoteProfile.ownerName || localProfile.ownerName,
+        address: remoteProfile.address || localProfile.address,
+        businessType: remoteProfile.businessType || localProfile.businessType,
+        currencyCode: remoteProfile.currencyCode || localProfile.currencyCode,
+        currencySymbol: remoteProfile.currencySymbol || localProfile.currencySymbol,
+        taxRate: Number.isFinite(remoteProfile.taxRate) ? remoteProfile.taxRate : localProfile.taxRate,
+        receiptHeader: remoteProfile.receiptHeader || localProfile.receiptHeader,
+        receiptFooter: remoteProfile.receiptFooter || localProfile.receiptFooter,
+        updatedAt: Math.max(localProfile.updatedAt, remoteProfile.updatedAt || 0)
+      };
+      await execute('UPDATE shop_profile SET data=?,updated_at=? WHERE id=1', [toJson(updated), updated.updatedAt], tx);
+    }
+    await audit(actor, 'IOS_CLOUD_SNAPSHOT_MERGED', actor.id, JSON.stringify(summary), tx);
+  });
+  return summary;
 }
 
 export async function getOutbox(): Promise<SyncOutboxItem[]> {
