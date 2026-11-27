@@ -65,7 +65,7 @@ import java.util.concurrent.TimeUnit
         ShopDevice::class,
         DeadLetterItem::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
