@@ -19,6 +19,7 @@ pub struct QnxToolchainStatus {
     pub host_os: String,
     pub host_arch: String,
     pub host_supported: bool,
+    pub qemu_host_supported: bool,
     pub qnx_base: Option<String>,
     pub qnx_host: Option<String>,
     pub qnx_target: Option<String>,
@@ -187,7 +188,32 @@ fn known_variants(qcc_output: &str) -> Vec<String> {
 }
 
 fn qemu_image_directory(root: Option<&Path>) -> Option<PathBuf> {
-    root.and_then(|base| canonical_dir(base.join("images/qemu")))
+    root.and_then(|base| canonical_dir(base.join("images/qemu/qemu")))
+}
+
+fn supports_qemu_host_os(release: &str) -> bool {
+    let value = |key: &str| {
+        release.lines().find_map(|line| {
+            let (name, value) = line.split_once('=')?;
+            (name == key).then(|| value.trim().trim_matches('"').trim_matches('\''))
+        })
+    };
+    value("ID") == Some("ubuntu")
+        && matches!(value("VERSION_ID"), Some("22.04" | "24.04"))
+}
+
+fn qemu_host_supported() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        env::consts::ARCH == "x86_64"
+            && fs::read_to_string("/etc/os-release")
+                .ok()
+                .is_some_and(|release| supports_qemu_host_os(&release))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
 }
 
 fn has_qemu_package_files(directory: Option<&Path>) -> bool {
@@ -287,6 +313,7 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
 
     let host_supported = (cfg!(target_os = "windows") || cfg!(target_os = "linux"))
         && env::consts::ARCH == "x86_64";
+    let qemu_host_supported = host_supported && qemu_host_supported();
 
     let image_directory = qemu_image_directory(root.as_deref());
     let qemu_package_directory_present = has_qemu_package_files(image_directory.as_deref());
@@ -320,8 +347,11 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
     if mkqnximage.is_none() {
         notes.push("mkqnximage was not found; QEMU image management is unavailable.".into());
     }
+    if !qemu_host_supported {
+        notes.push("The QNX SDP 8.0 QEMU quick-start image workflow requires an x86-64 Ubuntu 22.04 or 24.04 host. qcc cross-compilation and mkifs remain separate host-tool workflows.".into());
+    }
     if !qemu_package_directory_present {
-        notes.push("The QNX QEMU package directory is missing or empty under QNX_BASE/images/qemu.".into());
+        notes.push("The unpacked QNX QEMU image directory is missing or empty at QNX_BASE/images/qemu/qemu. Install and unpack the QNX quick-start image package.".into());
     }
 
     let host_tree_present = host.is_some();
@@ -344,6 +374,7 @@ fn probe(install_root: Option<String>) -> Result<QnxToolchainStatus, String> {
         host_os: env::consts::OS.to_string(),
         host_arch: env::consts::ARCH.to_string(),
         host_supported,
+        qemu_host_supported,
         qnx_base: root.as_ref().map(|path| path.display().to_string()),
         qnx_host: host.as_ref().map(|path| path.display().to_string()),
         qnx_target: target.as_ref().map(|path| path.display().to_string()),
@@ -579,11 +610,14 @@ pub fn qnx_build_ifs(
 }
 
 fn qemu_directory(status: &QnxToolchainStatus) -> Result<PathBuf, String> {
+    if !status.qemu_host_supported {
+        return Err("The QNX SDP 8.0 QEMU quick-start image workflow requires an x86-64 Ubuntu 22.04 or 24.04 host.".into());
+    }
     let directory = status.qemu_image_dir.as_deref()
-        .ok_or("The QNX QEMU image directory was not found under QNX_BASE/images/qemu.")?;
+        .ok_or("The unpacked QNX QEMU image directory was not found at QNX_BASE/images/qemu/qemu.")?;
     let path = PathBuf::from(directory);
     if !has_qemu_package_files(Some(&path)) {
-        return Err("The QNX QEMU package directory is empty. Install and unpack the QNX SDP 8.0 QEMU reference package first.".into());
+        return Err("The unpacked QNX QEMU image directory is empty. Install the QNX quick-start image package and run unpack_qemu_image.sh first.".into());
     }
     Ok(path)
 }
@@ -697,5 +731,23 @@ mod tests {
         fs::write(directory.join("README.txt"), "package fixture").expect("fixture file should be written");
         assert!(has_qemu_package_files(Some(&directory)));
         let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn qemu_reference_image_layout_uses_the_unpacked_nested_directory() {
+        let root = env::temp_dir().join(format!("beboss-qnx-qemu-root-{}", Uuid::new_v4().simple()));
+        let nested = root.join("images/qemu/qemu");
+        fs::create_dir_all(&nested).expect("nested QEMU image directory should be created");
+        let resolved = qemu_image_directory(Some(&root)).expect("unpacked image directory should resolve");
+        assert_eq!(resolved, nested.canonicalize().expect("fixture path should canonicalize"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn qemu_reference_image_only_allows_supported_ubuntu_hosts() {
+        assert!(supports_qemu_host_os("ID=ubuntu\nVERSION_ID=\"22.04\"\n"));
+        assert!(supports_qemu_host_os("ID=ubuntu\nVERSION_ID=\"24.04\"\n"));
+        assert!(!supports_qemu_host_os("ID=debian\nVERSION_ID=\"12\"\n"));
+        assert!(!supports_qemu_host_os("ID=ubuntu\nVERSION_ID=\"26.04\"\n"));
     }
 }
