@@ -499,10 +499,8 @@ function validateSnapshot(input: unknown, owner: IosDeviceContext): Snapshot {
         })
       : rows;
   }
-  const raw = new TextEncoder().encode(JSON.stringify(result));
-  if (raw.byteLength > 5 * 1024 * 1024) {
-    throw new Error("The complete shop snapshot exceeds the 5 MB raw cloud package limit. Reduce the export scope and retry.");
-  }
+  // Whole-shop snapshots may be larger than a single signed row. The writer
+  // splits them into bounded signed chunks below; each individual chunk is capped.
   return result as Snapshot;
 }
 
@@ -534,16 +532,16 @@ function splitSnapshot(snapshot: Snapshot): Snapshot[] {
   });
   for (const key of SNAPSHOT_COLLECTIONS) {
     const rows = arrayRows(snapshot[key]);
-    for (let start = 0; start < rows.length; start += 100) {
+    for (let start = 0; start < rows.length; start += 50) {
       const part = makeEmpty();
-      part[key] = rows.slice(start, start + 100);
+      part[key] = rows.slice(start, start + 50);
       chunks.push(part);
     }
   }
   const dead = arrayRows(snapshot.tombstones);
-  for (let start = 0; start < dead.length; start += 100) {
+  for (let start = 0; start < dead.length; start += 50) {
     const part = makeEmpty();
-    part.tombstones = dead.slice(start, start + 100);
+    part.tombstones = dead.slice(start, start + 50);
     chunks.push(part);
   }
   if (!chunks.length) chunks.push(makeEmpty());
