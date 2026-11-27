@@ -6,6 +6,10 @@ on:
     branches: [main]
     paths:
       - "desktop/**"
+      - "web/supabase/functions/beboss-desktop/index.ts"
+      - "web/supabase/functions/_shared/shop-audit.ts"
+      - "web/supabase/functions/_shared/shop-audit.test.ts"
+      - "app/src/main/java/com/beboss/shopmgmt/util/SupabaseAdminClient.kt"
       - ".github/workflows/build-desktop-multiplatform.yml"
 
 permissions:
