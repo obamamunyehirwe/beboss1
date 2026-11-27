@@ -196,6 +196,8 @@ import com.beboss.shopmgmt.util.SubscriptionSecurityManager
 import com.beboss.shopmgmt.util.SupabaseAdminSession
 import com.beboss.shopmgmt.util.SupabaseAuditLogDto
 import com.beboss.shopmgmt.util.SupabaseBranchSnapshotDto
+import com.beboss.shopmgmt.util.SupabaseCloudSyncEventDto
+import com.beboss.shopmgmt.util.SupabaseDeviceTelemetryDto
 import com.beboss.shopmgmt.util.SupabasePaymentRequestDto
 import com.beboss.shopmgmt.util.SupabaseShopAccountDto
 import com.beboss.shopmgmt.util.SupabaseShopDeviceDto
@@ -296,6 +298,9 @@ fun SettingsScreen(
     adminBranchSnapshots: List<SupabaseBranchSnapshotDto> = emptyList(),
     adminUnlockCodes: List<SupabaseUnlockCodeDto> = emptyList(),
     adminAuditLogs: List<SupabaseAuditLogDto> = emptyList(),
+    adminDeviceTelemetry: List<SupabaseDeviceTelemetryDto> = emptyList(),
+    adminCloudActivity: List<SupabaseCloudSyncEventDto> = emptyList(),
+    onLoadMoreAdminCloudActivity: () -> Unit = {},
     localAuditLogs: List<LocalAuditLog> = emptyList(),
     isAdminLoading: Boolean = false,
     onAdminSignIn: (String, String) -> Unit = { _, _ -> },
@@ -1062,6 +1067,9 @@ fun SettingsScreen(
         onDeleteShopUser = onAdminDeleteShopUser,
         onDeleteBranchSnapshot = onAdminDeleteBranchSnapshot,
         onShareWebPortal = onShareAdminWebPortal,
+        deviceTelemetry = adminDeviceTelemetry,
+        cloudActivity = adminCloudActivity,
+        onLoadMoreCloudActivity = onLoadMoreAdminCloudActivity,
         clockTamperStatus = clockTamperStatus,
         capturedLocation = capturedLocation,
         messageRecords = messageRecords,
