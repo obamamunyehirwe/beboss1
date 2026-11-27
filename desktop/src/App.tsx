@@ -153,8 +153,12 @@ function NativeDesktopApp() {
   const syncProbeRef = useRef({ ownerKey: "", managementVersion: "", snapshotUpdatedAt: 0, inFlight: false });
 
   const desktopUpdateCheckInFlight = useRef(false);
+  const lastDesktopUpdateCheckAt = useRef(0);
   const checkForDesktopUpdate = useCallback(async (showResult = false) => {
+    const now = Date.now();
+    const updateCheckIntervalMs = 6 * 60 * 60 * 1000;
     if (!isTauri() || desktopUpdateCheckInFlight.current) return;
+    if (!showResult && now - lastDesktopUpdateCheckAt.current < updateCheckIntervalMs) return;
     desktopUpdateCheckInFlight.current = true;
     setCheckingDesktopUpdate(true);
     setDesktopUpdateError("");
@@ -174,12 +178,14 @@ function NativeDesktopApp() {
         headers: { Accept: "application/json" },
       });
       if (response.status === 204) {
+        lastDesktopUpdateCheckAt.current = Date.now();
         setDesktopUpdateOffer(null);
         if (showResult) setNotice("BeBoss Desktop is up to date.");
         return;
       }
       if (!response.ok) throw new Error("The desktop release service returned HTTP " + response.status + ".");
       const offer = parseDesktopUpdateOffer(await response.json(), window.beBossDesktop.version, platform);
+      lastDesktopUpdateCheckAt.current = Date.now();
       setDesktopUpdateOffer(offer);
       if (showResult) {
         setNotice(offer
@@ -187,6 +193,9 @@ function NativeDesktopApp() {
           : "BeBoss Desktop is up to date.");
       }
     } catch (error) {
+      // Permit one retry after a brief cool-down when a startup check fails
+      // because the user is offline or the public release service is down.
+      lastDesktopUpdateCheckAt.current = Date.now() - (6 * 60 * 60 * 1000 - 60 * 1000);
       const message = errorText(error);
       if (showResult) setDesktopUpdateError(message);
       else console.warn("[BeBoss desktop updater] Automatic update check could not complete.", message);
@@ -340,7 +349,16 @@ function NativeDesktopApp() {
 
   useEffect(() => {
     if (!startupReady || setupRequired || !isTauri()) return;
-    void checkForDesktopUpdate(false);
+    const check = () => { void checkForDesktopUpdate(false); };
+    check();
+    window.addEventListener("focus", check);
+    window.addEventListener("online", check);
+    const interval = window.setInterval(check, 6 * 60 * 60 * 1000);
+    return () => {
+      window.removeEventListener("focus", check);
+      window.removeEventListener("online", check);
+      window.clearInterval(interval);
+    };
   }, [startupReady, setupRequired, checkForDesktopUpdate]);
 
   useEffect(() => {
