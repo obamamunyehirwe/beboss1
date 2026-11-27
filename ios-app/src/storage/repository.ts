@@ -1768,6 +1768,7 @@ export async function buildIosCloudSnapshot(actor: Staff): Promise<IosCloudSnaps
         id: profile.id,
         shopName: profile.shopName,
         name: profile.ownerName,
+        username: profile.username.trim().toLowerCase(),
         phone: profile.phone,
         email: profile.email || '',
         address: profile.address,
