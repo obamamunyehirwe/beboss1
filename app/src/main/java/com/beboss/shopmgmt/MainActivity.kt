@@ -9,6 +9,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.rememberCoroutineScope
 import com.beboss.shopmgmt.util.AndroidAppRelease
 import com.beboss.shopmgmt.util.SupabaseAdminClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.io.File
 import android.os.Build
@@ -285,12 +286,18 @@ private fun BeBossMainContent(
     val updateScope = rememberCoroutineScope()
     var currentPublicAndroidRelease by remember { mutableStateOf<AndroidAppRelease?>(null) }
     var installedAndroidVersionCode by remember { mutableStateOf(0L) }
+    var installedAndroidVersionName by remember { mutableStateOf("") }
     var showAndroidUpdateDialog by remember { mutableStateOf(false) }
+    var isCheckingAndroidUpdate by remember { mutableStateOf(false) }
     var isDownloadingAndroidUpdate by remember { mutableStateOf(false) }
     var downloadedAndroidUpdate by remember { mutableStateOf<File?>(null) }
     var androidUpdateError by remember { mutableStateOf("") }
+    var androidUpdateStatus by remember { mutableStateOf("Checking for the latest public Android release…") }
 
-    LaunchedEffect(context.packageName) {
+    suspend fun checkForAndroidUpdate() {
+        if (isCheckingAndroidUpdate || isDownloadingAndroidUpdate) return
+        isCheckingAndroidUpdate = true
+        androidUpdateError = ""
         try {
             val installedInfo = context.packageManager.getPackageInfo(context.packageName, 0)
             installedAndroidVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -299,14 +306,31 @@ private fun BeBossMainContent(
                 @Suppress("DEPRECATION")
                 installedInfo.versionCode.toLong()
             }
+            installedAndroidVersionName = installedInfo.versionName.orEmpty()
+
+            val previousRelease = currentPublicAndroidRelease
             val release = SupabaseAdminClient.fetchCurrentPublicAndroidRelease()
-            if (release?.isNewerThan(installedAndroidVersionCode) == true) {
-                currentPublicAndroidRelease = release
+            if (previousRelease?.id != release?.id || previousRelease?.versionCode != release?.versionCode) {
+                downloadedAndroidUpdate = null
             }
+            currentPublicAndroidRelease = release
+            androidUpdateStatus = when {
+                release == null -> "No public Android update is currently available."
+                release.isNewerThan(installedAndroidVersionCode) -> "A new BeBoss update is available and ready to verify."
+                else -> "BeBoss is up to date."
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
-            // Update discovery is non-blocking; offline checkout and existing data remain available.
-            androidUpdateError = error.message.orEmpty()
+            androidUpdateError = error.message ?: "BeBoss could not check for updates."
+            androidUpdateStatus = "Update check could not complete. Your shop data and offline work are unchanged."
+        } finally {
+            isCheckingAndroidUpdate = false
         }
+    }
+
+    LaunchedEffect(context.packageName) {
+        checkForAndroidUpdate()
     }
 
     val updateAvailable = currentPublicAndroidRelease?.isNewerThan(installedAndroidVersionCode) == true
@@ -522,7 +546,10 @@ private fun BeBossMainContent(
                     onLockClick = { viewModel.lockApp() },
                     updateAvailable = updateAvailable,
                     updateVersion = currentPublicAndroidRelease?.versionName.orEmpty(),
-                    onUpdateClick = { showAndroidUpdateDialog = true }
+                    onUpdateClick = {
+                        showAndroidUpdateDialog = true
+                        updateScope.launch { checkForAndroidUpdate() }
+                    }
                 )
             },
             bottomBar = {
@@ -1056,22 +1083,34 @@ private fun BeBossMainContent(
         )
     }
 
-    if (showAndroidUpdateDialog && currentPublicAndroidRelease != null) {
-        val release = currentPublicAndroidRelease!!
+    if (showAndroidUpdateDialog) {
+        val release = currentPublicAndroidRelease
+        val hasNewerRelease = release?.isNewerThan(installedAndroidVersionCode) == true
         AlertDialog(
             onDismissRequest = {
-                if (!isDownloadingAndroidUpdate) showAndroidUpdateDialog = false
+                if (!isDownloadingAndroidUpdate && !isCheckingAndroidUpdate) showAndroidUpdateDialog = false
             },
-            title = { Text("BeBoss update available", fontWeight = FontWeight.Bold) },
+            title = { Text("BeBoss software updates", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Version ${release.versionName} · build ${release.versionCode}")
-                    Text(
-                        "Package size: ${"%.1f".format(release.sizeBytes / (1024.0 * 1024.0))} MB · Minimum: ${release.minimumAndroid}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (release.releaseNotes.isNotBlank()) {
-                        Text(release.releaseNotes, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("Installed version: ${installedAndroidVersionName.ifBlank { "Unknown" }} · build ${installedAndroidVersionCode}")
+                    if (isCheckingAndroidUpdate) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(19.dp), strokeWidth = 2.dp)
+                            Text("Checking the official release service…", modifier = Modifier.padding(start = 10.dp))
+                        }
+                    } else {
+                        Text(androidUpdateStatus, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (release != null && hasNewerRelease) {
+                        Text("Available version: ${release.versionName} · build ${release.versionCode}", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Package size: ${"%.1f".format(release.sizeBytes / (1024.0 * 1024.0))} MB · Minimum: ${release.minimumAndroid.ifBlank { "As declared by Android package" }}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (release.releaseNotes.isNotBlank()) {
+                            Text(release.releaseNotes, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                     if (isDownloadingAndroidUpdate) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1079,9 +1118,9 @@ private fun BeBossMainContent(
                             Text("Downloading and verifying the official APK…", modifier = Modifier.padding(start = 10.dp))
                         }
                     }
-                    if (downloadedAndroidUpdate != null) {
+                    if (downloadedAndroidUpdate != null && hasNewerRelease) {
                         Text(
-                            "APK verified: SHA-256 and published file size match. Ready for Android installation.",
+                            "APK verified: release checksum, file size, application ID and internal version all match. Android will perform the final signing-certificate check.",
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -1092,7 +1131,7 @@ private fun BeBossMainContent(
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                         !context.packageManager.canRequestPackageInstalls()) {
                         Text(
-                            "Android requires you to allow BeBoss to install updates from this source. Enable it in the next Settings screen, return to BeBoss, then tap Install update.",
+                            "Android requires permission to install updates from BeBoss. Enable this source in the next Settings screen, return here, and tap Install update.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -1100,55 +1139,63 @@ private fun BeBossMainContent(
             },
             confirmButton = {
                 TextButton(
-                    enabled = !isDownloadingAndroidUpdate,
+                    enabled = !isDownloadingAndroidUpdate && !isCheckingAndroidUpdate,
                     onClick = {
                         val verifiedFile = downloadedAndroidUpdate
-                        if (verifiedFile == null) {
-                            updateScope.launch {
-                                isDownloadingAndroidUpdate = true
-                                androidUpdateError = ""
-                                try {
-                                    downloadedAndroidUpdate = withContext(Dispatchers.IO) {
-                                        SupabaseAdminClient.downloadPublicAndroidRelease(context, release)
+                        when {
+                            release == null || !hasNewerRelease -> {
+                                updateScope.launch { checkForAndroidUpdate() }
+                            }
+                            verifiedFile == null -> {
+                                updateScope.launch {
+                                    isDownloadingAndroidUpdate = true
+                                    androidUpdateError = ""
+                                    try {
+                                        downloadedAndroidUpdate = withContext(Dispatchers.IO) {
+                                            SupabaseAdminClient.downloadPublicAndroidRelease(context, release)
+                                        }
+                                    } catch (error: Exception) {
+                                        androidUpdateError = error.message ?: "The BeBoss update could not be downloaded."
+                                    } finally {
+                                        isDownloadingAndroidUpdate = false
                                     }
-                                } catch (error: Exception) {
-                                    androidUpdateError = error.message ?: "The BeBoss update could not be downloaded."
-                                } finally {
-                                    isDownloadingAndroidUpdate = false
                                 }
                             }
-                        } else {
-                            try {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                                    !context.packageManager.canRequestPackageInstalls()) {
-                                    val permissionIntent = Intent(
-                                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                        Uri.parse("package:${context.packageName}")
-                                    )
-                                    context.startActivity(permissionIntent)
-                                    androidUpdateError = "Allow installs from BeBoss, return here, and tap Install update again."
-                                } else {
-                                    val apkUri = FileProvider.getUriForFile(
-                                        context,
-                                        "${context.packageName}.fileprovider",
-                                        verifiedFile
-                                    )
-                                    val installerIntent = Intent(Intent.ACTION_VIEW).apply {
-                                        setDataAndType(apkUri, "application/vnd.android.package-archive")
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            else -> {
+                                try {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                        !context.packageManager.canRequestPackageInstalls()) {
+                                        val permissionIntent = Intent(
+                                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                            Uri.parse("package:${context.packageName}")
+                                        )
+                                        context.startActivity(permissionIntent)
+                                        androidUpdateError = "Allow installs from BeBoss, return here, and tap Install update again."
+                                    } else {
+                                        val apkUri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.fileprovider",
+                                            verifiedFile
+                                        )
+                                        val installerIntent = Intent(Intent.ACTION_VIEW).apply {
+                                            setDataAndType(apkUri, "application/vnd.android.package-archive")
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(installerIntent)
                                     }
-                                    context.startActivity(installerIntent)
+                                } catch (error: Exception) {
+                                    androidUpdateError = error.message ?: "Android could not open the package installer."
                                 }
-                            } catch (error: Exception) {
-                                androidUpdateError = error.message ?: "Android could not open the package installer."
                             }
                         }
                     }
                 ) {
                     Text(
                         when {
+                            isCheckingAndroidUpdate -> "Checking…"
                             isDownloadingAndroidUpdate -> "Verifying update…"
+                            release == null || !hasNewerRelease -> "Check again"
                             downloadedAndroidUpdate != null -> "Install update"
                             else -> "Download update"
                         }
@@ -1157,10 +1204,10 @@ private fun BeBossMainContent(
             },
             dismissButton = {
                 TextButton(
-                    enabled = !isDownloadingAndroidUpdate,
+                    enabled = !isDownloadingAndroidUpdate && !isCheckingAndroidUpdate,
                     onClick = { showAndroidUpdateDialog = false }
                 ) {
-                    Text("Later")
+                    Text("Close")
                 }
             }
         )

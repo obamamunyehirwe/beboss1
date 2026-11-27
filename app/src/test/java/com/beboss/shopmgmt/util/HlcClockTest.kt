@@ -10,6 +10,17 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class HlcClockTest {
+    private data class VersionCase(
+        val localHlc: Long,
+        val localVersion: Long,
+        val localUpdatedAt: Long,
+        val localDeviceId: String,
+        val remoteHlc: Long,
+        val remoteVersion: Long,
+        val remoteUpdatedAt: Long,
+        val remoteDeviceId: String
+    )
+
 
     @Test
     fun `pack and unpack round-trip physical and logical components`() {
@@ -56,15 +67,21 @@ class HlcClockTest {
     @Test
     fun `compareVersions is antisymmetric for mixed legacy and modern records`() {
         val cases = listOf(
-            listOf(0L, 1L, 1_000L, "A", 0L, 2L, 2_000L, "B"),
-            listOf(500L, 0L, 500L, "A", 0L, 1L, 900L, "B"),
-            listOf(500L, 3L, 500L, "A", 700L, 3L, 700L, "B"),
-            listOf(0L, 0L, 0L, "SAME", 0L, 0L, 0L, "SAME")
+            VersionCase(0L, 1L, 1_000L, "A", 0L, 2L, 2_000L, "B"),
+            VersionCase(500L, 0L, 500L, "A", 0L, 1L, 900L, "B"),
+            VersionCase(500L, 3L, 500L, "A", 700L, 3L, 700L, "B"),
+            VersionCase(0L, 0L, 0L, "SAME", 0L, 0L, 0L, "SAME")
         )
-        for (c in cases) {
-            val forward = HlcClock.compareVersions(c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7])
-            val reverse = HlcClock.compareVersions(c[4], c[5], c[6], c[7], c[0], c[1], c[2], c[3])
-            assertEquals("not antisymmetric for $c", Integer.signum(forward), -Integer.signum(reverse))
+        for (case in cases) {
+            val forward = HlcClock.compareVersions(
+                case.localHlc, case.localVersion, case.localUpdatedAt, case.localDeviceId,
+                case.remoteHlc, case.remoteVersion, case.remoteUpdatedAt, case.remoteDeviceId
+            )
+            val reverse = HlcClock.compareVersions(
+                case.remoteHlc, case.remoteVersion, case.remoteUpdatedAt, case.remoteDeviceId,
+                case.localHlc, case.localVersion, case.localUpdatedAt, case.localDeviceId
+            )
+            assertEquals("not antisymmetric for $case", Integer.signum(forward), -Integer.signum(reverse))
         }
     }
 

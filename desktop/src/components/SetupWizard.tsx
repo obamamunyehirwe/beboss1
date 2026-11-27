@@ -644,7 +644,7 @@ export function SetupWizard({initialPreferences,onComplete,onRecoverLocalDatabas
       </footer>
     </main>
     <footer className="setup-global-foot">
-      <span>BeBoss Desktop <b>1.4.2</b></span>
+      <span>BeBoss Desktop <b>{diagnostics?.appVersion || "Version unavailable"}</b></span>
       <span>Protected local recovery · Supabase cloud data</span>
     </footer>
     </section>

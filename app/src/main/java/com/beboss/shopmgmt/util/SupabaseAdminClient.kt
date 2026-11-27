@@ -1443,15 +1443,7 @@ object SupabaseAdminClient {
                     minimumAndroid = row.optString("min_android").trim(),
                     releaseNotes = row.optString("release_notes").trim()
                 )
-                val validId = runCatching { UUID.fromString(release.id) }.isSuccess
-                val validName = release.fileName.endsWith(".apk", ignoreCase = true) &&
-                    release.fileName.length <= 180 &&
-                    !release.fileName.contains('/') &&
-                    !release.fileName.contains('\\')
-                val validSize = release.sizeBytes in 1L..(512L * 1024L * 1024L)
-                val validHash = Regex("^[a-f0-9]{64}$").matches(release.sha256)
-                if (!validId || !validName || !validSize || !validHash ||
-                    release.versionCode <= 0L || release.versionName.isBlank()) {
+                if (!release.hasValidPublicMetadata()) {
                     Log.e(TAG, "The current public Android release metadata failed validation.")
                     return@withContext null
                 }
@@ -1475,9 +1467,7 @@ object SupabaseAdminClient {
         release: AndroidAppRelease
     ): File = withContext(Dispatchers.IO) {
         if (!isConfigured()) throw IOException("BeBoss cloud configuration is unavailable.")
-        if (!runCatching { UUID.fromString(release.id) }.isSuccess ||
-            !Regex("^[a-f0-9]{64}$").matches(release.sha256) ||
-            release.sizeBytes !in 1L..(512L * 1024L * 1024L)) {
+        if (!release.hasValidPublicMetadata()) {
             throw IOException("The published APK metadata is invalid. Refresh the update check.")
         }
 
@@ -1565,6 +1555,35 @@ object SupabaseAdminClient {
                     )) {
                     throw IOException("APK integrity verification failed. The file was not made installable.")
                 }
+            }
+
+            // Verify the actual archive agrees with the release record before exposing it
+            // to Android's installer. The OS remains responsible for certificate/lineage checks.
+            @Suppress("DEPRECATION")
+            val archiveInfo = context.packageManager.getPackageArchiveInfo(partial.absolutePath, 0)
+                ?: throw IOException("The downloaded file is not a valid Android APK.")
+            if (archiveInfo.packageName != context.packageName) {
+                throw IOException("The published APK belongs to a different Android application.")
+            }
+            val archiveVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                archiveInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                archiveInfo.versionCode.toLong()
+            }
+            if (archiveVersionCode != release.versionCode ||
+                archiveInfo.versionName != release.versionName) {
+                throw IOException("The APK's internal version does not match the published release metadata.")
+            }
+            val archiveMinSdk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                archiveInfo.applicationInfo?.minSdkVersion ?: 1
+            } else {
+                1
+            }
+            if (Build.VERSION.SDK_INT < archiveMinSdk) {
+                throw IOException("This update requires Android API $archiveMinSdk or later.")
+            }
+
             }
 
             if (destination.exists() && !destination.delete()) {

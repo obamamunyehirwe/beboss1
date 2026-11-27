@@ -194,32 +194,38 @@ fun BeBossTopBar(
             }
         },
         actions = {
-            if (updateAvailable) {
-                Surface(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onUpdateClick()
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    color = ProfitGreen.copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, ProfitGreen.copy(alpha = 0.34f)),
-                    modifier = Modifier.padding(end = 5.dp)
+            Surface(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onUpdateClick()
+                },
+                shape = RoundedCornerShape(12.dp),
+                color = if (updateAvailable) ProfitGreen.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                border = BorderStroke(
+                    1.dp,
+                    if (updateAvailable) ProfitGreen.copy(alpha = 0.34f) else MaterialTheme.colorScheme.outlineVariant
+                ),
+                modifier = Modifier.padding(end = 5.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Sync, contentDescription = null, tint = ProfitGreen, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = "Update ${updateVersion.take(12)}",
-                            fontFamily = GopherFontFamily,
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = ProfitGreen,
-                            maxLines = 1
-                        )
-                    }
+                    Icon(
+                        Icons.Default.Sync,
+                        contentDescription = if (updateAvailable) "Update available" else "Check for updates",
+                        tint = if (updateAvailable) ProfitGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = if (updateAvailable) "Update ${updateVersion.take(7)}" else "Updates",
+                        fontFamily = GopherFontFamily,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (updateAvailable) ProfitGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
                 }
             }
 

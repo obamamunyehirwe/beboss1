@@ -22,4 +22,15 @@ class AndroidAppReleaseTest {
         assertFalse(release.isNewerThan(20L))
         assertFalse(release.isNewerThan(21L))
     }
+
+    @Test
+    fun publicReleaseMetadataRejectsInvalidIdsHashesAndPaths() {
+        assertTrue(release.hasValidPublicMetadata())
+        assertFalse(release.copy(id = "not-a-uuid").hasValidPublicMetadata())
+        assertFalse(release.copy(sha256 = "not-a-checksum").hasValidPublicMetadata())
+        assertFalse(release.copy(fileName = "../other.apk").hasValidPublicMetadata())
+        assertFalse(release.copy(fileName = "BeBoss.zip").hasValidPublicMetadata())
+        assertFalse(release.copy(sizeBytes = 0L).hasValidPublicMetadata())
+        assertFalse(release.copy(versionCode = 0L).hasValidPublicMetadata())
+    }
 }
