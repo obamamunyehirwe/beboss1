@@ -43,5 +43,10 @@ verify_jwt = false
 [functions.android-device-auth]
 verify_jwt = false
 
+# iPhone enrollment, single-use credential refresh and device-header-authenticated
+# signed snapshot sync verify their own shop/device authority in the Edge Function.
+[functions.ios-device-auth]
+verify_jwt = false
+
 [functions.send-auth-sms]
 verify_jwt = false
