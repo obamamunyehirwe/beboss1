@@ -51,6 +51,8 @@ class SyncCoordinatorTest {
                 name = "Test Owner"
             )
             database.shopProfileDao().insertOrUpdateProfile(profile)
+            val owner = User.defaultForRole("Test Owner", "test_owner", UserRole.OWNER)
+            database.userDao().insertUser(owner)
         }
     }
 
@@ -85,7 +87,8 @@ class SyncCoordinatorTest {
             branchId = "main_branch",
             branchName = "Main Store",
             cashierId = "cashier-1",
-            cashierName = "Test Cashier"
+            cashierName = "Test Cashier",
+            actor = owner
         )
 
         val outboxItems = database.syncQueueDao().getPendingQueueDirect()
