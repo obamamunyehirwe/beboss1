@@ -932,9 +932,7 @@ export async function restoreEncryptedBackupData(backup: any, actor: Staff): Pro
   };
 
   await transaction(async tx => {
-    const currentProducts = new Set((await query<Row>('SELECT id FROM products', [], tx)).map(row => String(row.id)));
     const currentCustomers = new Set((await query<Row>('SELECT id FROM customers', [], tx)).map(row => String(row.id)));
-    const currentBranches = new Set((await query<Row>('SELECT id FROM branches', [], tx)).map(row => String(row.id)));
     const currentSales = new Set((await query<Row>('SELECT id,receipt_number FROM sales', [], tx)).flatMap(row => [String(row.id), String(row.receipt_number)]));
 
     for (const branch of branches) {
@@ -947,7 +945,6 @@ export async function restoreEncryptedBackupData(backup: any, actor: Staff): Pro
       };
       await saveBranchRow(merged, tx);
       await enqueue('branches', merged.id, old ? 'UPDATE' : 'CREATE', merged, tx);
-      currentBranches.add(merged.id);
       summary.branches += 1;
     }
 
@@ -966,7 +963,6 @@ export async function restoreEncryptedBackupData(backup: any, actor: Staff): Pro
       await saveProductRow(merged, tx);
       await execute('DELETE FROM sync_tombstones WHERE id=?', ['products:' + merged.id], tx);
       await enqueue('products', merged.id, old ? 'UPDATE' : 'CREATE', merged, tx);
-      currentProducts.add(merged.id);
       summary.products += 1;
     }
 
