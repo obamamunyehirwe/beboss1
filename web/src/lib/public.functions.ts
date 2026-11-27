@@ -304,7 +304,7 @@ export const lookupMyShop = createServerFn({ method: "POST" })
         .select("id,device_id,branch_name,records_summary,payload_token,updated_at,sync_generation,chunk_index,chunk_count")
         .eq("shop_sync_key", key).order("updated_at", { ascending: false }).limit(20),
       sb.from("shop_branches")
-        .select("id,name,code,address,phone,manager_user_id,manager_name,is_main_branch,is_active,color_hex,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,stock_value_rwf,product_count,operational_status,email,notes,updated_at,hlc_timestamp")
+        .select("id,name,code,location_type,address,phone,manager_user_id,manager_name,is_main_branch,is_active,color_hex,daily_sales_target_rwf,monthly_target_rwf,opening_cash_float,stock_value_rwf,product_count,operational_status,email,notes,updated_at,hlc_timestamp")
         .eq("shop_sync_key", key).eq("is_active", true)
         .order("is_main_branch", { ascending: false }).limit(200),
       sb.from("shop_stock_transfers")
@@ -317,7 +317,7 @@ export const lookupMyShop = createServerFn({ method: "POST" })
       sb.from("cloud_sync_events")
         .select("id,entity,action,actor,device_id,detail,created_at")
         .eq("shop_sync_key", key)
-        .in("entity", ["FINANCE_LEDGER", "BRANCH", "STOCK_TRANSFER", "BRANCH_RECONCILIATION", "STAFF", "APPROVAL_POLICY"])
+        .in("entity", ["FINANCE_LEDGER", "BRANCH", "STOCK_TRANSFER", "BRANCH_RECONCILIATION", "STAFF", "DEVICE", "APPROVAL_POLICY"])
         .order("created_at", { ascending: false }).limit(1000),
     ]);
 
