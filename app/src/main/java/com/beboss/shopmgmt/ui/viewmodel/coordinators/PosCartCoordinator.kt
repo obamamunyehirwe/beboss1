@@ -429,7 +429,8 @@ class PosCartCoordinator(
                     branchId = branch.id,
                     branchName = branch.name,
                     cashierId = user?.id ?: "",
-                    cashierName = user?.name ?: "Shop Operator"
+                    cashierName = user?.name ?: "Shop Operator",
+                    actor = user
                 )
                 val saleWithItems = repository.getSaleWithItems(sale.id)
                 _activeReceiptSale.value = saleWithItems
@@ -512,7 +513,8 @@ class PosCartCoordinator(
                     branchId = branch.id,
                     branchName = branch.name,
                     cashierId = user?.id ?: "",
-                    cashierName = user?.name ?: "Shop Operator"
+                    cashierName = user?.name ?: "Shop Operator",
+                    actor = user
                 )
                 val saleWithItems = repository.getSaleWithItems(sale.id)
                 _activeReceiptSale.value = saleWithItems
