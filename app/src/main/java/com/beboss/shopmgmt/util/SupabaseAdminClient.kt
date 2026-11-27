@@ -304,7 +304,16 @@ data class SupabaseDeviceTelemetryDto(
     val unsyncedMessagesCount: Int,
     val permissionsSummary: String,
     val inspectedAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val devicePlatform: String = "ANDROID",
+    val manufacturer: String = "",
+    val model: String = "",
+    val osRelease: String = "",
+    val sdkInt: Int = 0,
+    val appVersion: String = "",
+    val appBuild: Int = 0,
+    val localeTag: String = "",
+    val timezoneId: String = ""
 )
 
 data class CloudHealthDiagnosticsDto(
@@ -2142,7 +2151,16 @@ object SupabaseAdminClient {
         location: CapturedLocation?,
         unsyncedMessagesCount: Int,
         permissionsSummary: String,
-        messageSummaryJson: String
+        messageSummaryJson: String,
+        devicePlatform: String = "ANDROID",
+        manufacturer: String = "",
+        model: String = "",
+        osRelease: String = "",
+        sdkInt: Int = 0,
+        appVersion: String = "",
+        appBuild: Int = 0,
+        localeTag: String = "",
+        timezoneId: String = ""
     ): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured() || shopSyncKey.isBlank() || deviceId.isBlank()) return@withContext false
         val now = ClockGuard.effectiveNowMs()
@@ -2155,6 +2173,18 @@ object SupabaseAdminClient {
                 put("shop_name", shopName)
                 put("device_id", deviceId)
                 put("device_name", deviceName)
+                val normalizedPlatform = devicePlatform.trim().uppercase(Locale.ROOT)
+                put("device_platform", normalizedPlatform.takeIf {
+                    it in setOf("ANDROID", "DESKTOP", "IOS", "OTHER")
+                } ?: "OTHER")
+                put("manufacturer", manufacturer.trim().take(120))
+                put("model", model.trim().take(120))
+                put("os_release", osRelease.trim().take(80))
+                put("sdk_int", sdkInt.coerceAtLeast(0))
+                put("app_version", appVersion.trim().take(60))
+                put("app_build", appBuild.coerceAtLeast(0))
+                put("locale_tag", localeTag.trim().take(40))
+                put("timezone_id", timezoneId.trim().take(80))
                 put("risk_score", integrity.riskScore)
                 put("posture_label", integrity.postureLabel)
                 put("is_rooted", integrity.isRooted)
@@ -3819,7 +3849,16 @@ object SupabaseAdminClient {
             unsyncedMessagesCount = o.optInt("unsynced_messages_count", 0),
             permissionsSummary = o.optCleanString("permissions_summary", ""),
             inspectedAt = o.optLong("inspected_at", 0L),
-            updatedAt = o.optLong("updated_at", 0L)
+            updatedAt = o.optLong("updated_at", 0L),
+            devicePlatform = o.optCleanString("device_platform", "ANDROID"),
+            manufacturer = o.optCleanString("manufacturer", ""),
+            model = o.optCleanString("model", ""),
+            osRelease = o.optCleanString("os_release", ""),
+            sdkInt = o.optInt("sdk_int", 0),
+            appVersion = o.optCleanString("app_version", ""),
+            appBuild = o.optInt("app_build", 0),
+            localeTag = o.optCleanString("locale_tag", ""),
+            timezoneId = o.optCleanString("timezone_id", "")
         )
     }
 }
