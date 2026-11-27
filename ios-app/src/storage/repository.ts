@@ -2212,6 +2212,10 @@ export async function mergeIosCloudSnapshots(parts: unknown[], actor: Staff): Pr
         isActive: raw.isActive !== false && raw.is_active !== false,
         operationalStatus: ['OPEN', 'PAUSED', 'CLOSED'].includes(cloudString(raw, 'operationalStatus', 'operational_status'))
           ? cloudString(raw, 'operationalStatus', 'operational_status') as Branch['operationalStatus'] : 'OPEN',
+        dailySalesTargetRwf: Math.max(0, cloudNumber(raw, 'dailySalesTargetRwf', 'daily_sales_target_rwf', 0)),
+        monthlyTargetRwf: Math.max(0, cloudNumber(raw, 'monthlyTargetRwf', 'monthly_target_rwf', 0)),
+        stockValueRwf: Math.max(0, cloudNumber(raw, 'stockValueRwf', 'stock_value_rwf', 0)),
+        productCount: Math.max(0, Math.floor(cloudNumber(raw, 'productCount', 'product_count', 0))),
         notes: cloudString(raw, 'notes', 'notes'),
         createdAt: cloudNumber(raw, 'createdAt', 'created_at', Date.now()),
         updatedAt: cloudNumber(raw, 'updatedAt', 'updated_at', Date.now())
