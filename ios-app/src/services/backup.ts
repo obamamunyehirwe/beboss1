@@ -1,4 +1,4 @@
-import { Buffer } from 'buffer';
+import { Buffer } from 'react-native-quick-crypto';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import QuickCrypto from 'react-native-quick-crypto';
