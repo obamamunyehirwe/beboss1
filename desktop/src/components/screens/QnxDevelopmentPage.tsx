@@ -7,6 +7,7 @@ type QnxStatus = {
   hostOs: string;
   hostArch: string;
   hostSupported: boolean;
+  qemuHostSupported: boolean;
   qnxBase: string | null;
   qnxHost: string | null;
   qnxTarget: string | null;
@@ -109,7 +110,7 @@ export function QnxDevelopmentPage() {
         : targetArch;
   const selectedVariant = effectiveTargetArch === "x86_64" ? "gcc_ntox86_64" : "gcc_ntoaarch64le";
   const selectedTargetVerified = Boolean(status?.qccVariants.includes(selectedVariant));
-  const canBuildImage = sdkReady && selectedTargetVerified
+  const canBuildImage = sdkReady && selectedTargetVerified && Boolean(status?.qemuHostSupported)
     && Boolean(status?.mkqnximagePath) && Boolean(status?.qemuPackageDirectoryPresent);
 
   return <div className="page-stack">
@@ -151,6 +152,7 @@ export function QnxDevelopmentPage() {
         <DetailRow label="q++" value={status?.qppPath || "Not found"} ok={Boolean(status?.qppPath)} />
         <DetailRow label="mkifs" value={status?.mkifsPath || "Not found"} ok={Boolean(status?.mkifsPath)} />
         <DetailRow label="mkqnximage" value={status?.mkqnximagePath || "Not found"} ok={Boolean(status?.mkqnximagePath)} />
+        <DetailRow label="QEMU host" value={status?.qemuHostSupported ? "Ubuntu 22.04 / 24.04 x86-64" : "Unsupported for QNX QEMU quick-start"} ok={Boolean(status?.qemuHostSupported)} />
         <DetailRow label="target/qnx8 headers" value={status?.qnxTargetTreePresent ? "Found" : "Missing"} ok={Boolean(status?.qnxTargetTreePresent)} />
         <DetailRow label="Compiler variants" value={status?.qccVariants.join(", ") || "Not verified"} />
       </section>
@@ -190,7 +192,7 @@ export function QnxDevelopmentPage() {
 
       <section className="panel diag-card">
         <div className="panel-heading"><div><span className="eyebrow muted">VIRTUAL TARGET</span><h3>QEMU lifecycle</h3></div><Activity size={18} className="muted-icon" /></div>
-        <p className="settings-section-description">mkqnximage prepares and launches the QNX QEMU reference target. A non-empty package directory is only a preliminary check; the build command must still validate its contents, and the guest boot must be confirmed in QEMU or its serial console.</p>
+        <p className="settings-section-description">The QNX SDP 8.0 quick-start QEMU workflow is enabled only on x86-64 Ubuntu 22.04 or 24.04 with the unpacked reference image. A non-empty directory is only a preliminary check; the build command must still validate its contents, and the guest boot must be confirmed in QEMU or its serial console.</p>
         <div className="form-footer">
           <span className="muted small-text">{status?.qemuPackageDirectoryPresent ? "Files found in QEMU package directory" : "QEMU reference package missing or directory empty"}</span>
           <button className="btn-outline" disabled={!canBuildImage || Boolean(busy)} onClick={() => void runOperation("qemu-build", () => invoke<QnxResult>("qnx_build_qemu_image", { installRoot: installRoot.trim() || null, architecture: effectiveTargetArch }))}>
